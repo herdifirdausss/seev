@@ -153,7 +153,10 @@ func TestPolicy_Engine_CacheExpiresAndRefetchesFromRealDB(t *testing.T) {
 	repo := policy.NewRepository(db)
 	counter := cache.NewMemoryCounter()
 	defer counter.Stop()
-	engine := policy.New(repo, counter, time.UTC, nil, policy.WithCacheTTL(20*time.Millisecond))
+	// A one-second TTL keeps the "still cached" assertion well clear of
+	// race-detector and database scheduling jitter, while remaining short
+	// enough to exercise expiry without materially slowing this suite.
+	engine := policy.New(repo, counter, time.UTC, nil, policy.WithCacheTTL(time.Second))
 	ctx := context.Background()
 	userID := uuid.New()
 
@@ -177,7 +180,7 @@ func TestPolicy_Engine_CacheExpiresAndRefetchesFromRealDB(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, allowed, "within the cache TTL window, Check must still use the OLD limit (1000), not hit the DB every call")
 
-	time.Sleep(30 * time.Millisecond)
+	time.Sleep(1100 * time.Millisecond)
 
 	allowed, rule, _, err := engine.Check(ctx, userID, "transfer_p2p", decimal.NewFromInt(500))
 	require.NoError(t, err)
