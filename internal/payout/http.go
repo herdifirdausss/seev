@@ -1,0 +1,291 @@
+package payout
+
+import (
+	"encoding/json"
+	"errors"
+	"net/http"
+	"strconv"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
+
+	"github.com/herdifirdausss/seev/internal/payout/repository"
+	"github.com/herdifirdausss/seev/pkg/middleware"
+	"github.com/herdifirdausss/seev/pkg/response"
+)
+
+// currentUserID extracts and parses the authenticated user's ID from the
+// JWT claims already validated by pkg/middleware.WithAuth — mirrors
+// internal/ledger/transport's own helper of the same name.
+func currentUserID(r *http.Request) (uuid.UUID, bool) {
+	raw := middleware.UserIDFromCtx(r.Context())
+	id, err := uuid.Parse(raw)
+	if err != nil {
+		return uuid.Nil, false
+	}
+	return id, true
+}
+
+func isAdmin(r *http.Request) bool {
+	claims := middleware.GetClaims(r.Context())
+	return claims != nil && claims.Role == "admin"
+}
+
+// errNonIntegralAmount and decimalFromString mirror
+// internal/ledger/transport's own (unexported, cross-module-inaccessible)
+// helpers of the same name — the ledger is minor-unit-only (docs/plan/01
+// decision D2), so a fractional amount here would create/destroy money
+// once posted as withdraw_initiate downstream.
+var errNonIntegralAmount = errors.New("amount must be an integer (minor units, no fractional part)")
+
+func decimalFromString(s string) (decimal.Decimal, error) {
+	amt, err := decimal.NewFromString(s)
+	if err != nil {
+		return decimal.Decimal{}, err
+	}
+	if !amt.Equal(amt.Truncate(0)) {
+		return decimal.Decimal{}, errNonIntegralAmount
+	}
+	return amt, nil
+}
+
+type payoutResponse struct {
+	ID           uuid.UUID `json:"id"`
+	UserID       uuid.UUID `json:"user_id"`
+	Amount       string    `json:"amount"`
+	Currency     string    `json:"currency"`
+	Vendor       string    `json:"vendor"`
+	Status       string    `json:"status"`
+	ErrorMessage string    `json:"error_message,omitempty"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+}
+
+func toPayoutResponse(req PayoutRequest) payoutResponse {
+	return payoutResponse{
+		ID: req.ID, UserID: req.UserID, Amount: req.Amount.String(), Currency: req.Currency,
+		Vendor: req.Vendor, Status: req.Status, ErrorMessage: req.ErrorMessage,
+		CreatedAt: req.CreatedAt, UpdatedAt: req.UpdatedAt,
+	}
+}
+
+type createPayoutRequest struct {
+	Amount      string          `json:"amount"`
+	Destination json.RawMessage `json:"destination"`
+}
+
+// CreateHandler serves POST /api/v1/payout (docs/plan/23 Task T5) — creates
+// a payout request for the authenticated user and drives it through
+// hold -> vendor submission synchronously. A Pending or even a Failed
+// vendor outcome still returns 201: the request itself was created and is
+// progressing/resuming correctly, that's not a client error — poll
+// GET /api/v1/payout/{id} for the eventual terminal status.
+func (m *Module) CreateHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID, ok := currentUserID(r)
+		if !ok {
+			response.Unauthorized(w, "invalid or missing user identity")
+			return
+		}
+
+		var req createPayoutRequest
+		if !response.Decode(w, r, &req) {
+			return
+		}
+		if len(req.Destination) == 0 {
+			response.BadRequest(w, "destination is required")
+			return
+		}
+		amount, err := decimalFromString(req.Amount)
+		if err != nil {
+			if errors.Is(err, errNonIntegralAmount) {
+				response.BadRequest(w, err.Error())
+			} else {
+				response.BadRequest(w, "amount must be a valid decimal string")
+			}
+			return
+		}
+		if !amount.IsPositive() {
+			response.BadRequest(w, "amount must be positive")
+			return
+		}
+
+		id, err := m.Create(r.Context(), userID, amount, req.Destination, userID.String(), "")
+		if err != nil {
+			switch {
+			case errors.Is(err, ErrNoRoute):
+				response.JSON(w, http.StatusUnprocessableEntity, response.Envelope{Success: false, Error: &response.Error{Code: "NO_ROUTE", Message: "no payout route available"}})
+			default:
+				response.InternalServerError(w, err)
+			}
+			return
+		}
+
+		out, err := m.Get(r.Context(), id)
+		if err != nil {
+			response.InternalServerError(w, err)
+			return
+		}
+		response.Created(w, toPayoutResponse(out))
+	}
+}
+
+// GetHandler serves GET /api/v1/payout/{id} (docs/plan/23 Task T5).
+// Ownership is a direct comparison against payout_requests.user_id — no
+// CanAccessAccount-style indirection needed the way ledger's
+// account-ownership model requires, since this table already carries
+// user_id directly. A different user's payout reports 404, not 403 — same
+// "don't confirm existence to a non-owner" reasoning ledger's own
+// ownership-checked handlers use.
+func (m *Module) GetHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID, ok := currentUserID(r)
+		if !ok {
+			response.Unauthorized(w, "invalid or missing user identity")
+			return
+		}
+		id, err := uuid.Parse(r.PathValue("id"))
+		if err != nil {
+			response.BadRequest(w, "invalid payout id")
+			return
+		}
+		req, err := m.Get(r.Context(), id)
+		if err != nil {
+			if errors.Is(err, repository.ErrNotFound) {
+				response.NotFound(w, "payout request not found")
+			} else {
+				response.InternalServerError(w, err)
+			}
+			return
+		}
+		if req.UserID != userID {
+			response.NotFound(w, "payout request not found")
+			return
+		}
+		response.OK(w, toPayoutResponse(req))
+	}
+}
+
+// AdminRouter returns the payout module's admin HTTP surface, already at
+// its final paths (/admin/payout/...) — mount directly, no prefix
+// stripping needed (docs/plan/23 Task T5, same mounting pattern as
+// internal/payin.Module.AdminRouter). Internal-router only; every handler
+// is also admin-gated inside itself, defense in depth, same pattern as
+// every other /admin/* surface in this codebase.
+func (m *Module) AdminRouter() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /admin/payout/requests", m.listRequestsHandler)
+	mux.HandleFunc("POST /admin/payout/requests/{id}/cancel", m.adminCancelHandler)
+	mux.HandleFunc("POST /admin/payout/requests/{id}/retry", m.adminRetryHandler)
+	mux.HandleFunc("GET /admin/payout/routing-rules", m.listRoutingRulesHandler)
+	mux.HandleFunc("POST /admin/payout/routing-rules", m.createRoutingRuleHandler)
+	mux.HandleFunc("PUT /admin/payout/routing-rules/{id}", m.updateRoutingRuleHandler)
+	mux.HandleFunc("GET /admin/payout/vendor-gateways/{vendor}", m.getVendorGatewayHandler)
+	mux.HandleFunc("PUT /admin/payout/vendor-gateways/{vendor}", m.putVendorGatewayHandler)
+	return mux
+}
+
+type listRequestsResponse struct {
+	Requests []payoutResponse `json:"requests"`
+}
+
+func (m *Module) listRequestsHandler(w http.ResponseWriter, r *http.Request) {
+	if !isAdmin(r) {
+		response.Forbidden(w, "admin privileges required")
+		return
+	}
+
+	status := r.URL.Query().Get("status")
+	vendor := r.URL.Query().Get("vendor")
+
+	limit, offset := 50, 0
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed <= 0 {
+			response.BadRequest(w, "limit must be a positive integer")
+			return
+		}
+		limit = parsed
+	}
+	if raw := r.URL.Query().Get("offset"); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 0 {
+			response.BadRequest(w, "offset must be a non-negative integer")
+			return
+		}
+		offset = parsed
+	}
+
+	reqs, err := m.List(r.Context(), status, vendor, limit, offset)
+	if err != nil {
+		response.InternalServerError(w, err)
+		return
+	}
+	out := make([]payoutResponse, len(reqs))
+	for i, req := range reqs {
+		out[i] = toPayoutResponse(req)
+	}
+	response.OK(w, listRequestsResponse{Requests: out})
+}
+
+type adminActionRequest struct {
+	Reason string `json:"reason"`
+}
+
+func (m *Module) adminCancelHandler(w http.ResponseWriter, r *http.Request) {
+	if !isAdmin(r) {
+		response.Forbidden(w, "admin privileges required")
+		return
+	}
+	id, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		response.BadRequest(w, "invalid payout id")
+		return
+	}
+
+	var body adminActionRequest
+	if r.ContentLength > 0 {
+		if !response.Decode(w, r, &body) {
+			return
+		}
+	}
+
+	if err := m.AdminCancel(r.Context(), id, body.Reason); err != nil {
+		switch {
+		case errors.Is(err, repository.ErrNotFound):
+			response.NotFound(w, "payout request not found")
+		case errors.Is(err, ErrInvalidTransition):
+			response.Conflict(w, err.Error())
+		default:
+			response.InternalServerError(w, err)
+		}
+		return
+	}
+	response.OK(w, map[string]bool{"cancelled": true})
+}
+
+func (m *Module) adminRetryHandler(w http.ResponseWriter, r *http.Request) {
+	if !isAdmin(r) {
+		response.Forbidden(w, "admin privileges required")
+		return
+	}
+	id, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		response.BadRequest(w, "invalid payout id")
+		return
+	}
+
+	if err := m.AdminRetry(r.Context(), id); err != nil {
+		switch {
+		case errors.Is(err, repository.ErrNotFound):
+			response.NotFound(w, "payout request not found")
+		case errors.Is(err, ErrInvalidTransition):
+			response.Conflict(w, err.Error())
+		default:
+			response.InternalServerError(w, err)
+		}
+		return
+	}
+	response.OK(w, map[string]bool{"retried": true})
+}

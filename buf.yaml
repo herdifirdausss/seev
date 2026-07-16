@@ -1,0 +1,14 @@
+version: v2
+modules:
+  - path: api/proto
+lint:
+  use:
+    - STANDARD
+  except:
+    # The locked ledger contract returns the shared Transaction message and
+    # intentionally uses the concise GetTxByIdemKeyRequest wire name.
+    - RPC_REQUEST_STANDARD_NAME
+    - RPC_RESPONSE_STANDARD_NAME
+breaking:
+  use:
+    - FILE

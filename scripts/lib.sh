@@ -1,0 +1,757 @@
+#!/usr/bin/env bash
+# Shared bootstrap/assertion library for this repo's Bash test scripts
+# (scripts/chaos-test.sh, scripts/smoke-test.sh). Sourced, never executed
+# directly — every function here builds/starts a real server against a
+# real docker-compose Postgres/Redis/RabbitMQ stack, so both scripts get
+# identical, single-source-of-truth setup instead of drifting copies.
+#
+# A caller sources this AFTER setting ROOT_DIR (cd there first) and BEFORE
+# using any function below. Callers are expected to `trap cleanup EXIT`
+# themselves right after sourcing, so each script controls its own
+# lifecycle (the library doesn't install the trap for you).
+
+# ─── Config (overridable by the caller before sourcing) ────────────────────
+
+POSTGRES_CONTAINER="${POSTGRES_CONTAINER:-seev-postgres-1}"
+REDIS_CONTAINER="${REDIS_CONTAINER:-seev-redis-1}"
+RABBITMQ_CONTAINER="${RABBITMQ_CONTAINER:-seev-rabbitmq-1}"
+DB_USER="${DB_USER:-seev}"
+DB_NAME="${DB_NAME:-seev}"
+LEDGER_DB_NAME="${LEDGER_DB_NAME:-seev_ledger}"
+AUTH_DB_NAME="${AUTH_DB_NAME:-seev_auth}"
+PAYIN_DB_NAME="${PAYIN_DB_NAME:-seev_payin}"
+PAYOUT_DB_NAME="${PAYOUT_DB_NAME:-seev_payout}"
+FRAUD_DB_NAME="${FRAUD_DB_NAME:-seev_fraud}"
+GATEWAY_DB_NAME="${GATEWAY_DB_NAME:-seev_gateway}"
+JWT_SECRET="${JWT_SECRET:-change-me-to-a-random-32-plus-character-secret}"
+APP_PORT="${APP_PORT:-18080}"
+INTERNAL_PORT="${INTERNAL_PORT:-18081}"
+LEDGER_GRPC_PORT="${LEDGER_GRPC_PORT:-19091}"
+LEDGER_APP_PORT="${LEDGER_APP_PORT:-18090}"
+LEDGER_INTERNAL_PORT="${LEDGER_INTERNAL_PORT:-18091}"
+AUTH_APP_PORT="${AUTH_APP_PORT:-18082}"
+AUTH_INTERNAL_PORT="${AUTH_INTERNAL_PORT:-18083}"
+PAYIN_GRPC_PORT="${PAYIN_GRPC_PORT:-19092}"
+PAYIN_ADMIN_PORT="${PAYIN_ADMIN_PORT:-18092}"
+PAYOUT_GRPC_PORT="${PAYOUT_GRPC_PORT:-19093}"
+PAYOUT_ADMIN_PORT="${PAYOUT_ADMIN_PORT:-18093}"
+FRAUD_GRPC_PORT="${FRAUD_GRPC_PORT:-19094}"
+FRAUD_ADMIN_PORT="${FRAUD_ADMIN_PORT:-18094}"
+REDIS_HOST_PORT="${REDIS_HOST_PORT:-6380}"
+
+WORK_DIR="$(mktemp -d "/tmp/seev-${LIB_WORK_DIR_PREFIX:-run}.XXXXXX")"
+GATEWAY_BIN="$WORK_DIR/gateway"
+LEDGER_BIN="$WORK_DIR/ledger-service"
+AUTH_BIN="$WORK_DIR/auth-service"
+PAYIN_BIN="$WORK_DIR/payin-service"
+PAYOUT_BIN="$WORK_DIR/payout-service"
+FRAUD_BIN="$WORK_DIR/fraud-service"
+GENTOKEN_BIN="$WORK_DIR/gentoken"
+GATEWAY_LOG="$WORK_DIR/gateway.log"
+LEDGER_LOG="$WORK_DIR/ledger-service.log"
+AUTH_LOG="$WORK_DIR/auth-service.log"
+PAYIN_LOG="$WORK_DIR/payin-service.log"
+PAYOUT_LOG="$WORK_DIR/payout-service.log"
+FRAUD_LOG="$WORK_DIR/fraud-service.log"
+GATEWAY_PID_FILE="$WORK_DIR/gateway.pid"
+LEDGER_PID_FILE="$WORK_DIR/ledger-service.pid"
+AUTH_PID_FILE="$WORK_DIR/auth-service.pid"
+PAYIN_PID_FILE="$WORK_DIR/payin-service.pid"
+PAYOUT_PID_FILE="$WORK_DIR/payout-service.pid"
+FRAUD_PID_FILE="$WORK_DIR/fraud-service.pid"
+
+# Postgres port as seen from the HOST — auto-detected below rather than
+# assumed, so this keeps working regardless of what POSTGRES_PORT (or its
+# 5433 default — see docker-compose.yml's own comment) docker-compose
+# actually mapped.
+DB_HOST_PORT=""
+
+log()  { printf '\033[1;34m[%s]\033[0m %s\n' "${LIB_LOG_TAG:-lib}" "$*"; }
+ok()   { printf '\033[1;32m[ pass]\033[0m %s\n' "$*"; }
+fail() { printf '\033[1;31m[ FAIL]\033[0m %s\n' "$*"; FAILED=1; }
+
+FAILED=0
+
+# ─── Docker / Postgres bootstrap ────────────────────────────────────────────
+
+detect_db_port() {
+	DB_HOST_PORT="$(docker port "$POSTGRES_CONTAINER" 5432/tcp 2>/dev/null | head -1 | cut -d: -f2)"
+	if [ -z "$DB_HOST_PORT" ]; then
+		fail "could not detect host port for $POSTGRES_CONTAINER — is docker-compose up?"
+		exit 1
+	fi
+	log "detected Postgres host port: $DB_HOST_PORT"
+}
+
+psql_exec() {
+	local database="$DB_NAME"
+	if [ "$#" -gt 0 ] && [[ "$1" != -* ]]; then
+		database=$1
+		shift
+	fi
+	docker exec -i "$POSTGRES_CONTAINER" psql -U "$DB_USER" -d "$database" -v ON_ERROR_STOP=1 -t -A "$@"
+}
+
+wait_for_container_healthy() {
+	local container=$1 tries=30
+	while [ "$tries" -gt 0 ]; do
+		local status
+		status="$(docker inspect "$container" --format '{{.State.Health.Status}}' 2>/dev/null || echo "missing")"
+		[ "$status" = "healthy" ] && return 0
+		sleep 2
+		tries=$((tries - 1))
+	done
+	fail "$container did not become healthy in time"
+	return 1
+}
+
+ensure_deps_up() {
+	log "ensuring postgres/redis/rabbitmq are up..."
+	docker compose up -d postgres redis rabbitmq >/dev/null 2>&1
+	wait_for_container_healthy "$POSTGRES_CONTAINER"
+	wait_for_container_healthy "$REDIS_CONTAINER"
+	wait_for_container_healthy "$RABBITMQ_CONTAINER"
+	ensure_service_dbs
+	detect_db_port
+	apply_migrations
+}
+
+# ensure_service_dbs mirrors scripts/postgres-init/02-service-dbs.sh for
+# existing Docker volumes, where entrypoint init scripts no longer run.
+ensure_service_dbs() {
+	local service database role exists
+	for service in ledger auth payin payout fraud gateway; do
+		database="seev_${service}"
+		role="${service}_app"
+		exists="$(docker exec -i "$POSTGRES_CONTAINER" psql -U "$DB_USER" -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname = '$database'")"
+		if [ "$exists" != "1" ]; then
+			docker exec -i "$POSTGRES_CONTAINER" createdb -U "$DB_USER" "$database"
+		fi
+		docker exec -i "$POSTGRES_CONTAINER" psql -U "$DB_USER" -d postgres -v ON_ERROR_STOP=1 <<-SQL >/dev/null
+			DO \$\$
+			BEGIN
+			    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '$role') THEN
+			        EXECUTE format('CREATE ROLE %I LOGIN PASSWORD %L', '$role', '$role');
+			    END IF;
+			END
+			\$\$;
+		SQL
+	done
+}
+
+apply_migrations() {
+	log "applying migrations (idempotent — CREATE TABLE IF... guards not present, so this is a no-op error we suppress if already applied)..."
+	# Ledger must run first because migration 000009 creates the shared
+	# app_service/app_readonly roles referenced by the other service SQL.
+	for f in migrations/ledger/*.up.sql; do
+		docker exec -i "$POSTGRES_CONTAINER" psql -U "$DB_USER" -d "$LEDGER_DB_NAME" -v ON_ERROR_STOP=0 <"$f" >/dev/null 2>&1 || true
+	done
+	for f in migrations/auth/*.up.sql; do
+		docker exec -i "$POSTGRES_CONTAINER" psql -U "$DB_USER" -d "$AUTH_DB_NAME" -v ON_ERROR_STOP=0 <"$f" >/dev/null 2>&1 || true
+	done
+	for f in migrations/payin/*.up.sql; do
+		docker exec -i "$POSTGRES_CONTAINER" psql -U "$DB_USER" -d "$PAYIN_DB_NAME" -v ON_ERROR_STOP=0 <"$f" >/dev/null 2>&1 || true
+	done
+	for f in migrations/payout/*.up.sql; do
+		docker exec -i "$POSTGRES_CONTAINER" psql -U "$DB_USER" -d "$PAYOUT_DB_NAME" -v ON_ERROR_STOP=0 <"$f" >/dev/null 2>&1 || true
+	done
+	for f in migrations/fraud/*.up.sql; do
+		docker exec -i "$POSTGRES_CONTAINER" psql -U "$DB_USER" -d "$FRAUD_DB_NAME" -v ON_ERROR_STOP=0 <"$f" >/dev/null 2>&1 || true
+	done
+	for f in migrations/gateway/*.up.sql; do
+		docker exec -i "$POSTGRES_CONTAINER" psql -U "$DB_USER" -d "$GATEWAY_DB_NAME" -v ON_ERROR_STOP=0 <"$f" >/dev/null 2>&1 || true
+	done
+	local service_dir
+	for service_dir in migrations/*; do
+		[ -d "$service_dir" ] || continue
+		[ "$service_dir" = "migrations/ledger" ] && continue
+		[ "$service_dir" = "migrations/auth" ] && continue
+		[ "$service_dir" = "migrations/payin" ] && continue
+		[ "$service_dir" = "migrations/payout" ] && continue
+		[ "$service_dir" = "migrations/fraud" ] && continue
+		[ "$service_dir" = "migrations/gateway" ] && continue
+		for f in "$service_dir"/*.up.sql; do
+			[ -f "$f" ] || continue
+			docker exec -i "$POSTGRES_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=0 <"$f" >/dev/null 2>&1 || true
+		done
+	done
+	ensure_app_role "$DB_NAME" seev_app seev_app
+	ensure_app_role "$LEDGER_DB_NAME" ledger_app ledger_app
+	ensure_app_role "$AUTH_DB_NAME" auth_app auth_app
+	ensure_app_role "$PAYIN_DB_NAME" payin_app payin_app
+	ensure_app_role "$PAYOUT_DB_NAME" payout_app payout_app
+	ensure_app_role "$FRAUD_DB_NAME" fraud_app fraud_app
+	ensure_app_role "$GATEWAY_DB_NAME" gateway_app gateway_app
+}
+
+# ensure_app_role provisions the restricted login role the server actually
+# connects as (docs/plan/16 Task T3) — the docker-compose postgres-init
+# script only runs on a container's FIRST boot, which a script reusing an
+# existing volume can't assume, so this is the idempotent belt-and-suspenders
+# version run every time.
+ensure_app_role() {
+	local database=$1 role=$2 password=$3
+	docker exec -i "$POSTGRES_CONTAINER" psql -U "$DB_USER" -d "$database" -v ON_ERROR_STOP=1 <<-SQL >/dev/null
+		DO \$\$
+		BEGIN
+		    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '$role') THEN
+		        CREATE ROLE $role LOGIN PASSWORD '$password';
+		    END IF;
+		END
+		\$\$;
+		GRANT app_service TO $role;
+	SQL
+}
+
+# ─── Server lifecycle ───────────────────────────────────────────────────────
+
+build_server() {
+	log "building gateway + ledger-service + auth-service + payin-service + payout-service + fraud-service + gentoken binaries..."
+	go build -o "$GATEWAY_BIN" ./cmd/gateway
+	go build -o "$LEDGER_BIN" ./cmd/ledger-service
+	go build -o "$AUTH_BIN" ./cmd/auth-service
+	go build -o "$PAYIN_BIN" ./cmd/payin-service
+	go build -o "$PAYOUT_BIN" ./cmd/payout-service
+	go build -o "$FRAUD_BIN" ./cmd/fraud-service
+	go build -o "$GENTOKEN_BIN" ./cmd/gentoken
+}
+
+start_fraud_service() {
+	log "starting fraud-service (grpc $FRAUD_GRPC_PORT / admin $FRAUD_ADMIN_PORT)..."
+	(
+		export APP_NAME=fraud-service
+		export APP_PORT=$FRAUD_ADMIN_PORT
+		export GRPC_PORT=$FRAUD_GRPC_PORT
+		export POSTGRES_HOST=localhost
+		export POSTGRES_PORT=$DB_HOST_PORT
+		export POSTGRES_USER=fraud_app
+		export POSTGRES_PASSWORD=fraud_app
+		export POSTGRES_DB=$FRAUD_DB_NAME
+		export POSTGRES_SSL_MODE=disable
+		export REDIS_ENABLED="${REDIS_ENABLED:-true}"
+		export REDIS_ADDR=localhost:$REDIS_HOST_PORT
+		export REDIS_DB=1
+		export RABBITMQ_HOST=localhost
+		export RABBITMQ_USERNAME=seev
+		export RABBITMQ_PASSWORD=seev
+		export RABBITMQ_EXCHANGE=ledger.events
+		export JWT_SECRET=$JWT_SECRET
+		export SCREENING_MODE="${SCREENING_MODE:-off}"
+		export SCREENING_AMOUNT_THRESHOLD="${SCREENING_AMOUNT_THRESHOLD:-0}"
+		export SCREENING_VELOCITY_MAX_PER_HOUR="${SCREENING_VELOCITY_MAX_PER_HOUR:-0}"
+		export LOG_FORMAT=json
+		nohup "$FRAUD_BIN" >>"$FRAUD_LOG" 2>&1 &
+		echo $! >"$FRAUD_PID_FILE"
+	)
+	wait_for_service_up fraud-service "http://localhost:$FRAUD_ADMIN_PORT/health" "$FRAUD_PID_FILE" "$FRAUD_LOG"
+}
+
+start_payout_service() {
+	log "starting payout-service (grpc $PAYOUT_GRPC_PORT / admin $PAYOUT_ADMIN_PORT)..."
+	(
+		export APP_NAME=payout-service
+		export APP_PORT=$PAYOUT_ADMIN_PORT
+		export GRPC_PORT=$PAYOUT_GRPC_PORT
+		export POSTGRES_HOST=localhost
+		export POSTGRES_PORT=$DB_HOST_PORT
+		export POSTGRES_USER=payout_app
+		export POSTGRES_PASSWORD=payout_app
+		export POSTGRES_DB=$PAYOUT_DB_NAME
+		export POSTGRES_SSL_MODE=disable
+		export REDIS_ENABLED="${REDIS_ENABLED:-true}"
+		export REDIS_ADDR=localhost:$REDIS_HOST_PORT
+		export REDIS_DB=0
+		export LEDGER_GRPC_ADDR=localhost:$LEDGER_GRPC_PORT
+		export FRAUD_GRPC_ADDR=localhost:$FRAUD_GRPC_PORT
+		export JWT_SECRET=$JWT_SECRET
+		export VENDOR_MOCKVENDOR_ENABLED=true
+		export VENDOR_MOCKVENDOR_SECRET=script-test-mockvendor-secret-at-least-32-chars-long
+		export LOG_FORMAT=json
+		nohup "$PAYOUT_BIN" >>"$PAYOUT_LOG" 2>&1 &
+		echo $! >"$PAYOUT_PID_FILE"
+	)
+	wait_for_service_up payout-service "http://localhost:$PAYOUT_ADMIN_PORT/health" "$PAYOUT_PID_FILE" "$PAYOUT_LOG"
+}
+
+start_payin_service() {
+	log "starting payin-service (grpc $PAYIN_GRPC_PORT / admin $PAYIN_ADMIN_PORT)..."
+	(
+		export APP_NAME=payin-service
+		export APP_PORT=$PAYIN_ADMIN_PORT
+		export GRPC_PORT=$PAYIN_GRPC_PORT
+		export POSTGRES_HOST=localhost
+		export POSTGRES_PORT=$DB_HOST_PORT
+		export POSTGRES_USER=payin_app
+		export POSTGRES_PASSWORD=payin_app
+		export POSTGRES_DB=$PAYIN_DB_NAME
+		export POSTGRES_SSL_MODE=disable
+		export LEDGER_GRPC_ADDR=localhost:$LEDGER_GRPC_PORT
+		export FRAUD_GRPC_ADDR=localhost:$FRAUD_GRPC_PORT
+		export JWT_SECRET=$JWT_SECRET
+		export VENDOR_MOCKVENDOR_ENABLED=true
+		export VENDOR_MOCKVENDOR_SECRET=script-test-mockvendor-secret-at-least-32-chars-long
+		export LOG_FORMAT=json
+		nohup "$PAYIN_BIN" >>"$PAYIN_LOG" 2>&1 &
+		echo $! >"$PAYIN_PID_FILE"
+	)
+	wait_for_service_up payin-service "http://localhost:$PAYIN_ADMIN_PORT/health" "$PAYIN_PID_FILE" "$PAYIN_LOG"
+}
+
+# gen_token mints a JWT via cmd/gentoken (see that package's own doc comment)
+# — the single canonical implementation, no more hand-rolled heredocs.
+# gentoken defaults kyc_level to 1 (docs/plan/39 Task T6, gotcha #9) so
+# every existing gen_token call site in smoke-test.sh/chaos-test.sh keeps
+# posting to gated routes without any change — pass an explicit ttl+level
+# ("1h" "0") only if a script specifically wants to exercise the KYC gate
+# itself.
+gen_token() {
+	JWT_SECRET="$JWT_SECRET" "$GENTOKEN_BIN" "$@"
+}
+
+start_ledger_service() {
+	log "starting ledger-service (grpc $LEDGER_GRPC_PORT / http $LEDGER_APP_PORT / internal $LEDGER_INTERNAL_PORT)..."
+	(
+		export APP_NAME=ledger-service
+		export APP_PORT=$LEDGER_APP_PORT
+		export INTERNAL_APP_PORT=$LEDGER_INTERNAL_PORT
+		export GRPC_PORT=$LEDGER_GRPC_PORT
+		export POSTGRES_HOST=localhost
+		export POSTGRES_PORT=$DB_HOST_PORT
+		export POSTGRES_USER=ledger_app
+		export POSTGRES_PASSWORD=ledger_app
+		export POSTGRES_DB=$LEDGER_DB_NAME
+		export POSTGRES_SSL_MODE=disable
+		export REDIS_ENABLED="${REDIS_ENABLED:-true}"
+		export REDIS_ADDR=localhost:$REDIS_HOST_PORT
+		export RABBITMQ_HOST=localhost
+		export RABBITMQ_USERNAME=seev
+		export RABBITMQ_PASSWORD=seev
+		export RABBITMQ_EXCHANGE=ledger.events
+		export FRAUD_GRPC_ADDR=localhost:$FRAUD_GRPC_PORT
+		export JWT_SECRET=$JWT_SECRET
+		export LOG_FORMAT=json
+		nohup "$LEDGER_BIN" >>"$LEDGER_LOG" 2>&1 &
+		echo $! >"$LEDGER_PID_FILE"
+	)
+	wait_for_service_up ledger-service "http://localhost:$LEDGER_APP_PORT/health" "$LEDGER_PID_FILE" "$LEDGER_LOG"
+}
+
+start_gateway() {
+	log "starting gateway (port $APP_PORT / internal $INTERNAL_PORT, db port $DB_HOST_PORT)..."
+	(
+		export APP_PORT=$APP_PORT
+		export INTERNAL_APP_PORT=$INTERNAL_PORT
+		export POSTGRES_HOST=localhost
+		export POSTGRES_PORT=$DB_HOST_PORT
+		# docs/plan/16 Task T3: the running app connects as the restricted
+		# app_service role, never the schema owner ($DB_USER, used only for
+		# migrations/assertions in this script) — same split as production.
+		export POSTGRES_USER=gateway_app
+		export POSTGRES_PASSWORD=gateway_app
+		export POSTGRES_DB=$GATEWAY_DB_NAME
+		export POSTGRES_SSL_MODE=disable
+		export REDIS_ENABLED="${REDIS_ENABLED:-true}"
+		export REDIS_ADDR=localhost:$REDIS_HOST_PORT
+		export RABBITMQ_HOST=localhost
+		export RABBITMQ_USERNAME=seev
+		export RABBITMQ_PASSWORD=seev
+		export RABBITMQ_EXCHANGE=ledger.events
+		export JWT_SECRET=$JWT_SECRET
+		export LEDGER_GRPC_ADDR=localhost:$LEDGER_GRPC_PORT
+		export LEDGER_USER_API_URL=http://localhost:$LEDGER_APP_PORT
+		export PAYIN_GRPC_ADDR=localhost:$PAYIN_GRPC_PORT
+		export PAYOUT_GRPC_ADDR=localhost:$PAYOUT_GRPC_PORT
+		export LOG_FORMAT=json
+		# mockvendor enabled unconditionally — purely additive: it only makes
+		# /api/v1/payout and /webhooks/mockvendor reachable, flows that never
+		# touch those routes are unaffected.
+		export VENDOR_MOCKVENDOR_ENABLED=true
+		export VENDOR_MOCKVENDOR_SECRET=script-test-mockvendor-secret-at-least-32-chars-long
+		nohup "$GATEWAY_BIN" >>"$GATEWAY_LOG" 2>&1 &
+		echo $! >"$GATEWAY_PID_FILE"
+	)
+	wait_for_service_up gateway "http://localhost:$APP_PORT/health" "$GATEWAY_PID_FILE" "$GATEWAY_LOG"
+}
+
+start_auth_service() {
+	log "starting auth-service (http $AUTH_APP_PORT / internal $AUTH_INTERNAL_PORT)..."
+	(
+		export APP_NAME=auth-service
+		export APP_PORT=$AUTH_APP_PORT
+		export INTERNAL_APP_PORT=$AUTH_INTERNAL_PORT
+		export POSTGRES_HOST=localhost
+		export POSTGRES_PORT=$DB_HOST_PORT
+		export POSTGRES_USER=auth_app
+		export POSTGRES_PASSWORD=auth_app
+		export POSTGRES_DB=$AUTH_DB_NAME
+		export POSTGRES_SSL_MODE=disable
+		export REDIS_ENABLED="${REDIS_ENABLED:-true}"
+		export REDIS_ADDR=localhost:$REDIS_HOST_PORT
+		export LEDGER_GRPC_ADDR=localhost:$LEDGER_GRPC_PORT
+		export JWT_SECRET=$JWT_SECRET
+		export LOG_FORMAT=json
+		nohup "$AUTH_BIN" >>"$AUTH_LOG" 2>&1 &
+		echo $! >"$AUTH_PID_FILE"
+	)
+	wait_for_service_up auth-service "http://localhost:$AUTH_INTERNAL_PORT/health" "$AUTH_PID_FILE" "$AUTH_LOG"
+}
+
+start_services() {
+	start_ledger_service
+	start_fraud_service
+	start_auth_service
+	start_payin_service
+	start_payout_service
+	start_gateway
+}
+
+wait_for_service_up() {
+	local name=$1 url=$2 pid_file=$3 log_file=$4
+	local tries=30
+	while [ "$tries" -gt 0 ]; do
+		if curl -s -o /dev/null "$url"; then
+			log "$name is up (pid $(cat "$pid_file" 2>/dev/null))"
+			return 0
+		fi
+		sleep 1
+		tries=$((tries - 1))
+	done
+	fail "$name did not come up in time — see $log_file"
+	tail -40 "$log_file" || true
+	return 1
+}
+
+# Compatibility for chaos-test while it is migrated to service-specific
+# lifecycle controls in its own extraction phase.
+start_server() { start_services; }
+
+# wait_for_pid_gone polls kill -0 until the pid is actually gone (or ~10s
+# elapses). Every service is started via `nohup bin & echo $! >pidfile` inside
+# a "( ... )" subshell (see start_*_service below), so by the time the pid
+# reaches a stop/kill function it is NOT a job of the calling shell — bash's
+# builtin `wait PID` only blocks for actual children of the current shell, so
+# the old `wait "$pid" 2>/dev/null || true` on that pid was a silent no-op:
+# it returned instantly whether or not the process had actually exited. That
+# made every
+# graceful stop_services() call effectively async: the function returned
+# immediately after sending SIGTERM while the real process (mid 30s graceful
+# shutdown drain) was still bound to its port. The very next scenario's
+# start_services() in a `chaos-test.sh all` run could then race a still-dying
+# predecessor for the same ports (bind: address already in use), and
+# wait_for_service_up would sometimes report a stale survivor as "up" — the
+# same false-positive-health-check failure mode as the stop_server_gracefully
+# bug above, just from a different mechanism. Real bug found reproducing
+# docs/plan/34 T2 scenario 5/6/7 failures that only appeared inside `all`,
+# never in isolation.
+wait_for_pid_gone() {
+	local pid=$1 tries=100
+	while [ "$tries" -gt 0 ] && kill -0 "$pid" 2>/dev/null; do
+		sleep 0.1
+		tries=$((tries - 1))
+	done
+	# Graceful shutdown can legitimately take up to the app's own 30s drain
+	# timeout (server: shutting down .. timeout=30s) under load — 10s isn't
+	# always enough. Never return with the pid (and therefore its port)
+	# still alive: escalate to SIGKILL and poll a little longer so the very
+	# next scenario's start_services() never races a still-dying predecessor.
+	if kill -0 "$pid" 2>/dev/null; then
+		kill -9 "$pid" 2>/dev/null || true
+		tries=50
+		while [ "$tries" -gt 0 ] && kill -0 "$pid" 2>/dev/null; do
+			sleep 0.1
+			tries=$((tries - 1))
+		done
+	fi
+}
+
+stop_gateway_only() {
+	if [ -f "$GATEWAY_PID_FILE" ]; then
+		local pid
+		pid="$(cat "$GATEWAY_PID_FILE")"
+		kill -TERM "$pid" 2>/dev/null || true
+		wait_for_pid_gone "$pid"
+		rm -f "$GATEWAY_PID_FILE"
+	fi
+}
+
+# Compatibility alias: every caller of "stop the server gracefully" means
+# "shut the whole stack down cleanly", same as start_server above means
+# "start all six" — a caller that stopped only the gateway here would leak
+# the other five processes, which then squat on the next scenario's ports
+# and get silently misreported as "up" by wait_for_service_up (a stale
+# survivor answering the same health-check URL). Real bug found running
+# `chaos-test.sh all` end to end for docs/plan/34 T2: five scenarios called
+# this expecting a full stop and got only gateway killed.
+stop_server_gracefully() { stop_services; }
+
+stop_services() {
+	stop_gateway_only
+	if [ -f "$AUTH_PID_FILE" ]; then
+		local auth_pid
+		auth_pid="$(cat "$AUTH_PID_FILE")"
+		kill -TERM "$auth_pid" 2>/dev/null || true
+		wait_for_pid_gone "$auth_pid"
+		rm -f "$AUTH_PID_FILE"
+	fi
+	if [ -f "$LEDGER_PID_FILE" ]; then
+		local pid
+		pid="$(cat "$LEDGER_PID_FILE")"
+		kill -TERM "$pid" 2>/dev/null || true
+		wait_for_pid_gone "$pid"
+		rm -f "$LEDGER_PID_FILE"
+	fi
+	if [ -f "$PAYIN_PID_FILE" ]; then
+		local payin_pid
+		payin_pid="$(cat "$PAYIN_PID_FILE")"
+		kill -TERM "$payin_pid" 2>/dev/null || true
+		wait_for_pid_gone "$payin_pid"
+		rm -f "$PAYIN_PID_FILE"
+	fi
+	if [ -f "$PAYOUT_PID_FILE" ]; then
+		local payout_pid
+		payout_pid="$(cat "$PAYOUT_PID_FILE")"
+		kill -TERM "$payout_pid" 2>/dev/null || true
+		wait_for_pid_gone "$payout_pid"
+		rm -f "$PAYOUT_PID_FILE"
+	fi
+	if [ -f "$FRAUD_PID_FILE" ]; then
+		local fraud_pid
+		fraud_pid="$(cat "$FRAUD_PID_FILE")"
+		kill -TERM "$fraud_pid" 2>/dev/null || true
+		wait_for_pid_gone "$fraud_pid"
+		rm -f "$FRAUD_PID_FILE"
+	fi
+}
+
+kill_server_hard() {
+	if [ -f "$GATEWAY_PID_FILE" ]; then
+		local pid
+		pid="$(cat "$GATEWAY_PID_FILE")"
+		log "kill -9 gateway pid $pid"
+		kill -9 "$pid" 2>/dev/null || true
+		rm -f "$GATEWAY_PID_FILE"
+	fi
+}
+
+kill_payin_hard() {
+	if [ -f "$PAYIN_PID_FILE" ]; then
+		local pid
+		pid="$(cat "$PAYIN_PID_FILE")"
+		log "kill -9 payin-service pid $pid"
+		kill -9 "$pid" 2>/dev/null || true
+		rm -f "$PAYIN_PID_FILE"
+	fi
+}
+
+kill_payout_hard() {
+	if [ -f "$PAYOUT_PID_FILE" ]; then
+		local pid
+		pid="$(cat "$PAYOUT_PID_FILE")"
+		log "kill -9 payout-service pid $pid"
+		kill -9 "$pid" 2>/dev/null || true
+		rm -f "$PAYOUT_PID_FILE"
+	fi
+}
+
+kill_ledger_hard() {
+	if [ -f "$LEDGER_PID_FILE" ]; then
+		local pid
+		pid="$(cat "$LEDGER_PID_FILE")"
+		log "kill -9 ledger-service pid $pid"
+		kill -9 "$pid" 2>/dev/null || true
+		rm -f "$LEDGER_PID_FILE"
+	fi
+}
+
+kill_fraud_hard() {
+	if [ -f "$FRAUD_PID_FILE" ]; then
+		local pid
+		pid="$(cat "$FRAUD_PID_FILE")"
+		log "kill -9 fraud-service pid $pid"
+		kill -9 "$pid" 2>/dev/null || true
+		rm -f "$FRAUD_PID_FILE"
+	fi
+}
+
+# ─── Test data helpers ───────────────────────────────────────────────────────
+
+provision_user() {
+	local user_id=$1
+	psql_exec "$LEDGER_DB_NAME" -c "
+		INSERT INTO accounts (id, owner_id, owner_type, type, currency, status, created_by)
+		VALUES (gen_random_uuid(), '$user_id', 'user', 'cash', 'IDR', 'active', 'script_test')
+		ON CONFLICT DO NOTHING;" >/dev/null
+	psql_exec "$LEDGER_DB_NAME" -c "
+		INSERT INTO account_balances (account_id)
+		SELECT id FROM accounts WHERE owner_id = '$user_id' AND type = 'cash'
+		ON CONFLICT DO NOTHING;" >/dev/null
+	psql_exec "$LEDGER_DB_NAME" -c "SELECT id FROM accounts WHERE owner_id = '$user_id' AND type = 'cash' LIMIT 1;"
+}
+
+# provision_hold_account additionally provisions the 'hold' account
+# withdraw_initiate/withdraw_settle/withdraw_cancel (and payout, which posts
+# those under the hood) require — provision_user alone (cash only) is not
+# enough for any withdraw_* flow.
+provision_hold_account() {
+	local user_id=$1
+	psql_exec "$LEDGER_DB_NAME" -c "
+		INSERT INTO accounts (id, owner_id, owner_type, type, currency, status, created_by)
+		VALUES (gen_random_uuid(), '$user_id', 'user', 'hold', 'IDR', 'active', 'script_test')
+		ON CONFLICT DO NOTHING;" >/dev/null
+	psql_exec "$LEDGER_DB_NAME" -c "
+		INSERT INTO account_balances (account_id)
+		SELECT id FROM accounts WHERE owner_id = '$user_id' AND type = 'hold'
+		ON CONFLICT DO NOTHING;" >/dev/null
+}
+
+# fund_user credits a fresh user's cash account via a real money_in
+# transaction on the INTERNAL router (settlement[bca] -> user.cash), so the
+# funding itself stays part of the double-entry ledger and doesn't trip
+# v_account_balance_audit the way a raw `UPDATE account_balances` would.
+# money_in credits whoever's JWT `sub` claim is on the request, NOT any
+# target_user_id in the body (internal/ledger/processors/money_in.go) — so
+# this mints a token for user_id itself, not the caller/service identity.
+# Idempotency key is stable per user_id, so re-running against an
+# already-funded account (same Postgres volume) is a safe idempotent no-op.
+fund_user() {
+	local user_id=$1
+	local amount=${2:-1000000}
+	local fund_token
+	fund_token="$(gen_token "$user_id")"
+	curl -s -o /dev/null -X POST "http://localhost:$LEDGER_INTERNAL_PORT/api/v1/ledger/transactions" \
+		-H "Authorization: Bearer $fund_token" -H "Content-Type: application/json" \
+		-d "{\"idempotency_key\":\"fund-$user_id\",\"type\":\"money_in\",\"amount\":\"$amount\",\"metadata\":{\"gateway\":\"bca\"}}"
+}
+
+cash_account_id() {
+	psql_exec "$LEDGER_DB_NAME" -c "SELECT id FROM accounts WHERE owner_id = '$1' AND type = 'cash' LIMIT 1;"
+}
+
+account_balance() {
+	psql_exec "$LEDGER_DB_NAME" -c "SELECT balance FROM account_balances WHERE account_id = '$1';"
+}
+
+# ─── HTTP response helpers ───────────────────────────────────────────────────
+
+# json_field extracts "key":"value" (string fields only) from a JSON blob
+# read on stdin — good enough for this repo's flat response shapes, avoids
+# a jq dependency. Shared by every script that curls the JSON API.
+json_field() {
+	sed -n "s/.*\"$1\":\"\([^\"]*\)\".*/\1/p"
+}
+
+# ─── KYC dance helpers (docs/plan/39 Task T6, gotcha #9 master) ─────────────
+#
+# Every script that transacts as a REAL registered user (not a gen_token
+# fixture — see gen_token's own doc comment for why gentoken users don't
+# need this) must clear the KYC gate before it can post to a gated route
+# (POST /topup, POST /payout, POST /api/v1/ledger/transactions*), or every
+# one of them now 403s KYC_REQUIRED. This is the ONE place that dance lives.
+
+# kyc_approve_l1 submits an L1 KYC request against a REAL auth-service user
+# (auth_port's public listener) — the mock provider auto-approves L1 when no
+# mock_mode is given — then refreshes to obtain a NEW token pair carrying
+# the updated kyc_level claim (the claim only refreshes on login/refresh,
+# docs/plan/39 Task T4, so the caller's OLD access token stays stuck at
+# whatever level it was minted with). Echoes the RAW refresh response JSON
+# to stdout — refresh tokens rotate (single-use), so the caller MUST
+# extract and keep the NEW refresh_token too (json_field refresh_token), or
+# a second dance later (e.g. kyc_submit_l2_and_admin_approve) will fail
+# replaying an already-revoked token.
+kyc_approve_l1() {
+	local auth_port=$1 access_token=$2 refresh_token=$3
+	curl -s -o /dev/null -X POST "http://localhost:$auth_port/api/v1/users/me/kyc" \
+		-H "Authorization: Bearer $access_token" -H "Content-Type: application/json" \
+		-d '{"level_requested":1}'
+	curl -s -X POST "http://localhost:$auth_port/api/v1/auth/refresh" \
+		-H "Content-Type: application/json" -d "{\"refresh_token\":\"$refresh_token\"}"
+}
+
+# kyc_submit_l2_and_admin_approve submits L2 (the mock provider ALWAYS
+# refers L2 to manual review, regardless of mock_mode — docs/plan/39's own
+# locked decision), approves it with an admin token against auth's INTERNAL
+# listener (auth_internal_port), then refreshes. Echoes the RAW refresh
+# response JSON to stdout — same rotating-refresh-token caveat as
+# kyc_approve_l1 above.
+kyc_submit_l2_and_admin_approve() {
+	local auth_port=$1 auth_internal_port=$2 admin_token=$3 access_token=$4 refresh_token=$5
+	local submit_resp submission_id
+	submit_resp="$(curl -s -X POST "http://localhost:$auth_port/api/v1/users/me/kyc" \
+		-H "Authorization: Bearer $access_token" -H "Content-Type: application/json" \
+		-d '{"level_requested":2}')"
+	submission_id="$(echo "$submit_resp" | json_field id)"
+	curl -s -o /dev/null -X POST "http://localhost:$auth_internal_port/api/v1/admin/kyc/submissions/$submission_id/approve" \
+		-H "Authorization: Bearer $admin_token" -H "Content-Type: application/json"
+	curl -s -X POST "http://localhost:$auth_port/api/v1/auth/refresh" \
+		-H "Content-Type: application/json" -d "{\"refresh_token\":\"$refresh_token\"}"
+}
+
+# await_notification polls GET /api/v1/notifications (on the gateway,
+# $APP_PORT) for token until a notification with the given title substring
+# appears, or fails after ~10s — the outbox relay -> RabbitMQ ->
+# internal/notify consumer path is asynchronous, so this can't be a single
+# immediate curl+grep like most other assertions in these scripts.
+await_notification() {
+	local token=$1 title=$2 tries=20
+	while [ "$tries" -gt 0 ]; do
+		local resp
+		resp="$(curl -s "http://localhost:$APP_PORT/api/v1/notifications" -H "Authorization: Bearer $token")"
+		if echo "$resp" | grep -q "\"title\":\"$title\""; then
+			ok "notification \"$title\" delivered"
+			return 0
+		fi
+		sleep 0.5
+		tries=$((tries - 1))
+	done
+	fail "notification \"$title\" never appeared within timeout"
+	return 1
+}
+
+# ─── Ledger integrity assertions ────────────────────────────────────────────
+
+# assert_ledger_balanced fails if fn_verify_ledger_balance() finds ANY
+# unbalanced transaction across all of history — the single most important
+# assertion in every script that uses this library.
+assert_ledger_balanced() {
+	local rows
+	rows="$(psql_exec "$LEDGER_DB_NAME" -c "SELECT count(*) FROM fn_verify_ledger_balance('-infinity','infinity');" | tr -d '[:space:]')"
+	if [ "$rows" = "0" ]; then
+		ok "fn_verify_ledger_balance() found 0 unbalanced transactions"
+	else
+		fail "fn_verify_ledger_balance() found $rows unbalanced transaction(s) — MONEY LOST OR CREATED"
+		psql_exec "$LEDGER_DB_NAME" -c "SELECT * FROM fn_verify_ledger_balance('-infinity','infinity');"
+	fi
+}
+
+# assert_no_inconsistent_projections fails if any account's stored balance
+# disagrees with the balance computed from its ledger_entries.
+assert_no_inconsistent_projections() {
+	local rows
+	rows="$(psql_exec "$LEDGER_DB_NAME" -c "SELECT count(*) FROM v_account_balance_audit WHERE is_consistent = false;" | tr -d '[:space:]')"
+	if [ "$rows" = "0" ]; then
+		ok "v_account_balance_audit: all accounts consistent"
+	else
+		fail "v_account_balance_audit found $rows inconsistent account(s)"
+		psql_exec "$LEDGER_DB_NAME" -c "SELECT * FROM v_account_balance_audit WHERE is_consistent = false;"
+	fi
+}
+
+# assert_no_stuck_pending_transactions fails if any ledger_transactions row
+# is still 'pending' — execTransfer always marks posted/failed in the same
+# DB transaction as building the entries, so a lingering 'pending' row means
+# a partial write escaped that guarantee.
+assert_no_stuck_pending_transactions() {
+	local rows
+	rows="$(psql_exec "$LEDGER_DB_NAME" -c "SELECT count(*) FROM ledger_transactions WHERE status = 'pending';" | tr -d '[:space:]')"
+	if [ "$rows" = "0" ]; then
+		ok "no ledger_transactions stuck in 'pending' (no partial writes)"
+	else
+		fail "$rows ledger_transactions stuck in 'pending' — partial write detected"
+		psql_exec "$LEDGER_DB_NAME" -c "SELECT id, type, status, created_at FROM ledger_transactions WHERE status = 'pending';"
+	fi
+}
+
+cleanup() {
+	stop_services
+	rm -rf "$WORK_DIR"
+}

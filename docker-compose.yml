@@ -1,0 +1,344 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      # The image's own bootstrap superuser is the SCHEMA-OWNER identity
+      # (POSTGRES_MIGRATE_USER), never the app's restricted connection — see
+      # docs/plan/16 Task T3 / .env.example's PostgreSQL section for why.
+      POSTGRES_USER: ${POSTGRES_MIGRATE_USER:-seev}
+      POSTGRES_PASSWORD: ${POSTGRES_MIGRATE_PASSWORD:-seev}
+      POSTGRES_DB: ${POSTGRES_DB:-seev}
+      # Consumed by scripts/postgres-init/ (not the postgres image itself)
+      # to provision the app's restricted login role at first boot.
+      APP_DB_USER: ${POSTGRES_USER:-seev_app}
+      APP_DB_PASSWORD: ${POSTGRES_PASSWORD:-seev_app}
+    ports:
+      # Host port defaults to 5433, not Postgres's standard 5432: a native
+      # (Homebrew-installed) Postgres commonly already occupies 5432 on a
+      # macOS dev machine, bound specifically to loopback — which wins over
+      # Docker Desktop's wildcard-bound port-forward for any connection to
+      # "localhost:5432", silently routing the app at the WRONG database
+      # instead of failing loudly. Override with POSTGRES_PORT in .env if
+      # your machine has no such conflict and you'd rather use 5432.
+      - "${POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - seev_postgres_data:/var/lib/postgresql/data
+      - ./scripts/postgres-init:/docker-entrypoint-initdb.d:ro
+      - ./migrations:/migrations:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_MIGRATE_USER:-seev} -d ${POSTGRES_DB:-seev}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      # Host uses 6380 to avoid colliding with a locally installed Redis.
+      # Containers keep reaching this service as redis:6379.
+      - "6380:6379"
+    volumes:
+      - seev_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME:-seev}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-seev}
+    ports:
+      - "5672:5672"   # AMQP
+      - "15672:15672" # management UI
+    volumes:
+      - seev_rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD-SHELL", "rabbitmq-diagnostics -q check_running && rabbitmq-diagnostics -q check_port_connectivity"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  ledger-service:
+    profiles: ["app"]
+    build:
+      context: .
+      args:
+        SERVICE: ledger-service
+    environment:
+      APP_NAME: ledger-service
+      APP_PORT: "8090"
+      INTERNAL_APP_PORT: "8091"
+      INTERNAL_APP_BIND_ADDR: 0.0.0.0
+      GRPC_PORT: "9091"
+      INTERNAL_GRPC_TOKEN: ${INTERNAL_GRPC_TOKEN:-}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: ledger_app
+      POSTGRES_PASSWORD: ledger_app
+      POSTGRES_DB: seev_ledger
+      POSTGRES_SSL_MODE: disable
+      REDIS_ENABLED: "true"
+      REDIS_ADDR: redis:6379
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: "5672"
+      RABBITMQ_USERNAME: ${RABBITMQ_USERNAME:-seev}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-seev}
+      RABBITMQ_EXCHANGE: ledger.events
+      FRAUD_GRPC_ADDR: fraud-service:9094
+      JWT_SECRET: ${JWT_SECRET:-change-me-to-a-random-32-plus-character-secret}
+    ports:
+      - "8090:8090"
+      - "8091:8091"
+      - "9091:9091"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/app/service", "-healthcheck"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  auth-service:
+    profiles: ["app"]
+    build:
+      context: .
+      args:
+        SERVICE: auth-service
+    environment:
+      APP_NAME: auth-service
+      APP_PORT: "8082"
+      INTERNAL_APP_PORT: "8083"
+      INTERNAL_APP_BIND_ADDR: 0.0.0.0
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: auth_app
+      POSTGRES_PASSWORD: auth_app
+      POSTGRES_DB: seev_auth
+      POSTGRES_SSL_MODE: disable
+      REDIS_ENABLED: "true"
+      REDIS_ADDR: redis:6379
+      LEDGER_GRPC_ADDR: ledger-service:9091
+      INTERNAL_GRPC_TOKEN: ${INTERNAL_GRPC_TOKEN:-}
+      JWT_SECRET: ${JWT_SECRET:-change-me-to-a-random-32-plus-character-secret}
+    ports:
+      - "8082:8082"
+      - "8083:8083"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      ledger-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/app/service", "-healthcheck"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  payin-service:
+    profiles: ["app"]
+    build:
+      context: .
+      args:
+        SERVICE: payin-service
+    environment:
+      APP_NAME: payin-service
+      APP_PORT: "8092"
+      GRPC_PORT: "9092"
+      INTERNAL_GRPC_TOKEN: ${INTERNAL_GRPC_TOKEN:-}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: payin_app
+      POSTGRES_PASSWORD: payin_app
+      POSTGRES_DB: seev_payin
+      POSTGRES_SSL_MODE: disable
+      LEDGER_GRPC_ADDR: ledger-service:9091
+      FRAUD_GRPC_ADDR: fraud-service:9094
+      JWT_SECRET: ${JWT_SECRET:-change-me-to-a-random-32-plus-character-secret}
+      VENDOR_MOCKVENDOR_ENABLED: "true"
+      VENDOR_MOCKVENDOR_SECRET: ${VENDOR_MOCKVENDOR_SECRET:-change-me-mockvendor-secret}
+    ports:
+      - "8092:8092"
+      - "9092:9092"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ledger-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/app/service", "-healthcheck"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  payout-service:
+    profiles: ["app"]
+    build:
+      context: .
+      args:
+        SERVICE: payout-service
+    environment:
+      APP_NAME: payout-service
+      APP_PORT: "8093"
+      GRPC_PORT: "9093"
+      INTERNAL_GRPC_TOKEN: ${INTERNAL_GRPC_TOKEN:-}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: payout_app
+      POSTGRES_PASSWORD: payout_app
+      POSTGRES_DB: seev_payout
+      POSTGRES_SSL_MODE: disable
+      REDIS_ENABLED: "true"
+      REDIS_ADDR: redis:6379
+      REDIS_DB: "0"
+      LEDGER_GRPC_ADDR: ledger-service:9091
+      FRAUD_GRPC_ADDR: fraud-service:9094
+      JWT_SECRET: ${JWT_SECRET:-change-me-to-a-random-32-plus-character-secret}
+      VENDOR_MOCKVENDOR_ENABLED: "true"
+      VENDOR_MOCKVENDOR_SECRET: ${VENDOR_MOCKVENDOR_SECRET:-change-me-mockvendor-secret}
+    ports:
+      - "8093:8093"
+      - "9093:9093"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      ledger-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/app/service", "-healthcheck"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  fraud-service:
+    profiles: ["app"]
+    build:
+      context: .
+      args:
+        SERVICE: fraud-service
+    environment:
+      APP_NAME: fraud-service
+      APP_PORT: "8094"
+      GRPC_PORT: "9094"
+      INTERNAL_GRPC_TOKEN: ${INTERNAL_GRPC_TOKEN:-}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: fraud_app
+      POSTGRES_PASSWORD: fraud_app
+      POSTGRES_DB: seev_fraud
+      POSTGRES_SSL_MODE: disable
+      REDIS_ENABLED: "true"
+      REDIS_ADDR: redis:6379
+      REDIS_DB: "1"
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: "5672"
+      RABBITMQ_USERNAME: ${RABBITMQ_USERNAME:-seev}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-seev}
+      RABBITMQ_EXCHANGE: ledger.events
+      JWT_SECRET: ${JWT_SECRET:-change-me-to-a-random-32-plus-character-secret}
+      SCREENING_MODE: ${SCREENING_MODE:-off}
+      SCREENING_AMOUNT_THRESHOLD: ${SCREENING_AMOUNT_THRESHOLD:-0}
+      SCREENING_VELOCITY_MAX_PER_HOUR: ${SCREENING_VELOCITY_MAX_PER_HOUR:-0}
+    ports:
+      - "8094:8094"
+      - "9094:9094"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/app/service", "-healthcheck"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  gateway-service:
+    profiles: ["app"]
+    build:
+      context: .
+      args:
+        SERVICE: gateway
+    environment:
+      APP_NAME: gateway-service
+      APP_PORT: "8080"
+      INTERNAL_APP_PORT: "8081"
+      INTERNAL_APP_BIND_ADDR: 0.0.0.0
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: gateway_app
+      POSTGRES_PASSWORD: gateway_app
+      POSTGRES_DB: seev_gateway
+      POSTGRES_SSL_MODE: disable
+      REDIS_ENABLED: "true"
+      REDIS_ADDR: redis:6379
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: "5672"
+      RABBITMQ_USERNAME: ${RABBITMQ_USERNAME:-seev}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-seev}
+      RABBITMQ_EXCHANGE: ledger.events
+      LEDGER_GRPC_ADDR: ledger-service:9091
+      LEDGER_USER_API_URL: http://ledger-service:8090
+      PAYIN_GRPC_ADDR: payin-service:9092
+      PAYOUT_GRPC_ADDR: payout-service:9093
+      INTERNAL_GRPC_TOKEN: ${INTERNAL_GRPC_TOKEN:-}
+      JWT_SECRET: ${JWT_SECRET:-change-me-to-a-random-32-plus-character-secret}
+    ports:
+      - "8080:8080"
+      - "8081:8081"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      ledger-service:
+        condition: service_healthy
+      payin-service:
+        condition: service_healthy
+      payout-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/app/service", "-healthcheck"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Local trace backend for docs/plan/12 Task T5 — NOT started by `docker
+  # compose up` (no default profile membership on the other services means
+  # they run by default; jaeger has an explicit profile so it's opt-in
+  # only). Run with:
+  #   docker compose --profile observability up -d
+  # Then set OTEL_EXPORTER_OTLP_ENDPOINT=localhost:4317 and open
+  # http://localhost:16686 to view traces.
+  jaeger:
+    # :latest is acceptable here (unlike the other services) — this is a
+    # local dev-only trace viewer behind an opt-in profile, never part of
+    # any deployed environment.
+    image: jaegertracing/all-in-one:latest
+    profiles: ["observability"]
+    ports:
+      - "4317:4317"   # OTLP gRPC receiver
+      - "16686:16686" # Jaeger UI
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+
+volumes:
+  seev_postgres_data:
+  seev_redis_data:
+  seev_rabbitmq_data:

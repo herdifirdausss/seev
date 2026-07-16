@@ -8,6 +8,15 @@
 *.so
 *.dylib
 
+# Build output (`make build`) and stray extensionless binaries from
+# `go build ./cmd/<pkg>` run without -o at the repo root (easy to do by
+# accident — happened once building cmd/gentoken).
+/bin/
+/server
+/gentoken
+/gateway
+/payout-service
+
 # Test binary, built with `go test -c`
 *.test
 

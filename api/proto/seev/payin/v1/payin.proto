@@ -1,0 +1,59 @@
+syntax = "proto3";
+
+package seev.payin.v1;
+
+import "google/protobuf/timestamp.proto";
+
+service PayinService {
+  rpc HandleWebhook(HandleWebhookRequest) returns (HandleWebhookResponse);
+  rpc CreateTopupIntent(CreateTopupIntentRequest) returns (CreateTopupIntentResponse);
+  rpc GetTopupIntent(GetTopupIntentRequest) returns (GetTopupIntentResponse);
+}
+
+message HandleWebhookRequest {
+  string vendor = 1;
+  map<string, string> headers = 2;
+  bytes raw_body = 3;
+}
+
+enum WebhookResult {
+  WEBHOOK_RESULT_UNSPECIFIED = 0;
+  WEBHOOK_RESULT_OK = 1;
+  WEBHOOK_RESULT_IGNORED = 2;
+  WEBHOOK_RESULT_BUSINESS_FAILURE = 3;
+}
+
+message HandleWebhookResponse {
+  WebhookResult result = 1;
+}
+
+message CreateTopupIntentRequest {
+  string user_id = 1;
+  string amount = 2;
+}
+
+message GetTopupIntentRequest {
+  string id = 1;
+  string user_id = 2;
+}
+
+message CreateTopupIntentResponse {
+  TopupIntent intent = 1;
+}
+
+message GetTopupIntentResponse {
+  TopupIntent intent = 1;
+}
+
+message TopupIntent {
+  string id = 1;
+  string reference = 2;
+  string user_id = 3;
+  string amount = 4;
+  string currency = 5;
+  string vendor = 6;
+  string status = 7;
+  google.protobuf.Timestamp expires_at = 8;
+  google.protobuf.Timestamp created_at = 9;
+  google.protobuf.Timestamp updated_at = 10;
+}
