@@ -24,7 +24,10 @@ jobs:
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v6
         with:
-          version: latest
+          version: v1.64.8
+          # The release binary is built with Go 1.24 and cannot analyze this
+          # Go 1.25.6 module. Build the pinned linter with the runner's Go.
+          install-mode: goinstall
 
       - name: Test
         run: go test -race -cover ./...
