@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+package seev.ping.v1;
+
+service PingService {
+  rpc Ping(PingRequest) returns (PingResponse);
+}
+
+message PingRequest {}
+
+message PingResponse {}

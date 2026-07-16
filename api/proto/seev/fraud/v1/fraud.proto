@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package seev.fraud.v1;
+
+service FraudService {
+  rpc Screen(ScreenRequest) returns (ScreenResponse);
+}
+
+message ScreenRequest {
+  string tx_type = 1;
+  string user_id = 2;
+  string amount = 3;
+  string currency = 4;
+  // request_id is the originating HTTP/gRPC request_id (docs/plan/36),
+  // propagated here purely for audit/trace correlation in screening_events.
+  string request_id = 5;
+  // flow identifies the calling surface: "p2p_transfer" | "topup" | "payout"
+  // (docs/plan/37) — informational only, rules do not branch on it.
+  string flow = 6;
+}
+
+message ScreenResponse {
+  bool block = 1;
+  string reason = 2;
+}

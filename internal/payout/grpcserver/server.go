@@ -1,0 +1,100 @@
+package grpcserver
+
+import (
+	"context"
+	"errors"
+
+	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/timestamppb"
+
+	payoutv1 "github.com/herdifirdausss/seev/gen/payout/v1"
+	"github.com/herdifirdausss/seev/internal/payout/model"
+	"github.com/herdifirdausss/seev/pkg/ledgererr"
+)
+
+type Service interface {
+	Create(ctx context.Context, userID uuid.UUID, amount decimal.Decimal, destination []byte, createdBy, quoteID string) (uuid.UUID, error)
+	Get(context.Context, uuid.UUID) (model.PayoutRequest, error)
+}
+
+type Server struct {
+	payoutv1.UnimplementedPayoutServiceServer
+	service          Service
+	notFound         error
+	noRoute          error
+	screeningBlocked error
+}
+
+func New(service Service, notFound, noRoute, screeningBlocked error) *Server {
+	return &Server{service: service, notFound: notFound, noRoute: noRoute, screeningBlocked: screeningBlocked}
+}
+
+func (s *Server) CreatePayout(ctx context.Context, request *payoutv1.CreatePayoutRequest) (*payoutv1.CreatePayoutResponse, error) {
+	userID, amount, err := parseUserAndAmount(request.GetUserId(), request.GetAmount())
+	if err != nil {
+		return nil, err
+	}
+	if len(request.GetDestination()) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "destination is required")
+	}
+	id, callErr := s.service.Create(ctx, userID, amount, request.GetDestination(), request.GetCreatedBy(), request.GetQuoteId())
+	if callErr != nil {
+		if errors.Is(callErr, s.noRoute) {
+			return nil, status.Error(codes.FailedPrecondition, "no payout route available")
+		}
+		if errors.Is(callErr, s.screeningBlocked) {
+			return nil, status.Error(codes.FailedPrecondition, callErr.Error())
+		}
+		var business *ledgererr.LedgerError
+		if errors.As(callErr, &business) {
+			return nil, status.Error(codes.FailedPrecondition, business.Error())
+		}
+		return nil, status.Error(codes.Internal, "create payout failed")
+	}
+	value, getErr := s.service.Get(ctx, id)
+	if getErr != nil {
+		return nil, status.Error(codes.Internal, "read created payout failed")
+	}
+	return &payoutv1.CreatePayoutResponse{Payout: payoutToProto(value)}, nil
+}
+
+func (s *Server) GetPayout(ctx context.Context, request *payoutv1.GetPayoutRequest) (*payoutv1.GetPayoutResponse, error) {
+	id, err := uuid.Parse(request.GetId())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "id must be a valid UUID")
+	}
+	userID, err := uuid.Parse(request.GetUserId())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "user_id must be a valid UUID")
+	}
+	value, callErr := s.service.Get(ctx, id)
+	if callErr != nil {
+		if errors.Is(callErr, s.notFound) {
+			return nil, status.Error(codes.NotFound, "payout request not found")
+		}
+		return nil, status.Error(codes.Internal, "get payout failed")
+	}
+	if value.UserID != userID {
+		return nil, status.Error(codes.NotFound, "payout request not found")
+	}
+	return &payoutv1.GetPayoutResponse{Payout: payoutToProto(value)}, nil
+}
+
+func parseUserAndAmount(rawUserID, rawAmount string) (uuid.UUID, decimal.Decimal, error) {
+	userID, err := uuid.Parse(rawUserID)
+	if err != nil {
+		return uuid.Nil, decimal.Zero, status.Error(codes.InvalidArgument, "user_id must be a valid UUID")
+	}
+	amount, err := decimal.NewFromString(rawAmount)
+	if err != nil || !amount.IsPositive() || !amount.Equal(amount.Truncate(0)) {
+		return uuid.Nil, decimal.Zero, status.Error(codes.InvalidArgument, "amount must be a positive integer decimal string")
+	}
+	return userID, amount, nil
+}
+
+func payoutToProto(value model.PayoutRequest) *payoutv1.Payout {
+	return &payoutv1.Payout{Id: value.ID.String(), UserId: value.UserID.String(), Amount: value.Amount.String(), Currency: value.Currency, Vendor: value.Vendor, Status: value.Status, ErrorMessage: value.ErrorMessage, CreatedAt: timestamppb.New(value.CreatedAt), UpdatedAt: timestamppb.New(value.UpdatedAt)}
+}

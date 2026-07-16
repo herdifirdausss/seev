@@ -1,0 +1,14 @@
+-- docs/plan/36 Task T5: request_id — the originating HTTP/gRPC request_id,
+-- for end-to-end tracing. Same informative-correlation-column status as
+-- external_ref/gateway (migration 000007, docs/plan/16 Task T2 K5): source
+-- of truth stays ledger_entries, this is purely a trace anchor, extracted
+-- from cmd.Metadata by service.go exactly like external_ref/gateway are.
+--
+-- Correction to docs/plan/36's original locked-decision table: it assumed
+-- ledger_transactions already had a generic JSONB metadata column ("tanpa
+-- migrasi") — it does not; only informative correlation columns exist.
+-- This migration takes the ledger migration number 000020 that doc 36's
+-- table had earmarked for doc 38's fee_quotes; docs 38/39 shift their own
+-- ledger migration numbers to 000021/000022 accordingly (see doc 36's
+-- updated locked-decision table).
+ALTER TABLE ledger_transactions ADD COLUMN request_id TEXT NULL;

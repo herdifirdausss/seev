@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read Go version from go.mod
+        id: goversion
+        run: echo "version=$(grep -E '^go ' go.mod | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ steps.goversion.outputs.version }}
+          cache: true
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+
+      - name: Test
+        run: go test -race -cover ./...
+
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read Go version from go.mod
+        id: goversion
+        run: echo "version=$(grep -E '^go ' go.mod | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ steps.goversion.outputs.version }}
+          cache: true
+
+      # Integration tests use testcontainers-go, which starts its own
+      # Postgres container against the Docker daemon already available on
+      # GitHub-hosted runners — no separate `services:` container needed.
+      - name: Integration tests
+        run: go test -tags=integration -race ./...

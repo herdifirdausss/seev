@@ -1,0 +1,41 @@
+syntax = "proto3";
+
+package seev.payout.v1;
+
+import "google/protobuf/timestamp.proto";
+
+service PayoutService {
+  rpc CreatePayout(CreatePayoutRequest) returns (CreatePayoutResponse);
+  rpc GetPayout(GetPayoutRequest) returns (GetPayoutResponse);
+}
+
+message CreatePayoutRequest {
+  string user_id = 1;
+  string amount = 2;
+  bytes destination = 3;
+  string created_by = 4;
+  // quote_id (docs/plan/38 Task T5), when set, consumes a fee quote
+  // BEFORE the hold is posted (anti-burn ordering) — the fee it locks in
+  // is honored at settle time regardless of any later fee_rules change.
+  string quote_id = 5;
+}
+
+message GetPayoutRequest {
+  string id = 1;
+  string user_id = 2;
+}
+
+message CreatePayoutResponse { Payout payout = 1; }
+message GetPayoutResponse { Payout payout = 1; }
+
+message Payout {
+  string id = 1;
+  string user_id = 2;
+  string amount = 3;
+  string currency = 4;
+  string vendor = 5;
+  string status = 6;
+  string error_message = 7;
+  google.protobuf.Timestamp created_at = 8;
+  google.protobuf.Timestamp updated_at = 9;
+}

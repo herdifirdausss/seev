@@ -1,0 +1,108 @@
+syntax = "proto3";
+
+package seev.ledger.v1;
+
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+service LedgerService {
+  rpc Post(PostRequest) returns (PostResponse);
+  rpc GetTransactionByIdempotencyKey(GetTxByIdemKeyRequest) returns (Transaction);
+  rpc GetUserCurrency(GetUserCurrencyRequest) returns (GetUserCurrencyResponse);
+  rpc ResolveFee(ResolveFeeRequest) returns (ResolveFeeResponse);
+  rpc ProvisionUser(ProvisionUserRequest) returns (ProvisionUserResponse);
+  // ConsumeFeeQuote atomically, single-use consumes a fee quote created via
+  // POST /fees/quote (docs/plan/38 Task T5) — additive; ResolveFee remains
+  // the no-quote fallback for every existing caller.
+  rpc ConsumeFeeQuote(ConsumeFeeQuoteRequest) returns (ConsumeFeeQuoteResponse);
+  rpc ApplyKycTier(ApplyKycTierRequest) returns (ApplyKycTierResponse);
+}
+
+message PostRequest {
+  string idempotency_key = 1;
+  string idempotency_scope = 2;
+  string type = 3;
+  string amount = 4;
+  string user_id = 5;
+  string target_user_id = 6;
+  string pocket_code = 7;
+  string reference_id = 8;
+  google.protobuf.Struct metadata = 9;
+}
+
+message PostResponse {}
+
+message GetTxByIdemKeyRequest {
+  string idempotency_key = 1;
+  string idempotency_scope = 2;
+}
+
+message Transaction {
+  string id = 1;
+  string idempotency_key = 2;
+  string idempotency_scope = 3;
+  string type = 4;
+  string status = 5;
+  string amount = 6;
+  string currency = 7;
+  string source_account_id = 8;
+  string destination_account_id = 9;
+  string error_message = 10;
+  string external_ref = 11;
+  string gateway = 12;
+  google.protobuf.Timestamp created_at = 13;
+  google.protobuf.Timestamp updated_at = 14;
+}
+
+message GetUserCurrencyRequest {
+  string user_id = 1;
+  string pocket_code = 2;
+}
+
+message GetUserCurrencyResponse {
+  string currency = 1;
+}
+
+message ResolveFeeRequest {
+  string type = 1;
+  string gateway = 2;
+  string currency = 3;
+  string amount = 4;
+  string user_id = 5;
+}
+
+message ResolveFeeResponse {
+  string fee = 1;
+  string fee_gateway = 2;
+  bool ok = 3;
+}
+
+message ProvisionUserRequest {
+  string user_id = 1;
+  string currency = 2;
+}
+
+message ProvisionUserResponse {}
+
+message ConsumeFeeQuoteRequest {
+  string quote_id = 1;
+  string user_id = 2;
+  string transaction_type = 3;
+  string currency = 4;
+  string amount = 5;
+  // consumed_by_ref is persisted as fee_quotes.consumed_by_ref for audit —
+  // 'payout:<uuid>' for this caller.
+  string consumed_by_ref = 6;
+}
+
+message ConsumeFeeQuoteResponse {
+  string fee_amount = 1;
+  string fee_gateway = 2;
+}
+
+message ApplyKycTierRequest {
+  string user_id = 1;
+  int32 kyc_level = 2;
+}
+
+message ApplyKycTierResponse {}
