@@ -23,6 +23,7 @@ import (
 	"github.com/herdifirdausss/seev/internal/ledger/apperror"
 	"github.com/herdifirdausss/seev/internal/ledger/feepolicy"
 	"github.com/herdifirdausss/seev/internal/ledger/processors"
+	"github.com/herdifirdausss/seev/internal/ledger/repository"
 	"github.com/herdifirdausss/seev/pkg/database"
 )
 
@@ -55,7 +56,7 @@ func countLedgerTransactionsByKey(t *testing.T, db *database.DBSQL, idempotencyK
 func TestSchemaContract_ExecTransfer_QuoteHonoredExactly_EvenIfFeeRuleChangesAfterQuote(t *testing.T) {
 	db := setupSchemaTestDB(t)
 	svc, _ := newService(db)
-	policy := feepolicy.New(db)
+	policy := feepolicy.New(db, repository.NewFeeRepository(db))
 	ctx := context.Background()
 
 	userA, userB := uuid.New(), uuid.New()
@@ -92,7 +93,7 @@ func TestSchemaContract_ExecTransfer_QuoteHonoredExactly_EvenIfFeeRuleChangesAft
 func TestSchemaContract_ExecTransfer_QuoteExpired_RollsBackEntirely_NoTxNoEntries(t *testing.T) {
 	db := setupSchemaTestDB(t)
 	svc, _ := newService(db)
-	policy := feepolicy.New(db)
+	policy := feepolicy.New(db, repository.NewFeeRepository(db))
 	ctx := context.Background()
 
 	userA, userB := uuid.New(), uuid.New()
@@ -121,7 +122,7 @@ func TestSchemaContract_ExecTransfer_QuoteExpired_RollsBackEntirely_NoTxNoEntrie
 func TestSchemaContract_ExecTransfer_QuoteMismatch_RollsBackAndQuoteStaysUsable(t *testing.T) {
 	db := setupSchemaTestDB(t)
 	svc, _ := newService(db)
-	policy := feepolicy.New(db)
+	policy := feepolicy.New(db, repository.NewFeeRepository(db))
 	ctx := context.Background()
 
 	userA, userB := uuid.New(), uuid.New()
@@ -164,7 +165,7 @@ func TestSchemaContract_ExecTransfer_QuoteMismatch_RollsBackAndQuoteStaysUsable(
 func TestSchemaContract_ExecTransfer_ReplayAfterQuoteSuccess_IdempotentNoReconsumption(t *testing.T) {
 	db := setupSchemaTestDB(t)
 	svc, _ := newService(db)
-	policy := feepolicy.New(db)
+	policy := feepolicy.New(db, repository.NewFeeRepository(db))
 	ctx := context.Background()
 
 	userA, userB := uuid.New(), uuid.New()
@@ -199,7 +200,7 @@ func TestSchemaContract_ExecTransfer_ReplayAfterQuoteSuccess_IdempotentNoReconsu
 func TestSchemaContract_ExecTransfer_ConcurrentDifferentTransfersSameQuote_ExactlyOneSucceeds(t *testing.T) {
 	db := setupSchemaTestDB(t)
 	svc, _ := newService(db)
-	policy := feepolicy.New(db)
+	policy := feepolicy.New(db, repository.NewFeeRepository(db))
 	ctx := context.Background()
 
 	userA, userB := uuid.New(), uuid.New()

@@ -13,7 +13,12 @@ import (
 )
 
 type RoutingRepository interface {
-	Resolve(context.Context, string, uuid.UUID, string, int64) (model.RoutingRule, string, bool, error)
+	// ResolveCandidates returns EVERY enabled rule matching flow/userID/
+	// currency/amount, ordered user-specific-first then by priority
+	// (docs/plan/40 Task T2 — replaces the old single-winner Resolve so a
+	// caller can skip a candidate whose circuit is open/unregistered and
+	// fall through to the next). Empty slice = no rule matched at all.
+	ResolveCandidates(ctx context.Context, flow string, userID uuid.UUID, currency string, amount int64) ([]model.RoutingCandidate, error)
 	ListRules(context.Context) ([]model.RoutingRule, error)
 	CreateRule(context.Context, model.RoutingRule) error
 	UpdateRule(context.Context, model.RoutingRule) error
@@ -25,27 +30,21 @@ type routingRepo struct{ db database.DatabaseSQL }
 
 func NewRoutingRepository(db database.DatabaseSQL) RoutingRepository { return &routingRepo{db: db} }
 
-func (r *routingRepo) Resolve(ctx context.Context, flow string, userID uuid.UUID, currency string, amount int64) (model.RoutingRule, string, bool, error) {
-	row := r.db.QueryRowContext(ctx, `SELECT rr.id, rr.flow, rr.priority, rr.enabled, rr.currency, rr.min_amount, rr.max_amount, rr.user_id, rr.vendor, rr.created_at, rr.updated_at, vg.gateway FROM payout_routing_rules rr JOIN payout_vendor_gateways vg ON vg.vendor=rr.vendor WHERE rr.enabled AND rr.flow=$1 AND (rr.user_id=$2 OR rr.user_id IS NULL) AND (rr.currency=$3 OR rr.currency IS NULL) AND (rr.min_amount IS NULL OR $4>=rr.min_amount) AND (rr.max_amount IS NULL OR $4<=rr.max_amount) ORDER BY (rr.user_id IS NOT NULL) DESC, rr.priority ASC LIMIT 1`, flow, userID, currency, amount)
-	rule, gateway, err := scanResolved(row)
-	if errors.Is(err, sql.ErrNoRows) {
-		return model.RoutingRule{}, "", false, nil
-	}
+func (r *routingRepo) ResolveCandidates(ctx context.Context, flow string, userID uuid.UUID, currency string, amount int64) ([]model.RoutingCandidate, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT rr.vendor, vg.gateway FROM payout_routing_rules rr JOIN payout_vendor_gateways vg ON vg.vendor=rr.vendor WHERE rr.enabled AND rr.flow=$1 AND (rr.user_id=$2 OR rr.user_id IS NULL) AND (rr.currency=$3 OR rr.currency IS NULL) AND (rr.min_amount IS NULL OR $4>=rr.min_amount) AND (rr.max_amount IS NULL OR $4<=rr.max_amount) ORDER BY (rr.user_id IS NOT NULL) DESC, rr.priority ASC`, flow, userID, currency, amount)
 	if err != nil {
-		return model.RoutingRule{}, "", false, fmt.Errorf("resolve payout route: %w", err)
+		return nil, fmt.Errorf("resolve payout route candidates: %w", err)
 	}
-	return rule, gateway, true, nil
-}
-
-func scanResolved(row *sql.Row) (model.RoutingRule, string, error) {
-	var rule model.RoutingRule
-	var currency sql.NullString
-	var min, max sql.NullInt64
-	var user uuid.NullUUID
-	var gateway string
-	err := row.Scan(&rule.ID, &rule.Flow, &rule.Priority, &rule.Enabled, &currency, &min, &max, &user, &rule.Vendor, &rule.CreatedAt, &rule.UpdatedAt, &gateway)
-	setNullable(&rule, currency, min, max, user)
-	return rule, gateway, err
+	defer rows.Close()
+	var out []model.RoutingCandidate
+	for rows.Next() {
+		var c model.RoutingCandidate
+		if err := rows.Scan(&c.Vendor, &c.Gateway); err != nil {
+			return nil, fmt.Errorf("scan payout route candidate: %w", err)
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
 }
 func setNullable(rule *model.RoutingRule, currency sql.NullString, min, max sql.NullInt64, user uuid.NullUUID) {
 	if currency.Valid {

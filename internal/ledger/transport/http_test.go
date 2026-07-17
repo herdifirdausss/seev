@@ -25,6 +25,7 @@ import (
 	"github.com/herdifirdausss/seev/internal/ledger/feepolicy"
 	"github.com/herdifirdausss/seev/internal/ledger/model"
 	"github.com/herdifirdausss/seev/internal/ledger/processors"
+	"github.com/herdifirdausss/seev/internal/ledger/repository"
 	"github.com/herdifirdausss/seev/pkg/database"
 	"github.com/herdifirdausss/seev/pkg/fraudcheck"
 	"github.com/herdifirdausss/seev/pkg/middleware"
@@ -45,7 +46,8 @@ func newFeeAdminRouter(t *testing.T) (http.Handler, sqlmock.Sqlmock) {
 	sqlDB, dbMock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = sqlDB.Close() })
-	policy := feepolicy.New(database.NewFromSQL(sqlDB, database.Config{}))
+	dbHandle := database.NewFromSQL(sqlDB, database.Config{})
+	policy := feepolicy.New(dbHandle, repository.NewFeeRepository(dbHandle))
 	return middleware.WithAuth(testSecret, "")(NewInternalRouterWithFeePolicy(svc, policy)), dbMock
 }
 
@@ -69,7 +71,8 @@ func newQuoteTestHandler(t *testing.T) (http.Handler, *MockService, sqlmock.Sqlm
 	sqlDB, dbMock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = sqlDB.Close() })
-	policy := feepolicy.New(database.NewFromSQL(sqlDB, database.Config{}))
+	dbHandle := database.NewFromSQL(sqlDB, database.Config{})
+	policy := feepolicy.New(dbHandle, repository.NewFeeRepository(dbHandle))
 	h := middleware.WithAuth(testSecret, "")(NewRouterWithOptions(svc, nil, policy))
 	return h, inner, dbMock
 }
@@ -600,7 +603,8 @@ ORDER BY (user_id IS NOT NULL) DESC, (gateway <> '') DESC
 LIMIT 1`)).
 		WithArgs("transfer_p2p", "IDR", sqlmock.AnyArg(), "").
 		WillReturnRows(sqlmock.NewRows([]string{"flat_minor_units", "percent_basis_pts", "fee_gateway"}).AddRow(2500, 0, "platform"))
-	policy := feepolicy.New(database.NewFromSQL(sqlDB, database.Config{}))
+	dbHandle := database.NewFromSQL(sqlDB, database.Config{})
+	policy := feepolicy.New(dbHandle, repository.NewFeeRepository(dbHandle))
 	h := middleware.WithAuth(testSecret, "")(NewRouterWithOptions(svc, nil, policy))
 
 	userID := uuid.New()

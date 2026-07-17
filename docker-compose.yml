@@ -167,6 +167,8 @@ services:
       JWT_SECRET: ${JWT_SECRET:-change-me-to-a-random-32-plus-character-secret}
       VENDOR_MOCKVENDOR_ENABLED: "true"
       VENDOR_MOCKVENDOR_SECRET: ${VENDOR_MOCKVENDOR_SECRET:-change-me-mockvendor-secret}
+      MOCKVENDOR2_ENABLED: "true"
+      MOCKVENDOR2_SECRET: ${MOCKVENDOR2_SECRET:-change-me-mockvendor2-secret}
     ports:
       - "8092:8092"
       - "9092:9092"
@@ -206,6 +208,8 @@ services:
       JWT_SECRET: ${JWT_SECRET:-change-me-to-a-random-32-plus-character-secret}
       VENDOR_MOCKVENDOR_ENABLED: "true"
       VENDOR_MOCKVENDOR_SECRET: ${VENDOR_MOCKVENDOR_SECRET:-change-me-mockvendor-secret}
+      MOCKVENDOR2_ENABLED: "true"
+      MOCKVENDOR2_SECRET: ${MOCKVENDOR2_SECRET:-change-me-mockvendor2-secret}
     ports:
       - "8093:8093"
       - "9093:9093"

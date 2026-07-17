@@ -3,7 +3,7 @@ BUILD_DIR := bin
 CMD_DIR   := ./cmd/gateway
 GOFLAGS   := -trimpath -ldflags="-s -w"
 
-.PHONY: build build-all run dev test lint tidy tools proto proto-lint proto-breaking docker-up docker-down migrate-up migrate-up-all migrate-down grant-app-role
+.PHONY: build build-all run dev test lint tidy tools proto proto-lint proto-breaking docker-up docker-down migrate-up migrate-up-all migrate-down grant-app-role verify-full chaos-debug
 
 BUF_VERSION                := v1.47.2
 PROTOC_GEN_GO_VERSION      := v1.36.11
@@ -79,6 +79,33 @@ docker-up:
 ## docker-down: Stop infrastructure
 docker-down:
 	docker compose down
+
+# This is what CLAUDE.md's "Build and verification" section means by "the
+# full gate" — run this instead of chaining the steps by hand so a volume
+# reset is never skipped by mistake. Any ad-hoc debugging against the
+# shared dev stack (manual curl against a running service, a one-off
+# scenario re-run) leaves state behind that smoke-test.sh's fixed-UUID
+# fixtures will misreport as a regression — this target always starts from
+# zero so its PASS/FAIL is trustworthy.
+## verify-full: Full doc-completion gate from a CLEAN volume (build/vet/lint/test + smoke + business-e2e + chaos-all)
+verify-full:
+	go build ./...
+	go vet ./...
+	go vet -tags=integration ./...
+	$(MAKE) lint
+	$(MAKE) test
+	docker compose down -v
+	./scripts/smoke-test.sh
+	./scripts/business-e2e.sh
+	./scripts/chaos-test.sh all
+
+# Preserves /tmp/seev-chaos.*/*.log past the exit trap instead of deleting
+# them, so a failing scenario can be inspected after the fact. Usage:
+#   make chaos-debug SCENARIO=8
+## chaos-debug: Re-run one chaos scenario (SCENARIO=1..8, default all) with logs preserved after exit
+SCENARIO ?= all
+chaos-debug:
+	KEEP_WORK_DIR=1 ./scripts/chaos-test.sh $(SCENARIO)
 
 # Migrations run as the schema OWNER (POSTGRES_MIGRATE_USER), never as the
 # app's restricted POSTGRES_USER (docs/plan/16 Task T3) — DDL and DML

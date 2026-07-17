@@ -123,11 +123,11 @@ func assertLedgerBalanced(t *testing.T, db *database.DBSQL) {
 func newPayoutTestModules(db *database.DBSQL) (*testutil.LedgerHarness, *payout.Module, *mockvendor.PayoutProvider) {
 	ledgerModule := testutil.NewLedgerHarness(db)
 
-	provider := mockvendor.NewPayoutProvider()
+	provider := mockvendor.NewPayoutProvider(mockvendor.VendorName)
 	registry := vendorgw.NewRegistry()
 	registry.AddPayout(provider)
 
-	payoutModule := payout.NewModule(db, ledgerModule, registry, nil, nil, nil)
+	payoutModule := payout.NewModule(db, ledgerModule, registry, nil, nil, nil, nil)
 	return ledgerModule, payoutModule, provider
 }
 

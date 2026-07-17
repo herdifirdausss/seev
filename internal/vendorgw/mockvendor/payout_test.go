@@ -21,12 +21,12 @@ func destJSON(t *testing.T, mode string) json.RawMessage {
 }
 
 func TestPayoutProvider_Vendor_ReturnsRegistryName(t *testing.T) {
-	p := NewPayoutProvider()
+	p := NewPayoutProvider(VendorName)
 	assert.Equal(t, "mockvendor", p.Vendor())
 }
 
 func TestPayoutProvider_InstantSettle_ReturnsSettled(t *testing.T) {
-	p := NewPayoutProvider()
+	p := NewPayoutProvider(VendorName)
 	result, err := p.Submit(context.Background(), "key-1", decimal.NewFromInt(100_000), "IDR", destJSON(t, ModeInstantSettle))
 	require.NoError(t, err)
 	assert.Equal(t, vendorgw.PayoutSettled, result.Status)
@@ -34,7 +34,7 @@ func TestPayoutProvider_InstantSettle_ReturnsSettled(t *testing.T) {
 }
 
 func TestPayoutProvider_Async_ReturnsPending_ThenCompletePendingSettles(t *testing.T) {
-	p := NewPayoutProvider()
+	p := NewPayoutProvider(VendorName)
 	result, err := p.Submit(context.Background(), "key-2", decimal.NewFromInt(50_000), "IDR", destJSON(t, ModeAsync))
 	require.NoError(t, err)
 	assert.Equal(t, vendorgw.PayoutPending, result.Status)
@@ -52,7 +52,7 @@ func TestPayoutProvider_Async_ReturnsPending_ThenCompletePendingSettles(t *testi
 }
 
 func TestPayoutProvider_Fail_ReturnsFailedWithReason(t *testing.T) {
-	p := NewPayoutProvider()
+	p := NewPayoutProvider(VendorName)
 	result, err := p.Submit(context.Background(), "key-3", decimal.NewFromInt(10_000), "IDR", destJSON(t, ModeFail))
 	require.NoError(t, err)
 	assert.Equal(t, vendorgw.PayoutFailed, result.Status)
@@ -60,7 +60,7 @@ func TestPayoutProvider_Fail_ReturnsFailedWithReason(t *testing.T) {
 }
 
 func TestPayoutProvider_Timeout_ReturnsErrorEveryTime(t *testing.T) {
-	p := NewPayoutProvider()
+	p := NewPayoutProvider(VendorName)
 	_, err := p.Submit(context.Background(), "key-4", decimal.NewFromInt(10_000), "IDR", destJSON(t, ModeTimeout))
 	require.Error(t, err)
 
@@ -77,7 +77,7 @@ func TestPayoutProvider_Timeout_ReturnsErrorEveryTime(t *testing.T) {
 func TestPayoutProvider_Submit_IdempotentAcrossModes(t *testing.T) {
 	for _, mode := range []string{ModeInstantSettle, ModeAsync, ModeFail} {
 		t.Run(mode, func(t *testing.T) {
-			p := NewPayoutProvider()
+			p := NewPayoutProvider(VendorName)
 			key := "idem-key-" + mode
 			first, err := p.Submit(context.Background(), key, decimal.NewFromInt(75_000), "IDR", destJSON(t, mode))
 			require.NoError(t, err)
@@ -91,7 +91,7 @@ func TestPayoutProvider_Submit_IdempotentAcrossModes(t *testing.T) {
 }
 
 func TestPayoutProvider_Submit_ConcurrentSameKey_ExactlyOneEffectiveSubmission(t *testing.T) {
-	p := NewPayoutProvider()
+	p := NewPayoutProvider(VendorName)
 	const concurrency = 20
 	results := make([]vendorgw.PayoutResult, concurrency)
 	errs := make([]error, concurrency)
@@ -113,7 +113,35 @@ func TestPayoutProvider_Submit_ConcurrentSameKey_ExactlyOneEffectiveSubmission(t
 }
 
 func TestPayoutProvider_Query_UnknownKey_Error(t *testing.T) {
-	p := NewPayoutProvider()
+	p := NewPayoutProvider(VendorName)
 	_, err := p.Query(context.Background(), "never-submitted")
 	assert.Error(t, err)
+}
+
+// TestPayoutProvider_IdempotencyCache_IsolatedAcrossVendorInstances proves
+// docs/plan/40 Task T3's own required test: a payout that fails over from
+// one vendor to another reuses the SAME idempotency key (the payout
+// request ID, see orchestrate.go's submit()) against a DIFFERENT
+// PayoutProvider instance — this must never read or leak the first
+// vendor's cached result, since each named instance (docs/plan/40 Task T4's
+// pulled-forward naming parameterization) owns its own independent
+// submitted map.
+func TestPayoutProvider_IdempotencyCache_IsolatedAcrossVendorInstances(t *testing.T) {
+	vendorA := NewPayoutProvider("vendorA")
+	vendorB := NewPayoutProvider("vendorB")
+	const sharedKey = "shared-payout-id"
+
+	rejectedA, err := vendorA.Submit(context.Background(), sharedKey, decimal.NewFromInt(100_000), "IDR", destJSON(t, ModeFail))
+	require.NoError(t, err)
+	require.Equal(t, vendorgw.PayoutFailed, rejectedA.Status)
+
+	settledB, err := vendorB.Submit(context.Background(), sharedKey, decimal.NewFromInt(100_000), "IDR", destJSON(t, ModeInstantSettle))
+	require.NoError(t, err)
+	assert.Equal(t, vendorgw.PayoutSettled, settledB.Status,
+		"vendorB must process the SAME key fresh, not read vendorA's cached Failed result")
+
+	// vendorA's own cache must remain unaffected by vendorB's activity.
+	requeryA, err := vendorA.Query(context.Background(), sharedKey)
+	require.NoError(t, err)
+	assert.Equal(t, vendorgw.PayoutFailed, requeryA.Status, "vendorA's cache must still show its own original result")
 }

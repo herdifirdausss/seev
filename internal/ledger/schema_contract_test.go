@@ -243,7 +243,7 @@ func newService(db *database.DBSQL) (*ledgerhandle.Service, repository.AccountRe
 	entryRepo := repository.NewEntryRepository(db)
 	outboxRepo := repository.NewOutboxRepository(db)
 	registry := processors.NewDefaultRegistry(accRepo, txRepo)
-	svc := ledgerhandle.New(db, txRepo, balRepo, entryRepo, outboxRepo, registry, slog.Default(), decimal.Zero, feepolicy.New(db))
+	svc := ledgerhandle.New(db, txRepo, balRepo, entryRepo, outboxRepo, registry, slog.Default(), decimal.Zero, feepolicy.New(db, repository.NewFeeRepository(db)))
 	return svc, accRepo
 }
 
@@ -790,7 +790,7 @@ func TestSchemaContract_LifecycleGuard_DoubleSettle_Rejected(t *testing.T) {
 // that only needs the accounts to exist, not the HTTP surface.
 func provisionStandardAccounts(t *testing.T, db *database.DBSQL, userID uuid.UUID) error {
 	t.Helper()
-	_, err := provision.New(db).CreateUserAccounts(context.Background(), userID, "IDR")
+	_, err := provision.New(db, repository.NewProvisioningRepository()).CreateUserAccounts(context.Background(), userID, "IDR")
 	return err
 }
 
@@ -1904,14 +1904,14 @@ func TestSchemaContract_Provisioning_RespectsLoadedCurrencyRegistry(t *testing.T
 	t.Cleanup(func() { currency.Load([]currency.Currency{{Code: "IDR", MinorUnit: 0}}) })
 
 	userID := uuid.New()
-	accounts, err := provision.New(db).CreateUserAccounts(ctx, userID, "USD")
+	accounts, err := provision.New(db, repository.NewProvisioningRepository()).CreateUserAccounts(ctx, userID, "USD")
 	require.NoError(t, err, "USD must be provisionable once the registry has loaded it from the DB")
 	require.NotEmpty(t, accounts)
 	for _, acc := range accounts {
 		require.Equal(t, "USD", acc.Currency)
 	}
 
-	_, err = provision.New(db).CreateUserAccounts(ctx, uuid.New(), "XYZ")
+	_, err = provision.New(db, repository.NewProvisioningRepository()).CreateUserAccounts(ctx, uuid.New(), "XYZ")
 	require.Error(t, err, "a currency absent from the currencies table must still be rejected")
 	require.True(t, errors.Is(err, apperror.ErrValidation))
 }
@@ -1954,7 +1954,7 @@ func TestSchemaContract_MultiCurrency_MoneyIn_UsesCorrectSettlementPool(t *testi
 	ctx := context.Background()
 
 	userUSD := uuid.New()
-	accountsUSD, err := provision.New(db).CreateUserAccounts(ctx, userUSD, "USD")
+	accountsUSD, err := provision.New(db, repository.NewProvisioningRepository()).CreateUserAccounts(ctx, userUSD, "USD")
 	require.NoError(t, err)
 	cashUSD := cashAccountOf(t, accountsUSD)
 
@@ -1994,12 +1994,12 @@ func TestSchemaContract_MultiCurrency_TransferP2P_CrossCurrencyRejected(t *testi
 	ctx := context.Background()
 
 	userIDR := uuid.New()
-	accountsIDR, err := provision.New(db).CreateUserAccounts(ctx, userIDR, "IDR")
+	accountsIDR, err := provision.New(db, repository.NewProvisioningRepository()).CreateUserAccounts(ctx, userIDR, "IDR")
 	require.NoError(t, err)
 	cashIDR := cashAccountOf(t, accountsIDR)
 
 	userUSD := uuid.New()
-	_, err = provision.New(db).CreateUserAccounts(ctx, userUSD, "USD")
+	_, err = provision.New(db, repository.NewProvisioningRepository()).CreateUserAccounts(ctx, userUSD, "USD")
 	require.NoError(t, err)
 
 	err = svc.Handle(ctx, processors.Command{
@@ -2035,12 +2035,12 @@ func TestSchemaContract_MultiCurrency_ParallelIDRAndUSD_HitDistinctSettlementAcc
 	ctx := context.Background()
 
 	userIDR := uuid.New()
-	accountsIDR, err := provision.New(db).CreateUserAccounts(ctx, userIDR, "IDR")
+	accountsIDR, err := provision.New(db, repository.NewProvisioningRepository()).CreateUserAccounts(ctx, userIDR, "IDR")
 	require.NoError(t, err)
 	cashIDR := cashAccountOf(t, accountsIDR)
 
 	userUSD := uuid.New()
-	accountsUSD, err := provision.New(db).CreateUserAccounts(ctx, userUSD, "USD")
+	accountsUSD, err := provision.New(db, repository.NewProvisioningRepository()).CreateUserAccounts(ctx, userUSD, "USD")
 	require.NoError(t, err)
 	cashUSD := cashAccountOf(t, accountsUSD)
 
@@ -2116,12 +2116,12 @@ func TestSchemaContract_FX_OutThenIn_MovesBothLegsCorrectly(t *testing.T) {
 	ctx := context.Background()
 
 	userIDR := uuid.New()
-	accountsIDR, err := provision.New(db).CreateUserAccounts(ctx, userIDR, "IDR")
+	accountsIDR, err := provision.New(db, repository.NewProvisioningRepository()).CreateUserAccounts(ctx, userIDR, "IDR")
 	require.NoError(t, err)
 	cashIDR := cashAccountOf(t, accountsIDR)
 
 	userUSD := uuid.New()
-	accountsUSD, err := provision.New(db).CreateUserAccounts(ctx, userUSD, "USD")
+	accountsUSD, err := provision.New(db, repository.NewProvisioningRepository()).CreateUserAccounts(ctx, userUSD, "USD")
 	require.NoError(t, err)
 	cashUSD := cashAccountOf(t, accountsUSD)
 
@@ -2163,7 +2163,7 @@ func TestSchemaContract_FX_In_RetrySameKey_Idempotent(t *testing.T) {
 	ctx := context.Background()
 
 	userUSD := uuid.New()
-	accountsUSD, err := provision.New(db).CreateUserAccounts(ctx, userUSD, "USD")
+	accountsUSD, err := provision.New(db, repository.NewProvisioningRepository()).CreateUserAccounts(ctx, userUSD, "USD")
 	require.NoError(t, err)
 	cashUSD := cashAccountOf(t, accountsUSD)
 
@@ -2187,12 +2187,12 @@ func TestSchemaContract_FX_InFails_OpenPositionVisible_ReversalCloses(t *testing
 	ctx := context.Background()
 
 	userIDR := uuid.New()
-	accountsIDR, err := provision.New(db).CreateUserAccounts(ctx, userIDR, "IDR")
+	accountsIDR, err := provision.New(db, repository.NewProvisioningRepository()).CreateUserAccounts(ctx, userIDR, "IDR")
 	require.NoError(t, err)
 	cashIDR := cashAccountOf(t, accountsIDR)
 
 	userUSD := uuid.New()
-	accountsUSD, err := provision.New(db).CreateUserAccounts(ctx, userUSD, "USD")
+	accountsUSD, err := provision.New(db, repository.NewProvisioningRepository()).CreateUserAccounts(ctx, userUSD, "USD")
 	require.NoError(t, err)
 	cashUSDID := cashAccountOf(t, accountsUSD)
 

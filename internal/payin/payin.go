@@ -56,7 +56,7 @@ type Poster interface {
 
 // RegisterGRPC exposes the internal payin service contract.
 func (m *Module) RegisterGRPC(server *grpc.Server) {
-	payinv1.RegisterPayinServiceServer(server, grpcserver.New(m, ErrTopupIntentNotFound, ErrNoRoute))
+	payinv1.RegisterPayinServiceServer(server, grpcserver.New(m, ErrTopupIntentNotFound, ErrNoRoute, ErrNoVendorAvailable))
 }
 
 // Module is the public facade for the payin module.
@@ -72,12 +72,16 @@ type Module struct {
 	// fraudClient screens deposits before posting (docs/plan/37 Task T4).
 	// nil is a valid, fully-supported configuration — no screening runs.
 	fraudClient *fraudcheck.Client
+	// breaker tracks per-vendor circuit health (docs/plan/40 Task T1) — nil
+	// is a valid, fully-supported configuration (byte-identical to before
+	// this feature existed: every registered vendor is always "allowed").
+	breaker *vendorgw.HealthTracker
 }
 
 // NewModule wires the payin module. Vendor and gateway selection comes
 // from the routing repository; topupTTL <=0 defaults to 24h. fraudClient
 // may be nil to disable pre-posting fraud screening entirely.
-func NewModule(db database.DatabaseSQL, poster Poster, registry *vendorgw.Registry, topupTTL time.Duration, logger *slog.Logger, fraudClient *fraudcheck.Client) *Module {
+func NewModule(db database.DatabaseSQL, poster Poster, registry *vendorgw.Registry, topupTTL time.Duration, logger *slog.Logger, fraudClient *fraudcheck.Client, breaker *vendorgw.HealthTracker) *Module {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -89,6 +93,7 @@ func NewModule(db database.DatabaseSQL, poster Poster, registry *vendorgw.Regist
 		logger:      logger,
 		topupTTL:    topupTTL,
 		fraudClient: fraudClient,
+		breaker:     breaker,
 	}
 }
 

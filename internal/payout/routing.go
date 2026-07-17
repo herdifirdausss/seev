@@ -8,18 +8,36 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-func (m *Module) ResolvePayoutRoute(ctx context.Context, userID uuid.UUID, currency string, amount decimal.Decimal) (string, string, error) {
-	rule, gateway, found, err := m.routing.Resolve(ctx, "payout", userID, currency, amount.IntPart())
+// ResolvePayoutRoute picks the first candidate vendor (in routing-rule
+// priority order) that is both registered and not circuit-broken, skipping
+// any vendor named in exclude (docs/plan/40 Task T3's failover — vendors
+// already tried for this request). Pass a nil/empty exclude for a fresh
+// request.
+func (m *Module) ResolvePayoutRoute(ctx context.Context, userID uuid.UUID, currency string, amount decimal.Decimal, exclude []string) (string, string, error) {
+	candidates, err := m.routing.ResolveCandidates(ctx, "payout", userID, currency, amount.IntPart())
 	if err != nil {
 		return "", "", err
 	}
-	if !found {
+	if len(candidates) == 0 {
 		return "", "", ErrNoRoute
 	}
-	if _, ok := m.registry.Payout(rule.Vendor); !ok {
-		return "", "", fmt.Errorf("payout: routed vendor %q is not registered", rule.Vendor)
+	excluded := make(map[string]bool, len(exclude))
+	for _, v := range exclude {
+		excluded[v] = true
 	}
-	return rule.Vendor, gateway, nil
+	for _, c := range candidates {
+		if excluded[c.Vendor] {
+			continue
+		}
+		if _, ok := m.registry.Payout(c.Vendor); !ok {
+			continue
+		}
+		if m.breaker != nil && !m.breaker.Allow(c.Vendor) {
+			continue
+		}
+		return c.Vendor, c.Gateway, nil
+	}
+	return "", "", ErrNoVendorAvailable
 }
 
 func (m *Module) gatewayForVendor(ctx context.Context, vendor string) (string, error) {

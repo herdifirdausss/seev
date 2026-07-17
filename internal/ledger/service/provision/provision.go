@@ -12,6 +12,7 @@ import (
 	"github.com/herdifirdausss/seev/internal/ledger/apperror"
 	"github.com/herdifirdausss/seev/internal/ledger/constant"
 	"github.com/herdifirdausss/seev/internal/ledger/model"
+	"github.com/herdifirdausss/seev/internal/ledger/repository"
 	currencyreg "github.com/herdifirdausss/seev/pkg/currency"
 )
 
@@ -34,11 +35,12 @@ var standardAccountTypes = []string{
 var pocketCodePattern = regexp.MustCompile(`^[a-z0-9_]{1,32}$`)
 
 type Service struct {
-	db DatabaseSQL
+	db   DatabaseSQL
+	repo repository.ProvisioningRepository
 }
 
-func New(db DatabaseSQL) *Service {
-	return &Service{db: db}
+func New(db DatabaseSQL, repo repository.ProvisioningRepository) *Service {
+	return &Service{db: db, repo: repo}
 }
 
 // CreateUserAccounts provisions the standard account set (cash, hold,
@@ -56,7 +58,9 @@ func (s *Service) CreateUserAccounts(ctx context.Context, userID uuid.UUID, curr
 
 	err := s.db.WithTx(ctx, nil, func(tx *sql.Tx) error {
 		for _, accType := range standardAccountTypes {
-			acc, err := upsertAccount(ctx, tx, userID, accType, currency, "")
+			acc, err := s.repo.UpsertAccount(ctx, tx, repository.UpsertAccountParams{
+				OwnerID: userID, Type: accType, Currency: currency, CreatedBy: "service:ledger-provision",
+			})
 			if err != nil {
 				return fmt.Errorf("provision %s account: %w", accType, err)
 			}
@@ -87,53 +91,14 @@ func (s *Service) CreatePocket(ctx context.Context, userID uuid.UUID, currency, 
 	var acc model.Account
 	err := s.db.WithTx(ctx, nil, func(tx *sql.Tx) error {
 		var err error
-		acc, err = upsertAccount(ctx, tx, userID, constant.AccountTypePocket, currency, pocketCode)
+		acc, err = s.repo.UpsertAccount(ctx, tx, repository.UpsertAccountParams{
+			OwnerID: userID, Type: constant.AccountTypePocket, Currency: currency,
+			PocketCode: pocketCode, CreatedBy: "service:ledger-provision",
+		})
 		return err
 	})
 	if err != nil {
 		return model.Account{}, err
 	}
-	return acc, nil
-}
-
-// upsertAccount creates an account + zero-balance row, or returns the
-// existing one if it already exists (ON CONFLICT DO UPDATE is a no-op write
-// used only to make RETURNING report the existing row too).
-func upsertAccount(ctx context.Context, tx *sql.Tx, userID uuid.UUID, accType, currency, pocketCode string) (model.Account, error) {
-	id := uuid.New()
-
-	var conflictTarget string
-	var pocketArg any
-	if pocketCode == "" {
-		conflictTarget = "(owner_type, owner_id, type, currency) WHERE pocket_code IS NULL AND owner_id IS NOT NULL"
-		pocketArg = nil
-	} else {
-		conflictTarget = "(owner_type, owner_id, type, currency, pocket_code) WHERE pocket_code IS NOT NULL"
-		pocketArg = pocketCode
-	}
-
-	var acc model.Account
-	acc.OwnerID = userID
-	acc.Type = accType
-	acc.Currency = currency
-	acc.PocketCode = pocketCode
-
-	query := fmt.Sprintf(`
-		INSERT INTO accounts (id, owner_id, owner_type, type, currency, pocket_code, status, created_by)
-		VALUES ($1, $2, 'user', $3, $4, $5, 'active', 'service:ledger-provision')
-		ON CONFLICT %s DO UPDATE SET updated_at = accounts.updated_at
-		RETURNING id, status`, conflictTarget)
-
-	if err := tx.QueryRowContext(ctx, query, id, userID, accType, currency, pocketArg).Scan(&acc.ID, &acc.Status); err != nil {
-		return model.Account{}, fmt.Errorf("upsert account: %w", err)
-	}
-
-	if _, err := tx.ExecContext(ctx,
-		`INSERT INTO account_balances (account_id) VALUES ($1) ON CONFLICT (account_id) DO NOTHING`,
-		acc.ID,
-	); err != nil {
-		return model.Account{}, fmt.Errorf("upsert account balance: %w", err)
-	}
-
 	return acc, nil
 }

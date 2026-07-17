@@ -20,3 +20,23 @@ func NullUUID(id uuid.UUID) any {
 	}
 	return id
 }
+
+// StringPtr returns nil for an empty string, else a pointer to s — for
+// struct fields typed *string (as opposed to NullString's any, meant for
+// direct ExecContext/QueryRowContext driver arguments).
+func StringPtr(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
+}
+
+// UUIDPtr returns nil for uuid.Nil, else a pointer to id — for struct
+// fields typed *uuid.UUID (as opposed to NullUUID's any, meant for direct
+// ExecContext/QueryRowContext driver arguments).
+func UUIDPtr(id uuid.UUID) *uuid.UUID {
+	if id == uuid.Nil {
+		return nil
+	}
+	return &id
+}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"sort"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
@@ -16,7 +17,7 @@ import (
 
 type matrixRouting struct{ rules []model.RoutingRule }
 
-func (m matrixRouting) Resolve(_ context.Context, flow string, userID uuid.UUID, currency string, amount int64) (model.RoutingRule, string, bool, error) {
+func (m matrixRouting) ResolveCandidates(_ context.Context, flow string, userID uuid.UUID, currency string, amount int64) ([]model.RoutingCandidate, error) {
 	var matches []model.RoutingRule
 	for _, rule := range m.rules {
 		if !rule.Enabled || rule.Flow != flow || rule.UserID != nil && *rule.UserID != userID || rule.Currency != nil && *rule.Currency != currency || rule.MinAmount != nil && amount < *rule.MinAmount || rule.MaxAmount != nil && amount > *rule.MaxAmount {
@@ -30,10 +31,11 @@ func (m matrixRouting) Resolve(_ context.Context, flow string, userID uuid.UUID,
 		}
 		return matches[i].Priority < matches[j].Priority
 	})
-	if len(matches) == 0 {
-		return model.RoutingRule{}, "", false, nil
+	out := make([]model.RoutingCandidate, len(matches))
+	for i, rule := range matches {
+		out[i] = model.RoutingCandidate{Vendor: rule.Vendor, Gateway: rule.Vendor + "-gateway"}
 	}
-	return matches[0], matches[0].Vendor + "-gateway", true, nil
+	return out, nil
 }
 func (m matrixRouting) ListRules(context.Context) ([]model.RoutingRule, error) { return m.rules, nil }
 func (matrixRouting) CreateRule(context.Context, model.RoutingRule) error      { return nil }
@@ -88,4 +90,35 @@ func TestResolveTopupRoute_Matrix(t *testing.T) {
 	noRoute := &Module{routing: matrixRouting{}, registry: registry}
 	_, _, err := noRoute.ResolveTopupRoute(context.Background(), otherUser, "IDR", decimal.NewFromInt(1))
 	assert.ErrorIs(t, err, ErrNoRoute)
+}
+
+// TestResolveTopupRoute_BreakerOpen_SkipsToNextCandidate mirrors
+// internal/payout's own test (docs/plan/40 Task T2).
+func TestResolveTopupRoute_BreakerOpen_SkipsToNextCandidate(t *testing.T) {
+	rules := []model.RoutingRule{
+		{Flow: "topup", Priority: 1, Enabled: true, Vendor: "primary"},
+		{Flow: "topup", Priority: 2, Enabled: true, Vendor: "secondary"},
+	}
+	registry := vendorgw.NewRegistry()
+	registry.AddPayin(stubVerifier{name: "primary"})
+	registry.AddPayin(stubVerifier{name: "secondary"})
+	breaker := vendorgw.NewHealthTracker(1, time.Hour, nil)
+	breaker.RecordFailure("primary")
+
+	m := &Module{routing: matrixRouting{rules: rules}, registry: registry, breaker: breaker}
+	vendor, _, err := m.ResolveTopupRoute(context.Background(), uuid.New(), "IDR", decimal.NewFromInt(1))
+	require.NoError(t, err)
+	assert.Equal(t, "secondary", vendor)
+}
+
+func TestResolveTopupRoute_AllCandidatesOpen_ErrNoVendorAvailable(t *testing.T) {
+	rules := []model.RoutingRule{{Flow: "topup", Priority: 1, Enabled: true, Vendor: "primary"}}
+	registry := vendorgw.NewRegistry()
+	registry.AddPayin(stubVerifier{name: "primary"})
+	breaker := vendorgw.NewHealthTracker(1, time.Hour, nil)
+	breaker.RecordFailure("primary")
+
+	m := &Module{routing: matrixRouting{rules: rules}, registry: registry, breaker: breaker}
+	_, _, err := m.ResolveTopupRoute(context.Background(), uuid.New(), "IDR", decimal.NewFromInt(1))
+	assert.ErrorIs(t, err, ErrNoVendorAvailable)
 }

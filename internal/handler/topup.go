@@ -58,9 +58,15 @@ func createTopupIntentHandler(client payinv1.PayinServiceClient) http.HandlerFun
 		}
 		result, err := client.CreateTopupIntent(r.Context(), &payinv1.CreateTopupIntentRequest{UserId: userID.String(), Amount: amount.String()})
 		if err != nil {
-			if status.Code(err) == codes.FailedPrecondition {
+			switch status.Code(err) {
+			case codes.FailedPrecondition:
 				response.JSON(w, http.StatusUnprocessableEntity, response.Envelope{Success: false, Error: &response.Error{Code: "NO_ROUTE", Message: "no topup route available"}})
-			} else {
+			case codes.Unavailable:
+				// docs/plan/40 Task T2 — every candidate vendor is
+				// registered but circuit-broken; distinct from NO_ROUTE
+				// (a config problem) since this is transient.
+				response.JSON(w, http.StatusServiceUnavailable, response.Envelope{Success: false, Error: &response.Error{Code: "VENDOR_UNAVAILABLE", Message: "no vendor available"}})
+			default:
 				response.InternalServerError(w, err)
 			}
 			return

@@ -230,7 +230,7 @@ func NewModule(db database.DatabaseSQL, broker messaging.Broker, redisClient *re
 	reportingRepo := repository.NewReportingRepository(db)
 	kycTierRepo := repository.NewKycTierRepository(db)
 
-	feeQuotePolicy := feepolicy.New(db)
+	feeQuotePolicy := feepolicy.New(db, repository.NewFeeRepository(db))
 	handleSvc := ledgerhandle.New(db, txRepo, balanceRepo, entryRepo, outboxRepo, registry, logger, maxAmountPerTx, feeQuotePolicy)
 	adjustmentsSvc := adjustments.New(db, adjRepo, txRepo, outboxRepo, handleSvc)
 	scheduleSvc := schedule.New(db, scheduleRepo, handleSvc, logger)
@@ -239,7 +239,7 @@ func NewModule(db database.DatabaseSQL, broker messaging.Broker, redisClient *re
 
 	m := &Module{
 		handleSvc:         handleSvc,
-		provisionSvc:      provision.New(db),
+		provisionSvc:      provision.New(db, repository.NewProvisioningRepository()),
 		adjustmentsSvc:    adjustmentsSvc,
 		reconSvc:          recon.New(db, reconRepo, adjustmentsSvc),
 		scheduleSvc:       scheduleSvc,
@@ -286,7 +286,7 @@ func NewModule(db database.DatabaseSQL, broker messaging.Broker, redisClient *re
 	if workerCfg.AlertWebhookURL != "" {
 		alertFn = alerting.NewWebhookAlerter(workerCfg.AlertWebhookURL, nil)
 	}
-	m.verifier = worker.NewVerifier(db, outboxRepo, lock, logger, loc, alertFn)
+	m.verifier = worker.NewVerifier(repository.NewVerificationRepository(db), outboxRepo, lock, logger, loc, alertFn)
 	m.snapshotJob = worker.NewSnapshotJob(snapshotRepo, lock, logger, loc, alertFn)
 	m.scheduleJob = worker.NewScheduleRunnerJob(scheduleSvc, lock, logger, loc)
 	m.accrualJob = worker.NewAccrualJob(accrualSvc, lock, logger, loc)

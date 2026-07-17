@@ -25,6 +25,26 @@ const (
 	StatusRejected = "rejected"
 )
 
+// Vendor call outcome values for PayoutVendorCall.Outcome (docs/plan/40
+// Task T3) — the classification that drives the anti-double-payout
+// failover rule (mayFailover): failover is DIYIZINKAN only while NO call
+// for a request has ever landed accepted or uncertain.
+const (
+	// VendorCallAccepted: the vendor took the request (Settled or Pending)
+	// — reachable/synchronous, pinned forward toward completion.
+	VendorCallAccepted = "accepted"
+	// VendorCallRejected: a definitive SYNCHRONOUS business rejection (the
+	// vendor was reachable and said no) — failover to another candidate is
+	// allowed, and this does NOT trip the circuit breaker (gotcha #13
+	// master: business rejections are not infra failures).
+	VendorCallRejected = "rejected"
+	// VendorCallUncertain: a transport/infra error (timeout, 5xx, unknown)
+	// — the vendor may or may not have received/actioned the request, so
+	// the payout is PINNED to this vendor forever (recovery = Query/retry
+	// the SAME vendor via the resume job, never failover).
+	VendorCallUncertain = "uncertain"
+)
+
 // PayoutRequest is one row of payout_requests.
 type PayoutRequest struct {
 	ID           uuid.UUID
@@ -70,7 +90,12 @@ type PayoutVendorCall struct {
 	ReqSummary      string
 	RespStatus      string
 	Error           string
-	CreatedAt       time.Time
+	// Outcome classifies this call (docs/plan/40 Task T3) — one of
+	// VendorCallAccepted/Rejected/Uncertain. Drives the anti-double-payout
+	// failover rule (mayFailover): the source of truth is THIS column
+	// across every call ever recorded for a request, never breaker state.
+	Outcome   string
+	CreatedAt time.Time
 }
 
 type RoutingRule struct {
@@ -90,4 +115,14 @@ type RoutingRule struct {
 type VendorGateway struct {
 	Vendor  string `json:"vendor"`
 	Gateway string `json:"gateway"`
+}
+
+// RoutingCandidate is one matching routing rule's vendor+gateway, part of
+// the ordered candidate list ResolveCandidates returns (docs/plan/40 Task
+// T2) — replaces the old single-winner Resolve so the caller can skip a
+// candidate whose circuit is open or who is in an exclusion list (already
+// tried this request) and fall through to the next.
+type RoutingCandidate struct {
+	Vendor  string
+	Gateway string
 }

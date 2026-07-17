@@ -65,6 +65,11 @@ type Repository interface {
 	// (docs/plan/38 Task T5) — settle uses these stored values instead of
 	// re-resolving fee_rules. Does not change status.
 	SetQuotedFee(ctx context.Context, id, quoteID uuid.UUID, feeAmount decimal.Decimal, feeGateway string) error
+	// SetVendor updates which vendor a request is currently routed to
+	// (docs/plan/40 Task T3's failover — a rejected vendor's replacement is
+	// persisted here so the audit trail, admin UI, and any later resume
+	// pass all see the CURRENT vendor). Does not change status.
+	SetVendor(ctx context.Context, id uuid.UUID, vendor string) error
 
 	Get(ctx context.Context, id uuid.UUID) (model.PayoutRequest, error)
 	// List returns requests newest first, optionally filtered by status
@@ -75,6 +80,10 @@ type Repository interface {
 	ListStuck(ctx context.Context, status string, olderThan time.Time, limit int) ([]model.PayoutRequest, error)
 
 	InsertVendorCall(ctx context.Context, call model.PayoutVendorCall) error
+	// ListVendorCalls returns every vendor call ever recorded for a
+	// request, oldest first — mayFailover (docs/plan/40 Task T3) reads
+	// this to decide whether any call has ever landed accepted/uncertain.
+	ListVendorCalls(ctx context.Context, payoutRequestID uuid.UUID) ([]model.PayoutVendorCall, error)
 }
 
 type repo struct {
@@ -192,6 +201,16 @@ func (r *repo) SetQuotedFee(ctx context.Context, id, quoteID uuid.UUID, feeAmoun
 		quoteID, feeAmount.IntPart(), feeGateway, id)
 	if err != nil {
 		return fmt.Errorf("set payout request quoted fee: %w", err)
+	}
+	return nil
+}
+
+func (r *repo) SetVendor(ctx context.Context, id uuid.UUID, vendor string) error {
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE payout_requests SET vendor = $1, updated_at = now() WHERE id = $2`,
+		vendor, id)
+	if err != nil {
+		return fmt.Errorf("set payout request vendor: %w", err)
 	}
 	return nil
 }
@@ -322,14 +341,33 @@ func (r *repo) queryRequests(ctx context.Context, query string, args ...any) ([]
 
 func (r *repo) InsertVendorCall(ctx context.Context, call model.PayoutVendorCall) error {
 	_, err := r.db.ExecContext(ctx, `
-		INSERT INTO payout_vendor_calls (id, payout_request_id, attempt, req_summary, resp_status, error, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, now())`,
-		call.ID, call.PayoutRequestID, call.Attempt, call.ReqSummary, nullString(call.RespStatus), nullString(call.Error),
+		INSERT INTO payout_vendor_calls (id, payout_request_id, attempt, req_summary, resp_status, error, outcome, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, now())`,
+		call.ID, call.PayoutRequestID, call.Attempt, call.ReqSummary, nullString(call.RespStatus), nullString(call.Error), call.Outcome,
 	)
 	if err != nil {
 		return fmt.Errorf("insert payout vendor call: %w", err)
 	}
 	return nil
+}
+
+func (r *repo) ListVendorCalls(ctx context.Context, payoutRequestID uuid.UUID) ([]model.PayoutVendorCall, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id, payout_request_id, attempt, req_summary, COALESCE(resp_status, ''), COALESCE(error, ''), outcome, created_at
+		FROM payout_vendor_calls WHERE payout_request_id = $1 ORDER BY created_at ASC`, payoutRequestID)
+	if err != nil {
+		return nil, fmt.Errorf("list payout vendor calls: %w", err)
+	}
+	defer rows.Close()
+	var out []model.PayoutVendorCall
+	for rows.Next() {
+		var c model.PayoutVendorCall
+		if err := rows.Scan(&c.ID, &c.PayoutRequestID, &c.Attempt, &c.ReqSummary, &c.RespStatus, &c.Error, &c.Outcome, &c.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan payout vendor call: %w", err)
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
 }
 
 func nullString(s string) any {

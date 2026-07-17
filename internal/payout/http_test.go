@@ -18,6 +18,7 @@ import (
 	"github.com/herdifirdausss/seev/internal/payout/model"
 	"github.com/herdifirdausss/seev/internal/payout/repository"
 	"github.com/herdifirdausss/seev/internal/vendorgw"
+	"github.com/herdifirdausss/seev/internal/vendorgw/mockvendor"
 	"github.com/herdifirdausss/seev/pkg/ledgerclient"
 	"github.com/herdifirdausss/seev/pkg/middleware"
 )
@@ -382,4 +383,122 @@ func TestGetHandler_Success_200(t *testing.T) {
 	w := doReq(t, router, http.MethodGet, "/payout/"+id.String(), tokenForUser(t, ownerID, "user"), "")
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.Contains(t, w.Body.String(), "settled")
+}
+
+// ─── Admin: vendor force-fail (docs/plan/40 Task T4) ────────────────────
+
+func TestAdminRouter_ForceFail_NonAdmin_403(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	repo := repository.NewMockRepository(ctrl) // no calls expected
+	m := newTestModule(repo, stubPoster{}, vendorgw.NewRegistry())
+	router := newAdminTestRouter(m)
+
+	w := doReq(t, router, http.MethodPost, "/admin/payout/vendors/mockvendor/force-fail", tokenForUser(t, uuid.New(), "user"), `{"fail":true}`)
+	assert.Equal(t, http.StatusForbidden, w.Code)
+}
+
+func TestAdminRouter_ForceFail_UnregisteredVendor_404(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	repo := repository.NewMockRepository(ctrl) // no calls expected
+	m := newTestModule(repo, stubPoster{}, vendorgw.NewRegistry())
+	router := newAdminTestRouter(m)
+
+	w := doReq(t, router, http.MethodPost, "/admin/payout/vendors/nosuchvendor/force-fail", tokenForUser(t, uuid.New(), "admin"), `{"fail":true}`)
+	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+// stubPayoutProviderNoForceFail deliberately does NOT implement
+// forceFailSwitch, proving a vendor without the capability reports 400
+// rather than silently no-op-ing.
+type stubPayoutProviderNoForceFail struct{ *stubPayoutProvider }
+
+func TestAdminRouter_ForceFail_VendorWithoutSwitch_400(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	repo := repository.NewMockRepository(ctrl) // no calls expected
+	provider := &stubPayoutProviderNoForceFail{&stubPayoutProvider{name: "plainvendor"}}
+	m := newTestModule(repo, stubPoster{}, registryWith(provider))
+	router := newAdminTestRouter(m)
+
+	w := doReq(t, router, http.MethodPost, "/admin/payout/vendors/plainvendor/force-fail", tokenForUser(t, uuid.New(), "admin"), `{"fail":true}`)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestAdminRouter_ForceFail_Success_TripsSubsequentSubmit(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	repo := repository.NewMockRepository(ctrl) // no calls expected
+	provider := mockvendor.NewPayoutProvider("mockvendor")
+	m := newTestModule(repo, stubPoster{}, registryWith(provider))
+	router := newAdminTestRouter(m)
+
+	w := doReq(t, router, http.MethodPost, "/admin/payout/vendors/mockvendor/force-fail", tokenForUser(t, uuid.New(), "admin"), `{"fail":true}`)
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), `"force_fail":true`)
+
+	dest, _ := json.Marshal(map[string]string{"bank_code": "014", "account_no": "1"})
+	_, err := provider.Submit(context.Background(), "any-key", decimal.NewFromInt(1000), "IDR", dest)
+	assert.Error(t, err, "force-fail must trip EVERY Submit against this vendor regardless of destination content")
+
+	w2 := doReq(t, router, http.MethodPost, "/admin/payout/vendors/mockvendor/force-fail", tokenForUser(t, uuid.New(), "admin"), `{"fail":false}`)
+	assert.Equal(t, http.StatusOK, w2.Code)
+	assert.Contains(t, w2.Body.String(), `"force_fail":false`)
+
+	_, err = provider.Submit(context.Background(), "any-key-2", decimal.NewFromInt(1000), "IDR", dest)
+	assert.NoError(t, err, "flipping the switch back off must restore normal behavior")
+}
+
+// ─── Admin: vendor health (docs/plan/40 Task T5) ────────────────────────
+
+func TestAdminRouter_VendorHealth_NonAdmin_403(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	repo := repository.NewMockRepository(ctrl) // no calls expected
+	m := newTestModule(repo, stubPoster{}, vendorgw.NewRegistry())
+	router := newAdminTestRouter(m)
+
+	w := doReq(t, router, http.MethodGet, "/admin/payout/vendors/health", tokenForUser(t, uuid.New(), "user"), "")
+	assert.Equal(t, http.StatusForbidden, w.Code)
+}
+
+func TestAdminRouter_VendorHealth_NilBreaker_EmptyList(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	repo := repository.NewMockRepository(ctrl)                     // no calls expected
+	m := newTestModule(repo, stubPoster{}, vendorgw.NewRegistry()) // breaker deliberately nil
+	router := newAdminTestRouter(m)
+
+	w := doReq(t, router, http.MethodGet, "/admin/payout/vendors/health", tokenForUser(t, uuid.New(), "admin"), "")
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), `"vendors":[]`)
+}
+
+// TestAdminRouter_VendorHealth_ReportsAllThreeStates is docs/plan/40 Task
+// T5's own required test: a tracker seeded with closed, open, AND
+// half-open vendors must report each state accurately in one snapshot.
+func TestAdminRouter_VendorHealth_ReportsAllThreeStates(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	repo := repository.NewMockRepository(ctrl) // no calls expected
+	breaker := vendorgw.NewHealthTracker(1, time.Nanosecond, nil)
+	breaker.RecordFailure("open-vendor") // trips open, cooldown effectively never elapses in this test
+	breaker.RecordFailure("half-open-vendor")
+	assert.True(t, breaker.Allow("half-open-vendor"), "cooldown of 1ns has elapsed by the time Allow is called, promoting to half-open")
+	// "closed-vendor" is never touched — stays closed by default.
+
+	m := newTestModule(repo, stubPoster{}, vendorgw.NewRegistry())
+	m.breaker = breaker
+	router := newAdminTestRouter(m)
+
+	w := doReq(t, router, http.MethodGet, "/admin/payout/vendors/health", tokenForUser(t, uuid.New(), "admin"), "")
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var envelope struct {
+		Data struct {
+			Vendors []vendorgw.VendorHealth `json:"vendors"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &envelope))
+	states := make(map[string]vendorgw.HealthState, len(envelope.Data.Vendors))
+	for _, v := range envelope.Data.Vendors {
+		states[v.Vendor] = v.State
+	}
+	assert.Equal(t, vendorgw.StateOpen, states["open-vendor"])
+	assert.Equal(t, vendorgw.StateHalfOpen, states["half-open-vendor"])
+	assert.Empty(t, states["closed-vendor"], "a never-touched vendor has no entry at all — closed is the implicit default, not a snapshot row")
 }

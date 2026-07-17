@@ -45,17 +45,6 @@ func NewWithAddr(cfg config.AppConfig, addr string, handler http.Handler) *Serve
 	}
 }
 
-// Addr returns the address the server listens on.
-func (s *Server) Addr() string {
-	return s.httpServer.Addr
-}
-
-// Start begins listening and blocks until SIGINT or SIGTERM is received.
-// cleanup is called after all in-flight requests have been drained.
-func (s *Server) Start(cleanup func()) error {
-	return s.StartWithSignals(cleanup, syscall.SIGINT, syscall.SIGTERM)
-}
-
 // startWithSignals is the testable inner implementation; callers can inject signals.
 func (s *Server) StartWithSignals(cleanup func(), sigs ...os.Signal) error {
 	quit := make(chan os.Signal, 1)

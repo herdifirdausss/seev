@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/herdifirdausss/seev/internal/payin/repository"
+	"github.com/herdifirdausss/seev/internal/vendorgw"
 	"github.com/herdifirdausss/seev/pkg/middleware"
 	"github.com/herdifirdausss/seev/pkg/response"
 )
@@ -28,7 +29,33 @@ func (m *Module) AdminRouter() http.Handler {
 	mux.HandleFunc("PUT /admin/payin/routing-rules/{id}", m.updateRoutingRuleHandler)
 	mux.HandleFunc("GET /admin/payin/vendor-gateways/{vendor}", m.getVendorGatewayHandler)
 	mux.HandleFunc("PUT /admin/payin/vendor-gateways/{vendor}", m.putVendorGatewayHandler)
+	mux.HandleFunc("GET /admin/payin/vendors/health", m.vendorHealthHandler)
 	return mux
+}
+
+type vendorHealthResponse struct {
+	Vendors []vendorgw.VendorHealth `json:"vendors"`
+}
+
+// vendorHealthHandler serves GET /admin/payin/vendors/health (docs/plan/40
+// Task T5 — the doc's own shorthand path "/admin/vendors/health" isn't
+// reachable through this service's admin router, which only ever mounts
+// the "/admin/payin/" subtree, see cmd/payin-service/router.go; every
+// other admin route in this module is namespaced the same way, so this
+// stays consistent with that convention instead). nil breaker (no
+// BREAKER_* config wired, or every vendor still closed) reports an empty
+// list — same "byte-identical when the feature is off" contract as the
+// rest of docs/plan/40.
+func (m *Module) vendorHealthHandler(w http.ResponseWriter, r *http.Request) {
+	if !isAdmin(r) {
+		response.Forbidden(w, "admin privileges required")
+		return
+	}
+	vendors := []vendorgw.VendorHealth{}
+	if m.breaker != nil {
+		vendors = m.breaker.Snapshot()
+	}
+	response.OK(w, vendorHealthResponse{Vendors: vendors})
 }
 
 func isAdmin(r *http.Request) bool {

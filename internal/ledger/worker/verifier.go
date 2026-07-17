@@ -8,7 +8,6 @@ import (
 
 	"github.com/herdifirdausss/seev/internal/ledger/repository"
 	"github.com/herdifirdausss/seev/pkg/alerting"
-	"github.com/herdifirdausss/seev/pkg/database"
 	"github.com/herdifirdausss/seev/pkg/scheduler"
 )
 
@@ -19,7 +18,7 @@ const outboxLagThreshold = 5 * time.Minute
 // and the outbox queue. It never repairs anything automatically — it only
 // detects and logs/alerts (docs/plan/06 Task 1c.2).
 type Verifier struct {
-	db         database.DatabaseSQL
+	verifyRepo repository.VerificationRepository
 	outboxRepo repository.OutboxRepository
 	logger     *slog.Logger
 	sched      *scheduler.Scheduler
@@ -38,14 +37,14 @@ type Verifier struct {
 // production (so only one replica runs each check) or scheduler.NewMemoryLock
 // for a single-instance deployment. alertFn may be nil (no external alert,
 // log+metric only — see docs/plan/12 Task T4).
-func NewVerifier(db database.DatabaseSQL, outboxRepo repository.OutboxRepository, lock scheduler.LockProvider, logger *slog.Logger, loc *time.Location, alertFn alerting.AlertFunc) *Verifier {
+func NewVerifier(verifyRepo repository.VerificationRepository, outboxRepo repository.OutboxRepository, lock scheduler.LockProvider, logger *slog.Logger, loc *time.Location, alertFn alerting.AlertFunc) *Verifier {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	if loc == nil {
 		loc = time.UTC
 	}
-	return &Verifier{db: db, outboxRepo: outboxRepo, logger: logger, loc: loc, alertFn: alertFn,
+	return &Verifier{verifyRepo: verifyRepo, outboxRepo: outboxRepo, logger: logger, loc: loc, alertFn: alertFn,
 		sched: scheduler.NewScheduler(lock, nil, scheduler.WithLocation(loc))}
 }
 
@@ -84,34 +83,21 @@ func (v *Verifier) Stop() {
 // the last 2 hours (fn_verify_ledger_balance returns ONLY the unbalanced
 // ones — any row here is a serious bug and must be investigated).
 func (v *Verifier) checkTrialBalance(ctx context.Context) error {
-	rows, err := v.db.QueryContext(ctx,
-		`SELECT transaction_id, sum_debit, sum_credit, diff
-		 FROM fn_verify_ledger_balance(now() - INTERVAL '2 hours', now())`)
+	discrepancies, err := v.verifyRepo.TrialBalanceDiscrepancies(ctx)
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
 
-	found := 0
-	for rows.Next() {
-		var txID string
-		var sumDebit, sumCredit, diff int64
-		if err := rows.Scan(&txID, &sumDebit, &sumCredit, &diff); err != nil {
-			return err
-		}
-		found++
+	for _, d := range discrepancies {
 		v.logger.Error("ledger integrity: unbalanced transaction detected",
-			slog.String("transaction_id", txID),
-			slog.Int64("sum_debit", sumDebit), slog.Int64("sum_credit", sumCredit), slog.Int64("diff", diff))
+			slog.String("transaction_id", d.TransactionID),
+			slog.Int64("sum_debit", d.SumDebit), slog.Int64("sum_credit", d.SumCredit), slog.Int64("diff", d.Diff))
 		v.alert(ctx, "critical", fmt.Sprintf(
 			"unbalanced transaction detected: transaction_id=%s sum_debit=%d sum_credit=%d diff=%d",
-			txID, sumDebit, sumCredit, diff))
+			d.TransactionID, d.SumDebit, d.SumCredit, d.Diff))
 	}
-	if err := rows.Err(); err != nil {
-		return err
-	}
-	if found > 0 {
-		verificationDiscrepanciesTotal.WithLabelValues("trial_balance").Add(float64(found))
+	if len(discrepancies) > 0 {
+		verificationDiscrepanciesTotal.WithLabelValues("trial_balance").Add(float64(len(discrepancies)))
 	}
 	return nil
 }
@@ -119,34 +105,21 @@ func (v *Verifier) checkTrialBalance(ctx context.Context) error {
 // checkProjectionAudit proves account_balances.balance matches the balance
 // computed from ledger_entries, for every account that moved in the last 24h.
 func (v *Verifier) checkProjectionAudit(ctx context.Context) error {
-	rows, err := v.db.QueryContext(ctx,
-		`SELECT account_id, stored_balance, computed_balance
-		 FROM v_account_balance_audit WHERE is_consistent = false`)
+	discrepancies, err := v.verifyRepo.ProjectionDiscrepancies(ctx)
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
 
-	found := 0
-	for rows.Next() {
-		var accountID string
-		var stored, computed int64
-		if err := rows.Scan(&accountID, &stored, &computed); err != nil {
-			return err
-		}
-		found++
+	for _, d := range discrepancies {
 		v.logger.Error("ledger integrity: balance projection inconsistent",
-			slog.String("account_id", accountID),
-			slog.Int64("stored_balance", stored), slog.Int64("computed_balance", computed))
+			slog.String("account_id", d.AccountID),
+			slog.Int64("stored_balance", d.StoredBalance), slog.Int64("computed_balance", d.ComputedBalance))
 		v.alert(ctx, "critical", fmt.Sprintf(
 			"balance projection inconsistent: account_id=%s stored_balance=%d computed_balance=%d",
-			accountID, stored, computed))
+			d.AccountID, d.StoredBalance, d.ComputedBalance))
 	}
-	if err := rows.Err(); err != nil {
-		return err
-	}
-	if found > 0 {
-		verificationDiscrepanciesTotal.WithLabelValues("projection").Add(float64(found))
+	if len(discrepancies) > 0 {
+		verificationDiscrepanciesTotal.WithLabelValues("projection").Add(float64(len(discrepancies)))
 	}
 	return nil
 }

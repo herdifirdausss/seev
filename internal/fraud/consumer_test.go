@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
+	"log/slog"
 	"testing"
 	"time"
 
@@ -14,6 +16,8 @@ import (
 
 	"github.com/herdifirdausss/seev/internal/ledger/events"
 )
+
+func discardLogger() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }
 
 type storeStub struct {
 	eventID string
@@ -39,7 +43,7 @@ func TestHandleDeliveryRecordsPostedUser(t *testing.T) {
 	at := time.Date(2026, 7, 15, 9, 30, 0, 0, time.FixedZone("WIB", 7*60*60))
 	event := events.NewTransactionPosted(uuid.New(), "transfer_p2p", "100", "IDR", nil, nil, nil, "", at, &userID, nil, "")
 	store := &storeStub{}
-	m := &Module{store: store}
+	m := &Module{store: store, logger: discardLogger()}
 	d := delivery(t, event)
 	require.NoError(t, m.handleDelivery(context.Background(), d))
 	assert.Equal(t, d.MessageId, store.eventID)

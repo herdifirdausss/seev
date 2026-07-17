@@ -32,7 +32,7 @@ func newVerifierTestDB(t *testing.T) (*database.DBSQL, sqlmock.Sqlmock) {
 
 func TestVerifier_CheckTrialBalance_NoDiscrepancies(t *testing.T) {
 	db, mock := newVerifierTestDB(t)
-	v := &Verifier{db: db, logger: discardLogger()}
+	v := &Verifier{verifyRepo: repository.NewVerificationRepository(db), logger: discardLogger()}
 
 	mock.ExpectQuery(`fn_verify_ledger_balance`).
 		WillReturnRows(sqlmock.NewRows([]string{"transaction_id", "sum_debit", "sum_credit", "diff"}))
@@ -44,7 +44,7 @@ func TestVerifier_CheckTrialBalance_NoDiscrepancies(t *testing.T) {
 
 func TestVerifier_CheckTrialBalance_FindsDiscrepancy(t *testing.T) {
 	db, mock := newVerifierTestDB(t)
-	v := &Verifier{db: db, logger: discardLogger()}
+	v := &Verifier{verifyRepo: repository.NewVerificationRepository(db), logger: discardLogger()}
 
 	mock.ExpectQuery(`fn_verify_ledger_balance`).
 		WillReturnRows(sqlmock.NewRows([]string{"transaction_id", "sum_debit", "sum_credit", "diff"}).
@@ -57,7 +57,7 @@ func TestVerifier_CheckTrialBalance_FindsDiscrepancy(t *testing.T) {
 
 func TestVerifier_CheckProjectionAudit_FindsInconsistency(t *testing.T) {
 	db, mock := newVerifierTestDB(t)
-	v := &Verifier{db: db, logger: discardLogger()}
+	v := &Verifier{verifyRepo: repository.NewVerificationRepository(db), logger: discardLogger()}
 
 	mock.ExpectQuery(`v_account_balance_audit`).
 		WillReturnRows(sqlmock.NewRows([]string{"account_id", "stored_balance", "computed_balance"}).
@@ -74,7 +74,7 @@ func TestVerifier_CheckTrialBalance_AlertFnCalledOncePerDiscrepancy(t *testing.T
 	db, mock := newVerifierTestDB(t)
 
 	var calls []struct{ severity, message string }
-	v := &Verifier{db: db, logger: discardLogger(), alertFn: func(_ context.Context, severity, message string) error {
+	v := &Verifier{verifyRepo: repository.NewVerificationRepository(db), logger: discardLogger(), alertFn: func(_ context.Context, severity, message string) error {
 		calls = append(calls, struct{ severity, message string }{severity, message})
 		return nil
 	}}
@@ -98,7 +98,7 @@ func TestVerifier_CheckProjectionAudit_AlertFnCalledWithDetails(t *testing.T) {
 	db, mock := newVerifierTestDB(t)
 
 	var gotSeverity, gotMessage string
-	v := &Verifier{db: db, logger: discardLogger(), alertFn: func(_ context.Context, severity, message string) error {
+	v := &Verifier{verifyRepo: repository.NewVerificationRepository(db), logger: discardLogger(), alertFn: func(_ context.Context, severity, message string) error {
 		gotSeverity, gotMessage = severity, message
 		return nil
 	}}
@@ -119,7 +119,7 @@ func TestVerifier_CheckTrialBalance_NoDiscrepancy_AlertFnNeverCalled(t *testing.
 	db, mock := newVerifierTestDB(t)
 
 	called := false
-	v := &Verifier{db: db, logger: discardLogger(), alertFn: func(context.Context, string, string) error {
+	v := &Verifier{verifyRepo: repository.NewVerificationRepository(db), logger: discardLogger(), alertFn: func(context.Context, string, string) error {
 		called = true
 		return nil
 	}}
@@ -134,7 +134,7 @@ func TestVerifier_CheckTrialBalance_NoDiscrepancy_AlertFnNeverCalled(t *testing.
 func TestVerifier_AlertFnError_LoggedNotPropagated(t *testing.T) {
 	db, mock := newVerifierTestDB(t)
 
-	v := &Verifier{db: db, logger: discardLogger(), alertFn: func(context.Context, string, string) error {
+	v := &Verifier{verifyRepo: repository.NewVerificationRepository(db), logger: discardLogger(), alertFn: func(context.Context, string, string) error {
 		return errors.New("webhook unreachable")
 	}}
 
@@ -150,7 +150,7 @@ func TestVerifier_AlertFnError_LoggedNotPropagated(t *testing.T) {
 
 func TestVerifier_NilAlertFn_NoPanic(t *testing.T) {
 	db, mock := newVerifierTestDB(t)
-	v := &Verifier{db: db, logger: discardLogger(), alertFn: nil}
+	v := &Verifier{verifyRepo: repository.NewVerificationRepository(db), logger: discardLogger(), alertFn: nil}
 
 	mock.ExpectQuery(`fn_verify_ledger_balance`).
 		WillReturnRows(sqlmock.NewRows([]string{"transaction_id", "sum_debit", "sum_credit", "diff"}).
@@ -199,7 +199,7 @@ func TestVerifier_StartRegistersAllChecks(t *testing.T) {
 	defer ctrl.Finish()
 	repo := repository.NewMockOutboxRepository(ctrl)
 
-	v := NewVerifier(db, repo, scheduler.NewMemoryLock(time.Second), discardLogger(), time.UTC, nil)
+	v := NewVerifier(repository.NewVerificationRepository(db), repo, scheduler.NewMemoryLock(time.Second), discardLogger(), time.UTC, nil)
 	require.NoError(t, v.Start())
 	v.Stop()
 }

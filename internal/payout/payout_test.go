@@ -113,8 +113,11 @@ type stubRouting struct {
 func routeTo(vendor, gateway string) repository.RoutingRepository {
 	return stubRouting{vendor: vendor, gateway: gateway, found: true}
 }
-func (s stubRouting) Resolve(context.Context, string, uuid.UUID, string, int64) (model.RoutingRule, string, bool, error) {
-	return model.RoutingRule{Vendor: s.vendor}, s.gateway, s.found, nil
+func (s stubRouting) ResolveCandidates(context.Context, string, uuid.UUID, string, int64) ([]model.RoutingCandidate, error) {
+	if !s.found {
+		return nil, nil
+	}
+	return []model.RoutingCandidate{{Vendor: s.vendor, Gateway: s.gateway}}, nil
 }
 func (stubRouting) ListRules(context.Context) ([]model.RoutingRule, error) { return nil, nil }
 func (stubRouting) CreateRule(context.Context, model.RoutingRule) error    { return nil }
@@ -346,6 +349,12 @@ func TestSubmit_VendorFailed_CancelsAndReturnsHold(t *testing.T) {
 	repo.EXPECT().Get(gomock.Any(), id).Return(req, nil).Times(2)
 	repo.EXPECT().TransitionToSubmitted(gomock.Any(), id).Return(true, nil)
 	repo.EXPECT().InsertVendorCall(gomock.Any(), gomock.Any()).Return(nil)
+	// mayFailover check (docs/plan/40 Task T3) — no prior calls, so
+	// failover WOULD be allowed, but the only registered/routed vendor is
+	// "mockvendor" itself, so ResolvePayoutRoute (excluding it) finds no
+	// other candidate and submit() falls through to cancel exactly as
+	// before this feature existed.
+	repo.EXPECT().ListVendorCalls(gomock.Any(), id).Return(nil, nil)
 	repo.EXPECT().TransitionToCancelled(gomock.Any(), id, cancelTxID).Return(true, nil)
 	repo.EXPECT().SetError(gomock.Any(), id, "vendor declined").Return(nil)
 

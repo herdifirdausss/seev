@@ -2,6 +2,7 @@ package payin
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/herdifirdausss/seev/internal/payin/model"
 	"github.com/herdifirdausss/seev/internal/payin/repository"
+	"github.com/herdifirdausss/seev/internal/vendorgw"
 	"github.com/herdifirdausss/seev/pkg/ledgerclient"
 	"github.com/herdifirdausss/seev/pkg/middleware"
 )
@@ -147,4 +149,55 @@ func TestAdminRouter_ReplayEvent_FailedEvent_Success(t *testing.T) {
 	w := doAdminReq(t, router, http.MethodPost, "/admin/payin/events/"+id.String()+"/replay", tokenFor(t, "admin"))
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.Equal(t, 1, postCalls)
+}
+
+// ─── Admin: vendor health (docs/plan/40 Task T5) ────────────────────────
+
+func TestAdminRouter_VendorHealth_NonAdmin_403(t *testing.T) {
+	m := &Module{}
+	router := newAdminTestRouter(t, m)
+
+	w := doAdminReq(t, router, http.MethodGet, "/admin/payin/vendors/health", tokenFor(t, "user"))
+	assert.Equal(t, http.StatusForbidden, w.Code)
+}
+
+func TestAdminRouter_VendorHealth_NilBreaker_EmptyList(t *testing.T) {
+	m := &Module{} // breaker deliberately nil
+	router := newAdminTestRouter(t, m)
+
+	w := doAdminReq(t, router, http.MethodGet, "/admin/payin/vendors/health", tokenFor(t, "admin"))
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), `"vendors":[]`)
+}
+
+// TestAdminRouter_VendorHealth_ReportsAllThreeStates is docs/plan/40 Task
+// T5's own required test: a tracker seeded with closed, open, AND
+// half-open vendors must report each state accurately in one snapshot.
+func TestAdminRouter_VendorHealth_ReportsAllThreeStates(t *testing.T) {
+	breaker := vendorgw.NewHealthTracker(1, time.Nanosecond, nil)
+	breaker.RecordFailure("open-vendor")
+	breaker.RecordFailure("half-open-vendor")
+	assert.True(t, breaker.Allow("half-open-vendor"), "cooldown of 1ns has elapsed by the time Allow is called, promoting to half-open")
+	// "closed-vendor" is never touched — stays closed by default, and
+	// therefore has no entry in Snapshot() at all.
+
+	m := &Module{breaker: breaker}
+	router := newAdminTestRouter(t, m)
+
+	w := doAdminReq(t, router, http.MethodGet, "/admin/payin/vendors/health", tokenFor(t, "admin"))
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var envelope struct {
+		Data struct {
+			Vendors []vendorgw.VendorHealth `json:"vendors"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &envelope))
+	states := make(map[string]vendorgw.HealthState, len(envelope.Data.Vendors))
+	for _, v := range envelope.Data.Vendors {
+		states[v.Vendor] = v.State
+	}
+	assert.Equal(t, vendorgw.StateOpen, states["open-vendor"])
+	assert.Equal(t, vendorgw.StateHalfOpen, states["half-open-vendor"])
+	assert.Empty(t, states["closed-vendor"])
 }

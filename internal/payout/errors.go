@@ -13,6 +13,12 @@ var ErrInvalidTransition = errors.New("payout: invalid transition for current st
 
 var ErrNoRoute = errors.New("payout: no route")
 
+// ErrNoVendorAvailable means at least one routing rule matched, but every
+// candidate vendor was either unregistered or its circuit breaker is open
+// (docs/plan/40 Task T2) — distinct from ErrNoRoute (no rule matched at
+// all). The gateway handler maps this to 503 VENDOR_UNAVAILABLE.
+var ErrNoVendorAvailable = errors.New("payout: no vendor available")
+
 // ErrScreeningBlocked means fraud screening rejected the payout BEFORE any
 // payout_requests row was inserted or any money was held (docs/plan/37 Task
 // T5) — wrapped with the verdict's reason via fmt.Errorf("%w: %s", ...).

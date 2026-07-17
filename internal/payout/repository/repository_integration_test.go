@@ -199,7 +199,7 @@ func TestInsertVendorCall_And_ListStuck(t *testing.T) {
 
 	require.NoError(t, repo.InsertVendorCall(ctx, model.PayoutVendorCall{
 		ID: uuid.New(), PayoutRequestID: req.ID, Attempt: 1, ReqSummary: "submit amount=100000 vendor=mockvendor",
-		RespStatus: "pending",
+		RespStatus: "pending", Outcome: model.VendorCallAccepted,
 	}))
 
 	// The row's updated_at is "now" — a cutoff set to the future means

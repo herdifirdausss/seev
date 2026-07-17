@@ -76,8 +76,11 @@ func routeTo(vendor, gateway string) repository.RoutingRepository {
 	return stubRouting{vendor: vendor, gateway: gateway, found: true}
 }
 
-func (s stubRouting) Resolve(context.Context, string, uuid.UUID, string, int64) (model.RoutingRule, string, bool, error) {
-	return model.RoutingRule{Vendor: s.vendor}, s.gateway, s.found, nil
+func (s stubRouting) ResolveCandidates(context.Context, string, uuid.UUID, string, int64) ([]model.RoutingCandidate, error) {
+	if !s.found {
+		return nil, nil
+	}
+	return []model.RoutingCandidate{{Vendor: s.vendor, Gateway: s.gateway}}, nil
 }
 func (s stubRouting) ListRules(context.Context) ([]model.RoutingRule, error) { return nil, nil }
 func (s stubRouting) CreateRule(context.Context, model.RoutingRule) error    { return nil }

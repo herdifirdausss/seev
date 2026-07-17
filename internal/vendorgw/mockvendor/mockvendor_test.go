@@ -32,7 +32,7 @@ func TestVerifyAndParse_ValidSignature_ReturnsNormalizedEvent(t *testing.T) {
 	body := validSettledBody(userID)
 	headers := signedRequest(t, testSecret, body)
 
-	v := New(testSecret)
+	v := New(VendorName, testSecret)
 	ev, err := v.VerifyAndParse(headers, body)
 	require.NoError(t, err)
 	require.NotNil(t, ev)
@@ -48,7 +48,7 @@ func TestVerifyAndParse_ValidSignature_ReturnsNormalizedEvent(t *testing.T) {
 
 func TestVerifyAndParse_MissingSignatureHeader_ErrInvalidSignature(t *testing.T) {
 	body := validSettledBody(uuid.New())
-	v := New(testSecret)
+	v := New(VendorName, testSecret)
 	ev, err := v.VerifyAndParse(http.Header{}, body)
 	assert.Nil(t, ev)
 	assert.True(t, errors.Is(err, vendorgw.ErrInvalidSignature))
@@ -58,7 +58,7 @@ func TestVerifyAndParse_WrongSecret_ErrInvalidSignature(t *testing.T) {
 	body := validSettledBody(uuid.New())
 	headers := signedRequest(t, "wrong-secret", body)
 
-	v := New(testSecret)
+	v := New(VendorName, testSecret)
 	ev, err := v.VerifyAndParse(headers, body)
 	assert.Nil(t, ev)
 	assert.True(t, errors.Is(err, vendorgw.ErrInvalidSignature))
@@ -72,7 +72,7 @@ func TestVerifyAndParse_BodyTamperedAfterSigning_ErrInvalidSignature(t *testing.
 	copy(tampered, body)
 	tampered[len(tampered)-2] = 'X' // flip one byte inside the JSON, signature no longer matches
 
-	v := New(testSecret)
+	v := New(VendorName, testSecret)
 	ev, err := v.VerifyAndParse(headers, tampered)
 	assert.Nil(t, ev)
 	assert.True(t, errors.Is(err, vendorgw.ErrInvalidSignature))
@@ -83,7 +83,7 @@ func TestVerifyAndParse_NonSettledType_ReturnsNilNil(t *testing.T) {
 		`","amount":"1000","currency":"IDR","occurred_at":"2026-07-13T00:00:00Z","type":"payment.pending"}`)
 	headers := signedRequest(t, testSecret, body)
 
-	v := New(testSecret)
+	v := New(VendorName, testSecret)
 	ev, err := v.VerifyAndParse(headers, body)
 	assert.Nil(t, ev)
 	assert.NoError(t, err, "a valid signature over a non-settled event must be acknowledged, not errored")
@@ -108,7 +108,7 @@ func TestVerifyAndParse_SignatureIsOverRawBytes_NotReMarshaledJSON(t *testing.T)
 	headers := http.Header{}
 	headers.Set(SignatureHeader, sigForOriginal)
 
-	v := New(testSecret)
+	v := New(VendorName, testSecret)
 	// Verifying the ORIGINAL bytes against their own signature must pass.
 	ev, err := v.VerifyAndParse(headers, original)
 	require.NoError(t, err)
@@ -127,7 +127,7 @@ func TestVerifyAndParse_MissingEventIDOrExternalRef_Error(t *testing.T) {
 		`","amount":"1000","currency":"IDR","occurred_at":"2026-07-13T00:00:00Z","type":"payment.settled"}`)
 	headers := signedRequest(t, testSecret, body)
 
-	v := New(testSecret)
+	v := New(VendorName, testSecret)
 	ev, err := v.VerifyAndParse(headers, body)
 	assert.Nil(t, ev)
 	assert.Error(t, err)
@@ -139,15 +139,44 @@ func TestVerifyAndParse_InvalidAmount_Error(t *testing.T) {
 		`","amount":"not-a-number","currency":"IDR","occurred_at":"2026-07-13T00:00:00Z","type":"payment.settled"}`)
 	headers := signedRequest(t, testSecret, body)
 
-	v := New(testSecret)
+	v := New(VendorName, testSecret)
 	ev, err := v.VerifyAndParse(headers, body)
 	assert.Nil(t, ev)
 	assert.Error(t, err)
 }
 
 func TestVendor_ReturnsRegistryName(t *testing.T) {
-	v := New(testSecret)
+	v := New(VendorName, testSecret)
 	assert.Equal(t, "mockvendor", v.Vendor())
+}
+
+// TestVerifyAndParse_SecondNamedInstance_TagsEventWithOwnNameAndSecret is
+// docs/plan/40 Task T4's required test: a second named Verifier instance
+// (e.g. "mockvendor2", registered alongside "mockvendor" in the same
+// Registry) must be fully isolated — its own secret verifies its own
+// signatures, the OTHER instance's secret must NOT verify them, and the
+// resulting PayinEvent.Vendor must carry ITS OWN name (this event field
+// feeds both the idempotency scope and the vendor-gateway routing lookup
+// in internal/payin, so a wrong/hardcoded name would misattribute
+// mockvendor2 traffic to mockvendor throughout the rest of the pipeline).
+func TestVerifyAndParse_SecondNamedInstance_TagsEventWithOwnNameAndSecret(t *testing.T) {
+	const secret2 = "second-vendor-secret"
+	v2 := New("mockvendor2", secret2)
+
+	userID := uuid.New()
+	body := validSettledBody(userID)
+
+	ev, err := v2.VerifyAndParse(signedRequest(t, secret2, body), body)
+	require.NoError(t, err)
+	require.NotNil(t, ev)
+	assert.Equal(t, "mockvendor2", ev.Vendor, "the event must be tagged with THIS instance's own name, not the package-level VendorName constant")
+
+	_, err = v2.VerifyAndParse(signedRequest(t, testSecret, body), body)
+	assert.ErrorIs(t, err, vendorgw.ErrInvalidSignature, "mockvendor's secret must not verify mockvendor2's signature")
+
+	v1 := New(VendorName, testSecret)
+	_, err = v1.VerifyAndParse(signedRequest(t, secret2, body), body)
+	assert.ErrorIs(t, err, vendorgw.ErrInvalidSignature, "mockvendor2's secret must not verify mockvendor's signature")
 }
 
 func TestSign_Deterministic(t *testing.T) {

@@ -68,7 +68,8 @@ func createPayoutHandler(client payoutv1.PayoutServiceClient) http.HandlerFunc {
 		}
 		result, err := client.CreatePayout(r.Context(), &payoutv1.CreatePayoutRequest{UserId: userID.String(), Amount: amount.String(), Destination: request.Destination, CreatedBy: userID.String(), QuoteId: request.QuoteID})
 		if err != nil {
-			if status.Code(err) == codes.FailedPrecondition {
+			switch status.Code(err) {
+			case codes.FailedPrecondition:
 				msg := status.Convert(err).Message()
 				switch {
 				case msg == "no payout route available":
@@ -91,7 +92,12 @@ func createPayoutHandler(client payoutv1.PayoutServiceClient) http.HandlerFunc {
 				default:
 					response.UnprocessableEntity(w, msg)
 				}
-			} else {
+			case codes.Unavailable:
+				// docs/plan/40 Task T2 — every candidate vendor is
+				// registered but circuit-broken; distinct from NO_ROUTE
+				// (a config problem) since this is transient.
+				response.JSON(w, http.StatusServiceUnavailable, response.Envelope{Success: false, Error: &response.Error{Code: "VENDOR_UNAVAILABLE", Message: "no vendor available"}})
+			default:
 				response.InternalServerError(w, err)
 			}
 			return

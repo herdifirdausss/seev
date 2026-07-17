@@ -309,24 +309,19 @@ func (s *Service) execTransfer(ctx context.Context, cmd processors.ResolvedComma
 			gateway, _ := generalutil.MetaString(cmd.Metadata, "gateway")
 			requestID, _ := generalutil.MetaString(cmd.Metadata, "request_id")
 
-			_, insertErr := tx.ExecContext(ctx, `
-				INSERT INTO ledger_transactions
-					(id, idempotency_key, idempotency_scope, type, status, amount, currency,
-					 source_account_id, destination_account_id, external_ref, gateway, request_id,
-					 created_at, updated_at)
-				VALUES ($1,$2,$3,$4,'pending',$5,$6,$7,$8,$9,$10,$11,now(),now())`,
-				txID,
-				cmd.IdempotencyKey,
-				generalutil.NullString(cmd.IdempotencyScope),
-				cmd.Type,
-				cmd.Amount,
-				cmd.Currency,
-				generalutil.NullUUID(cmd.Source),
-				generalutil.NullUUID(cmd.Destination),
-				generalutil.NullString(externalRef),
-				generalutil.NullString(gateway),
-				generalutil.NullString(requestID),
-			)
+			insertErr := s.txRepo.Insert(ctx, tx, repository.InsertTransactionParams{
+				ID:                   txID,
+				IdempotencyKey:       cmd.IdempotencyKey,
+				IdempotencyScope:     generalutil.StringPtr(cmd.IdempotencyScope),
+				Type:                 cmd.Type,
+				Amount:               cmd.Amount,
+				Currency:             cmd.Currency,
+				SourceAccountID:      generalutil.UUIDPtr(cmd.Source),
+				DestinationAccountID: generalutil.UUIDPtr(cmd.Destination),
+				ExternalRef:          generalutil.StringPtr(externalRef),
+				Gateway:              generalutil.StringPtr(gateway),
+				RequestID:            generalutil.StringPtr(requestID),
+			})
 
 			if insertErr != nil {
 				_, _ = tx.ExecContext(ctx, `ROLLBACK TO SAVEPOINT sp_idem`)
@@ -536,9 +531,7 @@ func (s *Service) execTransfer(ctx context.Context, cmd processors.ResolvedComma
 			}
 
 			// ── 10. MARK POSTED ───────────────────────────────────────────────
-			if _, err := tx.ExecContext(ctx,
-				`UPDATE ledger_transactions SET status='posted', updated_at=now() WHERE id=$1`, txID,
-			); err != nil {
+			if err := s.txRepo.UpdateStatus(ctx, tx, txID, "posted", nil); err != nil {
 				return fmt.Errorf("mark posted: %w", err)
 			}
 
@@ -660,10 +653,7 @@ func (s *Service) markFailed(ctx context.Context, tx *sql.Tx, txID uuid.UUID, ms
 	if len(msg) > 500 {
 		msg = msg[:500]
 	}
-	_, err := tx.ExecContext(ctx, `
-		UPDATE ledger_transactions SET status='failed', error_message=$1, updated_at=now() WHERE id=$2`,
-		msg, txID)
-	return err
+	return s.txRepo.UpdateStatus(ctx, tx, txID, "failed", &msg)
 }
 
 // =============================================================================
@@ -671,17 +661,17 @@ func (s *Service) markFailed(ctx context.Context, tx *sql.Tx, txID uuid.UUID, ms
 // =============================================================================
 
 func (s *Service) handleDuplicate(ctx context.Context, tx *sql.Tx, key, scope string) error {
-	var status string
-	err := tx.QueryRowContext(ctx, `
-		SELECT status FROM ledger_transactions
-		WHERE  idempotency_key=$1
-		  AND (idempotency_scope=$2 OR ($2 IS NULL AND idempotency_scope IS NULL))
-		LIMIT 1`, key, generalutil.NullString(scope)).Scan(&status)
-	if errors.Is(err, sql.ErrNoRows) {
-		return fmt.Errorf("idempotency record vanished after duplicate error (race)")
-	}
+	// GetStatusByIdempotency reports a missing row as ("", nil) rather than
+	// sql.ErrNoRows (see its own doc comment) — an empty status here means
+	// the very row that caused our duplicate-key violation vanished, a race
+	// this repository method's contract deliberately surfaces as "not found"
+	// rather than an error.
+	status, err := s.txRepo.GetStatusByIdempotency(ctx, tx, key, generalutil.StringPtr(scope))
 	if err != nil {
 		return fmt.Errorf("lookup duplicate: %w", err)
+	}
+	if status == "" {
+		return fmt.Errorf("idempotency record vanished after duplicate error (race)")
 	}
 	switch status {
 	case "posted":
