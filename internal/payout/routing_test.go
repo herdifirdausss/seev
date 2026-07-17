@@ -4,6 +4,7 @@ import (
 	"context"
 	"sort"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
@@ -16,7 +17,7 @@ import (
 
 type matrixRouting struct{ rules []model.RoutingRule }
 
-func (m matrixRouting) Resolve(_ context.Context, flow string, user uuid.UUID, currency string, amount int64) (model.RoutingRule, string, bool, error) {
+func (m matrixRouting) ResolveCandidates(_ context.Context, flow string, user uuid.UUID, currency string, amount int64) ([]model.RoutingCandidate, error) {
 	var matches []model.RoutingRule
 	for _, r := range m.rules {
 		if !r.Enabled || r.Flow != flow || r.UserID != nil && *r.UserID != user || r.Currency != nil && *r.Currency != currency || r.MinAmount != nil && amount < *r.MinAmount || r.MaxAmount != nil && amount > *r.MaxAmount {
@@ -30,10 +31,11 @@ func (m matrixRouting) Resolve(_ context.Context, flow string, user uuid.UUID, c
 		}
 		return matches[i].Priority < matches[j].Priority
 	})
-	if len(matches) == 0 {
-		return model.RoutingRule{}, "", false, nil
+	out := make([]model.RoutingCandidate, len(matches))
+	for i, r := range matches {
+		out[i] = model.RoutingCandidate{Vendor: r.Vendor, Gateway: r.Vendor + "-gateway"}
 	}
-	return matches[0], matches[0].Vendor + "-gateway", true, nil
+	return out, nil
 }
 func (m matrixRouting) ListRules(context.Context) ([]model.RoutingRule, error) { return m.rules, nil }
 func (matrixRouting) CreateRule(context.Context, model.RoutingRule) error      { return nil }
@@ -44,6 +46,7 @@ func (matrixRouting) GetVendorGateway(context.Context, string) (model.VendorGate
 func (matrixRouting) UpsertVendorGateway(context.Context, model.VendorGateway) error { return nil }
 func payoutString(v string) *string                                                  { return &v }
 func payoutInt(v int64) *int64                                                       { return &v }
+
 func TestResolvePayoutRouteMatrix(t *testing.T) {
 	user := uuid.New()
 	other := uuid.New()
@@ -62,12 +65,65 @@ func TestResolvePayoutRouteMatrix(t *testing.T) {
 	}{{"user override", user, "USD", 150, "user"}, {"currency", other, "USD", 500, "usd"}, {"range", other, "IDR", 150, "range"}, {"fallback", other, "IDR", 500, "fallback"}}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			vendor, _, err := m.ResolvePayoutRoute(context.Background(), tc.user, tc.currency, decimal.NewFromInt(tc.amount))
+			vendor, _, err := m.ResolvePayoutRoute(context.Background(), tc.user, tc.currency, decimal.NewFromInt(tc.amount), nil)
 			require.NoError(t, err)
 			assert.Equal(t, tc.want, vendor)
 		})
 	}
 	m.routing = matrixRouting{}
-	_, _, err := m.ResolvePayoutRoute(context.Background(), other, "IDR", decimal.NewFromInt(1))
+	_, _, err := m.ResolvePayoutRoute(context.Background(), other, "IDR", decimal.NewFromInt(1), nil)
 	assert.ErrorIs(t, err, ErrNoRoute)
+}
+
+// TestResolvePayoutRoute_BreakerOpen_SkipsToNextCandidate is docs/plan/40
+// Task T2's own "Test wajib": a vendor whose circuit is open must be
+// skipped in favor of the next candidate in priority order.
+func TestResolvePayoutRoute_BreakerOpen_SkipsToNextCandidate(t *testing.T) {
+	rules := []model.RoutingRule{
+		{Flow: "payout", Priority: 1, Enabled: true, Vendor: "primary"},
+		{Flow: "payout", Priority: 2, Enabled: true, Vendor: "secondary"},
+	}
+	registry := vendorgw.NewRegistry()
+	registry.AddPayout(&stubPayoutProvider{name: "primary"})
+	registry.AddPayout(&stubPayoutProvider{name: "secondary"})
+	breaker := vendorgw.NewHealthTracker(1, time.Hour, nil)
+	breaker.RecordFailure("primary") // trips open at threshold 1
+
+	m := &Module{routing: matrixRouting{rules}, registry: registry, breaker: breaker}
+	vendor, _, err := m.ResolvePayoutRoute(context.Background(), uuid.New(), "IDR", decimal.NewFromInt(1), nil)
+	require.NoError(t, err)
+	assert.Equal(t, "secondary", vendor, "the open-circuit primary must be skipped in favor of secondary")
+}
+
+// TestResolvePayoutRoute_AllCandidatesOpen_ErrNoVendorAvailable proves the
+// distinct error (503 VENDOR_UNAVAILABLE at the gateway) from "no rule
+// matched at all" (ErrNoRoute).
+func TestResolvePayoutRoute_AllCandidatesOpen_ErrNoVendorAvailable(t *testing.T) {
+	rules := []model.RoutingRule{{Flow: "payout", Priority: 1, Enabled: true, Vendor: "primary"}}
+	registry := vendorgw.NewRegistry()
+	registry.AddPayout(&stubPayoutProvider{name: "primary"})
+	breaker := vendorgw.NewHealthTracker(1, time.Hour, nil)
+	breaker.RecordFailure("primary")
+
+	m := &Module{routing: matrixRouting{rules}, registry: registry, breaker: breaker}
+	_, _, err := m.ResolvePayoutRoute(context.Background(), uuid.New(), "IDR", decimal.NewFromInt(1), nil)
+	assert.ErrorIs(t, err, ErrNoVendorAvailable)
+}
+
+// TestResolvePayoutRoute_ExclusionList_SkipsAlreadyTried is docs/plan/40
+// Task T3's failover mechanism at the routing layer: a vendor named in
+// exclude is skipped even though its circuit is closed.
+func TestResolvePayoutRoute_ExclusionList_SkipsAlreadyTried(t *testing.T) {
+	rules := []model.RoutingRule{
+		{Flow: "payout", Priority: 1, Enabled: true, Vendor: "primary"},
+		{Flow: "payout", Priority: 2, Enabled: true, Vendor: "secondary"},
+	}
+	registry := vendorgw.NewRegistry()
+	registry.AddPayout(&stubPayoutProvider{name: "primary"})
+	registry.AddPayout(&stubPayoutProvider{name: "secondary"})
+
+	m := &Module{routing: matrixRouting{rules}, registry: registry}
+	vendor, _, err := m.ResolvePayoutRoute(context.Background(), uuid.New(), "IDR", decimal.NewFromInt(1), []string{"primary"})
+	require.NoError(t, err)
+	assert.Equal(t, "secondary", vendor, "primary must be skipped — it's in the exclusion list")
 }

@@ -74,3 +74,12 @@ type VendorGateway struct {
 	Vendor  string `json:"vendor"`
 	Gateway string `json:"gateway"`
 }
+
+// RoutingCandidate is one matching routing rule's vendor+gateway, part of
+// the ordered candidate list ResolveCandidates returns (docs/plan/40 Task
+// T2) — replaces the old single-winner Resolve so the caller can skip a
+// candidate whose circuit is open and fall through to the next.
+type RoutingCandidate struct {
+	Vendor  string
+	Gateway string
+}

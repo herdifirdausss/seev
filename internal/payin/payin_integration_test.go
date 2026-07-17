@@ -113,9 +113,9 @@ func newPayinModule(db *database.DBSQL) *payin.Module {
 	ledgerModule := testutil.NewLedgerHarness(db)
 
 	registry := vendorgw.NewRegistry()
-	registry.AddPayin(mockvendor.New(mockSecret))
+	registry.AddPayin(mockvendor.New(mockvendor.VendorName, mockSecret))
 
-	return payin.NewModule(db, ledgerModule, registry, 0, nil, nil)
+	return payin.NewModule(db, ledgerModule, registry, 0, nil, nil, nil)
 }
 
 func settledWebhookBody(eventID, externalRef string, userID uuid.UUID, amount int64) []byte {
@@ -148,9 +148,9 @@ func TestPayin_CreateTopupIntent_UsesDatabaseRoutingRule(t *testing.T) {
 	db := setupPayinTestDB(t)
 	ledgerModule := testutil.NewLedgerHarness(db)
 	registry := vendorgw.NewRegistry()
-	registry.AddPayin(mockvendor.New(mockSecret))
+	registry.AddPayin(mockvendor.New(mockvendor.VendorName, mockSecret))
 	registry.AddPayin(routeOnlyVerifier{vendor: "priorityvendor"})
-	m := payin.NewModule(db, ledgerModule, registry, 0, nil, nil)
+	m := payin.NewModule(db, ledgerModule, registry, 0, nil, nil, nil)
 
 	ctx := context.Background()
 	userID := uuid.New()

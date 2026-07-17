@@ -35,14 +35,20 @@ const SignatureHeader = "X-Mock-Signature"
 
 // Verifier implements vendorgw.PayinVerifier for mockvendor.
 type Verifier struct {
+	name   string
 	secret string
 }
 
-func New(secret string) *Verifier {
-	return &Verifier{secret: secret}
+// New constructs a verifier registered under name (docs/plan/40 Task T4 —
+// parameterized so a second mock vendor, e.g. "mockvendor2", can be
+// registered alongside the first with its own secret and fully isolated
+// signature verification). Existing callers pass VendorName to get
+// byte-identical behavior to before this parameter existed.
+func New(name, secret string) *Verifier {
+	return &Verifier{name: name, secret: secret}
 }
 
-func (v *Verifier) Vendor() string { return VendorName }
+func (v *Verifier) Vendor() string { return v.name }
 
 // webhookPayload is mockvendor's made-up wire format. Amount is a string,
 // not a JSON number — a JSON number decodes to float64, which is exactly
@@ -93,7 +99,7 @@ func (v *Verifier) VerifyAndParse(headers http.Header, rawBody []byte) (*vendorg
 	}
 
 	return &vendorgw.PayinEvent{
-		Vendor:        VendorName,
+		Vendor:        v.name,
 		VendorEventID: payload.EventID,
 		ExternalRef:   payload.ExternalRef,
 		UserID:        userID,

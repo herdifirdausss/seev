@@ -24,6 +24,7 @@ import (
 
 	"github.com/herdifirdausss/seev/internal/config"
 	"github.com/herdifirdausss/seev/internal/ledger/feepolicy"
+	"github.com/herdifirdausss/seev/internal/ledger/repository"
 	"github.com/herdifirdausss/seev/internal/testutil"
 	"github.com/herdifirdausss/seev/pkg/database"
 )
@@ -72,7 +73,7 @@ func setupQuoteTestDB(t *testing.T) *database.DBSQL {
 
 func TestQuote_CreateThenConsume_HappyPath(t *testing.T) {
 	db := setupQuoteTestDB(t)
-	policy := feepolicy.New(db)
+	policy := feepolicy.New(db, repository.NewFeeRepository(db))
 	ctx := context.Background()
 	userID := uuid.New()
 	amount := decimal.NewFromInt(100_000)
@@ -88,7 +89,7 @@ func TestQuote_CreateThenConsume_HappyPath(t *testing.T) {
 
 func TestQuote_Expired_ErrQuoteExpired(t *testing.T) {
 	db := setupQuoteTestDB(t)
-	policy := feepolicy.New(db)
+	policy := feepolicy.New(db, repository.NewFeeRepository(db))
 	ctx := context.Background()
 	userID := uuid.New()
 	amount := decimal.NewFromInt(50_000)
@@ -107,7 +108,7 @@ func TestQuote_Expired_ErrQuoteExpired(t *testing.T) {
 
 func TestQuote_SecondConsume_ErrQuoteExpired(t *testing.T) {
 	db := setupQuoteTestDB(t)
-	policy := feepolicy.New(db)
+	policy := feepolicy.New(db, repository.NewFeeRepository(db))
 	ctx := context.Background()
 	userID := uuid.New()
 	amount := decimal.NewFromInt(75_000)
@@ -124,7 +125,7 @@ func TestQuote_SecondConsume_ErrQuoteExpired(t *testing.T) {
 
 func TestQuote_AmountMismatch_ErrQuoteMismatch_QuoteStaysUnconsumed(t *testing.T) {
 	db := setupQuoteTestDB(t)
-	policy := feepolicy.New(db)
+	policy := feepolicy.New(db, repository.NewFeeRepository(db))
 	ctx := context.Background()
 	userID := uuid.New()
 	amount := decimal.NewFromInt(100_000)
@@ -148,7 +149,7 @@ func TestQuote_AmountMismatch_ErrQuoteMismatch_QuoteStaysUnconsumed(t *testing.T
 
 func TestQuote_ConcurrentConsume_ExactlyOneWins(t *testing.T) {
 	db := setupQuoteTestDB(t)
-	policy := feepolicy.New(db)
+	policy := feepolicy.New(db, repository.NewFeeRepository(db))
 	ctx := context.Background()
 	userID := uuid.New()
 	amount := decimal.NewFromInt(60_000)

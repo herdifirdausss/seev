@@ -22,14 +22,15 @@ type Service interface {
 
 type Server struct {
 	payoutv1.UnimplementedPayoutServiceServer
-	service          Service
-	notFound         error
-	noRoute          error
-	screeningBlocked error
+	service           Service
+	notFound          error
+	noRoute           error
+	noVendorAvailable error
+	screeningBlocked  error
 }
 
-func New(service Service, notFound, noRoute, screeningBlocked error) *Server {
-	return &Server{service: service, notFound: notFound, noRoute: noRoute, screeningBlocked: screeningBlocked}
+func New(service Service, notFound, noRoute, noVendorAvailable, screeningBlocked error) *Server {
+	return &Server{service: service, notFound: notFound, noRoute: noRoute, noVendorAvailable: noVendorAvailable, screeningBlocked: screeningBlocked}
 }
 
 func (s *Server) CreatePayout(ctx context.Context, request *payoutv1.CreatePayoutRequest) (*payoutv1.CreatePayoutResponse, error) {
@@ -44,6 +45,13 @@ func (s *Server) CreatePayout(ctx context.Context, request *payoutv1.CreatePayou
 	if callErr != nil {
 		if errors.Is(callErr, s.noRoute) {
 			return nil, status.Error(codes.FailedPrecondition, "no payout route available")
+		}
+		if errors.Is(callErr, s.noVendorAvailable) {
+			// docs/plan/40 Task T2 — distinct gRPC code from "no route"
+			// (FailedPrecondition/422): every candidate vendor is
+			// registered but circuit-broken, a TRANSIENT condition the
+			// caller should retry, not a config problem.
+			return nil, status.Error(codes.Unavailable, "no vendor available")
 		}
 		if errors.Is(callErr, s.screeningBlocked) {
 			return nil, status.Error(codes.FailedPrecondition, callErr.Error())

@@ -112,8 +112,8 @@ func newWebhookTestRouter(t *testing.T, db *database.DBSQL) http.Handler {
 	ledgerClient := testutil.NewLedgerHarness(db)
 
 	registry := vendorgw.NewRegistry()
-	registry.AddPayin(mockvendor.New(webhookTestMockSecret))
-	payinModule := payin.NewModule(db, ledgerClient, registry, 0, nil, nil)
+	registry.AddPayin(mockvendor.New(mockvendor.VendorName, webhookTestMockSecret))
+	payinModule := payin.NewModule(db, ledgerClient, registry, 0, nil, nil, nil)
 	listener := bufconn.Listen(1024 * 1024)
 	grpcServer := grpc.NewServer()
 	payinModule.RegisterGRPC(grpcServer)

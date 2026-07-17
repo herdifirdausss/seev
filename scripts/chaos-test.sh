@@ -18,7 +18,8 @@
 #   ./scripts/chaos-test.sh 5        # payout crash-mid-flight (docs/plan/23 Task T6)
 #   ./scripts/chaos-test.sh 6        # payin down -> webhook 503 -> redelivery heals
 #   ./scripts/chaos-test.sh 7        # fraud down fail-open + block-mode E2E
-#   ./scripts/chaos-test.sh all      # run all seven in sequence
+#   ./scripts/chaos-test.sh 8        # vendor failover: force-fail -> failover/pin -> recovery (docs/plan/40 Task T6)
+#   ./scripts/chaos-test.sh all      # run all eight in sequence
 #
 # Each scenario is independent and re-runs migrations against a throwaway
 # schema state (it does NOT reset the docker volumes — accounts/balances
@@ -691,6 +692,140 @@ scenario_7() {
 	unset SCREENING_MODE SCREENING_AMOUNT_THRESHOLD SCREENING_VELOCITY_MAX_PER_HOUR
 }
 
+# ─── Scenario 8: vendor failover (docs/plan/40 Task T6) ─────────────────────
+#
+# Proves the anti-double-payout failover contract end to end against real
+# running services, not just orchestrate.go's own unit/integration tests:
+# a vendor-level fault (force-fail, not a process kill) must (a) route the
+# NEXT new payout to the surviving vendor, (b) NEVER fail over an
+# already-in-flight payout whose Submit attempt landed 'uncertain' — it
+# stays pinned to the original vendor forever, and only the resume job's
+# retry against that SAME vendor can ever settle it, and (c) never produce
+# two settles for any payout regardless of how many vendors were involved.
+#
+# BREAKER_FAILURE_THRESHOLD=1 makes the breaker trip on the very first
+# force-fail-induced Submit failure — deterministic and fast, instead of
+# waiting out the default threshold of 5.
+#
+# mockvendor2 is seeded at priority 1001 (mockvendor's own seed migration,
+# 000002_routing.up.sql, is priority 1000) — deliberately a HIGHER priority
+# number than mockvendor's, since ResolveCandidates orders ASC (smallest
+# number = tried first, docs/plan/40 Task T2); this makes mockvendor2 a true
+# FALLBACK behind mockvendor, not a replacement for it. This differs from
+# the doc's own shorthand "priority 2" (which would have made mockvendor2
+# tried FIRST, backwards from the scenario's intent) for that reason.
+scenario_8() {
+	log "=== Scenario 8: vendor failover — force-fail mockvendor, new payout routes to mockvendor2, in-flight payout stays pinned, resume settles it once recovered ==="
+	export BREAKER_FAILURE_THRESHOLD=1
+	ensure_deps_up
+	build_server
+	start_services
+
+	local admin_token
+	admin_token="$(gen_token "$(uuidgen | tr '[:upper:]' '[:lower:]')" admin)"
+
+	log "-- seeding mockvendor2 (gateway + routing rule, priority 1001, global fallback) --"
+	curl -s -o /dev/null -X PUT "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendor-gateways/mockvendor2" \
+		-H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" -d '{"gateway":"gopay"}'
+	psql_exec "$PAYOUT_DB_NAME" -c "DELETE FROM payout_routing_rules WHERE priority = 1001;" >/dev/null
+	local route_json route_id
+	route_json="$(curl -s -X POST "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/routing-rules" \
+		-H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" \
+		-d '{"flow":"payout","priority":1001,"enabled":true,"vendor":"mockvendor2"}')"
+	route_id="$(echo "$route_json" | json_field id)"
+	[ -n "$route_id" ] && ok "admin seeded mockvendor2 routing rule ($route_id)" || fail "mockvendor2 routing rule creation failed: $route_json"
+
+	local user_id token
+	user_id="$(psql_exec "$LEDGER_DB_NAME" -c "SELECT gen_random_uuid();")"
+	provision_user "$user_id" >/dev/null
+	provision_hold_account "$user_id"
+	fund_user "$user_id" 500000
+	token="$(gen_token "$user_id")"
+	local cash
+	cash="$(cash_account_id "$user_id")"
+
+	log "-- force-failing mockvendor --"
+	curl -s -o /dev/null -X POST "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendors/mockvendor/force-fail" \
+		-H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" -d '{"fail":true}'
+
+	log "-- creating payout #1 while mockvendor is force-failed (still the top-priority candidate) --"
+	local resp1 id1 vendor1
+	resp1="$(curl -s -X POST "http://localhost:$APP_PORT/api/v1/payout" \
+		-H "Authorization: Bearer $token" -H "Content-Type: application/json" \
+		-d '{"amount":"10000","destination":{"bank_code":"014","account_no":"1"}}')"
+	id1="$(echo "$resp1" | json_field id)"
+	[ -n "$id1" ] && ok "payout #1 created ($id1)" || fail "payout #1 create did not return an id: $resp1"
+
+	vendor1="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT vendor FROM payout_requests WHERE id = '$id1';")"
+	local status1
+	status1="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT status FROM payout_requests WHERE id = '$id1';")"
+	[ "$vendor1" = "mockvendor" ] && [ "$status1" = "submitted" ] \
+		&& ok "payout #1 pinned to mockvendor, status='submitted' (uncertain, force-fail is a transport error)" \
+		|| fail "payout #1 unexpected vendor='$vendor1' status='$status1', expected vendor=mockvendor status=submitted"
+
+	local outcome1
+	outcome1="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT outcome FROM payout_vendor_calls WHERE payout_request_id = '$id1' ORDER BY created_at DESC LIMIT 1;")"
+	[ "$outcome1" = "uncertain" ] && ok "payout #1's vendor call recorded outcome='uncertain'" \
+		|| fail "payout #1's latest vendor call outcome was '$outcome1', expected 'uncertain'"
+
+	log "-- asserting admin health reports mockvendor open --"
+	local health_resp
+	health_resp="$(curl -s "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendors/health" -H "Authorization: Bearer $admin_token")"
+	echo "$health_resp" | grep -q '"vendor":"mockvendor","state":"open"' \
+		&& ok "admin vendor health reports mockvendor as open" \
+		|| fail "admin vendor health did not report mockvendor open: $health_resp"
+
+	log "-- creating payout #2: routing must skip mockvendor (open) straight to mockvendor2 --"
+	local resp2 id2 vendor2 status2
+	resp2="$(curl -s -X POST "http://localhost:$APP_PORT/api/v1/payout" \
+		-H "Authorization: Bearer $token" -H "Content-Type: application/json" \
+		-d '{"amount":"10000","destination":{"bank_code":"014","account_no":"2"}}')"
+	id2="$(echo "$resp2" | json_field id)"
+	[ -n "$id2" ] && ok "payout #2 created ($id2)" || fail "payout #2 create did not return an id: $resp2"
+
+	wait_for_payout_status "$id2" "settled" 10
+	vendor2="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT vendor FROM payout_requests WHERE id = '$id2';")"
+	status2="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT status FROM payout_requests WHERE id = '$id2';")"
+	[ "$vendor2" = "mockvendor2" ] && [ "$status2" = "settled" ] \
+		&& ok "payout #2 routed straight to mockvendor2 and settled" \
+		|| fail "payout #2 unexpected vendor='$vendor2' status='$status2', expected vendor=mockvendor2 status=settled"
+
+	log "-- recovering mockvendor; resume job must settle payout #1 against the SAME vendor --"
+	curl -s -o /dev/null -X POST "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendors/mockvendor/force-fail" \
+		-H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" -d '{"fail":false}'
+	backdate_payout "$id1"
+
+	log "waiting for the resume job's cron tick (every 1 minute) to retry payout #1..."
+	sleep 65
+
+	local final_status1 final_vendor1
+	final_status1="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT status FROM payout_requests WHERE id = '$id1';")"
+	final_vendor1="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT vendor FROM payout_requests WHERE id = '$id1';")"
+	[ "$final_status1" = "settled" ] && ok "payout #1 settled after mockvendor recovered (resume job retried the SAME vendor)" \
+		|| fail "payout #1 final status was '$final_status1', expected 'settled'"
+	[ "$final_vendor1" = "mockvendor" ] && ok "payout #1's vendor column never changed — stayed pinned to mockvendor throughout" \
+		|| fail "payout #1's vendor column changed to '$final_vendor1' — it must NEVER fail over once uncertain"
+
+	log "-- asserting no payout ever received two settles --"
+	local settle_count1 settle_count2
+	settle_count1="$(psql_exec "$LEDGER_DB_NAME" -c "SELECT count(*) FROM ledger_transactions WHERE idempotency_key = 'payout:$id1:settle';")"
+	settle_count2="$(psql_exec "$LEDGER_DB_NAME" -c "SELECT count(*) FROM ledger_transactions WHERE idempotency_key = 'payout:$id2:settle';")"
+	[ "$settle_count1" = "1" ] && ok "payout #1 has exactly one settle transaction" \
+		|| fail "payout #1 has $settle_count1 settle transactions, expected exactly 1"
+	[ "$settle_count2" = "1" ] && ok "payout #2 has exactly one settle transaction" \
+		|| fail "payout #2 has $settle_count2 settle transactions, expected exactly 1"
+
+	local after
+	after="$(account_balance "$cash")"
+	[ "$after" = "480000" ] && ok "cash balance reflects exactly two settles, no more (500000 funded - 2x10000)" \
+		|| fail "unexpected cash balance $after, expected 480000"
+
+	assert_ledger_balanced
+	assert_no_inconsistent_projections
+	stop_services
+	unset BREAKER_FAILURE_THRESHOLD
+}
+
 # ─── Main ────────────────────────────────────────────────────────────────────
 
 case "${1:-}" in
@@ -701,6 +836,7 @@ case "${1:-}" in
 5) scenario_5 ;;
 6) scenario_6 ;;
 7) scenario_7 ;;
+8) scenario_8 ;;
 all)
 	scenario_1
 	scenario_2
@@ -709,9 +845,10 @@ all)
 	scenario_5
 	scenario_6
 	scenario_7
+	scenario_8
 	;;
 *)
-	echo "Usage: $0 {1|2|3|4|5|6|7|all}"
+	echo "Usage: $0 {1|2|3|4|5|6|7|8|all}"
 	exit 2
 	;;
 esac

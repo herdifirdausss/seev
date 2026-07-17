@@ -100,9 +100,14 @@ func run(parent context.Context) error {
 	}
 	registry := vendorgw.NewRegistry()
 	if cfg.Vendor.MockvendorEnabled {
-		registry.AddPayout(mockvendor.NewPayoutProvider())
+		registry.AddPayout(mockvendor.NewPayoutProvider(mockvendor.VendorName))
 		log.Warn("vendorgw: mockvendor enabled — test-only vendor")
 	}
+	if cfg.Vendor.Mockvendor2Enabled {
+		registry.AddPayout(mockvendor.NewPayoutProvider("mockvendor2"))
+		log.Warn("vendorgw: mockvendor2 enabled — test-only second vendor for failover demos")
+	}
+	breaker := vendorgw.NewHealthTracker(cfg.Breaker.FailureThreshold, cfg.Breaker.Cooldown, log)
 
 	// fraud client screens payouts pre-hold (docs/plan/37 Task T5).
 	// FRAUD_GRPC_ADDR unset (dev/test defaults) => nil client => no screening.
@@ -122,7 +127,7 @@ func run(parent context.Context) error {
 		fraudClient = fraudcheck.New(fraudv1.NewFraudServiceClient(fraudConn), "payout")
 	}
 
-	module := payout.NewModule(db, ledgerclient.New(ledgerConn), registry, redisClient, log, fraudClient)
+	module := payout.NewModule(db, ledgerclient.New(ledgerConn), registry, redisClient, log, fraudClient, breaker)
 	module.StartWorkers(ctx)
 	grpcServer := grpcx.NewServer(log, cfg.InternalGRPCToken)
 	module.RegisterGRPC(grpcServer)

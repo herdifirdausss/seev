@@ -72,6 +72,8 @@ fail() { printf '\033[1;31m[ FAIL]\033[0m %s\n' "$*"; FAILED=1; }
 
 FAILED=0
 
+log "work dir: $WORK_DIR (binaries + *.log; KEEP_WORK_DIR=1 preserves it past exit for postmortem)"
+
 # ─── Docker / Postgres bootstrap ────────────────────────────────────────────
 
 detect_db_port() {
@@ -266,6 +268,12 @@ start_payout_service() {
 		export JWT_SECRET=$JWT_SECRET
 		export VENDOR_MOCKVENDOR_ENABLED=true
 		export VENDOR_MOCKVENDOR_SECRET=script-test-mockvendor-secret-at-least-32-chars-long
+		# mockvendor2 registered alongside mockvendor (docs/plan/40 Task T4) —
+		# purely additive: only reachable once a routing rule actually points
+		# at it (seeded by chaos-test.sh's vendor-failover scenario), every
+		# other flow is unaffected.
+		export MOCKVENDOR2_ENABLED=true
+		export MOCKVENDOR2_SECRET=script-test-mockvendor2-secret-at-least-32-chars-long
 		export LOG_FORMAT=json
 		nohup "$PAYOUT_BIN" >>"$PAYOUT_LOG" 2>&1 &
 		echo $! >"$PAYOUT_PID_FILE"
@@ -290,6 +298,8 @@ start_payin_service() {
 		export JWT_SECRET=$JWT_SECRET
 		export VENDOR_MOCKVENDOR_ENABLED=true
 		export VENDOR_MOCKVENDOR_SECRET=script-test-mockvendor-secret-at-least-32-chars-long
+		export MOCKVENDOR2_ENABLED=true
+		export MOCKVENDOR2_SECRET=script-test-mockvendor2-secret-at-least-32-chars-long
 		export LOG_FORMAT=json
 		nohup "$PAYIN_BIN" >>"$PAYIN_LOG" 2>&1 &
 		echo $! >"$PAYIN_PID_FILE"
@@ -707,6 +717,22 @@ await_notification() {
 	return 1
 }
 
+# await_log_line polls a log file for pattern until it appears, or fails
+# after ~10s — same rationale as await_notification: any consumer fed via
+# the outbox relay -> RabbitMQ hop (e.g. fraud-service's velocity consumer)
+# processes asynchronously, so a single immediate grep can flake on a slow
+# CI box even though the message eventually arrives.
+await_log_line() {
+	local logfile=$1 pattern=$2 description=$3 tries=20
+	while [ "$tries" -gt 0 ]; do
+		grep -q "$pattern" "$logfile" 2>/dev/null && { ok "$description"; return 0; }
+		sleep 0.5
+		tries=$((tries - 1))
+	done
+	fail "$description — pattern '$pattern' never appeared in $logfile within timeout"
+	return 1
+}
+
 # ─── Ledger integrity assertions ────────────────────────────────────────────
 
 # assert_ledger_balanced fails if fn_verify_ledger_balance() finds ANY
@@ -751,7 +777,16 @@ assert_no_stuck_pending_transactions() {
 	fi
 }
 
+# cleanup always stops every service (never leak a process past the
+# script's own exit), but only deletes WORK_DIR (binaries + *.log) when
+# KEEP_WORK_DIR is unset — set `KEEP_WORK_DIR=1` when re-running a single
+# scenario for debugging so the *.log files under WORK_DIR survive for
+# postmortem instead of being wiped on every exit, success or failure.
 cleanup() {
 	stop_services
-	rm -rf "$WORK_DIR"
+	if [ "${KEEP_WORK_DIR:-0}" = "1" ]; then
+		log "KEEP_WORK_DIR=1 — leaving $WORK_DIR in place (binaries + *.log) for inspection"
+	else
+		rm -rf "$WORK_DIR"
+	fi
 }

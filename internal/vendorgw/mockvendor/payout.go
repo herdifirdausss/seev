@@ -38,19 +38,48 @@ const (
 // therefore a TEST SCENARIO (call Submit twice, assert identical result),
 // not a mock_mode value.
 type PayoutProvider struct {
-	mu        sync.Mutex
+	name string
+	mu   sync.Mutex
+	// forceFail, when true, makes every Submit return an INFRA error
+	// regardless of mock_mode (docs/plan/40 Task T4) — mock_mode alone can
+	// only simulate a single request's behavior, never "this vendor is
+	// down for ALL traffic". This must be a transport-style error (not a
+	// business rejection): only that classification trips the circuit
+	// breaker (gotcha #13 master) from realistic end-to-end traffic,
+	// rather than reaching into breaker internals directly in a test.
+	forceFail bool
 	submitted map[string]vendorgw.PayoutResult
 }
 
-func NewPayoutProvider() *PayoutProvider {
-	return &PayoutProvider{submitted: make(map[string]vendorgw.PayoutResult)}
+// NewPayoutProvider constructs a provider registered under name
+// (docs/plan/40 Task T4 — parameterized so a second mock vendor can be
+// registered for failover demos). Existing callers pass VendorName to get
+// byte-identical behavior to before this parameter existed.
+func NewPayoutProvider(name string) *PayoutProvider {
+	return &PayoutProvider{name: name, submitted: make(map[string]vendorgw.PayoutResult)}
 }
 
-func (p *PayoutProvider) Vendor() string { return VendorName }
+func (p *PayoutProvider) Vendor() string { return p.name }
+
+// SetForceFail flips the vendor-level force-fail switch (docs/plan/40 Task
+// T4) — test-only, not part of vendorgw.PayoutProvider. Every Submit while
+// true returns an INFRA error (never cached, same rationale as
+// ModeTimeout — a genuinely down vendor can't remember what it never
+// received), so a chaos scenario can trip the circuit breaker with real
+// end-to-end traffic instead of reaching into breaker internals directly.
+func (p *PayoutProvider) SetForceFail(fail bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.forceFail = fail
+}
 
 func (p *PayoutProvider) Submit(_ context.Context, idempotencyKey string, _ decimal.Decimal, _ string, destination json.RawMessage) (vendorgw.PayoutResult, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+
+	if p.forceFail {
+		return vendorgw.PayoutResult{}, fmt.Errorf("mockvendor %s: forced failure (vendor down)", p.name)
+	}
 
 	if existing, ok := p.submitted[idempotencyKey]; ok {
 		return existing, nil

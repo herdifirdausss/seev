@@ -47,7 +47,7 @@ func startServer(t *testing.T, service Service) payinv1.PayinServiceClient {
 	t.Helper()
 	listener := bufconn.Listen(1024 * 1024)
 	server := grpc.NewServer()
-	payinv1.RegisterPayinServiceServer(server, New(service, errors.New("not found"), errors.New("no route")))
+	payinv1.RegisterPayinServiceServer(server, New(service, errors.New("not found"), errors.New("no route"), errors.New("no vendor available")))
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(func() { server.Stop(); _ = listener.Close() })
 	connection, err := grpc.NewClient("passthrough:///bufnet",

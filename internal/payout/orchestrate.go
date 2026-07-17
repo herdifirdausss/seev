@@ -57,7 +57,7 @@ func (m *Module) Create(ctx context.Context, userID uuid.UUID, amount decimal.De
 		}
 	}
 
-	vendor, _, err := m.ResolvePayoutRoute(ctx, userID, currency, amount)
+	vendor, _, err := m.ResolvePayoutRoute(ctx, userID, currency, amount, nil)
 	if err != nil {
 		return uuid.Nil, err
 	}
@@ -146,7 +146,61 @@ func (m *Module) hold(ctx context.Context, req model.PayoutRequest) error {
 	return nil
 }
 
-// submit moves held/vendor_pending -> submitted and calls the vendor.
+// maxFailoverAttempts bounds the failover loop in submit() (docs/plan/40
+// Task T3 step 4) — belt-and-braces only: the routing exclusion list
+// already guarantees termination in at most len(candidates) iterations
+// (each rejected attempt permanently excludes one more vendor from a
+// finite routing-rule set), so this cap only matters if that invariant is
+// ever broken by a bug. Comfortably above any realistic candidate count.
+const maxFailoverAttempts = 20
+
+// classifySubmitOutcome maps one Submit round-trip to the outcome
+// classification the anti-double-payout failover rule (mayFailover) reads
+// from payout_vendor_calls (docs/plan/40 Task T3). callErr non-nil is a
+// transport/infra failure (timeout, 5xx, unknown) — the vendor may or may
+// not have received the request, so it's "uncertain", never "rejected"
+// (gotcha #13 master: only a definitive SYNCHRONOUS business rejection,
+// vendorgw.PayoutFailed with NO error, counts as "rejected" and is safe to
+// fail over from).
+func classifySubmitOutcome(result vendorgw.PayoutResult, callErr error) string {
+	if callErr != nil {
+		return model.VendorCallUncertain
+	}
+	if result.Status == vendorgw.PayoutFailed {
+		return model.VendorCallRejected
+	}
+	return model.VendorCallAccepted
+}
+
+// classifyQueryOutcome mirrors classifySubmitOutcome for the resume job's
+// polling calls (pollVendorPending) — a request only ever reaches Query
+// after an earlier Submit already landed "accepted", so a successful Query
+// (any status) can only ever confirm "accepted", never newly "rejected".
+func classifyQueryOutcome(callErr error) string {
+	if callErr != nil {
+		return model.VendorCallUncertain
+	}
+	return model.VendorCallAccepted
+}
+
+// mayFailover implements docs/plan/40's locked anti-double-payout rule
+// EXACTLY: switching this request to a different vendor is safe ONLY while
+// none of its vendor calls has EVER landed accepted or uncertain — once
+// one has, the request is PINNED to that vendor forever (recovery =
+// Query/retry the SAME vendor via the resume job, never a new one). A
+// synchronous business rejection ("rejected") never blocks failover.
+func mayFailover(calls []model.PayoutVendorCall) bool {
+	for _, c := range calls {
+		if c.Outcome == model.VendorCallAccepted || c.Outcome == model.VendorCallUncertain {
+			return false
+		}
+	}
+	return true
+}
+
+// submit moves held/vendor_pending -> submitted and calls the vendor,
+// failing over to the next routing candidate on a definitive synchronous
+// rejection (docs/plan/40 Task T3) as long as mayFailover allows it.
 // Called from Create (fresh request), the resume job (retrying a stuck
 // 'submitted' request — Submit is idempotent by request ID, so re-calling
 // it after an infra failure is always safe), and admin retry (Task T5).
@@ -154,10 +208,6 @@ func (m *Module) submit(ctx context.Context, id uuid.UUID) error {
 	req, err := m.repo.Get(ctx, id)
 	if err != nil {
 		return err
-	}
-	provider, ok := m.registry.Payout(req.Vendor)
-	if !ok {
-		return fmt.Errorf("%w: %s", ErrUnknownVendor, req.Vendor)
 	}
 
 	// TransitionToSubmitted is a no-op (won=false) if the request is
@@ -171,34 +221,93 @@ func (m *Module) submit(ctx context.Context, id uuid.UUID) error {
 		return fmt.Errorf("transition to submitted: %w", err)
 	}
 
-	result, submitErr := provider.Submit(ctx, id.String(), req.Amount, req.Currency, req.Destination)
-	m.recordVendorCall(ctx, id, fmt.Sprintf("submit amount=%s currency=%s vendor=%s", req.Amount, req.Currency, req.Vendor), result, submitErr)
+	vendor := req.Vendor
+	tried := make([]string, 0, 1)
 
-	if submitErr != nil {
-		// Infra failure — status stays 'submitted'; the resume job retries.
-		if setErr := m.repo.SetError(ctx, id, submitErr.Error()); setErr != nil {
-			m.logger.Error("payout: set error failed", slog.Any("error", setErr), slog.String("request_id", id.String()))
+	for attempt := 0; attempt < maxFailoverAttempts; attempt++ {
+		provider, ok := m.registry.Payout(vendor)
+		if !ok {
+			return fmt.Errorf("%w: %s", ErrUnknownVendor, vendor)
 		}
-		return submitErr
-	}
 
-	gateway, err := m.gatewayForVendor(ctx, req.Vendor)
-	if err != nil {
-		return err
-	}
-	switch result.Status {
-	case vendorgw.PayoutSettled:
-		return m.settle(ctx, id, gateway)
-	case vendorgw.PayoutPending:
-		if _, err := m.repo.TransitionToVendorPending(ctx, id, result.VendorRef); err != nil {
-			return fmt.Errorf("transition to vendor_pending: %w", err)
+		result, submitErr := provider.Submit(ctx, id.String(), req.Amount, req.Currency, req.Destination)
+		outcome := classifySubmitOutcome(result, submitErr)
+		recordErr := m.recordVendorCall(ctx, id, fmt.Sprintf("submit amount=%s currency=%s vendor=%s", req.Amount, req.Currency, vendor), result, submitErr, outcome)
+		if m.breaker != nil {
+			if submitErr != nil {
+				m.breaker.RecordFailure(vendor)
+			} else {
+				// Includes a business rejection (PayoutFailed with no
+				// error) — the vendor WAS reachable, gotcha #13 master.
+				m.breaker.RecordSuccess(vendor)
+			}
 		}
-		return nil
-	case vendorgw.PayoutFailed:
-		return m.cancel(ctx, id, gateway, result.Reason)
-	default:
-		return fmt.Errorf("payout: unknown vendor result status %q", result.Status)
+		if recordErr != nil {
+			// The persisted call history is the safety boundary that prevents a
+			// later retry from paying through a second vendor. If it cannot be
+			// written, leave the request pinned and make no further state change.
+			return recordErr
+		}
+
+		if submitErr != nil {
+			// Uncertain — status stays 'submitted', PINNED to this vendor;
+			// the resume job retries the SAME vendor (Submit is idempotent
+			// by request ID), never a new one.
+			if setErr := m.repo.SetError(ctx, id, submitErr.Error()); setErr != nil {
+				m.logger.Error("payout: set error failed", slog.Any("error", setErr), slog.String("request_id", id.String()))
+			}
+			return submitErr
+		}
+
+		if result.Status == vendorgw.PayoutFailed {
+			tried = append(tried, vendor)
+			calls, callsErr := m.repo.ListVendorCalls(ctx, id)
+			if callsErr != nil {
+				return fmt.Errorf("payout: list vendor calls before failover: %w", callsErr)
+			}
+			if !mayFailover(calls) {
+				// Another concurrent attempt has already recorded an accepted or
+				// uncertain outcome. It owns completion; cancelling here could race
+				// its settlement and return money that is already being paid out.
+				return nil
+			}
+			nextVendor, _, routeErr := m.ResolvePayoutRoute(ctx, req.UserID, req.Currency, req.Amount, tried)
+			if routeErr == nil {
+				if setErr := m.repo.SetVendor(ctx, id, nextVendor); setErr != nil {
+					return fmt.Errorf("payout: persist failover vendor: %w", setErr)
+				}
+				vendor = nextVendor
+				continue
+			}
+			if !errors.Is(routeErr, ErrNoRoute) && !errors.Is(routeErr, ErrNoVendorAvailable) {
+				return fmt.Errorf("payout: resolve failover route: %w", routeErr)
+			}
+			// No safe candidate remains after only definitive rejections, so
+			// returning the hold is now safe.
+			gateway, gErr := m.gatewayForVendor(ctx, vendor)
+			if gErr != nil {
+				return gErr
+			}
+			return m.cancel(ctx, id, gateway, result.Reason)
+		}
+
+		gateway, gErr := m.gatewayForVendor(ctx, vendor)
+		if gErr != nil {
+			return gErr
+		}
+		switch result.Status {
+		case vendorgw.PayoutSettled:
+			return m.settle(ctx, id, gateway)
+		case vendorgw.PayoutPending:
+			if _, err := m.repo.TransitionToVendorPending(ctx, id, result.VendorRef); err != nil {
+				return fmt.Errorf("transition to vendor_pending: %w", err)
+			}
+			return nil
+		default:
+			return fmt.Errorf("payout: unknown vendor result status %q", result.Status)
+		}
 	}
+	return fmt.Errorf("payout: exhausted failover attempts for request %s", id)
 }
 
 // settle posts withdraw_settle (docs/plan/23 Task T4) and moves the
@@ -335,9 +444,9 @@ func (m *Module) reconcileAfterLostRace(ctx context.Context, id uuid.UUID, cause
 	return nil
 }
 
-func (m *Module) recordVendorCall(ctx context.Context, requestID uuid.UUID, summary string, result vendorgw.PayoutResult, callErr error) {
+func (m *Module) recordVendorCall(ctx context.Context, requestID uuid.UUID, summary string, result vendorgw.PayoutResult, callErr error, outcome string) error {
 	call := model.PayoutVendorCall{
-		ID: generalutil.NewV7(), PayoutRequestID: requestID, Attempt: 1, ReqSummary: summary,
+		ID: generalutil.NewV7(), PayoutRequestID: requestID, Attempt: 1, ReqSummary: summary, Outcome: outcome,
 	}
 	if callErr != nil {
 		call.Error = callErr.Error()
@@ -345,8 +454,9 @@ func (m *Module) recordVendorCall(ctx context.Context, requestID uuid.UUID, summ
 		call.RespStatus = string(result.Status)
 	}
 	if err := m.repo.InsertVendorCall(ctx, call); err != nil {
-		m.logger.Error("payout: record vendor call failed", slog.Any("error", err), slog.String("request_id", requestID.String()))
+		return fmt.Errorf("payout: persist vendor call outcome: %w", err)
 	}
+	return nil
 }
 
 // ResumeStuck re-drives requests that crashed or stalled mid-flight
@@ -443,7 +553,9 @@ func (m *Module) pollVendorPending(ctx context.Context, req model.PayoutRequest)
 	}
 
 	result, queryErr := provider.Query(ctx, req.ID.String())
-	m.recordVendorCall(ctx, req.ID, fmt.Sprintf("query vendor=%s vendor_ref=%s", req.Vendor, req.VendorRef), result, queryErr)
+	if err := m.recordVendorCall(ctx, req.ID, fmt.Sprintf("query vendor=%s vendor_ref=%s", req.Vendor, req.VendorRef), result, queryErr, classifyQueryOutcome(queryErr)); err != nil {
+		return err
+	}
 	if queryErr != nil {
 		return queryErr
 	}

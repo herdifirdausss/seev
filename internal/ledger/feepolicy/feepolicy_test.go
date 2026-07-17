@@ -3,7 +3,6 @@ package feepolicy
 import (
 	"context"
 	"database/sql"
-	"regexp"
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
@@ -11,6 +10,7 @@ import (
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/require"
 
+	"github.com/herdifirdausss/seev/internal/ledger/repository"
 	"github.com/herdifirdausss/seev/pkg/database"
 )
 
@@ -19,11 +19,12 @@ func testPolicy(t *testing.T) (*Policy, sqlmock.Sqlmock) {
 	sqlDB, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = sqlDB.Close() })
-	return New(database.NewFromSQL(sqlDB, database.Config{})), mock
+	dbHandle := database.NewFromSQL(sqlDB, database.Config{})
+	return New(dbHandle, repository.NewFeeRepository(dbHandle)), mock
 }
 
 func expectRule(mock sqlmock.Sqlmock, userID uuid.UUID, txType, gateway, currency string, flat, bps int64, feeGateway string) {
-	mock.ExpectQuery(regexp.QuoteMeta(resolveQuery)).
+	mock.ExpectQuery(`SELECT flat_minor_units, percent_basis_pts, fee_gateway`).
 		WithArgs(txType, currency, userID, gateway).
 		WillReturnRows(sqlmock.NewRows([]string{"flat_minor_units", "percent_basis_pts", "fee_gateway"}).
 			AddRow(flat, bps, feeGateway))
@@ -66,7 +67,7 @@ func TestResolveFlatPlusPercentTruncates(t *testing.T) {
 func TestResolveDisabledOrNoMatch(t *testing.T) {
 	policy, mock := testPolicy(t)
 	userID := uuid.New()
-	mock.ExpectQuery(regexp.QuoteMeta(resolveQuery)).
+	mock.ExpectQuery(`SELECT flat_minor_units, percent_basis_pts, fee_gateway`).
 		WithArgs("transfer_p2p", "IDR", userID, "").
 		WillReturnError(sql.ErrNoRows)
 	fee, gateway, ok := policy.Resolve(context.Background(), userID, "transfer_p2p", "", "IDR", decimal.NewFromInt(1_000))

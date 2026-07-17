@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"sync/atomic"
 	"testing"
 
 	"github.com/google/uuid"
@@ -85,17 +86,17 @@ type stubPayoutProvider struct {
 	name      string
 	submitFn  func(ctx context.Context, idempotencyKey string, amount decimal.Decimal, currency string, destination json.RawMessage) (vendorgw.PayoutResult, error)
 	queryFn   func(ctx context.Context, idempotencyKey string) (vendorgw.PayoutResult, error)
-	submitted int
-	queried   int
+	submitted atomic.Int64
+	queried   atomic.Int64
 }
 
 func (s *stubPayoutProvider) Vendor() string { return s.name }
 func (s *stubPayoutProvider) Submit(ctx context.Context, idempotencyKey string, amount decimal.Decimal, currency string, destination json.RawMessage) (vendorgw.PayoutResult, error) {
-	s.submitted++
+	s.submitted.Add(1)
 	return s.submitFn(ctx, idempotencyKey, amount, currency, destination)
 }
 func (s *stubPayoutProvider) Query(ctx context.Context, idempotencyKey string) (vendorgw.PayoutResult, error) {
-	s.queried++
+	s.queried.Add(1)
 	return s.queryFn(ctx, idempotencyKey)
 }
 
@@ -113,8 +114,11 @@ type stubRouting struct {
 func routeTo(vendor, gateway string) repository.RoutingRepository {
 	return stubRouting{vendor: vendor, gateway: gateway, found: true}
 }
-func (s stubRouting) Resolve(context.Context, string, uuid.UUID, string, int64) (model.RoutingRule, string, bool, error) {
-	return model.RoutingRule{Vendor: s.vendor}, s.gateway, s.found, nil
+func (s stubRouting) ResolveCandidates(context.Context, string, uuid.UUID, string, int64) ([]model.RoutingCandidate, error) {
+	if !s.found {
+		return nil, nil
+	}
+	return []model.RoutingCandidate{{Vendor: s.vendor, Gateway: s.gateway}}, nil
 }
 func (stubRouting) ListRules(context.Context) ([]model.RoutingRule, error) { return nil, nil }
 func (stubRouting) CreateRule(context.Context, model.RoutingRule) error    { return nil }
@@ -201,7 +205,7 @@ func TestCreate_HappyPath_InstantSettle(t *testing.T) {
 	id, err := m.Create(context.Background(), userID, decimal.NewFromInt(100_000), []byte(`{}`), "test", "")
 	require.NoError(t, err)
 	assert.NotEqual(t, uuid.Nil, id)
-	assert.Equal(t, 1, provider.submitted)
+	assert.Equal(t, int64(1), provider.submitted.Load())
 }
 
 // TestCreate_FraudBlock_NoRowInserted_NoHold proves docs/plan/37 Task T5: a
@@ -346,6 +350,12 @@ func TestSubmit_VendorFailed_CancelsAndReturnsHold(t *testing.T) {
 	repo.EXPECT().Get(gomock.Any(), id).Return(req, nil).Times(2)
 	repo.EXPECT().TransitionToSubmitted(gomock.Any(), id).Return(true, nil)
 	repo.EXPECT().InsertVendorCall(gomock.Any(), gomock.Any()).Return(nil)
+	// mayFailover check (docs/plan/40 Task T3) — no prior calls, so
+	// failover WOULD be allowed, but the only registered/routed vendor is
+	// "mockvendor" itself, so ResolvePayoutRoute (excluding it) finds no
+	// other candidate and submit() falls through to cancel exactly as
+	// before this feature existed.
+	repo.EXPECT().ListVendorCalls(gomock.Any(), id).Return(nil, nil)
 	repo.EXPECT().TransitionToCancelled(gomock.Any(), id, cancelTxID).Return(true, nil)
 	repo.EXPECT().SetError(gomock.Any(), id, "vendor declined").Return(nil)
 
@@ -475,8 +485,8 @@ func TestResumeStuck_RetriesSubmittedAndPollsVendorPending(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 2, resumed)
 	assert.Equal(t, 0, failed)
-	assert.Equal(t, 1, provider.submitted)
-	assert.Equal(t, 1, provider.queried)
+	assert.Equal(t, int64(1), provider.submitted.Load())
+	assert.Equal(t, int64(1), provider.queried.Load())
 }
 
 // TestResumeStuck_VendorStillPending_NotCountedAsFailure proves a genuinely

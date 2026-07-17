@@ -32,6 +32,7 @@ type Config struct {
 	Vendor   VendorConfig
 	Auth     AuthConfig
 	Fraud    FraudConfig
+	Breaker  BreakerConfig
 
 	// Cross-process endpoints introduced by the service extraction phases.
 	GRPCPort          string
@@ -69,6 +70,25 @@ type VendorConfig struct {
 	// webhook arriving after this window is a business failure (money
 	// never posts), not silently accepted.
 	TopupIntentTTL time.Duration
+	// Mockvendor2Enabled/Secret register a SECOND mock vendor (docs/plan/40
+	// Task T4) — exists purely to demonstrate real failover between two
+	// registered vendors; default disabled, byte-identical to before this
+	// feature existed.
+	Mockvendor2Enabled bool
+	Mockvendor2Secret  string
+}
+
+// BreakerConfig tunes the per-vendor circuit breaker (docs/plan/40 Task T1,
+// internal/vendorgw.HealthTracker) shared by payin-service and
+// payout-service.
+type BreakerConfig struct {
+	// FailureThreshold consecutive transport/infra failures trip the
+	// circuit open. <=0 falls back to HealthTracker's own default (5).
+	FailureThreshold int
+	// Cooldown is how long the circuit stays open before a single
+	// half-open probe is allowed through. <=0 falls back to
+	// HealthTracker's own default (30s).
+	Cooldown time.Duration
 }
 
 // TracingConfig controls OpenTelemetry trace export (docs/plan/12 Task T5).
@@ -414,9 +434,15 @@ func loadFromEnvMode(getenv func(string) string, requireRabbitMQ bool) (*Config,
 			OTLPEndpoint: getenv("OTEL_EXPORTER_OTLP_ENDPOINT"),
 		},
 		Vendor: VendorConfig{
-			MockvendorEnabled: parseBool(getenv("VENDOR_MOCKVENDOR_ENABLED"), false),
-			MockvendorSecret:  getenv("VENDOR_MOCKVENDOR_SECRET"),
-			TopupIntentTTL:    parseDuration(getenv("TOPUP_INTENT_TTL"), 24*time.Hour),
+			MockvendorEnabled:  parseBool(getenv("VENDOR_MOCKVENDOR_ENABLED"), false),
+			MockvendorSecret:   getenv("VENDOR_MOCKVENDOR_SECRET"),
+			TopupIntentTTL:     parseDuration(getenv("TOPUP_INTENT_TTL"), 24*time.Hour),
+			Mockvendor2Enabled: parseBool(getenv("MOCKVENDOR2_ENABLED"), false),
+			Mockvendor2Secret:  getenv("MOCKVENDOR2_SECRET"),
+		},
+		Breaker: BreakerConfig{
+			FailureThreshold: parseInt(getenv("BREAKER_FAILURE_THRESHOLD"), 5),
+			Cooldown:         parseDuration(getenv("BREAKER_COOLDOWN"), 30*time.Second),
 		},
 		Auth: AuthConfig{
 			DefaultCurrency:        getWithDefault(getenv, "DEFAULT_CURRENCY", "IDR"),
@@ -541,6 +567,10 @@ func validate(cfg *Config, requireRabbitMQ bool, errs *[]string) error {
 
 	if cfg.Vendor.MockvendorEnabled && cfg.Vendor.MockvendorSecret == "" {
 		*errs = append(*errs, "VENDOR_MOCKVENDOR_SECRET must be set when VENDOR_MOCKVENDOR_ENABLED=true — an empty HMAC secret would accept any signature")
+	}
+
+	if cfg.Vendor.Mockvendor2Enabled && cfg.Vendor.Mockvendor2Secret == "" {
+		*errs = append(*errs, "MOCKVENDOR2_SECRET must be set when MOCKVENDOR2_ENABLED=true — an empty HMAC secret would accept any signature")
 	}
 
 	if len(*errs) > 0 {

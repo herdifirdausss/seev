@@ -43,6 +43,10 @@ export DEFAULT_CURRENCY=IDR
 # Task T6) proves a KYC tier upgrade's new policy_limits cap applies without
 # waiting out that window.
 export POLICY_CACHE_TTL=2s
+# Production default is 5 (docs/plan/40 Task T1) — quote_journey's failover
+# drill needs the circuit to trip on the FIRST force-fail-induced Submit
+# failure, same rationale as chaos-test.sh scenario 8.
+export BREAKER_FAILURE_THRESHOLD=1
 
 # shellcheck source=scripts/lib.sh
 source "$ROOT_DIR/scripts/lib.sh"
@@ -523,6 +527,79 @@ quote_journey() {
 	fee_after_payout="$(fee_platform_balance)"
 	[ "$((fee_after_payout - fee_before_payout))" = "2000" ] && ok "fee[platform] increased by EXACTLY the quoted 2000, not the changed 8000 rule" \
 		|| fail "fee[platform] changed by $((fee_after_payout - fee_before_payout)), expected 2000 (payout quote honored despite mid-flight rule change)"
+
+	log "payout ber-quote + drill failover (docs/plan/40): force-fail mockvendor -> quote-backed payout routes to mockvendor2..."
+	local failover_quote_resp failover_quote_id failover_fee_amount
+	failover_quote_resp="$(curl -s -X POST "http://localhost:$APP_PORT/api/v1/ledger/fees/quote" \
+		-H "Authorization: Bearer $TOKEN_A" -H "Content-Type: application/json" \
+		-d '{"transaction_type":"withdraw_settle","amount":"25000"}')"
+	failover_quote_id="$(echo "$failover_quote_resp" | json_field quote_id)"
+	failover_fee_amount="$(echo "$failover_quote_resp" | json_field fee_amount)"
+	[ -n "$failover_quote_id" ] && ok "failover-drill quote created (id=$failover_quote_id fee=$failover_fee_amount)" \
+		|| fail "failover-drill quote creation unexpected: $failover_quote_resp"
+
+	# mockvendor2 seeded as a FALLBACK behind mockvendor's existing priority-10
+	# rule (from section 5) — priority 11 is a LARGER number, tried SECOND,
+	# since docs/plan/40 Task T2's ResolveCandidates orders priority ASC
+	# (smallest number wins first; see CLAUDE.md's debugging notes).
+	curl -s -o /dev/null -X PUT "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendor-gateways/mockvendor2" \
+		-H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" -d '{"gateway":"gopay"}'
+	psql_exec "$PAYOUT_DB_NAME" -c "DELETE FROM payout_routing_rules WHERE priority = 11;" >/dev/null
+	local mv2_route_json mv2_route_id
+	mv2_route_json="$(curl -s -X POST "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/routing-rules" \
+		-H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" \
+		-d '{"flow":"payout","priority":11,"enabled":true,"vendor":"mockvendor2"}')"
+	mv2_route_id="$(echo "$mv2_route_json" | json_field id)"
+	[ -n "$mv2_route_id" ] && ok "admin seeded mockvendor2 as fallback routing rule ($mv2_route_id)" \
+		|| fail "mockvendor2 routing rule creation failed: $mv2_route_json"
+
+	curl -s -o /dev/null -X POST "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendors/mockvendor/force-fail" \
+		-H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" -d '{"fail":true}'
+
+	log "tripping mockvendor's circuit with a small probe payout (no quote — stays pinned/uncertain by the anti-double-payout rule, by design)..."
+	local probe_resp probe_id probe_vendor probe_status
+	probe_resp="$(curl -s -X POST "http://localhost:$APP_PORT/api/v1/payout" \
+		-H "Authorization: Bearer $TOKEN_A" -H "Content-Type: application/json" \
+		-d '{"amount":"1000","destination":{"bank_code":"014","account_no":"9"}}')"
+	probe_id="$(echo "$probe_resp" | json_field id)"
+	[ -n "$probe_id" ] && ok "probe payout created ($probe_id)" || fail "probe payout create failed: $probe_resp"
+	probe_vendor="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT vendor FROM payout_requests WHERE id='$probe_id';")"
+	probe_status="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT status FROM payout_requests WHERE id='$probe_id';")"
+	[ "$probe_vendor" = "mockvendor" ] && [ "$probe_status" = "submitted" ] \
+		&& ok "probe payout pinned to mockvendor, uncertain (trips the circuit)" \
+		|| fail "probe payout unexpected vendor='$probe_vendor' status='$probe_status'"
+
+	local health_resp
+	health_resp="$(curl -s "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendors/health" -H "Authorization: Bearer $admin_token")"
+	echo "$health_resp" | grep -q '"vendor":"mockvendor","state":"open"' \
+		&& ok "admin vendor health confirms mockvendor's circuit is open" \
+		|| fail "admin vendor health did not report mockvendor open: $health_resp"
+
+	local failover_before_fee
+	failover_before_fee="$(fee_platform_balance)"
+	local failover_payout_resp
+	FAILOVER_REQUEST_ID="e2e-payout-trace-$RUN_ID"
+	failover_payout_resp="$(curl -s -X POST "http://localhost:$APP_PORT/api/v1/payout" \
+		-H "Authorization: Bearer $TOKEN_A" -H "Content-Type: application/json" \
+		-H "X-Request-Id: $FAILOVER_REQUEST_ID" \
+		-d "{\"amount\":\"25000\",\"destination\":{\"bank_code\":\"014\",\"account_no\":\"1\"},\"quote_id\":\"$failover_quote_id\"}")"
+	FAILOVER_PAYOUT_ID="$(echo "$failover_payout_resp" | json_field id)"
+	local failover_payout_status failover_payout_vendor
+	failover_payout_status="$(echo "$failover_payout_resp" | json_field status)"
+	failover_payout_vendor="$(echo "$failover_payout_resp" | json_field vendor)"
+	[ "$failover_payout_vendor" = "mockvendor2" ] && [ "$failover_payout_status" = "settled" ] \
+		&& ok "quote-backed payout routed straight to mockvendor2 (mockvendor's circuit is open) and settled ($FAILOVER_PAYOUT_ID)" \
+		|| fail "failover payout unexpected: $failover_payout_resp"
+
+	local failover_after_fee
+	failover_after_fee="$(fee_platform_balance)"
+	[ "$((failover_after_fee - failover_before_fee))" = "$failover_fee_amount" ] \
+		&& ok "failover payout charged EXACTLY the stored quote fee ($failover_fee_amount)" \
+		|| fail "fee[platform] changed by $((failover_after_fee - failover_before_fee)), expected $failover_fee_amount"
+
+	log "recovering mockvendor..."
+	curl -s -o /dev/null -X POST "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendors/mockvendor/force-fail" \
+		-H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" -d '{"fail":false}'
 }
 
 # ─── Section 7: daily ops — integrity + revenue + operator visibility ────────
@@ -575,6 +652,19 @@ ops() {
 	code=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:$FRAUD_ADMIN_PORT/api/v1/admin/fraud/events" \
 		-H "Authorization: Bearer $admin_token")
 	[ "$code" = "200" ] && ok "admin fraud events list reachable (code=$code)" || fail "admin fraud events list got $code, expected 200"
+
+	log "GET /admin/kyc/submissions?status=pending (auth-service internal) — operator tooling reachable without SQL..."
+	code=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:$AUTH_INTERNAL_PORT/api/v1/admin/kyc/submissions?status=pending" \
+		-H "Authorization: Bearer $admin_token")
+	[ "$code" = "200" ] && ok "admin KYC pending list reachable (code=$code)" || fail "admin KYC pending list got $code, expected 200"
+
+	log "GET /admin/vendors/health (docs/plan/40 Task T5) on payin + payout — operator sees vendor state without SQL/log-diving..."
+	code=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:$PAYIN_ADMIN_PORT/admin/payin/vendors/health" \
+		-H "Authorization: Bearer $admin_token")
+	[ "$code" = "200" ] && ok "admin payin vendor health reachable (code=$code)" || fail "admin payin vendor health got $code, expected 200"
+	code=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendors/health" \
+		-H "Authorization: Bearer $admin_token")
+	[ "$code" = "200" ] && ok "admin payout vendor health reachable (code=$code)" || fail "admin payout vendor health got $code, expected 200"
 }
 
 # ─── Section 8: request tracing end-to-end (docs/plan/36 Task T6) ───────────
@@ -608,6 +698,20 @@ trace_check() {
 	[ "$stored" = "$trace_id" ] \
 		&& ok "ledger_transactions.request_id matches ($trace_id)" \
 		|| fail "stored request_id was '$stored', expected $trace_id"
+
+	log "tracing the failover payout from section 6: payout_requests.request_id + CorrelationId reaching fraud's async velocity consumer..."
+	local stored_payout_request_id
+	stored_payout_request_id="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT request_id FROM payout_requests WHERE id = '$FAILOVER_PAYOUT_ID';")"
+	[ "$stored_payout_request_id" = "$FAILOVER_REQUEST_ID" ] \
+		&& ok "payout_requests.request_id matches ($FAILOVER_REQUEST_ID)" \
+		|| fail "stored payout request_id was '$stored_payout_request_id', expected $FAILOVER_REQUEST_ID"
+
+	# The payout's withdraw_settle only publishes ledger.transaction.posted.v1
+	# once settled; fraud-service's velocity consumer then processes it off
+	# the outbox relay -> RabbitMQ hop — asynchronous, so poll rather than a
+	# single immediate grep (same rationale as await_notification).
+	await_log_line "$FRAUD_LOG" "$FAILOVER_REQUEST_ID" \
+		"fraud-service velocity consumer log carries the payout's CorrelationId ($FAILOVER_REQUEST_ID)"
 }
 
 # ─── Main ────────────────────────────────────────────────────────────────────

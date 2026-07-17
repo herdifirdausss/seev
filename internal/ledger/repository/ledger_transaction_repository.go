@@ -28,6 +28,14 @@ type InsertTransactionParams struct {
 
 	SourceAccountID      *uuid.UUID
 	DestinationAccountID *uuid.UUID
+
+	// ExternalRef/Gateway (docs/plan/16 Task T2, K5) and RequestID
+	// (docs/plan/36 Task T5) are purely informative correlation columns —
+	// absent for the large majority of transaction types that never carry
+	// this metadata (transfer_p2p, adjustment_*, etc.).
+	ExternalRef *string
+	Gateway     *string
+	RequestID   *string
 }
 
 // TransactionRepository abstracts persistence operations for ledger_transactions.
@@ -142,8 +150,8 @@ func (r *transactionRepo) Insert(
 		INSERT INTO ledger_transactions
 			(id, idempotency_key, idempotency_scope, type, status,
 			 amount, currency, source_account_id, destination_account_id,
-			 created_at, updated_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,now(),now())`,
+			 external_ref, gateway, request_id, created_at, updated_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,now(),now())`,
 		p.ID,
 		p.IdempotencyKey,
 		p.IdempotencyScope,
@@ -153,6 +161,9 @@ func (r *transactionRepo) Insert(
 		p.Currency,
 		p.SourceAccountID,
 		p.DestinationAccountID,
+		p.ExternalRef,
+		p.Gateway,
+		p.RequestID,
 	)
 
 	if err != nil {

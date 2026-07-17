@@ -25,13 +25,14 @@ type Service interface {
 
 type Server struct {
 	payinv1.UnimplementedPayinServiceServer
-	service  Service
-	notFound error
-	noRoute  error
+	service           Service
+	notFound          error
+	noRoute           error
+	noVendorAvailable error
 }
 
-func New(service Service, notFound, noRoute error) *Server {
-	return &Server{service: service, notFound: notFound, noRoute: noRoute}
+func New(service Service, notFound, noRoute, noVendorAvailable error) *Server {
+	return &Server{service: service, notFound: notFound, noRoute: noRoute, noVendorAvailable: noVendorAvailable}
 }
 
 func (s *Server) HandleWebhook(ctx context.Context, request *payinv1.HandleWebhookRequest) (*payinv1.HandleWebhookResponse, error) {
@@ -69,6 +70,13 @@ func (s *Server) CreateTopupIntent(ctx context.Context, request *payinv1.CreateT
 	if callErr != nil {
 		if errors.Is(callErr, s.noRoute) {
 			return nil, status.Error(codes.FailedPrecondition, "no topup route available")
+		}
+		if errors.Is(callErr, s.noVendorAvailable) {
+			// docs/plan/40 Task T2 — distinct gRPC code from "no route"
+			// (FailedPrecondition/422): every candidate vendor is
+			// registered but circuit-broken, a TRANSIENT condition the
+			// caller should retry, not a config problem.
+			return nil, status.Error(codes.Unavailable, "no vendor available")
 		}
 		return nil, status.Error(codes.Internal, "create topup intent failed")
 	}

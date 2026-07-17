@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/herdifirdausss/seev/internal/config"
 	"github.com/herdifirdausss/seev/internal/ledger/apperror"
+	"github.com/herdifirdausss/seev/internal/ledger/repository"
 	"github.com/herdifirdausss/seev/pkg/database"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -23,21 +24,21 @@ func newMockDB(t *testing.T) (*database.DBSQL, sqlmock.Sqlmock) {
 
 func TestCreateUserAccounts_InvalidCurrency_Rejected(t *testing.T) {
 	db, _ := newMockDB(t)
-	svc := New(db)
+	svc := New(db, repository.NewProvisioningRepository())
 	_, err := svc.CreateUserAccounts(context.Background(), uuid.New(), "USD")
 	assert.ErrorIs(t, err, apperror.ErrValidation)
 }
 
 func TestCreateUserAccounts_NilUserID_Rejected(t *testing.T) {
 	db, _ := newMockDB(t)
-	svc := New(db)
+	svc := New(db, repository.NewProvisioningRepository())
 	_, err := svc.CreateUserAccounts(context.Background(), uuid.Nil, "IDR")
 	assert.ErrorIs(t, err, apperror.ErrValidation)
 }
 
 func TestCreateUserAccounts_ProvisionsStandardSet(t *testing.T) {
 	db, mock := newMockDB(t)
-	svc := New(db)
+	svc := New(db, repository.NewProvisioningRepository())
 	userID := uuid.New()
 
 	mock.ExpectBegin()
@@ -63,7 +64,7 @@ func TestCreateUserAccounts_ProvisionsStandardSet(t *testing.T) {
 
 func TestCreateUserAccounts_DBError_RollsBack(t *testing.T) {
 	db, mock := newMockDB(t)
-	svc := New(db)
+	svc := New(db, repository.NewProvisioningRepository())
 
 	mock.ExpectBegin()
 	mock.ExpectQuery(`INSERT INTO accounts`).WillReturnError(assert.AnError)
@@ -76,14 +77,14 @@ func TestCreateUserAccounts_DBError_RollsBack(t *testing.T) {
 
 func TestCreatePocket_InvalidCode_Rejected(t *testing.T) {
 	db, _ := newMockDB(t)
-	svc := New(db)
+	svc := New(db, repository.NewProvisioningRepository())
 	_, err := svc.CreatePocket(context.Background(), uuid.New(), "IDR", "Not Valid!")
 	assert.ErrorIs(t, err, apperror.ErrValidation)
 }
 
 func TestCreatePocket_ValidCode_OK(t *testing.T) {
 	db, mock := newMockDB(t)
-	svc := New(db)
+	svc := New(db, repository.NewProvisioningRepository())
 	userID := uuid.New()
 	accID := uuid.New()
 

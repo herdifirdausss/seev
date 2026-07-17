@@ -85,9 +85,14 @@ func run(parent context.Context) error {
 	}
 	registry := vendorgw.NewRegistry()
 	if cfg.Vendor.MockvendorEnabled {
-		registry.AddPayin(mockvendor.New(cfg.Vendor.MockvendorSecret))
+		registry.AddPayin(mockvendor.New(mockvendor.VendorName, cfg.Vendor.MockvendorSecret))
 		log.Warn("vendorgw: mockvendor enabled — test-only vendor")
 	}
+	if cfg.Vendor.Mockvendor2Enabled {
+		registry.AddPayin(mockvendor.New("mockvendor2", cfg.Vendor.Mockvendor2Secret))
+		log.Warn("vendorgw: mockvendor2 enabled — test-only second vendor for failover demos")
+	}
+	breaker := vendorgw.NewHealthTracker(cfg.Breaker.FailureThreshold, cfg.Breaker.Cooldown, log)
 
 	// fraud client screens deposits pre-posting (docs/plan/37 Task T4).
 	// FRAUD_GRPC_ADDR unset (dev/test defaults) => nil client => no screening.
@@ -104,7 +109,7 @@ func run(parent context.Context) error {
 		fraudClient = fraudcheck.New(fraudv1.NewFraudServiceClient(fraudConn), "payin")
 	}
 
-	module := payin.NewModule(db, ledgerclient.New(ledgerConn), registry, cfg.Vendor.TopupIntentTTL, log, fraudClient)
+	module := payin.NewModule(db, ledgerclient.New(ledgerConn), registry, cfg.Vendor.TopupIntentTTL, log, fraudClient, breaker)
 	grpcServer := grpcx.NewServer(log, cfg.InternalGRPCToken)
 	module.RegisterGRPC(grpcServer)
 	grpcListener, err := net.Listen("tcp", ":"+cfg.GRPCPort)

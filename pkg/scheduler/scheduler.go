@@ -28,7 +28,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -735,29 +734,6 @@ func (t *testMetrics) JobFail(name string, dur time.Duration, err error) {
 
 func (t *testMetrics) JobSkip(name string) {
 	t.skips.Add(1)
-}
-
-type PrometheusMetrics struct {
-	jobStarts   *prometheus.CounterVec
-	jobDuration *prometheus.HistogramVec
-	jobFailures *prometheus.CounterVec
-}
-
-func (m *PrometheusMetrics) JobStart(name string) {
-	m.jobStarts.WithLabelValues(name).Inc()
-}
-
-func (m *PrometheusMetrics) JobSuccess(name string, dur time.Duration) {
-	m.jobDuration.WithLabelValues(name, "success").Observe(dur.Seconds())
-}
-
-func (m *PrometheusMetrics) JobFail(name string, dur time.Duration, err error) {
-	m.jobFailures.WithLabelValues(name).Inc()
-	m.jobDuration.WithLabelValues(name, "failure").Observe(dur.Seconds())
-}
-
-func (m *PrometheusMetrics) JobSkip(name string) {
-	m.jobStarts.WithLabelValues(name + "_skip").Inc()
 }
 
 // ============================================================

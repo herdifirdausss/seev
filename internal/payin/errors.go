@@ -34,3 +34,9 @@ var ErrTopupIntentMismatch = errors.New("payin: topup intent mismatch")
 var ErrTopupIntentExpired = errors.New("payin: topup intent expired")
 
 var ErrNoRoute = errors.New("payin: no route")
+
+// ErrNoVendorAvailable means at least one routing rule matched, but every
+// candidate vendor was either unregistered or its circuit breaker is open
+// (docs/plan/40 Task T2) — distinct from ErrNoRoute (no rule matched at
+// all). The gateway handler maps this to 503 VENDOR_UNAVAILABLE.
+var ErrNoVendorAvailable = errors.New("payin: no vendor available")

@@ -145,7 +145,7 @@ func setupHeldRequest(t *testing.T, db *database.DBSQL, m *Module, ledgerModule 
 func newRaceModule(db *database.DBSQL) (*Module, *testutil.LedgerHarness) {
 	ledgerModule := testutil.NewLedgerHarness(db)
 	registry := vendorgw.NewRegistry()
-	registry.AddPayout(mockvendor.NewPayoutProvider())
+	registry.AddPayout(mockvendor.NewPayoutProvider(mockvendor.VendorName))
 	m := &Module{
 		repo:     repository.NewRepository(db),
 		poster:   ledgerModule,

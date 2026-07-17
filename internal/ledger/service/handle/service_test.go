@@ -568,21 +568,6 @@ func TestValidateAccounts_CurrencyMismatch_ErrCurrencyMismatch(t *testing.T) {
 }
 
 // =============================================================================
-// deduplicateAndSort
-// =============================================================================
-
-func TestDeduplicateAndSort_RemovesDups(t *testing.T) {
-	id := newID()
-	result := generalutil.DeduplicateAndSort([]uuid.UUID{id, id, id})
-	assert.Len(t, result, 1)
-}
-
-func TestDeduplicateAndSort_Deterministic(t *testing.T) {
-	ids := []uuid.UUID{newID(), newID(), newID()}
-	assert.Equal(t, generalutil.DeduplicateAndSort(ids), generalutil.DeduplicateAndSort(ids))
-}
-
-// =============================================================================
 // generalutil.MetaDecimal — float64 precision correctness  [FIX #1 iter2]
 // =============================================================================
 

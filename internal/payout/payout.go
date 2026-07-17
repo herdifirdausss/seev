@@ -43,7 +43,7 @@ import (
 type PayoutRequest = model.PayoutRequest
 
 func (m *Module) RegisterGRPC(server *grpc.Server) {
-	payoutv1.RegisterPayoutServiceServer(server, grpcserver.New(m, repository.ErrNotFound, ErrNoRoute, ErrScreeningBlocked))
+	payoutv1.RegisterPayoutServiceServer(server, grpcserver.New(m, repository.ErrNotFound, ErrNoRoute, ErrNoVendorAvailable, ErrScreeningBlocked))
 }
 
 // Poster is the subset of ledger.Module's behavior payout needs — a local
@@ -85,6 +85,10 @@ type Module struct {
 	// posted (docs/plan/37 Task T5). nil is a valid, fully-supported
 	// configuration — no screening runs.
 	fraudClient *fraudcheck.Client
+	// breaker tracks per-vendor circuit health (docs/plan/40 Task T1) — nil
+	// is a valid, fully-supported configuration (byte-identical to before
+	// this feature existed: every registered vendor is always "allowed").
+	breaker *vendorgw.HealthTracker
 
 	resumeJob *worker.ResumeJob
 }
@@ -93,8 +97,10 @@ type Module struct {
 // from the routing repository. redisClient follows the optional-Redis convention as
 // ledger.NewModule: nil means the resume job's distributed lock falls back
 // to an in-memory implementation (single-instance only). fraudClient may be
-// nil to disable pre-hold fraud screening entirely.
-func NewModule(db database.DatabaseSQL, poster Poster, registry *vendorgw.Registry, redisClient *redis.Client, logger *slog.Logger, fraudClient *fraudcheck.Client) *Module {
+// nil to disable pre-hold fraud screening entirely. breaker may be nil to
+// disable circuit-breaking entirely (every registered vendor is always
+// allowed).
+func NewModule(db database.DatabaseSQL, poster Poster, registry *vendorgw.Registry, redisClient *redis.Client, logger *slog.Logger, fraudClient *fraudcheck.Client, breaker *vendorgw.HealthTracker) *Module {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -105,6 +111,7 @@ func NewModule(db database.DatabaseSQL, poster Poster, registry *vendorgw.Regist
 		registry:    registry,
 		logger:      logger,
 		fraudClient: fraudClient,
+		breaker:     breaker,
 	}
 
 	var lock scheduler.LockProvider

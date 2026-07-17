@@ -20,6 +20,7 @@ import (
 	"github.com/herdifirdausss/seev/internal/ledger/events"
 	"github.com/herdifirdausss/seev/pkg/database"
 	"github.com/herdifirdausss/seev/pkg/messaging"
+	"github.com/herdifirdausss/seev/pkg/middleware"
 )
 
 type ScreenInput = model.ScreenInput
@@ -122,6 +123,12 @@ func (m *Module) handleDelivery(ctx context.Context, delivery amqp.Delivery) err
 	if err := m.store.Record(ctx, delivery.MessageId, key, velocityTTL); err != nil {
 		return fmt.Errorf("fraud: increment velocity: %w", err)
 	}
+	// request_id here is the CorrelationId the publisher stamped on this
+	// message (docs/plan/36 Task T4/T6) — logging it is what lets a trace
+	// span the async hop from "HTTP/gRPC request that posted the
+	// transaction" to "this velocity counter increment", the same way the
+	// synchronous screening call already does via pkg/fraudcheck.
+	m.logger.Info("fraud: velocity recorded", "request_id", middleware.RequestIDFromCtx(ctx), "user_id", event.UserID.String())
 	return nil
 }
 

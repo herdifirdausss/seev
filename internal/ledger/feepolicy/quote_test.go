@@ -3,7 +3,6 @@ package feepolicy
 import (
 	"context"
 	"database/sql"
-	"regexp"
 	"testing"
 	"time"
 
@@ -20,7 +19,7 @@ func TestCreateQuote_ResolvesFeeAndPersists(t *testing.T) {
 	amount := decimal.NewFromInt(100_000)
 
 	expectRule(mock, userID, "transfer_p2p", "", "IDR", 500, 0, "platform")
-	mock.ExpectExec(regexp.QuoteMeta("INSERT INTO fee_quotes")).
+	mock.ExpectExec(`INSERT INTO fee_quotes`).
 		WithArgs(sqlmock.AnyArg(), userID, "transfer_p2p", "", "IDR", amount, decimal.NewFromInt(500), "platform", sqlmock.AnyArg()).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
@@ -38,10 +37,10 @@ func TestCreateQuote_NoRuleMatched_ZeroFeeStillQuoted(t *testing.T) {
 	userID := uuid.New()
 	amount := decimal.NewFromInt(100_000)
 
-	mock.ExpectQuery(regexp.QuoteMeta(resolveQuery)).
+	mock.ExpectQuery(`SELECT flat_minor_units, percent_basis_pts, fee_gateway`).
 		WithArgs("money_in", "IDR", userID, "").
 		WillReturnError(sql.ErrNoRows)
-	mock.ExpectExec(regexp.QuoteMeta("INSERT INTO fee_quotes")).
+	mock.ExpectExec(`INSERT INTO fee_quotes`).
 		WithArgs(sqlmock.AnyArg(), userID, "money_in", "", "IDR", amount, decimal.Zero, "", sqlmock.AnyArg()).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
@@ -57,7 +56,7 @@ func TestConsumeQuote_HappyPath(t *testing.T) {
 	quoteID, userID := uuid.New(), uuid.New()
 	amount := decimal.NewFromInt(100_000)
 
-	mock.ExpectQuery(regexp.QuoteMeta(consumeQuoteQuery)).
+	mock.ExpectQuery(`UPDATE fee_quotes SET consumed_at`).
 		WithArgs(quoteID, userID, "transfer_p2p", "IDR", amount, "tx:abc").
 		WillReturnRows(sqlmock.NewRows([]string{"fee_amount", "fee_gateway"}).AddRow(500, "platform"))
 
@@ -73,10 +72,10 @@ func TestConsumeQuote_TrulyExpiredOrConsumedOrMissing_ErrQuoteExpired(t *testing
 	quoteID, userID := uuid.New(), uuid.New()
 	amount := decimal.NewFromInt(100_000)
 
-	mock.ExpectQuery(regexp.QuoteMeta(consumeQuoteQuery)).
+	mock.ExpectQuery(`UPDATE fee_quotes SET consumed_at`).
 		WithArgs(quoteID, userID, "transfer_p2p", "IDR", amount, "tx:abc").
 		WillReturnError(sql.ErrNoRows)
-	mock.ExpectQuery(regexp.QuoteMeta(classifyQuoteQuery)).
+	mock.ExpectQuery(`SELECT 1 FROM fee_quotes`).
 		WithArgs(quoteID, userID).
 		WillReturnError(sql.ErrNoRows)
 
@@ -90,10 +89,10 @@ func TestConsumeQuote_ExistsButAmountMismatch_ErrQuoteMismatch_NotBurned(t *test
 	quoteID, userID := uuid.New(), uuid.New()
 	wrongAmount := decimal.NewFromInt(100_001) // off by one
 
-	mock.ExpectQuery(regexp.QuoteMeta(consumeQuoteQuery)).
+	mock.ExpectQuery(`UPDATE fee_quotes SET consumed_at`).
 		WithArgs(quoteID, userID, "transfer_p2p", "IDR", wrongAmount, "tx:abc").
 		WillReturnError(sql.ErrNoRows)
-	mock.ExpectQuery(regexp.QuoteMeta(classifyQuoteQuery)).
+	mock.ExpectQuery(`SELECT 1 FROM fee_quotes`).
 		WithArgs(quoteID, userID).
 		WillReturnRows(sqlmock.NewRows([]string{"1"}).AddRow(1))
 

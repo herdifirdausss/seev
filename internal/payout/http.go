@@ -11,6 +11,7 @@ import (
 	"github.com/shopspring/decimal"
 
 	"github.com/herdifirdausss/seev/internal/payout/repository"
+	"github.com/herdifirdausss/seev/internal/vendorgw"
 	"github.com/herdifirdausss/seev/pkg/middleware"
 	"github.com/herdifirdausss/seev/pkg/response"
 )
@@ -183,7 +184,74 @@ func (m *Module) AdminRouter() http.Handler {
 	mux.HandleFunc("PUT /admin/payout/routing-rules/{id}", m.updateRoutingRuleHandler)
 	mux.HandleFunc("GET /admin/payout/vendor-gateways/{vendor}", m.getVendorGatewayHandler)
 	mux.HandleFunc("PUT /admin/payout/vendor-gateways/{vendor}", m.putVendorGatewayHandler)
+	mux.HandleFunc("POST /admin/payout/vendors/{vendor}/force-fail", m.vendorForceFailHandler)
+	mux.HandleFunc("GET /admin/payout/vendors/health", m.vendorHealthHandler)
 	return mux
+}
+
+type vendorHealthResponse struct {
+	Vendors []vendorgw.VendorHealth `json:"vendors"`
+}
+
+// vendorHealthHandler serves GET /admin/payout/vendors/health (docs/plan/40
+// Task T5 — see internal/payin/http.go's own vendorHealthHandler doc
+// comment for why this is namespaced under /admin/payout/ rather than the
+// doc's shorthand "/admin/vendors/health"). nil breaker reports an empty
+// list.
+func (m *Module) vendorHealthHandler(w http.ResponseWriter, r *http.Request) {
+	if !isAdmin(r) {
+		response.Forbidden(w, "admin privileges required")
+		return
+	}
+	vendors := []vendorgw.VendorHealth{}
+	if m.breaker != nil {
+		vendors = m.breaker.Snapshot()
+	}
+	response.OK(w, vendorHealthResponse{Vendors: vendors})
+}
+
+// forceFailSwitch is implemented by mockvendor.PayoutProvider only
+// (docs/plan/40 Task T4) — a narrow, package-local interface so this
+// production module never imports the test-only mockvendor package
+// directly; any registered vendor that doesn't support it simply reports
+// itself as unsupported below.
+type forceFailSwitch interface{ SetForceFail(fail bool) }
+
+type vendorForceFailRequest struct {
+	Fail bool `json:"fail"`
+}
+
+// vendorForceFailHandler serves POST /admin/payout/vendors/{vendor}/force-fail
+// (docs/plan/40 Task T4) — test-only chaos tooling: flips a registered
+// vendor's force-fail switch so every Submit against it returns a genuine
+// transport-style error regardless of destination content, tripping the
+// circuit breaker from realistic end-to-end traffic instead of reaching
+// into breaker internals directly. A vendor that doesn't implement
+// forceFailSwitch (i.e. isn't mockvendor) reports 400 — there is no
+// generic way to simulate "this real vendor is down".
+func (m *Module) vendorForceFailHandler(w http.ResponseWriter, r *http.Request) {
+	if !isAdmin(r) {
+		response.Forbidden(w, "admin privileges required")
+		return
+	}
+	vendor := r.PathValue("vendor")
+	provider, ok := m.registry.Payout(vendor)
+	if !ok {
+		response.NotFound(w, "vendor not registered")
+		return
+	}
+	switcher, ok := provider.(forceFailSwitch)
+	if !ok {
+		response.BadRequest(w, "vendor does not support force-fail")
+		return
+	}
+
+	var body vendorForceFailRequest
+	if !response.Decode(w, r, &body) {
+		return
+	}
+	switcher.SetForceFail(body.Fail)
+	response.OK(w, map[string]bool{"force_fail": body.Fail})
 }
 
 type listRequestsResponse struct {

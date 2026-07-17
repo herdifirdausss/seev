@@ -28,12 +28,15 @@ func NewV7() uuid.UUID {
 }
 
 // Deduplicate removes repeated IDs while preserving the first occurrence's
-// position. Use this (not DeduplicateAndSort) when the caller's code
-// identifies accounts by position (e.g. processors indexing
+// position. Positional order must be preserved here (e.g. processors index
 // ResolvedCommand.AccountIDs as [source, destination, fee]) — lock ordering
 // is handled independently by the DB query's own ORDER BY (see
-// repository.BalanceRepository.LockBalances), so resorting here would only
-// scramble positional meaning without adding any deadlock-safety benefit.
+// repository.BalanceRepository.LockBalances), so resorting IDs at this layer
+// would only scramble positional meaning without adding any deadlock-safety
+// benefit. A prior sorting variant of this function was in fact the root
+// cause of a real money-safety bug (silently swapped debit/credit direction
+// whenever a system account's UUID happened to sort before the user's) and
+// was removed entirely rather than left around unused.
 func Deduplicate(ids []uuid.UUID) []uuid.UUID {
 	seen := make(map[uuid.UUID]struct{}, len(ids))
 	out := make([]uuid.UUID, 0, len(ids))
@@ -43,33 +46,6 @@ func Deduplicate(ids []uuid.UUID) []uuid.UUID {
 			out = append(out, id)
 		}
 	}
-	return out
-}
-
-// DeduplicateAndSort removes repeated IDs and sorts the result by raw
-// [16]byte value. Prefer Deduplicate when callers rely on positional
-// ordering (see its doc comment) — sorting here is only useful when the
-// caller genuinely needs a canonical/deterministic order for its own sake
-// (e.g. two independently-built ID lists that must compare equal).
-func DeduplicateAndSort(ids []uuid.UUID) []uuid.UUID {
-	seen := make(map[uuid.UUID]struct{}, len(ids))
-	out := make([]uuid.UUID, 0, len(ids))
-	for _, id := range ids {
-		if _, ok := seen[id]; !ok {
-			seen[id] = struct{}{}
-			out = append(out, id)
-		}
-	}
-
-	// Sort by raw [16]byte for deterministic lock ordering.
-	sort.Slice(out, func(i, j int) bool {
-		for k := 0; k < 16; k++ {
-			if out[i][k] != out[j][k] {
-				return out[i][k] < out[j][k]
-			}
-		}
-		return false
-	})
 	return out
 }
 
@@ -87,12 +63,4 @@ func SortedDecimalKeys(m map[uuid.UUID]decimal.Decimal) []uuid.UUID {
 		return false
 	})
 	return keys
-}
-
-func SafeIndex(ids []uuid.UUID, i int) any {
-	if i < len(ids) {
-		return ids[i]
-	}
-
-	return nil
 }
