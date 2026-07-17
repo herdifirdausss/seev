@@ -137,6 +137,34 @@ func TestSubmit_VendorTimesOut_NeverFailsOver_PinnedForResume(t *testing.T) {
 	assert.Equal(t, 1, providerA.submitted)
 }
 
+func TestSubmit_VendorCallPersistenceFailureRefusesProgress(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	repo := repository.NewMockRepository(ctrl)
+	id := uuid.New()
+	holdTxID := uuid.New()
+
+	req := sampleRequest(id, model.StatusHeld)
+	req.HoldTxID = &holdTxID
+	req.Vendor = "vendorA"
+
+	repo.EXPECT().Get(gomock.Any(), id).Return(req, nil)
+	repo.EXPECT().TransitionToSubmitted(gomock.Any(), id).Return(true, nil)
+	repo.EXPECT().InsertVendorCall(gomock.Any(), gomock.Any()).Return(assertAnErr("database unavailable"))
+	// No settlement, cancellation, failover lookup, or vendor replacement is
+	// allowed after the durable call history fails to record the outcome.
+
+	providerA := &stubPayoutProvider{name: "vendorA", submitFn: func(context.Context, string, decimal.Decimal, string, json.RawMessage) (vendorgw.PayoutResult, error) {
+		return vendorgw.PayoutResult{Status: vendorgw.PayoutSettled}, nil
+	}}
+	registry := vendorgw.NewRegistry()
+	registry.AddPayout(providerA)
+
+	m := &Module{repo: repo, poster: stubPoster{}, registry: registry, logger: discardLogger()}
+	err := m.submit(context.Background(), id)
+	require.ErrorContains(t, err, "persist vendor call outcome")
+	assert.Equal(t, 1, providerA.submitted)
+}
+
 // TestSubmit_CircuitAlreadyOpen_GoesStraightToSecondCandidate is
 // docs/plan/40 Task T3's scenario (c): the FIRST candidate's circuit is
 // already open before any call this submit() makes — routing (Task T2)

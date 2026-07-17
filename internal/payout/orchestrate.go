@@ -232,7 +232,7 @@ func (m *Module) submit(ctx context.Context, id uuid.UUID) error {
 
 		result, submitErr := provider.Submit(ctx, id.String(), req.Amount, req.Currency, req.Destination)
 		outcome := classifySubmitOutcome(result, submitErr)
-		m.recordVendorCall(ctx, id, fmt.Sprintf("submit amount=%s currency=%s vendor=%s", req.Amount, req.Currency, vendor), result, submitErr, outcome)
+		recordErr := m.recordVendorCall(ctx, id, fmt.Sprintf("submit amount=%s currency=%s vendor=%s", req.Amount, req.Currency, vendor), result, submitErr, outcome)
 		if m.breaker != nil {
 			if submitErr != nil {
 				m.breaker.RecordFailure(vendor)
@@ -241,6 +241,12 @@ func (m *Module) submit(ctx context.Context, id uuid.UUID) error {
 				// error) — the vendor WAS reachable, gotcha #13 master.
 				m.breaker.RecordSuccess(vendor)
 			}
+		}
+		if recordErr != nil {
+			// The persisted call history is the safety boundary that prevents a
+			// later retry from paying through a second vendor. If it cannot be
+			// written, leave the request pinned and make no further state change.
+			return recordErr
 		}
 
 		if submitErr != nil {
@@ -431,7 +437,7 @@ func (m *Module) reconcileAfterLostRace(ctx context.Context, id uuid.UUID, cause
 	return nil
 }
 
-func (m *Module) recordVendorCall(ctx context.Context, requestID uuid.UUID, summary string, result vendorgw.PayoutResult, callErr error, outcome string) {
+func (m *Module) recordVendorCall(ctx context.Context, requestID uuid.UUID, summary string, result vendorgw.PayoutResult, callErr error, outcome string) error {
 	call := model.PayoutVendorCall{
 		ID: generalutil.NewV7(), PayoutRequestID: requestID, Attempt: 1, ReqSummary: summary, Outcome: outcome,
 	}
@@ -441,8 +447,9 @@ func (m *Module) recordVendorCall(ctx context.Context, requestID uuid.UUID, summ
 		call.RespStatus = string(result.Status)
 	}
 	if err := m.repo.InsertVendorCall(ctx, call); err != nil {
-		m.logger.Error("payout: record vendor call failed", slog.Any("error", err), slog.String("request_id", requestID.String()))
+		return fmt.Errorf("payout: persist vendor call outcome: %w", err)
 	}
+	return nil
 }
 
 // ResumeStuck re-drives requests that crashed or stalled mid-flight
@@ -539,7 +546,9 @@ func (m *Module) pollVendorPending(ctx context.Context, req model.PayoutRequest)
 	}
 
 	result, queryErr := provider.Query(ctx, req.ID.String())
-	m.recordVendorCall(ctx, req.ID, fmt.Sprintf("query vendor=%s vendor_ref=%s", req.Vendor, req.VendorRef), result, queryErr, classifyQueryOutcome(queryErr))
+	if err := m.recordVendorCall(ctx, req.ID, fmt.Sprintf("query vendor=%s vendor_ref=%s", req.Vendor, req.VendorRef), result, queryErr, classifyQueryOutcome(queryErr)); err != nil {
+		return err
+	}
 	if queryErr != nil {
 		return queryErr
 	}
