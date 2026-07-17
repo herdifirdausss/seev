@@ -91,8 +91,8 @@ func TestSubmit_VendorRejectsSynchronously_FailsOverToNextCandidate(t *testing.T
 	err := m.submit(context.Background(), id)
 	require.NoError(t, err)
 
-	assert.Equal(t, 1, providerA.submitted, "A must be tried exactly once")
-	assert.Equal(t, 1, providerB.submitted, "B must be tried exactly once")
+	assert.Equal(t, int64(1), providerA.submitted.Load(), "A must be tried exactly once")
+	assert.Equal(t, int64(1), providerB.submitted.Load(), "B must be tried exactly once")
 }
 
 // TestSubmit_VendorTimesOut_NeverFailsOver_PinnedForResume is docs/plan/40
@@ -134,7 +134,7 @@ func TestSubmit_VendorTimesOut_NeverFailsOver_PinnedForResume(t *testing.T) {
 	m := &Module{repo: repo, poster: stubPoster{}, registry: registry, routing: routing, logger: discardLogger()}
 	err := m.submit(context.Background(), id)
 	require.Error(t, err)
-	assert.Equal(t, 1, providerA.submitted)
+	assert.Equal(t, int64(1), providerA.submitted.Load())
 }
 
 func TestSubmit_VendorCallPersistenceFailureRefusesProgress(t *testing.T) {
@@ -162,7 +162,36 @@ func TestSubmit_VendorCallPersistenceFailureRefusesProgress(t *testing.T) {
 	m := &Module{repo: repo, poster: stubPoster{}, registry: registry, logger: discardLogger()}
 	err := m.submit(context.Background(), id)
 	require.ErrorContains(t, err, "persist vendor call outcome")
-	assert.Equal(t, 1, providerA.submitted)
+	assert.Equal(t, int64(1), providerA.submitted.Load())
+}
+
+func TestSubmit_ConcurrentAcceptedCallPreventsCancellation(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	repo := repository.NewMockRepository(ctrl)
+	id := uuid.New()
+
+	req := sampleRequest(id, model.StatusHeld)
+	req.Vendor = "vendorA"
+
+	repo.EXPECT().Get(gomock.Any(), id).Return(req, nil)
+	repo.EXPECT().TransitionToSubmitted(gomock.Any(), id).Return(true, nil)
+	repo.EXPECT().InsertVendorCall(gomock.Any(), gomock.Any()).Return(nil)
+	repo.EXPECT().ListVendorCalls(gomock.Any(), id).Return([]model.PayoutVendorCall{
+		{Outcome: model.VendorCallRejected},
+		{Outcome: model.VendorCallAccepted},
+	}, nil)
+	// No routing, vendor replacement, or cancellation is allowed once a
+	// concurrent attempt has recorded an accepted outcome.
+
+	providerA := &stubPayoutProvider{name: "vendorA", submitFn: func(context.Context, string, decimal.Decimal, string, json.RawMessage) (vendorgw.PayoutResult, error) {
+		return vendorgw.PayoutResult{Status: vendorgw.PayoutFailed, Reason: "declined"}, nil
+	}}
+	registry := vendorgw.NewRegistry()
+	registry.AddPayout(providerA)
+
+	m := &Module{repo: repo, poster: stubPoster{}, registry: registry, logger: discardLogger()}
+	require.NoError(t, m.submit(context.Background(), id))
+	assert.Equal(t, int64(1), providerA.submitted.Load())
 }
 
 // TestSubmit_CircuitAlreadyOpen_GoesStraightToSecondCandidate is
@@ -227,8 +256,8 @@ func TestSubmit_CircuitAlreadyOpen_GoesStraightToSecondCandidate(t *testing.T) {
 	m := &Module{repo: repo, poster: poster, registry: registry, routing: routing, breaker: breaker, logger: discardLogger()}
 	err := m.submit(context.Background(), id)
 	require.NoError(t, err)
-	assert.Equal(t, 0, providerA.submitted)
-	assert.Equal(t, 1, providerB.submitted)
+	assert.Equal(t, int64(0), providerA.submitted.Load())
+	assert.Equal(t, int64(1), providerB.submitted.Load())
 }
 
 // assertAnErr is a tiny helper so scenario (b)'s stub can return a plain

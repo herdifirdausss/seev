@@ -263,20 +263,27 @@ func (m *Module) submit(ctx context.Context, id uuid.UUID) error {
 			tried = append(tried, vendor)
 			calls, callsErr := m.repo.ListVendorCalls(ctx, id)
 			if callsErr != nil {
-				m.logger.Error("payout: list vendor calls failed, refusing failover", slog.Any("error", callsErr), slog.String("request_id", id.String()))
+				return fmt.Errorf("payout: list vendor calls before failover: %w", callsErr)
 			}
-			if callsErr == nil && mayFailover(calls) {
-				nextVendor, _, routeErr := m.ResolvePayoutRoute(ctx, req.UserID, req.Currency, req.Amount, tried)
-				if routeErr == nil {
-					vendor = nextVendor
-					if setErr := m.repo.SetVendor(ctx, id, vendor); setErr != nil {
-						m.logger.Error("payout: set vendor failed", slog.Any("error", setErr), slog.String("request_id", id.String()))
-					}
-					continue
+			if !mayFailover(calls) {
+				// Another concurrent attempt has already recorded an accepted or
+				// uncertain outcome. It owns completion; cancelling here could race
+				// its settlement and return money that is already being paid out.
+				return nil
+			}
+			nextVendor, _, routeErr := m.ResolvePayoutRoute(ctx, req.UserID, req.Currency, req.Amount, tried)
+			if routeErr == nil {
+				if setErr := m.repo.SetVendor(ctx, id, nextVendor); setErr != nil {
+					return fmt.Errorf("payout: persist failover vendor: %w", setErr)
 				}
-				// ErrNoRoute/ErrNoVendorAvailable — no more candidates, fall
-				// through to cancel below.
+				vendor = nextVendor
+				continue
 			}
+			if !errors.Is(routeErr, ErrNoRoute) && !errors.Is(routeErr, ErrNoVendorAvailable) {
+				return fmt.Errorf("payout: resolve failover route: %w", routeErr)
+			}
+			// No safe candidate remains after only definitive rejections, so
+			// returning the hold is now safe.
 			gateway, gErr := m.gatewayForVendor(ctx, vendor)
 			if gErr != nil {
 				return gErr

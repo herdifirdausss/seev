@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"sync/atomic"
 	"testing"
 
 	"github.com/google/uuid"
@@ -85,17 +86,17 @@ type stubPayoutProvider struct {
 	name      string
 	submitFn  func(ctx context.Context, idempotencyKey string, amount decimal.Decimal, currency string, destination json.RawMessage) (vendorgw.PayoutResult, error)
 	queryFn   func(ctx context.Context, idempotencyKey string) (vendorgw.PayoutResult, error)
-	submitted int
-	queried   int
+	submitted atomic.Int64
+	queried   atomic.Int64
 }
 
 func (s *stubPayoutProvider) Vendor() string { return s.name }
 func (s *stubPayoutProvider) Submit(ctx context.Context, idempotencyKey string, amount decimal.Decimal, currency string, destination json.RawMessage) (vendorgw.PayoutResult, error) {
-	s.submitted++
+	s.submitted.Add(1)
 	return s.submitFn(ctx, idempotencyKey, amount, currency, destination)
 }
 func (s *stubPayoutProvider) Query(ctx context.Context, idempotencyKey string) (vendorgw.PayoutResult, error) {
-	s.queried++
+	s.queried.Add(1)
 	return s.queryFn(ctx, idempotencyKey)
 }
 
@@ -204,7 +205,7 @@ func TestCreate_HappyPath_InstantSettle(t *testing.T) {
 	id, err := m.Create(context.Background(), userID, decimal.NewFromInt(100_000), []byte(`{}`), "test", "")
 	require.NoError(t, err)
 	assert.NotEqual(t, uuid.Nil, id)
-	assert.Equal(t, 1, provider.submitted)
+	assert.Equal(t, int64(1), provider.submitted.Load())
 }
 
 // TestCreate_FraudBlock_NoRowInserted_NoHold proves docs/plan/37 Task T5: a
@@ -484,8 +485,8 @@ func TestResumeStuck_RetriesSubmittedAndPollsVendorPending(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 2, resumed)
 	assert.Equal(t, 0, failed)
-	assert.Equal(t, 1, provider.submitted)
-	assert.Equal(t, 1, provider.queried)
+	assert.Equal(t, int64(1), provider.submitted.Load())
+	assert.Equal(t, int64(1), provider.queried.Load())
 }
 
 // TestResumeStuck_VendorStillPending_NotCountedAsFailure proves a genuinely
