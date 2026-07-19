@@ -480,7 +480,19 @@ tidak pernah hilang karena audit DB down.
 
 ### Hasil
 
-> Diisi saat T4 selesai.
+> T4 selesai pada 2026-07-19. Rule tidak lagi menulis `screening_events`
+> sendiri; verdict membawa event dan `Module.Screen` menjadi satu-satunya
+> jalur persist. Kegagalan INSERT tidak mengubah verdict (termasuk block),
+> tetapi memasukkan event ke FIFO spill queue in-memory bounded 1.000 row.
+> Flusher background mempertahankan urutan, retry saat Postgres pulih, dan
+> overflow membuang event tertua secara terukur.
+>
+> Metric yang tersedia: `fraud_screening_event_write_failures_total`,
+> `fraud_screening_event_spill_depth`, dan
+> `fraud_screening_events_lost_total`; loss akibat crash proses saat spill
+> masih terisi tetap menjadi batas desain yang terdokumentasi. Bukti: unit
+> central write, DB recovery flush, FIFO overflow, serta seluruh fraud suite
+> lulus.
 
 ### T5 — Sanctions screening OpenSanctions (K6)
 

@@ -54,8 +54,8 @@ func TestAmountThresholdModes(t *testing.T) {
 			verdict, err := rule.Screen(context.Background(), input("100"))
 			require.NoError(t, err)
 			assert.Equal(t, tc.block, verdict.Block)
-			require.Len(t, repo.events, 1)
-			assert.Equal(t, "IDR", repo.events[0].Currency)
+			require.NotNil(t, verdict.Event)
+			assert.Equal(t, "IDR", verdict.Event.Currency)
 		})
 	}
 }
@@ -81,7 +81,7 @@ func TestAmountThresholdDynamicModeOffIsNoop(t *testing.T) {
 	verdict, err = rule.Screen(context.Background(), input("100"))
 	require.NoError(t, err)
 	assert.True(t, verdict.Block)
-	assert.Len(t, repo.events, 1)
+	assert.NotNil(t, verdict.Event)
 }
 
 func TestVelocityReadsPostedCounterWithoutIncrementing(t *testing.T) {
@@ -91,7 +91,8 @@ func TestVelocityReadsPostedCounterWithoutIncrementing(t *testing.T) {
 	verdict, err := rule.Screen(context.Background(), input("10"))
 	require.NoError(t, err)
 	assert.True(t, verdict.Block)
-	assert.Equal(t, "fraud:velocity:"+repo.events[0].UserID.String()+":2026-07-15-10", VelocityKey(repo.events[0].UserID.String(), rule.now()))
+	require.NotNil(t, verdict.Event)
+	assert.Equal(t, "fraud:velocity:"+verdict.Event.UserID.String()+":2026-07-15-10", VelocityKey(verdict.Event.UserID.String(), rule.now()))
 }
 
 func TestVelocityCounterError(t *testing.T) {

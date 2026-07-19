@@ -42,6 +42,8 @@ type Module struct {
 	broker       Broker
 	logger       *slog.Logger
 	cancel       context.CancelFunc
+	spill        *eventSpill
+	spillCancel  context.CancelFunc
 }
 
 func (m *Module) RegisterGRPC(server *grpc.Server) {
@@ -66,7 +68,7 @@ func NewModule(db database.DatabaseSQL, store VelocityStore, broker Broker, cfg 
 	repo := repository.NewScreeningRepository(db)
 	mode := rules.ParseMode(cfg.Mode)
 	modeRepo := repository.NewRuleModeRepository(db)
-	module := &Module{repo: repo, modeRepo: modeRepo, modeResolver: newRuleModeResolver(modeRepo, mode, logger), store: store, broker: broker, logger: logger}
+	module := &Module{repo: repo, modeRepo: modeRepo, modeResolver: newRuleModeResolver(modeRepo, mode, logger), store: store, broker: broker, logger: logger, spill: newEventSpill()}
 	if cfg.AmountThreshold.IsPositive() {
 		module.rules = append(module.rules, rules.NewAmountThresholdRuleWithResolver(cfg.AmountThreshold, mode, module.modeResolver, repo, logger))
 	}
@@ -77,6 +79,7 @@ func NewModule(db database.DatabaseSQL, store VelocityStore, broker Broker, cfg 
 }
 
 func (m *Module) Start(ctx context.Context) error {
+	m.startSpillFlusher(ctx)
 	if m.broker == nil || m.store == nil {
 		return nil
 	}
@@ -101,6 +104,9 @@ func (m *Module) Start(ctx context.Context) error {
 func (m *Module) Stop() {
 	if m.cancel != nil {
 		m.cancel()
+	}
+	if m.spillCancel != nil {
+		m.spillCancel()
 	}
 }
 
@@ -136,6 +142,9 @@ func (m *Module) Screen(ctx context.Context, input ScreenInput) (Verdict, error)
 	var finding Verdict
 	for _, rule := range m.rules {
 		verdict, err := rule.Screen(ctx, input)
+		if verdict.Event != nil {
+			m.persistScreeningEvent(ctx, *verdict.Event)
+		}
 		if err != nil || verdict.Block {
 			return verdict, err
 		}
@@ -144,6 +153,34 @@ func (m *Module) Screen(ctx context.Context, input ScreenInput) (Verdict, error)
 		}
 	}
 	return finding, nil
+}
+
+func (m *Module) persistScreeningEvent(ctx context.Context, event ScreeningEvent) {
+	if m.repo == nil {
+		m.enqueueSpill(event)
+		return
+	}
+	if err := m.repo.InsertEvent(ctx, event); err != nil {
+		logger := m.logger
+		if logger == nil {
+			logger = slog.Default()
+		}
+		logger.Error("fraud: persist screening event failed", slog.Any("error", err), slog.String("rule", event.Rule), slog.String("user_id", event.UserID.String()))
+		m.enqueueSpill(event)
+	}
+}
+
+func (m *Module) enqueueSpill(event ScreeningEvent) {
+	if m.spill == nil {
+		m.spill = newEventSpill()
+	}
+	beforeLost := m.spill.lostCount()
+	m.spill.enqueue(event)
+	fraudScreeningEventWriteFailures.Inc()
+	fraudScreeningEventSpillDepth.Set(float64(m.spill.depth()))
+	if m.spill.lostCount() > beforeLost {
+		fraudScreeningEventsLost.Inc()
+	}
 }
 
 func (m *Module) ListEvents(ctx context.Context, userID, verdict string, limit, offset int) ([]ScreeningEvent, error) {

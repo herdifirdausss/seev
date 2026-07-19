@@ -38,6 +38,10 @@ type ScreenInput struct {
 type Verdict struct {
 	Block  bool
 	Reason string
+	// Event is emitted by a rule and persisted centrally by Module.Screen.
+	// Keeping it on the verdict prevents each rule from implementing a subtly
+	// different best-effort audit path.
+	Event *ScreeningEvent
 }
 
 type ScreeningEvent struct {

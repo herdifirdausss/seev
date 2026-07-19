@@ -67,14 +67,13 @@ func (r *VelocityAnomalyRule) Screen(ctx context.Context, input model.ScreenInpu
 		eventVerdict = "blocked"
 	}
 	screeningTotal.WithLabelValues(r.Name(), eventVerdict).Inc()
-	if err := r.repo.InsertEvent(ctx, model.ScreeningEvent{
+	event := model.ScreeningEvent{
 		ID: generalutil.NewV7(), TxType: input.TxType, UserID: input.UserID,
 		Amount: input.Amount, Currency: input.Currency, Rule: r.Name(),
 		Verdict: eventVerdict, Reason: reason,
 		RequestID: input.RequestID, Flow: input.Flow,
-	}); err != nil {
-		r.logger.Error("fraud: persist screening event failed", "error", err, "rule", r.Name(), "user_id", input.UserID)
 	}
+	verdict.Event = &event
 	return verdict, nil
 }
 
