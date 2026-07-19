@@ -164,14 +164,18 @@ func (m *Module) runsHandler(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var id, mode, statusValue, errorCode string
 		var baseline bool
-		var cutoff, started time.Time
+		var cutoff sql.NullTime
+		var started time.Time
 		var finished sql.NullTime
 		var scanned, pages, opened int
 		if err := rows.Scan(&id, &mode, &statusValue, &baseline, &cutoff, &started, &finished, &scanned, &pages, &opened, &errorCode); err != nil {
 			http.Error(w, "assurance unavailable", http.StatusInternalServerError)
 			return
 		}
-		run := map[string]any{"id": id, "mode": mode, "status": statusValue, "baseline": baseline, "cutoff_at": cutoff, "started_at": started, "records_scanned": scanned, "pages_scanned": pages, "findings_opened": opened, "error_code": errorCode}
+		run := map[string]any{"id": id, "mode": mode, "status": statusValue, "baseline": baseline, "started_at": started, "records_scanned": scanned, "pages_scanned": pages, "findings_opened": opened, "error_code": errorCode}
+		if cutoff.Valid {
+			run["cutoff_at"] = cutoff.Time
+		}
 		if finished.Valid {
 			run["finished_at"] = finished.Time
 		}
