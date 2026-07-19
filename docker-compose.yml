@@ -387,7 +387,7 @@ services:
   # ports are bound to 127.0.0.1 only — see docs/plan/43 K1.
   #
   # RAM budget: ~1.9 GiB on top of the app+infra profiles, inside the 4 GB
-  # Docker Desktop budget documented in CLAUDE.md — do NOT run this profile
+  # Docker Desktop budget documented in PROJECT_GUIDE.md — do NOT run this profile
   # at the same time as the testcontainers integration suite.
   prometheus:
     image: prom/prometheus@sha256:f39df5334dee301b885f77e0ff1159f5d8a43bf9db518f885544594799a1e3c2 # v3.12.0-distroless

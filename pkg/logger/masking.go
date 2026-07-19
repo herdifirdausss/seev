@@ -34,7 +34,7 @@ var sensitiveKeys = []string{
 	"credential",
 	"privatekey",
 	"clientsecret",
-	// docs/plan/43 Task T6 / CLAUDE.md: "do not expose ... full idempotency
+	// docs/plan/43 Task T6 / PROJECT_GUIDE.md: "do not expose ... full idempotency
 	// keys in public logs" — Contains-based matching also catches
 	// idempotency_key/idempotency_scope. "amount" is deliberately NOT
 	// added here (see TestIsSensitiveKey's own "amount"->false case,

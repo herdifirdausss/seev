@@ -84,7 +84,7 @@ docker-down:
 smoke-container:
 	./scripts/smoke-container.sh
 
-# This is what CLAUDE.md's "Build and verification" section means by "the
+# This is what PROJECT_GUIDE.md's "Build and verification" section means by "the
 # full gate" — run this instead of chaining the steps by hand so a volume
 # reset is never skipped by mistake. Any ad-hoc debugging against the
 # shared dev stack (manual curl against a running service, a one-off
@@ -158,7 +158,7 @@ observability-secret:
 		echo "deploy/observability/secrets/grafana_admin_password already exists, leaving it alone"; \
 	fi
 
-## observability-up: Start app + observability profiles (Prometheus/Grafana/Loki/Tempo/Alloy) — do NOT run alongside the testcontainers integration suite (CLAUDE.md RAM budget)
+## observability-up: Start app + observability profiles (Prometheus/Grafana/Loki/Tempo/Alloy) — do NOT run alongside the testcontainers integration suite (PROJECT_GUIDE.md RAM budget)
 observability-up: observability-secret
 	OTEL_EXPORTER_OTLP_ENDPOINT=tempo:4317 docker compose --profile app --profile observability up --build -d
 

@@ -1,7 +1,7 @@
 // Package events is the versioned wire-format contract for ledger outbox
 // events (docs/plan/14 Task T3, decision K4). It is the SINGLE subpackage of
 // internal/ledger that external code (other modules, cmd/, internal/handler)
-// may import — see CLAUDE.md "Module Boundaries". It contains ONLY payload
+// may import — see PROJECT_GUIDE.md "Module Boundaries". It contains ONLY payload
 // types and event-type constants: no repository, no processor, no DB access.
 // A consumer that only needs to decode events must not be forced to pull in
 // the whole ledger module's dependency graph.
