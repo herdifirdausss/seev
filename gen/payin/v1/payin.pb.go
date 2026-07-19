@@ -802,6 +802,246 @@ func (x *AssuranceRecord) GetLedgerIdempotencyScope() string {
 	return ""
 }
 
+type GetIntakeControlRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetIntakeControlRequest) Reset() {
+	*x = GetIntakeControlRequest{}
+	mi := &file_seev_payin_v1_payin_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetIntakeControlRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetIntakeControlRequest) ProtoMessage() {}
+
+func (x *GetIntakeControlRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_seev_payin_v1_payin_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetIntakeControlRequest.ProtoReflect.Descriptor instead.
+func (*GetIntakeControlRequest) Descriptor() ([]byte, []int) {
+	return file_seev_payin_v1_payin_proto_rawDescGZIP(), []int{10}
+}
+
+type GetIntakeControlResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Paused        bool                   `protobuf:"varint,1,opt,name=paused,proto3" json:"paused,omitempty"`
+	Revision      int64                  `protobuf:"varint,2,opt,name=revision,proto3" json:"revision,omitempty"`
+	UpdatedBy     string                 `protobuf:"bytes,3,opt,name=updated_by,json=updatedBy,proto3" json:"updated_by,omitempty"`
+	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetIntakeControlResponse) Reset() {
+	*x = GetIntakeControlResponse{}
+	mi := &file_seev_payin_v1_payin_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetIntakeControlResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetIntakeControlResponse) ProtoMessage() {}
+
+func (x *GetIntakeControlResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_seev_payin_v1_payin_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetIntakeControlResponse.ProtoReflect.Descriptor instead.
+func (*GetIntakeControlResponse) Descriptor() ([]byte, []int) {
+	return file_seev_payin_v1_payin_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *GetIntakeControlResponse) GetPaused() bool {
+	if x != nil {
+		return x.Paused
+	}
+	return false
+}
+
+func (x *GetIntakeControlResponse) GetRevision() int64 {
+	if x != nil {
+		return x.Revision
+	}
+	return 0
+}
+
+func (x *GetIntakeControlResponse) GetUpdatedBy() string {
+	if x != nil {
+		return x.UpdatedBy
+	}
+	return ""
+}
+
+func (x *GetIntakeControlResponse) GetUpdatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.UpdatedAt
+	}
+	return nil
+}
+
+type ApplyIntakeControlRequest struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	CommandId        string                 `protobuf:"bytes,1,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
+	Action           string                 `protobuf:"bytes,2,opt,name=action,proto3" json:"action,omitempty"` // pause | resume
+	ExpectedRevision int64                  `protobuf:"varint,3,opt,name=expected_revision,json=expectedRevision,proto3" json:"expected_revision,omitempty"`
+	Actor            string                 `protobuf:"bytes,4,opt,name=actor,proto3" json:"actor,omitempty"`
+	Reason           string                 `protobuf:"bytes,5,opt,name=reason,proto3" json:"reason,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *ApplyIntakeControlRequest) Reset() {
+	*x = ApplyIntakeControlRequest{}
+	mi := &file_seev_payin_v1_payin_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ApplyIntakeControlRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ApplyIntakeControlRequest) ProtoMessage() {}
+
+func (x *ApplyIntakeControlRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_seev_payin_v1_payin_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ApplyIntakeControlRequest.ProtoReflect.Descriptor instead.
+func (*ApplyIntakeControlRequest) Descriptor() ([]byte, []int) {
+	return file_seev_payin_v1_payin_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *ApplyIntakeControlRequest) GetCommandId() string {
+	if x != nil {
+		return x.CommandId
+	}
+	return ""
+}
+
+func (x *ApplyIntakeControlRequest) GetAction() string {
+	if x != nil {
+		return x.Action
+	}
+	return ""
+}
+
+func (x *ApplyIntakeControlRequest) GetExpectedRevision() int64 {
+	if x != nil {
+		return x.ExpectedRevision
+	}
+	return 0
+}
+
+func (x *ApplyIntakeControlRequest) GetActor() string {
+	if x != nil {
+		return x.Actor
+	}
+	return ""
+}
+
+func (x *ApplyIntakeControlRequest) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+type ApplyIntakeControlResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Applied       bool                   `protobuf:"varint,1,opt,name=applied,proto3" json:"applied,omitempty"`
+	Paused        bool                   `protobuf:"varint,2,opt,name=paused,proto3" json:"paused,omitempty"`
+	Revision      int64                  `protobuf:"varint,3,opt,name=revision,proto3" json:"revision,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ApplyIntakeControlResponse) Reset() {
+	*x = ApplyIntakeControlResponse{}
+	mi := &file_seev_payin_v1_payin_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ApplyIntakeControlResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ApplyIntakeControlResponse) ProtoMessage() {}
+
+func (x *ApplyIntakeControlResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_seev_payin_v1_payin_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ApplyIntakeControlResponse.ProtoReflect.Descriptor instead.
+func (*ApplyIntakeControlResponse) Descriptor() ([]byte, []int) {
+	return file_seev_payin_v1_payin_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *ApplyIntakeControlResponse) GetApplied() bool {
+	if x != nil {
+		return x.Applied
+	}
+	return false
+}
+
+func (x *ApplyIntakeControlResponse) GetPaused() bool {
+	if x != nil {
+		return x.Paused
+	}
+	return false
+}
+
+func (x *ApplyIntakeControlResponse) GetRevision() int64 {
+	if x != nil {
+		return x.Revision
+	}
+	return 0
+}
+
 var File_seev_payin_v1_payin_proto protoreflect.FileDescriptor
 
 const file_seev_payin_v1_payin_proto_rawDesc = "" +
@@ -874,17 +1114,38 @@ const file_seev_payin_v1_payin_proto_rawDesc = "" +
 	"ledgerType\x12%\n" +
 	"\x0eledger_gateway\x18\x10 \x01(\tR\rledgerGateway\x12.\n" +
 	"\x13ledger_external_ref\x18\x11 \x01(\tR\x11ledgerExternalRef\x128\n" +
-	"\x18ledger_idempotency_scope\x18\x12 \x01(\tR\x16ledgerIdempotencyScope*\x87\x01\n" +
+	"\x18ledger_idempotency_scope\x18\x12 \x01(\tR\x16ledgerIdempotencyScope\"\x19\n" +
+	"\x17GetIntakeControlRequest\"\xa8\x01\n" +
+	"\x18GetIntakeControlResponse\x12\x16\n" +
+	"\x06paused\x18\x01 \x01(\bR\x06paused\x12\x1a\n" +
+	"\brevision\x18\x02 \x01(\x03R\brevision\x12\x1d\n" +
+	"\n" +
+	"updated_by\x18\x03 \x01(\tR\tupdatedBy\x129\n" +
+	"\n" +
+	"updated_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\xad\x01\n" +
+	"\x19ApplyIntakeControlRequest\x12\x1d\n" +
+	"\n" +
+	"command_id\x18\x01 \x01(\tR\tcommandId\x12\x16\n" +
+	"\x06action\x18\x02 \x01(\tR\x06action\x12+\n" +
+	"\x11expected_revision\x18\x03 \x01(\x03R\x10expectedRevision\x12\x14\n" +
+	"\x05actor\x18\x04 \x01(\tR\x05actor\x12\x16\n" +
+	"\x06reason\x18\x05 \x01(\tR\x06reason\"j\n" +
+	"\x1aApplyIntakeControlResponse\x12\x18\n" +
+	"\aapplied\x18\x01 \x01(\bR\aapplied\x12\x16\n" +
+	"\x06paused\x18\x02 \x01(\bR\x06paused\x12\x1a\n" +
+	"\brevision\x18\x03 \x01(\x03R\brevision*\x87\x01\n" +
 	"\rWebhookResult\x12\x1e\n" +
 	"\x1aWEBHOOK_RESULT_UNSPECIFIED\x10\x00\x12\x15\n" +
 	"\x11WEBHOOK_RESULT_OK\x10\x01\x12\x1a\n" +
 	"\x16WEBHOOK_RESULT_IGNORED\x10\x02\x12#\n" +
-	"\x1fWEBHOOK_RESULT_BUSINESS_FAILURE\x10\x032\xa2\x03\n" +
+	"\x1fWEBHOOK_RESULT_BUSINESS_FAILURE\x10\x032\xf2\x04\n" +
 	"\fPayinService\x12Z\n" +
 	"\rHandleWebhook\x12#.seev.payin.v1.HandleWebhookRequest\x1a$.seev.payin.v1.HandleWebhookResponse\x12f\n" +
 	"\x11CreateTopupIntent\x12'.seev.payin.v1.CreateTopupIntentRequest\x1a(.seev.payin.v1.CreateTopupIntentResponse\x12]\n" +
 	"\x0eGetTopupIntent\x12$.seev.payin.v1.GetTopupIntentRequest\x1a%.seev.payin.v1.GetTopupIntentResponse\x12o\n" +
-	"\x14ListAssuranceRecords\x12*.seev.payin.v1.ListAssuranceRecordsRequest\x1a+.seev.payin.v1.ListAssuranceRecordsResponseB\xa2\x01\n" +
+	"\x14ListAssuranceRecords\x12*.seev.payin.v1.ListAssuranceRecordsRequest\x1a+.seev.payin.v1.ListAssuranceRecordsResponse\x12c\n" +
+	"\x10GetIntakeControl\x12&.seev.payin.v1.GetIntakeControlRequest\x1a'.seev.payin.v1.GetIntakeControlResponse\x12i\n" +
+	"\x12ApplyIntakeControl\x12(.seev.payin.v1.ApplyIntakeControlRequest\x1a).seev.payin.v1.ApplyIntakeControlResponseB\xa2\x01\n" +
 	"\x11com.seev.payin.v1B\n" +
 	"PayinProtoP\x01Z+github.com/herdifirdausss/seev/gen/payin/v1\xa2\x02\x03SPX\xaa\x02\rSeev.Payin.V1\xca\x02\rSeev\\Payin\\V1\xe2\x02\x19Seev\\Payin\\V1\\GPBMetadata\xea\x02\x0fSeev::Payin::V1b\x06proto3"
 
@@ -901,7 +1162,7 @@ func file_seev_payin_v1_payin_proto_rawDescGZIP() []byte {
 }
 
 var file_seev_payin_v1_payin_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_seev_payin_v1_payin_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
+var file_seev_payin_v1_payin_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
 var file_seev_payin_v1_payin_proto_goTypes = []any{
 	(WebhookResult)(0),                   // 0: seev.payin.v1.WebhookResult
 	(*HandleWebhookRequest)(nil),         // 1: seev.payin.v1.HandleWebhookRequest
@@ -914,36 +1175,45 @@ var file_seev_payin_v1_payin_proto_goTypes = []any{
 	(*ListAssuranceRecordsRequest)(nil),  // 8: seev.payin.v1.ListAssuranceRecordsRequest
 	(*ListAssuranceRecordsResponse)(nil), // 9: seev.payin.v1.ListAssuranceRecordsResponse
 	(*AssuranceRecord)(nil),              // 10: seev.payin.v1.AssuranceRecord
-	nil,                                  // 11: seev.payin.v1.HandleWebhookRequest.HeadersEntry
-	(*timestamppb.Timestamp)(nil),        // 12: google.protobuf.Timestamp
+	(*GetIntakeControlRequest)(nil),      // 11: seev.payin.v1.GetIntakeControlRequest
+	(*GetIntakeControlResponse)(nil),     // 12: seev.payin.v1.GetIntakeControlResponse
+	(*ApplyIntakeControlRequest)(nil),    // 13: seev.payin.v1.ApplyIntakeControlRequest
+	(*ApplyIntakeControlResponse)(nil),   // 14: seev.payin.v1.ApplyIntakeControlResponse
+	nil,                                  // 15: seev.payin.v1.HandleWebhookRequest.HeadersEntry
+	(*timestamppb.Timestamp)(nil),        // 16: google.protobuf.Timestamp
 }
 var file_seev_payin_v1_payin_proto_depIdxs = []int32{
-	11, // 0: seev.payin.v1.HandleWebhookRequest.headers:type_name -> seev.payin.v1.HandleWebhookRequest.HeadersEntry
+	15, // 0: seev.payin.v1.HandleWebhookRequest.headers:type_name -> seev.payin.v1.HandleWebhookRequest.HeadersEntry
 	0,  // 1: seev.payin.v1.HandleWebhookResponse.result:type_name -> seev.payin.v1.WebhookResult
 	7,  // 2: seev.payin.v1.CreateTopupIntentResponse.intent:type_name -> seev.payin.v1.TopupIntent
 	7,  // 3: seev.payin.v1.GetTopupIntentResponse.intent:type_name -> seev.payin.v1.TopupIntent
-	12, // 4: seev.payin.v1.TopupIntent.expires_at:type_name -> google.protobuf.Timestamp
-	12, // 5: seev.payin.v1.TopupIntent.created_at:type_name -> google.protobuf.Timestamp
-	12, // 6: seev.payin.v1.TopupIntent.updated_at:type_name -> google.protobuf.Timestamp
-	12, // 7: seev.payin.v1.ListAssuranceRecordsRequest.cursor_updated_at:type_name -> google.protobuf.Timestamp
-	12, // 8: seev.payin.v1.ListAssuranceRecordsRequest.cutoff:type_name -> google.protobuf.Timestamp
+	16, // 4: seev.payin.v1.TopupIntent.expires_at:type_name -> google.protobuf.Timestamp
+	16, // 5: seev.payin.v1.TopupIntent.created_at:type_name -> google.protobuf.Timestamp
+	16, // 6: seev.payin.v1.TopupIntent.updated_at:type_name -> google.protobuf.Timestamp
+	16, // 7: seev.payin.v1.ListAssuranceRecordsRequest.cursor_updated_at:type_name -> google.protobuf.Timestamp
+	16, // 8: seev.payin.v1.ListAssuranceRecordsRequest.cutoff:type_name -> google.protobuf.Timestamp
 	10, // 9: seev.payin.v1.ListAssuranceRecordsResponse.records:type_name -> seev.payin.v1.AssuranceRecord
-	12, // 10: seev.payin.v1.ListAssuranceRecordsResponse.next_updated_at:type_name -> google.protobuf.Timestamp
-	12, // 11: seev.payin.v1.AssuranceRecord.effective_updated_at:type_name -> google.protobuf.Timestamp
-	12, // 12: seev.payin.v1.AssuranceRecord.created_at:type_name -> google.protobuf.Timestamp
-	1,  // 13: seev.payin.v1.PayinService.HandleWebhook:input_type -> seev.payin.v1.HandleWebhookRequest
-	3,  // 14: seev.payin.v1.PayinService.CreateTopupIntent:input_type -> seev.payin.v1.CreateTopupIntentRequest
-	4,  // 15: seev.payin.v1.PayinService.GetTopupIntent:input_type -> seev.payin.v1.GetTopupIntentRequest
-	8,  // 16: seev.payin.v1.PayinService.ListAssuranceRecords:input_type -> seev.payin.v1.ListAssuranceRecordsRequest
-	2,  // 17: seev.payin.v1.PayinService.HandleWebhook:output_type -> seev.payin.v1.HandleWebhookResponse
-	5,  // 18: seev.payin.v1.PayinService.CreateTopupIntent:output_type -> seev.payin.v1.CreateTopupIntentResponse
-	6,  // 19: seev.payin.v1.PayinService.GetTopupIntent:output_type -> seev.payin.v1.GetTopupIntentResponse
-	9,  // 20: seev.payin.v1.PayinService.ListAssuranceRecords:output_type -> seev.payin.v1.ListAssuranceRecordsResponse
-	17, // [17:21] is the sub-list for method output_type
-	13, // [13:17] is the sub-list for method input_type
-	13, // [13:13] is the sub-list for extension type_name
-	13, // [13:13] is the sub-list for extension extendee
-	0,  // [0:13] is the sub-list for field type_name
+	16, // 10: seev.payin.v1.ListAssuranceRecordsResponse.next_updated_at:type_name -> google.protobuf.Timestamp
+	16, // 11: seev.payin.v1.AssuranceRecord.effective_updated_at:type_name -> google.protobuf.Timestamp
+	16, // 12: seev.payin.v1.AssuranceRecord.created_at:type_name -> google.protobuf.Timestamp
+	16, // 13: seev.payin.v1.GetIntakeControlResponse.updated_at:type_name -> google.protobuf.Timestamp
+	1,  // 14: seev.payin.v1.PayinService.HandleWebhook:input_type -> seev.payin.v1.HandleWebhookRequest
+	3,  // 15: seev.payin.v1.PayinService.CreateTopupIntent:input_type -> seev.payin.v1.CreateTopupIntentRequest
+	4,  // 16: seev.payin.v1.PayinService.GetTopupIntent:input_type -> seev.payin.v1.GetTopupIntentRequest
+	8,  // 17: seev.payin.v1.PayinService.ListAssuranceRecords:input_type -> seev.payin.v1.ListAssuranceRecordsRequest
+	11, // 18: seev.payin.v1.PayinService.GetIntakeControl:input_type -> seev.payin.v1.GetIntakeControlRequest
+	13, // 19: seev.payin.v1.PayinService.ApplyIntakeControl:input_type -> seev.payin.v1.ApplyIntakeControlRequest
+	2,  // 20: seev.payin.v1.PayinService.HandleWebhook:output_type -> seev.payin.v1.HandleWebhookResponse
+	5,  // 21: seev.payin.v1.PayinService.CreateTopupIntent:output_type -> seev.payin.v1.CreateTopupIntentResponse
+	6,  // 22: seev.payin.v1.PayinService.GetTopupIntent:output_type -> seev.payin.v1.GetTopupIntentResponse
+	9,  // 23: seev.payin.v1.PayinService.ListAssuranceRecords:output_type -> seev.payin.v1.ListAssuranceRecordsResponse
+	12, // 24: seev.payin.v1.PayinService.GetIntakeControl:output_type -> seev.payin.v1.GetIntakeControlResponse
+	14, // 25: seev.payin.v1.PayinService.ApplyIntakeControl:output_type -> seev.payin.v1.ApplyIntakeControlResponse
+	20, // [20:26] is the sub-list for method output_type
+	14, // [14:20] is the sub-list for method input_type
+	14, // [14:14] is the sub-list for extension type_name
+	14, // [14:14] is the sub-list for extension extendee
+	0,  // [0:14] is the sub-list for field type_name
 }
 
 func init() { file_seev_payin_v1_payin_proto_init() }
@@ -957,7 +1227,7 @@ func file_seev_payin_v1_payin_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_seev_payin_v1_payin_proto_rawDesc), len(file_seev_payin_v1_payin_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   11,
+			NumMessages:   15,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -26,6 +26,12 @@ type fakePayoutClient struct {
 func (f fakePayoutClient) ListAssuranceRecords(context.Context, *payoutv1.ListAssuranceRecordsRequest, ...grpc.CallOption) (*payoutv1.ListAssuranceRecordsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "")
 }
+func (f fakePayoutClient) GetIntakeControl(context.Context, *payoutv1.GetIntakeControlRequest, ...grpc.CallOption) (*payoutv1.GetIntakeControlResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "")
+}
+func (f fakePayoutClient) ApplyIntakeControl(context.Context, *payoutv1.ApplyIntakeControlRequest, ...grpc.CallOption) (*payoutv1.ApplyIntakeControlResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "")
+}
 
 func (f fakePayoutClient) CreatePayout(ctx context.Context, r *payoutv1.CreatePayoutRequest, _ ...grpc.CallOption) (*payoutv1.CreatePayoutResponse, error) {
 	return f.create(ctx, r)

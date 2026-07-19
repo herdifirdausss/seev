@@ -3,6 +3,7 @@ package grpcserver
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
@@ -47,6 +48,9 @@ func (s *Server) CreatePayout(ctx context.Context, request *payoutv1.CreatePayou
 	}
 	id, callErr := s.service.Create(ctx, userID, amount, request.GetDestination(), request.GetCreatedBy(), request.GetQuoteId())
 	if callErr != nil {
+		if strings.Contains(callErr.Error(), "intake paused") {
+			return nil, status.Error(codes.FailedPrecondition, "INTAKE_PAUSED")
+		}
 		if errors.Is(callErr, s.noRoute) {
 			return nil, status.Error(codes.FailedPrecondition, "no payout route available")
 		}
@@ -109,6 +113,33 @@ func (s *Server) ListAssuranceRecords(ctx context.Context, request *payoutv1.Lis
 		return nil, status.Error(codes.Unimplemented, "payout assurance projection unavailable")
 	}
 	return reader.ListAssuranceRecords(ctx, request)
+}
+
+func (s *Server) GetIntakeControl(ctx context.Context, request *payoutv1.GetIntakeControlRequest) (*payoutv1.GetIntakeControlResponse, error) {
+	reader, ok := s.service.(interface {
+		GetIntakeControlRPC(context.Context) (*payoutv1.GetIntakeControlResponse, error)
+	})
+	if !ok {
+		return nil, status.Error(codes.Unimplemented, "payout intake control unavailable")
+	}
+	return reader.GetIntakeControlRPC(ctx)
+}
+
+func (s *Server) ApplyIntakeControl(ctx context.Context, request *payoutv1.ApplyIntakeControlRequest) (*payoutv1.ApplyIntakeControlResponse, error) {
+	reader, ok := s.service.(interface {
+		ApplyIntakeControlRPC(context.Context, *payoutv1.ApplyIntakeControlRequest) (*payoutv1.ApplyIntakeControlResponse, error)
+	})
+	if !ok {
+		return nil, status.Error(codes.Unimplemented, "payout intake control unavailable")
+	}
+	response, err := reader.ApplyIntakeControlRPC(ctx, request)
+	if err != nil {
+		if strings.Contains(err.Error(), "revision mismatch") {
+			return nil, status.Error(codes.Aborted, "intake revision mismatch")
+		}
+		return nil, status.Error(codes.InvalidArgument, "invalid intake command")
+	}
+	return response, nil
 }
 
 func parseUserAndAmount(rawUserID, rawAmount string) (uuid.UUID, decimal.Decimal, error) {

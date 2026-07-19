@@ -25,6 +25,12 @@ type fakePayinClient struct {
 func (f fakePayinClient) ListAssuranceRecords(context.Context, *payinv1.ListAssuranceRecordsRequest, ...grpc.CallOption) (*payinv1.ListAssuranceRecordsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "")
 }
+func (f fakePayinClient) GetIntakeControl(context.Context, *payinv1.GetIntakeControlRequest, ...grpc.CallOption) (*payinv1.GetIntakeControlResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "")
+}
+func (f fakePayinClient) ApplyIntakeControl(context.Context, *payinv1.ApplyIntakeControlRequest, ...grpc.CallOption) (*payinv1.ApplyIntakeControlResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "")
+}
 
 func (f fakePayinClient) HandleWebhook(ctx context.Context, request *payinv1.HandleWebhookRequest, _ ...grpc.CallOption) (*payinv1.HandleWebhookResponse, error) {
 	return f.handle(ctx, request)

@@ -23,6 +23,8 @@ const (
 	PayinService_CreateTopupIntent_FullMethodName    = "/seev.payin.v1.PayinService/CreateTopupIntent"
 	PayinService_GetTopupIntent_FullMethodName       = "/seev.payin.v1.PayinService/GetTopupIntent"
 	PayinService_ListAssuranceRecords_FullMethodName = "/seev.payin.v1.PayinService/ListAssuranceRecords"
+	PayinService_GetIntakeControl_FullMethodName     = "/seev.payin.v1.PayinService/GetIntakeControl"
+	PayinService_ApplyIntakeControl_FullMethodName   = "/seev.payin.v1.PayinService/ApplyIntakeControl"
 )
 
 // PayinServiceClient is the client API for PayinService service.
@@ -35,6 +37,8 @@ type PayinServiceClient interface {
 	// Read-only product-assurance projection. Additive: existing callers are
 	// unaffected and sensitive webhook payloads never cross this boundary.
 	ListAssuranceRecords(ctx context.Context, in *ListAssuranceRecordsRequest, opts ...grpc.CallOption) (*ListAssuranceRecordsResponse, error)
+	GetIntakeControl(ctx context.Context, in *GetIntakeControlRequest, opts ...grpc.CallOption) (*GetIntakeControlResponse, error)
+	ApplyIntakeControl(ctx context.Context, in *ApplyIntakeControlRequest, opts ...grpc.CallOption) (*ApplyIntakeControlResponse, error)
 }
 
 type payinServiceClient struct {
@@ -85,6 +89,26 @@ func (c *payinServiceClient) ListAssuranceRecords(ctx context.Context, in *ListA
 	return out, nil
 }
 
+func (c *payinServiceClient) GetIntakeControl(ctx context.Context, in *GetIntakeControlRequest, opts ...grpc.CallOption) (*GetIntakeControlResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetIntakeControlResponse)
+	err := c.cc.Invoke(ctx, PayinService_GetIntakeControl_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *payinServiceClient) ApplyIntakeControl(ctx context.Context, in *ApplyIntakeControlRequest, opts ...grpc.CallOption) (*ApplyIntakeControlResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ApplyIntakeControlResponse)
+	err := c.cc.Invoke(ctx, PayinService_ApplyIntakeControl_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // PayinServiceServer is the server API for PayinService service.
 // All implementations must embed UnimplementedPayinServiceServer
 // for forward compatibility.
@@ -95,6 +119,8 @@ type PayinServiceServer interface {
 	// Read-only product-assurance projection. Additive: existing callers are
 	// unaffected and sensitive webhook payloads never cross this boundary.
 	ListAssuranceRecords(context.Context, *ListAssuranceRecordsRequest) (*ListAssuranceRecordsResponse, error)
+	GetIntakeControl(context.Context, *GetIntakeControlRequest) (*GetIntakeControlResponse, error)
+	ApplyIntakeControl(context.Context, *ApplyIntakeControlRequest) (*ApplyIntakeControlResponse, error)
 	mustEmbedUnimplementedPayinServiceServer()
 }
 
@@ -116,6 +142,12 @@ func (UnimplementedPayinServiceServer) GetTopupIntent(context.Context, *GetTopup
 }
 func (UnimplementedPayinServiceServer) ListAssuranceRecords(context.Context, *ListAssuranceRecordsRequest) (*ListAssuranceRecordsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListAssuranceRecords not implemented")
+}
+func (UnimplementedPayinServiceServer) GetIntakeControl(context.Context, *GetIntakeControlRequest) (*GetIntakeControlResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetIntakeControl not implemented")
+}
+func (UnimplementedPayinServiceServer) ApplyIntakeControl(context.Context, *ApplyIntakeControlRequest) (*ApplyIntakeControlResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ApplyIntakeControl not implemented")
 }
 func (UnimplementedPayinServiceServer) mustEmbedUnimplementedPayinServiceServer() {}
 func (UnimplementedPayinServiceServer) testEmbeddedByValue()                      {}
@@ -210,6 +242,42 @@ func _PayinService_ListAssuranceRecords_Handler(srv interface{}, ctx context.Con
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PayinService_GetIntakeControl_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetIntakeControlRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PayinServiceServer).GetIntakeControl(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PayinService_GetIntakeControl_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PayinServiceServer).GetIntakeControl(ctx, req.(*GetIntakeControlRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PayinService_ApplyIntakeControl_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ApplyIntakeControlRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PayinServiceServer).ApplyIntakeControl(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PayinService_ApplyIntakeControl_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PayinServiceServer).ApplyIntakeControl(ctx, req.(*ApplyIntakeControlRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // PayinService_ServiceDesc is the grpc.ServiceDesc for PayinService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -232,6 +300,14 @@ var PayinService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListAssuranceRecords",
 			Handler:    _PayinService_ListAssuranceRecords_Handler,
+		},
+		{
+			MethodName: "GetIntakeControl",
+			Handler:    _PayinService_GetIntakeControl_Handler,
+		},
+		{
+			MethodName: "ApplyIntakeControl",
+			Handler:    _PayinService_ApplyIntakeControl_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

@@ -50,6 +50,7 @@ type Module struct {
 	alertFn alerting.AlertFunc
 
 	stopOnce sync.Once
+	runMu    sync.Mutex
 	stopCh   chan struct{}
 	doneCh   chan struct{}
 }
@@ -118,6 +119,10 @@ type RunSummary struct {
 }
 
 func (m *Module) Run(ctx context.Context, mode string) (RunSummary, error) {
+	if !m.runMu.TryLock() {
+		return RunSummary{}, errors.New("assurance run already active")
+	}
+	defer m.runMu.Unlock()
 	started := time.Now()
 	if mode == "" {
 		mode = "manual"

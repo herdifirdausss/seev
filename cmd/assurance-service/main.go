@@ -23,6 +23,7 @@ import (
 	"github.com/herdifirdausss/seev/pkg/database"
 	"github.com/herdifirdausss/seev/pkg/grpcx"
 	"github.com/herdifirdausss/seev/pkg/logger"
+	"github.com/herdifirdausss/seev/pkg/middleware"
 	"github.com/herdifirdausss/seev/pkg/tracing"
 )
 
@@ -116,6 +117,8 @@ func run(parent context.Context) error {
 		_, _ = w.Write([]byte(`{"status":"ready"}`))
 	})
 	mux.Handle("GET /metrics", promhttp.Handler())
+	authed := middleware.Chain(middleware.WithAuth(cfg.JWT.Secret, cfg.JWT.Issuer), middleware.RequireJSON())
+	mux.Handle("/admin/assurance/", authed(module.AdminRouter()))
 	server := &http.Server{Addr: ":" + cfg.App.Port, Handler: mux, ReadTimeout: cfg.App.ReadTimeout, WriteTimeout: cfg.App.WriteTimeout, IdleTimeout: cfg.App.IdleTimeout, ReadHeaderTimeout: 5 * time.Second, MaxHeaderBytes: 1 << 20}
 	errCh := make(chan error, 1)
 	go func() {

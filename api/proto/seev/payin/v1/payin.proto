@@ -11,6 +11,8 @@ service PayinService {
   // Read-only product-assurance projection. Additive: existing callers are
   // unaffected and sensitive webhook payloads never cross this boundary.
   rpc ListAssuranceRecords(ListAssuranceRecordsRequest) returns (ListAssuranceRecordsResponse);
+  rpc GetIntakeControl(GetIntakeControlRequest) returns (GetIntakeControlResponse);
+  rpc ApplyIntakeControl(ApplyIntakeControlRequest) returns (ApplyIntakeControlResponse);
 }
 
 message HandleWebhookRequest {
@@ -94,4 +96,27 @@ message AssuranceRecord {
   string ledger_gateway = 16;
   string ledger_external_ref = 17;
   string ledger_idempotency_scope = 18;
+}
+
+message GetIntakeControlRequest {}
+
+message GetIntakeControlResponse {
+  bool paused = 1;
+  int64 revision = 2;
+  string updated_by = 3;
+  google.protobuf.Timestamp updated_at = 4;
+}
+
+message ApplyIntakeControlRequest {
+  string command_id = 1;
+  string action = 2; // pause | resume
+  int64 expected_revision = 3;
+  string actor = 4;
+  string reason = 5;
+}
+
+message ApplyIntakeControlResponse {
+  bool applied = 1;
+  bool paused = 2;
+  int64 revision = 3;
 }

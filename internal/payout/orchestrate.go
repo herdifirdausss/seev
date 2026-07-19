@@ -39,6 +39,9 @@ func cancelIdempotencyKey(id uuid.UUID) string { return "payout:" + id.String() 
 // ID as every subsequent ledger idempotency key; nothing here is a "start
 // over from scratch" operation.
 func (m *Module) Create(ctx context.Context, userID uuid.UUID, amount decimal.Decimal, destination []byte, createdBy, quoteID string) (uuid.UUID, error) {
+	if err := m.ensureIntakeOpen(ctx); err != nil {
+		return uuid.Nil, err
+	}
 	currency, err := m.poster.GetUserCurrency(ctx, userID, "")
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("payout: resolve user currency: %w", err)

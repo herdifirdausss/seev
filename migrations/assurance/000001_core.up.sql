@@ -63,7 +63,7 @@ CREATE TABLE intake_control_commands (
     revision           BIGINT NOT NULL,
     requested_by       TEXT NOT NULL,
     approved_by        TEXT NOT NULL DEFAULT '',
-    status             TEXT NOT NULL CHECK (status IN ('pending','applied','rejected','failed')),
+    status             TEXT NOT NULL CHECK (status IN ('pending','applying','applied','rejected','failed')),
     idempotency_key    UUID NOT NULL UNIQUE,
     created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
     applied_at         TIMESTAMPTZ,

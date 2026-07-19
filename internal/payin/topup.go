@@ -23,6 +23,9 @@ type TopupIntent = model.TopupIntent
 // vendor never learns the internal user_id, only this opaque reference,
 // which travels back in the settling webhook's existing ExternalRef field.
 func (m *Module) CreateTopupIntent(ctx context.Context, userID uuid.UUID, amount decimal.Decimal) (TopupIntent, error) {
+	if err := m.ensureIntakeOpen(ctx); err != nil {
+		return TopupIntent{}, err
+	}
 	currency, err := m.poster.GetUserCurrency(ctx, userID, "")
 	if err != nil {
 		return TopupIntent{}, fmt.Errorf("payin: resolve user currency: %w", err)

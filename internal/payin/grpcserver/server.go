@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
@@ -78,6 +79,9 @@ func (s *Server) CreateTopupIntent(ctx context.Context, request *payinv1.CreateT
 	}
 	intent, callErr := s.service.CreateTopupIntent(ctx, userID, amount)
 	if callErr != nil {
+		if strings.Contains(callErr.Error(), "intake paused") {
+			return nil, status.Error(codes.FailedPrecondition, "INTAKE_PAUSED")
+		}
 		if errors.Is(callErr, s.noRoute) {
 			return nil, status.Error(codes.FailedPrecondition, "no topup route available")
 		}
@@ -123,6 +127,33 @@ func (s *Server) ListAssuranceRecords(ctx context.Context, request *payinv1.List
 		return nil, status.Error(codes.Unimplemented, "payin assurance projection unavailable")
 	}
 	return reader.ListAssuranceRecords(ctx, request)
+}
+
+func (s *Server) GetIntakeControl(ctx context.Context, request *payinv1.GetIntakeControlRequest) (*payinv1.GetIntakeControlResponse, error) {
+	reader, ok := s.service.(interface {
+		GetIntakeControlRPC(context.Context) (*payinv1.GetIntakeControlResponse, error)
+	})
+	if !ok {
+		return nil, status.Error(codes.Unimplemented, "payin intake control unavailable")
+	}
+	return reader.GetIntakeControlRPC(ctx)
+}
+
+func (s *Server) ApplyIntakeControl(ctx context.Context, request *payinv1.ApplyIntakeControlRequest) (*payinv1.ApplyIntakeControlResponse, error) {
+	reader, ok := s.service.(interface {
+		ApplyIntakeControlRPC(context.Context, *payinv1.ApplyIntakeControlRequest) (*payinv1.ApplyIntakeControlResponse, error)
+	})
+	if !ok {
+		return nil, status.Error(codes.Unimplemented, "payin intake control unavailable")
+	}
+	response, err := reader.ApplyIntakeControlRPC(ctx, request)
+	if err != nil {
+		if strings.Contains(err.Error(), "revision mismatch") {
+			return nil, status.Error(codes.Aborted, "intake revision mismatch")
+		}
+		return nil, status.Error(codes.InvalidArgument, "invalid intake command")
+	}
+	return response, nil
 }
 
 func parseUserAndAmount(rawUserID, rawAmount string) (uuid.UUID, decimal.Decimal, error) {

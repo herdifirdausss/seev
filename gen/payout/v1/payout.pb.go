@@ -801,6 +801,246 @@ func (x *VendorCommandSummary) GetUpdatedAt() *timestamppb.Timestamp {
 	return nil
 }
 
+type GetIntakeControlRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetIntakeControlRequest) Reset() {
+	*x = GetIntakeControlRequest{}
+	mi := &file_seev_payout_v1_payout_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetIntakeControlRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetIntakeControlRequest) ProtoMessage() {}
+
+func (x *GetIntakeControlRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_seev_payout_v1_payout_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetIntakeControlRequest.ProtoReflect.Descriptor instead.
+func (*GetIntakeControlRequest) Descriptor() ([]byte, []int) {
+	return file_seev_payout_v1_payout_proto_rawDescGZIP(), []int{10}
+}
+
+type GetIntakeControlResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Paused        bool                   `protobuf:"varint,1,opt,name=paused,proto3" json:"paused,omitempty"`
+	Revision      int64                  `protobuf:"varint,2,opt,name=revision,proto3" json:"revision,omitempty"`
+	UpdatedBy     string                 `protobuf:"bytes,3,opt,name=updated_by,json=updatedBy,proto3" json:"updated_by,omitempty"`
+	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetIntakeControlResponse) Reset() {
+	*x = GetIntakeControlResponse{}
+	mi := &file_seev_payout_v1_payout_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetIntakeControlResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetIntakeControlResponse) ProtoMessage() {}
+
+func (x *GetIntakeControlResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_seev_payout_v1_payout_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetIntakeControlResponse.ProtoReflect.Descriptor instead.
+func (*GetIntakeControlResponse) Descriptor() ([]byte, []int) {
+	return file_seev_payout_v1_payout_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *GetIntakeControlResponse) GetPaused() bool {
+	if x != nil {
+		return x.Paused
+	}
+	return false
+}
+
+func (x *GetIntakeControlResponse) GetRevision() int64 {
+	if x != nil {
+		return x.Revision
+	}
+	return 0
+}
+
+func (x *GetIntakeControlResponse) GetUpdatedBy() string {
+	if x != nil {
+		return x.UpdatedBy
+	}
+	return ""
+}
+
+func (x *GetIntakeControlResponse) GetUpdatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.UpdatedAt
+	}
+	return nil
+}
+
+type ApplyIntakeControlRequest struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	CommandId        string                 `protobuf:"bytes,1,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
+	Action           string                 `protobuf:"bytes,2,opt,name=action,proto3" json:"action,omitempty"` // pause | resume
+	ExpectedRevision int64                  `protobuf:"varint,3,opt,name=expected_revision,json=expectedRevision,proto3" json:"expected_revision,omitempty"`
+	Actor            string                 `protobuf:"bytes,4,opt,name=actor,proto3" json:"actor,omitempty"`
+	Reason           string                 `protobuf:"bytes,5,opt,name=reason,proto3" json:"reason,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *ApplyIntakeControlRequest) Reset() {
+	*x = ApplyIntakeControlRequest{}
+	mi := &file_seev_payout_v1_payout_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ApplyIntakeControlRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ApplyIntakeControlRequest) ProtoMessage() {}
+
+func (x *ApplyIntakeControlRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_seev_payout_v1_payout_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ApplyIntakeControlRequest.ProtoReflect.Descriptor instead.
+func (*ApplyIntakeControlRequest) Descriptor() ([]byte, []int) {
+	return file_seev_payout_v1_payout_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *ApplyIntakeControlRequest) GetCommandId() string {
+	if x != nil {
+		return x.CommandId
+	}
+	return ""
+}
+
+func (x *ApplyIntakeControlRequest) GetAction() string {
+	if x != nil {
+		return x.Action
+	}
+	return ""
+}
+
+func (x *ApplyIntakeControlRequest) GetExpectedRevision() int64 {
+	if x != nil {
+		return x.ExpectedRevision
+	}
+	return 0
+}
+
+func (x *ApplyIntakeControlRequest) GetActor() string {
+	if x != nil {
+		return x.Actor
+	}
+	return ""
+}
+
+func (x *ApplyIntakeControlRequest) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+type ApplyIntakeControlResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Applied       bool                   `protobuf:"varint,1,opt,name=applied,proto3" json:"applied,omitempty"`
+	Paused        bool                   `protobuf:"varint,2,opt,name=paused,proto3" json:"paused,omitempty"`
+	Revision      int64                  `protobuf:"varint,3,opt,name=revision,proto3" json:"revision,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ApplyIntakeControlResponse) Reset() {
+	*x = ApplyIntakeControlResponse{}
+	mi := &file_seev_payout_v1_payout_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ApplyIntakeControlResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ApplyIntakeControlResponse) ProtoMessage() {}
+
+func (x *ApplyIntakeControlResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_seev_payout_v1_payout_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ApplyIntakeControlResponse.ProtoReflect.Descriptor instead.
+func (*ApplyIntakeControlResponse) Descriptor() ([]byte, []int) {
+	return file_seev_payout_v1_payout_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *ApplyIntakeControlResponse) GetApplied() bool {
+	if x != nil {
+		return x.Applied
+	}
+	return false
+}
+
+func (x *ApplyIntakeControlResponse) GetPaused() bool {
+	if x != nil {
+		return x.Paused
+	}
+	return false
+}
+
+func (x *ApplyIntakeControlResponse) GetRevision() int64 {
+	if x != nil {
+		return x.Revision
+	}
+	return 0
+}
+
 var File_seev_payout_v1_payout_proto protoreflect.FileDescriptor
 
 const file_seev_payout_v1_payout_proto_rawDesc = "" +
@@ -880,11 +1120,32 @@ const file_seev_payout_v1_payout_proto_rawDesc = "" +
 	"\aattempt\x18\x03 \x01(\x05R\aattempt\x12\x16\n" +
 	"\x06status\x18\x04 \x01(\tR\x06status\x129\n" +
 	"\n" +
-	"updated_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt2\xaf\x02\n" +
+	"updated_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\x19\n" +
+	"\x17GetIntakeControlRequest\"\xa8\x01\n" +
+	"\x18GetIntakeControlResponse\x12\x16\n" +
+	"\x06paused\x18\x01 \x01(\bR\x06paused\x12\x1a\n" +
+	"\brevision\x18\x02 \x01(\x03R\brevision\x12\x1d\n" +
+	"\n" +
+	"updated_by\x18\x03 \x01(\tR\tupdatedBy\x129\n" +
+	"\n" +
+	"updated_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\xad\x01\n" +
+	"\x19ApplyIntakeControlRequest\x12\x1d\n" +
+	"\n" +
+	"command_id\x18\x01 \x01(\tR\tcommandId\x12\x16\n" +
+	"\x06action\x18\x02 \x01(\tR\x06action\x12+\n" +
+	"\x11expected_revision\x18\x03 \x01(\x03R\x10expectedRevision\x12\x14\n" +
+	"\x05actor\x18\x04 \x01(\tR\x05actor\x12\x16\n" +
+	"\x06reason\x18\x05 \x01(\tR\x06reason\"j\n" +
+	"\x1aApplyIntakeControlResponse\x12\x18\n" +
+	"\aapplied\x18\x01 \x01(\bR\aapplied\x12\x16\n" +
+	"\x06paused\x18\x02 \x01(\bR\x06paused\x12\x1a\n" +
+	"\brevision\x18\x03 \x01(\x03R\brevision2\x83\x04\n" +
 	"\rPayoutService\x12Y\n" +
 	"\fCreatePayout\x12#.seev.payout.v1.CreatePayoutRequest\x1a$.seev.payout.v1.CreatePayoutResponse\x12P\n" +
 	"\tGetPayout\x12 .seev.payout.v1.GetPayoutRequest\x1a!.seev.payout.v1.GetPayoutResponse\x12q\n" +
-	"\x14ListAssuranceRecords\x12+.seev.payout.v1.ListAssuranceRecordsRequest\x1a,.seev.payout.v1.ListAssuranceRecordsResponseB\xa9\x01\n" +
+	"\x14ListAssuranceRecords\x12+.seev.payout.v1.ListAssuranceRecordsRequest\x1a,.seev.payout.v1.ListAssuranceRecordsResponse\x12e\n" +
+	"\x10GetIntakeControl\x12'.seev.payout.v1.GetIntakeControlRequest\x1a(.seev.payout.v1.GetIntakeControlResponse\x12k\n" +
+	"\x12ApplyIntakeControl\x12).seev.payout.v1.ApplyIntakeControlRequest\x1a*.seev.payout.v1.ApplyIntakeControlResponseB\xa9\x01\n" +
 	"\x12com.seev.payout.v1B\vPayoutProtoP\x01Z,github.com/herdifirdausss/seev/gen/payout/v1\xa2\x02\x03SPX\xaa\x02\x0eSeev.Payout.V1\xca\x02\x0eSeev\\Payout\\V1\xe2\x02\x1aSeev\\Payout\\V1\\GPBMetadata\xea\x02\x10Seev::Payout::V1b\x06proto3"
 
 var (
@@ -899,7 +1160,7 @@ func file_seev_payout_v1_payout_proto_rawDescGZIP() []byte {
 	return file_seev_payout_v1_payout_proto_rawDescData
 }
 
-var file_seev_payout_v1_payout_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
+var file_seev_payout_v1_payout_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
 var file_seev_payout_v1_payout_proto_goTypes = []any{
 	(*CreatePayoutRequest)(nil),          // 0: seev.payout.v1.CreatePayoutRequest
 	(*GetPayoutRequest)(nil),             // 1: seev.payout.v1.GetPayoutRequest
@@ -911,34 +1172,43 @@ var file_seev_payout_v1_payout_proto_goTypes = []any{
 	(*AssuranceRecord)(nil),              // 7: seev.payout.v1.AssuranceRecord
 	(*VendorCallSummary)(nil),            // 8: seev.payout.v1.VendorCallSummary
 	(*VendorCommandSummary)(nil),         // 9: seev.payout.v1.VendorCommandSummary
-	(*timestamppb.Timestamp)(nil),        // 10: google.protobuf.Timestamp
+	(*GetIntakeControlRequest)(nil),      // 10: seev.payout.v1.GetIntakeControlRequest
+	(*GetIntakeControlResponse)(nil),     // 11: seev.payout.v1.GetIntakeControlResponse
+	(*ApplyIntakeControlRequest)(nil),    // 12: seev.payout.v1.ApplyIntakeControlRequest
+	(*ApplyIntakeControlResponse)(nil),   // 13: seev.payout.v1.ApplyIntakeControlResponse
+	(*timestamppb.Timestamp)(nil),        // 14: google.protobuf.Timestamp
 }
 var file_seev_payout_v1_payout_proto_depIdxs = []int32{
 	4,  // 0: seev.payout.v1.CreatePayoutResponse.payout:type_name -> seev.payout.v1.Payout
 	4,  // 1: seev.payout.v1.GetPayoutResponse.payout:type_name -> seev.payout.v1.Payout
-	10, // 2: seev.payout.v1.Payout.created_at:type_name -> google.protobuf.Timestamp
-	10, // 3: seev.payout.v1.Payout.updated_at:type_name -> google.protobuf.Timestamp
-	10, // 4: seev.payout.v1.ListAssuranceRecordsRequest.cursor_updated_at:type_name -> google.protobuf.Timestamp
-	10, // 5: seev.payout.v1.ListAssuranceRecordsRequest.cutoff:type_name -> google.protobuf.Timestamp
+	14, // 2: seev.payout.v1.Payout.created_at:type_name -> google.protobuf.Timestamp
+	14, // 3: seev.payout.v1.Payout.updated_at:type_name -> google.protobuf.Timestamp
+	14, // 4: seev.payout.v1.ListAssuranceRecordsRequest.cursor_updated_at:type_name -> google.protobuf.Timestamp
+	14, // 5: seev.payout.v1.ListAssuranceRecordsRequest.cutoff:type_name -> google.protobuf.Timestamp
 	7,  // 6: seev.payout.v1.ListAssuranceRecordsResponse.records:type_name -> seev.payout.v1.AssuranceRecord
-	10, // 7: seev.payout.v1.ListAssuranceRecordsResponse.next_updated_at:type_name -> google.protobuf.Timestamp
-	10, // 8: seev.payout.v1.AssuranceRecord.effective_updated_at:type_name -> google.protobuf.Timestamp
-	10, // 9: seev.payout.v1.AssuranceRecord.created_at:type_name -> google.protobuf.Timestamp
+	14, // 7: seev.payout.v1.ListAssuranceRecordsResponse.next_updated_at:type_name -> google.protobuf.Timestamp
+	14, // 8: seev.payout.v1.AssuranceRecord.effective_updated_at:type_name -> google.protobuf.Timestamp
+	14, // 9: seev.payout.v1.AssuranceRecord.created_at:type_name -> google.protobuf.Timestamp
 	8,  // 10: seev.payout.v1.AssuranceRecord.vendor_calls:type_name -> seev.payout.v1.VendorCallSummary
 	9,  // 11: seev.payout.v1.AssuranceRecord.vendor_commands:type_name -> seev.payout.v1.VendorCommandSummary
-	10, // 12: seev.payout.v1.VendorCallSummary.created_at:type_name -> google.protobuf.Timestamp
-	10, // 13: seev.payout.v1.VendorCommandSummary.updated_at:type_name -> google.protobuf.Timestamp
-	0,  // 14: seev.payout.v1.PayoutService.CreatePayout:input_type -> seev.payout.v1.CreatePayoutRequest
-	1,  // 15: seev.payout.v1.PayoutService.GetPayout:input_type -> seev.payout.v1.GetPayoutRequest
-	5,  // 16: seev.payout.v1.PayoutService.ListAssuranceRecords:input_type -> seev.payout.v1.ListAssuranceRecordsRequest
-	2,  // 17: seev.payout.v1.PayoutService.CreatePayout:output_type -> seev.payout.v1.CreatePayoutResponse
-	3,  // 18: seev.payout.v1.PayoutService.GetPayout:output_type -> seev.payout.v1.GetPayoutResponse
-	6,  // 19: seev.payout.v1.PayoutService.ListAssuranceRecords:output_type -> seev.payout.v1.ListAssuranceRecordsResponse
-	17, // [17:20] is the sub-list for method output_type
-	14, // [14:17] is the sub-list for method input_type
-	14, // [14:14] is the sub-list for extension type_name
-	14, // [14:14] is the sub-list for extension extendee
-	0,  // [0:14] is the sub-list for field type_name
+	14, // 12: seev.payout.v1.VendorCallSummary.created_at:type_name -> google.protobuf.Timestamp
+	14, // 13: seev.payout.v1.VendorCommandSummary.updated_at:type_name -> google.protobuf.Timestamp
+	14, // 14: seev.payout.v1.GetIntakeControlResponse.updated_at:type_name -> google.protobuf.Timestamp
+	0,  // 15: seev.payout.v1.PayoutService.CreatePayout:input_type -> seev.payout.v1.CreatePayoutRequest
+	1,  // 16: seev.payout.v1.PayoutService.GetPayout:input_type -> seev.payout.v1.GetPayoutRequest
+	5,  // 17: seev.payout.v1.PayoutService.ListAssuranceRecords:input_type -> seev.payout.v1.ListAssuranceRecordsRequest
+	10, // 18: seev.payout.v1.PayoutService.GetIntakeControl:input_type -> seev.payout.v1.GetIntakeControlRequest
+	12, // 19: seev.payout.v1.PayoutService.ApplyIntakeControl:input_type -> seev.payout.v1.ApplyIntakeControlRequest
+	2,  // 20: seev.payout.v1.PayoutService.CreatePayout:output_type -> seev.payout.v1.CreatePayoutResponse
+	3,  // 21: seev.payout.v1.PayoutService.GetPayout:output_type -> seev.payout.v1.GetPayoutResponse
+	6,  // 22: seev.payout.v1.PayoutService.ListAssuranceRecords:output_type -> seev.payout.v1.ListAssuranceRecordsResponse
+	11, // 23: seev.payout.v1.PayoutService.GetIntakeControl:output_type -> seev.payout.v1.GetIntakeControlResponse
+	13, // 24: seev.payout.v1.PayoutService.ApplyIntakeControl:output_type -> seev.payout.v1.ApplyIntakeControlResponse
+	20, // [20:25] is the sub-list for method output_type
+	15, // [15:20] is the sub-list for method input_type
+	15, // [15:15] is the sub-list for extension type_name
+	15, // [15:15] is the sub-list for extension extendee
+	0,  // [0:15] is the sub-list for field type_name
 }
 
 func init() { file_seev_payout_v1_payout_proto_init() }
@@ -952,7 +1222,7 @@ func file_seev_payout_v1_payout_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_seev_payout_v1_payout_proto_rawDesc), len(file_seev_payout_v1_payout_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   10,
+			NumMessages:   14,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
