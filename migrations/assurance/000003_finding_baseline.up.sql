@@ -1,0 +1,1 @@
+ALTER TABLE assurance_findings ADD COLUMN IF NOT EXISTS baseline BOOLEAN NOT NULL DEFAULT false;

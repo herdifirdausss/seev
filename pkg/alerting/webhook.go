@@ -41,6 +41,13 @@ type webhookPayload struct {
 // Failure to deliver is returned as an error for the caller to log; it is
 // NEVER retried internally and never blocks beyond defaultTimeout.
 func NewWebhookAlerter(url string, httpClient *http.Client) AlertFunc {
+	return NewWebhookAlerterForService(url, "seev-ledger", httpClient)
+}
+
+// NewWebhookAlerterForService is the service-labelled variant used by
+// non-ledger workers. The original constructor remains compatible for
+// existing callers and keeps its historical service label.
+func NewWebhookAlerterForService(url, service string, httpClient *http.Client) AlertFunc {
 	client := httpClient
 	if client == nil {
 		client = &http.Client{Timeout: defaultTimeout}
@@ -50,7 +57,7 @@ func NewWebhookAlerter(url string, httpClient *http.Client) AlertFunc {
 		payload := webhookPayload{
 			Severity:  severity,
 			Message:   message,
-			Service:   "seev-ledger",
+			Service:   service,
 			Timestamp: time.Now().UTC().Format(time.RFC3339),
 		}
 		body, err := json.Marshal(payload)

@@ -67,6 +67,15 @@ func run(parent context.Context) error {
 	if os.Getenv("APP_PORT") == "" {
 		cfg.App.Port = "8096"
 	}
+	// Assurance is deliberately a small read-only worker. Keep its pool bounded
+	// even if a global POSTGRES_MAX_OPEN_CONNS override is larger for domain
+	// services; five connections is the Plan 48 safety ceiling.
+	if cfg.Postgres.MaxOpenConns > 5 || cfg.Postgres.MaxOpenConns <= 0 {
+		cfg.Postgres.MaxOpenConns = 5
+	}
+	if cfg.Postgres.MaxIdleConns > 5 || cfg.Postgres.MaxIdleConns <= 0 {
+		cfg.Postgres.MaxIdleConns = 5
+	}
 	log := logger.New(cfg.Logger.Pkg())
 	ctx, cancel := signal.NotifyContext(parent, syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
@@ -97,7 +106,7 @@ func run(parent context.Context) error {
 	defer ledgerConn.Close()
 	var alertFn alerting.AlertFunc
 	if cfg.Assurance.AlertWebhookURL != "" {
-		alertFn = alerting.NewWebhookAlerter(cfg.Assurance.AlertWebhookURL, nil)
+		alertFn = alerting.NewWebhookAlerterForService(cfg.Assurance.AlertWebhookURL, "seev-assurance", nil)
 	}
 	module := assurance.NewModule(db, cfg.Assurance, payinv1.NewPayinServiceClient(payinConn), payoutv1.NewPayoutServiceClient(payoutConn), ledgerv1.NewLedgerServiceClient(ledgerConn), alertFn, log)
 	module.Start(ctx)

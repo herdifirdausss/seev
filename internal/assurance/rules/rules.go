@@ -73,7 +73,7 @@ func EvaluatePayin(record PayinRecord) []Finding {
 				findings = append(findings, newFinding("PA01", "critical", record, record.AmountMinor, map[string]string{"reason": reason, "record_type": "webhook_event"}))
 			}
 		case "blocked", "failed":
-			if len(success) > 0 {
+			if hasMoneyIn(record.Ledger) {
 				findings = append(findings, newFinding("PA04", "critical", record, record.AmountMinor, map[string]string{"reason": "blocked_or_failed_has_posted_ledger"}))
 			}
 		}
@@ -96,7 +96,7 @@ func EvaluatePayin(record PayinRecord) []Finding {
 func matchingMoneyIn(record PayinRecord) []LedgerProof {
 	matching := make([]LedgerProof, 0, len(record.Ledger))
 	for _, proof := range record.Ledger {
-		if proof.Type == "money_in" && proof.Status == "posted" && proof.AmountMinor == record.AmountMinor && proof.Currency == record.Currency && proof.ExternalRef == record.ExternalRef && (proof.Gateway == "" || proof.Gateway == record.Vendor) {
+		if proof.Type == "money_in" && proof.Status == "posted" && proof.AmountMinor == record.AmountMinor && proof.Currency == record.Currency && proof.ExternalRef == record.ExternalRef && proof.Gateway == record.Vendor {
 			matching = append(matching, proof)
 		}
 	}
@@ -156,6 +156,8 @@ type PayoutRecord struct {
 	VendorCalls      []VendorCall
 	VendorCommands   []VendorCommand
 	FeeQuote         *FeeProof
+	BookedFeeMinor   int64
+	BookedFeeGateway string
 }
 
 func EvaluatePayout(record PayoutRecord) []Finding {
@@ -201,7 +203,7 @@ func EvaluatePayout(record PayoutRecord) []Finding {
 		findings = append(findings, newFinding("PO06", "critical", record, record.AmountMinor, map[string]string{"reason": "vendor_changed_after_accepted_or_uncertain"}))
 	}
 	if record.FeeQuote != nil && record.FeeQuote.Exists {
-		if record.FeeQuote.ConsumedByRef != "payout:"+record.ID || record.FeeQuote.AmountMinor != record.FeeAmountMinor || record.FeeQuote.Gateway != record.FeeGateway {
+		if record.FeeQuote.ConsumedByRef != "payout:"+record.ID || record.FeeQuote.AmountMinor != record.FeeAmountMinor || record.FeeQuote.Gateway != record.FeeGateway || (record.FeeAmountMinor > 0 && (record.BookedFeeMinor != record.FeeAmountMinor || record.BookedFeeGateway != record.FeeGateway)) {
 			findings = append(findings, newFinding("PO07", "critical", record, record.AmountMinor, map[string]string{"reason": "fee_quote_or_booked_fee_mismatch"}))
 		}
 	}

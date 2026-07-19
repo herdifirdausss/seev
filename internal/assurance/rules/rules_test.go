@@ -23,6 +23,7 @@ func TestEvaluatePayin(t *testing.T) {
 		{name: "posted missing proof", record: event, rule: "PA01", want: 1},
 		{name: "posted duplicate proof", record: PayinRecord{ID: event.ID, RecordType: event.RecordType, Status: event.Status, UserID: event.UserID, AmountMinor: event.AmountMinor, Currency: event.Currency, Vendor: event.Vendor, ExternalRef: event.ExternalRef, RequestIDPresent: true, Ledger: []LedgerProof{postedLedger("tx-1", "mockvendor", "ext-1", 1000), postedLedger("tx-2", "mockvendor", "ext-1", 1000)}}, rule: "PA01", want: 1},
 		{name: "blocked has money", record: PayinRecord{ID: event.ID, RecordType: event.RecordType, Status: "blocked", UserID: event.UserID, AmountMinor: event.AmountMinor, Currency: event.Currency, Vendor: event.Vendor, ExternalRef: event.ExternalRef, RequestIDPresent: true, Ledger: []LedgerProof{postedLedger("tx-1", "mockvendor", "ext-1", 1000)}}, rule: "PA04", want: 1},
+		{name: "blocked has mismatched money", record: PayinRecord{ID: event.ID, RecordType: event.RecordType, Status: "blocked", UserID: event.UserID, AmountMinor: event.AmountMinor, Currency: event.Currency, Vendor: event.Vendor, ExternalRef: event.ExternalRef, RequestIDPresent: true, Ledger: []LedgerProof{{ID: "tx-1", Type: "money_in", Status: "posted", AmountMinor: 999, Currency: "IDR", Gateway: "other", ExternalRef: "other"}}}, rule: "PA04", want: 1},
 		{name: "pending after posting", record: PayinRecord{ID: "intent-1", RecordType: "intent", Status: "pending", AmountMinor: 1000, Currency: "IDR", Vendor: "mockvendor", ExternalRef: "ext-1", RequestIDPresent: true, Age: 3 * time.Minute, Ledger: []LedgerProof{postedLedger("tx-1", "mockvendor", "ext-1", 1000)}}, rule: "PA03", want: 1},
 	}
 	for _, test := range tests {
@@ -71,6 +72,16 @@ func TestEvaluatePayoutVendorAndFee(t *testing.T) {
 	for _, rule := range []string{"PO05", "PO06", "PO07"} {
 		require.True(t, got[rule], rule)
 	}
+}
+
+func TestEvaluatePayoutRequiresBookedFee(t *testing.T) {
+	record := PayoutRecord{ID: "payout-1", Status: "settled", AmountMinor: 5000, Currency: "IDR", HoldTxID: "hold-1", SettleTxID: "settle-1", RequestIDPresent: true,
+		Hold:           &LedgerProof{ID: "hold-1", Type: "withdraw_initiate", Status: "posted", AmountMinor: 5000, Currency: "IDR"},
+		Closing:        &LedgerProof{ID: "settle-1", Type: "withdraw_settle", Status: "posted", OriginalReferenceID: "hold-1"},
+		FeeAmountMinor: 100, FeeGateway: "platform", BookedFeeMinor: 0, FeeQuote: &FeeProof{Exists: true, ConsumedByRef: "payout:payout-1", AmountMinor: 100, Gateway: "platform"}}
+	findings := EvaluatePayout(record)
+	require.Len(t, findings, 1)
+	require.Equal(t, "PO07", findings[0].RuleCode)
 }
 
 func TestFingerprintStableAndMaskedEvidenceShape(t *testing.T) {

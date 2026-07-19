@@ -111,7 +111,9 @@ type RunSummary struct {
 	ID             uuid.UUID `json:"id"`
 	Mode           string    `json:"mode"`
 	Status         string    `json:"status"`
+	Cutoff         time.Time `json:"cutoff_at"`
 	RecordsScanned int       `json:"records_scanned"`
+	PagesScanned   int       `json:"pages_scanned"`
 	FindingsOpened int       `json:"findings_opened"`
 	Baseline       bool      `json:"baseline"`
 	StartedAt      time.Time `json:"started_at"`
@@ -130,13 +132,13 @@ func (m *Module) Run(ctx context.Context, mode string) (RunSummary, error) {
 	if mode != "manual" && mode != "backfill" && mode != "incremental" {
 		return RunSummary{}, fmt.Errorf("invalid assurance run mode %q", mode)
 	}
-	run := RunSummary{ID: uuid.New(), Mode: mode, Status: "running", StartedAt: started, Baseline: mode == "backfill"}
-	if _, err := m.db.ExecContext(ctx, `INSERT INTO assurance_runs (id, mode, status, baseline, started_at) VALUES ($1,$2,$3,$4,$5)`, run.ID, run.Mode, run.Status, run.Baseline, started); err != nil {
+	cutoff := started.Add(-m.cfg.ConsistencyDelay)
+	run := RunSummary{ID: uuid.New(), Mode: mode, Status: "running", StartedAt: started, Cutoff: cutoff, Baseline: mode == "backfill"}
+	if _, err := m.db.ExecContext(ctx, `INSERT INTO assurance_runs (id, mode, status, baseline, cutoff_at, started_at) VALUES ($1,$2,$3,$4,$5,$6)`, run.ID, run.Mode, run.Status, run.Baseline, cutoff, started); err != nil {
 		return run, fmt.Errorf("create assurance run: %w", err)
 	}
 	defer func() { runDuration.Observe(time.Since(started).Seconds()) }()
 
-	cutoff := time.Now().Add(-m.cfg.ConsistencyDelay)
 	if n, err := m.scanPayin(ctx, run.ID, cutoff, mode == "backfill"); err != nil {
 		return m.failRun(ctx, run, err)
 	} else {
@@ -146,6 +148,11 @@ func (m *Module) Run(ctx context.Context, mode string) (RunSummary, error) {
 		return m.failRun(ctx, run, err)
 	} else {
 		run.RecordsScanned += n
+	}
+	if mode == "backfill" {
+		if err := m.markBackfillComplete(ctx, "ledger", run.ID); err != nil {
+			return m.failRun(ctx, run, err)
+		}
 	}
 	// Alert delivery is secondary to proof persistence: a webhook outage must
 	// not roll back a successful scan or advance decision.
@@ -189,19 +196,54 @@ func (m *Module) scanPayin(ctx context.Context, runID uuid.UUID, cutoff time.Tim
 		if callErr != nil {
 			return total, fmt.Errorf("payin assurance RPC: %w", callErr)
 		}
-		if err := m.provePayin(ctx, response.GetRecords(), backfill); err != nil {
+		if response == nil {
+			return total, errors.New("payin assurance RPC returned nil response")
+		}
+		if err := validatePayinPage(response.GetRecords(), cutoff); err != nil {
+			return total, err
+		}
+		if len(response.GetRecords()) == 0 && response.GetHasMore() {
+			return total, errors.New("payin assurance RPC reported has_more with an empty page")
+		}
+		if cur.Valid && len(response.GetRecords()) > 0 {
+			firstTime, firstID, err := payinCursor(response.GetRecords()[0])
+			if err != nil {
+				return total, err
+			}
+			if firstTime.Before(cur.UpdatedAt) || (firstTime.Equal(cur.UpdatedAt) && firstID.String() <= cur.ID.String()) {
+				return total, errors.New("payin assurance RPC did not advance cursor")
+			}
+		}
+		if err := m.provePayin(ctx, response.GetRecords(), backfill, runID); err != nil {
 			return total, err
 		}
 		total += len(response.GetRecords())
 		if len(response.GetRecords()) > 0 {
 			last := response.GetRecords()[len(response.GetRecords())-1]
-			if err := m.advanceCursor(ctx, "payin", last.GetEffectiveUpdatedAt().AsTime(), last.GetId(), runID, backfill && !response.GetHasMore()); err != nil {
+			lastUpdated, lastID, err := payinCursor(last)
+			if err != nil {
 				return total, err
 			}
-			cur = cursorValue{Valid: true, UpdatedAt: last.GetEffectiveUpdatedAt().AsTime(), ID: uuid.MustParse(last.GetId())}
+			if err := m.recordPage(ctx, runID); err != nil {
+				return total, err
+			}
+			if err := m.advanceCursor(ctx, "payin", lastUpdated, lastID.String(), runID, backfill && !response.GetHasMore()); err != nil {
+				return total, err
+			}
+			cur = cursorValue{Valid: true, UpdatedAt: lastUpdated, ID: lastID}
 		}
 		if !response.GetHasMore() {
 			break
+		}
+	}
+	if total == 0 && backfill {
+		if err := m.markBackfillComplete(ctx, "payin", runID); err != nil {
+			return total, err
+		}
+	}
+	if total == 0 {
+		if err := m.recordPage(ctx, runID); err != nil {
+			return total, err
 		}
 	}
 	recordsScanned.WithLabelValues("payin").Add(float64(total))
@@ -229,26 +271,61 @@ func (m *Module) scanPayout(ctx context.Context, runID uuid.UUID, cutoff time.Ti
 		if callErr != nil {
 			return total, fmt.Errorf("payout assurance RPC: %w", callErr)
 		}
-		if err := m.provePayout(ctx, response.GetRecords(), backfill); err != nil {
+		if response == nil {
+			return total, errors.New("payout assurance RPC returned nil response")
+		}
+		if err := validatePayoutPage(response.GetRecords(), cutoff); err != nil {
+			return total, err
+		}
+		if len(response.GetRecords()) == 0 && response.GetHasMore() {
+			return total, errors.New("payout assurance RPC reported has_more with an empty page")
+		}
+		if cur.Valid && len(response.GetRecords()) > 0 {
+			firstTime, firstID, err := payoutCursor(response.GetRecords()[0])
+			if err != nil {
+				return total, err
+			}
+			if firstTime.Before(cur.UpdatedAt) || (firstTime.Equal(cur.UpdatedAt) && firstID.String() <= cur.ID.String()) {
+				return total, errors.New("payout assurance RPC did not advance cursor")
+			}
+		}
+		if err := m.provePayout(ctx, response.GetRecords(), backfill, runID); err != nil {
 			return total, err
 		}
 		total += len(response.GetRecords())
 		if len(response.GetRecords()) > 0 {
 			last := response.GetRecords()[len(response.GetRecords())-1]
-			if err := m.advanceCursor(ctx, "payout", last.GetEffectiveUpdatedAt().AsTime(), last.GetId(), runID, backfill && !response.GetHasMore()); err != nil {
+			lastUpdated, lastID, err := payoutCursor(last)
+			if err != nil {
 				return total, err
 			}
-			cur = cursorValue{Valid: true, UpdatedAt: last.GetEffectiveUpdatedAt().AsTime(), ID: uuid.MustParse(last.GetId())}
+			if err := m.recordPage(ctx, runID); err != nil {
+				return total, err
+			}
+			if err := m.advanceCursor(ctx, "payout", lastUpdated, lastID.String(), runID, backfill && !response.GetHasMore()); err != nil {
+				return total, err
+			}
+			cur = cursorValue{Valid: true, UpdatedAt: lastUpdated, ID: lastID}
 		}
 		if !response.GetHasMore() {
 			break
+		}
+	}
+	if total == 0 && backfill {
+		if err := m.markBackfillComplete(ctx, "payout", runID); err != nil {
+			return total, err
+		}
+	}
+	if total == 0 {
+		if err := m.recordPage(ctx, runID); err != nil {
+			return total, err
 		}
 	}
 	recordsScanned.WithLabelValues("payout").Add(float64(total))
 	return total, nil
 }
 
-func (m *Module) provePayin(ctx context.Context, records []*payinv1.AssuranceRecord, suppressAlerts bool) error {
+func (m *Module) provePayin(ctx context.Context, records []*payinv1.AssuranceRecord, suppressAlerts bool, runID uuid.UUID) error {
 	if len(records) == 0 {
 		return nil
 	}
@@ -287,16 +364,24 @@ func (m *Module) provePayin(ctx context.Context, records []*payinv1.AssuranceRec
 			}
 			value.SettledWebhook = &assurancerules.PayinRecord{ID: linked.GetId(), RecordType: linked.GetRecordType(), Status: linked.GetStatus(), UserID: linked.GetUserId(), AmountMinor: linkedAmount, Currency: linked.GetCurrency(), Reference: linked.GetReference()}
 		}
+		seen := map[string]bool{}
 		for _, finding := range assurancerules.EvaluatePayin(value) {
+			seen[finding.Fingerprint] = true
 			if _, err := m.upsertFinding(ctx, Finding{Fingerprint: finding.Fingerprint, Severity: finding.Severity, RuleCode: finding.RuleCode, ResourceID: finding.ResourceID, AmountMinor: finding.AmountMinor, Currency: finding.Currency, Evidence: finding.Evidence}, time.Now(), suppressAlerts); err != nil {
 				return fmt.Errorf("persist payin finding: %w", err)
 			}
 		}
+		if err := m.resolveResourceFindings(ctx, record.GetId(), seen); err != nil {
+			return fmt.Errorf("resolve payin findings: %w", err)
+		}
+	}
+	if err := m.advanceLedgerCursor(ctx, response, runID); err != nil {
+		return err
 	}
 	return nil
 }
 
-func (m *Module) provePayout(ctx context.Context, records []*payoutv1.AssuranceRecord, suppressAlerts bool) error {
+func (m *Module) provePayout(ctx context.Context, records []*payoutv1.AssuranceRecord, suppressAlerts bool, runID uuid.UUID) error {
 	if len(records) == 0 {
 		return nil
 	}
@@ -344,6 +429,8 @@ func (m *Module) provePayout(ctx context.Context, records []*payoutv1.AssuranceR
 			if proof.ID == record.GetSettleTxId() {
 				copy := proof
 				value.Closing = &copy
+				value.BookedFeeMinor = proof.BookedFeeMinor
+				value.BookedFeeGateway = proof.BookedFeeGateway
 			}
 		}
 		for _, call := range record.GetVendorCalls() {
@@ -355,11 +442,19 @@ func (m *Module) provePayout(ctx context.Context, records []*payoutv1.AssuranceR
 		if fee, ok := feeProofs[record.GetFeeQuoteId()]; ok {
 			value.FeeQuote = &assurancerules.FeeProof{Exists: true, ConsumedByRef: fee.GetConsumedByRef(), AmountMinor: parseMinorOrZero(fee.GetFeeAmount()), Gateway: fee.GetFeeGateway(), TransactionType: fee.GetTransactionType()}
 		}
+		seen := map[string]bool{}
 		for _, finding := range assurancerules.EvaluatePayout(value) {
+			seen[finding.Fingerprint] = true
 			if _, err := m.upsertFinding(ctx, Finding{Fingerprint: finding.Fingerprint, Severity: finding.Severity, RuleCode: finding.RuleCode, ResourceID: finding.ResourceID, AmountMinor: finding.AmountMinor, Currency: finding.Currency, Evidence: finding.Evidence}, time.Now(), suppressAlerts); err != nil {
 				return fmt.Errorf("persist payout finding: %w", err)
 			}
 		}
+		if err := m.resolveResourceFindings(ctx, record.GetId(), seen); err != nil {
+			return fmt.Errorf("resolve payout findings: %w", err)
+		}
+	}
+	if err := m.advanceLedgerCursor(ctx, response, runID); err != nil {
+		return err
 	}
 	return nil
 }
@@ -382,10 +477,79 @@ func (m *Module) batchLedger(ctx context.Context, selectors []*ledgerv1.Assuranc
 	return combined, nil
 }
 
+func validatePayinPage(records []*payinv1.AssuranceRecord, cutoff time.Time) error {
+	var previous time.Time
+	var previousID string
+	for _, record := range records {
+		updated, id, err := payinCursor(record)
+		if err != nil {
+			return err
+		}
+		if updated.After(cutoff) {
+			return fmt.Errorf("payin assurance record %s is newer than cutoff", id)
+		}
+		if !previous.IsZero() && (updated.Before(previous) || (updated.Equal(previous) && id.String() <= previousID)) {
+			return fmt.Errorf("payin assurance page is not strictly ordered")
+		}
+		if record.GetCreatedAt() == nil || !record.GetCreatedAt().IsValid() {
+			return fmt.Errorf("payin assurance record %s has invalid created_at", id)
+		}
+		previous, previousID = updated, id.String()
+	}
+	return nil
+}
+
+func validatePayoutPage(records []*payoutv1.AssuranceRecord, cutoff time.Time) error {
+	var previous time.Time
+	var previousID string
+	for _, record := range records {
+		updated, id, err := payoutCursor(record)
+		if err != nil {
+			return err
+		}
+		if updated.After(cutoff) {
+			return fmt.Errorf("payout assurance record %s is newer than cutoff", id)
+		}
+		if !previous.IsZero() && (updated.Before(previous) || (updated.Equal(previous) && id.String() <= previousID)) {
+			return fmt.Errorf("payout assurance page is not strictly ordered")
+		}
+		if record.GetCreatedAt() == nil || !record.GetCreatedAt().IsValid() {
+			return fmt.Errorf("payout assurance record %s has invalid created_at", id)
+		}
+		previous, previousID = updated, id.String()
+	}
+	return nil
+}
+
+func payinCursor(record *payinv1.AssuranceRecord) (time.Time, uuid.UUID, error) {
+	if record == nil || record.GetEffectiveUpdatedAt() == nil || !record.GetEffectiveUpdatedAt().IsValid() {
+		return time.Time{}, uuid.Nil, errors.New("payin assurance record has invalid effective_updated_at")
+	}
+	id, err := uuid.Parse(record.GetId())
+	if err != nil {
+		return time.Time{}, uuid.Nil, fmt.Errorf("payin assurance record id: %w", err)
+	}
+	return record.GetEffectiveUpdatedAt().AsTime(), id, nil
+}
+
+func payoutCursor(record *payoutv1.AssuranceRecord) (time.Time, uuid.UUID, error) {
+	if record == nil || record.GetEffectiveUpdatedAt() == nil || !record.GetEffectiveUpdatedAt().IsValid() {
+		return time.Time{}, uuid.Nil, errors.New("payout assurance record has invalid effective_updated_at")
+	}
+	id, err := uuid.Parse(record.GetId())
+	if err != nil {
+		return time.Time{}, uuid.Nil, fmt.Errorf("payout assurance record id: %w", err)
+	}
+	return record.GetEffectiveUpdatedAt().AsTime(), id, nil
+}
+
 func transactionProofs(response *ledgerv1.BatchGetAssuranceTransactionsResponse) (map[string][]assurancerules.LedgerProof, error) {
 	proofs := make(map[string][]assurancerules.LedgerProof)
 	for _, result := range response.GetResults() {
 		for _, tx := range result.GetTransactions() {
+			if tx == nil || tx.GetUpdatedAt() == nil || !tx.GetUpdatedAt().IsValid() {
+				return nil, errors.New("ledger assurance transaction has invalid updated_at")
+			}
 			amount, err := assurancerules.ParseMinor(tx.GetAmount())
 			if err != nil {
 				return nil, err
@@ -458,6 +622,40 @@ func (m *Module) advanceCursor(ctx context.Context, source string, updated time.
 	return nil
 }
 
+func (m *Module) markBackfillComplete(ctx context.Context, source string, runID uuid.UUID) error {
+	_, err := m.db.ExecContext(ctx, `INSERT INTO assurance_cursors (source, backfill_complete, updated_by_run_id, updated_at_service) VALUES ($1,true,$2,now()) ON CONFLICT (source) DO UPDATE SET backfill_complete=true, updated_by_run_id=EXCLUDED.updated_by_run_id, updated_at_service=now()`, source, runID)
+	if err != nil {
+		return fmt.Errorf("mark %s backfill complete: %w", source, err)
+	}
+	return nil
+}
+
+func (m *Module) recordPage(ctx context.Context, runID uuid.UUID) error {
+	_, err := m.db.ExecContext(ctx, `UPDATE assurance_runs SET pages_scanned=pages_scanned+1 WHERE id=$1`, runID)
+	if err != nil {
+		return fmt.Errorf("record assurance page: %w", err)
+	}
+	return nil
+}
+
+func (m *Module) advanceLedgerCursor(ctx context.Context, response *ledgerv1.BatchGetAssuranceTransactionsResponse, runID uuid.UUID) error {
+	var latest time.Time
+	var latestID string
+	for _, result := range response.GetResults() {
+		for _, transaction := range result.GetTransactions() {
+			updated := transaction.GetUpdatedAt().AsTime()
+			if latest.IsZero() || updated.After(latest) || (updated.Equal(latest) && transaction.GetId() > latestID) {
+				latest = updated
+				latestID = transaction.GetId()
+			}
+		}
+	}
+	if latest.IsZero() || latestID == "" {
+		return nil
+	}
+	return m.advanceCursor(ctx, "ledger", latest, latestID, runID, false)
+}
+
 // Finding is the persistence-safe representation used by the rule engine.
 type Finding struct {
 	Fingerprint string
@@ -474,6 +672,38 @@ func (m *Module) UpsertFinding(ctx context.Context, finding Finding, seenAt time
 	return err
 }
 
+func (m *Module) resolveResourceFindings(ctx context.Context, resourceID string, seen map[string]bool) error {
+	rows, err := m.db.QueryContext(ctx, `SELECT id, fingerprint FROM assurance_findings WHERE resource_id=$1 AND status IN ('open','acknowledged')`, resourceID)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	type findingRef struct {
+		id          uuid.UUID
+		fingerprint string
+	}
+	var refs []findingRef
+	for rows.Next() {
+		var ref findingRef
+		if err := rows.Scan(&ref.id, &ref.fingerprint); err != nil {
+			return err
+		}
+		refs = append(refs, ref)
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, ref := range refs {
+		if seen[ref.fingerprint] {
+			continue
+		}
+		if _, err := m.db.ExecContext(ctx, `UPDATE assurance_findings SET status='resolved', resolved_at=now() WHERE id=$1 AND status IN ('open','acknowledged')`, ref.id); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (m *Module) upsertFinding(ctx context.Context, finding Finding, seenAt time.Time, suppressAlert bool) (bool, error) {
 	if finding.Fingerprint == "" || finding.RuleCode == "" || finding.ResourceID == "" {
 		return false, errors.New("finding fingerprint, rule code, and resource id are required")
@@ -484,7 +714,8 @@ func (m *Module) upsertFinding(ctx context.Context, finding Finding, seenAt time
 	}
 	var existingID uuid.UUID
 	var existingStatus, existingSeverity string
-	existingErr := m.db.QueryRowContext(ctx, `SELECT id, status, severity FROM assurance_findings WHERE fingerprint=$1`, finding.Fingerprint).Scan(&existingID, &existingStatus, &existingSeverity)
+	var existingBaseline bool
+	existingErr := m.db.QueryRowContext(ctx, `SELECT id, status, severity, baseline FROM assurance_findings WHERE fingerprint=$1`, finding.Fingerprint).Scan(&existingID, &existingStatus, &existingSeverity, &existingBaseline)
 	if existingErr != nil && !errors.Is(existingErr, sql.ErrNoRows) {
 		return false, fmt.Errorf("read finding state: %w", existingErr)
 	}
@@ -493,11 +724,11 @@ func (m *Module) upsertFinding(ctx context.Context, finding Finding, seenAt time
 	if isNew {
 		findingID = uuid.New()
 	}
-	_, err = m.db.ExecContext(ctx, `INSERT INTO assurance_findings (id, fingerprint, severity, rule_code, resource_id, amount_minor, currency, evidence, first_seen_at, last_seen_at, occurrence_count, status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$9,1,'open') ON CONFLICT (fingerprint) DO UPDATE SET severity=EXCLUDED.severity, amount_minor=EXCLUDED.amount_minor, currency=EXCLUDED.currency, evidence=EXCLUDED.evidence, last_seen_at=EXCLUDED.last_seen_at, occurrence_count=assurance_findings.occurrence_count+1, status=CASE WHEN assurance_findings.status='resolved' THEN 'open' ELSE assurance_findings.status END, resolved_at=CASE WHEN assurance_findings.status='resolved' THEN NULL ELSE assurance_findings.resolved_at END`, findingID, finding.Fingerprint, finding.Severity, finding.RuleCode, finding.ResourceID, finding.AmountMinor, finding.Currency, evidence, seenAt)
+	_, err = m.db.ExecContext(ctx, `INSERT INTO assurance_findings (id, fingerprint, severity, rule_code, resource_id, amount_minor, currency, evidence, first_seen_at, last_seen_at, occurrence_count, status, baseline) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$9,1,'open',$10) ON CONFLICT (fingerprint) DO UPDATE SET severity=EXCLUDED.severity, amount_minor=EXCLUDED.amount_minor, currency=EXCLUDED.currency, evidence=EXCLUDED.evidence, last_seen_at=EXCLUDED.last_seen_at, occurrence_count=assurance_findings.occurrence_count+1, status=CASE WHEN assurance_findings.status='resolved' THEN 'open' ELSE assurance_findings.status END, resolved_at=CASE WHEN assurance_findings.status='resolved' THEN NULL ELSE assurance_findings.resolved_at END, baseline=EXCLUDED.baseline`, findingID, finding.Fingerprint, finding.Severity, finding.RuleCode, finding.ResourceID, finding.AmountMinor, finding.Currency, evidence, seenAt, suppressAlert)
 	if err != nil {
 		return false, err
 	}
-	shouldAlert := !suppressAlert && (isNew || existingStatus == "resolved" || severityRank(finding.Severity) > severityRank(existingSeverity))
+	shouldAlert := !suppressAlert && (isNew || existingStatus == "resolved" || existingBaseline || severityRank(finding.Severity) > severityRank(existingSeverity))
 	if shouldAlert {
 		message := fmt.Sprintf("assurance finding %s rule=%s resource=%s amount=%d currency=%s", finding.Severity, finding.RuleCode, finding.ResourceID, finding.AmountMinor, finding.Currency)
 		if _, err := m.db.ExecContext(ctx, `INSERT INTO assurance_alert_deliveries (id, finding_id, severity, message, status) VALUES ($1,$2,$3,$4,'pending')`, uuid.New(), findingID, finding.Severity, message); err != nil {

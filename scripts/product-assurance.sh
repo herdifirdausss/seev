@@ -7,13 +7,13 @@ TOKEN="${ASSURANCE_TOKEN:-}"
 
 usage() {
 	cat >&2 <<'EOF'
-usage: product-assurance.sh <summary|list|run|acknowledge|resolve|pause|resume|approve> [args]
+usage: product-assurance.sh <summary|list|run|acknowledge|resolve|pause|resume-request|resume-approve> [args]
   list [query]
   acknowledge <finding-id> <reason>
   resolve <finding-id> <reason>
   pause <payin|payout> <command-id> <revision> <reason>
-  resume <payin|payout> <command-id> <revision> <reason>
-  approve <payin|payout> <resume-command-id>
+  resume-request <payin|payout> <command-id> <revision> <reason>
+  resume-approve <payin|payout> <resume-command-id>
 EOF
 }
 
@@ -48,12 +48,12 @@ pause)
 	[ -n "$flow" ] && [ -n "$id" ] && [ -n "$revision" ] && [ -n "$reason" ] || { usage; exit 2; }
 	api -X POST "$BASE_URL/admin/assurance/intake/$flow/pause" -d "{\"command_id\":\"$id\",\"expected_revision\":$revision,\"reason\":\"$reason\"}"
 	;;
-resume)
+resume-request|resume)
 	flow="${2:-}"; id="${3:-}"; revision="${4:-}"; reason="${5:-}"
 	[ -n "$flow" ] && [ -n "$id" ] && [ -n "$revision" ] && [ -n "$reason" ] || { usage; exit 2; }
 	api -X POST "$BASE_URL/admin/assurance/intake/$flow/resume-requests" -d "{\"command_id\":\"$id\",\"expected_revision\":$revision,\"reason\":\"$reason\"}"
 	;;
-approve)
+resume-approve|approve)
 	flow="${2:-}"; id="${3:-}"
 	[ -n "$flow" ] && [ -n "$id" ] || { usage; exit 2; }
 	api -X POST "$BASE_URL/admin/assurance/intake/$flow/resume-requests/$id/approve"

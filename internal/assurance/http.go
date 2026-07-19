@@ -154,7 +154,7 @@ func (m *Module) runsHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
-	rows, err := m.db.QueryContext(r.Context(), `SELECT id, mode, status, baseline, started_at, finished_at, records_scanned, findings_opened, error_code FROM assurance_runs ORDER BY started_at DESC, id DESC LIMIT 200`)
+	rows, err := m.db.QueryContext(r.Context(), `SELECT id, mode, status, baseline, cutoff_at, started_at, finished_at, records_scanned, pages_scanned, findings_opened, error_code FROM assurance_runs ORDER BY started_at DESC, id DESC LIMIT 200`)
 	if err != nil {
 		http.Error(w, "assurance unavailable", http.StatusServiceUnavailable)
 		return
@@ -164,14 +164,14 @@ func (m *Module) runsHandler(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var id, mode, statusValue, errorCode string
 		var baseline bool
-		var started time.Time
+		var cutoff, started time.Time
 		var finished sql.NullTime
-		var scanned, opened int
-		if err := rows.Scan(&id, &mode, &statusValue, &baseline, &started, &finished, &scanned, &opened, &errorCode); err != nil {
+		var scanned, pages, opened int
+		if err := rows.Scan(&id, &mode, &statusValue, &baseline, &cutoff, &started, &finished, &scanned, &pages, &opened, &errorCode); err != nil {
 			http.Error(w, "assurance unavailable", http.StatusInternalServerError)
 			return
 		}
-		run := map[string]any{"id": id, "mode": mode, "status": statusValue, "baseline": baseline, "started_at": started, "records_scanned": scanned, "findings_opened": opened, "error_code": errorCode}
+		run := map[string]any{"id": id, "mode": mode, "status": statusValue, "baseline": baseline, "cutoff_at": cutoff, "started_at": started, "records_scanned": scanned, "pages_scanned": pages, "findings_opened": opened, "error_code": errorCode}
 		if finished.Valid {
 			run["finished_at"] = finished.Time
 		}
@@ -247,15 +247,28 @@ func (m *Module) intakeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	result := map[string]any{}
+	dependencyErr := false
 	if reader, ok := m.payin.(payinControlReader); ok {
 		if control, err := reader.GetIntakeControl(r.Context(), &payinv1.GetIntakeControlRequest{}); err == nil {
 			result["payin"] = control
+		} else {
+			dependencyErr = true
 		}
+	} else {
+		dependencyErr = true
 	}
 	if reader, ok := m.payout.(payoutControlReader); ok {
 		if control, err := reader.GetIntakeControl(r.Context(), &payoutv1.GetIntakeControlRequest{}); err == nil {
 			result["payout"] = control
+		} else {
+			dependencyErr = true
 		}
+	} else {
+		dependencyErr = true
+	}
+	if dependencyErr {
+		http.Error(w, "owner unavailable", http.StatusServiceUnavailable)
+		return
 	}
 	writeJSON(w, http.StatusOK, result)
 }
@@ -285,7 +298,7 @@ func (m *Module) applyOwnerCommand(w http.ResponseWriter, r *http.Request, actio
 		return
 	}
 	actor := actorFromRequest(r)
-	insertResult, err := m.db.ExecContext(r.Context(), `INSERT INTO intake_control_commands (id, flow, action, revision, requested_by, status, idempotency_key) VALUES ($1,$2,$3,$4,$5,'pending',$1) ON CONFLICT (idempotency_key) DO NOTHING`, commandID, flow, action, request.ExpectedRevision, actor)
+	insertResult, err := m.db.ExecContext(r.Context(), `INSERT INTO intake_control_commands (id, flow, action, revision, requested_by, reason, status, idempotency_key) VALUES ($1,$2,$3,$4,$5,$6,'pending',$1) ON CONFLICT (idempotency_key) DO NOTHING`, commandID, flow, action, request.ExpectedRevision, actor, request.Reason)
 	if err != nil {
 		http.Error(w, "command already exists or assurance unavailable", http.StatusConflict)
 		return
@@ -304,7 +317,7 @@ func (m *Module) applyOwnerCommand(w http.ResponseWriter, r *http.Request, actio
 		http.Error(w, "owner unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	_, _ = m.db.ExecContext(r.Context(), `UPDATE intake_control_commands SET status='applied', approved_by=$2, applied_at=now() WHERE id=$1`, commandID, actor)
+	_, _ = m.db.ExecContext(r.Context(), `UPDATE intake_control_commands SET status='applied', approved_by=$2, resulting_revision=$3, applied_at=now() WHERE id=$1`, commandID, actor, responseRevision(response))
 	writeJSON(w, http.StatusOK, response)
 }
 
@@ -347,7 +360,7 @@ func (m *Module) resumeRequestHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "command_id must be UUID", http.StatusBadRequest)
 		return
 	}
-	insertResult, err := m.db.ExecContext(r.Context(), `INSERT INTO intake_control_commands (id, flow, action, revision, requested_by, status, idempotency_key) VALUES ($1,$2,'resume_request',$3,$4,'pending',$1) ON CONFLICT (idempotency_key) DO NOTHING`, commandID, flow, request.ExpectedRevision, actorFromRequest(r))
+	insertResult, err := m.db.ExecContext(r.Context(), `INSERT INTO intake_control_commands (id, flow, action, revision, requested_by, reason, status, idempotency_key) VALUES ($1,$2,'resume_request',$3,$4,$5,'pending',$1) ON CONFLICT (idempotency_key) DO NOTHING`, commandID, flow, request.ExpectedRevision, actorFromRequest(r), request.Reason)
 	if err != nil {
 		http.Error(w, "command already exists or assurance unavailable", http.StatusConflict)
 		return
@@ -375,7 +388,7 @@ func (m *Module) resumeApproveHandler(w http.ResponseWriter, r *http.Request) {
 	flow := r.PathValue("flow")
 	var requestedBy string
 	var revision int64
-	if err := m.db.QueryRowContext(r.Context(), `SELECT requested_by, revision FROM intake_control_commands WHERE id=$1 AND flow=$2 AND action='resume_request' AND status='pending'`, commandID, flow).Scan(&requestedBy, &revision); err != nil {
+	if err := m.db.QueryRowContext(r.Context(), `SELECT requested_by, revision FROM intake_control_commands WHERE id=$1 AND flow=$2 AND action='resume_request' AND status IN ('pending','failed')`, commandID, flow).Scan(&requestedBy, &revision); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			http.Error(w, "resume request not found or already approved", http.StatusNotFound)
 			return
@@ -388,7 +401,7 @@ func (m *Module) resumeApproveHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "requester and approver must differ", http.StatusForbidden)
 		return
 	}
-	approvalResult, err := m.db.ExecContext(r.Context(), `UPDATE intake_control_commands SET status='applying', approved_by=$2 WHERE id=$1 AND status='pending'`, commandID, actor)
+	approvalResult, err := m.db.ExecContext(r.Context(), `UPDATE intake_control_commands SET status='applying', approved_by=$2, error_code='', error_message='' WHERE id=$1 AND status IN ('pending','failed')`, commandID, actor)
 	if err != nil {
 		http.Error(w, "assurance unavailable", http.StatusServiceUnavailable)
 		return
@@ -403,6 +416,17 @@ func (m *Module) resumeApproveHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "owner unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	_, _ = m.db.ExecContext(r.Context(), `UPDATE intake_control_commands SET action='resume_approve', status='applied', applied_at=now() WHERE id=$1`, commandID)
+	_, _ = m.db.ExecContext(r.Context(), `UPDATE intake_control_commands SET action='resume_approve', status='applied', resulting_revision=$2, applied_at=now() WHERE id=$1`, commandID, responseRevision(response))
 	writeJSON(w, http.StatusOK, response)
+}
+
+func responseRevision(value any) int64 {
+	switch result := value.(type) {
+	case *payinv1.ApplyIntakeControlResponse:
+		return result.GetRevision()
+	case *payoutv1.ApplyIntakeControlResponse:
+		return result.GetRevision()
+	default:
+		return 0
+	}
 }

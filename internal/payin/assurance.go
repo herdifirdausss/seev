@@ -56,7 +56,7 @@ func (m *Module) ListAssuranceRecords(ctx context.Context, req *payinv1.ListAssu
 		       amount, currency, vendor, reference, external_ref, settled_event_id,
 		       request_id, request_id_present, ledger_type, ledger_gateway,
 		       ledger_external_ref, ledger_idempotency_scope
-		FROM (
+			FROM (
 			SELECT i.id, 'intent' AS record_type, i.updated_at AS effective_updated_at,
 			       i.created_at, i.status, i.user_id, i.amount, i.currency, i.vendor,
 			       i.reference, COALESCE(e.external_ref, ''), COALESCE(i.settled_event_id::text, ''),
@@ -65,7 +65,15 @@ func (m *Module) ListAssuranceRecords(ctx context.Context, req *payinv1.ListAssu
 			       COALESCE(e.vendor, ''), COALESCE(e.external_ref, ''),
 			       CASE WHEN e.id IS NULL THEN '' ELSE 'payin:' || e.vendor END
 			FROM payin_topup_intents i
-			LEFT JOIN payin_webhook_events e ON e.id = i.settled_event_id
+			LEFT JOIN LATERAL (
+				SELECT e.*
+				FROM payin_webhook_events e
+				WHERE e.id = i.settled_event_id
+				   OR (i.reference <> '' AND e.status = 'posted' AND e.user_id = i.user_id
+				       AND e.amount = i.amount AND e.currency = i.currency AND e.external_ref = i.reference)
+				ORDER BY (e.id = i.settled_event_id) DESC, e.updated_at DESC, e.id DESC
+				LIMIT 1
+			) e ON true
 			UNION ALL
 			SELECT e.id, 'webhook_event', e.updated_at, e.created_at, e.status, e.user_id,
 			       e.amount, e.currency, e.vendor, '', e.external_ref, '',
