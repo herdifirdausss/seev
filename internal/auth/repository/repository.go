@@ -75,6 +75,8 @@ type Repository interface {
 	// DowngradeKYCLevel applies the stricter ledger limits first, then lowers
 	// auth_users. The callback is deliberately invoked before the DB tx.
 	DowngradeKYCLevel(ctx context.Context, userID uuid.UUID, level int, decidedBy, reason string, applyTier func(context.Context, uuid.UUID, int) error) error
+	CreateKYCDocument(context.Context, model.KYCDocument) error
+	GetKYCDocument(context.Context, uuid.UUID) (model.KYCDocument, error)
 }
 
 type repo struct {
@@ -439,6 +441,32 @@ func (r *repo) DowngradeKYCLevel(ctx context.Context, userID uuid.UUID, level in
 		}
 		return nil
 	})
+}
+
+func (r *repo) CreateKYCDocument(ctx context.Context, document model.KYCDocument) error {
+	_, err := r.db.ExecContext(ctx, `
+		INSERT INTO kyc_documents (id, submission_id, user_id, object_key, sha256, size_bytes, content_type)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)`, document.ID, document.SubmissionID, document.UserID,
+		document.ObjectKey, document.SHA256, document.SizeBytes, document.ContentType)
+	if err != nil {
+		return fmt.Errorf("auth: create kyc document: %w", err)
+	}
+	return nil
+}
+
+func (r *repo) GetKYCDocument(ctx context.Context, id uuid.UUID) (model.KYCDocument, error) {
+	var document model.KYCDocument
+	err := r.db.QueryRowContext(ctx, `
+		SELECT id, submission_id, user_id, object_key, sha256, size_bytes, content_type, created_at
+		FROM kyc_documents WHERE id = $1`, id).Scan(&document.ID, &document.SubmissionID, &document.UserID,
+		&document.ObjectKey, &document.SHA256, &document.SizeBytes, &document.ContentType, &document.CreatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return model.KYCDocument{}, ErrNotFound
+	}
+	if err != nil {
+		return model.KYCDocument{}, fmt.Errorf("auth: get kyc document: %w", err)
+	}
+	return document, nil
 }
 
 func (r *repo) ClaimKYCApplyRetries(ctx context.Context, limit int, lease time.Duration) ([]model.KYCApplyRetry, error) {

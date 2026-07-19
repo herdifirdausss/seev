@@ -64,6 +64,15 @@ type KYCApplyRetry struct {
 	UpdatedAt      time.Time
 }
 
+type KYCDocument struct {
+	ID, SubmissionID, UserID uuid.UUID
+	ObjectKey                string
+	SHA256                   string
+	SizeBytes                int64
+	ContentType              string
+	CreatedAt                time.Time
+}
+
 // MarshalPayload keeps JSON encoding in the auth repository boundary.
 func (s KYCSubmission) MarshalPayload() ([]byte, error) { return json.Marshal(s.Payload) }
 

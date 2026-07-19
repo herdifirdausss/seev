@@ -574,7 +574,19 @@ menyentuh provider riil maupun MinIO.
 
 ### Hasil
 
-> Diisi saat T6 selesai.
+> T6 core auth selesai pada 2026-07-19. Envelope AES-GCM memakai DEK acak
+> per file yang dibungkus KEK 32-byte, menyimpan hanya object key/hash
+> plaintext/size/MIME di `kyc_documents`, dan tidak pernah menulis plaintext
+> atau kunci ke log/database. Upload multipart dibatasi 10 MiB + allowlist
+> PDF/JPEG/PNG; download admin didekripsi on-the-fly. Tanpa `DocumentStore`
+> atau `KYC_DOC_KEK`, endpoint menjawab 503 dan alur KYC JSON existing tetap
+> berjalan. Unit round-trip, wrong-KEK, masking envelope, dan validation lulus.
+>
+> Adapter object storage sengaja berupa interface agar build default tidak
+> menarik dependency MinIO; profile `kycstore`/adapter MinIO hardened serta
+> evaluasi provider KYC sandbox riil masih menjadi follow-up deployment-gated
+> (tidak ada kredensial/vendor yang dipalsukan di CI). Kontrak `SetDocumentStore`
+> dan `SetDocumentKEK` sudah menjadi seam composition root untuk langkah itu.
 
 ### T7 — Chaos, observability, dan dokumentasi penutup (K8)
 
@@ -600,7 +612,19 @@ hutang ter-update.
 
 ### Hasil
 
-> Diisi saat T7 selesai.
+> T7 selesai pada 2026-07-19 untuk observability/runbook scope: Prometheus
+> alerts `SeevKYCApplyRetryDead`, `SeevFraudScreeningSpillLoss`, dan
+> `SeevFraudScreeningSpillBacklog`, dashboard Grafana A4, serta
+> `docs/runbooks/compliance-a4.md` sudah terdaftar. Runbook menegaskan
+> limits-first, FIFO spill recovery, dataset checksum/version, dan larangan
+> logging KEK/plaintext.
+>
+> Chaos full-stack yang memutus ledger/auth Postgres tetap dijalankan melalui
+> environment Docker/CI (bukan dipalsukan dalam unit test); acceptance gate
+> lokal yang tersedia di sini adalah unit + integration migrasi dan seluruh
+> targeted service tests. Provider KYC riil dan MinIO profile masih
+> deployment-gated sesuai anti-scope, sehingga default CI tetap offline/no
+> credential.
 
 ## 6. Constraint eksekutor
 

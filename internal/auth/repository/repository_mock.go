@@ -72,6 +72,20 @@ func (mr *MockRepositoryMockRecorder) ClaimKYCApplyRetries(ctx, limit, lease any
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ClaimKYCApplyRetries", reflect.TypeOf((*MockRepository)(nil).ClaimKYCApplyRetries), ctx, limit, lease)
 }
 
+// CreateKYCDocument mocks base method.
+func (m *MockRepository) CreateKYCDocument(arg0 context.Context, arg1 model.KYCDocument) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateKYCDocument", arg0, arg1)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CreateKYCDocument indicates an expected call of CreateKYCDocument.
+func (mr *MockRepositoryMockRecorder) CreateKYCDocument(arg0, arg1 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateKYCDocument", reflect.TypeOf((*MockRepository)(nil).CreateKYCDocument), arg0, arg1)
+}
+
 // CreateKYCSubmission mocks base method.
 func (m *MockRepository) CreateKYCSubmission(ctx context.Context, s model.KYCSubmission) error {
 	m.ctrl.T.Helper()
@@ -126,6 +140,21 @@ func (m *MockRepository) EnqueueKYCApplyRetry(ctx context.Context, retry model.K
 func (mr *MockRepositoryMockRecorder) EnqueueKYCApplyRetry(ctx, retry any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "EnqueueKYCApplyRetry", reflect.TypeOf((*MockRepository)(nil).EnqueueKYCApplyRetry), ctx, retry)
+}
+
+// GetKYCDocument mocks base method.
+func (m *MockRepository) GetKYCDocument(arg0 context.Context, arg1 uuid.UUID) (model.KYCDocument, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetKYCDocument", arg0, arg1)
+	ret0, _ := ret[0].(model.KYCDocument)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetKYCDocument indicates an expected call of GetKYCDocument.
+func (mr *MockRepositoryMockRecorder) GetKYCDocument(arg0, arg1 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetKYCDocument", reflect.TypeOf((*MockRepository)(nil).GetKYCDocument), arg0, arg1)
 }
 
 // GetKYCSubmission mocks base method.

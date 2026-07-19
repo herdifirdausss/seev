@@ -24,10 +24,12 @@ type authHandlers interface {
 type kycHandlers interface {
 	SubmitKYCHandler() http.HandlerFunc
 	KYCStatusHandler() http.HandlerFunc
+	UploadKYCDocumentHandler() http.HandlerFunc
 	AdminListKYCHandler() http.HandlerFunc
 	AdminApproveKYCHandler() http.HandlerFunc
 	AdminRejectKYCHandler() http.HandlerFunc
 	AdminDowngradeKYCHandler() http.HandlerFunc
+	AdminDownloadKYCDocumentHandler() http.HandlerFunc
 }
 
 func publicRouter(cfg *config.Config, handlers authHandlers, redisCache *cache.Cache, log *slog.Logger) http.Handler {
@@ -73,6 +75,7 @@ func publicRouter(cfg *config.Config, handlers authHandlers, redisCache *cache.C
 	if kyc, ok := handlers.(kycHandlers); ok {
 		api.Handle("POST /users/me/kyc", authed(kyc.SubmitKYCHandler()))
 		api.Handle("GET /users/me/kyc", authed(kyc.KYCStatusHandler()))
+		api.Handle("POST /users/me/kyc/documents", authed(kyc.UploadKYCDocumentHandler()))
 	}
 	apiRoot.Handle("/api/v1/", http.StripPrefix("/api/v1", api))
 	apiRoot.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) { http.NotFound(w, r) })
@@ -93,6 +96,7 @@ func internalRouter(args ...any) http.Handler {
 			mux.Handle("POST /api/v1/admin/kyc/submissions/{id}/approve", authedAdmin(handlers.AdminApproveKYCHandler()))
 			mux.Handle("POST /api/v1/admin/kyc/submissions/{id}/reject", authedAdmin(handlers.AdminRejectKYCHandler()))
 			mux.Handle("POST /api/v1/admin/kyc/users/{id}/downgrade", authedAdmin(handlers.AdminDowngradeKYCHandler()))
+			mux.Handle("GET /api/v1/admin/kyc/documents/{id}", authedAdmin(handlers.AdminDownloadKYCDocumentHandler()))
 		}
 	}
 	return mux

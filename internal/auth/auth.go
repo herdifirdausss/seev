@@ -83,6 +83,8 @@ type Module struct {
 	sanctionsChecker interface {
 		CheckWithSubject(context.Context, string, string, uuid.UUID, decimal.Decimal, string, string, string) (fraudcheck.Verdict, error)
 	}
+	documentStore DocumentStore
+	documentKEK   []byte
 }
 
 // SetSanctionsChecker enables the optional fraud-service sanctions seam. A

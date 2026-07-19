@@ -123,6 +123,9 @@ func run(parent context.Context) error {
 	if fraudConn != nil {
 		module.SetSanctionsChecker(fraudcheck.New(fraudv1.NewFraudServiceClient(fraudConn), "auth"))
 	}
+	if kek := os.Getenv("KYC_DOC_KEK"); kek != "" {
+		module.SetDocumentKEK([]byte(kek))
+	}
 	if err := module.EnsureBootstrapAdmin(ctx, cfg.Auth.BootstrapAdminEmail, cfg.Auth.BootstrapAdminPassword); err != nil {
 		closeAuthDependencies(log, ledgerConn.Close, closeFraud, redisCache, db, shutdownTracing)
 		return fmt.Errorf("ensure bootstrap admin: %w", err)
