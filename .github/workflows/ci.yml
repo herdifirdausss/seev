@@ -130,12 +130,9 @@ jobs:
         run: ./scripts/ci/check-action-pins.sh
 
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@2226d7cb06a077cd73e56eedd38eecad18e5d837 # v6.5.0
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
-          version: v1.64.8
-          # The release binary is built with Go 1.24 and cannot analyze this
-          # Go 1.25.6 module. Build the pinned linter with the runner's Go.
-          install-mode: goinstall
+          version: v2.12.2
 
       - name: Test
         run: go test -race -cover ./...

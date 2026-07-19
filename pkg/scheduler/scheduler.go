@@ -459,7 +459,7 @@ func parseDOWField(field string) (*dowField, error) {
 
 			dow, err := normalizeDOW(rawDow)
 			if err != nil {
-				return nil, fmt.Errorf("L syntax %q: %w", token, err)
+				return nil, fmt.Errorf("invalid L syntax %q: %w", token, err)
 			}
 
 			df.lastDow = append(df.lastDow, dow)
