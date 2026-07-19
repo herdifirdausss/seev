@@ -47,8 +47,8 @@ owner direct-pause `/admin/payin/intake/pause` atau
 Resume memerlukan principal kedua:
 
 ```bash
-scripts/product-assurance.sh resume payout <uuid> <revision> "request resume after review"
-scripts/product-assurance.sh approve payout <uuid>
+scripts/product-assurance.sh resume-request payout <uuid> <revision> "request resume after review"
+scripts/product-assurance.sh resume-approve payout <uuid>
 ```
 
 Requester dan approver yang sama selalu ditolak. Command UUID dan revision
