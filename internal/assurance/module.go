@@ -154,6 +154,12 @@ func (m *Module) Run(ctx context.Context, mode string) (RunSummary, error) {
 			return m.failRun(ctx, run, err)
 		}
 	}
+	var opened, pages int
+	if err := m.db.QueryRowContext(ctx, `SELECT findings_opened, pages_scanned FROM assurance_runs WHERE id=$1`, run.ID).Scan(&opened, &pages); err != nil {
+		return m.failRun(ctx, run, fmt.Errorf("read assurance run progress: %w", err))
+	}
+	run.FindingsOpened = opened
+	run.PagesScanned = pages
 	// Alert delivery is secondary to proof persistence: a webhook outage must
 	// not roll back a successful scan or advance decision.
 	if err := m.dispatchAlerts(ctx); err != nil {
@@ -367,8 +373,14 @@ func (m *Module) provePayin(ctx context.Context, records []*payinv1.AssuranceRec
 		seen := map[string]bool{}
 		for _, finding := range assurancerules.EvaluatePayin(value) {
 			seen[finding.Fingerprint] = true
-			if _, err := m.upsertFinding(ctx, Finding{Fingerprint: finding.Fingerprint, Severity: finding.Severity, RuleCode: finding.RuleCode, ResourceID: finding.ResourceID, AmountMinor: finding.AmountMinor, Currency: finding.Currency, Evidence: finding.Evidence}, time.Now(), suppressAlerts); err != nil {
+			opened, err := m.upsertFinding(ctx, Finding{Fingerprint: finding.Fingerprint, Severity: finding.Severity, RuleCode: finding.RuleCode, ResourceID: finding.ResourceID, AmountMinor: finding.AmountMinor, Currency: finding.Currency, Evidence: finding.Evidence}, time.Now(), suppressAlerts)
+			if err != nil {
 				return fmt.Errorf("persist payin finding: %w", err)
+			}
+			if opened {
+				if err := m.incrementRunFindings(ctx, runID); err != nil {
+					return fmt.Errorf("record payin finding transition: %w", err)
+				}
 			}
 		}
 		if err := m.resolveResourceFindings(ctx, record.GetId(), seen); err != nil {
@@ -445,8 +457,14 @@ func (m *Module) provePayout(ctx context.Context, records []*payoutv1.AssuranceR
 		seen := map[string]bool{}
 		for _, finding := range assurancerules.EvaluatePayout(value) {
 			seen[finding.Fingerprint] = true
-			if _, err := m.upsertFinding(ctx, Finding{Fingerprint: finding.Fingerprint, Severity: finding.Severity, RuleCode: finding.RuleCode, ResourceID: finding.ResourceID, AmountMinor: finding.AmountMinor, Currency: finding.Currency, Evidence: finding.Evidence}, time.Now(), suppressAlerts); err != nil {
+			opened, err := m.upsertFinding(ctx, Finding{Fingerprint: finding.Fingerprint, Severity: finding.Severity, RuleCode: finding.RuleCode, ResourceID: finding.ResourceID, AmountMinor: finding.AmountMinor, Currency: finding.Currency, Evidence: finding.Evidence}, time.Now(), suppressAlerts)
+			if err != nil {
 				return fmt.Errorf("persist payout finding: %w", err)
+			}
+			if opened {
+				if err := m.incrementRunFindings(ctx, runID); err != nil {
+					return fmt.Errorf("record payout finding transition: %w", err)
+				}
 			}
 		}
 		if err := m.resolveResourceFindings(ctx, record.GetId(), seen); err != nil {
@@ -636,6 +654,11 @@ func (m *Module) recordPage(ctx context.Context, runID uuid.UUID) error {
 		return fmt.Errorf("record assurance page: %w", err)
 	}
 	return nil
+}
+
+func (m *Module) incrementRunFindings(ctx context.Context, runID uuid.UUID) error {
+	_, err := m.db.ExecContext(ctx, `UPDATE assurance_runs SET findings_opened=findings_opened+1 WHERE id=$1`, runID)
+	return err
 }
 
 func (m *Module) advanceLedgerCursor(ctx context.Context, response *ledgerv1.BatchGetAssuranceTransactionsResponse, runID uuid.UUID) error {
