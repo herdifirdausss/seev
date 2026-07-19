@@ -76,7 +76,11 @@ func run(parent context.Context) error {
 		return fmt.Errorf("connect postgres: %w", err)
 	}
 	defer db.Close()
-	defer shutdownTracing(context.Background())
+	defer func() {
+		if shutdownErr := shutdownTracing(context.Background()); shutdownErr != nil {
+			log.Error("tracing: shutdown failed", "error", shutdownErr)
+		}
+	}()
 
 	module := adminbff.NewModule(db, cfg.AdminBFF, log)
 	if err := module.Start(); err != nil {

@@ -26,8 +26,10 @@ import (
 
 const sessionCookieName = "admin_session"
 
+type sessionContextKey struct{}
+
 var (
-	adminSessionKey  = struct{}{}
+	adminSessionKey  = sessionContextKey{}
 	csrfFailureTotal = prometheus.NewCounter(prometheus.CounterOpts{
 		Namespace: "adminbff", Name: "csrf_failures_total", Help: "Rejected admin BFF requests due to missing or invalid CSRF tokens.",
 	})
@@ -37,8 +39,8 @@ var (
 )
 
 func init() {
-	prometheus.Register(csrfFailureTotal)
-	prometheus.Register(auditWriteFailuresTotal)
+	_ = prometheus.Register(csrfFailureTotal)
+	_ = prometheus.Register(auditWriteFailuresTotal)
 }
 
 type Module struct {
