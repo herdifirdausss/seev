@@ -90,6 +90,11 @@ func TestLoadFromEnv_Defaults(t *testing.T) {
 	assert.Equal(t, "json", cfg.Logger.Format)
 
 	assert.Equal(t, int64(1_000_000_000), cfg.Ledger.MaxAmountPerTx)
+	assert.Equal(t, 2*time.Minute, cfg.Assurance.ConsistencyDelay)
+	assert.Equal(t, time.Minute, cfg.Assurance.Interval)
+	assert.Equal(t, 500, cfg.Assurance.PageSize)
+	assert.Equal(t, 3*time.Second, cfg.Assurance.RPCTimeout)
+	assert.Equal(t, 2, cfg.Assurance.Concurrency)
 
 	assert.Equal(t, "", cfg.Worker.AlertWebhookURL, "no external alert by default (docs/plan/12 Task T4)")
 	assert.Equal(t, "", cfg.Tracing.OTLPEndpoint, "no tracer provider installed by default (docs/plan/12 Task T5)")

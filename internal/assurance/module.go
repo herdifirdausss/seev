@@ -1,0 +1,334 @@
+// Package assurance owns durable, read-only cross-service reconciliation.
+package assurance
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"log/slog"
+	"sync"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/prometheus/client_golang/prometheus"
+	"google.golang.org/grpc"
+	"google.golang.org/protobuf/types/known/timestamppb"
+
+	ledgerv1 "github.com/herdifirdausss/seev/gen/ledger/v1"
+	payinv1 "github.com/herdifirdausss/seev/gen/payin/v1"
+	payoutv1 "github.com/herdifirdausss/seev/gen/payout/v1"
+	"github.com/herdifirdausss/seev/internal/config"
+	"github.com/herdifirdausss/seev/pkg/database"
+)
+
+var (
+	runDuration        = prometheus.NewHistogram(prometheus.HistogramOpts{Namespace: "assurance", Name: "run_duration_seconds", Help: "Duration of assurance runs."})
+	runFailures        = prometheus.NewCounter(prometheus.CounterOpts{Namespace: "assurance", Name: "run_failures_total", Help: "Assurance runs that failed before cursor advancement."})
+	recordsScanned     = prometheus.NewCounterVec(prometheus.CounterOpts{Namespace: "assurance", Name: "records_scanned_total", Help: "Records read from owner services."}, []string{"source"})
+	findingsBySeverity = prometheus.NewGaugeVec(prometheus.GaugeOpts{Namespace: "assurance", Name: "findings", Help: "Current finding count by severity and rule."}, []string{"severity", "rule"})
+	moneyAtRisk        = prometheus.NewGaugeVec(prometheus.GaugeOpts{Namespace: "assurance", Name: "money_at_risk_minor", Help: "Open finding amount in minor units by currency."}, []string{"currency"})
+)
+
+func init() {
+	for _, metric := range []prometheus.Collector{runDuration, runFailures, recordsScanned, findingsBySeverity, moneyAtRisk} {
+		_ = prometheus.Register(metric)
+	}
+}
+
+type Module struct {
+	db     database.DatabaseSQL
+	cfg    config.AssuranceConfig
+	logger *slog.Logger
+	payin  payinReader
+	payout payoutReader
+	ledger ledgerReader
+
+	stopOnce sync.Once
+	stopCh   chan struct{}
+	doneCh   chan struct{}
+}
+
+// Narrow interfaces keep assurance decoupled from unrelated owner RPCs and
+// make dependency failures easy to exercise in unit tests.
+type payinReader interface {
+	ListAssuranceRecords(context.Context, *payinv1.ListAssuranceRecordsRequest, ...grpc.CallOption) (*payinv1.ListAssuranceRecordsResponse, error)
+}
+type payoutReader interface {
+	ListAssuranceRecords(context.Context, *payoutv1.ListAssuranceRecordsRequest, ...grpc.CallOption) (*payoutv1.ListAssuranceRecordsResponse, error)
+}
+type ledgerReader interface {
+	BatchGetAssuranceTransactions(context.Context, *ledgerv1.BatchGetAssuranceTransactionsRequest, ...grpc.CallOption) (*ledgerv1.BatchGetAssuranceTransactionsResponse, error)
+}
+
+func NewModule(db database.DatabaseSQL, cfg config.AssuranceConfig, payin payinReader, payout payoutReader, ledger ledgerReader, logger *slog.Logger) *Module {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	return &Module{db: db, cfg: cfg, logger: logger, payin: payin, payout: payout, ledger: ledger, stopCh: make(chan struct{}), doneCh: make(chan struct{})}
+}
+
+func (m *Module) Start(ctx context.Context) {
+	go func() {
+		defer close(m.doneCh)
+		// A first run is deliberately asynchronous so the HTTP health endpoint
+		// can come up while a historical backfill is in progress.
+		if _, err := m.Run(ctx, "backfill"); err != nil && !errors.Is(err, context.Canceled) {
+			m.logger.Error("assurance initial run failed", "error", err)
+		}
+		ticker := time.NewTicker(m.cfg.Interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-m.stopCh:
+				return
+			case <-ticker.C:
+				if _, err := m.Run(ctx, "incremental"); err != nil && !errors.Is(err, context.Canceled) {
+					m.logger.Error("assurance scheduled run failed", "error", err)
+				}
+			}
+		}
+	}()
+}
+
+func (m *Module) Stop() {
+	m.stopOnce.Do(func() { close(m.stopCh) })
+	select {
+	case <-m.doneCh:
+	case <-time.After(5 * time.Second):
+	}
+}
+
+type RunSummary struct {
+	ID             uuid.UUID `json:"id"`
+	Mode           string    `json:"mode"`
+	Status         string    `json:"status"`
+	RecordsScanned int       `json:"records_scanned"`
+	FindingsOpened int       `json:"findings_opened"`
+	Baseline       bool      `json:"baseline"`
+	StartedAt      time.Time `json:"started_at"`
+	FinishedAt     time.Time `json:"finished_at"`
+}
+
+func (m *Module) Run(ctx context.Context, mode string) (RunSummary, error) {
+	started := time.Now()
+	if mode == "" {
+		mode = "manual"
+	}
+	if mode != "manual" && mode != "backfill" && mode != "incremental" {
+		return RunSummary{}, fmt.Errorf("invalid assurance run mode %q", mode)
+	}
+	run := RunSummary{ID: uuid.New(), Mode: mode, Status: "running", StartedAt: started, Baseline: mode == "backfill"}
+	if _, err := m.db.ExecContext(ctx, `INSERT INTO assurance_runs (id, mode, status, baseline, started_at) VALUES ($1,$2,$3,$4,$5)`, run.ID, run.Mode, run.Status, run.Baseline, started); err != nil {
+		return run, fmt.Errorf("create assurance run: %w", err)
+	}
+	defer func() { runDuration.Observe(time.Since(started).Seconds()) }()
+
+	cutoff := time.Now().Add(-m.cfg.ConsistencyDelay)
+	if n, err := m.scanPayin(ctx, run.ID, cutoff, mode == "backfill"); err != nil {
+		return m.failRun(ctx, run, err)
+	} else {
+		run.RecordsScanned += n
+	}
+	if n, err := m.scanPayout(ctx, run.ID, cutoff, mode == "backfill"); err != nil {
+		return m.failRun(ctx, run, err)
+	} else {
+		run.RecordsScanned += n
+	}
+	run.Status = "succeeded"
+	run.FinishedAt = time.Now()
+	if _, err := m.db.ExecContext(ctx, `UPDATE assurance_runs SET status='succeeded', finished_at=$2, records_scanned=$3, findings_opened=$4 WHERE id=$1`, run.ID, run.FinishedAt, run.RecordsScanned, run.FindingsOpened); err != nil {
+		return run, fmt.Errorf("finish assurance run: %w", err)
+	}
+	return run, nil
+}
+
+func (m *Module) failRun(ctx context.Context, run RunSummary, runErr error) (RunSummary, error) {
+	run.Status = "failed"
+	run.FinishedAt = time.Now()
+	runFailures.Inc()
+	_, _ = m.db.ExecContext(ctx, `UPDATE assurance_runs SET status='failed', finished_at=$2, records_scanned=$3, error_code='DEPENDENCY_OR_PERSISTENCE', error_message=$4 WHERE id=$1`, run.ID, run.FinishedAt, run.RecordsScanned, runErr.Error())
+	return run, runErr
+}
+
+func (m *Module) scanPayin(ctx context.Context, runID uuid.UUID, cutoff time.Time, backfill bool) (int, error) {
+	if m.payin == nil {
+		return 0, errors.New("payin assurance client is unavailable")
+	}
+	cur, err := m.cursor(ctx, "payin")
+	if err != nil {
+		return 0, err
+	}
+	total := 0
+	for {
+		rpcCtx, cancel := context.WithTimeout(ctx, m.cfg.RPCTimeout)
+		request := &payinv1.ListAssuranceRecordsRequest{PageSize: uint32(m.cfg.PageSize), Cutoff: timestamppb.New(cutoff)}
+		if cur.Valid {
+			request.CursorUpdatedAt = timestamppb.New(cur.UpdatedAt)
+			request.CursorId = cur.ID.String()
+		}
+		response, callErr := m.payin.ListAssuranceRecords(rpcCtx, request)
+		cancel()
+		if callErr != nil {
+			return total, fmt.Errorf("payin assurance RPC: %w", callErr)
+		}
+		if err := m.provePayin(ctx, response.GetRecords()); err != nil {
+			return total, err
+		}
+		total += len(response.GetRecords())
+		if len(response.GetRecords()) > 0 {
+			last := response.GetRecords()[len(response.GetRecords())-1]
+			if err := m.advanceCursor(ctx, "payin", last.GetEffectiveUpdatedAt().AsTime(), last.GetId(), runID, backfill && !response.GetHasMore()); err != nil {
+				return total, err
+			}
+			cur = cursorValue{Valid: true, UpdatedAt: last.GetEffectiveUpdatedAt().AsTime(), ID: uuid.MustParse(last.GetId())}
+		}
+		if !response.GetHasMore() {
+			break
+		}
+	}
+	recordsScanned.WithLabelValues("payin").Add(float64(total))
+	return total, nil
+}
+
+func (m *Module) scanPayout(ctx context.Context, runID uuid.UUID, cutoff time.Time, backfill bool) (int, error) {
+	if m.payout == nil {
+		return 0, errors.New("payout assurance client is unavailable")
+	}
+	cur, err := m.cursor(ctx, "payout")
+	if err != nil {
+		return 0, err
+	}
+	total := 0
+	for {
+		rpcCtx, cancel := context.WithTimeout(ctx, m.cfg.RPCTimeout)
+		request := &payoutv1.ListAssuranceRecordsRequest{PageSize: uint32(m.cfg.PageSize), Cutoff: timestamppb.New(cutoff)}
+		if cur.Valid {
+			request.CursorUpdatedAt = timestamppb.New(cur.UpdatedAt)
+			request.CursorId = cur.ID.String()
+		}
+		response, callErr := m.payout.ListAssuranceRecords(rpcCtx, request)
+		cancel()
+		if callErr != nil {
+			return total, fmt.Errorf("payout assurance RPC: %w", callErr)
+		}
+		if err := m.provePayout(ctx, response.GetRecords()); err != nil {
+			return total, err
+		}
+		total += len(response.GetRecords())
+		if len(response.GetRecords()) > 0 {
+			last := response.GetRecords()[len(response.GetRecords())-1]
+			if err := m.advanceCursor(ctx, "payout", last.GetEffectiveUpdatedAt().AsTime(), last.GetId(), runID, backfill && !response.GetHasMore()); err != nil {
+				return total, err
+			}
+			cur = cursorValue{Valid: true, UpdatedAt: last.GetEffectiveUpdatedAt().AsTime(), ID: uuid.MustParse(last.GetId())}
+		}
+		if !response.GetHasMore() {
+			break
+		}
+	}
+	recordsScanned.WithLabelValues("payout").Add(float64(total))
+	return total, nil
+}
+
+func (m *Module) provePayin(ctx context.Context, records []*payinv1.AssuranceRecord) error {
+	if len(records) == 0 || m.ledger == nil {
+		return nil
+	}
+	selectors := make([]*ledgerv1.AssuranceSelector, 0, len(records))
+	for _, record := range records {
+		if record.GetLedgerType() == "" || record.GetLedgerGateway() == "" || record.GetLedgerExternalRef() == "" {
+			continue
+		}
+		selectors = append(selectors, &ledgerv1.AssuranceSelector{Token: record.GetId(), Type: record.GetLedgerType(), Gateway: record.GetLedgerGateway(), ExternalRef: record.GetLedgerExternalRef()})
+	}
+	return m.batchLedger(ctx, selectors)
+}
+
+func (m *Module) provePayout(ctx context.Context, records []*payoutv1.AssuranceRecord) error {
+	if len(records) == 0 || m.ledger == nil {
+		return nil
+	}
+	selectors := make([]*ledgerv1.AssuranceSelector, 0, len(records)*2)
+	for _, record := range records {
+		for _, id := range []string{record.GetHoldTxId(), record.GetSettleTxId()} {
+			if id == "" {
+				continue
+			}
+			selectors = append(selectors, &ledgerv1.AssuranceSelector{Token: record.GetId(), TransactionId: id})
+		}
+	}
+	return m.batchLedger(ctx, selectors)
+}
+
+func (m *Module) batchLedger(ctx context.Context, selectors []*ledgerv1.AssuranceSelector) error {
+	for start := 0; start < len(selectors); start += 500 {
+		end := start + 500
+		if end > len(selectors) {
+			end = len(selectors)
+		}
+		rpcCtx, cancel := context.WithTimeout(ctx, m.cfg.RPCTimeout)
+		_, err := m.ledger.BatchGetAssuranceTransactions(rpcCtx, &ledgerv1.BatchGetAssuranceTransactionsRequest{Selectors: selectors[start:end]})
+		cancel()
+		if err != nil {
+			return fmt.Errorf("ledger assurance RPC: %w", err)
+		}
+	}
+	return nil
+}
+
+type cursorValue struct {
+	Valid     bool
+	UpdatedAt time.Time
+	ID        uuid.UUID
+}
+
+func (m *Module) cursor(ctx context.Context, source string) (cursorValue, error) {
+	var updated sql.NullTime
+	var id uuid.NullUUID
+	if err := m.db.QueryRowContext(ctx, `SELECT updated_at, resource_id FROM assurance_cursors WHERE source=$1`, source).Scan(&updated, &id); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return cursorValue{}, nil
+		}
+		return cursorValue{}, fmt.Errorf("read %s cursor: %w", source, err)
+	}
+	return cursorValue{Valid: updated.Valid && id.Valid, UpdatedAt: updated.Time, ID: id.UUID}, nil
+}
+
+func (m *Module) advanceCursor(ctx context.Context, source string, updated time.Time, resourceID string, runID uuid.UUID, backfillComplete bool) error {
+	id, err := uuid.Parse(resourceID)
+	if err != nil {
+		return fmt.Errorf("cursor resource id: %w", err)
+	}
+	_, err = m.db.ExecContext(ctx, `INSERT INTO assurance_cursors (source, updated_at, resource_id, backfill_complete, updated_by_run_id, updated_at_service) VALUES ($1,$2,$3,$4,$5,now()) ON CONFLICT (source) DO UPDATE SET updated_at=EXCLUDED.updated_at, resource_id=EXCLUDED.resource_id, backfill_complete=assurance_cursors.backfill_complete OR EXCLUDED.backfill_complete, updated_by_run_id=EXCLUDED.updated_by_run_id, updated_at_service=now()`, source, updated, id, backfillComplete, runID)
+	if err != nil {
+		return fmt.Errorf("advance %s cursor: %w", source, err)
+	}
+	return nil
+}
+
+// Finding is the persistence-safe representation used by the rule engine.
+type Finding struct {
+	Fingerprint string
+	Severity    string
+	RuleCode    string
+	ResourceID  string
+	AmountMinor int64
+	Currency    string
+	Evidence    map[string]string
+}
+
+func (m *Module) UpsertFinding(ctx context.Context, finding Finding, seenAt time.Time) error {
+	if finding.Fingerprint == "" || finding.RuleCode == "" || finding.ResourceID == "" {
+		return errors.New("finding fingerprint, rule code, and resource id are required")
+	}
+	evidence, err := json.Marshal(finding.Evidence)
+	if err != nil {
+		return fmt.Errorf("marshal finding evidence: %w", err)
+	}
+	_, err = m.db.ExecContext(ctx, `INSERT INTO assurance_findings (id, fingerprint, severity, rule_code, resource_id, amount_minor, currency, evidence, first_seen_at, last_seen_at, occurrence_count, status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$9,1,'open') ON CONFLICT (fingerprint) DO UPDATE SET severity=EXCLUDED.severity, amount_minor=EXCLUDED.amount_minor, currency=EXCLUDED.currency, evidence=EXCLUDED.evidence, last_seen_at=EXCLUDED.last_seen_at, occurrence_count=assurance_findings.occurrence_count+1, status=CASE WHEN assurance_findings.status='resolved' THEN 'open' ELSE assurance_findings.status END, resolved_at=CASE WHEN assurance_findings.status='resolved' THEN NULL ELSE assurance_findings.resolved_at END`, uuid.New(), finding.Fingerprint, finding.Severity, finding.RuleCode, finding.ResourceID, finding.AmountMinor, finding.Currency, evidence, seenAt)
+	return err
+}

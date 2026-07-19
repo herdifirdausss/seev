@@ -23,6 +23,10 @@ type fakePayoutClient struct {
 	get    func(context.Context, *payoutv1.GetPayoutRequest) (*payoutv1.GetPayoutResponse, error)
 }
 
+func (f fakePayoutClient) ListAssuranceRecords(context.Context, *payoutv1.ListAssuranceRecordsRequest, ...grpc.CallOption) (*payoutv1.ListAssuranceRecordsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "")
+}
+
 func (f fakePayoutClient) CreatePayout(ctx context.Context, r *payoutv1.CreatePayoutRequest, _ ...grpc.CallOption) (*payoutv1.CreatePayoutResponse, error) {
 	return f.create(ctx, r)
 }

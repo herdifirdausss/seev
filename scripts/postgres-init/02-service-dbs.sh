@@ -4,7 +4,7 @@
 # are intentionally deferred until each service's schema migrations land.
 set -eu
 
-for service in ledger auth payin payout fraud gateway adminbff; do
+for service in ledger auth payin payout fraud gateway adminbff assurance; do
     database="seev_${service}"
     role="${service}_app"
 

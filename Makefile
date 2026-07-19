@@ -14,7 +14,7 @@ build:
 	mkdir -p $(BUILD_DIR)
 	go build $(GOFLAGS) -o $(BUILD_DIR)/$(BINARY) $(CMD_DIR)
 
-## build-all: Compile all seven deployable service binaries
+## build-all: Compile all eight deployable service binaries
 build-all:
 	mkdir -p $(BUILD_DIR)
 	go build $(GOFLAGS) -o $(BUILD_DIR)/gateway ./cmd/gateway
@@ -24,6 +24,7 @@ build-all:
 	go build $(GOFLAGS) -o $(BUILD_DIR)/payout-service ./cmd/payout-service
 	go build $(GOFLAGS) -o $(BUILD_DIR)/fraud-service ./cmd/fraud-service
 	go build $(GOFLAGS) -o $(BUILD_DIR)/admin-bff-service ./cmd/admin-bff-service
+	go build $(GOFLAGS) -o $(BUILD_DIR)/assurance-service ./cmd/assurance-service
 
 ## run: Run the compiled binary
 run: build

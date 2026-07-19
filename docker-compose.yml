@@ -365,6 +365,59 @@ services:
         limits:
           memory: 128M
 
+  assurance-service:
+    profiles: ["app"]
+    image: seev/assurance-service:${SEEV_IMAGE_TAG:-dev}
+    build:
+      context: .
+      args:
+        SERVICE: assurance-service
+    logging: *app-logging
+    environment:
+      APP_NAME: assurance-service
+      LOG_FORMAT: json
+      OTEL_EXPORTER_OTLP_ENDPOINT: "${OTEL_EXPORTER_OTLP_ENDPOINT:-}"
+      OTEL_TRACES_SAMPLER: parentbased_traceidratio
+      OTEL_TRACES_SAMPLER_ARG: "${OTEL_TRACES_SAMPLER_ARG:-0.10}"
+      OTEL_EXPORTER_OTLP_INSECURE: "${OTEL_EXPORTER_OTLP_INSECURE:-true}"
+      APP_PORT: "8096"
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: assurance_app
+      POSTGRES_PASSWORD: assurance_app
+      POSTGRES_DB: seev_assurance
+      POSTGRES_SSL_MODE: disable
+      PAYIN_GRPC_ADDR: payin-service:9092
+      PAYOUT_GRPC_ADDR: payout-service:9093
+      LEDGER_GRPC_ADDR: ledger-service:9091
+      INTERNAL_GRPC_TOKEN: ${INTERNAL_GRPC_TOKEN:-}
+      JWT_SECRET: ${JWT_SECRET:-change-me-to-a-random-32-plus-character-secret}
+      ASSURANCE_INTERVAL: ${ASSURANCE_INTERVAL:-60s}
+      ASSURANCE_CONSISTENCY_DELAY: ${ASSURANCE_CONSISTENCY_DELAY:-2m}
+      ASSURANCE_PAGE_SIZE: ${ASSURANCE_PAGE_SIZE:-500}
+      ASSURANCE_RPC_TIMEOUT: ${ASSURANCE_RPC_TIMEOUT:-3s}
+      ASSURANCE_CONCURRENCY: ${ASSURANCE_CONCURRENCY:-2}
+    ports:
+      - "127.0.0.1:8096:8096"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ledger-service:
+        condition: service_healthy
+      payin-service:
+        condition: service_healthy
+      payout-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/app/service", "-healthcheck"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
   gateway-service:
     profiles: ["app"]
     image: seev/gateway-service:${SEEV_IMAGE_TAG:-dev}

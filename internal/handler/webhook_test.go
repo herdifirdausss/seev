@@ -22,6 +22,10 @@ type fakePayinClient struct {
 	get    func(context.Context, *payinv1.GetTopupIntentRequest) (*payinv1.GetTopupIntentResponse, error)
 }
 
+func (f fakePayinClient) ListAssuranceRecords(context.Context, *payinv1.ListAssuranceRecordsRequest, ...grpc.CallOption) (*payinv1.ListAssuranceRecordsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "")
+}
+
 func (f fakePayinClient) HandleWebhook(ctx context.Context, request *payinv1.HandleWebhookRequest, _ ...grpc.CallOption) (*payinv1.HandleWebhookResponse, error) {
 	return f.handle(ctx, request)
 }

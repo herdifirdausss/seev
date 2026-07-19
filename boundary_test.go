@@ -40,15 +40,16 @@ var mutuallyExclusive = [][2]string{
 // Adding a new service means moving modules between entries, never widening
 // every composition root's import privileges.
 var serviceModules = map[string]map[string]bool{
-	"ledger-service":   {"ledger": true, "policy": true},
-	"auth-service":     {"auth": true, "kycvendor": true},
-	"payin-service":    {"payin": true},
-	"payout-service":   {"payout": true},
-	"fraud-service":    {"fraud": true},
-	"sanctions-loader": {"fraud": true},
+	"ledger-service":    {"ledger": true, "policy": true},
+	"auth-service":      {"auth": true, "kycvendor": true},
+	"payin-service":     {"payin": true},
+	"payout-service":    {"payout": true},
+	"fraud-service":     {"fraud": true},
+	"sanctions-loader":  {"fraud": true},
 	"admin-bff-service": {"adminbff": true},
-	"gateway":          {"handler": true, "notify": true},
-	"gentoken":         {},
+	"assurance-service": {"assurance": true},
+	"gateway":           {"handler": true, "notify": true},
+	"gentoken":          {},
 }
 
 var ledgerConsumers = map[string]bool{

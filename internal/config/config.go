@@ -20,20 +20,21 @@ import (
 
 // Config holds all application configuration loaded from environment variables.
 type Config struct {
-	App      AppConfig
-	Postgres PostgresConfig
-	Redis    RedisConfig
-	RabbitMQ RabbitMQConfig
-	JWT      JWTConfig
-	Logger   LoggerConfig
-	Worker   WorkerConfig
-	Ledger   LedgerConfig
-	Tracing  TracingConfig
-	Vendor   VendorConfig
-	Auth     AuthConfig
-	Fraud    FraudConfig
-	Breaker  BreakerConfig
-	AdminBFF AdminBFFConfig
+	App       AppConfig
+	Postgres  PostgresConfig
+	Redis     RedisConfig
+	RabbitMQ  RabbitMQConfig
+	JWT       JWTConfig
+	Logger    LoggerConfig
+	Worker    WorkerConfig
+	Ledger    LedgerConfig
+	Tracing   TracingConfig
+	Vendor    VendorConfig
+	Auth      AuthConfig
+	Fraud     FraudConfig
+	Breaker   BreakerConfig
+	AdminBFF  AdminBFFConfig
+	Assurance AssuranceConfig
 
 	// Cross-process endpoints introduced by the service extraction phases.
 	GRPCPort          string
@@ -172,6 +173,15 @@ type AdminBFFConfig struct {
 	SessionIdleTTL      time.Duration
 	SessionAbsoluteTTL  time.Duration
 	DownstreamTokenTTL  time.Duration
+}
+
+// AssuranceConfig controls the read-only cross-service reconciliation worker.
+type AssuranceConfig struct {
+	ConsistencyDelay time.Duration
+	Interval         time.Duration
+	PageSize         int
+	RPCTimeout       time.Duration
+	Concurrency      int
 }
 
 type AppConfig struct {
@@ -353,6 +363,10 @@ func LoadFraudService() (*Config, error) { return load(true) }
 // HTTP-only aggregator with its own Postgres database (docs/plan/47 K1-K3).
 func LoadAdminBFFService() (*Config, error) { return load(false) }
 
+// LoadAssuranceService excludes RabbitMQ/Redis because assurance owns only
+// its database and uses read-only gRPC calls to domain services.
+func LoadAssuranceService() (*Config, error) { return load(false) }
+
 func load(requireRabbitMQ bool) (*Config, error) {
 	env := os.Getenv("APP_ENV")
 
@@ -518,6 +532,13 @@ func loadFromEnvMode(getenv func(string) string, requireRabbitMQ bool) (*Config,
 			SessionAbsoluteTTL:  parseDuration(getenv("ADMIN_BFF_SESSION_ABSOLUTE_TTL"), 8*time.Hour),
 			DownstreamTokenTTL:  parseDuration(getenv("ADMIN_BFF_DOWNSTREAM_TOKEN_TTL"), time.Minute),
 		},
+		Assurance: AssuranceConfig{
+			ConsistencyDelay: parseDuration(getenv("ASSURANCE_CONSISTENCY_DELAY"), 2*time.Minute),
+			Interval:         parseDuration(getenv("ASSURANCE_INTERVAL"), time.Minute),
+			PageSize:         parseInt(getenv("ASSURANCE_PAGE_SIZE"), 500),
+			RPCTimeout:       parseDuration(getenv("ASSURANCE_RPC_TIMEOUT"), 3*time.Second),
+			Concurrency:      parseInt(getenv("ASSURANCE_CONCURRENCY"), 2),
+		},
 		GRPCPort:          getWithDefault(getenv, "GRPC_PORT", "9091"),
 		InternalGRPCToken: getenv("INTERNAL_GRPC_TOKEN"),
 		LedgerGRPCAddr:    getWithDefault(getenv, "LEDGER_GRPC_ADDR", "localhost:9091"),
@@ -646,6 +667,15 @@ func validate(cfg *Config, requireRabbitMQ bool, errs *[]string) error {
 
 	if cfg.Vendor.Mockvendor2Enabled && cfg.Vendor.Mockvendor2Secret == "" {
 		*errs = append(*errs, "MOCKVENDOR2_SECRET must be set when MOCKVENDOR2_ENABLED=true — an empty HMAC secret would accept any signature")
+	}
+	if cfg.Assurance.PageSize <= 0 || cfg.Assurance.PageSize > 500 {
+		*errs = append(*errs, "ASSURANCE_PAGE_SIZE must be between 1 and 500")
+	}
+	if cfg.Assurance.Concurrency <= 0 || cfg.Assurance.Concurrency > 2 {
+		*errs = append(*errs, "ASSURANCE_CONCURRENCY must be between 1 and 2")
+	}
+	if cfg.Assurance.ConsistencyDelay < 0 || cfg.Assurance.RPCTimeout <= 0 || cfg.Assurance.Interval <= 0 {
+		*errs = append(*errs, "ASSURANCE interval, consistency delay, and RPC timeout are invalid")
 	}
 
 	if len(*errs) > 0 {
