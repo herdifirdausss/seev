@@ -59,11 +59,14 @@ func (m *Module) ListAssuranceRecords(ctx context.Context, req *payinv1.ListAssu
 			FROM (
 			SELECT i.id, 'intent' AS record_type, i.updated_at AS effective_updated_at,
 			       i.created_at, i.status, i.user_id, i.amount, i.currency, i.vendor,
-			       i.reference, COALESCE(e.external_ref, ''), COALESCE(i.settled_event_id::text, ''),
-			       COALESCE(i.request_id, ''), (i.request_id IS NOT NULL AND i.request_id <> ''),
-			       CASE WHEN e.id IS NULL THEN '' ELSE 'money_in' END,
-			       COALESCE(e.vendor, ''), COALESCE(e.external_ref, ''),
-			       CASE WHEN e.id IS NULL THEN '' ELSE 'payin:' || e.vendor END
+			       i.reference, COALESCE(e.external_ref, '') AS external_ref,
+			       COALESCE(i.settled_event_id::text, '') AS settled_event_id,
+			       COALESCE(i.request_id, '') AS request_id,
+			       (i.request_id IS NOT NULL AND i.request_id <> '') AS request_id_present,
+			       CASE WHEN e.id IS NULL THEN '' ELSE 'money_in' END AS ledger_type,
+			       COALESCE(e.vendor, '') AS ledger_gateway,
+			       COALESCE(e.external_ref, '') AS ledger_external_ref,
+			       CASE WHEN e.id IS NULL THEN '' ELSE 'payin:' || e.vendor END AS ledger_idempotency_scope
 			FROM payin_topup_intents i
 			LEFT JOIN LATERAL (
 				SELECT e.*

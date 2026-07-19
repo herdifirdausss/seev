@@ -123,7 +123,7 @@ func (m *Module) ListAssuranceRecords(ctx context.Context, req *payoutv1.ListAss
 }
 
 func (m *Module) populateAssuranceChildren(ctx context.Context, id uuid.UUID, record *payoutv1.AssuranceRecord) error {
-	calls, err := m.db.QueryContext(ctx, `SELECT attempt, vendor, outcome, created_at FROM payout_vendor_calls WHERE payout_request_id = $1 ORDER BY attempt, created_at`, id)
+	calls, err := m.db.QueryContext(ctx, `SELECT attempt, COALESCE(NULLIF(substring(req_summary FROM 'vendor=([^ ]+)'), ''), '') AS vendor, outcome, created_at FROM payout_vendor_calls WHERE payout_request_id = $1 ORDER BY attempt, created_at`, id)
 	if err != nil {
 		return fmt.Errorf("payout assurance calls: %w", err)
 	}
