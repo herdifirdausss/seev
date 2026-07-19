@@ -20,7 +20,7 @@ import (
 // isn't enough of a signal to rely on in isolation (some future addition to
 // this RPC could reuse the same code for an unrelated reason). This
 // literal is intentionally duplicated (not a shared import) in
-// pkg/fraudcheck: pkg/ must never import internal/ (CLAUDE.md boundary
+// pkg/fraudcheck: pkg/ must never import internal/ (PROJECT_GUIDE.md boundary
 // rule), and this string is effectively part of the fraudv1 wire contract
 // between fraud-service and its callers, not an internal implementation
 // detail. Keep both copies in sync if this ever changes.

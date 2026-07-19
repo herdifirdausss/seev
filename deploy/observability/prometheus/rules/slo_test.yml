@@ -212,7 +212,7 @@ tests:
 
   # ── 8. fraud-service-down fail-open must NOT burn the posting SLO ────────
   # (docs/plan/43 K7 / T5 "Test wajib": fraud down -> all three screening
-  # call sites fail OPEN (CLAUDE.md runbook), so ledger.Handle keeps
+  # call sites fail OPEN (PROJECT_GUIDE.md runbook), so ledger.Handle keeps
   # posting normally — screening being skipped never surfaces as a
   # ledger_transactions_total status change at all. This case proves that:
   # 100% posted traffic with zero screening-related errors recorded means

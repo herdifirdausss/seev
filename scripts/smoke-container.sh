@@ -11,7 +11,7 @@
 # start/stop host binaries. lib.sh's lifecycle (build_server, start_services,
 # gen_token, psql_exec against $DB_USER) is for the HOST-BINARY gate; mixing
 # the two process models in one script has bitten this repo before (see
-# CLAUDE.md's "one debug script, not repeated source scripts/lib.sh"
+# PROJECT_GUIDE.md's "one debug script, not repeated source scripts/lib.sh"
 # gotcha) — this script's container lifecycle is self-contained instead.
 #
 # Usage:

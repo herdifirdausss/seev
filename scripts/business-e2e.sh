@@ -554,7 +554,7 @@ quote_journey() {
 	# mockvendor2 seeded as a FALLBACK behind mockvendor's existing priority-10
 	# rule (from section 5) — priority 11 is a LARGER number, tried SECOND,
 	# since docs/plan/40 Task T2's ResolveCandidates orders priority ASC
-	# (smallest number wins first; see CLAUDE.md's debugging notes).
+	# (smallest number wins first; see PROJECT_GUIDE.md's debugging notes).
 	curl -s -o /dev/null -X PUT "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendor-gateways/mockvendor2" \
 		-H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" -d '{"gateway":"gopay"}'
 	psql_exec "$PAYOUT_DB_NAME" -c "DELETE FROM payout_routing_rules WHERE priority = 11;" >/dev/null

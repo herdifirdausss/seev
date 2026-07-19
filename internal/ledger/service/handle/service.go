@@ -149,7 +149,7 @@ func (s *Service) Handle(ctx context.Context, cmd processors.Command) (err error
 		return fmt.Errorf("%w: amount %s exceeds maximum %s", apperror.ErrAmountTooLarge, cmd.Amount, s.maxAmountPerTx)
 	}
 
-	// [docs/plan/43 Task T6] CLAUDE.md: "do not expose raw amounts or full
+	// [docs/plan/43 Task T6] PROJECT_GUIDE.md: "do not expose raw amounts or full
 	// idempotency keys in public logs" — amount dropped entirely (no safe
 	// partial form for a monetary value), idempotency key truncated to a
 	// short, non-replayable prefix that still lets support/debugging

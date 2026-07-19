@@ -237,7 +237,7 @@ func TestSettleAfterCancel_LedgerRejectsViaK3_ReconciledNoMoneyMoved(t *testing.
 	assert.True(t, raceGetBalance(t, db, cash).Equal(decimal.NewFromInt(200_000)), "no money may move on the rejected late settle")
 
 	// The idempotency-gate step inserts a header row for audit purposes
-	// even on a rejected attempt (CLAUDE.md's execTransfer ordering rule:
+	// even on a rejected attempt (PROJECT_GUIDE.md's execTransfer ordering rule:
 	// failed validations must stay auditable, not silently vanish) — so a
 	// row existing is expected; what must NEVER happen is that row reaching
 	// 'posted' status, which is what would mean money actually moved.
