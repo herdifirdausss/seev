@@ -1,11 +1,13 @@
 package fraud
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 
 	"github.com/google/uuid"
 
+	"github.com/herdifirdausss/seev/internal/fraud/rules"
 	"github.com/herdifirdausss/seev/pkg/middleware"
 	"github.com/herdifirdausss/seev/pkg/response"
 )
@@ -25,7 +27,55 @@ type eventResponse struct {
 func (m *Module) AdminRouter() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/admin/fraud/events", m.listEventsHandler)
+	mux.HandleFunc("GET /api/v1/admin/fraud/rules/{rule}/mode", m.getRuleModeHandler)
+	mux.HandleFunc("PUT /api/v1/admin/fraud/rules/{rule}/mode", m.putRuleModeHandler)
 	return mux
+}
+
+func (m *Module) getRuleModeHandler(w http.ResponseWriter, r *http.Request) {
+	claims := middleware.GetClaims(r.Context())
+	if claims == nil || claims.Role != "admin" {
+		response.Forbidden(w, "admin privileges required")
+		return
+	}
+	mode, updatedBy, updatedAt, err := m.GetRuleMode(r.Context(), r.PathValue("rule"))
+	if err != nil {
+		if errors.Is(err, ErrInvalidRuleMode) {
+			response.BadRequest(w, err.Error())
+			return
+		}
+		response.InternalServerError(w, err)
+		return
+	}
+	response.OK(w, map[string]any{"rule": r.PathValue("rule"), "mode": mode, "updated_by": updatedBy, "updated_at": updatedAt})
+}
+
+func (m *Module) putRuleModeHandler(w http.ResponseWriter, r *http.Request) {
+	claims := middleware.GetClaims(r.Context())
+	if claims == nil || claims.Role != "admin" {
+		response.Forbidden(w, "admin privileges required")
+		return
+	}
+	var req struct {
+		Mode string `json:"mode"`
+	}
+	if !response.Decode(w, r, &req) {
+		return
+	}
+	mode := rules.ParseMode(req.Mode)
+	if req.Mode != string(mode) {
+		response.BadRequest(w, "mode must be 'off', 'monitor', or 'block'")
+		return
+	}
+	if err := m.SetRuleMode(r.Context(), r.PathValue("rule"), mode, claims.UserID); err != nil {
+		if errors.Is(err, ErrInvalidRuleMode) {
+			response.BadRequest(w, err.Error())
+			return
+		}
+		response.InternalServerError(w, err)
+		return
+	}
+	response.OK(w, map[string]any{"rule": r.PathValue("rule"), "mode": mode, "updated_by": claims.UserID})
 }
 
 func (m *Module) listEventsHandler(w http.ResponseWriter, r *http.Request) {

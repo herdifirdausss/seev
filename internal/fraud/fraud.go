@@ -34,12 +34,14 @@ type Config struct {
 }
 
 type Module struct {
-	repo   repository.ScreeningRepository
-	rules  []rules.Rule
-	store  VelocityStore
-	broker Broker
-	logger *slog.Logger
-	cancel context.CancelFunc
+	repo         repository.ScreeningRepository
+	modeRepo     repository.RuleModeRepository
+	modeResolver *ruleModeResolver
+	rules        []rules.Rule
+	store        VelocityStore
+	broker       Broker
+	logger       *slog.Logger
+	cancel       context.CancelFunc
 }
 
 func (m *Module) RegisterGRPC(server *grpc.Server) {
@@ -63,15 +65,13 @@ func NewModule(db database.DatabaseSQL, store VelocityStore, broker Broker, cfg 
 	}
 	repo := repository.NewScreeningRepository(db)
 	mode := rules.ParseMode(cfg.Mode)
-	module := &Module{repo: repo, store: store, broker: broker, logger: logger}
-	if mode == rules.ModeOff {
-		return module
-	}
+	modeRepo := repository.NewRuleModeRepository(db)
+	module := &Module{repo: repo, modeRepo: modeRepo, modeResolver: newRuleModeResolver(modeRepo, mode, logger), store: store, broker: broker, logger: logger}
 	if cfg.AmountThreshold.IsPositive() {
-		module.rules = append(module.rules, rules.NewAmountThresholdRule(cfg.AmountThreshold, mode, repo, logger))
+		module.rules = append(module.rules, rules.NewAmountThresholdRuleWithResolver(cfg.AmountThreshold, mode, module.modeResolver, repo, logger))
 	}
 	if cfg.VelocityMaxPerHour > 0 && store != nil {
-		module.rules = append(module.rules, rules.NewVelocityAnomalyRule(cfg.VelocityMaxPerHour, mode, store, repo, logger))
+		module.rules = append(module.rules, rules.NewVelocityAnomalyRuleWithResolver(cfg.VelocityMaxPerHour, mode, module.modeResolver, store, repo, logger))
 	}
 	return module
 }

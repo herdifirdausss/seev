@@ -18,10 +18,17 @@ type Counter interface {
 type VelocityAnomalyRule struct {
 	maxPerHour int64
 	mode       Mode
+	resolver   ModeResolver
 	counter    Counter
 	repo       repository.ScreeningRepository
 	logger     *slog.Logger
 	now        func() time.Time
+}
+
+func NewVelocityAnomalyRuleWithResolver(maxPerHour int64, fallback Mode, resolver ModeResolver, counter Counter, repo repository.ScreeningRepository, logger *slog.Logger) *VelocityAnomalyRule {
+	rule := NewVelocityAnomalyRule(maxPerHour, fallback, counter, repo, logger)
+	rule.resolver = resolver
+	return rule
 }
 
 func NewVelocityAnomalyRule(maxPerHour int64, mode Mode, counter Counter, repo repository.ScreeningRepository, logger *slog.Logger) *VelocityAnomalyRule {
@@ -34,6 +41,16 @@ func NewVelocityAnomalyRule(maxPerHour int64, mode Mode, counter Counter, repo r
 func (r *VelocityAnomalyRule) Name() string { return "velocity_anomaly" }
 
 func (r *VelocityAnomalyRule) Screen(ctx context.Context, input model.ScreenInput) (model.Verdict, error) {
+	mode := r.mode
+	if r.resolver != nil {
+		resolved, err := r.resolver.ResolveMode(ctx, r.Name())
+		if err == nil {
+			mode = resolved
+		}
+	}
+	if mode == ModeOff {
+		return model.Verdict{}, nil
+	}
 	count, err := r.counter.Get(ctx, VelocityKey(input.UserID.String(), r.now()))
 	if err != nil {
 		return model.Verdict{}, fmt.Errorf("velocity counter: %w", err)
@@ -45,7 +62,7 @@ func (r *VelocityAnomalyRule) Screen(ctx context.Context, input model.ScreenInpu
 	reason := fmt.Sprintf("%d postings this hour exceeds threshold %d", count, r.maxPerHour)
 	verdict := model.Verdict{Reason: reason}
 	eventVerdict := "flagged"
-	if r.mode == ModeBlock {
+	if mode == ModeBlock {
 		verdict.Block = true
 		eventVerdict = "blocked"
 	}

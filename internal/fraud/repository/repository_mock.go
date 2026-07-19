@@ -12,6 +12,7 @@ package repository
 import (
 	context "context"
 	reflect "reflect"
+	time "time"
 
 	model "github.com/herdifirdausss/seev/internal/fraud/model"
 	gomock "go.uber.org/mock/gomock"
@@ -68,4 +69,60 @@ func (m *MockScreeningRepository) ListEvents(ctx context.Context, userID, verdic
 func (mr *MockScreeningRepositoryMockRecorder) ListEvents(ctx, userID, verdict, limit, offset any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListEvents", reflect.TypeOf((*MockScreeningRepository)(nil).ListEvents), ctx, userID, verdict, limit, offset)
+}
+
+// MockRuleModeRepository is a mock of RuleModeRepository interface.
+type MockRuleModeRepository struct {
+	ctrl     *gomock.Controller
+	recorder *MockRuleModeRepositoryMockRecorder
+	isgomock struct{}
+}
+
+// MockRuleModeRepositoryMockRecorder is the mock recorder for MockRuleModeRepository.
+type MockRuleModeRepositoryMockRecorder struct {
+	mock *MockRuleModeRepository
+}
+
+// NewMockRuleModeRepository creates a new mock instance.
+func NewMockRuleModeRepository(ctrl *gomock.Controller) *MockRuleModeRepository {
+	mock := &MockRuleModeRepository{ctrl: ctrl}
+	mock.recorder = &MockRuleModeRepositoryMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockRuleModeRepository) EXPECT() *MockRuleModeRepositoryMockRecorder {
+	return m.recorder
+}
+
+// GetRuleMode mocks base method.
+func (m *MockRuleModeRepository) GetRuleMode(arg0 context.Context, arg1 string) (string, string, time.Time, bool, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetRuleMode", arg0, arg1)
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(string)
+	ret2, _ := ret[2].(time.Time)
+	ret3, _ := ret[3].(bool)
+	ret4, _ := ret[4].(error)
+	return ret0, ret1, ret2, ret3, ret4
+}
+
+// GetRuleMode indicates an expected call of GetRuleMode.
+func (mr *MockRuleModeRepositoryMockRecorder) GetRuleMode(arg0, arg1 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetRuleMode", reflect.TypeOf((*MockRuleModeRepository)(nil).GetRuleMode), arg0, arg1)
+}
+
+// SetRuleMode mocks base method.
+func (m *MockRuleModeRepository) SetRuleMode(arg0 context.Context, arg1, arg2, arg3 string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SetRuleMode", arg0, arg1, arg2, arg3)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// SetRuleMode indicates an expected call of SetRuleMode.
+func (mr *MockRuleModeRepositoryMockRecorder) SetRuleMode(arg0, arg1, arg2, arg3 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetRuleMode", reflect.TypeOf((*MockRuleModeRepository)(nil).SetRuleMode), arg0, arg1, arg2, arg3)
 }

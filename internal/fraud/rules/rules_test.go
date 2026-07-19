@@ -29,6 +29,10 @@ type counterStub struct {
 	err   error
 }
 
+type modeResolverStub struct{ mode Mode }
+
+func (r *modeResolverStub) ResolveMode(context.Context, string) (Mode, error) { return r.mode, nil }
+
 func (c counterStub) Get(context.Context, string) (int64, error) { return c.value, c.err }
 
 func input(amount string) model.ScreenInput {
@@ -62,6 +66,22 @@ func TestAmountThresholdBelowDoesNothing(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, verdict.Block)
 	assert.Empty(t, repo.events)
+}
+
+func TestAmountThresholdDynamicModeOffIsNoop(t *testing.T) {
+	repo := &repoStub{}
+	resolver := &modeResolverStub{mode: ModeOff}
+	rule := NewAmountThresholdRuleWithResolver(decimal.NewFromInt(100), ModeBlock, resolver, repo, nil)
+	verdict, err := rule.Screen(context.Background(), input("100"))
+	require.NoError(t, err)
+	assert.False(t, verdict.Block)
+	assert.Empty(t, repo.events)
+
+	resolver.mode = ModeBlock
+	verdict, err = rule.Screen(context.Background(), input("100"))
+	require.NoError(t, err)
+	assert.True(t, verdict.Block)
+	assert.Len(t, repo.events, 1)
 }
 
 func TestVelocityReadsPostedCounterWithoutIncrementing(t *testing.T) {

@@ -444,7 +444,20 @@ mengubah.
 
 ### Hasil
 
-> Diisi saat T3 selesai.
+> T3 selesai pada 2026-07-19. Fraud migration `000003_screening_rule_modes`
+> menambahkan override per rule (`off|monitor|block`) untuk
+> `amount_threshold`, `velocity_anomaly`, dan slot `sanctions_watchlist`,
+> lengkap dengan `updated_by`, timestamp, grant, dan RLS.
+>
+> `Module.Screen` sekarang selalu memakai resolver mode dengan cache 10 detik;
+> row DB menjadi override, row yang tidak ada memakai `SCREENING_MODE` sebagai
+> fallback, dan `off` mengembalikan no-op tanpa menghapus rule dari wiring.
+> PUT langsung menginvalidasi cache sehingga perubahan aktif segera (GET
+> mengembalikan audit metadata). Endpoint admin tervalidasi enum dan rule
+> allowlist serta mengambil `updated_by` dari JWT claims.
+>
+> Bukti: `go test ./internal/fraud/... ./cmd/fraud-service` hijau, termasuk
+> unit perubahan mode tanpa restart, no-op off, dan suite Redis fail-closed.
 
 ### T4 — Screening events durable (K5)
 

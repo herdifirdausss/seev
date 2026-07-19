@@ -4,7 +4,10 @@ package repository
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
+	"time"
 
 	"github.com/shopspring/decimal"
 
@@ -18,10 +21,46 @@ type ScreeningRepository interface {
 	ListEvents(ctx context.Context, userID, verdict string, limit, offset int) ([]model.ScreeningEvent, error)
 }
 
+type RuleModeRepository interface {
+	GetRuleMode(context.Context, string) (mode string, updatedBy string, updatedAt time.Time, found bool, err error)
+	SetRuleMode(context.Context, string, string, string) error
+}
+
 type screeningRepo struct{ db database.DatabaseSQL }
 
 func NewScreeningRepository(db database.DatabaseSQL) ScreeningRepository {
 	return &screeningRepo{db: db}
+}
+
+func NewRuleModeRepository(db database.DatabaseSQL) RuleModeRepository {
+	return &screeningRepo{db: db}
+}
+
+func (r *screeningRepo) GetRuleMode(ctx context.Context, rule string) (string, string, time.Time, bool, error) {
+	var mode, updatedBy string
+	var updatedAt time.Time
+	err := r.db.QueryRowContext(ctx, `
+		SELECT mode, updated_by, updated_at
+		FROM screening_rule_modes WHERE rule = $1`, rule).Scan(&mode, &updatedBy, &updatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", "", time.Time{}, false, nil
+	}
+	if err != nil {
+		return "", "", time.Time{}, false, fmt.Errorf("get screening rule mode: %w", err)
+	}
+	return mode, updatedBy, updatedAt, true, nil
+}
+
+func (r *screeningRepo) SetRuleMode(ctx context.Context, rule, mode, updatedBy string) error {
+	_, err := r.db.ExecContext(ctx, `
+		INSERT INTO screening_rule_modes (rule, mode, updated_by, updated_at)
+		VALUES ($1, $2, $3, now())
+		ON CONFLICT (rule) DO UPDATE SET mode = EXCLUDED.mode, updated_by = EXCLUDED.updated_by, updated_at = now()`,
+		rule, mode, updatedBy)
+	if err != nil {
+		return fmt.Errorf("set screening rule mode: %w", err)
+	}
+	return nil
 }
 
 func (r *screeningRepo) InsertEvent(ctx context.Context, ev model.ScreeningEvent) error {
