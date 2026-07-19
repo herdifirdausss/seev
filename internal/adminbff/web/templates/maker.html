@@ -1,0 +1,11 @@
+{{define "content"}}<h1>Maker-checker adjustments</h1>
+{{if .IsMaker}}<article><h2>Buat adjustment</h2>
+<form method="post" action="/api/v1/admin/adjustments">
+  <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+  <label>Type <select name="type" required><option value="adjustment_credit">Credit</option><option value="adjustment_debit">Debit</option></select></label>
+  <label>User ID <input name="user_id" required></label><label>Amount (minor unit) <input name="amount" inputmode="numeric" required></label>
+  <label>Reason <textarea name="reason" required></textarea></label><button type="submit">Kirim untuk approval</button>
+</form></article>{{end}}
+{{if .IsChecker}}<article><h2>Antrean approval</h2><div hx-get="/api/v1/admin/adjustments?status=pending" hx-trigger="load, every 15s">Memuat antrean…</div><form method="post" action="/api/v1/admin/adjustments/approve"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><label>Adjustment ID untuk approve <input name="adjustment_id" required></label><button type="submit">Approve</button></form><form method="post" action="/api/v1/admin/adjustments/reject"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><label>Adjustment ID untuk reject <input name="adjustment_id" required></label><button type="submit" class="secondary">Reject</button></form></article>{{end}}
+{{if and (not .IsMaker) (not .IsChecker)}}<p>Role admin superuser dapat membuat dan menyetujui adjustment.</p>{{end}}
+{{end}}

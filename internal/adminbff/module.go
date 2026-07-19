@@ -7,13 +7,16 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/herdifirdausss/seev/internal/adminbff/client"
+	adminweb "github.com/herdifirdausss/seev/internal/adminbff/web"
 	"github.com/herdifirdausss/seev/internal/config"
 	"github.com/herdifirdausss/seev/pkg/database"
 	"github.com/herdifirdausss/seev/pkg/middleware"
@@ -78,6 +81,15 @@ func (m *Module) Stop() {
 
 func (m *Module) AdminRouter() http.Handler {
 	mux := http.NewServeMux()
+	mux.Handle("GET /api/v1/admin/maker", m.consolePage("maker"))
+	mux.Handle("GET /api/v1/admin/payout", m.consolePage("payout"))
+	mux.Handle("GET /api/v1/admin/recon", m.consolePage("recon"))
+	mux.Handle("/api/v1/admin/adjustments/", m.proxy("ledger", m.clients.Ledger, "/api/v1/admin/adjustments/", "/api/v1/ledger/admin/adjustments/"))
+	mux.Handle("/api/v1/admin/adjustments", m.proxy("ledger", m.clients.Ledger, "/api/v1/admin/adjustments", "/api/v1/ledger/admin/adjustments"))
+	mux.Handle("POST /api/v1/admin/adjustments/approve", m.adjustmentDecisionProxy("approve"))
+	mux.Handle("POST /api/v1/admin/adjustments/reject", m.adjustmentDecisionProxy("reject"))
+	mux.Handle("/api/v1/admin/recon/", m.proxy("ledger", m.clients.Ledger, "/api/v1/admin/recon/", "/api/v1/ledger/admin/recon/"))
+	mux.Handle("/api/v1/admin/recon/batches", m.reconUploadProxy())
 	// The BFF exposes a stable operator namespace while each downstream keeps
 	// its existing internal admin route. No domain repository is opened here.
 	mux.Handle("/api/v1/admin/ledger/", m.proxy("ledger", m.clients.Ledger, "/api/v1/admin/ledger/", "/api/v1/admin/ledger/"))
@@ -93,10 +105,29 @@ func (m *Module) AdminRouter() http.Handler {
 			http.NotFound(w, r)
 			return
 		}
-		htmlHeader(w)
-		_, _ = w.Write([]byte("<main><h1>Admin console</h1><nav><a href=\"/api/v1/admin/payout/requests\">Payout</a> <a href=\"/api/v1/admin/ledger/adjustments\">Ledger</a> <a href=\"/api/v1/admin/kyc/submissions\">KYC</a></nav></main>"))
+		_ = adminweb.Render(w, "dashboard", m.pageData(r, "Ringkasan operasi", "dashboard"))
 	})
 	return mux
+}
+
+func (m *Module) consolePage(page string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := adminweb.Render(w, page, m.pageData(r, page, page)); err != nil {
+			m.logger.Error("adminbff: render page", "page", page, "error", err)
+			http.Error(w, "could not render admin page", http.StatusInternalServerError)
+		}
+	})
+}
+
+func (m *Module) pageData(r *http.Request, title, page string) adminweb.PageData {
+	session := SessionFromContext(r.Context())
+	data := adminweb.PageData{Title: title, Page: page}
+	if session != nil {
+		data.CSRFToken, data.Role = session.CSRFToken, session.Role
+		data.IsMaker = session.Role == "admin" || session.Role == "admin_maker"
+		data.IsChecker = session.Role == "admin" || session.Role == "admin_checker"
+	}
+	return data
 }
 
 func (m *Module) proxy(target string, downstream *client.ServiceClient, publicPrefix, downstreamPrefix string) http.Handler {
@@ -105,6 +136,28 @@ func (m *Module) proxy(target string, downstream *client.ServiceClient, publicPr
 		if err != nil {
 			http.Error(w, "invalid request body", http.StatusBadRequest)
 			return
+		}
+		contentType := r.Header.Get("Content-Type")
+		if strings.HasPrefix(contentType, "application/x-www-form-urlencoded") {
+			values, parseErr := url.ParseQuery(string(body))
+			if parseErr != nil {
+				http.Error(w, "invalid form body", http.StatusBadRequest)
+				return
+			}
+			payload := make(map[string]any, len(values))
+			for key, items := range values {
+				if len(items) == 1 {
+					payload[key] = items[0]
+				} else {
+					payload[key] = items
+				}
+			}
+			body, err = json.Marshal(payload)
+			if err != nil {
+				http.Error(w, "invalid form body", http.StatusBadRequest)
+				return
+			}
+			contentType = "application/json"
 		}
 		token, err := m.MintDownstreamToken(r.Context())
 		if err != nil {
@@ -116,7 +169,7 @@ func (m *Module) proxy(target string, downstream *client.ServiceClient, publicPr
 		if r.URL.RawQuery != "" {
 			path += "?" + r.URL.RawQuery
 		}
-		status, headers, responseBody, callErr := downstream.Do(r.Context(), token, r.Method, path, body)
+		status, headers, responseBody, callErr := downstream.DoRaw(r.Context(), token, r.Method, path, body, contentType)
 		if ct := headers.Get("Content-Type"); ct != "" {
 			w.Header().Set("Content-Type", ct)
 		} else {
@@ -133,6 +186,83 @@ func (m *Module) proxy(target string, downstream *client.ServiceClient, publicPr
 		m.AuditMutation(r.Context(), r, target, status, map[string]any{"downstream_status": status})
 		w.WriteHeader(status)
 		_, _ = w.Write(responseBody)
+	})
+}
+
+func (m *Module) reconUploadProxy() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost && r.Method != http.MethodGet {
+			http.NotFound(w, r)
+			return
+		}
+		body, err := io.ReadAll(io.LimitReader(r.Body, 10<<20))
+		if err != nil {
+			http.Error(w, "invalid upload", http.StatusBadRequest)
+			return
+		}
+		token, err := m.MintDownstreamToken(r.Context())
+		if err != nil {
+			http.Error(w, "authentication required", http.StatusUnauthorized)
+			return
+		}
+		path := "/api/v1/ledger/admin/recon/batches"
+		if r.URL.RawQuery != "" {
+			path += "?" + r.URL.RawQuery
+		}
+		status, headers, responseBody, callErr := m.clients.Ledger.DoRaw(r.Context(), token, http.MethodPost, path, body, r.Header.Get("Content-Type"))
+		if callErr != nil && status == 0 {
+			m.AuditMutation(r.Context(), r, "ledger", http.StatusServiceUnavailable, map[string]any{"error": "unavailable"})
+			writeJSONError(w, http.StatusServiceUnavailable, "DOWNSTREAM_UNAVAILABLE", "admin service temporarily unavailable")
+			return
+		}
+		if status == 0 {
+			status = http.StatusBadGateway
+		}
+		if ct := headers.Get("Content-Type"); ct != "" {
+			w.Header().Set("Content-Type", ct)
+		} else {
+			w.Header().Set("Content-Type", "application/json")
+		}
+		m.AuditMutation(r.Context(), r, "ledger", status, map[string]any{"downstream_status": status, "operation": "recon_import"})
+		w.WriteHeader(status)
+		_, _ = w.Write(responseBody)
+	})
+}
+
+func (m *Module) adjustmentDecisionProxy(action string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, "invalid form", http.StatusBadRequest)
+			return
+		}
+		id, err := uuid.Parse(r.FormValue("adjustment_id"))
+		if err != nil {
+			http.Error(w, "invalid adjustment id", http.StatusBadRequest)
+			return
+		}
+		token, err := m.MintDownstreamToken(r.Context())
+		if err != nil {
+			http.Error(w, "authentication required", http.StatusUnauthorized)
+			return
+		}
+		path := "/api/v1/ledger/admin/adjustments/" + id.String() + "/" + action
+		status, headers, body, callErr := m.clients.Ledger.DoRaw(r.Context(), token, http.MethodPost, path, []byte("{}"), "application/json")
+		if callErr != nil && status == 0 {
+			m.AuditMutation(r.Context(), r, "ledger", http.StatusServiceUnavailable, map[string]any{"error": "unavailable", "operation": action})
+			writeJSONError(w, http.StatusServiceUnavailable, "DOWNSTREAM_UNAVAILABLE", "admin service temporarily unavailable")
+			return
+		}
+		if status == 0 {
+			status = http.StatusBadGateway
+		}
+		if ct := headers.Get("Content-Type"); ct != "" {
+			w.Header().Set("Content-Type", ct)
+		} else {
+			w.Header().Set("Content-Type", "application/json")
+		}
+		m.AuditMutation(r.Context(), r, "ledger", status, map[string]any{"downstream_status": status, "operation": action})
+		w.WriteHeader(status)
+		_, _ = w.Write(body)
 	})
 }
 

@@ -1,0 +1,7 @@
+{{define "content"}}<h1>Payout operations</h1>
+<article><h2>Request</h2><div hx-get="/api/v1/admin/payout/requests?status=submitted" hx-trigger="load, every 15s">Memuat payout…</div></article>
+<article><h2>Dead vendor commands</h2>
+<button hx-get="/api/v1/admin/payout/vendor-commands/dead" hx-trigger="click" hx-target="#dead-commands">Muat ulang</button>
+<button hx-post="/api/v1/admin/payout/vendor-commands/dead/replay-all" hx-headers='{"X-CSRF-Token":"{{.CSRFToken}}"}' hx-target="#dead-commands">Replay semua (maks 100)</button>
+<div id="dead-commands">Belum dimuat.</div></article>
+{{end}}

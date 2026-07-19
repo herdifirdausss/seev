@@ -9,6 +9,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/herdifirdausss/seev/internal/adminbff"
+	adminweb "github.com/herdifirdausss/seev/internal/adminbff/web"
 	"github.com/herdifirdausss/seev/internal/config"
 	"github.com/herdifirdausss/seev/pkg/middleware"
 )
@@ -20,6 +21,7 @@ func adminRouter(cfg *config.Config, module *adminbff.Module, log *slog.Logger) 
 		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	})
 	root.Handle("GET /metrics", promhttp.Handler())
+	root.Handle("/assets/", http.StripPrefix("/assets/", adminweb.AssetHandler()))
 	root.Handle("GET /login", module.LoginPage())
 	root.Handle("POST /login", module.LoginHandler())
 	root.Handle("POST /logout", module.RequireSession(module.RequireCSRF(module.LogoutHandler())))

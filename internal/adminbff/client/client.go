@@ -44,6 +44,12 @@ func NewClients(auth, authAdmin, ledger, payin, payout, fraud, gateway string) C
 }
 
 func (c *ServiceClient) Do(ctx context.Context, token, method, path string, body []byte) (int, http.Header, []byte, error) {
+	return c.DoRaw(ctx, token, method, path, body, "application/json")
+}
+
+// DoRaw is the same bounded downstream call as Do, but lets the BFF preserve
+// a multipart upload for the ledger reconciliation endpoint.
+func (c *ServiceClient) DoRaw(ctx context.Context, token, method, path string, body []byte, contentType string) (int, http.Header, []byte, error) {
 	if !strings.HasPrefix(path, "/") {
 		path = "/" + path
 	}
@@ -52,8 +58,8 @@ func (c *ServiceClient) Do(ctx context.Context, token, method, path string, body
 		return 0, nil, nil, fmt.Errorf("%s client request: %w", c.Name, err)
 	}
 	req.Header.Set("Accept", "application/json")
-	if len(body) > 0 {
-		req.Header.Set("Content-Type", "application/json")
+	if len(body) > 0 && contentType != "" {
+		req.Header.Set("Content-Type", contentType)
 	}
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
