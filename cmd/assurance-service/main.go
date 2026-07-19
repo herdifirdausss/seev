@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -13,6 +14,8 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"google.golang.org/grpc"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 
 	ledgerv1 "github.com/herdifirdausss/seev/gen/ledger/v1"
 	payinv1 "github.com/herdifirdausss/seev/gen/payin/v1"
@@ -118,8 +121,23 @@ func run(parent context.Context) error {
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	})
 	mux.HandleFunc("GET /ready", func(w http.ResponseWriter, r *http.Request) {
+		components := map[string]string{"postgres": "ok", "payin": "ok", "payout": "ok", "ledger": "ok"}
+		ready := true
 		if err := db.HealthCheck(r.Context()); err != nil {
-			http.Error(w, "not ready", http.StatusServiceUnavailable)
+			components["postgres"], ready = "unavailable", false
+		}
+		for name, conn := range map[string]*grpc.ClientConn{"payin": payinConn, "payout": payoutConn, "ledger": ledgerConn} {
+			checkCtx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+			_, err := healthpb.NewHealthClient(conn).Check(checkCtx, &healthpb.HealthCheckRequest{})
+			cancel()
+			if err != nil {
+				components[name], ready = "unavailable", false
+			}
+		}
+		if !ready {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_ = json.NewEncoder(w).Encode(map[string]any{"status": "degraded", "components": components})
 			return
 		}
 		w.WriteHeader(http.StatusOK)
