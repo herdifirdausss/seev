@@ -19,6 +19,7 @@ import (
 	ledgerv1 "github.com/herdifirdausss/seev/gen/ledger/v1"
 	payinv1 "github.com/herdifirdausss/seev/gen/payin/v1"
 	payoutv1 "github.com/herdifirdausss/seev/gen/payout/v1"
+	assurancerules "github.com/herdifirdausss/seev/internal/assurance/rules"
 	"github.com/herdifirdausss/seev/internal/config"
 	"github.com/herdifirdausss/seev/pkg/database"
 )
@@ -235,8 +236,11 @@ func (m *Module) scanPayout(ctx context.Context, runID uuid.UUID, cutoff time.Ti
 }
 
 func (m *Module) provePayin(ctx context.Context, records []*payinv1.AssuranceRecord) error {
-	if len(records) == 0 || m.ledger == nil {
+	if len(records) == 0 {
 		return nil
+	}
+	if m.ledger == nil {
+		return errors.New("ledger assurance client is unavailable")
 	}
 	selectors := make([]*ledgerv1.AssuranceSelector, 0, len(records))
 	for _, record := range records {
@@ -245,12 +249,46 @@ func (m *Module) provePayin(ctx context.Context, records []*payinv1.AssuranceRec
 		}
 		selectors = append(selectors, &ledgerv1.AssuranceSelector{Token: record.GetId(), Type: record.GetLedgerType(), Gateway: record.GetLedgerGateway(), ExternalRef: record.GetLedgerExternalRef()})
 	}
-	return m.batchLedger(ctx, selectors)
+	response, err := m.batchLedger(ctx, selectors)
+	if err != nil {
+		return err
+	}
+	proofByToken, err := transactionProofs(response)
+	if err != nil {
+		return err
+	}
+	byID := make(map[string]*payinv1.AssuranceRecord, len(records))
+	for _, record := range records {
+		byID[record.GetId()] = record
+	}
+	for _, record := range records {
+		amount, parseErr := assurancerules.ParseMinor(record.GetAmount())
+		if parseErr != nil {
+			return parseErr
+		}
+		value := assurancerules.PayinRecord{ID: record.GetId(), RecordType: record.GetRecordType(), Status: record.GetStatus(), UserID: record.GetUserId(), AmountMinor: amount, Currency: record.GetCurrency(), Vendor: record.GetVendor(), Reference: record.GetReference(), ExternalRef: record.GetExternalRef(), SettledEventID: record.GetSettledEventId(), RequestIDPresent: record.GetRequestIdPresent(), Age: time.Since(record.GetCreatedAt().AsTime()), Ledger: proofByToken[record.GetId()], ConsistencyDelay: m.cfg.ConsistencyDelay}
+		if linked := byID[record.GetSettledEventId()]; linked != nil {
+			linkedAmount, linkedErr := assurancerules.ParseMinor(linked.GetAmount())
+			if linkedErr != nil {
+				return linkedErr
+			}
+			value.SettledWebhook = &assurancerules.PayinRecord{ID: linked.GetId(), RecordType: linked.GetRecordType(), Status: linked.GetStatus(), UserID: linked.GetUserId(), AmountMinor: linkedAmount, Currency: linked.GetCurrency(), Reference: linked.GetReference()}
+		}
+		for _, finding := range assurancerules.EvaluatePayin(value) {
+			if err := m.UpsertFinding(ctx, Finding{Fingerprint: finding.Fingerprint, Severity: finding.Severity, RuleCode: finding.RuleCode, ResourceID: finding.ResourceID, AmountMinor: finding.AmountMinor, Currency: finding.Currency, Evidence: finding.Evidence}, time.Now()); err != nil {
+				return fmt.Errorf("persist payin finding: %w", err)
+			}
+		}
+	}
+	return nil
 }
 
 func (m *Module) provePayout(ctx context.Context, records []*payoutv1.AssuranceRecord) error {
-	if len(records) == 0 || m.ledger == nil {
+	if len(records) == 0 {
 		return nil
+	}
+	if m.ledger == nil {
+		return errors.New("ledger assurance client is unavailable")
 	}
 	selectors := make([]*ledgerv1.AssuranceSelector, 0, len(records)*2)
 	for _, record := range records {
@@ -261,23 +299,120 @@ func (m *Module) provePayout(ctx context.Context, records []*payoutv1.AssuranceR
 			selectors = append(selectors, &ledgerv1.AssuranceSelector{Token: record.GetId(), TransactionId: id})
 		}
 	}
-	return m.batchLedger(ctx, selectors)
+	response, err := m.batchLedger(ctx, selectors)
+	if err != nil {
+		return err
+	}
+	proofByToken, err := transactionProofs(response)
+	if err != nil {
+		return err
+	}
+	quoteIDs := make([]string, 0, len(records))
+	for _, record := range records {
+		if record.GetFeeQuoteId() != "" {
+			quoteIDs = append(quoteIDs, record.GetFeeQuoteId())
+		}
+	}
+	feeProofs, err := m.batchLedgerFeeQuotes(ctx, quoteIDs)
+	if err != nil {
+		return err
+	}
+	for _, record := range records {
+		amount, parseErr := assurancerules.ParseMinor(record.GetAmount())
+		if parseErr != nil {
+			return parseErr
+		}
+		value := assurancerules.PayoutRecord{ID: record.GetId(), Status: record.GetStatus(), AmountMinor: amount, Currency: record.GetCurrency(), Vendor: record.GetVendor(), HoldTxID: record.GetHoldTxId(), SettleTxID: record.GetSettleTxId(), FeeQuoteID: record.GetFeeQuoteId(), FeeAmountMinor: parseMinorOrZero(record.GetFeeAmount()), FeeGateway: record.GetFeeGateway(), RequestIDPresent: record.GetRequestIdPresent(), Age: time.Since(record.GetCreatedAt().AsTime())}
+		for _, proof := range proofByToken[record.GetId()] {
+			if proof.ID == record.GetHoldTxId() {
+				copy := proof
+				value.Hold = &copy
+			}
+			if proof.ID == record.GetSettleTxId() {
+				copy := proof
+				value.Closing = &copy
+			}
+		}
+		for _, call := range record.GetVendorCalls() {
+			value.VendorCalls = append(value.VendorCalls, assurancerules.VendorCall{Attempt: int(call.GetAttempt()), Vendor: call.GetVendor(), Outcome: call.GetOutcome(), At: call.GetCreatedAt().AsTime()})
+		}
+		for _, command := range record.GetVendorCommands() {
+			value.VendorCommands = append(value.VendorCommands, assurancerules.VendorCommand{ID: command.GetId(), Vendor: command.GetVendor(), Attempt: int(command.GetAttempt()), Status: command.GetStatus()})
+		}
+		if fee, ok := feeProofs[record.GetFeeQuoteId()]; ok {
+			value.FeeQuote = &assurancerules.FeeProof{Exists: true, ConsumedByRef: fee.GetConsumedByRef(), AmountMinor: parseMinorOrZero(fee.GetFeeAmount()), Gateway: fee.GetFeeGateway(), TransactionType: fee.GetTransactionType()}
+		}
+		for _, finding := range assurancerules.EvaluatePayout(value) {
+			if err := m.UpsertFinding(ctx, Finding{Fingerprint: finding.Fingerprint, Severity: finding.Severity, RuleCode: finding.RuleCode, ResourceID: finding.ResourceID, AmountMinor: finding.AmountMinor, Currency: finding.Currency, Evidence: finding.Evidence}, time.Now()); err != nil {
+				return fmt.Errorf("persist payout finding: %w", err)
+			}
+		}
+	}
+	return nil
 }
 
-func (m *Module) batchLedger(ctx context.Context, selectors []*ledgerv1.AssuranceSelector) error {
+func (m *Module) batchLedger(ctx context.Context, selectors []*ledgerv1.AssuranceSelector) (*ledgerv1.BatchGetAssuranceTransactionsResponse, error) {
+	combined := &ledgerv1.BatchGetAssuranceTransactionsResponse{}
 	for start := 0; start < len(selectors); start += 500 {
 		end := start + 500
 		if end > len(selectors) {
 			end = len(selectors)
 		}
 		rpcCtx, cancel := context.WithTimeout(ctx, m.cfg.RPCTimeout)
-		_, err := m.ledger.BatchGetAssuranceTransactions(rpcCtx, &ledgerv1.BatchGetAssuranceTransactionsRequest{Selectors: selectors[start:end]})
+		response, err := m.ledger.BatchGetAssuranceTransactions(rpcCtx, &ledgerv1.BatchGetAssuranceTransactionsRequest{Selectors: selectors[start:end]})
 		cancel()
 		if err != nil {
-			return fmt.Errorf("ledger assurance RPC: %w", err)
+			return nil, fmt.Errorf("ledger assurance RPC: %w", err)
+		}
+		combined.Results = append(combined.Results, response.GetResults()...)
+	}
+	return combined, nil
+}
+
+func transactionProofs(response *ledgerv1.BatchGetAssuranceTransactionsResponse) (map[string][]assurancerules.LedgerProof, error) {
+	proofs := make(map[string][]assurancerules.LedgerProof)
+	for _, result := range response.GetResults() {
+		for _, tx := range result.GetTransactions() {
+			amount, err := assurancerules.ParseMinor(tx.GetAmount())
+			if err != nil {
+				return nil, err
+			}
+			bookedFee, err := assurancerules.ParseMinor(tx.GetBookedFeeAmount())
+			if err != nil {
+				bookedFee = 0
+			}
+			proofs[result.GetToken()] = append(proofs[result.GetToken()], assurancerules.LedgerProof{ID: tx.GetId(), Type: tx.GetType(), Status: tx.GetStatus(), AmountMinor: amount, Currency: tx.GetCurrency(), Gateway: tx.GetGateway(), ExternalRef: tx.GetExternalRef(), OriginalReferenceID: tx.GetOriginalReferenceId(), LifecycleCloserID: tx.GetLifecycleCloserId(), BookedFeeMinor: bookedFee, BookedFeeGateway: tx.GetBookedFeeGateway()})
 		}
 	}
-	return nil
+	return proofs, nil
+}
+
+func (m *Module) batchLedgerFeeQuotes(ctx context.Context, quoteIDs []string) (map[string]*ledgerv1.FeeQuoteProof, error) {
+	result := make(map[string]*ledgerv1.FeeQuoteProof)
+	for start := 0; start < len(quoteIDs); start += 500 {
+		end := start + 500
+		if end > len(quoteIDs) {
+			end = len(quoteIDs)
+		}
+		rpcCtx, cancel := context.WithTimeout(ctx, m.cfg.RPCTimeout)
+		response, err := m.ledger.BatchGetAssuranceTransactions(rpcCtx, &ledgerv1.BatchGetAssuranceTransactionsRequest{FeeQuoteIds: quoteIDs[start:end]})
+		cancel()
+		if err != nil {
+			return nil, fmt.Errorf("ledger fee quote assurance RPC: %w", err)
+		}
+		for _, proof := range response.GetFeeQuoteProofs() {
+			result[proof.GetQuoteId()] = proof
+		}
+	}
+	return result, nil
+}
+
+func parseMinorOrZero(value string) int64 {
+	amount, err := assurancerules.ParseMinor(value)
+	if err != nil {
+		return 0
+	}
+	return amount
 }
 
 type cursorValue struct {
