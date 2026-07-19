@@ -19,8 +19,12 @@ import (
 
 	"github.com/herdifirdausss/seev/internal/auth"
 	"github.com/herdifirdausss/seev/internal/kycvendor/mockkyc"
+	"github.com/herdifirdausss/seev/internal/policy"
 	"github.com/herdifirdausss/seev/internal/testutil"
+	"github.com/herdifirdausss/seev/pkg/cache"
 	"github.com/herdifirdausss/seev/pkg/database"
+	"github.com/herdifirdausss/seev/pkg/middleware"
+	"github.com/shopspring/decimal"
 )
 
 func newAuthModuleWithMockKYC(db *database.DBSQL) (*auth.Module, *testutil.LedgerHarness) {
@@ -118,4 +122,36 @@ func TestAuth_KYC_Reject_LevelUnchangedNoLedgerCall(t *testing.T) {
 	require.NoError(t, db.QueryRowContext(ctx,
 		`SELECT count(*) FROM policy_limits WHERE user_id = $1`, u.ID).Scan(&rowCount))
 	assert.Zero(t, rowCount, "a rejected submission must never create policy_limits rows")
+}
+
+func TestAuth_KYC_DowngradeL0_HardPolicyBeatsStaleToken(t *testing.T) {
+	db := setupAuthTestDB(t)
+	m, _ := newAuthModuleWithMockKYC(db)
+	ctx := context.Background()
+
+	u, pair, err := m.Register(ctx, "kyc-downgrade@example.com", "hunter22!", "KYC Downgrade")
+	require.NoError(t, err)
+	_, err = m.SubmitKYC(ctx, u.ID, 1, nil)
+	require.NoError(t, err)
+	oldClaims, err := middleware.ParseToken(testJWTSecretIT, pair.AccessToken, "seev-test")
+	require.NoError(t, err)
+	assert.Equal(t, 0, oldClaims.KYCLevel, "the registration token predates approval; refresh is intentionally separate")
+
+	// Mint the stale L1 token that a client could still hold at downgrade time.
+	stale, err := middleware.GenerateToken(testJWTSecretIT, middleware.Claims{
+		UserID: u.ID.String(), Role: "user", KYCLevel: 1, Exp: time.Now().Add(time.Hour).Unix(), Iss: "seev-test",
+	})
+	require.NoError(t, err)
+	staleClaims, err := middleware.ParseToken(testJWTSecretIT, stale, "seev-test")
+	require.NoError(t, err)
+	assert.Equal(t, 1, staleClaims.KYCLevel)
+
+	require.NoError(t, m.DowngradeKYC(ctx, u.ID, 0, "admin-1", "manual review"))
+	assert.Equal(t, int64(0), policyLimitMaxPerTxIT(t, db, u.ID.String(), "transfer_p2p"))
+
+	engine := policy.New(policy.NewRepository(db), cache.NewMemoryCounter(), time.UTC, nil)
+	allowed, rule, _, err := engine.Check(ctx, u.ID, "transfer_p2p", decimal.NewFromInt(1))
+	require.NoError(t, err)
+	assert.False(t, allowed, "L0 hard limits must reject even while a stale L1 token exists")
+	assert.Equal(t, "max_per_tx", rule)
 }

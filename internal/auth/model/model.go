@@ -48,17 +48,20 @@ type KYCSubmission struct {
 // pending KYC approval.  It intentionally contains no ledger credentials or
 // payload data; the submission is re-read by auth when the intent is claimed.
 type KYCApplyRetry struct {
-	ID            uuid.UUID
-	SubmissionID  uuid.UUID
-	UserID        uuid.UUID
-	Level         int
-	Status        string
-	RetryCount    int
-	NextAttemptAt time.Time
-	LastError     string
-	LockedUntil   *time.Time
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
+	ID             uuid.UUID
+	SubmissionID   uuid.UUID
+	UserID         uuid.UUID
+	Level          int
+	Direction      string
+	DecidedBy      string
+	DecisionReason string
+	Status         string
+	RetryCount     int
+	NextAttemptAt  time.Time
+	LastError      string
+	LockedUntil    *time.Time
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
 }
 
 // MarshalPayload keeps JSON encoding in the auth repository boundary.

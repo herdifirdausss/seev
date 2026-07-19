@@ -71,6 +71,8 @@ func writeAuthError(w http.ResponseWriter, err error) {
 		response.Forbidden(w, "account disabled")
 	case errors.Is(err, ErrKYCLevelSequence):
 		response.BadRequest(w, "level_requested must be the next KYC level")
+	case errors.Is(err, repository.ErrKYCTierConflict):
+		response.Conflict(w, "KYC level change conflicts with the current level")
 	case errors.Is(err, ErrKYCPending), errors.Is(err, repository.ErrKYCSubmissionNotPending):
 		response.Conflict(w, "a KYC submission is already pending or decided")
 	case errors.Is(err, repository.ErrKYCSubmissionNotFound):
@@ -312,6 +314,33 @@ func (m *Module) AdminApproveKYCHandler() http.HandlerFunc {
 			return
 		}
 		response.OK(w, map[string]any{"status": "approved", "id": id})
+	}
+}
+
+func (m *Module) AdminDowngradeKYCHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID, err := uuid.Parse(r.PathValue("id"))
+		if err != nil {
+			response.BadRequest(w, "invalid user id")
+			return
+		}
+		var req struct {
+			Level  int    `json:"level"`
+			Reason string `json:"reason"`
+		}
+		if !response.Decode(w, r, &req) {
+			return
+		}
+		if err := m.DowngradeKYC(r.Context(), userID, req.Level, adminID(r), req.Reason); err != nil {
+			var queued *KYCApplyQueuedError
+			if errors.As(err, &queued) {
+				response.Accepted(w, map[string]any{"status": "queued", "retry_id": queued.RetryID, "user_id": userID, "level": req.Level})
+				return
+			}
+			writeAuthError(w, err)
+			return
+		}
+		response.OK(w, map[string]any{"status": "downgraded", "user_id": userID, "level": req.Level})
 	}
 }
 

@@ -406,8 +406,7 @@ func (m *Module) approveSubmission(ctx context.Context, submission model.KYCSubm
 
 	// ApproveKYCSubmission owns the fast-path transaction. It has rolled back
 	// completely at this point, so this insert is intentionally a separate
-	// transaction and cannot advance auth_users. A duplicate pending intent
-	// is harmless when an admin click races the relay.
+	// transaction and cannot advance auth_users.
 	// Derive the intent id from the submission so concurrent approval callers
 	// converge on one durable row and return the same retry id.
 	retry := model.KYCApplyRetry{
@@ -419,22 +418,66 @@ func (m *Module) approveSubmission(ctx context.Context, submission model.KYCSubm
 		NextAttemptAt: time.Now(),
 		LastError:     truncateRetryError(err),
 	}
+	return m.queueKYCApplyRetry(ctx, retry, err)
+}
+
+func (m *Module) queueKYCApplyRetry(ctx context.Context, retry model.KYCApplyRetry, cause error) error {
 	// The request context may already be cancelled because the ledger call
 	// timed out. Durable recovery must not depend on the caller staying
 	// connected, so use a short detached persistence context.
 	queueCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
 	defer cancel()
 	if enqueueErr := m.repo.EnqueueKYCApplyRetry(queueCtx, retry); enqueueErr != nil {
-		return fmt.Errorf("auth: persist kyc apply retry: %w (original: %v)", enqueueErr, err)
+		return fmt.Errorf("auth: persist kyc apply retry: %w (original: %v)", enqueueErr, cause)
 	}
 	kycApplyRetriesQueuedTotal.Inc()
-	return &KYCApplyQueuedError{RetryID: retry.ID, Cause: err}
+	return &KYCApplyQueuedError{RetryID: retry.ID, Cause: cause}
+}
+
+// DowngradeKYC applies stricter ledger limits before lowering the auth claim.
+func (m *Module) DowngradeKYC(ctx context.Context, userID uuid.UUID, level int, decidedBy, reason string) error {
+	if reason == "" || level < 0 || level > 2 {
+		return ErrValidation
+	}
+	user, err := m.repo.GetUserByID(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if user.KYCLevel <= level {
+		return repository.ErrKYCTierConflict
+	}
+	err = m.repo.DowngradeKYCLevel(ctx, userID, level, decidedBy, reason, m.provisioner.ApplyKycTier)
+	if err == nil || !errors.Is(err, repository.ErrKYCApplyTier) {
+		return err
+	}
+	retry := model.KYCApplyRetry{
+		ID:             uuid.NewSHA1(uuid.Nil, []byte(fmt.Sprintf("kyc-downgrade:%s:%d", userID, level))),
+		UserID:         userID,
+		Level:          level,
+		Direction:      "downgrade",
+		DecidedBy:      decidedBy,
+		DecisionReason: reason,
+		Status:         "pending",
+		NextAttemptAt:  time.Now(),
+		LastError:      truncateRetryError(err),
+	}
+	return m.queueKYCApplyRetry(ctx, retry, err)
 }
 
 // RetryKYCApply re-runs the full limits-first approval flow for a claimed
 // intent. A non-pending submission is already converged (for example an
 // admin approved it manually), so it is treated as a successful no-op.
 func (m *Module) RetryKYCApply(ctx context.Context, retry model.KYCApplyRetry) error {
+	if retry.Direction == "downgrade" {
+		user, err := m.repo.GetUserByID(ctx, retry.UserID)
+		if err != nil {
+			return err
+		}
+		if user.KYCLevel <= retry.Level {
+			return nil
+		}
+		return m.DowngradeKYC(ctx, retry.UserID, retry.Level, retry.DecidedBy, retry.DecisionReason)
+	}
 	submission, err := m.repo.GetKYCSubmission(ctx, retry.SubmissionID)
 	if err != nil {
 		return err

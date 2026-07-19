@@ -420,8 +420,11 @@ func loadFromEnvMode(getenv func(string) string, requireRabbitMQ bool) (*Config,
 			),
 		},
 		JWT: JWTConfig{
-			Secret:        requireValue(getenv, "JWT_SECRET", &errs),
-			AccessExpiry:  parseDuration(getenv("JWT_ACCESS_EXPIRY"), 15*time.Minute),
+			Secret: requireValue(getenv, "JWT_SECRET", &errs),
+			// Short access-token TTL bounds stale KYC claims after a
+			// limits-first downgrade. Hard policy_limits remain the source of
+			// truth while the token catches up (Plan 46 T2).
+			AccessExpiry:  parseDuration(getenv("JWT_ACCESS_EXPIRY"), 5*time.Minute),
 			RefreshExpiry: parseDuration(getenv("JWT_REFRESH_EXPIRY"), 7*24*time.Hour),
 			Issuer:        getenv("JWT_ISSUER"),
 		},

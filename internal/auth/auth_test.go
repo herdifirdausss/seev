@@ -376,3 +376,45 @@ func TestSubmitKYC_ApplyTierFailureLeavesApprovalPending(t *testing.T) {
 	assert.ErrorIs(t, err, ErrKYCApplyQueued)
 	assert.ErrorIs(t, err, context.DeadlineExceeded)
 }
+
+func TestDowngradeKYC_LimitsFirst(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	repo := repository.NewMockRepository(ctrl)
+	userID := uuid.New()
+	repo.EXPECT().GetUserByID(gomock.Any(), userID).Return(model.User{ID: userID, KYCLevel: 2}, nil)
+	var order []string
+	repo.EXPECT().DowngradeKYCLevel(gomock.Any(), userID, 0, "admin-1", "sanctions review", gomock.Any()).DoAndReturn(
+		func(ctx context.Context, id uuid.UUID, level int, _ string, _ string, apply func(context.Context, uuid.UUID, int) error) error {
+			order = append(order, "limits")
+			require.NoError(t, apply(ctx, id, level))
+			order = append(order, "auth")
+			return nil
+		})
+
+	m := newTestModule(repo, &stubProvisioner{})
+	require.NoError(t, m.DowngradeKYC(context.Background(), userID, 0, "admin-1", "sanctions review"))
+	assert.Equal(t, []string{"limits", "auth"}, order)
+}
+
+func TestDowngradeKYC_ApplyFailureQueuesDurableIntent(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	repo := repository.NewMockRepository(ctrl)
+	userID := uuid.New()
+	repo.EXPECT().GetUserByID(gomock.Any(), userID).Return(model.User{ID: userID, KYCLevel: 2}, nil)
+	repo.EXPECT().DowngradeKYCLevel(gomock.Any(), userID, 1, "admin-1", "policy review", gomock.Any()).DoAndReturn(
+		func(ctx context.Context, id uuid.UUID, level int, _, _ string, apply func(context.Context, uuid.UUID, int) error) error {
+			return fmt.Errorf("%w: %w", repository.ErrKYCApplyTier, apply(ctx, id, level))
+		})
+	repo.EXPECT().EnqueueKYCApplyRetry(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, retry model.KYCApplyRetry) error {
+		assert.Equal(t, "downgrade", retry.Direction)
+		assert.Equal(t, 1, retry.Level)
+		assert.Equal(t, userID, retry.UserID)
+		assert.Equal(t, "admin-1", retry.DecidedBy)
+		return nil
+	})
+
+	m := newTestModule(repo, &stubProvisioner{err: context.DeadlineExceeded})
+	err := m.DowngradeKYC(context.Background(), userID, 1, "admin-1", "policy review")
+	assert.ErrorIs(t, err, ErrKYCApplyQueued)
+	assert.ErrorIs(t, err, context.DeadlineExceeded)
+}

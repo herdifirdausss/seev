@@ -71,6 +71,10 @@ type Repository interface {
 	ClaimKYCApplyRetries(ctx context.Context, limit int, lease time.Duration) ([]model.KYCApplyRetry, error)
 	MarkKYCApplyRetrySucceeded(ctx context.Context, id uuid.UUID) error
 	MarkKYCApplyRetryFailure(ctx context.Context, id uuid.UUID, retryCount int, nextAttemptAt time.Time, lastError string, dead bool) error
+
+	// DowngradeKYCLevel applies the stricter ledger limits first, then lowers
+	// auth_users. The callback is deliberately invoked before the DB tx.
+	DowngradeKYCLevel(ctx context.Context, userID uuid.UUID, level int, decidedBy, reason string, applyTier func(context.Context, uuid.UUID, int) error) error
 }
 
 type repo struct {
@@ -319,6 +323,16 @@ func (r *repo) ApproveKYCSubmission(ctx context.Context, id uuid.UUID, decidedBy
 			// from an auth DB failure.
 			return fmt.Errorf("%w: %w", ErrKYCApplyTier, err)
 		}
+		var currentLevel int
+		if err := tx.QueryRowContext(ctx, `SELECT kyc_level FROM auth_users WHERE id = $1 FOR UPDATE`, userID).Scan(&currentLevel); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return ErrNotFound
+			}
+			return fmt.Errorf("auth: lock user kyc level: %w", err)
+		}
+		if currentLevel+1 != level {
+			return ErrKYCTierConflict
+		}
 		result, err := tx.ExecContext(ctx, `UPDATE auth_users SET kyc_level = $1, updated_at = now() WHERE id = $2 AND kyc_level + 1 = $1`, level, userID)
 		if err != nil {
 			return fmt.Errorf("auth: update kyc level: %w", err)
@@ -339,6 +353,12 @@ func (r *repo) ApproveKYCSubmission(ctx context.Context, id uuid.UUID, decidedBy
 		} else if changed != 1 {
 			return ErrKYCSubmissionNotPending
 		}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO kyc_level_changes (id, user_id, from_level, to_level, direction, reason, decided_by)
+			VALUES ($1, $2, $3, $4, 'upgrade', NULLIF($5, ''), $6)`,
+			uuid.New(), userID, currentLevel, level, reason, decidedBy); err != nil {
+			return fmt.Errorf("auth: record kyc upgrade: %w", err)
+		}
 		return nil
 	})
 }
@@ -346,36 +366,79 @@ func (r *repo) ApproveKYCSubmission(ctx context.Context, id uuid.UUID, decidedBy
 func (r *repo) EnqueueKYCApplyRetry(ctx context.Context, retry model.KYCApplyRetry) error {
 	_, err := r.db.ExecContext(ctx, `
 		INSERT INTO kyc_apply_retries
-			(id, submission_id, user_id, level, status, retry_count, next_attempt_at, last_error)
-		VALUES ($1, $2, $3, $4, 'pending', $5, $6, NULLIF($7, ''))
+			(id, submission_id, user_id, level, status, retry_count, next_attempt_at, last_error, direction, decided_by, decision_reason)
+		VALUES ($1, NULLIF($2, '00000000-0000-0000-0000-000000000000')::uuid, $3, $4, 'pending', $5, $6, NULLIF($7, ''), COALESCE(NULLIF($8, ''), 'upgrade'), NULLIF($9, ''), NULLIF($10, ''))
 		ON CONFLICT DO NOTHING`,
-		retry.ID, retry.SubmissionID, retry.UserID, retry.Level, retry.RetryCount,
-		retry.NextAttemptAt, retry.LastError)
+		retry.ID, retry.SubmissionID.String(), retry.UserID, retry.Level, retry.RetryCount,
+		retry.NextAttemptAt, retry.LastError, retry.Direction, retry.DecidedBy, retry.DecisionReason)
 	if err != nil {
 		return fmt.Errorf("auth: enqueue kyc apply retry: %w", err)
 	}
 	return nil
 }
 
-const kycApplyRetryColumns = `id, submission_id, user_id, level, status, retry_count, next_attempt_at, last_error, locked_until, created_at, updated_at`
+const kycApplyRetryColumns = `id, submission_id, user_id, level, status, retry_count, next_attempt_at, last_error, locked_until, created_at, updated_at, direction, decided_by, decision_reason`
 
 func scanKYCApplyRetry(scanner interface{ Scan(...any) error }) (model.KYCApplyRetry, error) {
 	var retry model.KYCApplyRetry
-	var lastError sql.NullString
+	var submissionID sql.NullString
+	var lastError, decidedBy, decisionReason sql.NullString
 	var lockedUntil sql.NullTime
-	if err := scanner.Scan(&retry.ID, &retry.SubmissionID, &retry.UserID, &retry.Level,
+	if err := scanner.Scan(&retry.ID, &submissionID, &retry.UserID, &retry.Level,
 		&retry.Status, &retry.RetryCount, &retry.NextAttemptAt, &lastError,
-		&lockedUntil, &retry.CreatedAt, &retry.UpdatedAt); err != nil {
+		&lockedUntil, &retry.CreatedAt, &retry.UpdatedAt, &retry.Direction, &decidedBy, &decisionReason); err != nil {
 		return model.KYCApplyRetry{}, fmt.Errorf("auth: scan kyc apply retry: %w", err)
 	}
 	if lastError.Valid {
 		retry.LastError = lastError.String
+	}
+	if submissionID.Valid {
+		if parsed, err := uuid.Parse(submissionID.String); err == nil {
+			retry.SubmissionID = parsed
+		}
+	}
+	if decidedBy.Valid {
+		retry.DecidedBy = decidedBy.String
+	}
+	if decisionReason.Valid {
+		retry.DecisionReason = decisionReason.String
 	}
 	if lockedUntil.Valid {
 		value := lockedUntil.Time
 		retry.LockedUntil = &value
 	}
 	return retry, nil
+}
+
+func (r *repo) DowngradeKYCLevel(ctx context.Context, userID uuid.UUID, level int, decidedBy, reason string, applyTier func(context.Context, uuid.UUID, int) error) error {
+	if level < 0 || level > 2 {
+		return ErrKYCTierConflict
+	}
+	if err := applyTier(ctx, userID, level); err != nil {
+		return fmt.Errorf("%w: %w", ErrKYCApplyTier, err)
+	}
+	return r.db.WithTx(ctx, nil, func(tx *sql.Tx) error {
+		var current int
+		if err := tx.QueryRowContext(ctx, `SELECT kyc_level FROM auth_users WHERE id = $1 FOR UPDATE`, userID).Scan(&current); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return ErrNotFound
+			}
+			return fmt.Errorf("auth: lock user for downgrade: %w", err)
+		}
+		if current <= level {
+			return ErrKYCTierConflict
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE auth_users SET kyc_level = $1, updated_at = now() WHERE id = $2 AND kyc_level > $1`, level, userID); err != nil {
+			return fmt.Errorf("auth: downgrade kyc level: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO kyc_level_changes (id, user_id, from_level, to_level, direction, reason, decided_by)
+			VALUES ($1, $2, $3, $4, 'downgrade', $5, $6)`,
+			uuid.New(), userID, current, level, reason, decidedBy); err != nil {
+			return fmt.Errorf("auth: record kyc downgrade: %w", err)
+		}
+		return nil
+	})
 }
 
 func (r *repo) ClaimKYCApplyRetries(ctx context.Context, limit int, lease time.Duration) ([]model.KYCApplyRetry, error) {

@@ -82,7 +82,7 @@ func TestLoadFromEnv_Defaults(t *testing.T) {
 	assert.Equal(t, 10*time.Second, cfg.RabbitMQ.DialTimeout)
 	assert.Equal(t, "app.exchange", cfg.RabbitMQ.DefaultExchange)
 
-	assert.Equal(t, 15*time.Minute, cfg.JWT.AccessExpiry)
+	assert.Equal(t, 5*time.Minute, cfg.JWT.AccessExpiry)
 	assert.Equal(t, 7*24*time.Hour, cfg.JWT.RefreshExpiry)
 	assert.Equal(t, "", cfg.JWT.Issuer)
 

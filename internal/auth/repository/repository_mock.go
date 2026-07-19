@@ -100,6 +100,20 @@ func (mr *MockRepositoryMockRecorder) CreateUser(ctx, u, passwordHash any) *gomo
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateUser", reflect.TypeOf((*MockRepository)(nil).CreateUser), ctx, u, passwordHash)
 }
 
+// DowngradeKYCLevel mocks base method.
+func (m *MockRepository) DowngradeKYCLevel(ctx context.Context, userID uuid.UUID, level int, decidedBy, reason string, applyTier func(context.Context, uuid.UUID, int) error) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DowngradeKYCLevel", ctx, userID, level, decidedBy, reason, applyTier)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DowngradeKYCLevel indicates an expected call of DowngradeKYCLevel.
+func (mr *MockRepositoryMockRecorder) DowngradeKYCLevel(ctx, userID, level, decidedBy, reason, applyTier any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DowngradeKYCLevel", reflect.TypeOf((*MockRepository)(nil).DowngradeKYCLevel), ctx, userID, level, decidedBy, reason, applyTier)
+}
+
 // EnqueueKYCApplyRetry mocks base method.
 func (m *MockRepository) EnqueueKYCApplyRetry(ctx context.Context, retry model.KYCApplyRetry) error {
 	m.ctrl.T.Helper()

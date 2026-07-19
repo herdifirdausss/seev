@@ -27,6 +27,7 @@ type kycHandlers interface {
 	AdminListKYCHandler() http.HandlerFunc
 	AdminApproveKYCHandler() http.HandlerFunc
 	AdminRejectKYCHandler() http.HandlerFunc
+	AdminDowngradeKYCHandler() http.HandlerFunc
 }
 
 func publicRouter(cfg *config.Config, handlers authHandlers, redisCache *cache.Cache, log *slog.Logger) http.Handler {
@@ -91,6 +92,7 @@ func internalRouter(args ...any) http.Handler {
 			mux.Handle("GET /api/v1/admin/kyc/submissions", authedAdmin(handlers.AdminListKYCHandler()))
 			mux.Handle("POST /api/v1/admin/kyc/submissions/{id}/approve", authedAdmin(handlers.AdminApproveKYCHandler()))
 			mux.Handle("POST /api/v1/admin/kyc/submissions/{id}/reject", authedAdmin(handlers.AdminRejectKYCHandler()))
+			mux.Handle("POST /api/v1/admin/kyc/users/{id}/downgrade", authedAdmin(handlers.AdminDowngradeKYCHandler()))
 		}
 	}
 	return mux

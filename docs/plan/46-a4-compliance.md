@@ -77,8 +77,9 @@ Semua diverifikasi 2026-07-17.
   yang sama.
 - JWT: `middleware.Claims{UserID, Email, Role, KYCLevel, ...}` diisi dari
   `auth_users.kyc_level` HANYA saat Register/Login/Refresh
-  (`issueTokensWithID`); `JWT_ACCESS_EXPIRY` default **15m**
-  (`internal/config/config.go:417`). Gate membaca CLAIM, bukan DB:
+  (`issueTokensWithID`); sebelum T2 `JWT_ACCESS_EXPIRY` default **15m**
+  (`internal/config/config.go:417`), kini dikunci menjadi **5m**. Gate
+  membaca CLAIM, bukan DB:
   gateway `requireKYC`/`requireKYCForLedgerPostings`
   (`internal/handler/router.go`) + defense-in-depth ledger transport.
   `auth_users.full_name` ADA (TEXT NOT NULL DEFAULT '').
@@ -400,7 +401,26 @@ terdokumentasi di kode + doc.
 
 ### Hasil
 
-> Diisi saat T2 selesai.
+> T2 selesai pada 2026-07-19. Ledger migration `000023` menambahkan template
+> L0 untuk `transfer_p2p`, `money_in`, dan `withdraw_initiate` dengan seluruh
+> limit `0`, memperluas constraint level ke `0|1|2`, serta mengizinkan nilai
+> nol pada `policy_limits` (nilai negatif tetap ditolak). Dengan demikian
+> `ApplyKycTier(0)` benar-benar memasang hard deny yang dicek policy engine,
+> bukan sekadar mengandalkan JWT.
+>
+> Auth downgrade admin (`POST /api/v1/admin/kyc/users/{id}/downgrade`) wajib
+> menyertakan reason dan menjalankan `ApplyKycTier(level_baru)` lebih dulu;
+> baru setelah sukses auth menurunkan `auth_users.kyc_level` dan menulis
+> `kyc_level_changes`. Kegagalan dependency masuk ke intent retry T1 dengan
+> arah `downgrade`; intent yang sudah lebih rendah diperlakukan idempotent.
+> Upgrade existing tetap memakai guard `kyc_level + 1` dan sekarang juga
+> diaudit.
+>
+> Default `JWT_ACCESS_EXPIRY` menjadi 5m di config dan `.env.example`; window
+> staleness yang diterima tetap eksplisit `5m + POLICY_CACHE_TTL 60s`, dengan
+> policy limits sebagai kontrol keras. Bukti: unit auth/config, serta
+> integration `TestAuth_KYC_DowngradeL0_HardPolicyBeatsStaleToken` dan
+> `TestApplyKycTier_L0HardControl` lulus pada Postgres nyata.
 
 ### T3 — Mode screening per-rule (K4)
 

@@ -169,3 +169,20 @@ func TestApplyKycTier_Idempotent_ApplyingTwiceIsOneResult(t *testing.T) {
 	assert.Equal(t, 3, policyLimitsRowCount(t, db, userID), "re-applying the same level must not create duplicate rows")
 	assert.Equal(t, int64(1_000_000), policyLimitMaxPerTx(t, db, userID, "transfer_p2p"))
 }
+
+func TestApplyKycTier_L0HardControlBlocksPositiveAmount(t *testing.T) {
+	client, db := setupKycTierTestServer(t)
+	ctx := context.Background()
+	userID := uuid.New()
+
+	_, err := client.ApplyKycTier(ctx, &ledgerv1.ApplyKycTierRequest{UserId: userID.String(), KycLevel: 0})
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), policyLimitMaxPerTx(t, db, userID, "transfer_p2p"))
+	assert.Equal(t, 3, policyLimitsRowCount(t, db, userID))
+
+	engine := policy.New(policy.NewRepository(db), cache.NewMemoryCounter(), time.UTC, slog.Default())
+	allowed, rule, _, err := engine.Check(ctx, userID, "transfer_p2p", decimal.NewFromInt(1))
+	require.NoError(t, err)
+	assert.False(t, allowed, "L0's zero max_per_tx must reject any positive amount")
+	assert.Equal(t, "max_per_tx", rule)
+}
