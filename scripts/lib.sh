@@ -809,16 +809,27 @@ provision_hold_account() {
 # money_in credits whoever's JWT `sub` claim is on the request, NOT any
 # target_user_id in the body (internal/ledger/processors/money_in.go) — so
 # this mints a token for user_id itself, not the caller/service identity.
-# Idempotency key is stable per user_id, so re-running against an
-# already-funded account (same Postgres volume) is a safe idempotent no-op.
+# Repeated runs against a reused development volume top up only the delta to
+# the requested target. The delta uses its own idempotency key, so the helper
+# remains safe if a process is interrupted after the ledger post.
 fund_user() {
 	local user_id=$1
 	local amount=${2:-1000000}
+	local cash current delta
+	cash="$(cash_account_id "$user_id")"
+	current="$(account_balance "$cash")"
+	if ! [[ "$current" =~ ^[0-9]+$ ]]; then
+		current=0
+	fi
+	delta=$((amount - current))
+	if [ "$delta" -le 0 ]; then
+		return 0
+	fi
 	local fund_token
 	fund_token="$(gen_token "$user_id")"
 	curl -s -o /dev/null -X POST "http://localhost:$LEDGER_INTERNAL_PORT/api/v1/ledger/transactions" \
 		-H "Authorization: Bearer $fund_token" -H "Content-Type: application/json" \
-		-d "{\"idempotency_key\":\"fund-$user_id\",\"type\":\"money_in\",\"amount\":\"$amount\",\"metadata\":{\"gateway\":\"bca\"}}"
+		-d "{\"idempotency_key\":\"fund-$user_id-$delta\",\"type\":\"money_in\",\"amount\":\"$delta\",\"metadata\":{\"gateway\":\"bca\"}}"
 }
 
 cash_account_id() {

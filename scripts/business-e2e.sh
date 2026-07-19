@@ -144,12 +144,30 @@ onboard() {
 	local admin_token fee_url code resp
 	admin_token="$(gen_token "$(uuidgen | tr '[:upper:]' '[:lower:]')" admin)"
 	fee_url="http://localhost:$LEDGER_INTERNAL_PORT/api/v1/admin/ledger/fee-rules"
-	code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$fee_url" -H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" -d '{"tx_type":"transfer_p2p","currency":"IDR","flat_minor_units":1000,"fee_gateway":"platform"}')
-	[ "$code" = "201" ] && ok "seeded global transfer fee via admin API" || fail "global fee seed got HTTP $code"
+	# The ledger DB is intentionally reusable between local runs. A global rule
+	# is unique by (tx_type,gateway,currency,NULL user), so update an existing
+	# seed instead of turning a harmless rerun into HTTP 500.
+	local global_transfer_id global_withdraw_id
+	global_transfer_id="$(psql_exec "$LEDGER_DB_NAME" -c "SELECT id FROM fee_rules WHERE tx_type = 'transfer_p2p' AND currency = 'IDR' AND user_id IS NULL ORDER BY updated_at DESC LIMIT 1;")"
+	if [ -n "$global_transfer_id" ]; then
+		code=$(curl -s -o /dev/null -w '%{http_code}' -X PUT "$fee_url/$global_transfer_id" -H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" -d '{"tx_type":"transfer_p2p","currency":"IDR","flat_minor_units":1000,"fee_gateway":"platform"}')
+	else
+		code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$fee_url" -H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" -d '{"tx_type":"transfer_p2p","currency":"IDR","flat_minor_units":1000,"fee_gateway":"platform"}')
+	fi
+	if [ "$code" = "200" ] || [ "$code" = "201" ]; then
+		ok "seeded global transfer fee via admin API"
+	else
+		fail "global fee seed got HTTP $code"
+	fi
 	resp="$(curl -s -X POST "$fee_url" -H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" -d "{\"tx_type\":\"transfer_p2p\",\"currency\":\"IDR\",\"user_id\":\"$USER_A\",\"flat_minor_units\":500,\"fee_gateway\":\"platform\"}")"
 	TRANSFER_FEE_RULE_ID="$(echo "$resp" | json_field id)"
 	[ -n "$TRANSFER_FEE_RULE_ID" ] && ok "seeded per-user transfer override via admin API ($TRANSFER_FEE_RULE_ID)" || fail "per-user fee seed failed: $resp"
-	resp="$(curl -s -X POST "$fee_url" -H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" -d '{"tx_type":"withdraw_settle","currency":"IDR","flat_minor_units":2000,"fee_gateway":"platform"}')"
+	global_withdraw_id="$(psql_exec "$LEDGER_DB_NAME" -c "SELECT id FROM fee_rules WHERE tx_type = 'withdraw_settle' AND currency = 'IDR' AND user_id IS NULL ORDER BY updated_at DESC LIMIT 1;")"
+	if [ -n "$global_withdraw_id" ]; then
+		resp="$(curl -s -X PUT "$fee_url/$global_withdraw_id" -H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" -d '{"tx_type":"withdraw_settle","currency":"IDR","flat_minor_units":2000,"fee_gateway":"platform"}')"
+	else
+		resp="$(curl -s -X POST "$fee_url" -H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" -d '{"tx_type":"withdraw_settle","currency":"IDR","flat_minor_units":2000,"fee_gateway":"platform"}')"
+	fi
 	WITHDRAW_FEE_RULE_ID="$(echo "$resp" | json_field id)"
 	[ -n "$WITHDRAW_FEE_RULE_ID" ] && ok "seeded withdraw fee via admin API ($WITHDRAW_FEE_RULE_ID)" || fail "withdraw fee seed failed: $resp"
 }

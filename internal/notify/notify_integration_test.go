@@ -26,8 +26,10 @@ import (
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/testcontainers/testcontainers-go"
 	pgcontainer "github.com/testcontainers/testcontainers-go/modules/postgres"
 	rmqcontainer "github.com/testcontainers/testcontainers-go/modules/rabbitmq"
+	"github.com/testcontainers/testcontainers-go/wait"
 
 	"github.com/herdifirdausss/seev/internal/config"
 	"github.com/herdifirdausss/seev/internal/ledger"
@@ -100,7 +102,15 @@ func setupNotifyTestBroker(t *testing.T) *messaging.RabbitMQ {
 	t.Helper()
 	ctx := context.Background()
 
-	container, err := rmqcontainer.Run(ctx, "rabbitmq:3.13-management-alpine")
+	// The module's default log wait looks for a version-specific line that is
+	// absent in some RabbitMQ alpine images. AMQP listening is the readiness
+	// condition the test actually needs, and avoids false negatives when the
+	// broker is healthy but its startup log wording changes.
+	container, err := rmqcontainer.Run(ctx, "rabbitmq:3.13-management-alpine",
+		testcontainers.WithWaitStrategy(
+			wait.ForListeningPort(rmqcontainer.DefaultAMQPPort).WithStartupTimeout(90*time.Second),
+		),
+	)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = container.Terminate(ctx) })
 
