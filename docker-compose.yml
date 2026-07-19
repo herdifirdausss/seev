@@ -316,6 +316,49 @@ services:
       timeout: 5s
       retries: 10
 
+  admin-bff-service:
+    profiles: ["app"]
+    image: seev/admin-bff-service:${SEEV_IMAGE_TAG:-dev}
+    build:
+      context: .
+      args:
+        SERVICE: admin-bff-service
+    logging: *app-logging
+    environment:
+      APP_NAME: admin-bff-service
+      LOG_FORMAT: json
+      OTEL_EXPORTER_OTLP_ENDPOINT: "${OTEL_EXPORTER_OTLP_ENDPOINT:-}"
+      OTEL_TRACES_SAMPLER: parentbased_traceidratio
+      OTEL_TRACES_SAMPLER_ARG: "${OTEL_TRACES_SAMPLER_ARG:-0.10}"
+      OTEL_EXPORTER_OTLP_INSECURE: "${OTEL_EXPORTER_OTLP_INSECURE:-true}"
+      APP_PORT: "8095"
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: adminbff_app
+      POSTGRES_PASSWORD: adminbff_app
+      POSTGRES_DB: seev_adminbff
+      POSTGRES_SSL_MODE: disable
+      JWT_SECRET: ${JWT_SECRET:-change-me-to-a-random-32-plus-character-secret}
+      JWT_ISSUER: ${JWT_ISSUER:-}
+      AUTH_SERVICE_URL: http://auth-service:8083
+      ADMIN_BFF_SECURE_COOKIE: "false"
+    ports:
+      - "127.0.0.1:8095:8095"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      auth-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/app/service", "-healthcheck"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
   gateway-service:
     profiles: ["app"]
     image: seev/gateway-service:${SEEV_IMAGE_TAG:-dev}

@@ -326,6 +326,10 @@ func LoadPayoutService() (*Config, error) { return load(false) }
 // LoadFraudService validates RabbitMQ because fraud consumes ledger events.
 func LoadFraudService() (*Config, error) { return load(true) }
 
+// LoadAdminBFFService excludes RabbitMQ because the admin BFF is an
+// HTTP-only aggregator with its own Postgres database (docs/plan/47 K1-K3).
+func LoadAdminBFFService() (*Config, error) { return load(false) }
+
 func load(requireRabbitMQ bool) (*Config, error) {
 	env := os.Getenv("APP_ENV")
 

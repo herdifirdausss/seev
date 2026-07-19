@@ -46,6 +46,7 @@ var serviceModules = map[string]map[string]bool{
 	"payout-service":   {"payout": true},
 	"fraud-service":    {"fraud": true},
 	"sanctions-loader": {"fraud": true},
+	"admin-bff-service": {"adminbff": true},
 	"gateway":          {"handler": true, "notify": true},
 	"gentoken":         {},
 }

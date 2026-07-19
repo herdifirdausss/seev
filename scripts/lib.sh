@@ -23,6 +23,7 @@ PAYIN_DB_NAME="${PAYIN_DB_NAME:-seev_payin}"
 PAYOUT_DB_NAME="${PAYOUT_DB_NAME:-seev_payout}"
 FRAUD_DB_NAME="${FRAUD_DB_NAME:-seev_fraud}"
 GATEWAY_DB_NAME="${GATEWAY_DB_NAME:-seev_gateway}"
+ADMINBFF_DB_NAME="${ADMINBFF_DB_NAME:-seev_adminbff}"
 JWT_SECRET="${JWT_SECRET:-change-me-to-a-random-32-plus-character-secret}"
 APP_PORT="${APP_PORT:-18080}"
 INTERNAL_PORT="${INTERNAL_PORT:-18081}"
@@ -44,6 +45,7 @@ PAYOUT2_GRPC_PORT="${PAYOUT2_GRPC_PORT:-19193}"
 PAYOUT2_ADMIN_PORT="${PAYOUT2_ADMIN_PORT:-18193}"
 FRAUD_GRPC_PORT="${FRAUD_GRPC_PORT:-19094}"
 FRAUD_ADMIN_PORT="${FRAUD_ADMIN_PORT:-18094}"
+ADMINBFF_PORT="${ADMINBFF_PORT:-18095}"
 REDIS_HOST_PORT="${REDIS_HOST_PORT:-6380}"
 
 # docs/plan/44 K7: SEEV_WORK_DIR lets a caller (T4's scheduled workflow, one
@@ -82,6 +84,7 @@ AUTH_BIN="$WORK_DIR/auth-service"
 PAYIN_BIN="$WORK_DIR/payin-service"
 PAYOUT_BIN="$WORK_DIR/payout-service"
 FRAUD_BIN="$WORK_DIR/fraud-service"
+ADMINBFF_BIN="$WORK_DIR/admin-bff-service"
 GENTOKEN_BIN="$WORK_DIR/gentoken"
 GATEWAY_LOG="$WORK_DIR/gateway.log"
 LEDGER_LOG="$WORK_DIR/ledger-service.log"
@@ -89,12 +92,14 @@ AUTH_LOG="$WORK_DIR/auth-service.log"
 PAYIN_LOG="$WORK_DIR/payin-service.log"
 PAYOUT_LOG="$WORK_DIR/payout-service.log"
 FRAUD_LOG="$WORK_DIR/fraud-service.log"
+ADMINBFF_LOG="$WORK_DIR/admin-bff-service.log"
 GATEWAY_PID_FILE="$WORK_DIR/gateway.pid"
 LEDGER_PID_FILE="$WORK_DIR/ledger-service.pid"
 AUTH_PID_FILE="$WORK_DIR/auth-service.pid"
 PAYIN_PID_FILE="$WORK_DIR/payin-service.pid"
 PAYOUT_PID_FILE="$WORK_DIR/payout-service.pid"
 FRAUD_PID_FILE="$WORK_DIR/fraud-service.pid"
+ADMINBFF_PID_FILE="$WORK_DIR/admin-bff-service.pid"
 PAYOUT2_LOG="$WORK_DIR/payout-service-2.log"
 PAYOUT2_PID_FILE="$WORK_DIR/payout-service-2.pid"
 
@@ -160,7 +165,7 @@ ensure_deps_up() {
 # existing Docker volumes, where entrypoint init scripts no longer run.
 ensure_service_dbs() {
 	local service database role exists
-	for service in ledger auth payin payout fraud gateway; do
+	for service in ledger auth payin payout fraud gateway adminbff; do
 		database="seev_${service}"
 		role="${service}_app"
 		exists="$(docker exec -i "$POSTGRES_CONTAINER" psql -U "$DB_USER" -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname = '$database'")"
@@ -201,6 +206,9 @@ apply_migrations() {
 	for f in migrations/gateway/*.up.sql; do
 		docker exec -i "$POSTGRES_CONTAINER" psql -U "$DB_USER" -d "$GATEWAY_DB_NAME" -v ON_ERROR_STOP=0 <"$f" >/dev/null 2>&1 || true
 	done
+	for f in migrations/adminbff/*.up.sql; do
+		docker exec -i "$POSTGRES_CONTAINER" psql -U "$DB_USER" -d "$ADMINBFF_DB_NAME" -v ON_ERROR_STOP=0 <"$f" >/dev/null 2>&1 || true
+	done
 	local service_dir
 	for service_dir in migrations/*; do
 		[ -d "$service_dir" ] || continue
@@ -210,6 +218,7 @@ apply_migrations() {
 		[ "$service_dir" = "migrations/payout" ] && continue
 		[ "$service_dir" = "migrations/fraud" ] && continue
 		[ "$service_dir" = "migrations/gateway" ] && continue
+		[ "$service_dir" = "migrations/adminbff" ] && continue
 		for f in "$service_dir"/*.up.sql; do
 			[ -f "$f" ] || continue
 			docker exec -i "$POSTGRES_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=0 <"$f" >/dev/null 2>&1 || true
@@ -222,6 +231,7 @@ apply_migrations() {
 	ensure_app_role "$PAYOUT_DB_NAME" payout_app payout_app
 	ensure_app_role "$FRAUD_DB_NAME" fraud_app fraud_app
 	ensure_app_role "$GATEWAY_DB_NAME" gateway_app gateway_app
+	ensure_app_role "$ADMINBFF_DB_NAME" adminbff_app adminbff_app
 }
 
 # ensure_app_role provisions the restricted login role the server actually
@@ -246,13 +256,14 @@ ensure_app_role() {
 # ─── Server lifecycle ───────────────────────────────────────────────────────
 
 build_server() {
-	log "building gateway + ledger-service + auth-service + payin-service + payout-service + fraud-service + gentoken binaries..."
+	log "building gateway + ledger-service + auth-service + payin-service + payout-service + fraud-service + admin-bff-service + gentoken binaries..."
 	go build -o "$GATEWAY_BIN" ./cmd/gateway
 	go build -o "$LEDGER_BIN" ./cmd/ledger-service
 	go build -o "$AUTH_BIN" ./cmd/auth-service
 	go build -o "$PAYIN_BIN" ./cmd/payin-service
 	go build -o "$PAYOUT_BIN" ./cmd/payout-service
 	go build -o "$FRAUD_BIN" ./cmd/fraud-service
+	go build -o "$ADMINBFF_BIN" ./cmd/admin-bff-service
 	go build -o "$GENTOKEN_BIN" ./cmd/gentoken
 }
 
@@ -512,6 +523,27 @@ start_services() {
 	start_payin_service
 	start_payout_service
 	start_gateway
+}
+
+start_adminbff_service() {
+	log "starting admin-bff-service (http $ADMINBFF_PORT)..."
+	(
+		export APP_NAME=admin-bff-service
+		export APP_PORT=$ADMINBFF_PORT
+		export POSTGRES_HOST=localhost
+		export POSTGRES_PORT=$DB_HOST_PORT
+		export POSTGRES_USER=adminbff_app
+		export POSTGRES_PASSWORD=adminbff_app
+		export POSTGRES_DB=$ADMINBFF_DB_NAME
+		export POSTGRES_SSL_MODE=disable
+		export JWT_SECRET=$JWT_SECRET
+		export AUTH_SERVICE_URL="${AUTH_SERVICE_URL:-http://localhost:$AUTH_INTERNAL_PORT}"
+		export ADMIN_BFF_SECURE_COOKIE="${ADMIN_BFF_SECURE_COOKIE:-false}"
+		export LOG_FORMAT=json
+		nohup "$ADMINBFF_BIN" >>"$ADMINBFF_LOG" 2>&1 &
+		echo $! >"$ADMINBFF_PID_FILE"
+	)
+	wait_for_service_up admin-bff-service "http://localhost:$ADMINBFF_PORT/health" "$ADMINBFF_PID_FILE" "$ADMINBFF_LOG"
 }
 
 wait_for_service_up() {

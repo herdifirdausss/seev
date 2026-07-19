@@ -195,7 +195,7 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
 
-      - name: Build six images (Bake, GHA cache, load into daemon)
+      - name: Build seven images (Bake, GHA cache, load into daemon)
         uses: docker/bake-action@d3418bd7d0e9324001bca92fa8ba175ea7e6dc9b # v7.3.0
         with:
           files: docker-compose.yml
@@ -206,6 +206,7 @@ jobs:
             ledger-service
             payin-service
             payout-service
+            admin-bff-service
           load: true
           set: |
             *.args.REVISION=${{ github.sha }}
@@ -218,7 +219,7 @@ jobs:
       - name: Verify image revision labels
         run: |
           set -euo pipefail
-          for svc in auth-service fraud-service gateway-service ledger-service payin-service payout-service; do
+          for svc in auth-service fraud-service gateway-service ledger-service payin-service payout-service admin-bff-service; do
             image="seev/${svc}:ci"
             id="$(docker image inspect "$image" --format '{{.Id}}')"
             rev="$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')"
