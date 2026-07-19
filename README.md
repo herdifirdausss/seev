@@ -10,7 +10,7 @@ only; they are not production secrets or real payment integrations.
 
 ## Runtime architecture
 
-Six deployable services are built from this repository:
+Seven deployable services are built from this repository:
 
 | Service | Public/internal ports | Database | Primary responsibility |
 |---|---:|---|---|
@@ -20,6 +20,7 @@ Six deployable services are built from this repository:
 | Pay-in | 8092, gRPC 9092 | seev_payin | Top-up intents, signed vendor webhooks, and routing |
 | Payout | 8093, gRPC 9093 | seev_payout | Withdrawal orchestration, vendor commands, recovery, and routing |
 | Fraud | 8094, gRPC 9094 | seev_fraud | Synchronous screening rules and asynchronous event enrichment |
+| Admin BFF | 8095 | seev_adminbff | Operator sessions, maker/checker console, typed admin proxy, and audit log |
 
 PostgreSQL stores service-owned data, Redis supports caching, rate limiting,
 velocity checks, and distributed coordination, and RabbitMQ carries ledger
@@ -31,7 +32,7 @@ HTTP or gRPC contracts; services must not query another service's database.
 ~~~text
 .
 ├── api/proto/               # Protobuf service contracts
-├── cmd/                     # Six service entrypoints plus local utilities
+├── cmd/                     # Seven service entrypoints plus local utilities
 ├── deploy/observability/    # Prometheus, Grafana, Loki, Tempo, and Alloy config
 ├── docs/                    # Event contract, plans, and operational runbooks
 ├── gen/                     # Committed generated protobuf bindings
@@ -80,7 +81,7 @@ Apply every service migration:
 make migrate-up-all
 ~~~
 
-Build and start all six application containers:
+Build and start all seven application containers:
 
 ~~~bash
 docker compose --profile app up --build -d
@@ -108,7 +109,7 @@ secrets, and TLS-related settings.
 ## Build and verification
 
 ~~~bash
-make build-all       # build all six deployable services
+make build-all       # build all seven deployable services
 make test            # unit tests with race detection and coverage
 make vet             # static checks from the Go toolchain
 make lint            # golangci-lint

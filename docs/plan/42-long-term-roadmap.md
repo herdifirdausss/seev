@@ -33,12 +33,13 @@ Dua framing kunci:
 | A1 | Observability naik kelas: dashboards, SLO, alerting, log & trace | H1 | 36 selesai + debugging lintas service pertama >30 menit | ★ |
 | A2 | Delivery pipeline: CI naik kelas + Kubernetes lokal | H1 | CI: kapan saja (murah); K8s: ingin belajar ([35] sudah ada) | |
 | A3 | Resiliensi dependensi eksternal: vendor riil, outbox outbound, breaker terdistribusi, Redis semantics | H1 | [40] selesai + ingin belajar integrasi nyata | ★ |
-| A4 | Compliance naik kelas: KYC & AML riil | H1 | [39] selesai + ingin belajar compliance engineering | |
-| A5 | Admin console: BFF + frontend | H1 | Operasi admin manual terasa menyakitkan, atau ingin belajar BFF | |
+| A4 | Compliance naik kelas: KYC & AML riil | H1 | [39] selesai + ingin belajar compliance engineering | core T1–T7 selesai; provider/MinIO/re-screen follow-up |
+| A5 | Admin console: BFF + frontend | H1 | Operasi admin manual terasa menyakitkan, atau ingin belajar BFF | core T1–T6 selesai; gate Docker follow-up |
 | A6 | Keamanan internal: mTLS, identitas service, secrets, threat model | H1 | Setelah 36–41; WAJIB sebelum C1 | |
 | A7 | Backup, PITR & disiplin DR | H1 | Kapan saja setelah 36–41 (murah, nilai tinggi) | |
 | A8 | Siklus hidup data & privasi | H1 | Setelah 36–41; purge fee_quotes lebih awal begitu [38] jalan | |
 | A9 | Kontrak API & evolusi skema | H1 | Perubahan payload pertama yang merusak konsumen diam-diam; prasyarat C1 | |
+| A10 | Product assurance & emergency intake control | H1 | Setelah 36–41 + ingin membuktikan konsistensi bisnis lintas payin–payout–ledger | |
 | B0 | Harness load/performance + model kapasitas (GERBANG H2) | H2 | Setelah 36–41; wajib sebelum B1–B3 | ★ |
 | B1 | S4: sub-sharding hot-account | H2 | Bukti lock-wait delta-apply akun sistem (via B0) | |
 | B2 | S5: partisi + archival `ledger_entries` | H2 | `ledger_entries` mendekati ~50 juta row | |
@@ -103,7 +104,8 @@ Dua framing kunci:
 
 ### A4 — Compliance naik kelas: KYC & AML riil
 
-> **Status: AKTIF → dokumen eksekusi [46](46-a4-compliance.md)** (2026-07-17,
+> **Status: core T1–T7 selesai → [46](46-a4-compliance.md); provider KYC riil,
+> MinIO, dan re-screen deployment follow-up** (2026-07-19,
 > trigger: [39] ✅ + keputusan sadar; tiga keputusan user — provider KYC ditunda
 > ke eksekutor ber-kriteria, sanctions = dataset OpenSanctions lokal, staleness
 > JWT = TTL 5m + hard-control limits — di pembuka 46).
@@ -112,12 +114,13 @@ Dua framing kunci:
 - **Nilai belajar**: integrasi provider identitas, object storage + enkripsi dokumen, state machine level KYC dua arah (upgrade/downgrade), side-effect at-least-once (retry queue), penanganan staleness klaim JWT.
 - **Trigger**: [39] selesai + ingin belajar compliance engineering.
 - **Dependensi**: [39] (tiers), [37] (fraud di edge), [20].
-- **Sketsa**: (1) KYC provider riil (sandbox) di belakang interface mockkyc + dokumen di MinIO terenkripsi + **KYC downgrade** (deferral 36); (2) retry queue async `ApplyKycTier` (deferral 36) — eventual consistency yang terbukti, bukan best-effort; (3) mitigasi staleness `kyc_level` di JWT (limitasi 39): TTL pendek / versi klaim / cek server-side di gate; (4) tabel mode per-rule screening log-only↔enforce (scoped-out doc 20 "nanti"); (5) vendor AML/sanctions riil (sandbox) di belakang interface screening yang sama (scoped-out 20); (6) persist screening-event durable via outbox kecil, menggantikan best-effort di luar posting tx (scoped-out 20).
+- **Realisasi [46]**: retry queue async `ApplyKycTier`, downgrade limits-first + template L0, TTL JWT 5m, mode screening per-rule, sanctions lokal KYC-time, screening-event durable dengan spill terukur, serta envelope encryption dokumen melalui `DocumentStore`. **Follow-up deployment-gated**: adapter/provider KYC riil, profile MinIO, dan re-screen berkala.
 - **Anti-scope**: bukan perizinan riil (lihat §8); case-management UI penuh menyusul via A5.
 
 ### A5 — Admin console: BFF + frontend
 
-> **Status: AKTIF → dokumen eksekusi [47](47-a5-admin-console.md)** (2026-07-19,
+> **Status: core T1–T6 selesai → [47](47-a5-admin-console.md); gate Docker
+> full-stack follow-up** (2026-07-19,
 > trigger jalur belajar: keputusan sadar + dependensi hijau [24/33/39/40];
 > tiga keputusan user — frontend Go templates+htmx tanpa Node, sesi BFF +
 > peran maker/checker di auth-service, semua panel dalam satu dokumen —
@@ -165,6 +168,21 @@ Dua framing kunci:
 - **Dependensi**: buf breaking-check existing; `internal/ledger/events` v1 existing.
 - **Sketsa**: (1) contract tests HTTP gateway↔services (golden/OpenAPI-driven); (2) **jalur upgrade event v1→v2** ditulis sebagai disiplin (aturan tambah field, jendela dual-publish, tolerant reader) + test enforcer; (3) OpenAPI spec surface publik gateway + lint di CI; (4) kebijakan versioning & deprecasi publik `/api/v1`→`v2` + sunset headers; (5) enforcement gaya boundary_test untuk skema event.
 - **Anti-scope**: bukan schema-registry server — cukup file + CI; tidak menyentuh gRPC (sudah dijaga buf).
+
+### A10 — Product assurance & emergency intake control
+
+> **Status: AKTIF → dokumen eksekusi [48](48-a10-product-assurance.md)**
+> (2026-07-19, trigger jalur belajar: baseline product 36–41 selesai dan
+> keputusan sadar untuk membuktikan invariant bisnis lintas service secara
+> durable). T1–T4 independen dari A4/A5; emergency control T5 menunggu role
+> maker/checker [47](47-a5-admin-console.md) T3.
+
+- **Tujuan bisnis**: mendeteksi kurang dari tiga menit ketika status payin atau payout tidak lagi sesuai dengan uang yang benar-benar dibukukan ledger, menyimpan bukti dan lifecycle finding secara durable, serta memberi operator rem darurat yang hanya menghentikan intake baru tanpa menghambat penyelesaian uang yang sudah berjalan.
+- **Nilai belajar**: continuous product assurance lintas database tanpa cross-DB query, keyset cursor yang tidak melewatkan row, evidence-safe invariant engine, baseline/backfill tanpa alert storm, durable command + maker/checker untuk emergency control.
+- **Trigger**: 36–41 selesai + ingin membuktikan konsistensi bisnis lintas payin–payout–ledger, bukan hanya invariant double-entry di dalam ledger.
+- **Dependensi**: kontrak gRPC dan korelasi [36], fee quote [38], payout failover [40], durable vendor command [45]; A1 untuk dashboard/alerting. Hanya task emergency control menunggu A5 [47] T3.
+- **Sketsa**: (1) RPC assurance owner-side dengan cursor `(updated_at,id)` dan lookup ledger batch; (2) `assurance-service` + DB sendiri, backfill, finding lifecycle, metrics, dan alert dedup; (3) rules PA01–PA04 dan PO01–PO07; (4) pause intake payin/payout yang durable, idempotent, revision-checked, pause satu pihak dan resume dua pihak; (5) API operator, CLI, dashboard, runbook, serta chaos recovery.
+- **Anti-scope**: bukan verifier double-entry baru; bukan compliance/KYC/fraud rules; bukan admin UI; bukan mTLS/secrets, DR, privasi/retensi, kontrak publik, atau performance tuning; tanpa SaaS berbayar, auto-correction, auto-pause, maupun auto-expiry.
 
 ## 5. HORIZON 2 — Kondisional-Terukur (disiplin S4/S5)
 
@@ -288,18 +306,18 @@ Audit "tidak ada yang jatuh" — setiap item yang pernah dijanjikan "nanti" di d
 | Sumber | Item → Track |
 |---|---|
 | PROJECT_GUIDE.md future work | admin BFF→A5; mTLS/identity→A6; payout vendor outbox→A3; fee/routing cache→B3; real vendor adapter→A3 |
-| Deferral doc 36 | topup fees→C5; real KYC+doc storage+downgrade→A4; distributed breaker→A3; fee_quotes purge→A8; non-IDR e2e→C4; OTel di luar ledger→A1; retry queue ApplyKycTier→A4 |
+| Deferral doc 36 | topup fees→C5; provider KYC riil + MinIO deployment→A4 follow-up; downgrade + doc encryption + retry queue ApplyKycTier→A4 [46]; distributed breaker→A3; fee_quotes purge→A8; non-IDR e2e→C4; OTel di luar ledger→A1 |
 | K-S measurement-gated [13] | S4→B1; S5→B2 |
 | Doc 35 | kind/K8s→A2 (dokumen eksekusi sudah ada) |
 | Scoped-out doc 19 | auto-pause schedule→C5; revisit policy-bypass→C5; kapitalisasi bunga→C5 |
-| Scoped-out doc 20 | mode per-rule screening→A4; vendor AML riil→A4; persist screening durable→A4 |
+| Scoped-out doc 20 | mode per-rule screening + persist screening durable→A4 [46]; vendor AML/sanctions provider riil→A4 follow-up |
 | Primitives doc 18 | registry refresh→C4; FK currency→C4; suspense per-currency→C4 |
 | Limitasi doc 12/34 | Redis hot-swap→A3; fraud velocity tanpa fallback→A3 |
 | Limitasi doc 39/40 | kyc_level staleness→A4; breaker per-proses→A3 |
 | Doc 24 | dual-write/shadow + gate produksi tak terpakai→C6 |
 | Gap CI | smoke/e2e/chaos hanya laptop→A2 |
 | Gap observability | dashboards/SLO/alerting/log/trace→A1 |
-| Kandidat baru diterima | load harness→B0; backup/PITR→A7; secrets management→A6; API versioning + kontrak HTTP + evolusi event→A9; data platform→C2; B2B/merchant→C1; admin UI→A5; notifikasi multi-channel→C3; siklus data/PII→A8; rate-limit per-key→C1; TTL idempotency→A8; threat model/pentest→A6 |
+| Kandidat baru diterima | load harness→B0; backup/PITR→A7; secrets management→A6; API versioning + kontrak HTTP + evolusi event→A9; product assurance + emergency intake control→A10; data platform→C2; B2B/merchant→C1; admin UI→A5; notifikasi multi-channel→C3; siklus data/PII→A8; rate-limit per-key→C1; TTL idempotency→A8; threat model/pentest→A6 |
 | Kandidat baru DITOLAK | multi-region (anti-goal §8); lisensi riil (boundary §8) |
 
 ## 10. Kriteria dokumen eksekusi 43+

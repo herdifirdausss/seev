@@ -2,11 +2,13 @@
 
 > Lahir dari track **A5** di [42-long-term-roadmap.md](42-long-term-roadmap.md).
 >
-> **Status verifikasi: SIAP DIEKSEKUSI (2026-07-19).** Semua fakta kode
+> **Status verifikasi: core T1–T6 terimplementasi (2026-07-19).** Full-stack
+> `admin-e2e.sh`, Docker volume bersih, dan gate chaos masih menjadi verifikasi
+> lingkungan; implementasi task dan unit test sudah tersedia. Semua fakta kode
 > (path, identifier, route, sequence migrasi) diverifikasi langsung terhadap
-> repo pada tanggal tersebut. Fakta EKSTERNAL (versi htmx dan PicoCSS
-> terkini) sengaja TIDAK ditulis — eksekutor wajib memverifikasinya saat
-> eksekusi (§6 butir 4). Line reference bergeser; verifikasi dengan grep.
+> repo pada tanggal tersebut. Versi asset eksternal dan checksum dicatat pada
+> Hasil T5 setelah diverifikasi dari sumber resmi. Line reference bergeser;
+> verifikasi dengan grep.
 > Inventori route admin di [24](24-extraction-playbook.md) adalah PETA,
 > router live adalah KEBENARAN (§6 butir 7).
 
@@ -357,7 +359,13 @@ lib.sh, boundary) tanpa satu pun fungsi bisnis.
 
 ### Hasil T1
 
-> Diisi saat T1 selesai.
+> Selesai pada commit `6180204`: service `cmd/admin-bff-service`, DB
+> `seev_adminbff`, migration bootstrap, Compose/Makefile/CI/boundary/lib.sh,
+> health/readiness dasar, dan memory limit 128 MiB.
+>
+> Verifikasi: `go test ./cmd/admin-bff-service ./internal/adminbff ./internal/config
+> ./... -run TestModuleBoundaries -count=1`, `docker compose config --quiet`,
+> `bash -n scripts/lib.sh`.
 
 ### T2 — Login, session, CSRF, minting token (K4, K5)
 
@@ -382,7 +390,12 @@ terproteksi yang bisa diakses tanpa session valid + CSRF.
 
 ### Hasil T2
 
-> Diisi saat T2 selesai.
+> Selesai pada commit `a3d83b3`: login melalui auth-service, session opaque
+> server-side dengan idle/absolute TTL, cleanup scheduler, cookie HttpOnly dan
+> CSRF, serta minting JWT downstream TTL satu menit.
+>
+> Verifikasi: `GOCACHE=/tmp/seev-go-cache go test ./internal/adminbff -count=1`
+> (listener httptest dijalankan dengan izin loopback).
 
 ### T3 — Role maker/checker + penegakan ledger + audit log (K6, K7)
 
@@ -413,7 +426,13 @@ BFF), semua mutasi admin via BFF ter-audit.
 
 ### Hasil T3
 
-> Diisi saat T3 selesai.
+> Selesai pada commit `a780378`: role `admin_maker`/`admin_checker`, bootstrap
+> opsional, sweep role seluruh service, maker/checker enforcement di ledger,
+> dan audit append-only BFF dengan counter failure.
+>
+> Verifikasi: `GOCACHE=/tmp/seev-go-cache go test ./internal/auth
+> ./internal/fraud ./internal/ledger/transport ./internal/adminbff
+> ./internal/config -count=1`.
 
 ### T4 — Typed clients + proxy + endpoint dead-command payout (K2, K9)
 
@@ -437,7 +456,15 @@ dead vendor-command bisa di-list dan di-replay via HTTP (bukan SQL).
 
 ### Hasil T4
 
-> Diisi saat T4 selesai.
+> Selesai pada commit `a53137d`: wire-only HTTP clients dengan timeout 5s,
+> bearer JWT per request, mapping 4xx/5xx/unavailable, proxy route BFF ke
+> surface admin, dan tiga endpoint dead vendor-command payout.
+>
+> Drift route live yang ditangani: adjustment/recon ledger berada pada
+> `/api/v1/ledger/admin/...`, sedangkan fee rules berada pada
+> `/api/v1/admin/ledger/...`; BFF memetakan keduanya tanpa mengubah service.
+> Verifikasi: `GOCACHE=/tmp/seev-go-cache go test ./internal/adminbff/...
+> ./internal/payout/... ./internal/config -count=1`.
 
 ### T5 — Panel ops batch 1 (K8): maker-checker, payout stuck, recon
 
@@ -462,7 +489,15 @@ bisa dikerjakan lewat browser tanpa curl.
 
 ### Hasil T5
 
-> Diisi saat T5 selesai.
+> Selesai pada commit `60d16e9`: template Go + `go:embed`, panel dashboard,
+> maker-checker, payout stuck/dead-command replay, recon CSV upload, form
+> translation BFF, dan asset vendor tanpa CDN/Node.
+>
+> Versi yang diverifikasi dari sumber resmi pada eksekusi: htmx **2.0.10**;
+> SHA-256 `71ea67185bfa8c98c39d31717c6fce5d852370fcdfd129db4543774d3145c0de`;
+> Pico CSS **2.1.1**; SHA-256
+> `fbc9a63fc9fc9f72d12fd7fc9806e11fa9f77ae4f9cad146b27003a1119ba3db`.
+> Verifikasi: `go test ./cmd/admin-bff-service ./internal/adminbff/... -count=1`.
 
 ### T6 — Panel batch 2 + admin-e2e + penutup (K8, K10)
 
@@ -492,7 +527,15 @@ end-to-end yang bisa diulang.
 
 ### Hasil T6
 
-> Diisi saat T6 selesai.
+> Selesai pada commit `c97ba40`: panel fee/routing, KYC, vendor health,
+> fraud events, audit read-only, lifecycle stop BFF, serta
+> `scripts/admin-e2e.sh` (source `lib.sh` sekali, login cookie/CSRF, mutasi
+> payout, dan assert audit row). `bash -n scripts/admin-e2e.sh` lulus.
+>
+> Unit/repository gate: `GOCACHE=/tmp/seev-go-cache go test ./... -count=1`
+> lulus. Full Docker `admin-e2e.sh`, `make verify-full`, dan chaos suite
+> perlu dijalankan pada environment Docker bersih; output chaos yang tersedia
+> masih menunjukkan kegagalan Scenario 7 dan 9 di luar scope perubahan A5.
 
 ## 6. Constraint eksekutor
 

@@ -7,7 +7,7 @@ the verification workflow.
 ## Service boundaries
 
 - The deployable services are gateway, auth-service, ledger-service,
-  payin-service, payout-service, and fraud-service.
+  payin-service, payout-service, fraud-service, and admin-bff-service.
 - Each service owns its database. Cross-service database queries are forbidden;
   use the published HTTP, gRPC, or event contract instead.
 - internal/ledger exposes its public facade from the package root. External
@@ -97,6 +97,8 @@ changes may use the normal gate plus link and content validation.
 - scripts/smoke-test.sh [ledger|payin|payout|all] verifies core live-server
   paths.
 - scripts/business-e2e.sh verifies the end-user and operator business journey.
+- scripts/admin-e2e.sh verifies the admin BFF session, CSRF, proxy mutation,
+  and audit row journey.
 - scripts/chaos-test.sh {1..11|all} verifies crash and dependency-failure
   behavior.
 - scripts/smoke-container.sh verifies freshly built Compose application images
