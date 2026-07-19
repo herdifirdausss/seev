@@ -7,7 +7,13 @@ the verification workflow.
 ## Service boundaries
 
 - The deployable services are gateway, auth-service, ledger-service,
-  payin-service, payout-service, fraud-service, and admin-bff-service.
+  payin-service, payout-service, fraud-service, admin-bff-service, and
+  assurance-service.
+- assurance-service is a read-only internal verifier with its own
+  `seev_assurance` database. It may read payin, payout, and ledger only via
+  authenticated assurance gRPC contracts; it must never receive their DB
+  credentials or write domain tables. Its emergency intake commands are
+  explicit operator actions, never automatic remediation.
 - Each service owns its database. Cross-service database queries are forbidden;
   use the published HTTP, gRPC, or event contract instead.
 - internal/ledger exposes its public facade from the package root. External

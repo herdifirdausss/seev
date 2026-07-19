@@ -3,6 +3,8 @@
 Seev is a service-oriented fintech backend written in Go. It provides ledger,
 authentication, pay-in, payout, fraud-screening, notification, and gateway
 capabilities with separate service databases and explicit runtime boundaries.
+The internal assurance service continuously checks product-state correlation
+across pay-in, payout, and ledger without becoming a money-moving dependency.
 
 The repository is designed for local learning and engineering validation. The
 default credentials and mock vendor integrations are for local development
@@ -10,7 +12,7 @@ only; they are not production secrets or real payment integrations.
 
 ## Runtime architecture
 
-Seven deployable services are built from this repository:
+Eight deployable services are built from this repository:
 
 | Service | Public/internal ports | Database | Primary responsibility |
 |---|---:|---|---|
@@ -21,6 +23,7 @@ Seven deployable services are built from this repository:
 | Payout | 8093, gRPC 9093 | seev_payout | Withdrawal orchestration, vendor commands, recovery, and routing |
 | Fraud | 8094, gRPC 9094 | seev_fraud | Synchronous screening rules and asynchronous event enrichment |
 | Admin BFF | 8095 | seev_adminbff | Operator sessions, maker/checker console, typed admin proxy, and audit log |
+| Assurance | 8096 (host 18096) | seev_assurance | Read-only pay-in/payout/ledger assurance, durable findings, alert delivery, and explicit intake controls |
 
 PostgreSQL stores service-owned data, Redis supports caching, rate limiting,
 velocity checks, and distributed coordination, and RabbitMQ carries ledger
@@ -32,7 +35,7 @@ HTTP or gRPC contracts; services must not query another service's database.
 ~~~text
 .
 ├── api/proto/               # Protobuf service contracts
-├── cmd/                     # Seven service entrypoints plus local utilities
+├── cmd/                     # Eight service entrypoints plus local utilities
 ├── deploy/observability/    # Prometheus, Grafana, Loki, Tempo, and Alloy config
 ├── docs/                    # Event contract, plans, and operational runbooks
 ├── gen/                     # Committed generated protobuf bindings
@@ -81,7 +84,7 @@ Apply every service migration:
 make migrate-up-all
 ~~~
 
-Build and start all seven application containers:
+Build and start all eight application containers:
 
 ~~~bash
 docker compose --profile app up --build -d
@@ -109,7 +112,7 @@ secrets, and TLS-related settings.
 ## Build and verification
 
 ~~~bash
-make build-all       # build all seven deployable services
+make build-all       # build all eight deployable services
 make test            # unit tests with race detection and coverage
 make vet             # static checks from the Go toolchain
 make lint            # golangci-lint
