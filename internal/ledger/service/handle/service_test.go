@@ -14,6 +14,7 @@ import (
 	"github.com/herdifirdausss/seev/internal/ledger/processors"
 	repository_mock "github.com/herdifirdausss/seev/internal/ledger/repository"
 	"github.com/herdifirdausss/seev/pkg/generalutil"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -251,6 +252,63 @@ func TestHandle_ValidateCommandError_Propagated(t *testing.T) {
 	svc := New(&mockDB{}, transactionRepo, balanceRepo, entryRepo, outboxRepo, processors.NewRegistry(p), nil, decimal.Zero, nil)
 	err := svc.Handle(context.Background(), processors.Command{IdempotencyKey: "k", Type: "t", Amount: d("1")})
 	assert.ErrorContains(t, err, "missing required metadata")
+}
+
+// ─── Handle — status label: business rejection vs infra error (docs/plan/43 T5) ─
+
+// TestHandle_BusinessRejection_RecordsStatusRejected is the regression test
+// for the posting_availability SLI gap found while writing T5: a valid
+// business/input rejection (here, an empty idempotency key) must record
+// ledger_transactions_total{status="rejected"}, NOT status="error" — an
+// "error" observation is what the SLO recording rule counts as a bad event,
+// and a legitimate rejection is not an outage (see
+// apperror.IsBusinessRejection's doc comment).
+func TestHandle_BusinessRejection_RecordsStatusRejected(t *testing.T) {
+	transactionRepo, ctrl := newMockTransactionRepo(t)
+	defer ctrl.Finish()
+	balanceRepo, ctrl2 := newMockAccountBalanceRepo(t)
+	defer ctrl2.Finish()
+	entryRepo, ctrl3 := newMockEntryRepo(t)
+	defer ctrl3.Finish()
+	outboxRepo, ctrl4 := newMockOutboxRepo(t)
+	defer ctrl4.Finish()
+
+	before := testutil.ToFloat64(transactionsTotal.WithLabelValues("money_in", "rejected"))
+
+	svc := New(&mockDB{}, transactionRepo, balanceRepo, entryRepo, outboxRepo, processors.NewRegistry(), nil, decimal.Zero, nil)
+	err := svc.Handle(context.Background(), processors.Command{IdempotencyKey: "", Type: "money_in", Amount: d("100")})
+	require.ErrorIs(t, err, apperror.ErrEmptyIdempotencyKey)
+
+	assert.Equal(t, before+1, testutil.ToFloat64(transactionsTotal.WithLabelValues("money_in", "rejected")))
+}
+
+// TestHandle_InfraError_RecordsStatusError is the counterpart: an
+// unrecognized error (not one of apperror's known business sentinels, e.g. a
+// raw "db down" propagated from a repository call) must still record
+// status="error" — the SLO's bad-event bucket must not silently shrink to
+// zero.
+func TestHandle_InfraError_RecordsStatusError(t *testing.T) {
+	transactionRepo, ctrl := newMockTransactionRepo(t)
+	defer ctrl.Finish()
+	balanceRepo, ctrl2 := newMockAccountBalanceRepo(t)
+	defer ctrl2.Finish()
+	entryRepo, ctrl3 := newMockEntryRepo(t)
+	defer ctrl3.Finish()
+	outboxRepo, ctrl4 := newMockOutboxRepo(t)
+	defer ctrl4.Finish()
+	p, ctrl := newMockTxProcessor(t)
+	defer ctrl.Finish()
+	p.EXPECT().Type().Return("t").AnyTimes()
+	p.EXPECT().ValidateCommand(gomock.Any(), processors.Command{IdempotencyKey: "k", Type: "t", Amount: d("1")}).Return(nil)
+	p.EXPECT().ResolveAccounts(gomock.Any(), processors.Command{IdempotencyKey: "k", Type: "t", Amount: d("1")}).Return(processors.ResolvedAccounts{}, "IDR", errors.New("db down"))
+
+	before := testutil.ToFloat64(transactionsTotal.WithLabelValues("t", "error"))
+
+	svc := New(&mockDB{}, transactionRepo, balanceRepo, entryRepo, outboxRepo, processors.NewRegistry(p), nil, decimal.Zero, nil)
+	err := svc.Handle(context.Background(), processors.Command{IdempotencyKey: "k", Type: "t", Amount: d("1")})
+	require.ErrorContains(t, err, "db down")
+
+	assert.Equal(t, before+1, testutil.ToFloat64(transactionsTotal.WithLabelValues("t", "error")))
 }
 
 func TestHandle_SourceNotInOrdered_RejectedAsProcessorBug(t *testing.T) {

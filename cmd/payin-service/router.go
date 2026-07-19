@@ -23,5 +23,5 @@ func adminRouter(cfg *config.Config, handlers adminHandlers, log *slog.Logger) h
 	root.Handle("GET /metrics", promhttp.Handler())
 	authed := middleware.Chain(middleware.WithAuth(cfg.JWT.Secret, cfg.JWT.Issuer), middleware.RequireJSON())
 	root.Handle("/admin/payin/", authed(handlers.AdminRouter()))
-	return middleware.Chain(middleware.WithRequestID(), middleware.WithLogger(log), middleware.WithRecovery(), middleware.WithSecurityHeaders(middleware.DefaultSecurityHeadersConfig()), middleware.WithTimeout(30*time.Second))(root)
+	return middleware.Chain(middleware.WithRequestID(), middleware.WithRoutePattern(root), middleware.WithTracing(log), middleware.WithHTTPMetrics(), middleware.WithLogger(log), middleware.WithRecovery(), middleware.WithSecurityHeaders(middleware.DefaultSecurityHeadersConfig()), middleware.WithTimeout(30*time.Second))(root)
 }

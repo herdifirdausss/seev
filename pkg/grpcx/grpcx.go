@@ -8,7 +8,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/herdifirdausss/seev/pkg/middleware"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -17,6 +18,10 @@ import (
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+
+	"github.com/herdifirdausss/seev/pkg/logger"
+	"github.com/herdifirdausss/seev/pkg/middleware"
+	"github.com/herdifirdausss/seev/pkg/tracing"
 )
 
 const dialTimeout = 5 * time.Second
@@ -25,7 +30,9 @@ const dialTimeout = 5 * time.Second
 // X-Request-Id equivalent across service boundaries (docs/plan/36 Task T3).
 const requestIDMetadataKey = "x-request-id"
 
-// NewServer creates a gRPC server with recovery, logging, and token auth.
+// NewServer creates a gRPC server with recovery, logging, tracing, and token
+// auth. Owns the otelgrpc stats handler itself (docs/plan/43 K4) so callers
+// never pass a competing one — grpc.StatsHandler set here always wins.
 func NewServer(logger *slog.Logger, token string, opts ...grpc.ServerOption) *grpc.Server {
 	if logger == nil {
 		logger = slog.Default()
@@ -36,7 +43,7 @@ func NewServer(logger *slog.Logger, token string, opts ...grpc.ServerOption) *gr
 		loggingInterceptor(logger),
 		authInterceptor(token),
 	)
-	opts = append([]grpc.ServerOption{interceptors}, opts...)
+	opts = append([]grpc.ServerOption{interceptors, grpc.StatsHandler(otelgrpc.NewServerHandler())}, opts...)
 	server := grpc.NewServer(opts...)
 	healthServer := health.NewServer()
 	healthServer.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
@@ -54,6 +61,7 @@ func Dial(ctx context.Context, addr, token string) (*grpc.ClientConn, error) {
 func DialLazy(ctx context.Context, addr, token string) (*grpc.ClientConn, error) {
 	base := []grpc.DialOption{
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithStatsHandler(otelgrpc.NewClientHandler()),
 		grpc.WithKeepaliveParams(keepalive.ClientParameters{
 			Time: 30 * time.Second, Timeout: 10 * time.Second, PermitWithoutStream: true,
 		}),
@@ -70,6 +78,7 @@ func dial(ctx context.Context, addr, token string, opts ...grpc.DialOption) (*gr
 	}
 	base := []grpc.DialOption{
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithStatsHandler(otelgrpc.NewClientHandler()),
 		grpc.WithBlock(), //nolint:staticcheck // Dial must honor the bounded connection timeout in this API.
 		grpc.WithKeepaliveParams(keepalive.ClientParameters{
 			Time: 30 * time.Second, Timeout: 10 * time.Second, PermitWithoutStream: true,
@@ -92,15 +101,30 @@ func recoveryInterceptor(logger *slog.Logger) grpc.UnaryServerInterceptor {
 	}
 }
 
-func loggingInterceptor(logger *slog.Logger) grpc.UnaryServerInterceptor {
+// loggingInterceptor logs one line per RPC and, like
+// pkg/middleware.WithTracing/WithLogger for HTTP, stores a span- and
+// request_id-enriched logger in ctx so handler code calling
+// logger.FromContext(ctx) picks up trace_id/span_id/request_id without
+// doing anything itself (docs/plan/43 K4). otelgrpc's server stats handler
+// (wired in NewServer) has already attached the active span to ctx by the
+// time this interceptor runs — stats handlers apply at the transport level,
+// before any unary interceptor.
+func loggingInterceptor(baseLogger *slog.Logger) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		started := time.Now()
+
+		reqLog := baseLogger.With("request_id", middleware.RequestIDFromCtx(ctx))
+		reqLog = tracing.LoggerWithSpan(reqLog, trace.SpanFromContext(ctx))
+		ctx = logger.WithContext(ctx, reqLog)
+
 		resp, err := handler(ctx, req)
-		logger.Info("grpc: request",
+		duration := time.Since(started)
+		code := status.Code(err)
+		grpcHandlingDuration.WithLabelValues(info.FullMethod, code.String()).Observe(duration.Seconds())
+		reqLog.Info("grpc: request",
 			"method", info.FullMethod,
-			"request_id", middleware.RequestIDFromCtx(ctx),
-			"duration", time.Since(started),
-			"code", status.Code(err).String())
+			"duration", duration,
+			"code", code.String())
 		return resp, err
 	}
 }

@@ -78,6 +78,26 @@ type Repository interface {
 	// ListStuck returns requests in `status` whose updated_at is older
 	// than olderThan — feeds the resume/polling job (docs/plan/23 Task T3).
 	ListStuck(ctx context.Context, status string, olderThan time.Time, limit int) ([]model.PayoutRequest, error)
+	// CountStuck is ListStuck's unbounded sibling: ONE grouped-count query
+	// across every status in statuses, whole backlog (no LIMIT) — feeds the
+	// payout_stuck_requests gauge (docs/plan/43 K5). Deliberately separate
+	// from ListStuck: that method caps at 100 rows per resume pass, which
+	// would silently under-report the gauge once the real backlog exceeds
+	// that cap. The returned map omits any status with zero rows; the
+	// caller fills 0 for those.
+	//
+	// Filters on created_at, NOT updated_at (docs/plan/43 T5 regression —
+	// an earlier draft copied ListStuck's updated_at filter here and the
+	// gauge stayed at 0 through an entire live-fire test: the resume job's
+	// OWN retry attempt touches updated_at every cron tick, so a request
+	// that has been stuck for hours still looks "just touched" to an
+	// updated_at filter and never crosses the threshold — a livelock
+	// between the retry job's write and the gauge's read of the same
+	// column. updated_at is the right column for ListStuck's job (retry
+	// throttling: don't hammer the vendor more often than olderThan); this
+	// gauge asks a different question — how long has the request existed
+	// unresolved — which only created_at answers correctly.
+	CountStuck(ctx context.Context, statuses []string, olderThan time.Time) (map[string]int, error)
 
 	InsertVendorCall(ctx context.Context, call model.PayoutVendorCall) error
 	// ListVendorCalls returns every vendor call ever recorded for a
@@ -316,6 +336,30 @@ func (r *repo) ListStuck(ctx context.Context, status string, olderThan time.Time
 		ORDER BY updated_at
 		LIMIT $3`,
 		status, olderThan, limit)
+}
+
+func (r *repo) CountStuck(ctx context.Context, statuses []string, olderThan time.Time) (map[string]int, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT status, COUNT(*)
+		FROM payout_requests
+		WHERE status = ANY($1) AND created_at < $2
+		GROUP BY status`,
+		statuses, olderThan)
+	if err != nil {
+		return nil, fmt.Errorf("count stuck payout requests: %w", err)
+	}
+	defer rows.Close()
+
+	counts := make(map[string]int, len(statuses))
+	for rows.Next() {
+		var status string
+		var count int
+		if err := rows.Scan(&status, &count); err != nil {
+			return nil, fmt.Errorf("scan stuck count: %w", err)
+		}
+		counts[status] = count
+	}
+	return counts, rows.Err()
 }
 
 func (r *repo) queryRequests(ctx context.Context, query string, args ...any) ([]model.PayoutRequest, error) {

@@ -22,15 +22,19 @@ type Service interface {
 
 type Server struct {
 	payoutv1.UnimplementedPayoutServiceServer
-	service           Service
-	notFound          error
-	noRoute           error
-	noVendorAvailable error
-	screeningBlocked  error
+	service                        Service
+	notFound                       error
+	noRoute                        error
+	noVendorAvailable              error
+	screeningBlocked               error
+	screeningDependencyUnavailable error
 }
 
-func New(service Service, notFound, noRoute, noVendorAvailable, screeningBlocked error) *Server {
-	return &Server{service: service, notFound: notFound, noRoute: noRoute, noVendorAvailable: noVendorAvailable, screeningBlocked: screeningBlocked}
+func New(service Service, notFound, noRoute, noVendorAvailable, screeningBlocked, screeningDependencyUnavailable error) *Server {
+	return &Server{
+		service: service, notFound: notFound, noRoute: noRoute, noVendorAvailable: noVendorAvailable,
+		screeningBlocked: screeningBlocked, screeningDependencyUnavailable: screeningDependencyUnavailable,
+	}
 }
 
 func (s *Server) CreatePayout(ctx context.Context, request *payoutv1.CreatePayoutRequest) (*payoutv1.CreatePayoutResponse, error) {
@@ -55,6 +59,12 @@ func (s *Server) CreatePayout(ctx context.Context, request *payoutv1.CreatePayou
 		}
 		if errors.Is(callErr, s.screeningBlocked) {
 			return nil, status.Error(codes.FailedPrecondition, callErr.Error())
+		}
+		if errors.Is(callErr, s.screeningDependencyUnavailable) {
+			// docs/plan/45 Task T3/K4 — codes.Unavailable like
+			// noVendorAvailable above (both transient, retry-worthy), but a
+			// DIFFERENT message so the gateway can tell them apart.
+			return nil, status.Error(codes.Unavailable, "screening dependency unavailable")
 		}
 		var business *ledgererr.LedgerError
 		if errors.As(callErr, &business) {

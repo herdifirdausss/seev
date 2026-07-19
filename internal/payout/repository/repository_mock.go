@@ -44,6 +44,21 @@ func (m *MockRepository) EXPECT() *MockRepositoryMockRecorder {
 	return m.recorder
 }
 
+// CountStuck mocks base method.
+func (m *MockRepository) CountStuck(ctx context.Context, statuses []string, olderThan time.Time) (map[string]int, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CountStuck", ctx, statuses, olderThan)
+	ret0, _ := ret[0].(map[string]int)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CountStuck indicates an expected call of CountStuck.
+func (mr *MockRepositoryMockRecorder) CountStuck(ctx, statuses, olderThan any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CountStuck", reflect.TypeOf((*MockRepository)(nil).CountStuck), ctx, statuses, olderThan)
+}
+
 // Get mocks base method.
 func (m *MockRepository) Get(ctx context.Context, id uuid.UUID) (model.PayoutRequest, error) {
 	m.ctrl.T.Helper()

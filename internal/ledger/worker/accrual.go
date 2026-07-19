@@ -36,7 +36,7 @@ func NewAccrualJob(runner accrualRunner, lock scheduler.LockProvider, logger *sl
 	}
 	return &AccrualJob{
 		runner: runner, logger: logger, loc: loc,
-		sched: scheduler.NewScheduler(lock, nil, scheduler.WithLocation(loc)),
+		sched: scheduler.NewScheduler(lock, scheduler.NewPrometheusMetrics(), scheduler.WithLocation(loc)),
 	}
 }
 

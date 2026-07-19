@@ -1,0 +1,157 @@
+name: Scheduled Full-Stack
+
+# docs/plan/44 K7: the file name stays "nightly.yml" (easy to find/grep for)
+# but the AUTOMATIC schedule is weekly, not nightly — K1's cost budget
+# forbids a daily 90-minute gate on a private repo. `workflow_dispatch`
+# lets an operator run any subset on demand; the schedule always runs the
+# full "all" (business E2E then chaos-all, one job, one runner — GitHub-
+# hosted jobs never share a VM, so splitting this across `needs:` jobs
+# would silently lose Docker/process state between them, per K7).
+on:
+  schedule:
+    # Monday 02:17 WIB = Sunday 19:17 UTC. Off-the-hour minute (K1) to
+    # avoid the top-of-hour scheduling rush; always runs "all".
+    - cron: "17 19 * * 0"
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: "Which suite(s) to run"
+        type: choice
+        options:
+          - all
+          - business
+          - chaos
+        default: all
+
+permissions:
+  contents: read
+
+concurrency:
+  # Fixed group (not per-ref) — a manual run must never silently cancel a
+  # scheduled run that's mid-way through collecting evidence, or vice
+  # versa; they queue instead (K3's cancel-in-progress: true pattern is
+  # deliberately NOT used here).
+  group: scheduled-full-stack
+  cancel-in-progress: false
+
+jobs:
+  full-stack:
+    name: full-stack
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    env:
+      SUITE: ${{ github.event_name == 'schedule' && 'all' || inputs.suite }}
+      KEEP_WORK_DIR: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # `runner.temp` is not a valid expression context inside job-level
+      # `env:` (only available once a step actually runs on the assigned
+      # runner) — compute both exact work-dir paths here instead, via the
+      # equivalent $RUNNER_TEMP shell variable GitHub sets on every runner,
+      # and hand them to later steps through $GITHUB_ENV like any other
+      # workflow-scoped value.
+      - name: Compute work-dir paths
+        run: |
+          {
+            echo "BUSINESS_WORK_DIR=$RUNNER_TEMP/seev-business-e2e"
+            echo "CHAOS_WORK_DIR=$RUNNER_TEMP/seev-chaos"
+          } >> "$GITHUB_ENV"
+
+      # docs/plan/44 K6: generated fresh per run, masked BEFORE landing in
+      # $GITHUB_ENV so no step output/log can ever print the raw value.
+      - name: Generate per-run credentials
+        run: |
+          set -euo pipefail
+          JWT_SECRET="$(openssl rand -hex 32)"
+          INTERNAL_GRPC_TOKEN="$(openssl rand -hex 32)"
+          VENDOR_MOCKVENDOR_SECRET="$(openssl rand -hex 32)"
+          MOCKVENDOR2_SECRET="$(openssl rand -hex 32)"
+          AUTH_BOOTSTRAP_ADMIN_PASSWORD="$(openssl rand -hex 16)"
+
+          echo "::add-mask::$JWT_SECRET"
+          echo "::add-mask::$INTERNAL_GRPC_TOKEN"
+          echo "::add-mask::$VENDOR_MOCKVENDOR_SECRET"
+          echo "::add-mask::$MOCKVENDOR2_SECRET"
+          echo "::add-mask::$AUTH_BOOTSTRAP_ADMIN_PASSWORD"
+
+          {
+            echo "JWT_SECRET=$JWT_SECRET"
+            echo "INTERNAL_GRPC_TOKEN=$INTERNAL_GRPC_TOKEN"
+            echo "VENDOR_MOCKVENDOR_SECRET=$VENDOR_MOCKVENDOR_SECRET"
+            echo "MOCKVENDOR2_SECRET=$MOCKVENDOR2_SECRET"
+            echo "AUTH_BOOTSTRAP_ADMIN_PASSWORD=$AUTH_BOOTSTRAP_ADMIN_PASSWORD"
+          } >> "$GITHUB_ENV"
+
+      - name: Business E2E
+        id: business
+        if: env.SUITE == 'business' || env.SUITE == 'all'
+        continue-on-error: true
+        env:
+          SEEV_WORK_DIR: ${{ env.BUSINESS_WORK_DIR }}
+        run: |
+          docker compose down -v --remove-orphans
+          ./scripts/business-e2e.sh
+
+      - name: Reset volume between suites
+        if: always() && (env.SUITE == 'chaos' || env.SUITE == 'all')
+        run: docker compose down -v --remove-orphans
+
+      - name: Chaos (all scenarios)
+        id: chaos
+        if: env.SUITE == 'chaos' || env.SUITE == 'all'
+        continue-on-error: true
+        env:
+          SEEV_WORK_DIR: ${{ env.CHAOS_WORK_DIR }}
+        run: ./scripts/chaos-test.sh all
+
+      # K7: summary built from step OUTCOME (a first-class GitHub Actions
+      # concept — success/failure/skipped per step), never by parsing ANSI
+      # color codes out of the scripts' own colored PASS/FAIL log lines.
+      - name: Write summary
+        if: always()
+        run: |
+          {
+            echo "## Scheduled full-stack — suite: \`${SUITE}\`"
+            echo ""
+            echo "| Suite | Outcome |"
+            echo "|---|---|"
+            echo "| business-e2e | ${{ steps.business.outcome || '_skipped_' }} |"
+            echo "| chaos-all | ${{ steps.chaos.outcome || '_skipped_' }} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Final cleanup
+        if: always()
+        run: docker compose down -v --remove-orphans
+
+      # K6's artifact allowlist: only the work dirs (binaries + *.log) this
+      # run itself produced, never $RUNNER_TEMP wholesale or a raw /tmp
+      # glob — SEEV_WORK_DIR (T1) is what makes these two paths exact and
+      # predictable instead of a fresh, unguessable mktemp path per suite.
+      - name: Upload failure diagnostics
+        if: steps.business.outcome == 'failure' || steps.chaos.outcome == 'failure'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: scheduled-full-stack-diagnostics
+          path: |
+            ${{ env.BUSINESS_WORK_DIR }}
+            ${{ env.CHAOS_WORK_DIR }}
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Fail the job if a selected suite failed
+        if: steps.business.outcome == 'failure' || steps.chaos.outcome == 'failure'
+        run: |
+          echo "::error::one or more selected suites failed — see summary and diagnostics artifact"
+          exit 1

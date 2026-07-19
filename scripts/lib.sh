@@ -35,11 +35,47 @@ PAYIN_GRPC_PORT="${PAYIN_GRPC_PORT:-19092}"
 PAYIN_ADMIN_PORT="${PAYIN_ADMIN_PORT:-18092}"
 PAYOUT_GRPC_PORT="${PAYOUT_GRPC_PORT:-19093}"
 PAYOUT_ADMIN_PORT="${PAYOUT_ADMIN_PORT:-18093}"
+# docs/plan/45 Task T4: a second payout-service instance sharing the same
+# Postgres/Redis as the primary (started via start_payout_service_replica,
+# below) — used only by chaos-test.sh's distributed-breaker scenario to
+# prove breaker state converges across two real replicas. Never started by
+# start_services/start_server; every other script/scenario is unaffected.
+PAYOUT2_GRPC_PORT="${PAYOUT2_GRPC_PORT:-19193}"
+PAYOUT2_ADMIN_PORT="${PAYOUT2_ADMIN_PORT:-18193}"
 FRAUD_GRPC_PORT="${FRAUD_GRPC_PORT:-19094}"
 FRAUD_ADMIN_PORT="${FRAUD_ADMIN_PORT:-18094}"
 REDIS_HOST_PORT="${REDIS_HOST_PORT:-6380}"
 
-WORK_DIR="$(mktemp -d "/tmp/seev-${LIB_WORK_DIR_PREFIX:-run}.XXXXXX")"
+# docs/plan/44 K7: SEEV_WORK_DIR lets a caller (T4's scheduled workflow, one
+# job running business-e2e then chaos-all in sequence) pin two EXACT
+# directories under $RUNNER_TEMP instead of two unrelated mktemp paths — so
+# a failure-only artifact upload step can name them directly. Local/default
+# behavior is untouched: no SEEV_WORK_DIR means the existing mktemp path.
+# Validated before use so cleanup()'s `rm -rf "$WORK_DIR"` can never reach
+# outside a directory this script itself owns: refuses to reuse an
+# already-populated directory (must be new/empty), and — only when
+# $RUNNER_TEMP is actually set, i.e. we're really on an Actions runner —
+# refuses a path that isn't underneath it (blocks an accidental "/" or a
+# shared ancestor a caller passed by mistake from ever reaching `rm -rf`).
+if [ -n "${SEEV_WORK_DIR:-}" ]; then
+	if [ -e "$SEEV_WORK_DIR" ] && [ -n "$(ls -A "$SEEV_WORK_DIR" 2>/dev/null)" ]; then
+		echo "lib.sh: SEEV_WORK_DIR '$SEEV_WORK_DIR' already exists and is not empty — refusing to reuse it" >&2
+		exit 1
+	fi
+	if [ -n "${RUNNER_TEMP:-}" ]; then
+		case "$SEEV_WORK_DIR" in
+		"$RUNNER_TEMP"/*) ;;
+		*)
+			echo "lib.sh: SEEV_WORK_DIR '$SEEV_WORK_DIR' is not underneath \$RUNNER_TEMP ('$RUNNER_TEMP')" >&2
+			exit 1
+			;;
+		esac
+	fi
+	mkdir -p "$SEEV_WORK_DIR"
+	WORK_DIR="$SEEV_WORK_DIR"
+else
+	WORK_DIR="$(mktemp -d "/tmp/seev-${LIB_WORK_DIR_PREFIX:-run}.XXXXXX")"
+fi
 GATEWAY_BIN="$WORK_DIR/gateway"
 LEDGER_BIN="$WORK_DIR/ledger-service"
 AUTH_BIN="$WORK_DIR/auth-service"
@@ -59,6 +95,8 @@ AUTH_PID_FILE="$WORK_DIR/auth-service.pid"
 PAYIN_PID_FILE="$WORK_DIR/payin-service.pid"
 PAYOUT_PID_FILE="$WORK_DIR/payout-service.pid"
 FRAUD_PID_FILE="$WORK_DIR/fraud-service.pid"
+PAYOUT2_LOG="$WORK_DIR/payout-service-2.log"
+PAYOUT2_PID_FILE="$WORK_DIR/payout-service-2.pid"
 
 # Postgres port as seen from the HOST — auto-detected below rather than
 # assumed, so this keeps working regardless of what POSTGRES_PORT (or its
@@ -267,18 +305,79 @@ start_payout_service() {
 		export FRAUD_GRPC_ADDR=localhost:$FRAUD_GRPC_PORT
 		export JWT_SECRET=$JWT_SECRET
 		export VENDOR_MOCKVENDOR_ENABLED=true
-		export VENDOR_MOCKVENDOR_SECRET=script-test-mockvendor-secret-at-least-32-chars-long
+		export VENDOR_MOCKVENDOR_SECRET="${VENDOR_MOCKVENDOR_SECRET:-script-test-mockvendor-secret-at-least-32-chars-long}"
 		# mockvendor2 registered alongside mockvendor (docs/plan/40 Task T4) —
 		# purely additive: only reachable once a routing rule actually points
 		# at it (seeded by chaos-test.sh's vendor-failover scenario), every
 		# other flow is unaffected.
 		export MOCKVENDOR2_ENABLED=true
-		export MOCKVENDOR2_SECRET=script-test-mockvendor2-secret-at-least-32-chars-long
+		export MOCKVENDOR2_SECRET="${MOCKVENDOR2_SECRET:-script-test-mockvendor2-secret-at-least-32-chars-long}"
+		# docs/plan/45 Task T2/K3: off by default (matches production
+		# BREAKER_DISTRIBUTED default false) — a scenario opts in by
+		# exporting BREAKER_DISTRIBUTED=true before calling this.
+		export BREAKER_DISTRIBUTED="${BREAKER_DISTRIBUTED:-false}"
 		export LOG_FORMAT=json
 		nohup "$PAYOUT_BIN" >>"$PAYOUT_LOG" 2>&1 &
 		echo $! >"$PAYOUT_PID_FILE"
 	)
 	wait_for_service_up payout-service "http://localhost:$PAYOUT_ADMIN_PORT/health" "$PAYOUT_PID_FILE" "$PAYOUT_LOG"
+}
+
+# start_payout_service_replica starts a SECOND payout-service process (same
+# binary, same Postgres DB and Redis instance as the primary) on the
+# PAYOUT2_* ports — docs/plan/45 Task T4's distributed-breaker-across-
+# replicas scenario needs two real processes sharing one breaker backend,
+# not two separately-provisioned stacks. Never called by start_services;
+# only chaos-test.sh's own scenario reaches for this directly, and must
+# pair it with kill_payout_replica_hard/stop_payout_replica for teardown.
+start_payout_service_replica() {
+	log "starting payout-service replica 2 (grpc $PAYOUT2_GRPC_PORT / admin $PAYOUT2_ADMIN_PORT)..."
+	(
+		export APP_NAME=payout-service
+		export APP_PORT=$PAYOUT2_ADMIN_PORT
+		export GRPC_PORT=$PAYOUT2_GRPC_PORT
+		export POSTGRES_HOST=localhost
+		export POSTGRES_PORT=$DB_HOST_PORT
+		export POSTGRES_USER=payout_app
+		export POSTGRES_PASSWORD=payout_app
+		export POSTGRES_DB=$PAYOUT_DB_NAME
+		export POSTGRES_SSL_MODE=disable
+		export REDIS_ENABLED="${REDIS_ENABLED:-true}"
+		export REDIS_ADDR=localhost:$REDIS_HOST_PORT
+		export REDIS_DB=0
+		export LEDGER_GRPC_ADDR=localhost:$LEDGER_GRPC_PORT
+		export FRAUD_GRPC_ADDR=localhost:$FRAUD_GRPC_PORT
+		export JWT_SECRET=$JWT_SECRET
+		export VENDOR_MOCKVENDOR_ENABLED=true
+		export VENDOR_MOCKVENDOR_SECRET="${VENDOR_MOCKVENDOR_SECRET:-script-test-mockvendor-secret-at-least-32-chars-long}"
+		export MOCKVENDOR2_ENABLED=true
+		export MOCKVENDOR2_SECRET="${MOCKVENDOR2_SECRET:-script-test-mockvendor2-secret-at-least-32-chars-long}"
+		export BREAKER_DISTRIBUTED="${BREAKER_DISTRIBUTED:-false}"
+		export LOG_FORMAT=json
+		nohup "$PAYOUT_BIN" >>"$PAYOUT2_LOG" 2>&1 &
+		echo $! >"$PAYOUT2_PID_FILE"
+	)
+	wait_for_service_up payout-service-2 "http://localhost:$PAYOUT2_ADMIN_PORT/health" "$PAYOUT2_PID_FILE" "$PAYOUT2_LOG"
+}
+
+kill_payout_replica_hard() {
+	if [ -f "$PAYOUT2_PID_FILE" ]; then
+		local pid
+		pid="$(cat "$PAYOUT2_PID_FILE")"
+		log "kill -9 payout-service replica 2 pid $pid"
+		kill -9 "$pid" 2>/dev/null || true
+		rm -f "$PAYOUT2_PID_FILE"
+	fi
+}
+
+stop_payout_replica() {
+	if [ -f "$PAYOUT2_PID_FILE" ]; then
+		local pid
+		pid="$(cat "$PAYOUT2_PID_FILE")"
+		kill -TERM "$pid" 2>/dev/null || true
+		wait_for_pid_gone "$pid"
+		rm -f "$PAYOUT2_PID_FILE"
+	fi
 }
 
 start_payin_service() {
@@ -297,9 +396,9 @@ start_payin_service() {
 		export FRAUD_GRPC_ADDR=localhost:$FRAUD_GRPC_PORT
 		export JWT_SECRET=$JWT_SECRET
 		export VENDOR_MOCKVENDOR_ENABLED=true
-		export VENDOR_MOCKVENDOR_SECRET=script-test-mockvendor-secret-at-least-32-chars-long
+		export VENDOR_MOCKVENDOR_SECRET="${VENDOR_MOCKVENDOR_SECRET:-script-test-mockvendor-secret-at-least-32-chars-long}"
 		export MOCKVENDOR2_ENABLED=true
-		export MOCKVENDOR2_SECRET=script-test-mockvendor2-secret-at-least-32-chars-long
+		export MOCKVENDOR2_SECRET="${MOCKVENDOR2_SECRET:-script-test-mockvendor2-secret-at-least-32-chars-long}"
 		export LOG_FORMAT=json
 		nohup "$PAYIN_BIN" >>"$PAYIN_LOG" 2>&1 &
 		echo $! >"$PAYIN_PID_FILE"
@@ -376,7 +475,7 @@ start_gateway() {
 		# /api/v1/payout and /webhooks/mockvendor reachable, flows that never
 		# touch those routes are unaffected.
 		export VENDOR_MOCKVENDOR_ENABLED=true
-		export VENDOR_MOCKVENDOR_SECRET=script-test-mockvendor-secret-at-least-32-chars-long
+		export VENDOR_MOCKVENDOR_SECRET="${VENDOR_MOCKVENDOR_SECRET:-script-test-mockvendor-secret-at-least-32-chars-long}"
 		nohup "$GATEWAY_BIN" >>"$GATEWAY_LOG" 2>&1 &
 		echo $! >"$GATEWAY_PID_FILE"
 	)
@@ -650,6 +749,70 @@ json_field() {
 	sed -n "s/.*\"$1\":\"\([^\"]*\)\".*/\1/p"
 }
 
+# wait_for_payout_status polls payout_requests.status until it matches want
+# or tries (default 40, 2s apart = 80s) are exhausted (docs/plan/45 Task T1,
+# K1's own admitted API-behavior change): POST /api/v1/payout now returns
+# right after hold+enqueue — the vendor result (settled/vendor_pending/
+# cancelled/failed) is always driven asynchronously by the relay's own
+# ~1s poll interval, even in what used to be called "instant-settle" mode.
+# Every script that used to read the terminal status straight off the
+# create response body must poll this instead. Shared by chaos-test.sh and
+# business-e2e.sh — do not duplicate this loop in either script.
+wait_for_payout_status() {
+	local id=$1 want=$2 tries=${3:-40}
+	local status=""
+	while [ "$tries" -gt 0 ]; do
+		status="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT status FROM payout_requests WHERE id = '$id';")"
+		[ "$status" = "$want" ] && return 0
+		sleep 2
+		tries=$((tries - 1))
+	done
+	fail "payout $id did not reach status '$want' in time (last seen: '$status')"
+	return 1
+}
+
+# wait_for_vendor_call polls payout_vendor_calls until at least one row with
+# the given outcome ('accepted'|'rejected'|'uncertain') has been recorded
+# for id, or tries (default 40, 1s apart) are exhausted. docs/plan/45 Task
+# T1: dispatch is now async (the relay's own ~1s poll interval), so a test
+# that needs to prove "the vendor was genuinely called and returned X"
+# before taking its next step (e.g. rewriting a mock destination to let a
+# retry succeed) must wait for this evidence instead of assuming the vendor
+# call already happened synchronously inside an earlier curl.
+wait_for_vendor_call() {
+	local id=$1 outcome=$2 tries=${3:-40}
+	local count="0"
+	while [ "$tries" -gt 0 ]; do
+		count="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT count(*) FROM payout_vendor_calls WHERE payout_request_id = '$id' AND outcome = '$outcome';")"
+		[ "$count" != "0" ] && return 0
+		sleep 1
+		tries=$((tries - 1))
+	done
+	fail "payout $id never recorded a vendor call with outcome '$outcome' (last count: $count)"
+	return 1
+}
+
+# wait_for_vendor_command_status polls the LIVE (pending/processing/failed)
+# payout_vendor_commands row for a request until its status matches want, or
+# tries (default 40, 1s apart) are exhausted. docs/plan/45 Task T1: used
+# when a test needs to know a command has fully finished a dispatch attempt
+# (i.e. FailCommand/CompleteCommand has actually committed) before mutating
+# state the relay itself also touches — waiting on payout_vendor_calls alone
+# (wait_for_vendor_call) only proves the audit write landed, which commits
+# slightly BEFORE the command's own status transition in the same dispatch.
+wait_for_vendor_command_status() {
+	local id=$1 want=$2 tries=${3:-40}
+	local status=""
+	while [ "$tries" -gt 0 ]; do
+		status="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT status FROM payout_vendor_commands WHERE payout_request_id = '$id' AND status IN ('pending','processing','failed') LIMIT 1;")"
+		[ "$status" = "$want" ] && return 0
+		sleep 1
+		tries=$((tries - 1))
+	done
+	fail "payout $id's live vendor command did not reach status '$want' in time (last seen: '$status')"
+	return 1
+}
+
 # ─── KYC dance helpers (docs/plan/39 Task T6, gotcha #9 master) ─────────────
 #
 # Every script that transacts as a REAL registered user (not a gen_token
@@ -733,6 +896,32 @@ await_log_line() {
 	return 1
 }
 
+# ─── Prometheus metric assertions ───────────────────────────────────────────
+
+# assert_metric_value curls a /metrics endpoint and asserts a Prometheus
+# gauge/counter's CURRENT value for a line matching every given "label=value"
+# substring (docs/plan/45 Task T4 — cache_redis_backend_active,
+# vendorgw_breaker_backend). Label order in the exposition text is never
+# assumed (client_golang doesn't guarantee it), so each label is checked as
+# an independent substring on the already-narrowed-down line rather than a
+# single fixed-order regex. Reports ok/fail itself (same convention as
+# assert_ledger_balanced below) so callers just call it inline.
+assert_metric_value() {
+	local url=$1 metric=$2 expected=$3 desc=$4
+	shift 4
+	local matches="" label value
+	matches="$(curl -s "$url" | grep "^${metric}{")"
+	for label in "$@"; do
+		matches="$(printf '%s\n' "$matches" | grep -F -- "$label")"
+	done
+	value="$(printf '%s\n' "$matches" | head -1 | awk '{print $2}')"
+	if [ "$value" = "$expected" ]; then
+		ok "$desc"
+	else
+		fail "$desc — got '$value', expected '$expected' (metric=$metric labels=[$*] url=$url)"
+	fi
+}
+
 # ─── Ledger integrity assertions ────────────────────────────────────────────
 
 # assert_ledger_balanced fails if fn_verify_ledger_balance() finds ANY
@@ -784,6 +973,7 @@ assert_no_stuck_pending_transactions() {
 # postmortem instead of being wiped on every exit, success or failure.
 cleanup() {
 	stop_services
+	kill_payout_replica_hard
 	if [ "${KEEP_WORK_DIR:-0}" = "1" ]; then
 		log "KEEP_WORK_DIR=1 — leaving $WORK_DIR in place (binaries + *.log) for inspection"
 	else

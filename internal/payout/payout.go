@@ -43,7 +43,7 @@ import (
 type PayoutRequest = model.PayoutRequest
 
 func (m *Module) RegisterGRPC(server *grpc.Server) {
-	payoutv1.RegisterPayoutServiceServer(server, grpcserver.New(m, repository.ErrNotFound, ErrNoRoute, ErrNoVendorAvailable, ErrScreeningBlocked))
+	payoutv1.RegisterPayoutServiceServer(server, grpcserver.New(m, repository.ErrNotFound, ErrNoRoute, ErrNoVendorAvailable, ErrScreeningBlocked, ErrScreeningDependencyUnavailable))
 }
 
 // Poster is the subset of ledger.Module's behavior payout needs — a local
@@ -88,9 +88,15 @@ type Module struct {
 	// breaker tracks per-vendor circuit health (docs/plan/40 Task T1) — nil
 	// is a valid, fully-supported configuration (byte-identical to before
 	// this feature existed: every registered vendor is always "allowed").
-	breaker *vendorgw.HealthTracker
+	breaker vendorgw.Breaker
+	// commandRepo persists the durable vendor-dispatch outbox (docs/plan/45
+	// Task T0/T1) — relay.go's dispatchOne is the only place that ever
+	// calls provider.Submit; every other call site (Create, resume,
+	// AdminRetry) only ever enqueues/ensures a command.
+	commandRepo repository.VendorCommandRepository
 
 	resumeJob *worker.ResumeJob
+	relay     *worker.VendorRelay
 }
 
 // NewModule wires the payout module. Vendor and gateway selection comes
@@ -100,13 +106,14 @@ type Module struct {
 // nil to disable pre-hold fraud screening entirely. breaker may be nil to
 // disable circuit-breaking entirely (every registered vendor is always
 // allowed).
-func NewModule(db database.DatabaseSQL, poster Poster, registry *vendorgw.Registry, redisClient *redis.Client, logger *slog.Logger, fraudClient *fraudcheck.Client, breaker *vendorgw.HealthTracker) *Module {
+func NewModule(db database.DatabaseSQL, poster Poster, registry *vendorgw.Registry, redisClient *redis.Client, logger *slog.Logger, fraudClient *fraudcheck.Client, breaker vendorgw.Breaker) *Module {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	m := &Module{
 		repo:        repository.NewRepository(db),
 		routing:     repository.NewRoutingRepository(db),
+		commandRepo: repository.NewVendorCommandRepository(db),
 		poster:      poster,
 		registry:    registry,
 		logger:      logger,
@@ -125,20 +132,25 @@ func NewModule(db database.DatabaseSQL, poster Poster, registry *vendorgw.Regist
 		lock = scheduler.NewMemoryLock(time.Second)
 	}
 	m.resumeJob = worker.NewResumeJob(m, lock, logger, time.Minute)
+	m.relay = worker.NewVendorRelay(m, logger, worker.VendorRelayConfig{})
 
 	return m
 }
 
 // StartWorkers launches the resume/polling job (docs/plan/23 Task T3 step
-// 3). Call StopWorkers on shutdown.
+// 3) and the vendor-command relay (docs/plan/45 Task T1) — the only place
+// provider.Submit is ever called from. Call StopWorkers on shutdown.
 func (m *Module) StartWorkers(ctx context.Context) {
 	if err := m.resumeJob.Start(ctx); err != nil {
 		m.logger.Error("payout: failed to start resume job", slog.Any("error", err))
 	}
+	m.relay.Start(ctx)
 }
 
-// StopWorkers gracefully stops the resume job, waiting for any in-flight
-// run. Safe to call even if StartWorkers was never called.
+// StopWorkers gracefully stops the resume job and the vendor relay,
+// waiting for any in-flight run. Safe to call even if StartWorkers was
+// never called.
 func (m *Module) StopWorkers() {
 	m.resumeJob.Stop()
+	m.relay.Stop()
 }

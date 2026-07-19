@@ -59,6 +59,16 @@ func webhookHandler(deps *Dependencies, logger *slog.Logger) http.HandlerFunc {
 			http.NotFound(w, r)
 		case status.Code(err) == codes.Unauthenticated:
 			w.WriteHeader(http.StatusUnauthorized)
+		case status.Code(err) == codes.Unavailable && status.Convert(err).Message() == "screening dependency unavailable":
+			// docs/plan/45 Task T3/K4 — fraud-service is reachable but its
+			// velocity dependency is down. Same 503-so-the-vendor-retries
+			// response as the generic infra case below (this handler's own
+			// minimal-body convention deliberately doesn't distinguish
+			// error causes to an external vendor), but logged at WARN, not
+			// ERROR — this is an expected, self-healing degraded state,
+			// not a bug.
+			logger.Warn("payin webhook: screening dependency unavailable, failing closed", slog.String("vendor", vendor))
+			w.WriteHeader(http.StatusServiceUnavailable)
 		default:
 			// Infra failure — the event is still 'received'; the vendor's
 			// own retry machinery is the queue (docs/plan/22 Task T2 step

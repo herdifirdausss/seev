@@ -103,7 +103,7 @@ func TestResolveTopupRoute_BreakerOpen_SkipsToNextCandidate(t *testing.T) {
 	registry.AddPayin(stubVerifier{name: "primary"})
 	registry.AddPayin(stubVerifier{name: "secondary"})
 	breaker := vendorgw.NewHealthTracker(1, time.Hour, nil)
-	breaker.RecordFailure("primary")
+	breaker.RecordFailure(context.Background(), "primary")
 
 	m := &Module{routing: matrixRouting{rules: rules}, registry: registry, breaker: breaker}
 	vendor, _, err := m.ResolveTopupRoute(context.Background(), uuid.New(), "IDR", decimal.NewFromInt(1))
@@ -116,7 +116,7 @@ func TestResolveTopupRoute_AllCandidatesOpen_ErrNoVendorAvailable(t *testing.T) 
 	registry := vendorgw.NewRegistry()
 	registry.AddPayin(stubVerifier{name: "primary"})
 	breaker := vendorgw.NewHealthTracker(1, time.Hour, nil)
-	breaker.RecordFailure("primary")
+	breaker.RecordFailure(context.Background(), "primary")
 
 	m := &Module{routing: matrixRouting{rules: rules}, registry: registry, breaker: breaker}
 	_, _, err := m.ResolveTopupRoute(context.Background(), uuid.New(), "IDR", decimal.NewFromInt(1))

@@ -51,7 +51,7 @@ func testClient(t *testing.T, service *fakeService, notFound error) payoutv1.Pay
 	t.Helper()
 	listener := bufconn.Listen(1024 * 1024)
 	server := grpc.NewServer()
-	payoutv1.RegisterPayoutServiceServer(server, New(service, notFound, errors.New("no route"), errors.New("no vendor available"), errors.New("screening blocked")))
+	payoutv1.RegisterPayoutServiceServer(server, New(service, notFound, errors.New("no route"), errors.New("no vendor available"), errors.New("screening blocked"), errors.New("screening dependency unavailable")))
 	go func() { _ = server.Serve(listener) }()
 	connection, err := grpc.NewClient("passthrough:///bufnet", grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return listener.Dial() }))
 	require.NoError(t, err)
@@ -76,6 +76,30 @@ func TestCreatePayoutInsufficientFunds(t *testing.T) {
 	service := &fakeService{createErr: &ledgererr.LedgerError{Code: "INSUFFICIENT_FUNDS", Message: "balance too low"}}
 	_, err := testClient(t, service, errors.New("not found")).CreatePayout(context.Background(), &payoutv1.CreatePayoutRequest{UserId: uuid.NewString(), Amount: "50000", Destination: []byte(`{}`)})
 	assert.Equal(t, codes.FailedPrecondition, status.Code(err))
+}
+
+// TestCreatePayoutScreeningDependencyUnavailable_MapsToUnavailable proves
+// docs/plan/45 Task T3/K4: the service returning the configured
+// screeningDependencyUnavailable sentinel maps to codes.Unavailable with a
+// message distinguishable from noVendorAvailable's own codes.Unavailable
+// use — the gateway sub-switches on this exact message.
+func TestCreatePayoutScreeningDependencyUnavailable_MapsToUnavailable(t *testing.T) {
+	depUnavailable := errors.New("screening dependency unavailable")
+	service := &fakeService{createErr: depUnavailable}
+
+	listener := bufconn.Listen(1024 * 1024)
+	server := grpc.NewServer()
+	payoutv1.RegisterPayoutServiceServer(server, New(service, errors.New("not found"), errors.New("no route"), errors.New("no vendor available"), errors.New("screening blocked"), depUnavailable))
+	go func() { _ = server.Serve(listener) }()
+	connection, err := grpc.NewClient("passthrough:///bufnet", grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return listener.Dial() }))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = connection.Close(); server.Stop(); _ = listener.Close() })
+	client := payoutv1.NewPayoutServiceClient(connection)
+
+	_, callErr := client.CreatePayout(context.Background(), &payoutv1.CreatePayoutRequest{UserId: uuid.NewString(), Amount: "50000", Destination: []byte(`{}`)})
+	require.Error(t, callErr)
+	assert.Equal(t, codes.Unavailable, status.Code(callErr))
+	assert.Equal(t, "screening dependency unavailable", status.Convert(callErr).Message())
 }
 
 func TestGetPayoutOwnerAndNonOwner(t *testing.T) {

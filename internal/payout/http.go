@@ -205,7 +205,7 @@ func (m *Module) vendorHealthHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	vendors := []vendorgw.VendorHealth{}
 	if m.breaker != nil {
-		vendors = m.breaker.Snapshot()
+		vendors = m.breaker.Snapshot(r.Context())
 	}
 	response.OK(w, vendorHealthResponse{Vendors: vendors})
 }

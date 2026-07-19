@@ -1,0 +1,14 @@
+# docs/plan/43 Task T1 — file provider. Task T4 adds the three dashboard
+# JSON files this loads from ../../dashboards/.
+apiVersion: 1
+
+providers:
+  - name: seev
+    orgId: 1
+    folder: Seev
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false

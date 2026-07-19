@@ -20,6 +20,7 @@ import (
 	"github.com/herdifirdausss/seev/pkg/grpcx"
 	"github.com/herdifirdausss/seev/pkg/ledgerclient"
 	"github.com/herdifirdausss/seev/pkg/logger"
+	"github.com/herdifirdausss/seev/pkg/tracing"
 )
 
 func main() {
@@ -69,6 +70,16 @@ func run(parent context.Context) error {
 	log := logger.New(cfg.Logger.Pkg())
 	ctx, cancel := signal.NotifyContext(parent, syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
+	shutdownTracing, err := tracing.Setup(ctx, tracing.Config{
+		ServiceName: "auth-service",
+		Endpoint:    cfg.Tracing.OTLPEndpoint,
+		SampleRatio: cfg.Tracing.SampleRatio,
+		Insecure:    cfg.Tracing.Insecure,
+	})
+	if err != nil {
+		log.Error("tracing: setup failed, continuing without a tracer provider", "error", err)
+		shutdownTracing = func(context.Context) error { return nil }
+	}
 
 	db, err := database.New(ctx, cfg.Postgres.Pkg())
 	if err != nil {
@@ -85,7 +96,7 @@ func run(parent context.Context) error {
 	}
 	ledgerConn, err := grpcx.Dial(ctx, cfg.LedgerGRPCAddr, cfg.InternalGRPCToken)
 	if err != nil {
-		closeAuthDependencies(log, nil, redisCache, db)
+		closeAuthDependencies(log, nil, redisCache, db, shutdownTracing)
 		return fmt.Errorf("connect ledger-service: %w", err)
 	}
 	module := auth.NewModule(db, ledgerclient.New(ledgerConn), auth.Config{
@@ -94,7 +105,7 @@ func run(parent context.Context) error {
 		DefaultCurrency: cfg.Auth.DefaultCurrency,
 	}, log, mockkyc.New())
 	if err := module.EnsureBootstrapAdmin(ctx, cfg.Auth.BootstrapAdminEmail, cfg.Auth.BootstrapAdminPassword); err != nil {
-		closeAuthDependencies(log, ledgerConn.Close, redisCache, db)
+		closeAuthDependencies(log, ledgerConn.Close, redisCache, db, shutdownTracing)
 		return fmt.Errorf("ensure bootstrap admin: %w", err)
 	}
 
@@ -119,7 +130,7 @@ func run(parent context.Context) error {
 	if err := internalServer.Shutdown(shutdownCtx); err != nil && serveErr == nil {
 		serveErr = err
 	}
-	closeAuthDependencies(log, ledgerConn.Close, redisCache, db)
+	closeAuthDependencies(log, ledgerConn.Close, redisCache, db, shutdownTracing)
 	return serveErr
 }
 
@@ -134,7 +145,7 @@ func serveHTTP(server *http.Server, errCh chan<- error) {
 	}
 }
 
-func closeAuthDependencies(log *slog.Logger, closeLedger func() error, redisCache *cache.Cache, db *database.DBSQL) {
+func closeAuthDependencies(log *slog.Logger, closeLedger func() error, redisCache *cache.Cache, db *database.DBSQL, shutdownTracing func(context.Context) error) {
 	if closeLedger != nil {
 		if err := closeLedger(); err != nil {
 			log.Error("close ledger grpc", "error", err)
@@ -147,5 +158,8 @@ func closeAuthDependencies(log *slog.Logger, closeLedger func() error, redisCach
 	}
 	if err := db.Close(); err != nil {
 		log.Error("close postgres", "error", err)
+	}
+	if err := shutdownTracing(context.Background()); err != nil {
+		log.Error("close tracing", "error", err)
 	}
 }

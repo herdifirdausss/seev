@@ -1,6 +1,7 @@
 package vendorgw
 
 import (
+	"context"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -12,8 +13,8 @@ import (
 
 func TestHealthTracker_ClosedByDefault_AlwaysAllows(t *testing.T) {
 	tr := NewHealthTracker(5, 30*time.Second, nil)
-	assert.True(t, tr.Allow("v1"))
-	snap := tr.Snapshot()
+	assert.True(t, tr.Allow(context.Background(), "v1"))
+	snap := tr.Snapshot(context.Background())
 	require.Len(t, snap, 1)
 	assert.Equal(t, StateClosed, snap[0].State)
 }
@@ -21,13 +22,13 @@ func TestHealthTracker_ClosedByDefault_AlwaysAllows(t *testing.T) {
 func TestHealthTracker_ThresholdTripsToOpen(t *testing.T) {
 	tr := NewHealthTracker(3, 30*time.Second, nil)
 	for i := 0; i < 2; i++ {
-		tr.RecordFailure("v1")
-		assert.True(t, tr.Allow("v1"), "must stay closed before threshold is reached")
+		tr.RecordFailure(context.Background(), "v1")
+		assert.True(t, tr.Allow(context.Background(), "v1"), "must stay closed before threshold is reached")
 	}
-	tr.RecordFailure("v1")
-	assert.False(t, tr.Allow("v1"), "must open exactly at the threshold")
+	tr.RecordFailure(context.Background(), "v1")
+	assert.False(t, tr.Allow(context.Background(), "v1"), "must open exactly at the threshold")
 
-	snap := tr.Snapshot()
+	snap := tr.Snapshot(context.Background())
 	require.Len(t, snap, 1)
 	assert.Equal(t, StateOpen, snap[0].State)
 	assert.Equal(t, 3, snap[0].ConsecutiveFailures)
@@ -36,36 +37,36 @@ func TestHealthTracker_ThresholdTripsToOpen(t *testing.T) {
 
 func TestHealthTracker_OpenBeforeCooldown_StillDisallows(t *testing.T) {
 	tr := NewHealthTracker(1, time.Hour, nil)
-	tr.RecordFailure("v1")
-	assert.False(t, tr.Allow("v1"), "cooldown has not elapsed yet")
+	tr.RecordFailure(context.Background(), "v1")
+	assert.False(t, tr.Allow(context.Background(), "v1"), "cooldown has not elapsed yet")
 }
 
 func TestHealthTracker_HalfOpenProbe_SuccessClosesCircuit(t *testing.T) {
 	tr := NewHealthTracker(1, 10*time.Millisecond, nil)
-	tr.RecordFailure("v1")
-	require.False(t, tr.Allow("v1"))
+	tr.RecordFailure(context.Background(), "v1")
+	require.False(t, tr.Allow(context.Background(), "v1"))
 	time.Sleep(20 * time.Millisecond)
 
-	require.True(t, tr.Allow("v1"), "cooldown elapsed — this call becomes the probe")
-	tr.RecordSuccess("v1")
+	require.True(t, tr.Allow(context.Background(), "v1"), "cooldown elapsed — this call becomes the probe")
+	tr.RecordSuccess(context.Background(), "v1")
 
-	snap := tr.Snapshot()
+	snap := tr.Snapshot(context.Background())
 	require.Len(t, snap, 1)
 	assert.Equal(t, StateClosed, snap[0].State)
 	assert.Zero(t, snap[0].ConsecutiveFailures)
-	assert.True(t, tr.Allow("v1"))
+	assert.True(t, tr.Allow(context.Background(), "v1"))
 }
 
 func TestHealthTracker_HalfOpenProbe_FailureReopensImmediately(t *testing.T) {
 	tr := NewHealthTracker(1, 10*time.Millisecond, nil)
-	tr.RecordFailure("v1")
+	tr.RecordFailure(context.Background(), "v1")
 	time.Sleep(20 * time.Millisecond)
-	require.True(t, tr.Allow("v1"), "cooldown elapsed — this call becomes the probe")
+	require.True(t, tr.Allow(context.Background(), "v1"), "cooldown elapsed — this call becomes the probe")
 
-	tr.RecordFailure("v1") // the probe itself failed
-	assert.False(t, tr.Allow("v1"), "must re-open on a failed probe — no waiting to re-accumulate the threshold")
+	tr.RecordFailure(context.Background(), "v1") // the probe itself failed
+	assert.False(t, tr.Allow(context.Background(), "v1"), "must re-open on a failed probe — no waiting to re-accumulate the threshold")
 
-	snap := tr.Snapshot()
+	snap := tr.Snapshot(context.Background())
 	require.Len(t, snap, 1)
 	assert.Equal(t, StateOpen, snap[0].State)
 }
@@ -76,7 +77,7 @@ func TestHealthTracker_HalfOpenProbe_FailureReopensImmediately(t *testing.T) {
 // cooldown elapses; exactly one must observe true.
 func TestHealthTracker_HalfOpenSingleProbe_RaceSafe(t *testing.T) {
 	tr := NewHealthTracker(1, 10*time.Millisecond, nil)
-	tr.RecordFailure("v1")
+	tr.RecordFailure(context.Background(), "v1")
 	time.Sleep(20 * time.Millisecond)
 
 	const goroutines = 20
@@ -86,7 +87,7 @@ func TestHealthTracker_HalfOpenSingleProbe_RaceSafe(t *testing.T) {
 	for i := 0; i < goroutines; i++ {
 		go func() {
 			defer wg.Done()
-			if tr.Allow("v1") {
+			if tr.Allow(context.Background(), "v1") {
 				allowedCount.Add(1)
 			}
 		}()
@@ -105,10 +106,10 @@ func TestHealthTracker_HalfOpenSingleProbe_RaceSafe(t *testing.T) {
 func TestHealthTracker_RecordSuccess_NeverTrips(t *testing.T) {
 	tr := NewHealthTracker(2, 30*time.Second, nil)
 	for i := 0; i < 50; i++ {
-		tr.RecordSuccess("v1")
+		tr.RecordSuccess(context.Background(), "v1")
 	}
-	assert.True(t, tr.Allow("v1"))
-	snap := tr.Snapshot()
+	assert.True(t, tr.Allow(context.Background(), "v1"))
+	snap := tr.Snapshot(context.Background())
 	require.Len(t, snap, 1)
 	assert.Equal(t, StateClosed, snap[0].State)
 	assert.Zero(t, snap[0].ConsecutiveFailures)
@@ -116,20 +117,20 @@ func TestHealthTracker_RecordSuccess_NeverTrips(t *testing.T) {
 
 func TestHealthTracker_RecordSuccess_ResetsCounterBeforeThreshold(t *testing.T) {
 	tr := NewHealthTracker(3, 30*time.Second, nil)
-	tr.RecordFailure("v1")
-	tr.RecordFailure("v1")
-	tr.RecordSuccess("v1")
-	tr.RecordFailure("v1")
-	tr.RecordFailure("v1")
-	assert.True(t, tr.Allow("v1"), "the reset must mean two more failures alone don't reach the threshold of 3")
+	tr.RecordFailure(context.Background(), "v1")
+	tr.RecordFailure(context.Background(), "v1")
+	tr.RecordSuccess(context.Background(), "v1")
+	tr.RecordFailure(context.Background(), "v1")
+	tr.RecordFailure(context.Background(), "v1")
+	assert.True(t, tr.Allow(context.Background(), "v1"), "the reset must mean two more failures alone don't reach the threshold of 3")
 }
 
 func TestHealthTracker_Snapshot_MultipleVendorsSortedAndAccurate(t *testing.T) {
 	tr := NewHealthTracker(1, 30*time.Second, nil)
-	tr.RecordFailure("zeta")
-	tr.RecordSuccess("alpha")
+	tr.RecordFailure(context.Background(), "zeta")
+	tr.RecordSuccess(context.Background(), "alpha")
 
-	snap := tr.Snapshot()
+	snap := tr.Snapshot(context.Background())
 	require.Len(t, snap, 2)
 	assert.Equal(t, "alpha", snap[0].Vendor)
 	assert.Equal(t, StateClosed, snap[0].State)

@@ -89,6 +89,13 @@ type BreakerConfig struct {
 	// half-open probe is allowed through. <=0 falls back to
 	// HealthTracker's own default (30s).
 	Cooldown time.Duration
+	// Distributed opts into the Redis-backed DistributedBreaker
+	// (docs/plan/45 Task T2/K3) instead of the per-process HealthTracker —
+	// default false (compatible with today's behavior) until the
+	// integration/chaos gate for it has passed. Has no effect if Redis
+	// itself is disabled/unreachable at startup: the service falls back to
+	// a plain HealthTracker rather than failing to start.
+	Distributed bool
 }
 
 // TracingConfig controls OpenTelemetry trace export (docs/plan/12 Task T5).
@@ -102,6 +109,16 @@ type TracingConfig struct {
 	// instrumentation" was never on the table: it's already there and
 	// free until someone actually wants to look at it.
 	OTLPEndpoint string
+	// SampleRatio is read from OTEL_TRACES_SAMPLER_ARG (docs/plan/43 K3) —
+	// the sampler strategy itself (ParentBased(TraceIDRatioBased(...))) is
+	// fixed in code, not selectable via OTEL_TRACES_SAMPLER; that env var
+	// is set in compose only for documentation/OTel-convention clarity.
+	SampleRatio float64
+	// Insecure selects a plaintext OTLP gRPC connection, read from
+	// OTEL_EXPORTER_OTLP_INSECURE (docs/plan/43 K3) — every environment
+	// this repo targets uses a local, unencrypted Tempo on the private
+	// Compose network, so this defaults to true.
+	Insecure bool
 }
 
 // LedgerConfig holds ledger-module-specific tunables that must live outside
@@ -432,6 +449,8 @@ func loadFromEnvMode(getenv func(string) string, requireRabbitMQ bool) (*Config,
 		},
 		Tracing: TracingConfig{
 			OTLPEndpoint: getenv("OTEL_EXPORTER_OTLP_ENDPOINT"),
+			SampleRatio:  parseFloat(getenv("OTEL_TRACES_SAMPLER_ARG"), 0.10),
+			Insecure:     parseBool(getenv("OTEL_EXPORTER_OTLP_INSECURE"), true),
 		},
 		Vendor: VendorConfig{
 			MockvendorEnabled:  parseBool(getenv("VENDOR_MOCKVENDOR_ENABLED"), false),
@@ -443,6 +462,7 @@ func loadFromEnvMode(getenv func(string) string, requireRabbitMQ bool) (*Config,
 		Breaker: BreakerConfig{
 			FailureThreshold: parseInt(getenv("BREAKER_FAILURE_THRESHOLD"), 5),
 			Cooldown:         parseDuration(getenv("BREAKER_COOLDOWN"), 30*time.Second),
+			Distributed:      parseBool(getenv("BREAKER_DISTRIBUTED"), false),
 		},
 		Auth: AuthConfig{
 			DefaultCurrency:        getWithDefault(getenv, "DEFAULT_CURRENCY", "IDR"),
@@ -712,6 +732,17 @@ func parseInt64(s string, fallback int64) int64 {
 		return fallback
 	}
 	return n
+}
+
+func parseFloat(s string, fallback float64) float64 {
+	if s == "" {
+		return fallback
+	}
+	f, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return fallback
+	}
+	return f
 }
 
 func parseDuration(s string, fallback time.Duration) time.Duration {

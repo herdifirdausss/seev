@@ -62,7 +62,7 @@ func requireKYCForLedgerPostings(min int) middleware.Middleware {
 // serves system-transaction types, /metrics, and admin tooling
 // (docs/plan/10 Task T1).
 func NewRouter(cfg *config.Config, deps *Dependencies, logger *slog.Logger) http.Handler {
-	limiter := buildRateLimiter(deps)
+	limiter := buildRateLimiter(deps, logger)
 	root := http.NewServeMux()
 	apiRoot := http.NewServeMux()
 
@@ -73,6 +73,8 @@ func NewRouter(cfg *config.Config, deps *Dependencies, logger *slog.Logger) http
 	// ─── Global middleware ────────────────────────────────────────────────────
 	global := middleware.Chain(
 		middleware.WithRequestID(),
+		middleware.WithRoutePattern(apiRoot),
+		middleware.WithTracing(logger), middleware.WithHTTPMetrics(),
 		middleware.WithLogger(logger),
 		middleware.WithRecovery(),
 		middleware.WithSecurityHeaders(securityHeadersConfig(cfg)),
@@ -92,6 +94,7 @@ func NewRouter(cfg *config.Config, deps *Dependencies, logger *slog.Logger) http
 	// URL is a stable top-level path.
 	webhookChain := middleware.Chain(
 		middleware.WithRequestID(),
+		middleware.WithTracing(logger), middleware.WithHTTPMetrics(),
 		middleware.WithLogger(logger),
 		middleware.WithRecovery(),
 		middleware.WithSecurityHeaders(securityHeadersConfig(cfg)),
@@ -173,6 +176,8 @@ func NewInternalRouter(cfg *config.Config, deps *Dependencies, logger *slog.Logg
 
 	global := middleware.Chain(
 		middleware.WithRequestID(),
+		middleware.WithRoutePattern(apiRoot),
+		middleware.WithTracing(logger), middleware.WithHTTPMetrics(),
 		middleware.WithLogger(logger),
 		middleware.WithRecovery(),
 		middleware.WithSecurityHeaders(securityHeadersConfig(cfg)),
@@ -191,12 +196,17 @@ func NewInternalRouter(cfg *config.Config, deps *Dependencies, logger *slog.Logg
 	return root
 }
 
-// buildRateLimiter returns a Redis-backed limiter, or an in-memory fallback
-// when Redis is disabled/unavailable (docs/plan/12 Task T1).
-func buildRateLimiter(deps *Dependencies) cache.Limiter {
+// buildRateLimiter returns a Redis-backed limiter that fails over to an
+// in-memory fallback at RUNTIME if Redis becomes unreachable (docs/plan/45
+// Task T3/K4), recovering automatically once Redis is healthy again for
+// two consecutive background probes — or a plain in-memory limiter with no
+// failover machinery at all when Redis is disabled/unavailable at startup
+// (docs/plan/12 Task T1's original behavior, unchanged for that case: there
+// is nothing to fail over TO).
+func buildRateLimiter(deps *Dependencies, logger *slog.Logger) cache.Limiter {
 	rateCfg := cache.RateConfig{Requests: 10, Per: 1 * time.Minute, Burst: 10}
 	if deps.Cache != nil {
-		return cache.NewRedisRateLimiter(deps.Cache.Redis(), rateCfg)
+		return cache.NewFailoverLimiter(deps.Cache.Redis(), rateCfg, logger)
 	}
 	return cache.NewMemoryRateLimiter(rateCfg)
 }

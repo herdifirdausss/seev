@@ -31,6 +31,7 @@ import (
 	"github.com/herdifirdausss/seev/pkg/logger"
 	"github.com/herdifirdausss/seev/pkg/messaging"
 	"github.com/herdifirdausss/seev/pkg/middleware"
+	"github.com/herdifirdausss/seev/pkg/tracing"
 )
 
 func main() {
@@ -86,7 +87,12 @@ func run(parent context.Context) error {
 
 	ctx, cancel := signal.NotifyContext(parent, syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
-	shutdownTracing, err := setupTracing(ctx, cfg.Tracing.OTLPEndpoint)
+	shutdownTracing, err := tracing.Setup(ctx, tracing.Config{
+		ServiceName: "ledger-service",
+		Endpoint:    cfg.Tracing.OTLPEndpoint,
+		SampleRatio: cfg.Tracing.SampleRatio,
+		Insecure:    cfg.Tracing.Insecure,
+	})
 	if err != nil {
 		log.Error("tracing: setup failed, continuing without exporter", "error", err)
 		shutdownTracing = func(context.Context) error { return nil }
@@ -121,7 +127,12 @@ func run(parent context.Context) error {
 	}
 	var counter cache.Counter = cache.NewMemoryCounter()
 	if redisClient != nil {
-		counter = cache.NewRedisCounter(redisClient)
+		// docs/plan/45 Task T3/K4: fails over to an in-memory counter at
+		// runtime if Redis becomes unreachable, recovering automatically —
+		// a strictly stronger degradation than the prior fail-open-with-no-
+		// enforcement gap, never a substitute for real cross-replica
+		// enforcement.
+		counter = cache.NewFailoverCounter(redisClient, log)
 	}
 	var policyOpts []policy.Option
 	if cfg.Worker.AlertWebhookURL != "" {
@@ -202,7 +213,7 @@ func publicRouter(cfg *config.Config, module *ledger.Module, db *database.DBSQL,
 	api := http.NewServeMux()
 	api.Handle("/api/v1/ledger/", authed(http.StripPrefix("/api/v1/ledger", module.Router())))
 	root.Handle("/", middleware.Chain(
-		middleware.WithRequestID(), middleware.WithLogger(log), middleware.WithRecovery(),
+		middleware.WithRequestID(), middleware.WithRoutePattern(api), middleware.WithTracing(log), middleware.WithHTTPMetrics(), middleware.WithLogger(log), middleware.WithRecovery(),
 		middleware.WithSecurityHeaders(middleware.DefaultSecurityHeadersConfig()), middleware.WithTimeout(30*time.Second),
 	)(api))
 	return root
@@ -217,7 +228,7 @@ func internalRouter(cfg *config.Config, module *ledger.Module, policyHandler *po
 	api.Handle("/api/v1/admin/ledger/", authed(http.StripPrefix("/api/v1", module.InternalRouter())))
 	api.Handle("/api/v1/admin/policy/", authed(http.StripPrefix("/api/v1", policyHandler.Mux())))
 	root.Handle("/", middleware.Chain(
-		middleware.WithRequestID(), middleware.WithLogger(log), middleware.WithRecovery(),
+		middleware.WithRequestID(), middleware.WithRoutePattern(api), middleware.WithTracing(log), middleware.WithHTTPMetrics(), middleware.WithLogger(log), middleware.WithRecovery(),
 		middleware.WithSecurityHeaders(middleware.DefaultSecurityHeadersConfig()), middleware.WithTimeout(30*time.Second),
 	)(api))
 	return root

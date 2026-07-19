@@ -1,11 +1,27 @@
 package vendorgw
 
 import (
+	"context"
 	"log/slog"
 	"sort"
 	"sync"
 	"time"
 )
+
+// Breaker is the context-aware interface both the per-process HealthTracker
+// and the Redis-backed DistributedBreaker (docs/plan/45 Task T2/K3)
+// satisfy — payin/payout call sites depend on this, never the concrete
+// type, so swapping backends is a construction-time decision only. ctx
+// carries no meaning for HealthTracker (pure in-memory, never blocks) but
+// is load-bearing for DistributedBreaker's own short Redis timeouts.
+type Breaker interface {
+	Allow(ctx context.Context, vendor string) bool
+	RecordSuccess(ctx context.Context, vendor string)
+	RecordFailure(ctx context.Context, vendor string)
+	Snapshot(ctx context.Context) []VendorHealth
+}
+
+var _ Breaker = (*HealthTracker)(nil)
 
 // HealthState is a circuit breaker's current state for one vendor
 // (docs/plan/40 Task T1).
@@ -91,6 +107,7 @@ func (t *HealthTracker) stateFor(vendor string) *vendorState {
 	if !ok {
 		v = &vendorState{state: StateClosed}
 		t.vendors[vendor] = v
+		breakerState.WithLabelValues(vendor).Set(breakerStateValue(StateClosed))
 	}
 	return v
 }
@@ -109,7 +126,7 @@ func (t *HealthTracker) stateFor(vendor string) *vendorState {
 //   - half-open: false for anyone arriving while a probe is already in
 //     flight — the probe's own outcome (RecordSuccess/RecordFailure)
 //     is what resolves the state next, not a second concurrent attempt.
-func (t *HealthTracker) Allow(vendor string) bool {
+func (t *HealthTracker) Allow(_ context.Context, vendor string) bool {
 	v := t.stateFor(vendor)
 	v.mu.Lock()
 	defer v.mu.Unlock()
@@ -123,6 +140,7 @@ func (t *HealthTracker) Allow(vendor string) bool {
 		}
 		v.state = StateHalfOpen
 		v.lastProbeAt = time.Now()
+		breakerState.WithLabelValues(vendor).Set(breakerStateValue(StateHalfOpen))
 		return true
 	default: // StateHalfOpen
 		return false
@@ -135,7 +153,7 @@ func (t *HealthTracker) Allow(vendor string) bool {
 // was reachable and responded, so from the breaker's point of view (pure
 // availability, gotcha #13 master) this is success. Closes the circuit
 // (or confirms a half-open probe) and resets the failure counter.
-func (t *HealthTracker) RecordSuccess(vendor string) {
+func (t *HealthTracker) RecordSuccess(_ context.Context, vendor string) {
 	v := t.stateFor(vendor)
 	v.mu.Lock()
 	defer v.mu.Unlock()
@@ -144,6 +162,7 @@ func (t *HealthTracker) RecordSuccess(vendor string) {
 	v.consecutiveFailures = 0
 	v.state = StateClosed
 	v.openedAt = time.Time{}
+	breakerState.WithLabelValues(vendor).Set(breakerStateValue(StateClosed))
 	if wasOpenOrProbing {
 		t.logger.Info("vendorgw: breaker closed", slog.String("vendor", vendor))
 	}
@@ -155,7 +174,7 @@ func (t *HealthTracker) RecordSuccess(vendor string) {
 // probe that fails re-opens immediately without needing to re-accumulate
 // failureThreshold — one failed probe is already sufficient evidence the
 // vendor is still down.
-func (t *HealthTracker) RecordFailure(vendor string) {
+func (t *HealthTracker) RecordFailure(_ context.Context, vendor string) {
 	v := t.stateFor(vendor)
 	v.mu.Lock()
 	defer v.mu.Unlock()
@@ -163,6 +182,7 @@ func (t *HealthTracker) RecordFailure(vendor string) {
 	if v.state == StateHalfOpen {
 		v.state = StateOpen
 		v.openedAt = time.Now()
+		breakerState.WithLabelValues(vendor).Set(breakerStateValue(StateOpen))
 		t.logger.Warn("vendorgw: half-open probe failed, breaker re-opened", slog.String("vendor", vendor))
 		return
 	}
@@ -171,13 +191,14 @@ func (t *HealthTracker) RecordFailure(vendor string) {
 	if v.state == StateClosed && v.consecutiveFailures >= t.failureThreshold {
 		v.state = StateOpen
 		v.openedAt = time.Now()
+		breakerState.WithLabelValues(vendor).Set(breakerStateValue(StateOpen))
 		t.logger.Warn("vendorgw: breaker opened", slog.String("vendor", vendor), slog.Int("consecutive_failures", v.consecutiveFailures))
 	}
 }
 
 // Snapshot returns every vendor this tracker has ever seen, sorted by name
 // for deterministic output (admin endpoint, docs/plan/40 Task T5).
-func (t *HealthTracker) Snapshot() []VendorHealth {
+func (t *HealthTracker) Snapshot(_ context.Context) []VendorHealth {
 	t.mu.Lock()
 	names := make([]string, 0, len(t.vendors))
 	states := make(map[string]*vendorState, len(t.vendors))

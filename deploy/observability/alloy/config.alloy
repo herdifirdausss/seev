@@ -1,0 +1,120 @@
+// docs/plan/43 Task T1 (discovery/source skeleton) + Task T6 (K9: JSON
+// parsing, level label, structured metadata, redaction). Positions persist
+// under --storage.path=/var/lib/alloy/data (the seev_alloy_data named
+// volume) — loki.source.docker tracks per-container read offsets there
+// automatically, so an Alloy restart resumes tailing instead of
+// re-shipping every line from container start.
+
+discovery.docker "containers" {
+	host = "tcp://docker-socket-proxy:2375"
+}
+
+discovery.relabel "containers" {
+	targets = discovery.docker.containers.targets
+
+	rule {
+		source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+		target_label  = "compose_service"
+	}
+
+	rule {
+		target_label = "environment"
+		replacement  = "dev"
+	}
+}
+
+// loki.process runs once per line, in stage order, before the line reaches
+// loki.write. Every app container logs LOG_FORMAT=json (slog), so this
+// pipeline can parse structured fields directly rather than regex-scraping
+// free text. Declared BEFORE loki.source.docker below — its receiver is
+// referenced in that block's forward_to and this Alloy version resolves
+// component references only for already-declared blocks, not forward
+// references later in the file.
+loki.process "app_logs" {
+	forward_to = [loki.write.default.receiver]
+
+	// Extract fields from the JSON log line WITHOUT touching the line
+	// itself yet — stage.json only populates the shared extracted-fields
+	// map that later stages read from.
+	stage.json {
+		expressions = {
+			level      = "level",
+			request_id = "request_id",
+			trace_id   = "trace_id",
+			span_id    = "span_id",
+		}
+	}
+
+	// level becomes a REAL Loki stream label (docs/plan/43 K9) — bounded
+	// cardinality (DEBUG/INFO/WARN/ERROR, 4 values across 6 services), the
+	// one field worth indexing as a label for fast severity filtering.
+	// Everything else extracted above stays out of the label set on
+	// purpose (see stage.structured_metadata below) — a label creates a
+	// NEW Loki stream per distinct value, and request_id/trace_id/span_id
+	// are unbounded (effectively one distinct value per request), which
+	// would blow up stream cardinality if labeled instead.
+	stage.labels {
+		values = {
+			level = "",
+		}
+	}
+
+	// request_id/trace_id/span_id become per-line STRUCTURED METADATA
+	// (Loki >=2.9, this stack's grafana/loki@sha256:...) — queryable via
+	// `| request_id="..."` same as a label, searchable and shown in the
+	// log detail view, but does NOT fragment the stream the way a label
+	// would. This is what makes "one request_id finds logs across every
+	// service" possible without an unbounded label set (docs/plan/43 K9,
+	// T6 Test wajib).
+	stage.structured_metadata {
+		values = {
+			request_id = "",
+			trace_id   = "",
+			span_id    = "",
+		}
+	}
+
+	// Defense-in-depth redaction (docs/plan/43 K9/T6) — pkg/logger's
+	// application-level masking (masking.go: sensitiveKeys/
+	// sensitiveValuePatterns) is the PRIMARY control and already strips
+	// Authorization/password/secret/token/idempotency_key etc. before a
+	// line is ever written. This stage scrubs the raw line by VALUE SHAPE
+	// as a second, independent layer — catches a Bearer token or a
+	// 3-part JWT that reaches stdout through a path masking.go doesn't
+	// cover (a third-party library's own log line, a panic dump, an error
+	// string that happens to embed a credential) before it's persisted to
+	// Loki's disk at all. Mirrors masking.go's own sensitiveValuePatterns
+	// regexes so both layers agree on what counts as secret-shaped.
+	stage.replace {
+		expression = `(?i)bearer\s+[A-Za-z0-9._~+/-]+=*`
+		replace    = "bearer [REDACTED]"
+	}
+
+	stage.replace {
+		expression = `eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+`
+		replace    = "[REDACTED_JWT]"
+	}
+
+	stage.replace {
+		expression = `AKIA[0-9A-Z]{16}`
+		replace    = "[REDACTED_AWS_KEY]"
+	}
+
+	stage.replace {
+		expression = `-----BEGIN\s+\S+\s+PRIVATE KEY-----[\s\S]*?-----END\s+\S+\s+PRIVATE KEY-----`
+		replace    = "[REDACTED_PRIVATE_KEY]"
+	}
+}
+
+loki.source.docker "containers" {
+	host          = "tcp://docker-socket-proxy:2375"
+	targets       = discovery.docker.containers.targets
+	relabel_rules = discovery.relabel.containers.rules
+	forward_to    = [loki.process.app_logs.receiver]
+}
+
+loki.write "default" {
+	endpoint {
+		url = "http://loki:3100/loki/api/v1/push"
+	}
+}

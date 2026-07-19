@@ -318,12 +318,16 @@ func TestRouter_NilCache_FallsBackToMemoryLimiter_StillServesRequests(t *testing
 }
 
 func TestBuildRateLimiter_NilCache_ReturnsMemoryLimiter(t *testing.T) {
-	limiter := buildRateLimiter(&Dependencies{Cache: nil})
+	limiter := buildRateLimiter(&Dependencies{Cache: nil}, slog.Default())
 	_, ok := limiter.(*cache.MemoryRateLimiter)
 	assert.True(t, ok, "expected *cache.MemoryRateLimiter when deps.Cache is nil")
 }
 
-func TestBuildRateLimiter_WithCache_ReturnsRedisLimiter(t *testing.T) {
+// TestBuildRateLimiter_WithCache_ReturnsFailoverLimiter proves
+// docs/plan/45 Task T3/K4: a non-nil deps.Cache now gets a runtime
+// Redis<->memory failover wrapper, not a bare RedisRateLimiter with no
+// degradation path.
+func TestBuildRateLimiter_WithCache_ReturnsFailoverLimiter(t *testing.T) {
 	deps := &Dependencies{
 		Cache: &cache.MockCache{
 			RedisFn: func() *redis.Client {
@@ -331,7 +335,10 @@ func TestBuildRateLimiter_WithCache_ReturnsRedisLimiter(t *testing.T) {
 			},
 		},
 	}
-	limiter := buildRateLimiter(deps)
-	_, ok := limiter.(*cache.RedisRateLimiter)
-	assert.True(t, ok, "expected *cache.RedisRateLimiter when deps.Cache is set")
+	limiter := buildRateLimiter(deps, slog.Default())
+	failover, ok := limiter.(*cache.FailoverLimiter)
+	assert.True(t, ok, "expected *cache.FailoverLimiter when deps.Cache is set")
+	if ok {
+		t.Cleanup(failover.Stop)
+	}
 }

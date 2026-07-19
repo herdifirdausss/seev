@@ -98,6 +98,49 @@ type PayoutVendorCall struct {
 	CreatedAt time.Time
 }
 
+// Status values for PayoutVendorCommand.Status (docs/plan/45 Task T0) — a
+// durable work item the relay (Task T1) claims and executes, distinct from
+// PayoutVendorCall above (an immutable audit record of one already-
+// completed round trip). State machine: pending -> processing ->
+// {completed | failed (retry, backoff) | dead (retry budget exhausted)}.
+const (
+	CommandPending    = "pending"
+	CommandProcessing = "processing"
+	CommandFailed     = "failed"
+	CommandCompleted  = "completed"
+	CommandDead       = "dead"
+)
+
+// PayoutVendorCommand is one row of payout_vendor_commands — "dispatch this
+// payout to this vendor" as a durable, retryable outbox entry (docs/plan/45
+// Task T0/K1), mirroring internal/ledger's outbox_events pattern. At most
+// one live command (pending/processing/failed) exists per PayoutRequestID
+// at any time, enforced by a partial unique index — this is what lets
+// EnsureSubmitCommand's recovery insert and CompleteAndEnqueueFailover's
+// next-attempt insert stay safe under multi-replica concurrency via a plain
+// conflicting-insert instead of a hand-rolled distributed lock.
+type PayoutVendorCommand struct {
+	ID uuid.UUID
+	// CommandKey ("payout:<request_id>:submit:<attempt>") is an internal
+	// dedup key only — the vendor-facing idempotency key stays
+	// PayoutRequestID itself (docs/plan/40), unchanged by retries of this
+	// same command, so a retried command never creates a second payout at
+	// the vendor.
+	CommandKey      string
+	PayoutRequestID uuid.UUID
+	Vendor          string
+	Attempt         int
+	Status          string
+	RetryCount      int
+	MaxRetries      int
+	NextAttemptAt   *time.Time
+	LastAttemptedAt *time.Time
+	LockedAt        *time.Time
+	LastError       string
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+}
+
 type RoutingRule struct {
 	ID        uuid.UUID  `json:"id"`
 	Flow      string     `json:"flow"`

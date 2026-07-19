@@ -16,6 +16,7 @@ package fraudcheck
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -23,10 +24,27 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/shopspring/decimal"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	fraudv1 "github.com/herdifirdausss/seev/gen/fraud/v1"
 	"github.com/herdifirdausss/seev/pkg/middleware"
 )
+
+// ErrDependencyUnavailable is returned by Check when fraud-service is
+// REACHABLE but explicitly reports that its velocity dependency (Redis) is
+// currently down (docs/plan/45 Task T3/K4) — distinct from every other
+// Check error, which means fraud-service itself is unreachable/erroring
+// and every existing caller fails OPEN for. This one caller MUST fail
+// CLOSED instead: map it to an HTTP 503 DEPENDENCY_UNAVAILABLE response
+// before any money moves, never proceed as if unscreened.
+var ErrDependencyUnavailable = errors.New("fraudcheck: fraud velocity dependency unavailable")
+
+// dependencyUnavailableMessage MUST match
+// internal/fraud/grpcserver's own dependencyUnavailableMessage exactly —
+// see that constant's doc comment for why this is a duplicated literal
+// rather than a shared import (pkg/ must never import internal/).
+const dependencyUnavailableMessage = "DEPENDENCY_UNAVAILABLE"
 
 // screenTimeout bounds every Screen call — the same 500ms budget the
 // in-transaction hook used before docs/plan/37 moved screening out of the
@@ -86,6 +104,9 @@ func (c *Client) Check(ctx context.Context, flow, txType string, userID uuid.UUI
 	})
 	if err != nil {
 		screeningClientErrorsTotal.WithLabelValues(c.caller).Inc()
+		if st, ok := status.FromError(err); ok && st.Code() == codes.FailedPrecondition && st.Message() == dependencyUnavailableMessage {
+			return Verdict{}, fmt.Errorf("%w: %s", ErrDependencyUnavailable, flow)
+		}
 		return Verdict{}, fmt.Errorf("fraudcheck: screen %s: %w", flow, err)
 	}
 	return Verdict{Block: response.GetBlock(), Reason: response.GetReason()}, nil

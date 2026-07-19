@@ -48,7 +48,7 @@ func NewSnapshotJob(snapshotRepo repository.SnapshotRepository, lock scheduler.L
 	}
 	return &SnapshotJob{
 		snapshotRepo: snapshotRepo, logger: logger, loc: loc, alertFn: alertFn,
-		sched: scheduler.NewScheduler(lock, nil, scheduler.WithLocation(loc)),
+		sched: scheduler.NewScheduler(lock, scheduler.NewPrometheusMetrics(), scheduler.WithLocation(loc)),
 	}
 }
 

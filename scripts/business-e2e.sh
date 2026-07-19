@@ -36,7 +36,10 @@ INTERNAL_PORT="${INTERNAL_PORT:-18101}"
 # start_server only explicitly exports the connection/infra env vars, but a
 # bash subshell always inherits everything already exported in its parent.
 export AUTH_BOOTSTRAP_ADMIN_EMAIL="business-e2e-admin@example.com"
-export AUTH_BOOTSTRAP_ADMIN_PASSWORD="BootstrapAdmin!2026"
+# docs/plan/44 K6: env-overridable so a CI run's generated per-job value is
+# actually used, instead of every run silently clobbering it with this
+# fixed local dev default.
+export AUTH_BOOTSTRAP_ADMIN_PASSWORD="${AUTH_BOOTSTRAP_ADMIN_PASSWORD:-BootstrapAdmin!2026}"
 export TOPUP_INTENT_TTL=1h
 export DEFAULT_CURRENCY=IDR
 # Production default is 60s (docs/plan/17 Task T1) — kyc_journey (docs/plan/39
@@ -53,7 +56,11 @@ source "$ROOT_DIR/scripts/lib.sh"
 
 trap cleanup EXIT
 
-MOCKVENDOR_SECRET="script-test-mockvendor-secret-at-least-32-chars-long"
+# docs/plan/44 K6: same env var name lib.sh's start_*_service functions
+# export to the service processes — a CI-generated VENDOR_MOCKVENDOR_SECRET
+# must sign AND verify with the identical value, not silently diverge
+# because this script's own webhook-signing copy had a different name.
+MOCKVENDOR_SECRET="${VENDOR_MOCKVENDOR_SECRET:-script-test-mockvendor-secret-at-least-32-chars-long}"
 RUN_ID="$(date +%s)-$$"
 
 
@@ -368,11 +375,15 @@ withdraw() {
 	create="$(curl -s -X POST "http://localhost:$APP_PORT/api/v1/payout" \
 		-H "Authorization: Bearer $TOKEN_A" -H "Content-Type: application/json" \
 		-d '{"amount":"200000","destination":{"bank_code":"014","account_no":"1"}}')"
-	local payout_id status
+	local payout_id
 	payout_id="$(echo "$create" | json_field id)"
-	status="$(echo "$create" | json_field status)"
-	[ -n "$payout_id" ] && [ "$status" = "settled" ] && ok "withdraw created and settled instantly ($payout_id)" \
-		|| fail "withdraw create response unexpected: $create"
+	[ -n "$payout_id" ] || fail "withdraw create response unexpected: $create"
+	# docs/plan/45 Task T1: the create response itself only reports
+	# 'submitted' (hold+enqueue) — the vendor result always comes from a
+	# separate, asynchronous relay dispatch pass now, even in what used to
+	# be called "instant-settle" mode.
+	wait_for_payout_status "$payout_id" "settled" 10
+	ok "withdraw created and settled via the relay ($payout_id)"
 
 	local balance_after fee_after
 	balance_after="$(account_balance "$cash_a")"
@@ -394,11 +405,11 @@ withdraw() {
 	create2="$(curl -s -X POST "http://localhost:$APP_PORT/api/v1/payout" \
 		-H "Authorization: Bearer $TOKEN_A" -H "Content-Type: application/json" \
 		-d '{"amount":"30000","destination":{"bank_code":"014","account_no":"1","mock_mode":"async"}}')"
-	local payout_id2 status2
+	local payout_id2
 	payout_id2="$(echo "$create2" | json_field id)"
-	status2="$(echo "$create2" | json_field status)"
-	[ -n "$payout_id2" ] && [ "$status2" = "vendor_pending" ] && ok "async withdraw created and left vendor_pending ($payout_id2)" \
-		|| fail "async withdraw create response unexpected: $create2"
+	[ -n "$payout_id2" ] || fail "async withdraw create response unexpected: $create2"
+	wait_for_payout_status "$payout_id2" "vendor_pending" 10
+	ok "async withdraw dispatched and left vendor_pending ($payout_id2)"
 
 	local code
 	code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/requests/$payout_id2/cancel" \
@@ -516,12 +527,14 @@ quote_journey() {
 
 	local fee_before_payout
 	fee_before_payout="$(fee_platform_balance)"
-	local payout_create payout_status
+	local payout_create payout_id3
 	payout_create="$(curl -s -X POST "http://localhost:$APP_PORT/api/v1/payout" \
 		-H "Authorization: Bearer $TOKEN_A" -H "Content-Type: application/json" \
 		-d "{\"amount\":\"40000\",\"destination\":{\"bank_code\":\"014\",\"account_no\":\"1\"},\"quote_id\":\"$payout_quote_id\"}")"
-	payout_status="$(echo "$payout_create" | json_field status)"
-	[ "$payout_status" = "settled" ] && ok "quote-backed payout settled instantly" || fail "quote-backed payout unexpected: $payout_create"
+	payout_id3="$(echo "$payout_create" | json_field id)"
+	[ -n "$payout_id3" ] || fail "quote-backed payout create response unexpected: $payout_create"
+	wait_for_payout_status "$payout_id3" "settled" 10
+	ok "quote-backed payout settled via the relay"
 
 	local fee_after_payout
 	fee_after_payout="$(fee_platform_balance)"
@@ -563,6 +576,10 @@ quote_journey() {
 		-d '{"amount":"1000","destination":{"bank_code":"014","account_no":"9"}}')"
 	probe_id="$(echo "$probe_resp" | json_field id)"
 	[ -n "$probe_id" ] && ok "probe payout created ($probe_id)" || fail "probe payout create failed: $probe_resp"
+	# docs/plan/45 Task T1: dispatch (and therefore the breaker's
+	# RecordFailure that trips the circuit) is async now — wait for the
+	# durable evidence before reading vendor/status/health state.
+	wait_for_vendor_call "$probe_id" "uncertain" 15
 	probe_vendor="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT vendor FROM payout_requests WHERE id='$probe_id';")"
 	probe_status="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT status FROM payout_requests WHERE id='$probe_id';")"
 	[ "$probe_vendor" = "mockvendor" ] && [ "$probe_status" = "submitted" ] \
@@ -584,12 +601,13 @@ quote_journey() {
 		-H "X-Request-Id: $FAILOVER_REQUEST_ID" \
 		-d "{\"amount\":\"25000\",\"destination\":{\"bank_code\":\"014\",\"account_no\":\"1\"},\"quote_id\":\"$failover_quote_id\"}")"
 	FAILOVER_PAYOUT_ID="$(echo "$failover_payout_resp" | json_field id)"
-	local failover_payout_status failover_payout_vendor
-	failover_payout_status="$(echo "$failover_payout_resp" | json_field status)"
-	failover_payout_vendor="$(echo "$failover_payout_resp" | json_field vendor)"
-	[ "$failover_payout_vendor" = "mockvendor2" ] && [ "$failover_payout_status" = "settled" ] \
-		&& ok "quote-backed payout routed straight to mockvendor2 (mockvendor's circuit is open) and settled ($FAILOVER_PAYOUT_ID)" \
-		|| fail "failover payout unexpected: $failover_payout_resp"
+	[ -n "$FAILOVER_PAYOUT_ID" ] || fail "failover payout create response unexpected: $failover_payout_resp"
+	wait_for_payout_status "$FAILOVER_PAYOUT_ID" "settled" 10
+	local failover_payout_vendor
+	failover_payout_vendor="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT vendor FROM payout_requests WHERE id='$FAILOVER_PAYOUT_ID';")"
+	[ "$failover_payout_vendor" = "mockvendor2" ] \
+		&& ok "quote-backed payout routed straight to mockvendor2 (mockvendor's circuit is open) and settled via the relay ($FAILOVER_PAYOUT_ID)" \
+		|| fail "failover payout routed to unexpected vendor='$failover_payout_vendor'"
 
 	local failover_after_fee
 	failover_after_fee="$(fee_platform_balance)"

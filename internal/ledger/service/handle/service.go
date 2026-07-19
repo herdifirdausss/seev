@@ -109,7 +109,17 @@ func (s *Service) Handle(ctx context.Context, cmd processors.Command) (err error
 	defer func() {
 		status := "posted"
 		if err != nil {
-			status = "error"
+			// [docs/plan/43 Task T5] "rejected" (business/input outcome, e.g.
+			// insufficient funds, closed account) is distinguished from
+			// "error" (genuine infra/programming failure) so the
+			// posting_availability SLO's bad-event count doesn't include
+			// valid rejections — see apperror.IsBusinessRejection's own doc
+			// comment.
+			if apperror.IsBusinessRejection(err) {
+				status = "rejected"
+			} else {
+				status = "error"
+			}
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())
 		}
@@ -139,10 +149,16 @@ func (s *Service) Handle(ctx context.Context, cmd processors.Command) (err error
 		return fmt.Errorf("%w: amount %s exceeds maximum %s", apperror.ErrAmountTooLarge, cmd.Amount, s.maxAmountPerTx)
 	}
 
+	// [docs/plan/43 Task T6] CLAUDE.md: "do not expose raw amounts or full
+	// idempotency keys in public logs" — amount dropped entirely (no safe
+	// partial form for a monetary value), idempotency key truncated to a
+	// short, non-replayable prefix that still lets support/debugging
+	// spot-correlate a specific request's log lines without ever writing
+	// the full key (which a caller could otherwise grep out of Loki and
+	// replay) to disk.
 	log := s.logger.With(
-		slog.String("idem_key", cmd.IdempotencyKey),
+		slog.String("idem_key_prefix", truncatedIdemKey(cmd.IdempotencyKey)),
 		slog.String("type", cmd.Type),
-		slog.String("amount", cmd.Amount.String()),
 		slog.String("user_id", cmd.UserID.String()),
 	)
 
@@ -547,6 +563,19 @@ func (s *Service) execTransfer(ctx context.Context, cmd processors.ResolvedComma
 		return dbErr
 	}
 	return businessErr
+}
+
+// truncatedIdemKey returns a short, non-replayable prefix of an
+// idempotency key for log correlation (docs/plan/43 Task T6) — never the
+// full value. Every valid key is already >=8 chars (transport rejects
+// shorter ones), so a 6-char prefix always leaves at least 2 characters
+// unrevealed.
+func truncatedIdemKey(key string) string {
+	const n = 6
+	if len(key) <= n {
+		return key + "…"
+	}
+	return key[:n] + "…"
 }
 
 func accountIDIn(ids []uuid.UUID, id uuid.UUID) bool {

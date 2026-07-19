@@ -43,15 +43,24 @@ func WithContext(ctx context.Context, logger *slog.Logger) context.Context {
 
 // FromContext retrieves the logger from ctx; falls back to slog.Default().
 func FromContext(ctx context.Context) *slog.Logger {
+	return FromContextOrDefault(ctx, slog.Default())
+}
+
+// FromContextOrDefault retrieves the logger from ctx, falling back to
+// fallback (rather than slog.Default()) when ctx carries none — lets a
+// caller that already holds its own service-scoped base logger (e.g.
+// middleware.WithLogger's captured log) avoid silently dropping to the
+// global default when no per-request logger was set upstream.
+func FromContextOrDefault(ctx context.Context, fallback *slog.Logger) *slog.Logger {
 	if ctx == nil {
-		return slog.Default()
+		return fallback
 	}
 
 	if l, ok := ctx.Value(loggerKey).(*slog.Logger); ok && l != nil {
 		return l
 	}
 
-	return slog.Default()
+	return fallback
 }
 
 // With returns a new logger from ctx with extra key-value pairs attached.

@@ -45,7 +45,7 @@ func NewVerifier(verifyRepo repository.VerificationRepository, outboxRepo reposi
 		loc = time.UTC
 	}
 	return &Verifier{verifyRepo: verifyRepo, outboxRepo: outboxRepo, logger: logger, loc: loc, alertFn: alertFn,
-		sched: scheduler.NewScheduler(lock, nil, scheduler.WithLocation(loc))}
+		sched: scheduler.NewScheduler(lock, scheduler.NewPrometheusMetrics(), scheduler.WithLocation(loc))}
 }
 
 // alert fires v.alertFn if configured, logging (not propagating) any

@@ -1,0 +1,16 @@
+version: 2
+
+# docs/plan/44 K2: keep external action SHA pins receiving reviewable
+# updates instead of going stale forever. No auto-merge — every bump is a
+# normal PR that runs the full CI gate and gets read by a human before
+# merge (constraint #9's own "no auto-approval/auto-merge" applies).
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 3
+    groups:
+      github-actions:
+        patterns:
+          - "*"

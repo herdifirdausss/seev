@@ -175,9 +175,9 @@ func TestAdminRouter_VendorHealth_NilBreaker_EmptyList(t *testing.T) {
 // half-open vendors must report each state accurately in one snapshot.
 func TestAdminRouter_VendorHealth_ReportsAllThreeStates(t *testing.T) {
 	breaker := vendorgw.NewHealthTracker(1, time.Nanosecond, nil)
-	breaker.RecordFailure("open-vendor")
-	breaker.RecordFailure("half-open-vendor")
-	assert.True(t, breaker.Allow("half-open-vendor"), "cooldown of 1ns has elapsed by the time Allow is called, promoting to half-open")
+	breaker.RecordFailure(context.Background(), "open-vendor")
+	breaker.RecordFailure(context.Background(), "half-open-vendor")
+	assert.True(t, breaker.Allow(context.Background(), "half-open-vendor"), "cooldown of 1ns has elapsed by the time Allow is called, promoting to half-open")
 	// "closed-vendor" is never touched — stays closed by default, and
 	// therefore has no entry in Snapshot() at all.
 
