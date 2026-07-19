@@ -30,7 +30,7 @@ func currentUserID(r *http.Request) (uuid.UUID, bool) {
 
 func isAdmin(r *http.Request) bool {
 	claims := middleware.GetClaims(r.Context())
-	return claims != nil && claims.Role == "admin"
+	return claims != nil && (claims.Role == "admin" || claims.Role == "admin_maker" || claims.Role == "admin_checker")
 }
 
 // errNonIntegralAmount and decimalFromString mirror

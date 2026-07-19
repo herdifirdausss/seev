@@ -53,8 +53,12 @@ type AuthConfig struct {
 	// BootstrapAdminEmail/Password, when both set, idempotently create the
 	// first admin account at startup (docs/plan/25 T1 step 6) — chosen over
 	// a seed migration so no password hash is ever committed to VCS.
-	BootstrapAdminEmail    string
-	BootstrapAdminPassword string
+	BootstrapAdminEmail      string
+	BootstrapAdminPassword   string
+	BootstrapMakerEmail      string
+	BootstrapMakerPassword   string
+	BootstrapCheckerEmail    string
+	BootstrapCheckerPassword string
 }
 
 // VendorConfig configures the payin webhook vendor registry (docs/plan/22
@@ -485,9 +489,13 @@ func loadFromEnvMode(getenv func(string) string, requireRabbitMQ bool) (*Config,
 			Distributed:      parseBool(getenv("BREAKER_DISTRIBUTED"), false),
 		},
 		Auth: AuthConfig{
-			DefaultCurrency:        getWithDefault(getenv, "DEFAULT_CURRENCY", "IDR"),
-			BootstrapAdminEmail:    getenv("AUTH_BOOTSTRAP_ADMIN_EMAIL"),
-			BootstrapAdminPassword: getenv("AUTH_BOOTSTRAP_ADMIN_PASSWORD"),
+			DefaultCurrency:          getWithDefault(getenv, "DEFAULT_CURRENCY", "IDR"),
+			BootstrapAdminEmail:      getenv("AUTH_BOOTSTRAP_ADMIN_EMAIL"),
+			BootstrapAdminPassword:   getenv("AUTH_BOOTSTRAP_ADMIN_PASSWORD"),
+			BootstrapMakerEmail:      getenv("AUTH_BOOTSTRAP_MAKER_EMAIL"),
+			BootstrapMakerPassword:   getenv("AUTH_BOOTSTRAP_MAKER_PASSWORD"),
+			BootstrapCheckerEmail:    getenv("AUTH_BOOTSTRAP_CHECKER_EMAIL"),
+			BootstrapCheckerPassword: getenv("AUTH_BOOTSTRAP_CHECKER_PASSWORD"),
 		},
 		AdminBFF: AdminBFFConfig{
 			AuthServiceURL:     getWithDefault(getenv, "AUTH_SERVICE_URL", "http://localhost:8082"),
@@ -604,6 +612,12 @@ func validate(cfg *Config, requireRabbitMQ bool, errs *[]string) error {
 
 	if (cfg.Auth.BootstrapAdminEmail == "") != (cfg.Auth.BootstrapAdminPassword == "") {
 		*errs = append(*errs, "AUTH_BOOTSTRAP_ADMIN_EMAIL and AUTH_BOOTSTRAP_ADMIN_PASSWORD must be set together")
+	}
+	if (cfg.Auth.BootstrapMakerEmail == "") != (cfg.Auth.BootstrapMakerPassword == "") {
+		*errs = append(*errs, "AUTH_BOOTSTRAP_MAKER_EMAIL and AUTH_BOOTSTRAP_MAKER_PASSWORD must be set together")
+	}
+	if (cfg.Auth.BootstrapCheckerEmail == "") != (cfg.Auth.BootstrapCheckerPassword == "") {
+		*errs = append(*errs, "AUTH_BOOTSTRAP_CHECKER_EMAIL and AUTH_BOOTSTRAP_CHECKER_PASSWORD must be set together")
 	}
 
 	if cfg.App.Env == "production" && cfg.Postgres.SSLMode == "disable" {

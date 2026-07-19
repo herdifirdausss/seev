@@ -24,14 +24,19 @@ var (
 	csrfFailureTotal = prometheus.NewCounter(prometheus.CounterOpts{
 		Namespace: "adminbff", Name: "csrf_failures_total", Help: "Rejected admin BFF requests due to missing or invalid CSRF tokens.",
 	})
+	auditWriteFailuresTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace: "adminbff", Name: "audit_write_failures_total", Help: "Admin BFF audit writes that failed while the mutation continued.",
+	})
 )
 
 func init() {
 	prometheus.Register(csrfFailureTotal)
+	prometheus.Register(auditWriteFailuresTotal)
 }
 
 type Module struct {
 	repo      SessionRepository
+	audit     auditWriter
 	auth      *AuthClient
 	cfg       config.AdminBFFConfig
 	logger    *slog.Logger
@@ -46,7 +51,8 @@ func NewModule(db database.DatabaseSQL, cfg config.AdminBFFConfig, logger *slog.
 	}
 	lock := scheduler.NewMemoryLock(2 * time.Minute)
 	return &Module{repo: NewSessionRepository(db), auth: NewAuthClient(cfg.AuthServiceURL), cfg: cfg, logger: logger,
-		lock: lock, scheduler: scheduler.NewScheduler(lock, scheduler.NewPrometheusMetrics())}
+		audit: newAuditRepository(db),
+		lock:  lock, scheduler: scheduler.NewScheduler(lock, scheduler.NewPrometheusMetrics())}
 }
 
 func (m *Module) Start() error {

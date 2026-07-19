@@ -467,7 +467,17 @@ func currentUserID(r *http.Request) (uuid.UUID, bool) {
 
 func isAdmin(r *http.Request) bool {
 	claims := middleware.GetClaims(r.Context())
-	return claims != nil && claims.Role == "admin"
+	return claims != nil && (claims.Role == "admin" || claims.Role == "admin_maker" || claims.Role == "admin_checker")
+}
+
+func isAdminMaker(r *http.Request) bool {
+	claims := middleware.GetClaims(r.Context())
+	return claims != nil && (claims.Role == "admin" || claims.Role == "admin_maker")
+}
+
+func isAdminChecker(r *http.Request) bool {
+	claims := middleware.GetClaims(r.Context())
+	return claims != nil && (claims.Role == "admin" || claims.Role == "admin_checker")
 }
 
 func (h *handler) postTransaction(w http.ResponseWriter, r *http.Request) {
@@ -1006,8 +1016,8 @@ func (h *handler) listDeadEvents(w http.ResponseWriter, r *http.Request) {
 // adjustment_debit (see directPostBlockedTypes in postTransaction).
 
 func (h *handler) createAdjustment(w http.ResponseWriter, r *http.Request) {
-	if !isAdmin(r) {
-		response.Forbidden(w, "admin privileges required")
+	if !isAdminMaker(r) {
+		response.Forbidden(w, "maker privileges required")
 		return
 	}
 	requestedBy, ok := currentUserID(r)
@@ -1059,8 +1069,8 @@ func (h *handler) createAdjustment(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handler) approveAdjustment(w http.ResponseWriter, r *http.Request) {
-	if !isAdmin(r) {
-		response.Forbidden(w, "admin privileges required")
+	if !isAdminChecker(r) {
+		response.Forbidden(w, "checker privileges required")
 		return
 	}
 	approverID, ok := currentUserID(r)
@@ -1083,8 +1093,8 @@ func (h *handler) approveAdjustment(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handler) rejectAdjustment(w http.ResponseWriter, r *http.Request) {
-	if !isAdmin(r) {
-		response.Forbidden(w, "admin privileges required")
+	if !isAdminChecker(r) {
+		response.Forbidden(w, "checker privileges required")
 		return
 	}
 	approverID, ok := currentUserID(r)
@@ -1172,8 +1182,8 @@ const maxReconCSVUploadBytes = 10 << 20 // 10MiB
 const maxReconCSVRows = 50_000
 
 func (h *handler) createReconBatch(w http.ResponseWriter, r *http.Request) {
-	if !isAdmin(r) {
-		response.Forbidden(w, "admin privileges required")
+	if !isAdminMaker(r) {
+		response.Forbidden(w, "maker privileges required")
 		return
 	}
 	createdBy, ok := currentUserID(r)
@@ -1342,8 +1352,8 @@ func (h *handler) listReconBatches(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handler) resolveReconItem(w http.ResponseWriter, r *http.Request) {
-	if !isAdmin(r) {
-		response.Forbidden(w, "admin privileges required")
+	if !isAdminMaker(r) {
+		response.Forbidden(w, "maker privileges required")
 		return
 	}
 	requestedBy, ok := currentUserID(r)

@@ -130,6 +130,14 @@ func run(parent context.Context) error {
 		closeAuthDependencies(log, ledgerConn.Close, closeFraud, redisCache, db, shutdownTracing)
 		return fmt.Errorf("ensure bootstrap admin: %w", err)
 	}
+	if err := module.EnsureBootstrapOperator(ctx, cfg.Auth.BootstrapMakerEmail, cfg.Auth.BootstrapMakerPassword, "admin_maker"); err != nil {
+		closeAuthDependencies(log, ledgerConn.Close, closeFraud, redisCache, db, shutdownTracing)
+		return fmt.Errorf("ensure bootstrap maker: %w", err)
+	}
+	if err := module.EnsureBootstrapOperator(ctx, cfg.Auth.BootstrapCheckerEmail, cfg.Auth.BootstrapCheckerPassword, "admin_checker"); err != nil {
+		closeAuthDependencies(log, ledgerConn.Close, closeFraud, redisCache, db, shutdownTracing)
+		return fmt.Errorf("ensure bootstrap checker: %w", err)
+	}
 	retryJob := module.NewKYCApplyRetryJob(redisClientClient(redisCache), log)
 	if err := retryJob.Start(ctx); err != nil {
 		closeAuthDependencies(log, ledgerConn.Close, closeFraud, redisCache, db, shutdownTracing)

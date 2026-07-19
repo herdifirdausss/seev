@@ -24,6 +24,10 @@ type eventResponse struct {
 	CreatedAt string    `json:"created_at"`
 }
 
+func isAdminRole(role string) bool {
+	return role == "admin" || role == "admin_maker" || role == "admin_checker"
+}
+
 func (m *Module) AdminRouter() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/admin/fraud/events", m.listEventsHandler)
@@ -34,7 +38,7 @@ func (m *Module) AdminRouter() http.Handler {
 
 func (m *Module) getRuleModeHandler(w http.ResponseWriter, r *http.Request) {
 	claims := middleware.GetClaims(r.Context())
-	if claims == nil || claims.Role != "admin" {
+	if claims == nil || !isAdminRole(claims.Role) {
 		response.Forbidden(w, "admin privileges required")
 		return
 	}
@@ -52,7 +56,7 @@ func (m *Module) getRuleModeHandler(w http.ResponseWriter, r *http.Request) {
 
 func (m *Module) putRuleModeHandler(w http.ResponseWriter, r *http.Request) {
 	claims := middleware.GetClaims(r.Context())
-	if claims == nil || claims.Role != "admin" {
+	if claims == nil || !isAdminRole(claims.Role) {
 		response.Forbidden(w, "admin privileges required")
 		return
 	}
@@ -80,7 +84,7 @@ func (m *Module) putRuleModeHandler(w http.ResponseWriter, r *http.Request) {
 
 func (m *Module) listEventsHandler(w http.ResponseWriter, r *http.Request) {
 	claims := middleware.GetClaims(r.Context())
-	if claims == nil || claims.Role != "admin" {
+	if claims == nil || !isAdminRole(claims.Role) {
 		response.Forbidden(w, "admin privileges required")
 		return
 	}

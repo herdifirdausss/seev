@@ -9,8 +9,10 @@ import (
 
 // Role/status values — mirror the CHECK constraints on auth_users exactly.
 const (
-	RoleUser  = "user"
-	RoleAdmin = "admin"
+	RoleUser         = "user"
+	RoleAdmin        = "admin"
+	RoleAdminMaker   = "admin_maker"
+	RoleAdminChecker = "admin_checker"
 
 	StatusActive   = "active"
 	StatusDisabled = "disabled"

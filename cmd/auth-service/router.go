@@ -91,7 +91,7 @@ func internalRouter(args ...any) http.Handler {
 		cfg, cfgOK := args[0].(*config.Config)
 		handlers, handlersOK := args[1].(kycHandlers)
 		if cfgOK && handlersOK {
-			authedAdmin := middleware.Chain(middleware.WithAuth(cfg.JWT.Secret, cfg.JWT.Issuer), middleware.WithRole("admin"), middleware.RequireJSON())
+			authedAdmin := middleware.Chain(middleware.WithAuth(cfg.JWT.Secret, cfg.JWT.Issuer), middleware.WithRole("admin", "admin_maker", "admin_checker"), middleware.RequireJSON())
 			mux.Handle("GET /api/v1/admin/kyc/submissions", authedAdmin(handlers.AdminListKYCHandler()))
 			mux.Handle("POST /api/v1/admin/kyc/submissions/{id}/approve", authedAdmin(handlers.AdminApproveKYCHandler()))
 			mux.Handle("POST /api/v1/admin/kyc/submissions/{id}/reject", authedAdmin(handlers.AdminRejectKYCHandler()))

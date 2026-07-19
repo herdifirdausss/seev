@@ -60,7 +60,7 @@ func (m *Module) vendorHealthHandler(w http.ResponseWriter, r *http.Request) {
 
 func isAdmin(r *http.Request) bool {
 	claims := middleware.GetClaims(r.Context())
-	return claims != nil && claims.Role == "admin"
+	return claims != nil && (claims.Role == "admin" || claims.Role == "admin_maker" || claims.Role == "admin_checker")
 }
 
 type webhookEventResponse struct {
