@@ -78,7 +78,11 @@ func run(parent context.Context) error {
 	defer db.Close()
 	defer shutdownTracing(context.Background())
 
-	module := adminbff.NewModule()
+	module := adminbff.NewModule(db, cfg.AdminBFF, log)
+	if err := module.Start(); err != nil {
+		return fmt.Errorf("start admin-bff jobs: %w", err)
+	}
+	defer module.Stop()
 	server := &http.Server{
 		Addr: ":" + cfg.App.Port, Handler: adminRouter(cfg, module, log),
 		ReadTimeout: cfg.App.ReadTimeout, WriteTimeout: cfg.App.WriteTimeout,

@@ -1,5 +1,5 @@
 CREATE TABLE sessions (
-    id                  UUID PRIMARY KEY,
+    id                  TEXT PRIMARY KEY,
     user_id             UUID NOT NULL,
     email               TEXT NOT NULL,
     role                TEXT NOT NULL CHECK (role IN ('admin', 'admin_maker', 'admin_checker')),

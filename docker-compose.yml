@@ -340,7 +340,7 @@ services:
       POSTGRES_SSL_MODE: disable
       JWT_SECRET: ${JWT_SECRET:-change-me-to-a-random-32-plus-character-secret}
       JWT_ISSUER: ${JWT_ISSUER:-}
-      AUTH_SERVICE_URL: http://auth-service:8083
+      AUTH_SERVICE_URL: http://auth-service:8082
       ADMIN_BFF_SECURE_COOKIE: "false"
     ports:
       - "127.0.0.1:8095:8095"
