@@ -1,0 +1,12 @@
+{{define "content"}}<h1>Kontrol dan review</h1>
+<p>Panel read-only atau CRUD tipis ini meneruskan kontrak service pemilik data.</p>
+<div class="grid">
+  <article><h2>Fee rules</h2><div hx-get="/api/v1/admin/ledger/fee-rules" hx-trigger="load">Memuat fee rules…</div></article>
+  <article><h2>Payin routing</h2><div hx-get="/api/v1/admin/payin/routing-rules" hx-trigger="load">Memuat routing payin…</div></article>
+  <article><h2>Payout routing</h2><div hx-get="/api/v1/admin/payout/routing-rules" hx-trigger="load">Memuat routing payout…</div></article>
+  <article><h2>Vendor gateways</h2><div hx-get="/api/v1/admin/payout/vendors/health" hx-trigger="load, every 30s">Memuat kesehatan vendor…</div></article>
+  <article><h2>KYC review</h2><div hx-get="/api/v1/admin/kyc/submissions" hx-trigger="load, every 30s">Memuat submission KYC…</div></article>
+  <article><h2>Fraud events</h2><div hx-get="/api/v1/admin/fraud/events" hx-trigger="load, every 30s">Memuat events fraud…</div></article>
+  <article><h2>Audit log</h2><div hx-get="/api/v1/admin/audit?limit=25" hx-trigger="load, every 30s">Memuat audit…</div></article>
+</div>
+{{end}}

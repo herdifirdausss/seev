@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -43,6 +44,7 @@ func init() {
 type Module struct {
 	repo      SessionRepository
 	audit     auditWriter
+	auditRead auditReader
 	auth      *AuthClient
 	clients   client.Clients
 	cfg       config.AdminBFFConfig
@@ -57,9 +59,10 @@ func NewModule(db database.DatabaseSQL, cfg config.AdminBFFConfig, logger *slog.
 		logger = slog.Default()
 	}
 	lock := scheduler.NewMemoryLock(2 * time.Minute)
+	auditRepo := newAuditRepository(db)
 	return &Module{repo: NewSessionRepository(db), auth: NewAuthClient(cfg.AuthServiceURL), clients: client.NewClients(cfg.AuthServiceURL, cfg.AuthAdminServiceURL, cfg.LedgerServiceURL, cfg.PayinServiceURL, cfg.PayoutServiceURL, cfg.FraudServiceURL, cfg.GatewayServiceURL), cfg: cfg, logger: logger,
-		audit: newAuditRepository(db),
-		lock:  lock, scheduler: scheduler.NewScheduler(lock, scheduler.NewPrometheusMetrics())}
+		audit: auditRepo, auditRead: auditRepo,
+		lock: lock, scheduler: scheduler.NewScheduler(lock, scheduler.NewPrometheusMetrics())}
 }
 
 func (m *Module) Start() error {
@@ -84,6 +87,8 @@ func (m *Module) AdminRouter() http.Handler {
 	mux.Handle("GET /api/v1/admin/maker", m.consolePage("maker"))
 	mux.Handle("GET /api/v1/admin/payout", m.consolePage("payout"))
 	mux.Handle("GET /api/v1/admin/recon", m.consolePage("recon"))
+	mux.Handle("GET /api/v1/admin/catalog", m.consolePage("catalog"))
+	mux.HandleFunc("GET /api/v1/admin/audit", m.auditListHandler)
 	mux.Handle("/api/v1/admin/adjustments/", m.proxy("ledger", m.clients.Ledger, "/api/v1/admin/adjustments/", "/api/v1/ledger/admin/adjustments/"))
 	mux.Handle("/api/v1/admin/adjustments", m.proxy("ledger", m.clients.Ledger, "/api/v1/admin/adjustments", "/api/v1/ledger/admin/adjustments"))
 	mux.Handle("POST /api/v1/admin/adjustments/approve", m.adjustmentDecisionProxy("approve"))
@@ -128,6 +133,39 @@ func (m *Module) pageData(r *http.Request, title, page string) adminweb.PageData
 		data.IsChecker = session.Role == "admin" || session.Role == "admin_checker"
 	}
 	return data
+}
+
+func (m *Module) auditListHandler(w http.ResponseWriter, r *http.Request) {
+	limit := 100
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		if value, err := strconv.Atoi(raw); err != nil || value <= 0 {
+			writeJSONError(w, http.StatusBadRequest, "INVALID_LIMIT", "limit must be positive")
+			return
+		} else if value < limit {
+			limit = value
+		}
+	}
+	entries, err := m.auditRead.ListAudit(r.Context(), limit)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "AUDIT_UNAVAILABLE", "audit log unavailable")
+		return
+	}
+	response := make([]map[string]any, 0, len(entries))
+	for _, entry := range entries {
+		response = append(response, map[string]any{
+			"user_id": entry.UserID, "email": entry.Email, "role": entry.Role,
+			"method": entry.Method, "route_pattern": entry.RoutePattern,
+			"target_service": entry.TargetService, "resource_id": entry.ResourceID,
+			"outcome": entry.Outcome, "request_id": entry.RequestID, "summary": entry.Summary,
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"entries": response})
+}
+
+func writeJSON(w http.ResponseWriter, status int, value any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(value)
 }
 
 func (m *Module) proxy(target string, downstream *client.ServiceClient, publicPrefix, downstreamPrefix string) http.Handler {

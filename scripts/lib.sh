@@ -537,7 +537,13 @@ start_adminbff_service() {
 		export POSTGRES_DB=$ADMINBFF_DB_NAME
 		export POSTGRES_SSL_MODE=disable
 		export JWT_SECRET=$JWT_SECRET
-		export AUTH_SERVICE_URL="${AUTH_SERVICE_URL:-http://localhost:$AUTH_INTERNAL_PORT}"
+		export AUTH_SERVICE_URL="${AUTH_SERVICE_URL:-http://localhost:$AUTH_APP_PORT}"
+		export AUTH_ADMIN_SERVICE_URL="${AUTH_ADMIN_SERVICE_URL:-http://localhost:$AUTH_INTERNAL_PORT}"
+		export LEDGER_SERVICE_URL="${LEDGER_SERVICE_URL:-http://localhost:$LEDGER_INTERNAL_PORT}"
+		export PAYIN_SERVICE_URL="${PAYIN_SERVICE_URL:-http://localhost:$PAYIN_ADMIN_PORT}"
+		export PAYOUT_SERVICE_URL="${PAYOUT_SERVICE_URL:-http://localhost:$PAYOUT_ADMIN_PORT}"
+		export FRAUD_SERVICE_URL="${FRAUD_SERVICE_URL:-http://localhost:$FRAUD_ADMIN_PORT}"
+		export GATEWAY_SERVICE_URL="${GATEWAY_SERVICE_URL:-http://localhost:$INTERNAL_PORT}"
 		export ADMIN_BFF_SECURE_COOKIE="${ADMIN_BFF_SECURE_COOKIE:-false}"
 		export LOG_FORMAT=json
 		nohup "$ADMINBFF_BIN" >>"$ADMINBFF_LOG" 2>&1 &
@@ -661,6 +667,13 @@ stop_services() {
 		kill -TERM "$fraud_pid" 2>/dev/null || true
 		wait_for_pid_gone "$fraud_pid"
 		rm -f "$FRAUD_PID_FILE"
+	fi
+	if [ -f "$ADMINBFF_PID_FILE" ]; then
+		local adminbff_pid
+		adminbff_pid="$(cat "$ADMINBFF_PID_FILE")"
+		kill -TERM "$adminbff_pid" 2>/dev/null || true
+		wait_for_pid_gone "$adminbff_pid"
+		rm -f "$ADMINBFF_PID_FILE"
 	fi
 }
 

@@ -27,9 +27,13 @@ type auditWriter interface {
 	WriteAudit(context.Context, AuditEntry) error
 }
 
+type auditReader interface {
+	ListAudit(context.Context, int) ([]AuditEntry, error)
+}
+
 type auditRepo struct{ db database.DatabaseSQL }
 
-func newAuditRepository(db database.DatabaseSQL) auditWriter { return &auditRepo{db: db} }
+func newAuditRepository(db database.DatabaseSQL) *auditRepo { return &auditRepo{db: db} }
 
 func (r *auditRepo) WriteAudit(ctx context.Context, entry AuditEntry) error {
 	summary, err := json.Marshal(entry.Summary)
@@ -46,6 +50,39 @@ func (r *auditRepo) WriteAudit(ctx context.Context, entry AuditEntry) error {
 		return fmt.Errorf("adminbff: write audit: %w", err)
 	}
 	return nil
+}
+
+func (r *auditRepo) ListAudit(ctx context.Context, limit int) ([]AuditEntry, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 100
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT user_id, email, role, method, route_pattern, target_service,
+		       resource_id, outcome, request_id, summary
+		FROM audit_log ORDER BY created_at DESC, id DESC LIMIT $1`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("adminbff: list audit: %w", err)
+	}
+	defer rows.Close()
+	entries := make([]AuditEntry, 0, limit)
+	for rows.Next() {
+		var entry AuditEntry
+		var userID string
+		var summary []byte
+		if err := rows.Scan(&userID, &entry.Email, &entry.Role, &entry.Method,
+			&entry.RoutePattern, &entry.TargetService, &entry.ResourceID,
+			&entry.Outcome, &entry.RequestID, &summary); err != nil {
+			return nil, fmt.Errorf("adminbff: scan audit: %w", err)
+		}
+		entry.UserID = userID
+		if len(summary) > 0 {
+			if err := json.Unmarshal(summary, &entry.Summary); err != nil {
+				return nil, fmt.Errorf("adminbff: decode audit summary: %w", err)
+			}
+		}
+		entries = append(entries, entry)
+	}
+	return entries, rows.Err()
 }
 
 func (m *Module) AuditMutation(ctx context.Context, r *http.Request, target string, outcome int, summary map[string]any) {
