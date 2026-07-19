@@ -19,9 +19,10 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	PayinService_HandleWebhook_FullMethodName     = "/seev.payin.v1.PayinService/HandleWebhook"
-	PayinService_CreateTopupIntent_FullMethodName = "/seev.payin.v1.PayinService/CreateTopupIntent"
-	PayinService_GetTopupIntent_FullMethodName    = "/seev.payin.v1.PayinService/GetTopupIntent"
+	PayinService_HandleWebhook_FullMethodName        = "/seev.payin.v1.PayinService/HandleWebhook"
+	PayinService_CreateTopupIntent_FullMethodName    = "/seev.payin.v1.PayinService/CreateTopupIntent"
+	PayinService_GetTopupIntent_FullMethodName       = "/seev.payin.v1.PayinService/GetTopupIntent"
+	PayinService_ListAssuranceRecords_FullMethodName = "/seev.payin.v1.PayinService/ListAssuranceRecords"
 )
 
 // PayinServiceClient is the client API for PayinService service.
@@ -31,6 +32,9 @@ type PayinServiceClient interface {
 	HandleWebhook(ctx context.Context, in *HandleWebhookRequest, opts ...grpc.CallOption) (*HandleWebhookResponse, error)
 	CreateTopupIntent(ctx context.Context, in *CreateTopupIntentRequest, opts ...grpc.CallOption) (*CreateTopupIntentResponse, error)
 	GetTopupIntent(ctx context.Context, in *GetTopupIntentRequest, opts ...grpc.CallOption) (*GetTopupIntentResponse, error)
+	// Read-only product-assurance projection. Additive: existing callers are
+	// unaffected and sensitive webhook payloads never cross this boundary.
+	ListAssuranceRecords(ctx context.Context, in *ListAssuranceRecordsRequest, opts ...grpc.CallOption) (*ListAssuranceRecordsResponse, error)
 }
 
 type payinServiceClient struct {
@@ -71,6 +75,16 @@ func (c *payinServiceClient) GetTopupIntent(ctx context.Context, in *GetTopupInt
 	return out, nil
 }
 
+func (c *payinServiceClient) ListAssuranceRecords(ctx context.Context, in *ListAssuranceRecordsRequest, opts ...grpc.CallOption) (*ListAssuranceRecordsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListAssuranceRecordsResponse)
+	err := c.cc.Invoke(ctx, PayinService_ListAssuranceRecords_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // PayinServiceServer is the server API for PayinService service.
 // All implementations must embed UnimplementedPayinServiceServer
 // for forward compatibility.
@@ -78,6 +92,9 @@ type PayinServiceServer interface {
 	HandleWebhook(context.Context, *HandleWebhookRequest) (*HandleWebhookResponse, error)
 	CreateTopupIntent(context.Context, *CreateTopupIntentRequest) (*CreateTopupIntentResponse, error)
 	GetTopupIntent(context.Context, *GetTopupIntentRequest) (*GetTopupIntentResponse, error)
+	// Read-only product-assurance projection. Additive: existing callers are
+	// unaffected and sensitive webhook payloads never cross this boundary.
+	ListAssuranceRecords(context.Context, *ListAssuranceRecordsRequest) (*ListAssuranceRecordsResponse, error)
 	mustEmbedUnimplementedPayinServiceServer()
 }
 
@@ -96,6 +113,9 @@ func (UnimplementedPayinServiceServer) CreateTopupIntent(context.Context, *Creat
 }
 func (UnimplementedPayinServiceServer) GetTopupIntent(context.Context, *GetTopupIntentRequest) (*GetTopupIntentResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetTopupIntent not implemented")
+}
+func (UnimplementedPayinServiceServer) ListAssuranceRecords(context.Context, *ListAssuranceRecordsRequest) (*ListAssuranceRecordsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListAssuranceRecords not implemented")
 }
 func (UnimplementedPayinServiceServer) mustEmbedUnimplementedPayinServiceServer() {}
 func (UnimplementedPayinServiceServer) testEmbeddedByValue()                      {}
@@ -172,6 +192,24 @@ func _PayinService_GetTopupIntent_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PayinService_ListAssuranceRecords_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListAssuranceRecordsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PayinServiceServer).ListAssuranceRecords(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PayinService_ListAssuranceRecords_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PayinServiceServer).ListAssuranceRecords(ctx, req.(*ListAssuranceRecordsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // PayinService_ServiceDesc is the grpc.ServiceDesc for PayinService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -190,6 +228,10 @@ var PayinService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetTopupIntent",
 			Handler:    _PayinService_GetTopupIntent_Handler,
+		},
+		{
+			MethodName: "ListAssuranceRecords",
+			Handler:    _PayinService_ListAssuranceRecords_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

@@ -8,6 +8,9 @@ service PayinService {
   rpc HandleWebhook(HandleWebhookRequest) returns (HandleWebhookResponse);
   rpc CreateTopupIntent(CreateTopupIntentRequest) returns (CreateTopupIntentResponse);
   rpc GetTopupIntent(GetTopupIntentRequest) returns (GetTopupIntentResponse);
+  // Read-only product-assurance projection. Additive: existing callers are
+  // unaffected and sensitive webhook payloads never cross this boundary.
+  rpc ListAssuranceRecords(ListAssuranceRecordsRequest) returns (ListAssuranceRecordsResponse);
 }
 
 message HandleWebhookRequest {
@@ -56,4 +59,39 @@ message TopupIntent {
   google.protobuf.Timestamp expires_at = 8;
   google.protobuf.Timestamp created_at = 9;
   google.protobuf.Timestamp updated_at = 10;
+}
+
+message ListAssuranceRecordsRequest {
+  google.protobuf.Timestamp cursor_updated_at = 1;
+  string cursor_id = 2;
+  google.protobuf.Timestamp cutoff = 3;
+  uint32 page_size = 4;
+}
+
+message ListAssuranceRecordsResponse {
+  repeated AssuranceRecord records = 1;
+  google.protobuf.Timestamp next_updated_at = 2;
+  string next_id = 3;
+  bool has_more = 4;
+}
+
+message AssuranceRecord {
+  string record_type = 1; // intent | webhook_event
+  string id = 2;
+  google.protobuf.Timestamp effective_updated_at = 3;
+  google.protobuf.Timestamp created_at = 4;
+  string status = 5;
+  string user_id = 6;
+  string amount = 7;
+  string currency = 8;
+  string vendor = 9;
+  string reference = 10;
+  string external_ref = 11;
+  string settled_event_id = 12;
+  string request_id = 13;
+  bool request_id_present = 14;
+  string ledger_type = 15;
+  string ledger_gateway = 16;
+  string ledger_external_ref = 17;
+  string ledger_idempotency_scope = 18;
 }

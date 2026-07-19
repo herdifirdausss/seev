@@ -16,6 +16,7 @@ service LedgerService {
   // the no-quote fallback for every existing caller.
   rpc ConsumeFeeQuote(ConsumeFeeQuoteRequest) returns (ConsumeFeeQuoteResponse);
   rpc ApplyKycTier(ApplyKycTierRequest) returns (ApplyKycTierResponse);
+  rpc BatchGetAssuranceTransactions(BatchGetAssuranceTransactionsRequest) returns (BatchGetAssuranceTransactionsResponse);
 }
 
 message PostRequest {
@@ -106,3 +107,57 @@ message ApplyKycTierRequest {
 }
 
 message ApplyKycTierResponse {}
+
+message BatchGetAssuranceTransactionsRequest {
+  repeated AssuranceSelector selectors = 1;
+  repeated string fee_quote_ids = 2;
+}
+
+message AssuranceSelector {
+  string token = 1;
+  string transaction_id = 2;
+  string idempotency_key = 3;
+  string idempotency_scope = 4;
+  string type = 5;
+  string gateway = 6;
+  string external_ref = 7;
+}
+
+message BatchGetAssuranceTransactionsResponse {
+  repeated AssuranceTransactionResult results = 1;
+  repeated FeeQuoteProof fee_quote_proofs = 2;
+}
+
+message AssuranceTransactionResult {
+  string token = 1;
+  repeated AssuranceTransaction transactions = 2;
+}
+
+message AssuranceTransaction {
+  string id = 1;
+  string type = 2;
+  string status = 3;
+  string amount = 4;
+  string currency = 5;
+  string gateway = 6;
+  string external_ref = 7;
+  string original_reference_id = 8;
+  string lifecycle_closer_id = 9;
+  string lifecycle_closer_reason = 10;
+  string booked_fee_amount = 11;
+  string booked_fee_gateway = 12;
+  google.protobuf.Timestamp created_at = 13;
+  google.protobuf.Timestamp updated_at = 14;
+}
+
+message FeeQuoteProof {
+  string quote_id = 1;
+  bool user_match = 2;
+  string transaction_type = 3;
+  string amount = 4;
+  string currency = 5;
+  string fee_amount = 6;
+  string fee_gateway = 7;
+  string status = 8;
+  string consumed_by_ref = 9;
+}

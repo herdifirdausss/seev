@@ -349,6 +349,458 @@ func (x *Payout) GetUpdatedAt() *timestamppb.Timestamp {
 	return nil
 }
 
+type ListAssuranceRecordsRequest struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	CursorUpdatedAt *timestamppb.Timestamp `protobuf:"bytes,1,opt,name=cursor_updated_at,json=cursorUpdatedAt,proto3" json:"cursor_updated_at,omitempty"`
+	CursorId        string                 `protobuf:"bytes,2,opt,name=cursor_id,json=cursorId,proto3" json:"cursor_id,omitempty"`
+	Cutoff          *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=cutoff,proto3" json:"cutoff,omitempty"`
+	PageSize        uint32                 `protobuf:"varint,4,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *ListAssuranceRecordsRequest) Reset() {
+	*x = ListAssuranceRecordsRequest{}
+	mi := &file_seev_payout_v1_payout_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListAssuranceRecordsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListAssuranceRecordsRequest) ProtoMessage() {}
+
+func (x *ListAssuranceRecordsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_seev_payout_v1_payout_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListAssuranceRecordsRequest.ProtoReflect.Descriptor instead.
+func (*ListAssuranceRecordsRequest) Descriptor() ([]byte, []int) {
+	return file_seev_payout_v1_payout_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *ListAssuranceRecordsRequest) GetCursorUpdatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CursorUpdatedAt
+	}
+	return nil
+}
+
+func (x *ListAssuranceRecordsRequest) GetCursorId() string {
+	if x != nil {
+		return x.CursorId
+	}
+	return ""
+}
+
+func (x *ListAssuranceRecordsRequest) GetCutoff() *timestamppb.Timestamp {
+	if x != nil {
+		return x.Cutoff
+	}
+	return nil
+}
+
+func (x *ListAssuranceRecordsRequest) GetPageSize() uint32 {
+	if x != nil {
+		return x.PageSize
+	}
+	return 0
+}
+
+type ListAssuranceRecordsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Records       []*AssuranceRecord     `protobuf:"bytes,1,rep,name=records,proto3" json:"records,omitempty"`
+	NextUpdatedAt *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=next_updated_at,json=nextUpdatedAt,proto3" json:"next_updated_at,omitempty"`
+	NextId        string                 `protobuf:"bytes,3,opt,name=next_id,json=nextId,proto3" json:"next_id,omitempty"`
+	HasMore       bool                   `protobuf:"varint,4,opt,name=has_more,json=hasMore,proto3" json:"has_more,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListAssuranceRecordsResponse) Reset() {
+	*x = ListAssuranceRecordsResponse{}
+	mi := &file_seev_payout_v1_payout_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListAssuranceRecordsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListAssuranceRecordsResponse) ProtoMessage() {}
+
+func (x *ListAssuranceRecordsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_seev_payout_v1_payout_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListAssuranceRecordsResponse.ProtoReflect.Descriptor instead.
+func (*ListAssuranceRecordsResponse) Descriptor() ([]byte, []int) {
+	return file_seev_payout_v1_payout_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *ListAssuranceRecordsResponse) GetRecords() []*AssuranceRecord {
+	if x != nil {
+		return x.Records
+	}
+	return nil
+}
+
+func (x *ListAssuranceRecordsResponse) GetNextUpdatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.NextUpdatedAt
+	}
+	return nil
+}
+
+func (x *ListAssuranceRecordsResponse) GetNextId() string {
+	if x != nil {
+		return x.NextId
+	}
+	return ""
+}
+
+func (x *ListAssuranceRecordsResponse) GetHasMore() bool {
+	if x != nil {
+		return x.HasMore
+	}
+	return false
+}
+
+type AssuranceRecord struct {
+	state              protoimpl.MessageState  `protogen:"open.v1"`
+	Id                 string                  `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	EffectiveUpdatedAt *timestamppb.Timestamp  `protobuf:"bytes,2,opt,name=effective_updated_at,json=effectiveUpdatedAt,proto3" json:"effective_updated_at,omitempty"`
+	CreatedAt          *timestamppb.Timestamp  `protobuf:"bytes,3,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	Status             string                  `protobuf:"bytes,4,opt,name=status,proto3" json:"status,omitempty"`
+	UserId             string                  `protobuf:"bytes,5,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	Amount             string                  `protobuf:"bytes,6,opt,name=amount,proto3" json:"amount,omitempty"`
+	Currency           string                  `protobuf:"bytes,7,opt,name=currency,proto3" json:"currency,omitempty"`
+	Vendor             string                  `protobuf:"bytes,8,opt,name=vendor,proto3" json:"vendor,omitempty"`
+	HoldTxId           string                  `protobuf:"bytes,9,opt,name=hold_tx_id,json=holdTxId,proto3" json:"hold_tx_id,omitempty"`
+	SettleTxId         string                  `protobuf:"bytes,10,opt,name=settle_tx_id,json=settleTxId,proto3" json:"settle_tx_id,omitempty"`
+	RequestId          string                  `protobuf:"bytes,11,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	RequestIdPresent   bool                    `protobuf:"varint,12,opt,name=request_id_present,json=requestIdPresent,proto3" json:"request_id_present,omitempty"`
+	FeeQuoteId         string                  `protobuf:"bytes,13,opt,name=fee_quote_id,json=feeQuoteId,proto3" json:"fee_quote_id,omitempty"`
+	FeeAmount          string                  `protobuf:"bytes,14,opt,name=fee_amount,json=feeAmount,proto3" json:"fee_amount,omitempty"`
+	FeeGateway         string                  `protobuf:"bytes,15,opt,name=fee_gateway,json=feeGateway,proto3" json:"fee_gateway,omitempty"`
+	VendorCalls        []*VendorCallSummary    `protobuf:"bytes,16,rep,name=vendor_calls,json=vendorCalls,proto3" json:"vendor_calls,omitempty"`
+	VendorCommands     []*VendorCommandSummary `protobuf:"bytes,17,rep,name=vendor_commands,json=vendorCommands,proto3" json:"vendor_commands,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *AssuranceRecord) Reset() {
+	*x = AssuranceRecord{}
+	mi := &file_seev_payout_v1_payout_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AssuranceRecord) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AssuranceRecord) ProtoMessage() {}
+
+func (x *AssuranceRecord) ProtoReflect() protoreflect.Message {
+	mi := &file_seev_payout_v1_payout_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AssuranceRecord.ProtoReflect.Descriptor instead.
+func (*AssuranceRecord) Descriptor() ([]byte, []int) {
+	return file_seev_payout_v1_payout_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *AssuranceRecord) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *AssuranceRecord) GetEffectiveUpdatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.EffectiveUpdatedAt
+	}
+	return nil
+}
+
+func (x *AssuranceRecord) GetCreatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return nil
+}
+
+func (x *AssuranceRecord) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *AssuranceRecord) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+func (x *AssuranceRecord) GetAmount() string {
+	if x != nil {
+		return x.Amount
+	}
+	return ""
+}
+
+func (x *AssuranceRecord) GetCurrency() string {
+	if x != nil {
+		return x.Currency
+	}
+	return ""
+}
+
+func (x *AssuranceRecord) GetVendor() string {
+	if x != nil {
+		return x.Vendor
+	}
+	return ""
+}
+
+func (x *AssuranceRecord) GetHoldTxId() string {
+	if x != nil {
+		return x.HoldTxId
+	}
+	return ""
+}
+
+func (x *AssuranceRecord) GetSettleTxId() string {
+	if x != nil {
+		return x.SettleTxId
+	}
+	return ""
+}
+
+func (x *AssuranceRecord) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *AssuranceRecord) GetRequestIdPresent() bool {
+	if x != nil {
+		return x.RequestIdPresent
+	}
+	return false
+}
+
+func (x *AssuranceRecord) GetFeeQuoteId() string {
+	if x != nil {
+		return x.FeeQuoteId
+	}
+	return ""
+}
+
+func (x *AssuranceRecord) GetFeeAmount() string {
+	if x != nil {
+		return x.FeeAmount
+	}
+	return ""
+}
+
+func (x *AssuranceRecord) GetFeeGateway() string {
+	if x != nil {
+		return x.FeeGateway
+	}
+	return ""
+}
+
+func (x *AssuranceRecord) GetVendorCalls() []*VendorCallSummary {
+	if x != nil {
+		return x.VendorCalls
+	}
+	return nil
+}
+
+func (x *AssuranceRecord) GetVendorCommands() []*VendorCommandSummary {
+	if x != nil {
+		return x.VendorCommands
+	}
+	return nil
+}
+
+type VendorCallSummary struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Attempt       int32                  `protobuf:"varint,1,opt,name=attempt,proto3" json:"attempt,omitempty"`
+	Vendor        string                 `protobuf:"bytes,2,opt,name=vendor,proto3" json:"vendor,omitempty"`
+	Outcome       string                 `protobuf:"bytes,3,opt,name=outcome,proto3" json:"outcome,omitempty"`
+	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *VendorCallSummary) Reset() {
+	*x = VendorCallSummary{}
+	mi := &file_seev_payout_v1_payout_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *VendorCallSummary) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*VendorCallSummary) ProtoMessage() {}
+
+func (x *VendorCallSummary) ProtoReflect() protoreflect.Message {
+	mi := &file_seev_payout_v1_payout_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use VendorCallSummary.ProtoReflect.Descriptor instead.
+func (*VendorCallSummary) Descriptor() ([]byte, []int) {
+	return file_seev_payout_v1_payout_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *VendorCallSummary) GetAttempt() int32 {
+	if x != nil {
+		return x.Attempt
+	}
+	return 0
+}
+
+func (x *VendorCallSummary) GetVendor() string {
+	if x != nil {
+		return x.Vendor
+	}
+	return ""
+}
+
+func (x *VendorCallSummary) GetOutcome() string {
+	if x != nil {
+		return x.Outcome
+	}
+	return ""
+}
+
+func (x *VendorCallSummary) GetCreatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return nil
+}
+
+type VendorCommandSummary struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Vendor        string                 `protobuf:"bytes,2,opt,name=vendor,proto3" json:"vendor,omitempty"`
+	Attempt       int32                  `protobuf:"varint,3,opt,name=attempt,proto3" json:"attempt,omitempty"`
+	Status        string                 `protobuf:"bytes,4,opt,name=status,proto3" json:"status,omitempty"`
+	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *VendorCommandSummary) Reset() {
+	*x = VendorCommandSummary{}
+	mi := &file_seev_payout_v1_payout_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *VendorCommandSummary) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*VendorCommandSummary) ProtoMessage() {}
+
+func (x *VendorCommandSummary) ProtoReflect() protoreflect.Message {
+	mi := &file_seev_payout_v1_payout_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use VendorCommandSummary.ProtoReflect.Descriptor instead.
+func (*VendorCommandSummary) Descriptor() ([]byte, []int) {
+	return file_seev_payout_v1_payout_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *VendorCommandSummary) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *VendorCommandSummary) GetVendor() string {
+	if x != nil {
+		return x.Vendor
+	}
+	return ""
+}
+
+func (x *VendorCommandSummary) GetAttempt() int32 {
+	if x != nil {
+		return x.Attempt
+	}
+	return 0
+}
+
+func (x *VendorCommandSummary) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *VendorCommandSummary) GetUpdatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.UpdatedAt
+	}
+	return nil
+}
+
 var File_seev_payout_v1_payout_proto protoreflect.FileDescriptor
 
 const file_seev_payout_v1_payout_proto_rawDesc = "" +
@@ -379,10 +831,60 @@ const file_seev_payout_v1_payout_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
-	"updated_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt2\xbc\x01\n" +
+	"updated_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\xd3\x01\n" +
+	"\x1bListAssuranceRecordsRequest\x12F\n" +
+	"\x11cursor_updated_at\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\x0fcursorUpdatedAt\x12\x1b\n" +
+	"\tcursor_id\x18\x02 \x01(\tR\bcursorId\x122\n" +
+	"\x06cutoff\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\x06cutoff\x12\x1b\n" +
+	"\tpage_size\x18\x04 \x01(\rR\bpageSize\"\xd1\x01\n" +
+	"\x1cListAssuranceRecordsResponse\x129\n" +
+	"\arecords\x18\x01 \x03(\v2\x1f.seev.payout.v1.AssuranceRecordR\arecords\x12B\n" +
+	"\x0fnext_updated_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\rnextUpdatedAt\x12\x17\n" +
+	"\anext_id\x18\x03 \x01(\tR\x06nextId\x12\x19\n" +
+	"\bhas_more\x18\x04 \x01(\bR\ahasMore\"\xab\x05\n" +
+	"\x0fAssuranceRecord\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12L\n" +
+	"\x14effective_updated_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\x12effectiveUpdatedAt\x129\n" +
+	"\n" +
+	"created_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12\x16\n" +
+	"\x06status\x18\x04 \x01(\tR\x06status\x12\x17\n" +
+	"\auser_id\x18\x05 \x01(\tR\x06userId\x12\x16\n" +
+	"\x06amount\x18\x06 \x01(\tR\x06amount\x12\x1a\n" +
+	"\bcurrency\x18\a \x01(\tR\bcurrency\x12\x16\n" +
+	"\x06vendor\x18\b \x01(\tR\x06vendor\x12\x1c\n" +
+	"\n" +
+	"hold_tx_id\x18\t \x01(\tR\bholdTxId\x12 \n" +
+	"\fsettle_tx_id\x18\n" +
+	" \x01(\tR\n" +
+	"settleTxId\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\v \x01(\tR\trequestId\x12,\n" +
+	"\x12request_id_present\x18\f \x01(\bR\x10requestIdPresent\x12 \n" +
+	"\ffee_quote_id\x18\r \x01(\tR\n" +
+	"feeQuoteId\x12\x1d\n" +
+	"\n" +
+	"fee_amount\x18\x0e \x01(\tR\tfeeAmount\x12\x1f\n" +
+	"\vfee_gateway\x18\x0f \x01(\tR\n" +
+	"feeGateway\x12D\n" +
+	"\fvendor_calls\x18\x10 \x03(\v2!.seev.payout.v1.VendorCallSummaryR\vvendorCalls\x12M\n" +
+	"\x0fvendor_commands\x18\x11 \x03(\v2$.seev.payout.v1.VendorCommandSummaryR\x0evendorCommands\"\x9a\x01\n" +
+	"\x11VendorCallSummary\x12\x18\n" +
+	"\aattempt\x18\x01 \x01(\x05R\aattempt\x12\x16\n" +
+	"\x06vendor\x18\x02 \x01(\tR\x06vendor\x12\x18\n" +
+	"\aoutcome\x18\x03 \x01(\tR\aoutcome\x129\n" +
+	"\n" +
+	"created_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\xab\x01\n" +
+	"\x14VendorCommandSummary\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x16\n" +
+	"\x06vendor\x18\x02 \x01(\tR\x06vendor\x12\x18\n" +
+	"\aattempt\x18\x03 \x01(\x05R\aattempt\x12\x16\n" +
+	"\x06status\x18\x04 \x01(\tR\x06status\x129\n" +
+	"\n" +
+	"updated_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt2\xaf\x02\n" +
 	"\rPayoutService\x12Y\n" +
 	"\fCreatePayout\x12#.seev.payout.v1.CreatePayoutRequest\x1a$.seev.payout.v1.CreatePayoutResponse\x12P\n" +
-	"\tGetPayout\x12 .seev.payout.v1.GetPayoutRequest\x1a!.seev.payout.v1.GetPayoutResponseB\xa9\x01\n" +
+	"\tGetPayout\x12 .seev.payout.v1.GetPayoutRequest\x1a!.seev.payout.v1.GetPayoutResponse\x12q\n" +
+	"\x14ListAssuranceRecords\x12+.seev.payout.v1.ListAssuranceRecordsRequest\x1a,.seev.payout.v1.ListAssuranceRecordsResponseB\xa9\x01\n" +
 	"\x12com.seev.payout.v1B\vPayoutProtoP\x01Z,github.com/herdifirdausss/seev/gen/payout/v1\xa2\x02\x03SPX\xaa\x02\x0eSeev.Payout.V1\xca\x02\x0eSeev\\Payout\\V1\xe2\x02\x1aSeev\\Payout\\V1\\GPBMetadata\xea\x02\x10Seev::Payout::V1b\x06proto3"
 
 var (
@@ -397,29 +899,46 @@ func file_seev_payout_v1_payout_proto_rawDescGZIP() []byte {
 	return file_seev_payout_v1_payout_proto_rawDescData
 }
 
-var file_seev_payout_v1_payout_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_seev_payout_v1_payout_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
 var file_seev_payout_v1_payout_proto_goTypes = []any{
-	(*CreatePayoutRequest)(nil),   // 0: seev.payout.v1.CreatePayoutRequest
-	(*GetPayoutRequest)(nil),      // 1: seev.payout.v1.GetPayoutRequest
-	(*CreatePayoutResponse)(nil),  // 2: seev.payout.v1.CreatePayoutResponse
-	(*GetPayoutResponse)(nil),     // 3: seev.payout.v1.GetPayoutResponse
-	(*Payout)(nil),                // 4: seev.payout.v1.Payout
-	(*timestamppb.Timestamp)(nil), // 5: google.protobuf.Timestamp
+	(*CreatePayoutRequest)(nil),          // 0: seev.payout.v1.CreatePayoutRequest
+	(*GetPayoutRequest)(nil),             // 1: seev.payout.v1.GetPayoutRequest
+	(*CreatePayoutResponse)(nil),         // 2: seev.payout.v1.CreatePayoutResponse
+	(*GetPayoutResponse)(nil),            // 3: seev.payout.v1.GetPayoutResponse
+	(*Payout)(nil),                       // 4: seev.payout.v1.Payout
+	(*ListAssuranceRecordsRequest)(nil),  // 5: seev.payout.v1.ListAssuranceRecordsRequest
+	(*ListAssuranceRecordsResponse)(nil), // 6: seev.payout.v1.ListAssuranceRecordsResponse
+	(*AssuranceRecord)(nil),              // 7: seev.payout.v1.AssuranceRecord
+	(*VendorCallSummary)(nil),            // 8: seev.payout.v1.VendorCallSummary
+	(*VendorCommandSummary)(nil),         // 9: seev.payout.v1.VendorCommandSummary
+	(*timestamppb.Timestamp)(nil),        // 10: google.protobuf.Timestamp
 }
 var file_seev_payout_v1_payout_proto_depIdxs = []int32{
-	4, // 0: seev.payout.v1.CreatePayoutResponse.payout:type_name -> seev.payout.v1.Payout
-	4, // 1: seev.payout.v1.GetPayoutResponse.payout:type_name -> seev.payout.v1.Payout
-	5, // 2: seev.payout.v1.Payout.created_at:type_name -> google.protobuf.Timestamp
-	5, // 3: seev.payout.v1.Payout.updated_at:type_name -> google.protobuf.Timestamp
-	0, // 4: seev.payout.v1.PayoutService.CreatePayout:input_type -> seev.payout.v1.CreatePayoutRequest
-	1, // 5: seev.payout.v1.PayoutService.GetPayout:input_type -> seev.payout.v1.GetPayoutRequest
-	2, // 6: seev.payout.v1.PayoutService.CreatePayout:output_type -> seev.payout.v1.CreatePayoutResponse
-	3, // 7: seev.payout.v1.PayoutService.GetPayout:output_type -> seev.payout.v1.GetPayoutResponse
-	6, // [6:8] is the sub-list for method output_type
-	4, // [4:6] is the sub-list for method input_type
-	4, // [4:4] is the sub-list for extension type_name
-	4, // [4:4] is the sub-list for extension extendee
-	0, // [0:4] is the sub-list for field type_name
+	4,  // 0: seev.payout.v1.CreatePayoutResponse.payout:type_name -> seev.payout.v1.Payout
+	4,  // 1: seev.payout.v1.GetPayoutResponse.payout:type_name -> seev.payout.v1.Payout
+	10, // 2: seev.payout.v1.Payout.created_at:type_name -> google.protobuf.Timestamp
+	10, // 3: seev.payout.v1.Payout.updated_at:type_name -> google.protobuf.Timestamp
+	10, // 4: seev.payout.v1.ListAssuranceRecordsRequest.cursor_updated_at:type_name -> google.protobuf.Timestamp
+	10, // 5: seev.payout.v1.ListAssuranceRecordsRequest.cutoff:type_name -> google.protobuf.Timestamp
+	7,  // 6: seev.payout.v1.ListAssuranceRecordsResponse.records:type_name -> seev.payout.v1.AssuranceRecord
+	10, // 7: seev.payout.v1.ListAssuranceRecordsResponse.next_updated_at:type_name -> google.protobuf.Timestamp
+	10, // 8: seev.payout.v1.AssuranceRecord.effective_updated_at:type_name -> google.protobuf.Timestamp
+	10, // 9: seev.payout.v1.AssuranceRecord.created_at:type_name -> google.protobuf.Timestamp
+	8,  // 10: seev.payout.v1.AssuranceRecord.vendor_calls:type_name -> seev.payout.v1.VendorCallSummary
+	9,  // 11: seev.payout.v1.AssuranceRecord.vendor_commands:type_name -> seev.payout.v1.VendorCommandSummary
+	10, // 12: seev.payout.v1.VendorCallSummary.created_at:type_name -> google.protobuf.Timestamp
+	10, // 13: seev.payout.v1.VendorCommandSummary.updated_at:type_name -> google.protobuf.Timestamp
+	0,  // 14: seev.payout.v1.PayoutService.CreatePayout:input_type -> seev.payout.v1.CreatePayoutRequest
+	1,  // 15: seev.payout.v1.PayoutService.GetPayout:input_type -> seev.payout.v1.GetPayoutRequest
+	5,  // 16: seev.payout.v1.PayoutService.ListAssuranceRecords:input_type -> seev.payout.v1.ListAssuranceRecordsRequest
+	2,  // 17: seev.payout.v1.PayoutService.CreatePayout:output_type -> seev.payout.v1.CreatePayoutResponse
+	3,  // 18: seev.payout.v1.PayoutService.GetPayout:output_type -> seev.payout.v1.GetPayoutResponse
+	6,  // 19: seev.payout.v1.PayoutService.ListAssuranceRecords:output_type -> seev.payout.v1.ListAssuranceRecordsResponse
+	17, // [17:20] is the sub-list for method output_type
+	14, // [14:17] is the sub-list for method input_type
+	14, // [14:14] is the sub-list for extension type_name
+	14, // [14:14] is the sub-list for extension extendee
+	0,  // [0:14] is the sub-list for field type_name
 }
 
 func init() { file_seev_payout_v1_payout_proto_init() }
@@ -433,7 +952,7 @@ func file_seev_payout_v1_payout_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_seev_payout_v1_payout_proto_rawDesc), len(file_seev_payout_v1_payout_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   5,
+			NumMessages:   10,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

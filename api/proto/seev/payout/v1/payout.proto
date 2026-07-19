@@ -7,6 +7,7 @@ import "google/protobuf/timestamp.proto";
 service PayoutService {
   rpc CreatePayout(CreatePayoutRequest) returns (CreatePayoutResponse);
   rpc GetPayout(GetPayoutRequest) returns (GetPayoutResponse);
+  rpc ListAssuranceRecords(ListAssuranceRecordsRequest) returns (ListAssuranceRecordsResponse);
 }
 
 message CreatePayoutRequest {
@@ -38,4 +39,53 @@ message Payout {
   string error_message = 7;
   google.protobuf.Timestamp created_at = 8;
   google.protobuf.Timestamp updated_at = 9;
+}
+
+message ListAssuranceRecordsRequest {
+  google.protobuf.Timestamp cursor_updated_at = 1;
+  string cursor_id = 2;
+  google.protobuf.Timestamp cutoff = 3;
+  uint32 page_size = 4;
+}
+
+message ListAssuranceRecordsResponse {
+  repeated AssuranceRecord records = 1;
+  google.protobuf.Timestamp next_updated_at = 2;
+  string next_id = 3;
+  bool has_more = 4;
+}
+
+message AssuranceRecord {
+  string id = 1;
+  google.protobuf.Timestamp effective_updated_at = 2;
+  google.protobuf.Timestamp created_at = 3;
+  string status = 4;
+  string user_id = 5;
+  string amount = 6;
+  string currency = 7;
+  string vendor = 8;
+  string hold_tx_id = 9;
+  string settle_tx_id = 10;
+  string request_id = 11;
+  bool request_id_present = 12;
+  string fee_quote_id = 13;
+  string fee_amount = 14;
+  string fee_gateway = 15;
+  repeated VendorCallSummary vendor_calls = 16;
+  repeated VendorCommandSummary vendor_commands = 17;
+}
+
+message VendorCallSummary {
+  int32 attempt = 1;
+  string vendor = 2;
+  string outcome = 3;
+  google.protobuf.Timestamp created_at = 4;
+}
+
+message VendorCommandSummary {
+  string id = 1;
+  string vendor = 2;
+  int32 attempt = 3;
+  string status = 4;
+  google.protobuf.Timestamp updated_at = 5;
 }

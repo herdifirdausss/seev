@@ -166,6 +166,19 @@ func (s *Server) ApplyKycTier(ctx context.Context, req *ledgerv1.ApplyKycTierReq
 	return &ledgerv1.ApplyKycTierResponse{}, nil
 }
 
+func (s *Server) BatchGetAssuranceTransactions(ctx context.Context, req *ledgerv1.BatchGetAssuranceTransactionsRequest) (*ledgerv1.BatchGetAssuranceTransactionsResponse, error) {
+	if len(req.GetSelectors()) > 500 || len(req.GetFeeQuoteIds()) > 500 {
+		return nil, status.Error(codes.InvalidArgument, "assurance batch limit is 500")
+	}
+	reader, ok := s.service.(interface {
+		BatchGetAssuranceTransactions(context.Context, *ledgerv1.BatchGetAssuranceTransactionsRequest) (*ledgerv1.BatchGetAssuranceTransactionsResponse, error)
+	})
+	if !ok {
+		return nil, status.Error(codes.Unimplemented, "ledger assurance projection unavailable")
+	}
+	return reader.BatchGetAssuranceTransactions(ctx, req)
+}
+
 func (s *Server) ProvisionUser(ctx context.Context, req *ledgerv1.ProvisionUserRequest) (*ledgerv1.ProvisionUserResponse, error) {
 	userID, err := parseUUID(req.GetUserId())
 	if err != nil {

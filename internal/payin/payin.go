@@ -61,6 +61,7 @@ func (m *Module) RegisterGRPC(server *grpc.Server) {
 
 // Module is the public facade for the payin module.
 type Module struct {
+	db       database.DatabaseSQL
 	repo     repository.Repository
 	routing  repository.RoutingRepository
 	poster   Poster
@@ -86,6 +87,7 @@ func NewModule(db database.DatabaseSQL, poster Poster, registry *vendorgw.Regist
 		logger = slog.Default()
 	}
 	return &Module{
+		db:          db,
 		repo:        repository.NewRepository(db),
 		routing:     repository.NewRoutingRepository(db),
 		poster:      poster,

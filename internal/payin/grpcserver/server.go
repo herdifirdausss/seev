@@ -115,6 +115,16 @@ func (s *Server) GetTopupIntent(ctx context.Context, request *payinv1.GetTopupIn
 	return &payinv1.GetTopupIntentResponse{Intent: intentToProto(intent)}, nil
 }
 
+func (s *Server) ListAssuranceRecords(ctx context.Context, request *payinv1.ListAssuranceRecordsRequest) (*payinv1.ListAssuranceRecordsResponse, error) {
+	reader, ok := s.service.(interface {
+		ListAssuranceRecords(context.Context, *payinv1.ListAssuranceRecordsRequest) (*payinv1.ListAssuranceRecordsResponse, error)
+	})
+	if !ok {
+		return nil, status.Error(codes.Unimplemented, "payin assurance projection unavailable")
+	}
+	return reader.ListAssuranceRecords(ctx, request)
+}
+
 func parseUserAndAmount(rawUserID, rawAmount string) (uuid.UUID, decimal.Decimal, error) {
 	userID, err := uuid.Parse(rawUserID)
 	if err != nil {

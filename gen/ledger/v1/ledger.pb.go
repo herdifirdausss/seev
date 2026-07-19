@@ -913,6 +913,510 @@ func (*ApplyKycTierResponse) Descriptor() ([]byte, []int) {
 	return file_seev_ledger_v1_ledger_proto_rawDescGZIP(), []int{13}
 }
 
+type BatchGetAssuranceTransactionsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Selectors     []*AssuranceSelector   `protobuf:"bytes,1,rep,name=selectors,proto3" json:"selectors,omitempty"`
+	FeeQuoteIds   []string               `protobuf:"bytes,2,rep,name=fee_quote_ids,json=feeQuoteIds,proto3" json:"fee_quote_ids,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BatchGetAssuranceTransactionsRequest) Reset() {
+	*x = BatchGetAssuranceTransactionsRequest{}
+	mi := &file_seev_ledger_v1_ledger_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BatchGetAssuranceTransactionsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BatchGetAssuranceTransactionsRequest) ProtoMessage() {}
+
+func (x *BatchGetAssuranceTransactionsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_seev_ledger_v1_ledger_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BatchGetAssuranceTransactionsRequest.ProtoReflect.Descriptor instead.
+func (*BatchGetAssuranceTransactionsRequest) Descriptor() ([]byte, []int) {
+	return file_seev_ledger_v1_ledger_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *BatchGetAssuranceTransactionsRequest) GetSelectors() []*AssuranceSelector {
+	if x != nil {
+		return x.Selectors
+	}
+	return nil
+}
+
+func (x *BatchGetAssuranceTransactionsRequest) GetFeeQuoteIds() []string {
+	if x != nil {
+		return x.FeeQuoteIds
+	}
+	return nil
+}
+
+type AssuranceSelector struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	Token            string                 `protobuf:"bytes,1,opt,name=token,proto3" json:"token,omitempty"`
+	TransactionId    string                 `protobuf:"bytes,2,opt,name=transaction_id,json=transactionId,proto3" json:"transaction_id,omitempty"`
+	IdempotencyKey   string                 `protobuf:"bytes,3,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	IdempotencyScope string                 `protobuf:"bytes,4,opt,name=idempotency_scope,json=idempotencyScope,proto3" json:"idempotency_scope,omitempty"`
+	Type             string                 `protobuf:"bytes,5,opt,name=type,proto3" json:"type,omitempty"`
+	Gateway          string                 `protobuf:"bytes,6,opt,name=gateway,proto3" json:"gateway,omitempty"`
+	ExternalRef      string                 `protobuf:"bytes,7,opt,name=external_ref,json=externalRef,proto3" json:"external_ref,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *AssuranceSelector) Reset() {
+	*x = AssuranceSelector{}
+	mi := &file_seev_ledger_v1_ledger_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AssuranceSelector) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AssuranceSelector) ProtoMessage() {}
+
+func (x *AssuranceSelector) ProtoReflect() protoreflect.Message {
+	mi := &file_seev_ledger_v1_ledger_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AssuranceSelector.ProtoReflect.Descriptor instead.
+func (*AssuranceSelector) Descriptor() ([]byte, []int) {
+	return file_seev_ledger_v1_ledger_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *AssuranceSelector) GetToken() string {
+	if x != nil {
+		return x.Token
+	}
+	return ""
+}
+
+func (x *AssuranceSelector) GetTransactionId() string {
+	if x != nil {
+		return x.TransactionId
+	}
+	return ""
+}
+
+func (x *AssuranceSelector) GetIdempotencyKey() string {
+	if x != nil {
+		return x.IdempotencyKey
+	}
+	return ""
+}
+
+func (x *AssuranceSelector) GetIdempotencyScope() string {
+	if x != nil {
+		return x.IdempotencyScope
+	}
+	return ""
+}
+
+func (x *AssuranceSelector) GetType() string {
+	if x != nil {
+		return x.Type
+	}
+	return ""
+}
+
+func (x *AssuranceSelector) GetGateway() string {
+	if x != nil {
+		return x.Gateway
+	}
+	return ""
+}
+
+func (x *AssuranceSelector) GetExternalRef() string {
+	if x != nil {
+		return x.ExternalRef
+	}
+	return ""
+}
+
+type BatchGetAssuranceTransactionsResponse struct {
+	state          protoimpl.MessageState        `protogen:"open.v1"`
+	Results        []*AssuranceTransactionResult `protobuf:"bytes,1,rep,name=results,proto3" json:"results,omitempty"`
+	FeeQuoteProofs []*FeeQuoteProof              `protobuf:"bytes,2,rep,name=fee_quote_proofs,json=feeQuoteProofs,proto3" json:"fee_quote_proofs,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *BatchGetAssuranceTransactionsResponse) Reset() {
+	*x = BatchGetAssuranceTransactionsResponse{}
+	mi := &file_seev_ledger_v1_ledger_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BatchGetAssuranceTransactionsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BatchGetAssuranceTransactionsResponse) ProtoMessage() {}
+
+func (x *BatchGetAssuranceTransactionsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_seev_ledger_v1_ledger_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BatchGetAssuranceTransactionsResponse.ProtoReflect.Descriptor instead.
+func (*BatchGetAssuranceTransactionsResponse) Descriptor() ([]byte, []int) {
+	return file_seev_ledger_v1_ledger_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *BatchGetAssuranceTransactionsResponse) GetResults() []*AssuranceTransactionResult {
+	if x != nil {
+		return x.Results
+	}
+	return nil
+}
+
+func (x *BatchGetAssuranceTransactionsResponse) GetFeeQuoteProofs() []*FeeQuoteProof {
+	if x != nil {
+		return x.FeeQuoteProofs
+	}
+	return nil
+}
+
+type AssuranceTransactionResult struct {
+	state         protoimpl.MessageState  `protogen:"open.v1"`
+	Token         string                  `protobuf:"bytes,1,opt,name=token,proto3" json:"token,omitempty"`
+	Transactions  []*AssuranceTransaction `protobuf:"bytes,2,rep,name=transactions,proto3" json:"transactions,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AssuranceTransactionResult) Reset() {
+	*x = AssuranceTransactionResult{}
+	mi := &file_seev_ledger_v1_ledger_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AssuranceTransactionResult) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AssuranceTransactionResult) ProtoMessage() {}
+
+func (x *AssuranceTransactionResult) ProtoReflect() protoreflect.Message {
+	mi := &file_seev_ledger_v1_ledger_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AssuranceTransactionResult.ProtoReflect.Descriptor instead.
+func (*AssuranceTransactionResult) Descriptor() ([]byte, []int) {
+	return file_seev_ledger_v1_ledger_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *AssuranceTransactionResult) GetToken() string {
+	if x != nil {
+		return x.Token
+	}
+	return ""
+}
+
+func (x *AssuranceTransactionResult) GetTransactions() []*AssuranceTransaction {
+	if x != nil {
+		return x.Transactions
+	}
+	return nil
+}
+
+type AssuranceTransaction struct {
+	state                 protoimpl.MessageState `protogen:"open.v1"`
+	Id                    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Type                  string                 `protobuf:"bytes,2,opt,name=type,proto3" json:"type,omitempty"`
+	Status                string                 `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`
+	Amount                string                 `protobuf:"bytes,4,opt,name=amount,proto3" json:"amount,omitempty"`
+	Currency              string                 `protobuf:"bytes,5,opt,name=currency,proto3" json:"currency,omitempty"`
+	Gateway               string                 `protobuf:"bytes,6,opt,name=gateway,proto3" json:"gateway,omitempty"`
+	ExternalRef           string                 `protobuf:"bytes,7,opt,name=external_ref,json=externalRef,proto3" json:"external_ref,omitempty"`
+	OriginalReferenceId   string                 `protobuf:"bytes,8,opt,name=original_reference_id,json=originalReferenceId,proto3" json:"original_reference_id,omitempty"`
+	LifecycleCloserId     string                 `protobuf:"bytes,9,opt,name=lifecycle_closer_id,json=lifecycleCloserId,proto3" json:"lifecycle_closer_id,omitempty"`
+	LifecycleCloserReason string                 `protobuf:"bytes,10,opt,name=lifecycle_closer_reason,json=lifecycleCloserReason,proto3" json:"lifecycle_closer_reason,omitempty"`
+	BookedFeeAmount       string                 `protobuf:"bytes,11,opt,name=booked_fee_amount,json=bookedFeeAmount,proto3" json:"booked_fee_amount,omitempty"`
+	BookedFeeGateway      string                 `protobuf:"bytes,12,opt,name=booked_fee_gateway,json=bookedFeeGateway,proto3" json:"booked_fee_gateway,omitempty"`
+	CreatedAt             *timestamppb.Timestamp `protobuf:"bytes,13,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt             *timestamppb.Timestamp `protobuf:"bytes,14,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
+}
+
+func (x *AssuranceTransaction) Reset() {
+	*x = AssuranceTransaction{}
+	mi := &file_seev_ledger_v1_ledger_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AssuranceTransaction) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AssuranceTransaction) ProtoMessage() {}
+
+func (x *AssuranceTransaction) ProtoReflect() protoreflect.Message {
+	mi := &file_seev_ledger_v1_ledger_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AssuranceTransaction.ProtoReflect.Descriptor instead.
+func (*AssuranceTransaction) Descriptor() ([]byte, []int) {
+	return file_seev_ledger_v1_ledger_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *AssuranceTransaction) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *AssuranceTransaction) GetType() string {
+	if x != nil {
+		return x.Type
+	}
+	return ""
+}
+
+func (x *AssuranceTransaction) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *AssuranceTransaction) GetAmount() string {
+	if x != nil {
+		return x.Amount
+	}
+	return ""
+}
+
+func (x *AssuranceTransaction) GetCurrency() string {
+	if x != nil {
+		return x.Currency
+	}
+	return ""
+}
+
+func (x *AssuranceTransaction) GetGateway() string {
+	if x != nil {
+		return x.Gateway
+	}
+	return ""
+}
+
+func (x *AssuranceTransaction) GetExternalRef() string {
+	if x != nil {
+		return x.ExternalRef
+	}
+	return ""
+}
+
+func (x *AssuranceTransaction) GetOriginalReferenceId() string {
+	if x != nil {
+		return x.OriginalReferenceId
+	}
+	return ""
+}
+
+func (x *AssuranceTransaction) GetLifecycleCloserId() string {
+	if x != nil {
+		return x.LifecycleCloserId
+	}
+	return ""
+}
+
+func (x *AssuranceTransaction) GetLifecycleCloserReason() string {
+	if x != nil {
+		return x.LifecycleCloserReason
+	}
+	return ""
+}
+
+func (x *AssuranceTransaction) GetBookedFeeAmount() string {
+	if x != nil {
+		return x.BookedFeeAmount
+	}
+	return ""
+}
+
+func (x *AssuranceTransaction) GetBookedFeeGateway() string {
+	if x != nil {
+		return x.BookedFeeGateway
+	}
+	return ""
+}
+
+func (x *AssuranceTransaction) GetCreatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return nil
+}
+
+func (x *AssuranceTransaction) GetUpdatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.UpdatedAt
+	}
+	return nil
+}
+
+type FeeQuoteProof struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	QuoteId         string                 `protobuf:"bytes,1,opt,name=quote_id,json=quoteId,proto3" json:"quote_id,omitempty"`
+	UserMatch       bool                   `protobuf:"varint,2,opt,name=user_match,json=userMatch,proto3" json:"user_match,omitempty"`
+	TransactionType string                 `protobuf:"bytes,3,opt,name=transaction_type,json=transactionType,proto3" json:"transaction_type,omitempty"`
+	Amount          string                 `protobuf:"bytes,4,opt,name=amount,proto3" json:"amount,omitempty"`
+	Currency        string                 `protobuf:"bytes,5,opt,name=currency,proto3" json:"currency,omitempty"`
+	FeeAmount       string                 `protobuf:"bytes,6,opt,name=fee_amount,json=feeAmount,proto3" json:"fee_amount,omitempty"`
+	FeeGateway      string                 `protobuf:"bytes,7,opt,name=fee_gateway,json=feeGateway,proto3" json:"fee_gateway,omitempty"`
+	Status          string                 `protobuf:"bytes,8,opt,name=status,proto3" json:"status,omitempty"`
+	ConsumedByRef   string                 `protobuf:"bytes,9,opt,name=consumed_by_ref,json=consumedByRef,proto3" json:"consumed_by_ref,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *FeeQuoteProof) Reset() {
+	*x = FeeQuoteProof{}
+	mi := &file_seev_ledger_v1_ledger_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FeeQuoteProof) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FeeQuoteProof) ProtoMessage() {}
+
+func (x *FeeQuoteProof) ProtoReflect() protoreflect.Message {
+	mi := &file_seev_ledger_v1_ledger_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FeeQuoteProof.ProtoReflect.Descriptor instead.
+func (*FeeQuoteProof) Descriptor() ([]byte, []int) {
+	return file_seev_ledger_v1_ledger_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *FeeQuoteProof) GetQuoteId() string {
+	if x != nil {
+		return x.QuoteId
+	}
+	return ""
+}
+
+func (x *FeeQuoteProof) GetUserMatch() bool {
+	if x != nil {
+		return x.UserMatch
+	}
+	return false
+}
+
+func (x *FeeQuoteProof) GetTransactionType() string {
+	if x != nil {
+		return x.TransactionType
+	}
+	return ""
+}
+
+func (x *FeeQuoteProof) GetAmount() string {
+	if x != nil {
+		return x.Amount
+	}
+	return ""
+}
+
+func (x *FeeQuoteProof) GetCurrency() string {
+	if x != nil {
+		return x.Currency
+	}
+	return ""
+}
+
+func (x *FeeQuoteProof) GetFeeAmount() string {
+	if x != nil {
+		return x.FeeAmount
+	}
+	return ""
+}
+
+func (x *FeeQuoteProof) GetFeeGateway() string {
+	if x != nil {
+		return x.FeeGateway
+	}
+	return ""
+}
+
+func (x *FeeQuoteProof) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *FeeQuoteProof) GetConsumedByRef() string {
+	if x != nil {
+		return x.ConsumedByRef
+	}
+	return ""
+}
+
 var File_seev_ledger_v1_ledger_proto protoreflect.FileDescriptor
 
 const file_seev_ledger_v1_ledger_proto_rawDesc = "" +
@@ -987,7 +1491,55 @@ const file_seev_ledger_v1_ledger_proto_rawDesc = "" +
 	"\x13ApplyKycTierRequest\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x1b\n" +
 	"\tkyc_level\x18\x02 \x01(\x05R\bkycLevel\"\x16\n" +
-	"\x14ApplyKycTierResponse2\x8e\x05\n" +
+	"\x14ApplyKycTierResponse\"\x8b\x01\n" +
+	"$BatchGetAssuranceTransactionsRequest\x12?\n" +
+	"\tselectors\x18\x01 \x03(\v2!.seev.ledger.v1.AssuranceSelectorR\tselectors\x12\"\n" +
+	"\rfee_quote_ids\x18\x02 \x03(\tR\vfeeQuoteIds\"\xf7\x01\n" +
+	"\x11AssuranceSelector\x12\x14\n" +
+	"\x05token\x18\x01 \x01(\tR\x05token\x12%\n" +
+	"\x0etransaction_id\x18\x02 \x01(\tR\rtransactionId\x12'\n" +
+	"\x0fidempotency_key\x18\x03 \x01(\tR\x0eidempotencyKey\x12+\n" +
+	"\x11idempotency_scope\x18\x04 \x01(\tR\x10idempotencyScope\x12\x12\n" +
+	"\x04type\x18\x05 \x01(\tR\x04type\x12\x18\n" +
+	"\agateway\x18\x06 \x01(\tR\agateway\x12!\n" +
+	"\fexternal_ref\x18\a \x01(\tR\vexternalRef\"\xb6\x01\n" +
+	"%BatchGetAssuranceTransactionsResponse\x12D\n" +
+	"\aresults\x18\x01 \x03(\v2*.seev.ledger.v1.AssuranceTransactionResultR\aresults\x12G\n" +
+	"\x10fee_quote_proofs\x18\x02 \x03(\v2\x1d.seev.ledger.v1.FeeQuoteProofR\x0efeeQuoteProofs\"|\n" +
+	"\x1aAssuranceTransactionResult\x12\x14\n" +
+	"\x05token\x18\x01 \x01(\tR\x05token\x12H\n" +
+	"\ftransactions\x18\x02 \x03(\v2$.seev.ledger.v1.AssuranceTransactionR\ftransactions\"\xaf\x04\n" +
+	"\x14AssuranceTransaction\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
+	"\x04type\x18\x02 \x01(\tR\x04type\x12\x16\n" +
+	"\x06status\x18\x03 \x01(\tR\x06status\x12\x16\n" +
+	"\x06amount\x18\x04 \x01(\tR\x06amount\x12\x1a\n" +
+	"\bcurrency\x18\x05 \x01(\tR\bcurrency\x12\x18\n" +
+	"\agateway\x18\x06 \x01(\tR\agateway\x12!\n" +
+	"\fexternal_ref\x18\a \x01(\tR\vexternalRef\x122\n" +
+	"\x15original_reference_id\x18\b \x01(\tR\x13originalReferenceId\x12.\n" +
+	"\x13lifecycle_closer_id\x18\t \x01(\tR\x11lifecycleCloserId\x126\n" +
+	"\x17lifecycle_closer_reason\x18\n" +
+	" \x01(\tR\x15lifecycleCloserReason\x12*\n" +
+	"\x11booked_fee_amount\x18\v \x01(\tR\x0fbookedFeeAmount\x12,\n" +
+	"\x12booked_fee_gateway\x18\f \x01(\tR\x10bookedFeeGateway\x129\n" +
+	"\n" +
+	"created_at\x18\r \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
+	"\n" +
+	"updated_at\x18\x0e \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\xa8\x02\n" +
+	"\rFeeQuoteProof\x12\x19\n" +
+	"\bquote_id\x18\x01 \x01(\tR\aquoteId\x12\x1d\n" +
+	"\n" +
+	"user_match\x18\x02 \x01(\bR\tuserMatch\x12)\n" +
+	"\x10transaction_type\x18\x03 \x01(\tR\x0ftransactionType\x12\x16\n" +
+	"\x06amount\x18\x04 \x01(\tR\x06amount\x12\x1a\n" +
+	"\bcurrency\x18\x05 \x01(\tR\bcurrency\x12\x1d\n" +
+	"\n" +
+	"fee_amount\x18\x06 \x01(\tR\tfeeAmount\x12\x1f\n" +
+	"\vfee_gateway\x18\a \x01(\tR\n" +
+	"feeGateway\x12\x16\n" +
+	"\x06status\x18\b \x01(\tR\x06status\x12&\n" +
+	"\x0fconsumed_by_ref\x18\t \x01(\tR\rconsumedByRef2\x9d\x06\n" +
 	"\rLedgerService\x12A\n" +
 	"\x04Post\x12\x1b.seev.ledger.v1.PostRequest\x1a\x1c.seev.ledger.v1.PostResponse\x12d\n" +
 	"\x1eGetTransactionByIdempotencyKey\x12%.seev.ledger.v1.GetTxByIdemKeyRequest\x1a\x1b.seev.ledger.v1.Transaction\x12b\n" +
@@ -996,7 +1548,8 @@ const file_seev_ledger_v1_ledger_proto_rawDesc = "" +
 	"ResolveFee\x12!.seev.ledger.v1.ResolveFeeRequest\x1a\".seev.ledger.v1.ResolveFeeResponse\x12\\\n" +
 	"\rProvisionUser\x12$.seev.ledger.v1.ProvisionUserRequest\x1a%.seev.ledger.v1.ProvisionUserResponse\x12b\n" +
 	"\x0fConsumeFeeQuote\x12&.seev.ledger.v1.ConsumeFeeQuoteRequest\x1a'.seev.ledger.v1.ConsumeFeeQuoteResponse\x12Y\n" +
-	"\fApplyKycTier\x12#.seev.ledger.v1.ApplyKycTierRequest\x1a$.seev.ledger.v1.ApplyKycTierResponseB\xa9\x01\n" +
+	"\fApplyKycTier\x12#.seev.ledger.v1.ApplyKycTierRequest\x1a$.seev.ledger.v1.ApplyKycTierResponse\x12\x8c\x01\n" +
+	"\x1dBatchGetAssuranceTransactions\x124.seev.ledger.v1.BatchGetAssuranceTransactionsRequest\x1a5.seev.ledger.v1.BatchGetAssuranceTransactionsResponseB\xa9\x01\n" +
 	"\x12com.seev.ledger.v1B\vLedgerProtoP\x01Z,github.com/herdifirdausss/seev/gen/ledger/v1\xa2\x02\x03SLX\xaa\x02\x0eSeev.Ledger.V1\xca\x02\x0eSeev\\Ledger\\V1\xe2\x02\x1aSeev\\Ledger\\V1\\GPBMetadata\xea\x02\x10Seev::Ledger::V1b\x06proto3"
 
 var (
@@ -1011,48 +1564,62 @@ func file_seev_ledger_v1_ledger_proto_rawDescGZIP() []byte {
 	return file_seev_ledger_v1_ledger_proto_rawDescData
 }
 
-var file_seev_ledger_v1_ledger_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
+var file_seev_ledger_v1_ledger_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
 var file_seev_ledger_v1_ledger_proto_goTypes = []any{
-	(*PostRequest)(nil),             // 0: seev.ledger.v1.PostRequest
-	(*PostResponse)(nil),            // 1: seev.ledger.v1.PostResponse
-	(*GetTxByIdemKeyRequest)(nil),   // 2: seev.ledger.v1.GetTxByIdemKeyRequest
-	(*Transaction)(nil),             // 3: seev.ledger.v1.Transaction
-	(*GetUserCurrencyRequest)(nil),  // 4: seev.ledger.v1.GetUserCurrencyRequest
-	(*GetUserCurrencyResponse)(nil), // 5: seev.ledger.v1.GetUserCurrencyResponse
-	(*ResolveFeeRequest)(nil),       // 6: seev.ledger.v1.ResolveFeeRequest
-	(*ResolveFeeResponse)(nil),      // 7: seev.ledger.v1.ResolveFeeResponse
-	(*ProvisionUserRequest)(nil),    // 8: seev.ledger.v1.ProvisionUserRequest
-	(*ProvisionUserResponse)(nil),   // 9: seev.ledger.v1.ProvisionUserResponse
-	(*ConsumeFeeQuoteRequest)(nil),  // 10: seev.ledger.v1.ConsumeFeeQuoteRequest
-	(*ConsumeFeeQuoteResponse)(nil), // 11: seev.ledger.v1.ConsumeFeeQuoteResponse
-	(*ApplyKycTierRequest)(nil),     // 12: seev.ledger.v1.ApplyKycTierRequest
-	(*ApplyKycTierResponse)(nil),    // 13: seev.ledger.v1.ApplyKycTierResponse
-	(*structpb.Struct)(nil),         // 14: google.protobuf.Struct
-	(*timestamppb.Timestamp)(nil),   // 15: google.protobuf.Timestamp
+	(*PostRequest)(nil),                           // 0: seev.ledger.v1.PostRequest
+	(*PostResponse)(nil),                          // 1: seev.ledger.v1.PostResponse
+	(*GetTxByIdemKeyRequest)(nil),                 // 2: seev.ledger.v1.GetTxByIdemKeyRequest
+	(*Transaction)(nil),                           // 3: seev.ledger.v1.Transaction
+	(*GetUserCurrencyRequest)(nil),                // 4: seev.ledger.v1.GetUserCurrencyRequest
+	(*GetUserCurrencyResponse)(nil),               // 5: seev.ledger.v1.GetUserCurrencyResponse
+	(*ResolveFeeRequest)(nil),                     // 6: seev.ledger.v1.ResolveFeeRequest
+	(*ResolveFeeResponse)(nil),                    // 7: seev.ledger.v1.ResolveFeeResponse
+	(*ProvisionUserRequest)(nil),                  // 8: seev.ledger.v1.ProvisionUserRequest
+	(*ProvisionUserResponse)(nil),                 // 9: seev.ledger.v1.ProvisionUserResponse
+	(*ConsumeFeeQuoteRequest)(nil),                // 10: seev.ledger.v1.ConsumeFeeQuoteRequest
+	(*ConsumeFeeQuoteResponse)(nil),               // 11: seev.ledger.v1.ConsumeFeeQuoteResponse
+	(*ApplyKycTierRequest)(nil),                   // 12: seev.ledger.v1.ApplyKycTierRequest
+	(*ApplyKycTierResponse)(nil),                  // 13: seev.ledger.v1.ApplyKycTierResponse
+	(*BatchGetAssuranceTransactionsRequest)(nil),  // 14: seev.ledger.v1.BatchGetAssuranceTransactionsRequest
+	(*AssuranceSelector)(nil),                     // 15: seev.ledger.v1.AssuranceSelector
+	(*BatchGetAssuranceTransactionsResponse)(nil), // 16: seev.ledger.v1.BatchGetAssuranceTransactionsResponse
+	(*AssuranceTransactionResult)(nil),            // 17: seev.ledger.v1.AssuranceTransactionResult
+	(*AssuranceTransaction)(nil),                  // 18: seev.ledger.v1.AssuranceTransaction
+	(*FeeQuoteProof)(nil),                         // 19: seev.ledger.v1.FeeQuoteProof
+	(*structpb.Struct)(nil),                       // 20: google.protobuf.Struct
+	(*timestamppb.Timestamp)(nil),                 // 21: google.protobuf.Timestamp
 }
 var file_seev_ledger_v1_ledger_proto_depIdxs = []int32{
-	14, // 0: seev.ledger.v1.PostRequest.metadata:type_name -> google.protobuf.Struct
-	15, // 1: seev.ledger.v1.Transaction.created_at:type_name -> google.protobuf.Timestamp
-	15, // 2: seev.ledger.v1.Transaction.updated_at:type_name -> google.protobuf.Timestamp
-	0,  // 3: seev.ledger.v1.LedgerService.Post:input_type -> seev.ledger.v1.PostRequest
-	2,  // 4: seev.ledger.v1.LedgerService.GetTransactionByIdempotencyKey:input_type -> seev.ledger.v1.GetTxByIdemKeyRequest
-	4,  // 5: seev.ledger.v1.LedgerService.GetUserCurrency:input_type -> seev.ledger.v1.GetUserCurrencyRequest
-	6,  // 6: seev.ledger.v1.LedgerService.ResolveFee:input_type -> seev.ledger.v1.ResolveFeeRequest
-	8,  // 7: seev.ledger.v1.LedgerService.ProvisionUser:input_type -> seev.ledger.v1.ProvisionUserRequest
-	10, // 8: seev.ledger.v1.LedgerService.ConsumeFeeQuote:input_type -> seev.ledger.v1.ConsumeFeeQuoteRequest
-	12, // 9: seev.ledger.v1.LedgerService.ApplyKycTier:input_type -> seev.ledger.v1.ApplyKycTierRequest
-	1,  // 10: seev.ledger.v1.LedgerService.Post:output_type -> seev.ledger.v1.PostResponse
-	3,  // 11: seev.ledger.v1.LedgerService.GetTransactionByIdempotencyKey:output_type -> seev.ledger.v1.Transaction
-	5,  // 12: seev.ledger.v1.LedgerService.GetUserCurrency:output_type -> seev.ledger.v1.GetUserCurrencyResponse
-	7,  // 13: seev.ledger.v1.LedgerService.ResolveFee:output_type -> seev.ledger.v1.ResolveFeeResponse
-	9,  // 14: seev.ledger.v1.LedgerService.ProvisionUser:output_type -> seev.ledger.v1.ProvisionUserResponse
-	11, // 15: seev.ledger.v1.LedgerService.ConsumeFeeQuote:output_type -> seev.ledger.v1.ConsumeFeeQuoteResponse
-	13, // 16: seev.ledger.v1.LedgerService.ApplyKycTier:output_type -> seev.ledger.v1.ApplyKycTierResponse
-	10, // [10:17] is the sub-list for method output_type
-	3,  // [3:10] is the sub-list for method input_type
-	3,  // [3:3] is the sub-list for extension type_name
-	3,  // [3:3] is the sub-list for extension extendee
-	0,  // [0:3] is the sub-list for field type_name
+	20, // 0: seev.ledger.v1.PostRequest.metadata:type_name -> google.protobuf.Struct
+	21, // 1: seev.ledger.v1.Transaction.created_at:type_name -> google.protobuf.Timestamp
+	21, // 2: seev.ledger.v1.Transaction.updated_at:type_name -> google.protobuf.Timestamp
+	15, // 3: seev.ledger.v1.BatchGetAssuranceTransactionsRequest.selectors:type_name -> seev.ledger.v1.AssuranceSelector
+	17, // 4: seev.ledger.v1.BatchGetAssuranceTransactionsResponse.results:type_name -> seev.ledger.v1.AssuranceTransactionResult
+	19, // 5: seev.ledger.v1.BatchGetAssuranceTransactionsResponse.fee_quote_proofs:type_name -> seev.ledger.v1.FeeQuoteProof
+	18, // 6: seev.ledger.v1.AssuranceTransactionResult.transactions:type_name -> seev.ledger.v1.AssuranceTransaction
+	21, // 7: seev.ledger.v1.AssuranceTransaction.created_at:type_name -> google.protobuf.Timestamp
+	21, // 8: seev.ledger.v1.AssuranceTransaction.updated_at:type_name -> google.protobuf.Timestamp
+	0,  // 9: seev.ledger.v1.LedgerService.Post:input_type -> seev.ledger.v1.PostRequest
+	2,  // 10: seev.ledger.v1.LedgerService.GetTransactionByIdempotencyKey:input_type -> seev.ledger.v1.GetTxByIdemKeyRequest
+	4,  // 11: seev.ledger.v1.LedgerService.GetUserCurrency:input_type -> seev.ledger.v1.GetUserCurrencyRequest
+	6,  // 12: seev.ledger.v1.LedgerService.ResolveFee:input_type -> seev.ledger.v1.ResolveFeeRequest
+	8,  // 13: seev.ledger.v1.LedgerService.ProvisionUser:input_type -> seev.ledger.v1.ProvisionUserRequest
+	10, // 14: seev.ledger.v1.LedgerService.ConsumeFeeQuote:input_type -> seev.ledger.v1.ConsumeFeeQuoteRequest
+	12, // 15: seev.ledger.v1.LedgerService.ApplyKycTier:input_type -> seev.ledger.v1.ApplyKycTierRequest
+	14, // 16: seev.ledger.v1.LedgerService.BatchGetAssuranceTransactions:input_type -> seev.ledger.v1.BatchGetAssuranceTransactionsRequest
+	1,  // 17: seev.ledger.v1.LedgerService.Post:output_type -> seev.ledger.v1.PostResponse
+	3,  // 18: seev.ledger.v1.LedgerService.GetTransactionByIdempotencyKey:output_type -> seev.ledger.v1.Transaction
+	5,  // 19: seev.ledger.v1.LedgerService.GetUserCurrency:output_type -> seev.ledger.v1.GetUserCurrencyResponse
+	7,  // 20: seev.ledger.v1.LedgerService.ResolveFee:output_type -> seev.ledger.v1.ResolveFeeResponse
+	9,  // 21: seev.ledger.v1.LedgerService.ProvisionUser:output_type -> seev.ledger.v1.ProvisionUserResponse
+	11, // 22: seev.ledger.v1.LedgerService.ConsumeFeeQuote:output_type -> seev.ledger.v1.ConsumeFeeQuoteResponse
+	13, // 23: seev.ledger.v1.LedgerService.ApplyKycTier:output_type -> seev.ledger.v1.ApplyKycTierResponse
+	16, // 24: seev.ledger.v1.LedgerService.BatchGetAssuranceTransactions:output_type -> seev.ledger.v1.BatchGetAssuranceTransactionsResponse
+	17, // [17:25] is the sub-list for method output_type
+	9,  // [9:17] is the sub-list for method input_type
+	9,  // [9:9] is the sub-list for extension type_name
+	9,  // [9:9] is the sub-list for extension extendee
+	0,  // [0:9] is the sub-list for field type_name
 }
 
 func init() { file_seev_ledger_v1_ledger_proto_init() }
@@ -1066,7 +1633,7 @@ func file_seev_ledger_v1_ledger_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_seev_ledger_v1_ledger_proto_rawDesc), len(file_seev_ledger_v1_ledger_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   14,
+			NumMessages:   20,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

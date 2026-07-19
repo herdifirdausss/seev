@@ -76,6 +76,7 @@ type Poster interface {
 
 // Module is the public facade for the payout module.
 type Module struct {
+	db       database.DatabaseSQL
 	repo     repository.Repository
 	routing  repository.RoutingRepository
 	poster   Poster
@@ -111,6 +112,7 @@ func NewModule(db database.DatabaseSQL, poster Poster, registry *vendorgw.Regist
 		logger = slog.Default()
 	}
 	m := &Module{
+		db:          db,
 		repo:        repository.NewRepository(db),
 		routing:     repository.NewRoutingRepository(db),
 		commandRepo: repository.NewVendorCommandRepository(db),

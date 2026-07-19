@@ -101,6 +101,16 @@ func (s *Server) GetPayout(ctx context.Context, request *payoutv1.GetPayoutReque
 	return &payoutv1.GetPayoutResponse{Payout: payoutToProto(value)}, nil
 }
 
+func (s *Server) ListAssuranceRecords(ctx context.Context, request *payoutv1.ListAssuranceRecordsRequest) (*payoutv1.ListAssuranceRecordsResponse, error) {
+	reader, ok := s.service.(interface {
+		ListAssuranceRecords(context.Context, *payoutv1.ListAssuranceRecordsRequest) (*payoutv1.ListAssuranceRecordsResponse, error)
+	})
+	if !ok {
+		return nil, status.Error(codes.Unimplemented, "payout assurance projection unavailable")
+	}
+	return reader.ListAssuranceRecords(ctx, request)
+}
+
 func parseUserAndAmount(rawUserID, rawAmount string) (uuid.UUID, decimal.Decimal, error) {
 	userID, err := uuid.Parse(rawUserID)
 	if err != nil {

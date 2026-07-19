@@ -141,6 +141,7 @@ type WorkerConfig struct {
 
 // Module is the public facade for the ledger module.
 type Module struct {
+	db              database.DatabaseSQL
 	handleSvc       *ledgerhandle.Service
 	provisionSvc    *provision.Service
 	adjustmentsSvc  *adjustments.Service
@@ -238,6 +239,7 @@ func NewModule(db database.DatabaseSQL, broker messaging.Broker, redisClient *re
 	accrualSvc := accrual.New(db, savingsRepo, snapshotRepo, handleSvc, logger)
 
 	m := &Module{
+		db:                db,
 		handleSvc:         handleSvc,
 		provisionSvc:      provision.New(db, repository.NewProvisioningRepository()),
 		adjustmentsSvc:    adjustmentsSvc,
