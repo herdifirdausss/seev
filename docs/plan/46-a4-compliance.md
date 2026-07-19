@@ -525,7 +525,27 @@ interface rule yang sama, ter-audit durable, mode bisa diubah tanpa deploy.
 
 ### Hasil
 
-> Diisi saat T5 selesai.
+> T5 selesai pada 2026-07-19. Fakta eksternal diverifikasi dari dokumentasi
+> OpenSanctions: bulk export dapat diambil tanpa login/API key untuk penggunaan
+> non-komersial ([bulk updates](https://www.opensanctions.org/docs/bulk/updates/)), metadata dataset berada di `data.opensanctions.org` dan
+> resource terbaru dipilih melalui `datasets/latest/<dataset>/index.json`;
+> Consolidated Sanctions menyediakan export terstruktur JSON maupun format
+> tabular. Implementasi hanya mengonsumsi file lokal yang sudah diunduh—tidak
+> ada network fetch di CI—dan mencatat `dataset_version` saat replace atomik.
+>
+> Proto fraud menambah field opsional `subject_name`/`birth_date` secara
+> backward-compatible; `pkg/fraudcheck.CheckWithSubject` menjaga `Check`
+> existing tetap tanpa nama. Tabel `sanctions_entries` + loader JSONL offline
+> menyimpan subset normalized name/source/birth date/version. Normalisasi
+> melipat case/diacritics, membersihkan tanda baca, dan mengurutkan token.
+> Rule `sanctions_watchlist` no-op tanpa subject atau mode off, menghasilkan
+> flagged pada monitor dan blocked pada block; event tetap melalui jalur T4.
+> Submit KYC auth memakai seam checker opsional dan menolak submission sebelum
+> provider bila verdict block. Fixture lokal tersedia untuk test tanpa unduhan.
+>
+> Bukti: `make proto`, `make proto-lint`, unit normalisasi/rule/auth sanctions,
+> serta build `cmd/sanctions-loader` lulus. Provider/dataset refresh produksi
+> tetap config/operator-gated dan tidak dijalankan otomatis oleh CI.
 
 ### T6 — Dokumen terenkripsi + provider KYC riil (K7+K8)
 

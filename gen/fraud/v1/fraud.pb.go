@@ -32,7 +32,10 @@ type ScreenRequest struct {
 	RequestId string `protobuf:"bytes,5,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
 	// flow identifies the calling surface: "p2p_transfer" | "topup" | "payout"
 	// (docs/plan/37) — informational only, rules do not branch on it.
-	Flow          string `protobuf:"bytes,6,opt,name=flow,proto3" json:"flow,omitempty"`
+	Flow string `protobuf:"bytes,6,opt,name=flow,proto3" json:"flow,omitempty"`
+	// Optional KYC subject attributes used only by the sanctions rule.
+	SubjectName   string `protobuf:"bytes,7,opt,name=subject_name,json=subjectName,proto3" json:"subject_name,omitempty"`
+	BirthDate     string `protobuf:"bytes,8,opt,name=birth_date,json=birthDate,proto3" json:"birth_date,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -109,6 +112,20 @@ func (x *ScreenRequest) GetFlow() string {
 	return ""
 }
 
+func (x *ScreenRequest) GetSubjectName() string {
+	if x != nil {
+		return x.SubjectName
+	}
+	return ""
+}
+
+func (x *ScreenRequest) GetBirthDate() string {
+	if x != nil {
+		return x.BirthDate
+	}
+	return ""
+}
+
 type ScreenResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Block         bool                   `protobuf:"varint,1,opt,name=block,proto3" json:"block,omitempty"`
@@ -165,7 +182,7 @@ var File_seev_fraud_v1_fraud_proto protoreflect.FileDescriptor
 
 const file_seev_fraud_v1_fraud_proto_rawDesc = "" +
 	"\n" +
-	"\x19seev/fraud/v1/fraud.proto\x12\rseev.fraud.v1\"\xa8\x01\n" +
+	"\x19seev/fraud/v1/fraud.proto\x12\rseev.fraud.v1\"\xea\x01\n" +
 	"\rScreenRequest\x12\x17\n" +
 	"\atx_type\x18\x01 \x01(\tR\x06txType\x12\x17\n" +
 	"\auser_id\x18\x02 \x01(\tR\x06userId\x12\x16\n" +
@@ -173,7 +190,10 @@ const file_seev_fraud_v1_fraud_proto_rawDesc = "" +
 	"\bcurrency\x18\x04 \x01(\tR\bcurrency\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x05 \x01(\tR\trequestId\x12\x12\n" +
-	"\x04flow\x18\x06 \x01(\tR\x04flow\">\n" +
+	"\x04flow\x18\x06 \x01(\tR\x04flow\x12!\n" +
+	"\fsubject_name\x18\a \x01(\tR\vsubjectName\x12\x1d\n" +
+	"\n" +
+	"birth_date\x18\b \x01(\tR\tbirthDate\">\n" +
 	"\x0eScreenResponse\x12\x14\n" +
 	"\x05block\x18\x01 \x01(\bR\x05block\x12\x16\n" +
 	"\x06reason\x18\x02 \x01(\tR\x06reason2U\n" +

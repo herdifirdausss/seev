@@ -26,6 +26,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
+	"github.com/shopspring/decimal"
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/herdifirdausss/seev/internal/auth/model"
@@ -33,6 +34,7 @@ import (
 	"github.com/herdifirdausss/seev/internal/auth/worker"
 	"github.com/herdifirdausss/seev/internal/kycvendor"
 	"github.com/herdifirdausss/seev/pkg/database"
+	"github.com/herdifirdausss/seev/pkg/fraudcheck"
 	"github.com/herdifirdausss/seev/pkg/middleware"
 	"github.com/herdifirdausss/seev/pkg/scheduler"
 )
@@ -73,11 +75,22 @@ type Config struct {
 
 // Module is the public facade for the auth module.
 type Module struct {
-	repo        repository.Repository
-	provisioner Provisioner
-	cfg         Config
-	logger      *slog.Logger
-	kycProvider kycvendor.Provider
+	repo             repository.Repository
+	provisioner      Provisioner
+	cfg              Config
+	logger           *slog.Logger
+	kycProvider      kycvendor.Provider
+	sanctionsChecker interface {
+		CheckWithSubject(context.Context, string, string, uuid.UUID, decimal.Decimal, string, string, string) (fraudcheck.Verdict, error)
+	}
+}
+
+// SetSanctionsChecker enables the optional fraud-service sanctions seam. A
+// nil checker preserves the existing KYC-only behavior for local development.
+func (m *Module) SetSanctionsChecker(checker interface {
+	CheckWithSubject(context.Context, string, string, uuid.UUID, decimal.Decimal, string, string, string) (fraudcheck.Verdict, error)
+}) {
+	m.sanctionsChecker = checker
 }
 
 // ErrKYCApplyQueued marks the safe degraded response when the ledger could
@@ -355,6 +368,26 @@ func (m *Module) SubmitKYC(ctx context.Context, userID uuid.UUID, levelRequested
 			return model.KYCSubmission{}, ErrKYCPending
 		}
 		return model.KYCSubmission{}, err
+	}
+	if m.sanctionsChecker != nil {
+		subjectName, _ := payload["name"].(string)
+		if subjectName == "" {
+			subjectName, _ = payload["full_name"].(string)
+		}
+		birthDate, _ := payload["birth_date"].(string)
+		if subjectName != "" {
+			verdict, screenErr := m.sanctionsChecker.CheckWithSubject(ctx, "kyc", "kyc", userID, decimal.NewFromInt(1), m.cfg.DefaultCurrency, subjectName, birthDate)
+			if screenErr != nil {
+				return submission, fmt.Errorf("auth: sanctions screening: %w", screenErr)
+			}
+			if verdict.Block {
+				if rejectErr := m.repo.RejectKYCSubmission(ctx, submission.ID, "sanctions", verdict.Reason); rejectErr != nil {
+					return submission, rejectErr
+				}
+				submission.Status = "rejected"
+				return submission, nil
+			}
+		}
 	}
 	decision, err := m.kycProvider.Verify(ctx, kycvendor.Submission{UserID: userID, LevelRequested: levelRequested, Payload: payload})
 	if err != nil {

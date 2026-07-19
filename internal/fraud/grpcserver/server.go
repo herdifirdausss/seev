@@ -56,6 +56,7 @@ func (s *Server) Screen(ctx context.Context, request *fraudv1.ScreenRequest) (*f
 	verdict, err := s.service.Screen(ctx, model.ScreenInput{
 		TxType: request.GetTxType(), UserID: userID, Amount: amount, Currency: request.GetCurrency(),
 		RequestID: request.GetRequestId(), Flow: request.GetFlow(),
+		SubjectName: request.GetSubjectName(), BirthDate: request.GetBirthDate(),
 	})
 	if err != nil {
 		if errors.Is(err, model.ErrDependencyUnavailable) {

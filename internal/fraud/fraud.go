@@ -68,6 +68,7 @@ func NewModule(db database.DatabaseSQL, store VelocityStore, broker Broker, cfg 
 	repo := repository.NewScreeningRepository(db)
 	mode := rules.ParseMode(cfg.Mode)
 	modeRepo := repository.NewRuleModeRepository(db)
+	sanctionsRepo := repository.NewSanctionsRepository(db)
 	module := &Module{repo: repo, modeRepo: modeRepo, modeResolver: newRuleModeResolver(modeRepo, mode, logger), store: store, broker: broker, logger: logger, spill: newEventSpill()}
 	if cfg.AmountThreshold.IsPositive() {
 		module.rules = append(module.rules, rules.NewAmountThresholdRuleWithResolver(cfg.AmountThreshold, mode, module.modeResolver, repo, logger))
@@ -75,6 +76,7 @@ func NewModule(db database.DatabaseSQL, store VelocityStore, broker Broker, cfg 
 	if cfg.VelocityMaxPerHour > 0 && store != nil {
 		module.rules = append(module.rules, rules.NewVelocityAnomalyRuleWithResolver(cfg.VelocityMaxPerHour, mode, module.modeResolver, store, repo, logger))
 	}
+	module.rules = append(module.rules, rules.NewSanctionsWatchlistRule(mode, module.modeResolver, sanctionsRepo, logger))
 	return module
 }
 

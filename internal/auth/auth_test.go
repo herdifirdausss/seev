@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
@@ -17,6 +18,7 @@ import (
 	"github.com/herdifirdausss/seev/internal/auth/model"
 	"github.com/herdifirdausss/seev/internal/auth/repository"
 	"github.com/herdifirdausss/seev/internal/kycvendor/mockkyc"
+	"github.com/herdifirdausss/seev/pkg/fraudcheck"
 	"github.com/herdifirdausss/seev/pkg/middleware"
 )
 
@@ -417,4 +419,30 @@ func TestDowngradeKYC_ApplyFailureQueuesDurableIntent(t *testing.T) {
 	err := m.DowngradeKYC(context.Background(), userID, 1, "admin-1", "policy review")
 	assert.ErrorIs(t, err, ErrKYCApplyQueued)
 	assert.ErrorIs(t, err, context.DeadlineExceeded)
+}
+
+type sanctionsCheckerStub struct{ verdict fraudcheck.Verdict }
+
+func (s sanctionsCheckerStub) CheckWithSubject(context.Context, string, string, uuid.UUID, decimal.Decimal, string, string, string) (fraudcheck.Verdict, error) {
+	return s.verdict, nil
+}
+
+func TestSubmitKYC_SanctionsBlockRejectsBeforeProvider(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	repo := repository.NewMockRepository(ctrl)
+	userID := uuid.New()
+	repo.EXPECT().GetUserByID(gomock.Any(), userID).Return(model.User{ID: userID, KYCLevel: 0}, nil)
+	repo.EXPECT().GetLatestKYCSubmission(gomock.Any(), userID).Return(model.KYCSubmission{}, repository.ErrKYCSubmissionNotFound)
+	var submissionID uuid.UUID
+	repo.EXPECT().CreateKYCSubmission(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, s model.KYCSubmission) error { submissionID = s.ID; return nil })
+	repo.EXPECT().RejectKYCSubmission(gomock.Any(), gomock.Any(), "sanctions", "sanctions match").DoAndReturn(func(_ context.Context, id uuid.UUID, _, _ string) error {
+		assert.Equal(t, submissionID, id)
+		return nil
+	})
+
+	m := newTestModule(repo, &stubProvisioner{})
+	m.sanctionsChecker = sanctionsCheckerStub{verdict: fraudcheck.Verdict{Block: true, Reason: "sanctions match"}}
+	got, err := m.SubmitKYC(context.Background(), userID, 1, map[string]any{"name": "Jane Doe"})
+	require.NoError(t, err)
+	assert.Equal(t, "rejected", got.Status)
 }

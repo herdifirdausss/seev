@@ -95,12 +95,18 @@ func New(grpc fraudv1.FraudServiceClient, caller string) *Client {
 // branch on it. request_id is read from ctx (docs/plan/36) and forwarded
 // the same way.
 func (c *Client) Check(ctx context.Context, flow, txType string, userID uuid.UUID, amount decimal.Decimal, currency string) (Verdict, error) {
+	return c.CheckWithSubject(ctx, flow, txType, userID, amount, currency, "", "")
+}
+
+// CheckWithSubject is the sanctions-aware variant. Existing money-movement
+// callers keep using Check so names never enter that path accidentally.
+func (c *Client) CheckWithSubject(ctx context.Context, flow, txType string, userID uuid.UUID, amount decimal.Decimal, currency, subjectName, birthDate string) (Verdict, error) {
 	callCtx, cancel := context.WithTimeout(ctx, screenTimeout)
 	defer cancel()
 
 	response, err := c.grpc.Screen(callCtx, &fraudv1.ScreenRequest{
 		TxType: txType, UserId: userID.String(), Amount: amount.String(), Currency: currency,
-		RequestId: middleware.RequestIDFromCtx(ctx), Flow: flow,
+		RequestId: middleware.RequestIDFromCtx(ctx), Flow: flow, SubjectName: subjectName, BirthDate: birthDate,
 	})
 	if err != nil {
 		screeningClientErrorsTotal.WithLabelValues(c.caller).Inc()

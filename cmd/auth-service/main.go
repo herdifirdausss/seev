@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"google.golang.org/grpc"
 	"log/slog"
 	"net/http"
 	"os"
@@ -14,11 +15,13 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
+	fraudv1 "github.com/herdifirdausss/seev/gen/fraud/v1"
 	"github.com/herdifirdausss/seev/internal/auth"
 	"github.com/herdifirdausss/seev/internal/config"
 	"github.com/herdifirdausss/seev/internal/kycvendor/mockkyc"
 	"github.com/herdifirdausss/seev/pkg/cache"
 	"github.com/herdifirdausss/seev/pkg/database"
+	"github.com/herdifirdausss/seev/pkg/fraudcheck"
 	"github.com/herdifirdausss/seev/pkg/grpcx"
 	"github.com/herdifirdausss/seev/pkg/ledgerclient"
 	"github.com/herdifirdausss/seev/pkg/logger"
@@ -98,21 +101,35 @@ func run(parent context.Context) error {
 	}
 	ledgerConn, err := grpcx.Dial(ctx, cfg.LedgerGRPCAddr, cfg.InternalGRPCToken)
 	if err != nil {
-		closeAuthDependencies(log, nil, redisCache, db, shutdownTracing)
+		closeAuthDependencies(log, nil, nil, redisCache, db, shutdownTracing)
 		return fmt.Errorf("connect ledger-service: %w", err)
+	}
+	var fraudConn *grpc.ClientConn
+	var closeFraud func() error
+	if cfg.FraudGRPCAddr != "" {
+		conn, dialErr := grpcx.DialLazy(ctx, cfg.FraudGRPCAddr, cfg.InternalGRPCToken)
+		if dialErr != nil {
+			closeAuthDependencies(log, ledgerConn.Close, nil, redisCache, db, shutdownTracing)
+			return fmt.Errorf("connect fraud-service: %w", dialErr)
+		}
+		fraudConn = conn
+		closeFraud = fraudConn.Close
 	}
 	module := auth.NewModule(db, ledgerclient.New(ledgerConn), auth.Config{
 		JWTSecret: cfg.JWT.Secret, JWTIssuer: cfg.JWT.Issuer,
 		AccessExpiry: cfg.JWT.AccessExpiry, RefreshExpiry: cfg.JWT.RefreshExpiry,
 		DefaultCurrency: cfg.Auth.DefaultCurrency,
 	}, log, mockkyc.New())
+	if fraudConn != nil {
+		module.SetSanctionsChecker(fraudcheck.New(fraudv1.NewFraudServiceClient(fraudConn), "auth"))
+	}
 	if err := module.EnsureBootstrapAdmin(ctx, cfg.Auth.BootstrapAdminEmail, cfg.Auth.BootstrapAdminPassword); err != nil {
-		closeAuthDependencies(log, ledgerConn.Close, redisCache, db, shutdownTracing)
+		closeAuthDependencies(log, ledgerConn.Close, closeFraud, redisCache, db, shutdownTracing)
 		return fmt.Errorf("ensure bootstrap admin: %w", err)
 	}
 	retryJob := module.NewKYCApplyRetryJob(redisClientClient(redisCache), log)
 	if err := retryJob.Start(ctx); err != nil {
-		closeAuthDependencies(log, ledgerConn.Close, redisCache, db, shutdownTracing)
+		closeAuthDependencies(log, ledgerConn.Close, closeFraud, redisCache, db, shutdownTracing)
 		return fmt.Errorf("start kyc apply retry worker: %w", err)
 	}
 
@@ -138,7 +155,7 @@ func run(parent context.Context) error {
 	if err := internalServer.Shutdown(shutdownCtx); err != nil && serveErr == nil {
 		serveErr = err
 	}
-	closeAuthDependencies(log, ledgerConn.Close, redisCache, db, shutdownTracing)
+	closeAuthDependencies(log, ledgerConn.Close, closeFraud, redisCache, db, shutdownTracing)
 	return serveErr
 }
 
@@ -160,10 +177,15 @@ func serveHTTP(server *http.Server, errCh chan<- error) {
 	}
 }
 
-func closeAuthDependencies(log *slog.Logger, closeLedger func() error, redisCache *cache.Cache, db *database.DBSQL, shutdownTracing func(context.Context) error) {
+func closeAuthDependencies(log *slog.Logger, closeLedger func() error, closeFraud func() error, redisCache *cache.Cache, db *database.DBSQL, shutdownTracing func(context.Context) error) {
 	if closeLedger != nil {
 		if err := closeLedger(); err != nil {
 			log.Error("close ledger grpc", "error", err)
+		}
+	}
+	if closeFraud != nil {
+		if err := closeFraud(); err != nil {
+			log.Error("close fraud grpc", "error", err)
 		}
 	}
 	if redisCache != nil {

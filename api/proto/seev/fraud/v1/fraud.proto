@@ -17,6 +17,9 @@ message ScreenRequest {
   // flow identifies the calling surface: "p2p_transfer" | "topup" | "payout"
   // (docs/plan/37) — informational only, rules do not branch on it.
   string flow = 6;
+  // Optional KYC subject attributes used only by the sanctions rule.
+  string subject_name = 7;
+  string birth_date = 8;
 }
 
 message ScreenResponse {

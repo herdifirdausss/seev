@@ -32,7 +32,9 @@ type ScreenInput struct {
 	RequestID string
 	// Flow identifies the calling surface: "p2p_transfer" | "topup" | "payout"
 	// (docs/plan/37) — informational only, rules do not branch on it.
-	Flow string
+	Flow        string
+	SubjectName string
+	BirthDate   string
 }
 
 type Verdict struct {

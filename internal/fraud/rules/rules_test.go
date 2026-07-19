@@ -33,6 +33,17 @@ type modeResolverStub struct{ mode Mode }
 
 func (r *modeResolverStub) ResolveMode(context.Context, string) (Mode, error) { return r.mode, nil }
 
+type sanctionsMatcherStub struct {
+	matched bool
+	name    string
+	birth   string
+}
+
+func (m *sanctionsMatcherStub) MatchSanctions(_ context.Context, name, birth string) (bool, error) {
+	m.name, m.birth = name, birth
+	return m.matched, nil
+}
+
 func (c counterStub) Get(context.Context, string) (int64, error) { return c.value, c.err }
 
 func input(amount string) model.ScreenInput {
@@ -99,6 +110,22 @@ func TestVelocityCounterError(t *testing.T) {
 	verdict, err := NewVelocityAnomalyRule(2, ModeBlock, counterStub{err: errors.New("redis down")}, &repoStub{}, nil).Screen(context.Background(), input("10"))
 	require.Error(t, err)
 	assert.False(t, verdict.Block)
+}
+
+func TestSanctionsRuleModeAndSubject(t *testing.T) {
+	matcher := &sanctionsMatcherStub{matched: true}
+	resolver := &modeResolverStub{mode: ModeMonitor}
+	rule := NewSanctionsWatchlistRule(ModeOff, resolver, matcher, nil)
+	verdict, err := rule.Screen(context.Background(), model.ScreenInput{SubjectName: "Doe, Jane", BirthDate: "1980-01-02"})
+	require.NoError(t, err)
+	assert.False(t, verdict.Block)
+	require.NotNil(t, verdict.Event)
+	assert.Equal(t, "doe jane", matcher.name)
+
+	resolver.mode = ModeBlock
+	verdict, err = rule.Screen(context.Background(), model.ScreenInput{SubjectName: "Doe, Jane"})
+	require.NoError(t, err)
+	assert.True(t, verdict.Block)
 }
 
 func TestParseModeDefaultsOff(t *testing.T) {
