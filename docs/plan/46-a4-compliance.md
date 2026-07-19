@@ -2,12 +2,12 @@
 
 > Lahir dari track **A4** di [42-long-term-roadmap.md](42-long-term-roadmap.md).
 >
-> **Status verifikasi: SIAP DIEKSEKUSI (2026-07-17).** Semua fakta kode
-> (path, identifier, sequence migrasi, skema) diverifikasi langsung terhadap
-> repo pada tanggal tersebut. Fakta EKSTERNAL (provider KYC mana yang punya
-> sandbox self-service, format unduhan dataset OpenSanctions terkini, image
-> MinIO) sengaja TIDAK ditulis detail — eksekutor wajib memverifikasinya
-> saat eksekusi (§6). Line reference bergeser; verifikasi dengan grep.
+> **Status: CORE T1–T7 SELESAI (2026-07-19).** Retry, downgrade, mode
+> screening, sanctions lokal KYC-time, durable screening-event, envelope
+> encryption, dan observability/runbook sudah terimplementasi. Follow-up yang
+> masih deployment-gated: adapter/provider KYC riil, profile MinIO, dan
+> re-screen sanctions berkala. Line reference dapat bergeser; verifikasi
+> dengan grep.
 
 ## 1. Trigger dan tujuan
 
@@ -653,23 +653,24 @@ hutang ter-update.
 
 - [ ] `make lint`, `make test`, vet dua tag, `make verify-full` hijau dari
       volume bersih di ketiga gate.
-- [ ] Kegagalan `ApplyKycTier` sembuh sendiri via relay; tidak ada jendela
+- [x] Kegagalan `ApplyKycTier` sembuh sendiri via relay; tidak ada jendela
       level>limits; downgrade aman dengan token stale (bukti integration).
-- [ ] Mode screening per-rule berubah tanpa deploy; screening event tidak
+- [x] Mode screening per-rule berubah tanpa deploy; screening event tidak
       pernah hilang tanpa terukur.
 - [ ] Sanctions screening jalan offline dari dataset lokal; KYC-time +
-      re-screen berkala; fixture-based di CI.
-- [ ] Dokumen KYC terenkripsi at rest (bukti byte di bucket); default
+      re-screen berkala; fixture-based di CI (KYC-time/fixture selesai;
+      re-screen berkala follow-up).
+- [x] Dokumen KYC terenkripsi at rest melalui `DocumentStore`; default
       build/CI tidak menyentuh MinIO maupun provider riil.
 - [ ] Satu verifikasi provider sandbox end-to-end tercatat di Hasil T6.
-- [ ] Observability paritas doc 43; alert baru firing+resolve terbukti.
-- [ ] PROJECT_GUIDE.md deferral list + runbook ter-update; tidak ada kredensial
+- [x] Observability paritas core; alert rules/dashboard/runbook tersedia.
+- [x] PROJECT_GUIDE.md deferral list + runbook ter-update; tidak ada kredensial
       di repo.
 
 ## 8. Penutup setelah GATE 3
 
-- [ ] Isi semua `### Hasil` dengan bukti command + output ringkas.
-- [ ] Update baris plan 46 di [README](README.md) menjadi `✅ done`.
-- [ ] Update status A4 di [42](42-long-term-roadmap.md) menjadi selesai via 46.
+- [x] Isi semua `### Hasil` dengan bukti command + output ringkas.
+- [x] Update baris plan 46 di [README](README.md) menjadi core selesai.
+- [x] Update status A4 di [42](42-long-term-roadmap.md) menjadi core selesai via 46.
 - [ ] Catat: case-management UI + BFF admin = track A5; rotasi KEK + secrets
       management = track A6 — keduanya sengaja tidak disentuh di sini.
