@@ -532,8 +532,9 @@ end-to-end yang bisa diulang.
 > `scripts/admin-e2e.sh` (source `lib.sh` sekali, login cookie/CSRF, mutasi
 > payout, dan assert audit row). `bash -n scripts/admin-e2e.sh` lulus.
 >
-> Unit/repository gate: `GOCACHE=/tmp/seev-go-cache go test ./... -count=1`
-> lulus. Full Docker `admin-e2e.sh`, `make verify-full`, dan chaos suite
+> Unit/repository gate: `GOCACHE=/tmp/seev-go-cache go test ./... -count=1`,
+> `go vet ./...`, dan `GOLANGCI_LINT_CACHE=/tmp/seev-golangci-cache make lint`
+> lulus (lint follow-up commit `0be8578`). Full Docker `admin-e2e.sh`, `make verify-full`, dan chaos suite
 > perlu dijalankan pada environment Docker bersih; output chaos yang tersedia
 > masih menunjukkan kegagalan Scenario 7 dan 9 di luar scope perubahan A5.
 
