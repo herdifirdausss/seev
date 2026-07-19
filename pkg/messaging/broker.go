@@ -58,7 +58,9 @@ type RabbitMQ struct {
 	publishSem chan struct{}
 
 	// inFlight tracks active handleDelivery calls for graceful drain in Close().
-	inFlight sync.WaitGroup
+	inFlight   sync.WaitGroup
+	inFlightMu sync.Mutex
+	closing    bool
 
 	done      chan struct{}
 	closeOnce sync.Once
@@ -221,6 +223,9 @@ func (r *RabbitMQ) Close() error {
 	var closeErr error
 	r.closeOnce.Do(func() {
 		close(r.done)
+		r.inFlightMu.Lock()
+		r.closing = true
+		r.inFlightMu.Unlock()
 
 		// ── Drain in-flight handlers ──────────────────────────────────────────
 		drained := make(chan struct{})
