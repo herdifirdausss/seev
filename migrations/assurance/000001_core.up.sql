@@ -42,6 +42,20 @@ CREATE TABLE assurance_findings (
 CREATE INDEX assurance_findings_status_idx ON assurance_findings (status, severity, last_seen_at DESC);
 CREATE INDEX assurance_findings_rule_idx ON assurance_findings (rule_code, last_seen_at DESC);
 
+CREATE TABLE assurance_alert_deliveries (
+    id                 UUID PRIMARY KEY,
+    finding_id         UUID NOT NULL REFERENCES assurance_findings(id),
+    severity           TEXT NOT NULL,
+    message            TEXT NOT NULL,
+    status             TEXT NOT NULL CHECK (status IN ('pending','delivered','failed')),
+    attempts           INTEGER NOT NULL DEFAULT 0,
+    next_attempt_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    last_error         TEXT NOT NULL DEFAULT '',
+    created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+    delivered_at       TIMESTAMPTZ
+);
+CREATE INDEX assurance_alert_deliveries_pending_idx ON assurance_alert_deliveries (status, next_attempt_at);
+
 CREATE TABLE intake_control_commands (
     id                 UUID PRIMARY KEY,
     flow               TEXT NOT NULL CHECK (flow IN ('payin','payout')),
@@ -58,16 +72,18 @@ CREATE TABLE intake_control_commands (
 );
 CREATE INDEX intake_control_commands_flow_idx ON intake_control_commands (flow, created_at DESC);
 
-GRANT SELECT, INSERT, UPDATE ON assurance_runs, assurance_cursors, assurance_findings, intake_control_commands TO app_service;
-GRANT SELECT ON assurance_runs, assurance_cursors, assurance_findings, intake_control_commands TO app_readonly;
+GRANT SELECT, INSERT, UPDATE ON assurance_runs, assurance_cursors, assurance_findings, assurance_alert_deliveries, intake_control_commands TO app_service;
+GRANT SELECT ON assurance_runs, assurance_cursors, assurance_findings, assurance_alert_deliveries, intake_control_commands TO app_readonly;
 
 ALTER TABLE assurance_runs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE assurance_cursors ENABLE ROW LEVEL SECURITY;
 ALTER TABLE assurance_findings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE assurance_alert_deliveries ENABLE ROW LEVEL SECURITY;
 ALTER TABLE intake_control_commands ENABLE ROW LEVEL SECURITY;
 ALTER TABLE assurance_runs FORCE ROW LEVEL SECURITY;
 ALTER TABLE assurance_cursors FORCE ROW LEVEL SECURITY;
 ALTER TABLE assurance_findings FORCE ROW LEVEL SECURITY;
+ALTER TABLE assurance_alert_deliveries FORCE ROW LEVEL SECURITY;
 ALTER TABLE intake_control_commands FORCE ROW LEVEL SECURITY;
 
 CREATE POLICY assurance_runs_service ON assurance_runs FOR ALL TO app_service USING (true) WITH CHECK (true);
@@ -76,5 +92,7 @@ CREATE POLICY assurance_cursors_service ON assurance_cursors FOR ALL TO app_serv
 CREATE POLICY assurance_cursors_readonly ON assurance_cursors FOR SELECT TO app_readonly USING (true);
 CREATE POLICY assurance_findings_service ON assurance_findings FOR ALL TO app_service USING (true) WITH CHECK (true);
 CREATE POLICY assurance_findings_readonly ON assurance_findings FOR SELECT TO app_readonly USING (true);
+CREATE POLICY assurance_alert_deliveries_service ON assurance_alert_deliveries FOR ALL TO app_service USING (true) WITH CHECK (true);
+CREATE POLICY assurance_alert_deliveries_readonly ON assurance_alert_deliveries FOR SELECT TO app_readonly USING (true);
 CREATE POLICY intake_commands_service ON intake_control_commands FOR ALL TO app_service USING (true) WITH CHECK (true);
 CREATE POLICY intake_commands_readonly ON intake_control_commands FOR SELECT TO app_readonly USING (true);

@@ -21,6 +21,7 @@ import (
 	payoutv1 "github.com/herdifirdausss/seev/gen/payout/v1"
 	assurancerules "github.com/herdifirdausss/seev/internal/assurance/rules"
 	"github.com/herdifirdausss/seev/internal/config"
+	"github.com/herdifirdausss/seev/pkg/alerting"
 	"github.com/herdifirdausss/seev/pkg/database"
 )
 
@@ -30,21 +31,23 @@ var (
 	recordsScanned     = prometheus.NewCounterVec(prometheus.CounterOpts{Namespace: "assurance", Name: "records_scanned_total", Help: "Records read from owner services."}, []string{"source"})
 	findingsBySeverity = prometheus.NewGaugeVec(prometheus.GaugeOpts{Namespace: "assurance", Name: "findings", Help: "Current finding count by severity and rule."}, []string{"severity", "rule"})
 	moneyAtRisk        = prometheus.NewGaugeVec(prometheus.GaugeOpts{Namespace: "assurance", Name: "money_at_risk_minor", Help: "Open finding amount in minor units by currency."}, []string{"currency"})
+	alertDeliveries    = prometheus.NewCounterVec(prometheus.CounterOpts{Namespace: "assurance", Name: "alert_deliveries_total", Help: "Assurance alert delivery attempts."}, []string{"result", "severity"})
 )
 
 func init() {
-	for _, metric := range []prometheus.Collector{runDuration, runFailures, recordsScanned, findingsBySeverity, moneyAtRisk} {
+	for _, metric := range []prometheus.Collector{runDuration, runFailures, recordsScanned, findingsBySeverity, moneyAtRisk, alertDeliveries} {
 		_ = prometheus.Register(metric)
 	}
 }
 
 type Module struct {
-	db     database.DatabaseSQL
-	cfg    config.AssuranceConfig
-	logger *slog.Logger
-	payin  payinReader
-	payout payoutReader
-	ledger ledgerReader
+	db      database.DatabaseSQL
+	cfg     config.AssuranceConfig
+	logger  *slog.Logger
+	payin   payinReader
+	payout  payoutReader
+	ledger  ledgerReader
+	alertFn alerting.AlertFunc
 
 	stopOnce sync.Once
 	stopCh   chan struct{}
@@ -63,11 +66,11 @@ type ledgerReader interface {
 	BatchGetAssuranceTransactions(context.Context, *ledgerv1.BatchGetAssuranceTransactionsRequest, ...grpc.CallOption) (*ledgerv1.BatchGetAssuranceTransactionsResponse, error)
 }
 
-func NewModule(db database.DatabaseSQL, cfg config.AssuranceConfig, payin payinReader, payout payoutReader, ledger ledgerReader, logger *slog.Logger) *Module {
+func NewModule(db database.DatabaseSQL, cfg config.AssuranceConfig, payin payinReader, payout payoutReader, ledger ledgerReader, alertFn alerting.AlertFunc, logger *slog.Logger) *Module {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Module{db: db, cfg: cfg, logger: logger, payin: payin, payout: payout, ledger: ledger, stopCh: make(chan struct{}), doneCh: make(chan struct{})}
+	return &Module{db: db, cfg: cfg, logger: logger, payin: payin, payout: payout, ledger: ledger, alertFn: alertFn, stopCh: make(chan struct{}), doneCh: make(chan struct{})}
 }
 
 func (m *Module) Start(ctx context.Context) {
@@ -139,6 +142,11 @@ func (m *Module) Run(ctx context.Context, mode string) (RunSummary, error) {
 	} else {
 		run.RecordsScanned += n
 	}
+	// Alert delivery is secondary to proof persistence: a webhook outage must
+	// not roll back a successful scan or advance decision.
+	if err := m.dispatchAlerts(ctx); err != nil {
+		m.logger.Error("assurance alert dispatch failed", "error", err)
+	}
 	run.Status = "succeeded"
 	run.FinishedAt = time.Now()
 	if _, err := m.db.ExecContext(ctx, `UPDATE assurance_runs SET status='succeeded', finished_at=$2, records_scanned=$3, findings_opened=$4 WHERE id=$1`, run.ID, run.FinishedAt, run.RecordsScanned, run.FindingsOpened); err != nil {
@@ -176,7 +184,7 @@ func (m *Module) scanPayin(ctx context.Context, runID uuid.UUID, cutoff time.Tim
 		if callErr != nil {
 			return total, fmt.Errorf("payin assurance RPC: %w", callErr)
 		}
-		if err := m.provePayin(ctx, response.GetRecords()); err != nil {
+		if err := m.provePayin(ctx, response.GetRecords(), backfill); err != nil {
 			return total, err
 		}
 		total += len(response.GetRecords())
@@ -216,7 +224,7 @@ func (m *Module) scanPayout(ctx context.Context, runID uuid.UUID, cutoff time.Ti
 		if callErr != nil {
 			return total, fmt.Errorf("payout assurance RPC: %w", callErr)
 		}
-		if err := m.provePayout(ctx, response.GetRecords()); err != nil {
+		if err := m.provePayout(ctx, response.GetRecords(), backfill); err != nil {
 			return total, err
 		}
 		total += len(response.GetRecords())
@@ -235,7 +243,7 @@ func (m *Module) scanPayout(ctx context.Context, runID uuid.UUID, cutoff time.Ti
 	return total, nil
 }
 
-func (m *Module) provePayin(ctx context.Context, records []*payinv1.AssuranceRecord) error {
+func (m *Module) provePayin(ctx context.Context, records []*payinv1.AssuranceRecord, suppressAlerts bool) error {
 	if len(records) == 0 {
 		return nil
 	}
@@ -275,7 +283,7 @@ func (m *Module) provePayin(ctx context.Context, records []*payinv1.AssuranceRec
 			value.SettledWebhook = &assurancerules.PayinRecord{ID: linked.GetId(), RecordType: linked.GetRecordType(), Status: linked.GetStatus(), UserID: linked.GetUserId(), AmountMinor: linkedAmount, Currency: linked.GetCurrency(), Reference: linked.GetReference()}
 		}
 		for _, finding := range assurancerules.EvaluatePayin(value) {
-			if err := m.UpsertFinding(ctx, Finding{Fingerprint: finding.Fingerprint, Severity: finding.Severity, RuleCode: finding.RuleCode, ResourceID: finding.ResourceID, AmountMinor: finding.AmountMinor, Currency: finding.Currency, Evidence: finding.Evidence}, time.Now()); err != nil {
+			if _, err := m.upsertFinding(ctx, Finding{Fingerprint: finding.Fingerprint, Severity: finding.Severity, RuleCode: finding.RuleCode, ResourceID: finding.ResourceID, AmountMinor: finding.AmountMinor, Currency: finding.Currency, Evidence: finding.Evidence}, time.Now(), suppressAlerts); err != nil {
 				return fmt.Errorf("persist payin finding: %w", err)
 			}
 		}
@@ -283,7 +291,7 @@ func (m *Module) provePayin(ctx context.Context, records []*payinv1.AssuranceRec
 	return nil
 }
 
-func (m *Module) provePayout(ctx context.Context, records []*payoutv1.AssuranceRecord) error {
+func (m *Module) provePayout(ctx context.Context, records []*payoutv1.AssuranceRecord, suppressAlerts bool) error {
 	if len(records) == 0 {
 		return nil
 	}
@@ -343,7 +351,7 @@ func (m *Module) provePayout(ctx context.Context, records []*payoutv1.AssuranceR
 			value.FeeQuote = &assurancerules.FeeProof{Exists: true, ConsumedByRef: fee.GetConsumedByRef(), AmountMinor: parseMinorOrZero(fee.GetFeeAmount()), Gateway: fee.GetFeeGateway(), TransactionType: fee.GetTransactionType()}
 		}
 		for _, finding := range assurancerules.EvaluatePayout(value) {
-			if err := m.UpsertFinding(ctx, Finding{Fingerprint: finding.Fingerprint, Severity: finding.Severity, RuleCode: finding.RuleCode, ResourceID: finding.ResourceID, AmountMinor: finding.AmountMinor, Currency: finding.Currency, Evidence: finding.Evidence}, time.Now()); err != nil {
+			if _, err := m.upsertFinding(ctx, Finding{Fingerprint: finding.Fingerprint, Severity: finding.Severity, RuleCode: finding.RuleCode, ResourceID: finding.ResourceID, AmountMinor: finding.AmountMinor, Currency: finding.Currency, Evidence: finding.Evidence}, time.Now(), suppressAlerts); err != nil {
 				return fmt.Errorf("persist payout finding: %w", err)
 			}
 		}
@@ -457,13 +465,98 @@ type Finding struct {
 }
 
 func (m *Module) UpsertFinding(ctx context.Context, finding Finding, seenAt time.Time) error {
+	_, err := m.upsertFinding(ctx, finding, seenAt, false)
+	return err
+}
+
+func (m *Module) upsertFinding(ctx context.Context, finding Finding, seenAt time.Time, suppressAlert bool) (bool, error) {
 	if finding.Fingerprint == "" || finding.RuleCode == "" || finding.ResourceID == "" {
-		return errors.New("finding fingerprint, rule code, and resource id are required")
+		return false, errors.New("finding fingerprint, rule code, and resource id are required")
 	}
 	evidence, err := json.Marshal(finding.Evidence)
 	if err != nil {
-		return fmt.Errorf("marshal finding evidence: %w", err)
+		return false, fmt.Errorf("marshal finding evidence: %w", err)
 	}
-	_, err = m.db.ExecContext(ctx, `INSERT INTO assurance_findings (id, fingerprint, severity, rule_code, resource_id, amount_minor, currency, evidence, first_seen_at, last_seen_at, occurrence_count, status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$9,1,'open') ON CONFLICT (fingerprint) DO UPDATE SET severity=EXCLUDED.severity, amount_minor=EXCLUDED.amount_minor, currency=EXCLUDED.currency, evidence=EXCLUDED.evidence, last_seen_at=EXCLUDED.last_seen_at, occurrence_count=assurance_findings.occurrence_count+1, status=CASE WHEN assurance_findings.status='resolved' THEN 'open' ELSE assurance_findings.status END, resolved_at=CASE WHEN assurance_findings.status='resolved' THEN NULL ELSE assurance_findings.resolved_at END`, uuid.New(), finding.Fingerprint, finding.Severity, finding.RuleCode, finding.ResourceID, finding.AmountMinor, finding.Currency, evidence, seenAt)
-	return err
+	var existingID uuid.UUID
+	var existingStatus, existingSeverity string
+	existingErr := m.db.QueryRowContext(ctx, `SELECT id, status, severity FROM assurance_findings WHERE fingerprint=$1`, finding.Fingerprint).Scan(&existingID, &existingStatus, &existingSeverity)
+	if existingErr != nil && !errors.Is(existingErr, sql.ErrNoRows) {
+		return false, fmt.Errorf("read finding state: %w", existingErr)
+	}
+	isNew := errors.Is(existingErr, sql.ErrNoRows)
+	findingID := existingID
+	if isNew {
+		findingID = uuid.New()
+	}
+	_, err = m.db.ExecContext(ctx, `INSERT INTO assurance_findings (id, fingerprint, severity, rule_code, resource_id, amount_minor, currency, evidence, first_seen_at, last_seen_at, occurrence_count, status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$9,1,'open') ON CONFLICT (fingerprint) DO UPDATE SET severity=EXCLUDED.severity, amount_minor=EXCLUDED.amount_minor, currency=EXCLUDED.currency, evidence=EXCLUDED.evidence, last_seen_at=EXCLUDED.last_seen_at, occurrence_count=assurance_findings.occurrence_count+1, status=CASE WHEN assurance_findings.status='resolved' THEN 'open' ELSE assurance_findings.status END, resolved_at=CASE WHEN assurance_findings.status='resolved' THEN NULL ELSE assurance_findings.resolved_at END`, findingID, finding.Fingerprint, finding.Severity, finding.RuleCode, finding.ResourceID, finding.AmountMinor, finding.Currency, evidence, seenAt)
+	if err != nil {
+		return false, err
+	}
+	shouldAlert := !suppressAlert && (isNew || existingStatus == "resolved" || severityRank(finding.Severity) > severityRank(existingSeverity))
+	if shouldAlert {
+		message := fmt.Sprintf("assurance finding %s rule=%s resource=%s amount=%d currency=%s", finding.Severity, finding.RuleCode, finding.ResourceID, finding.AmountMinor, finding.Currency)
+		if _, err := m.db.ExecContext(ctx, `INSERT INTO assurance_alert_deliveries (id, finding_id, severity, message, status) VALUES ($1,$2,$3,$4,'pending')`, uuid.New(), findingID, finding.Severity, message); err != nil {
+			return false, fmt.Errorf("queue assurance alert: %w", err)
+		}
+	}
+	return shouldAlert, nil
+}
+
+func severityRank(severity string) int {
+	switch severity {
+	case "critical":
+		return 3
+	case "high":
+		return 2
+	case "medium":
+		return 1
+	default:
+		return 0
+	}
+}
+
+func (m *Module) dispatchAlerts(ctx context.Context) error {
+	if m.alertFn == nil {
+		return nil
+	}
+	rows, err := m.db.QueryContext(ctx, `SELECT id, severity, message, attempts FROM assurance_alert_deliveries WHERE status='pending' AND next_attempt_at <= now() ORDER BY created_at, id LIMIT 50`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	type delivery struct {
+		id       uuid.UUID
+		severity string
+		message  string
+		attempts int
+	}
+	var deliveries []delivery
+	for rows.Next() {
+		var item delivery
+		if err := rows.Scan(&item.id, &item.severity, &item.message, &item.attempts); err != nil {
+			return err
+		}
+		deliveries = append(deliveries, item)
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, item := range deliveries {
+		if err := m.alertFn(ctx, item.severity, item.message); err != nil {
+			alertDeliveries.WithLabelValues("failed", item.severity).Inc()
+			backoff := time.Duration(1<<min(item.attempts, 6)) * time.Minute
+			_, _ = m.db.ExecContext(ctx, `UPDATE assurance_alert_deliveries SET status='pending', attempts=attempts+1, next_attempt_at=now()+($2 * interval '1 second'), last_error=$3 WHERE id=$1`, item.id, backoff.Seconds(), err.Error())
+			continue
+		}
+		alertDeliveries.WithLabelValues("delivered", item.severity).Inc()
+		_, _ = m.db.ExecContext(ctx, `UPDATE assurance_alert_deliveries SET status='delivered', attempts=attempts+1, delivered_at=now(), last_error='' WHERE id=$1`, item.id)
+	}
+	return nil
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }

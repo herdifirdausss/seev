@@ -19,6 +19,7 @@ import (
 	payoutv1 "github.com/herdifirdausss/seev/gen/payout/v1"
 	"github.com/herdifirdausss/seev/internal/assurance"
 	"github.com/herdifirdausss/seev/internal/config"
+	"github.com/herdifirdausss/seev/pkg/alerting"
 	"github.com/herdifirdausss/seev/pkg/database"
 	"github.com/herdifirdausss/seev/pkg/grpcx"
 	"github.com/herdifirdausss/seev/pkg/logger"
@@ -93,7 +94,11 @@ func run(parent context.Context) error {
 		return fmt.Errorf("dial ledger: %w", err)
 	}
 	defer ledgerConn.Close()
-	module := assurance.NewModule(db, cfg.Assurance, payinv1.NewPayinServiceClient(payinConn), payoutv1.NewPayoutServiceClient(payoutConn), ledgerv1.NewLedgerServiceClient(ledgerConn), log)
+	var alertFn alerting.AlertFunc
+	if cfg.Assurance.AlertWebhookURL != "" {
+		alertFn = alerting.NewWebhookAlerter(cfg.Assurance.AlertWebhookURL, nil)
+	}
+	module := assurance.NewModule(db, cfg.Assurance, payinv1.NewPayinServiceClient(payinConn), payoutv1.NewPayoutServiceClient(payoutConn), ledgerv1.NewLedgerServiceClient(ledgerConn), alertFn, log)
 	module.Start(ctx)
 	defer module.Stop()
 

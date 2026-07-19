@@ -182,6 +182,7 @@ type AssuranceConfig struct {
 	PageSize         int
 	RPCTimeout       time.Duration
 	Concurrency      int
+	AlertWebhookURL  string
 }
 
 type AppConfig struct {
@@ -538,6 +539,7 @@ func loadFromEnvMode(getenv func(string) string, requireRabbitMQ bool) (*Config,
 			PageSize:         parseInt(getenv("ASSURANCE_PAGE_SIZE"), 500),
 			RPCTimeout:       parseDuration(getenv("ASSURANCE_RPC_TIMEOUT"), 3*time.Second),
 			Concurrency:      parseInt(getenv("ASSURANCE_CONCURRENCY"), 2),
+			AlertWebhookURL:  getenv("ALERT_WEBHOOK_URL"),
 		},
 		GRPCPort:          getWithDefault(getenv, "GRPC_PORT", "9091"),
 		InternalGRPCToken: getenv("INTERNAL_GRPC_TOKEN"),
