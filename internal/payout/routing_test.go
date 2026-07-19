@@ -87,7 +87,7 @@ func TestResolvePayoutRoute_BreakerOpen_SkipsToNextCandidate(t *testing.T) {
 	registry.AddPayout(&stubPayoutProvider{name: "primary"})
 	registry.AddPayout(&stubPayoutProvider{name: "secondary"})
 	breaker := vendorgw.NewHealthTracker(1, time.Hour, nil)
-	breaker.RecordFailure("primary") // trips open at threshold 1
+	breaker.RecordFailure(context.Background(), "primary") // trips open at threshold 1
 
 	m := &Module{routing: matrixRouting{rules}, registry: registry, breaker: breaker}
 	vendor, _, err := m.ResolvePayoutRoute(context.Background(), uuid.New(), "IDR", decimal.NewFromInt(1), nil)
@@ -103,7 +103,7 @@ func TestResolvePayoutRoute_AllCandidatesOpen_ErrNoVendorAvailable(t *testing.T)
 	registry := vendorgw.NewRegistry()
 	registry.AddPayout(&stubPayoutProvider{name: "primary"})
 	breaker := vendorgw.NewHealthTracker(1, time.Hour, nil)
-	breaker.RecordFailure("primary")
+	breaker.RecordFailure(context.Background(), "primary")
 
 	m := &Module{routing: matrixRouting{rules}, registry: registry, breaker: breaker}
 	_, _, err := m.ResolvePayoutRoute(context.Background(), uuid.New(), "IDR", decimal.NewFromInt(1), nil)

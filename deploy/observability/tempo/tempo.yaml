@@ -1,0 +1,37 @@
+# docs/plan/43 K1/K2 — Tempo replaces Jaeger as the local trace backend.
+# OTLP gRPC receiver is the only ingest path; host stays on 127.0.0.1:4317
+# (same port the old Jaeger container used), so OTEL_EXPORTER_OTLP_ENDPOINT
+# does not change for any service.
+server:
+  http_listen_port: 3200
+  grpc_listen_port: 9095
+
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: 0.0.0.0:4317
+
+ingester:
+  trace_idle_period: 10s
+  max_block_bytes: 1_000_000
+  max_block_duration: 5m
+
+compactor:
+  compaction:
+    block_retention: 48h
+
+storage:
+  trace:
+    backend: local
+    local:
+      path: /var/tempo/traces
+    wal:
+      path: /var/tempo/wal
+
+overrides:
+  defaults:
+    ingestion:
+      rate_limit_bytes: 15000000
+      burst_size_bytes: 20000000

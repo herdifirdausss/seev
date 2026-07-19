@@ -3,7 +3,7 @@ BUILD_DIR := bin
 CMD_DIR   := ./cmd/gateway
 GOFLAGS   := -trimpath -ldflags="-s -w"
 
-.PHONY: build build-all run dev test lint tidy tools proto proto-lint proto-breaking docker-up docker-down migrate-up migrate-up-all migrate-down grant-app-role verify-full chaos-debug
+.PHONY: build build-all run dev test lint tidy tools proto proto-lint proto-breaking docker-up docker-down smoke-container migrate-up migrate-up-all migrate-down grant-app-role verify-full chaos-debug observability-secret observability-up observability-down
 
 BUF_VERSION                := v1.47.2
 PROTOC_GEN_GO_VERSION      := v1.36.11
@@ -80,6 +80,10 @@ docker-up:
 docker-down:
 	docker compose down
 
+## smoke-container: Full-container round-trip (docs/plan/44 K4) — real Docker images via `docker compose --profile app`, not host binaries
+smoke-container:
+	./scripts/smoke-container.sh
+
 # This is what CLAUDE.md's "Build and verification" section means by "the
 # full gate" — run this instead of chaining the steps by hand so a volume
 # reset is never skipped by mistake. Any ad-hoc debugging against the
@@ -102,7 +106,7 @@ verify-full:
 # Preserves /tmp/seev-chaos.*/*.log past the exit trap instead of deleting
 # them, so a failing scenario can be inspected after the fact. Usage:
 #   make chaos-debug SCENARIO=8
-## chaos-debug: Re-run one chaos scenario (SCENARIO=1..8, default all) with logs preserved after exit
+## chaos-debug: Re-run one chaos scenario (SCENARIO=1..11, default all) with logs preserved after exit
 SCENARIO ?= all
 chaos-debug:
 	KEEP_WORK_DIR=1 ./scripts/chaos-test.sh $(SCENARIO)
@@ -139,6 +143,28 @@ migrate-down:
 ## grant-app-role: Grant the app_service DB role to POSTGRES_USER (run once per environment, after the first migrate-up creates app_service — docs/plan/16 Task T3)
 grant-app-role:
 	psql "$(SERVICE_OWNER_DSN)" -c "GRANT app_service TO $(POSTGRES_USER);"
+
+# docs/plan/43 K1: a strong Grafana admin password generated locally, mode
+# 0600, gitignored — never a default/committed credential. Idempotent: does
+# nothing if the secret already exists, so re-running is safe.
+## observability-secret: Generate the local Grafana admin password (run once per machine)
+observability-secret:
+	@mkdir -p deploy/observability/secrets
+	@if [ ! -f deploy/observability/secrets/grafana_admin_password ]; then \
+		openssl rand -base64 24 > deploy/observability/secrets/grafana_admin_password; \
+		chmod 600 deploy/observability/secrets/grafana_admin_password; \
+		echo "generated deploy/observability/secrets/grafana_admin_password"; \
+	else \
+		echo "deploy/observability/secrets/grafana_admin_password already exists, leaving it alone"; \
+	fi
+
+## observability-up: Start app + observability profiles (Prometheus/Grafana/Loki/Tempo/Alloy) — do NOT run alongside the testcontainers integration suite (CLAUDE.md RAM budget)
+observability-up: observability-secret
+	OTEL_EXPORTER_OTLP_ENDPOINT=tempo:4317 docker compose --profile app --profile observability up --build -d
+
+## observability-down: Stop app + observability profiles
+observability-down:
+	docker compose --profile app --profile observability down
 
 ## help: Print this help message
 help:

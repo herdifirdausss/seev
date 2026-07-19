@@ -11,6 +11,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	fraudv1 "github.com/herdifirdausss/seev/gen/fraud/v1"
 	"github.com/herdifirdausss/seev/pkg/middleware"
@@ -88,4 +90,47 @@ func TestCheck_AllowVerdictNoBlock(t *testing.T) {
 	verdict, err := client.Check(context.Background(), "p2p_transfer", "transfer_p2p", uuid.New(), decimal.NewFromInt(100), "IDR")
 	require.NoError(t, err)
 	assert.False(t, verdict.Block)
+}
+
+// TestCheck_DependencyUnavailable_ClassifiedDistinctly proves docs/plan/45
+// Task T3/K4: fraud-service signaling its velocity dependency is down
+// (codes.FailedPrecondition + the exact "DEPENDENCY_UNAVAILABLE" message)
+// must be distinguishable from every other Check error via
+// errors.Is(err, ErrDependencyUnavailable) — the signal every caller
+// (ledger/payin/payout) maps to a fail-closed 503, unlike a generic infra
+// error (fail open).
+func TestCheck_DependencyUnavailable_ClassifiedDistinctly(t *testing.T) {
+	fake := &fakeFraudClient{err: status.Error(codes.FailedPrecondition, "DEPENDENCY_UNAVAILABLE")}
+	client := New(fake, "payout")
+
+	_, err := client.Check(context.Background(), "payout", "withdraw_initiate", uuid.New(), decimal.NewFromInt(1000), "IDR")
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrDependencyUnavailable)
+}
+
+// TestCheck_FailedPreconditionWithDifferentMessage_NotClassifiedAsDependencyUnavailable
+// proves the classification checks BOTH the code and the exact message —
+// a FailedPrecondition for some unrelated reason must fall through to the
+// generic (fail-open) error path, not be misread as a dependency signal.
+func TestCheck_FailedPreconditionWithDifferentMessage_NotClassifiedAsDependencyUnavailable(t *testing.T) {
+	fake := &fakeFraudClient{err: status.Error(codes.FailedPrecondition, "some other precondition failure")}
+	client := New(fake, "payout")
+
+	_, err := client.Check(context.Background(), "payout", "withdraw_initiate", uuid.New(), decimal.NewFromInt(1000), "IDR")
+	require.Error(t, err)
+	assert.False(t, errors.Is(err, ErrDependencyUnavailable))
+}
+
+// TestCheck_UnavailableCode_NotClassifiedAsDependencyUnavailable proves a
+// genuine transport-level failure (codes.Unavailable — what a real
+// connection failure to fraud-service itself naturally produces) is never
+// misclassified as the dependency signal, which uses a different code
+// (FailedPrecondition) specifically to avoid this ambiguity.
+func TestCheck_UnavailableCode_NotClassifiedAsDependencyUnavailable(t *testing.T) {
+	fake := &fakeFraudClient{err: status.Error(codes.Unavailable, "connection refused")}
+	client := New(fake, "ledger")
+
+	_, err := client.Check(context.Background(), "p2p_transfer", "transfer_p2p", uuid.New(), decimal.NewFromInt(1000), "IDR")
+	require.Error(t, err)
+	assert.False(t, errors.Is(err, ErrDependencyUnavailable))
 }

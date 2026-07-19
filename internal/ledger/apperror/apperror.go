@@ -166,3 +166,42 @@ var (
 	ErrPreviousFailed  = errors.New("PREVIOUS_ATTEMPT_FAILED")
 	ErrStillProcessing = errors.New("STILL_PROCESSING")
 )
+
+// businessRejectionSentinels mirrors internal/ledger/transport/errors.go's
+// writeError switch: every sentinel mapped there to a 4xx response (bad
+// request/forbidden/not found/unprocessable/conflict) is a valid, expected
+// outcome — a caller/business rejection, not a system fault — only the
+// unmapped default (500) is a genuine infra failure. Duplicated here rather
+// than exported from transport because transport needs the finer 5-way HTTP
+// status split this package doesn't care about; if the two lists ever drift,
+// the safe direction is this list under-including a new sentinel (it then
+// counts as "error" here, the same conservative default an unrecognized
+// error already gets).
+var businessRejectionSentinels = []error{
+	ErrValidation, ErrEmptyIdempotencyKey, ErrUnknownProcessor, ErrSelfTransfer,
+	ErrStatementRangeTooLarge, ErrCSVTooManyRows, ErrSelfApproval,
+	ErrAccountNotFound, ErrTransactionNotFound, ErrOriginalNotFound,
+	ErrOutboxEventNotFound, ErrPendingAdjustmentNotFound, ErrReconBatchNotFound,
+	ErrReconItemNotFound, ErrInsufficientFunds, ErrAccountSuspended,
+	ErrAccountClosed, ErrCurrencyMismatch, ErrAmountTooSmall, ErrAmountTooLarge,
+	ErrDailyLimitExceeded, ErrFeeExceedsAmount, ErrAlreadyReversed,
+	ErrNotReversible, ErrAlreadyClosed, ErrOriginalTypeMismatch,
+	ErrLifecycleAmountMismatch, ErrUnbalancedEntries, ErrScreeningBlocked,
+	ErrQuoteExpired, ErrQuoteMismatch, ErrStillProcessing, ErrPreviousFailed,
+	ErrAdjustmentAlreadyDecided, ErrReconItemAlreadyResolved,
+}
+
+// IsBusinessRejection reports whether err is a valid business/input outcome
+// (docs/plan/43 Task T5) rather than a genuine infrastructure or programming
+// failure — used to keep the posting_availability SLO from counting
+// legitimate rejections (insufficient funds, closed account, expired quote,
+// ...) as an outage, the same "4xx isn't an outage" reasoning K6 applies to
+// the HTTP-based SLIs elsewhere in that doc.
+func IsBusinessRejection(err error) bool {
+	for _, sentinel := range businessRejectionSentinels {
+		if errors.Is(err, sentinel) {
+			return true
+		}
+	}
+	return false
+}

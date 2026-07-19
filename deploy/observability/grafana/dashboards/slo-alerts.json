@@ -1,0 +1,315 @@
+{
+  "uid": "seev-slo-alerts",
+  "title": "Seev / SLO & Alerts",
+  "description": "30-day SLI, error budget, multi-window burn rate, and current alert state for the three SLOs defined in docs/plan/43 K6 (posting availability, webhook latency, notification success). Populated once Task T5's recording rules exist.",
+  "tags": [
+    "seev",
+    "observability",
+    "slo"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "1m",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "30-day SLI & error budget",
+      "type": "row",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 1
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 2,
+      "title": "30d SLI ratio per SLO",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "seev-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 1,
+        "w": 12,
+        "h": 8
+      },
+      "description": "Recording rule naming locked for docs/plan/43 Task T5 (not yet implemented as of T4 \u2014 these panels legitimately show 'No data' until T5's prometheus/rules/slo.yml exists): slo:sli_ratio:rate<window>{slo=\"posting_availability|webhook_latency|notification_success\"}, slo:burnrate:rate<window>{slo=...}, slo:error_budget_remaining{slo=...}, slo:eligible_events:rate1h{slo=...}. Windows: 5m/30m/1h/6h/3d/30d per K6 burn-rate pairs.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "seev-prometheus"
+          },
+          "expr": "slo:sli_ratio:rate30d",
+          "refId": "A",
+          "legendFormat": "{{slo}}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Remaining error budget",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "seev-prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 1,
+        "w": 12,
+        "h": 8
+      },
+      "description": "Recording rule naming locked for docs/plan/43 Task T5 (not yet implemented as of T4 \u2014 these panels legitimately show 'No data' until T5's prometheus/rules/slo.yml exists): slo:sli_ratio:rate<window>{slo=\"posting_availability|webhook_latency|notification_success\"}, slo:burnrate:rate<window>{slo=...}, slo:error_budget_remaining{slo=...}, slo:eligible_events:rate1h{slo=...}. Windows: 5m/30m/1h/6h/3d/30d per K6 burn-rate pairs.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "seev-prometheus"
+          },
+          "expr": "slo:error_budget_remaining",
+          "refId": "A",
+          "legendFormat": "{{slo}}"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Burn rate (all windows)",
+      "type": "row",
+      "gridPos": {
+        "x": 0,
+        "y": 9,
+        "w": 24,
+        "h": 1
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 5,
+      "title": "Fast burn (5m / 1h) \u2014 page threshold 14.4x",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "seev-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 10,
+        "w": 12,
+        "h": 8
+      },
+      "description": "Recording rule naming locked for docs/plan/43 Task T5 (not yet implemented as of T4 \u2014 these panels legitimately show 'No data' until T5's prometheus/rules/slo.yml exists): slo:sli_ratio:rate<window>{slo=\"posting_availability|webhook_latency|notification_success\"}, slo:burnrate:rate<window>{slo=...}, slo:error_budget_remaining{slo=...}, slo:eligible_events:rate1h{slo=...}. Windows: 5m/30m/1h/6h/3d/30d per K6 burn-rate pairs.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "seev-prometheus"
+          },
+          "expr": "slo:burnrate:rate5m",
+          "refId": "A",
+          "legendFormat": "{{slo}} 5m"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "seev-prometheus"
+          },
+          "expr": "slo:burnrate:rate1h",
+          "refId": "B",
+          "legendFormat": "{{slo}} 1h"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Slow burn (30m / 6h) \u2014 ticket threshold 6x",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "seev-prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 10,
+        "w": 12,
+        "h": 8
+      },
+      "description": "Recording rule naming locked for docs/plan/43 Task T5 (not yet implemented as of T4 \u2014 these panels legitimately show 'No data' until T5's prometheus/rules/slo.yml exists): slo:sli_ratio:rate<window>{slo=\"posting_availability|webhook_latency|notification_success\"}, slo:burnrate:rate<window>{slo=...}, slo:error_budget_remaining{slo=...}, slo:eligible_events:rate1h{slo=...}. Windows: 5m/30m/1h/6h/3d/30d per K6 burn-rate pairs.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "seev-prometheus"
+          },
+          "expr": "slo:burnrate:rate30m",
+          "refId": "A",
+          "legendFormat": "{{slo}} 30m"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "seev-prometheus"
+          },
+          "expr": "slo:burnrate:rate6h",
+          "refId": "B",
+          "legendFormat": "{{slo}} 6h"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Extended burn (3d) \u2014 sustained low-grade erosion",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "seev-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 18,
+        "w": 12,
+        "h": 8
+      },
+      "description": "Recording rule naming locked for docs/plan/43 Task T5 (not yet implemented as of T4 \u2014 these panels legitimately show 'No data' until T5's prometheus/rules/slo.yml exists): slo:sli_ratio:rate<window>{slo=\"posting_availability|webhook_latency|notification_success\"}, slo:burnrate:rate<window>{slo=...}, slo:error_budget_remaining{slo=...}, slo:eligible_events:rate1h{slo=...}. Windows: 5m/30m/1h/6h/3d/30d per K6 burn-rate pairs.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "seev-prometheus"
+          },
+          "expr": "slo:burnrate:rate3d",
+          "refId": "A",
+          "legendFormat": "{{slo}} 3d"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Eligible event volume (low-traffic gate)",
+      "type": "row",
+      "gridPos": {
+        "x": 0,
+        "y": 26,
+        "w": 24,
+        "h": 1
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 9,
+      "title": "Eligible events per hour",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "seev-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 27,
+        "w": 24,
+        "h": 8
+      },
+      "description": "Recording rule naming locked for docs/plan/43 Task T5 (not yet implemented as of T4 \u2014 these panels legitimately show 'No data' until T5's prometheus/rules/slo.yml exists): slo:sli_ratio:rate<window>{slo=\"posting_availability|webhook_latency|notification_success\"}, slo:burnrate:rate<window>{slo=...}, slo:error_budget_remaining{slo=...}, slo:eligible_events:rate1h{slo=...}. Windows: 5m/30m/1h/6h/3d/30d per K6 burn-rate pairs. Minimum gates per K6: 20/1h, 50/6h, 100/3d for the corresponding burn-rate alert to be trusted.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "seev-prometheus"
+          },
+          "expr": "slo:eligible_events:rate1h * 3600",
+          "refId": "A",
+          "legendFormat": "{{slo}}"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "title": "Current alert state",
+      "type": "row",
+      "gridPos": {
+        "x": 0,
+        "y": 35,
+        "w": 24,
+        "h": 1
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 11,
+      "title": "Active SLO & operational alerts",
+      "type": "alertlist",
+      "gridPos": {
+        "x": 0,
+        "y": 36,
+        "w": 24,
+        "h": 8
+      },
+      "options": {
+        "showOptions": "current",
+        "maxItems": 20,
+        "sortOrder": 1,
+        "dashboardAlerts": false,
+        "alertName": "",
+        "datasource": "",
+        "folder": "",
+        "stateFilter": {
+          "firing": true,
+          "pending": true,
+          "noData": false,
+          "normal": false,
+          "error": true
+        }
+      }
+    }
+  ]
+}

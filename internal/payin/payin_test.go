@@ -15,6 +15,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	fraudv1 "github.com/herdifirdausss/seev/gen/fraud/v1"
 	"github.com/herdifirdausss/seev/internal/payin/model"
@@ -363,6 +365,47 @@ func TestHandleWebhook_FraudInfraError_FailsOpen_StillPosts(t *testing.T) {
 	err := m.HandleWebhook(context.Background(), "acme", http.Header{}, []byte(`{}`))
 	require.NoError(t, err)
 	assert.Equal(t, 1, postCalls, "a screening infra error must fail open, not strand the deposit")
+}
+
+// TestHandleWebhook_FraudDependencyUnavailable_FailsClosed_NotBusinessFailure
+// proves docs/plan/45 Task T3/K4: fraud-service reachable but explicitly
+// signaling its velocity dependency is down must fail CLOSED — poster.Post
+// is NEVER called, unlike the fail-open infra-error case above — and,
+// critically, this must NOT be classified as a businessError (unlike the
+// Block case above): the identical webhook redelivery should succeed once
+// Redis recovers, so the webhook receiver must respond in a way that makes
+// the vendor retry (503), not ack 200 as a settled business decision.
+func TestHandleWebhook_FraudDependencyUnavailable_FailsClosed_NotBusinessFailure(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	repo := repository.NewMockRepository(ctrl)
+
+	repo.EXPECT().GetTopupIntentByReference(gomock.Any(), "ref-1").Return(model.TopupIntent{}, false, nil)
+	repo.EXPECT().GetOrInsert(gomock.Any(), gomock.Any()).DoAndReturn(
+		func(_ context.Context, e model.WebhookEvent) (model.WebhookEvent, error) {
+			e.Status = "received"
+			return e, nil
+		})
+	// No MarkBlocked/MarkPosted call expected — the event stays 'received'
+	// so the vendor's own redelivery re-screens it later.
+
+	postCalls := 0
+	poster := stubPoster{fn: func(_ context.Context, _ ledgerclient.Command) error {
+		postCalls++
+		return nil
+	}}
+
+	fraudClient := fraudcheck.New(&fakeFraudGRPCClient{
+		err: status.Error(codes.FailedPrecondition, "DEPENDENCY_UNAVAILABLE"),
+	}, "payin")
+
+	verifier := stubVerifier{name: "acme", event: sampleEvent()}
+	m := &Module{repo: repo, poster: poster, registry: registryWith(verifier), routing: routeTo("acme", "bca"), logger: discardLogger(), fraudClient: fraudClient}
+
+	err := m.HandleWebhook(context.Background(), "acme", http.Header{}, []byte(`{}`))
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrScreeningDependencyUnavailable)
+	assert.False(t, IsBusinessFailure(err), "must NOT be a business failure — the identical redelivery should succeed once Redis recovers")
+	assert.Equal(t, 0, postCalls, "no deposit may post while the dependency is unavailable")
 }
 
 // TestReplayEvent_BlockedEvent_ReScreens proves admin replay of a

@@ -27,6 +27,7 @@ import (
 	"github.com/herdifirdausss/seev/pkg/grpcx"
 	"github.com/herdifirdausss/seev/pkg/ledgerclient"
 	"github.com/herdifirdausss/seev/pkg/logger"
+	"github.com/herdifirdausss/seev/pkg/tracing"
 )
 
 func main() {
@@ -75,6 +76,16 @@ func run(parent context.Context) error {
 	log := logger.New(cfg.Logger.Pkg())
 	ctx, cancel := signal.NotifyContext(parent, syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
+	shutdownTracing, err := tracing.Setup(ctx, tracing.Config{
+		ServiceName: "payout-service",
+		Endpoint:    cfg.Tracing.OTLPEndpoint,
+		SampleRatio: cfg.Tracing.SampleRatio,
+		Insecure:    cfg.Tracing.Insecure,
+	})
+	if err != nil {
+		log.Error("tracing: setup failed, continuing without a tracer provider", "error", err)
+		shutdownTracing = func(context.Context) error { return nil }
+	}
 	db, err := database.New(ctx, cfg.Postgres.Pkg())
 	if err != nil {
 		return fmt.Errorf("connect postgres: %w", err)
@@ -107,7 +118,11 @@ func run(parent context.Context) error {
 		registry.AddPayout(mockvendor.NewPayoutProvider("mockvendor2"))
 		log.Warn("vendorgw: mockvendor2 enabled — test-only second vendor for failover demos")
 	}
-	breaker := vendorgw.NewHealthTracker(cfg.Breaker.FailureThreshold, cfg.Breaker.Cooldown, log)
+	var breaker vendorgw.Breaker = vendorgw.NewHealthTracker(cfg.Breaker.FailureThreshold, cfg.Breaker.Cooldown, log)
+	if cfg.Breaker.Distributed && redisClient != nil {
+		breaker = vendorgw.NewDistributedBreaker(redisClient, "payout", cfg.Breaker.FailureThreshold, cfg.Breaker.Cooldown, 0, log)
+		log.Info("vendorgw: distributed breaker enabled", "namespace", "payout")
+	}
 
 	// fraud client screens payouts pre-hold (docs/plan/37 Task T5).
 	// FRAUD_GRPC_ADDR unset (dev/test defaults) => nil client => no screening.
@@ -164,6 +179,7 @@ func run(parent context.Context) error {
 		_ = redisCache.Close()
 	}
 	_ = db.Close()
+	_ = shutdownTracing(context.Background())
 	return serveErr
 }
 func serveHTTP(s *http.Server, ch chan<- error) {

@@ -40,3 +40,13 @@ var ErrNoRoute = errors.New("payin: no route")
 // (docs/plan/40 Task T2) — distinct from ErrNoRoute (no rule matched at
 // all). The gateway handler maps this to 503 VENDOR_UNAVAILABLE.
 var ErrNoVendorAvailable = errors.New("payin: no vendor available")
+
+// ErrScreeningDependencyUnavailable means fraud-service is reachable but
+// explicitly reported its velocity dependency (Redis) is down
+// (docs/plan/45 Task T3/K4) — deliberately NOT a businessError: the exact
+// same webhook redelivery will succeed once Redis recovers, unlike a
+// genuine business mismatch. No posting is ever attempted for this event;
+// the webhook receiver responds 503 so the vendor's own retry mechanism
+// redelivers later. The gateway handler maps this to 503
+// DEPENDENCY_UNAVAILABLE.
+var ErrScreeningDependencyUnavailable = errors.New("payin: screening dependency unavailable")

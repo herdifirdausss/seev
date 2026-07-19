@@ -79,6 +79,15 @@ func TooManyRequests(w http.ResponseWriter) {
 	errResp(w, http.StatusTooManyRequests, "RATE_LIMITED", "Too many requests, please slow down")
 }
 
+// ServiceUnavailable is a 503 with a caller-chosen machine-readable code —
+// used for degraded-dependency signals (e.g. DEPENDENCY_UNAVAILABLE,
+// docs/plan/45 Task T3/K4; VENDOR_UNAVAILABLE, docs/plan/40) that are
+// transient and worth a client retry, distinct from InternalServerError's
+// generic unexpected-failure shape.
+func ServiceUnavailable(w http.ResponseWriter, code, message string) {
+	errResp(w, http.StatusServiceUnavailable, code, message)
+}
+
 func InternalServerError(w http.ResponseWriter, err error) {
 	slog.Error("internal server error", "error", err)
 	errResp(w, http.StatusInternalServerError, "INTERNAL_ERROR", "An unexpected error occurred")

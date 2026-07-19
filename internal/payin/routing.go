@@ -22,7 +22,7 @@ func (m *Module) ResolveTopupRoute(ctx context.Context, userID uuid.UUID, curren
 		if _, ok := m.registry.Payin(c.Vendor); !ok {
 			continue
 		}
-		if m.breaker != nil && !m.breaker.Allow(c.Vendor) {
+		if m.breaker != nil && !m.breaker.Allow(ctx, c.Vendor) {
 			continue
 		}
 		return c.Vendor, c.Gateway, nil

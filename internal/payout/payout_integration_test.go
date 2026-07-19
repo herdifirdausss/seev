@@ -190,7 +190,18 @@ func TestPayout_Create_InstantSettle_EndToEnd(t *testing.T) {
 	id, err := payoutModule.Create(ctx, userID, decimal.NewFromInt(100_000), mockDestination(""), "test", "")
 	require.NoError(t, err)
 
+	// docs/plan/45 Task T1: Create returns after hold+enqueue — the vendor
+	// result now always comes from a separate relay dispatch pass, even in
+	// "instant-settle" mode.
 	req, err := payoutModule.Get(ctx, id)
+	require.NoError(t, err)
+	assert.Equal(t, model.StatusSubmitted, req.Status, "Create must return before any vendor result — dispatch is async")
+
+	n, err := payoutModule.DispatchPendingCommands(ctx, 10)
+	require.NoError(t, err)
+	assert.Equal(t, 1, n)
+
+	req, err = payoutModule.Get(ctx, id)
 	require.NoError(t, err)
 	assert.Equal(t, mockvendor.VendorName, req.Vendor, "fallback routing rule in real Postgres must select mockvendor")
 	assert.Equal(t, model.StatusSettled, req.Status)
@@ -220,6 +231,10 @@ func TestPayout_Create_Async_ResumeJobSettles(t *testing.T) {
 
 	id, err := payoutModule.Create(ctx, userID, decimal.NewFromInt(75_000), mockDestination(mockvendor.ModeAsync), "test", "")
 	require.NoError(t, err)
+
+	n, err := payoutModule.DispatchPendingCommands(ctx, 10)
+	require.NoError(t, err)
+	assert.Equal(t, 1, n)
 
 	req, err := payoutModule.Get(ctx, id)
 	require.NoError(t, err)
@@ -260,6 +275,9 @@ func TestPayout_Create_VendorFails_MoneyReturnedToCash(t *testing.T) {
 	id, err := payoutModule.Create(ctx, userID, decimal.NewFromInt(50_000), mockDestination(mockvendor.ModeFail), "test", "")
 	require.NoError(t, err)
 
+	_, err = payoutModule.DispatchPendingCommands(ctx, 10)
+	require.NoError(t, err)
+
 	req, err := payoutModule.Get(ctx, id)
 	require.NoError(t, err)
 	assert.Equal(t, model.StatusCancelled, req.Status)
@@ -287,6 +305,9 @@ func TestPayout_Create_WithWithdrawFee_SettleChargesFee(t *testing.T) {
 	feeAccountBefore := getAccountBalance(t, db, feeAccountID(t, db, "platform"))
 
 	id, err := payoutModule.Create(ctx, userID, decimal.NewFromInt(100_000), mockDestination(""), "test", "")
+	require.NoError(t, err)
+
+	_, err = payoutModule.DispatchPendingCommands(ctx, 10)
 	require.NoError(t, err)
 
 	req, err := payoutModule.Get(ctx, id)
@@ -320,6 +341,9 @@ func TestPayout_Create_WithWithdrawFee_CancelledRefundsFullAmount_NoFeeCharged(t
 	feeAccountBefore := getAccountBalance(t, db, feeAccountID(t, db, "platform"))
 
 	id, err := payoutModule.Create(ctx, userID, decimal.NewFromInt(50_000), mockDestination(mockvendor.ModeFail), "test", "")
+	require.NoError(t, err)
+
+	_, err = payoutModule.DispatchPendingCommands(ctx, 10)
 	require.NoError(t, err)
 
 	req, err := payoutModule.Get(ctx, id)
@@ -383,6 +407,9 @@ func TestPayout_QuoteHonoredAtSettle_EvenIfFeeRuleChangesBeforeSettle(t *testing
 	id, err := payoutModule.Create(ctx, userID, amount, mockDestination(""), "test", quote.ID.String())
 	require.NoError(t, err)
 
+	_, err = payoutModule.DispatchPendingCommands(ctx, 10)
+	require.NoError(t, err)
+
 	req, err := payoutModule.Get(ctx, id)
 	require.NoError(t, err)
 	assert.Equal(t, model.StatusSettled, req.Status)
@@ -416,6 +443,9 @@ func TestPayout_ResumeJobSettle_UsesStoredFee(t *testing.T) {
 	require.True(t, quote.FeeAmount.Equal(decimal.NewFromInt(1_200)))
 
 	id, err := payoutModule.Create(ctx, userID, amount, mockDestination(mockvendor.ModeAsync), "test", quote.ID.String())
+	require.NoError(t, err)
+
+	_, err = payoutModule.DispatchPendingCommands(ctx, 10)
 	require.NoError(t, err)
 
 	req, err := payoutModule.Get(ctx, id)
@@ -477,12 +507,16 @@ func TestPayout_QuoteExpired_Returns422_NoHold_LedgerUntouched_RowRejected(t *te
 	assertLedgerBalanced(t, db)
 }
 
-// TestPayout_ResumeStuck_SubmittedRetried_EventuallySettled proves the
-// other half of step 3's resume job: a request stuck in 'submitted' (e.g.
-// the process crashed between calling Submit and recording the outcome)
-// gets Submit retried by the resume job, which is safe because
-// mockvendor's Submit is idempotent by request ID.
-func TestPayout_ResumeStuck_SubmittedRetried_EventuallySettled(t *testing.T) {
+// TestPayout_ResumeStuck_SubmittedWithNoCommand_RecoversAndSettles proves
+// docs/plan/45 Task T1/K1's genuine crash-gap recovery: a 'submitted'
+// request whose command row is missing entirely (EnqueueInitialSubmit's own
+// atomicity already rules this out in normal operation — this simulates a
+// manual/corrupted-data recovery scenario, the belt-and-braces case the
+// resume job's HasAnyCommand check exists for) gets a fresh command
+// inserted by the resume job, which the relay's own dispatch pass then
+// settles — proving the resume-job-inserts / relay-dispatches division of
+// labor (K2) end to end.
+func TestPayout_ResumeStuck_SubmittedWithNoCommand_RecoversAndSettles(t *testing.T) {
 	db := setupPayoutTestDB(t)
 	ledgerModule, payoutModule, _ := newPayoutTestModules(db)
 	ctx := context.Background()
@@ -493,11 +527,7 @@ func TestPayout_ResumeStuck_SubmittedRetried_EventuallySettled(t *testing.T) {
 	id, err := payoutModule.Create(ctx, userID, decimal.NewFromInt(60_000), mockDestination(""), "test", "")
 	require.NoError(t, err)
 
-	// The happy path already settled it via Create's own inline submit —
-	// force it back to 'submitted' to simulate "crashed right after
-	// TransitionToSubmitted, before the vendor call's outcome was recorded"
-	// (docs/plan/23 Task T6's crash point), then prove resume finishes it.
-	_, err = db.ExecContext(ctx, `UPDATE payout_requests SET status = 'submitted', settle_tx_id = NULL WHERE id = $1`, id)
+	_, err = db.ExecContext(ctx, `DELETE FROM payout_vendor_commands WHERE payout_request_id = $1`, id)
 	require.NoError(t, err)
 
 	resumed, failed, err := payoutModule.ResumeStuck(ctx, -time.Hour)
@@ -505,11 +535,15 @@ func TestPayout_ResumeStuck_SubmittedRetried_EventuallySettled(t *testing.T) {
 	assert.Equal(t, 1, resumed)
 	assert.Equal(t, 0, failed)
 
+	n, err := payoutModule.DispatchPendingCommands(ctx, 10)
+	require.NoError(t, err)
+	assert.Equal(t, 1, n, "resume must have inserted exactly one fresh command for the relay to dispatch")
+
 	req, err := payoutModule.Get(ctx, id)
 	require.NoError(t, err)
 	assert.Equal(t, model.StatusSettled, req.Status)
 	assert.True(t, getAccountBalance(t, db, cash).Equal(decimal.NewFromInt(140_000)))
-	assert.GreaterOrEqual(t, vendorCallCount(t, db, id, "submit"), 2, "the resume job must have retried Submit at least once beyond the original Create call")
+	assert.Equal(t, 1, vendorCallCount(t, db, id, "submit"))
 
 	assertLedgerBalanced(t, db)
 }

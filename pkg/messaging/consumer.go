@@ -183,7 +183,16 @@ func (r *RabbitMQ) handleDelivery(
 	handler HandlerFunc,
 ) {
 	// Track in-flight count so Close() can drain before connection teardown.
+	r.inFlightMu.Lock()
+	if r.closing {
+		r.inFlightMu.Unlock()
+		// Shutdown has started; return the delivery to RabbitMQ instead of
+		// adding to a WaitGroup that Close may already be waiting on.
+		_ = d.Nack(false, true)
+		return
+	}
 	r.inFlight.Add(1)
+	r.inFlightMu.Unlock()
 	defer r.inFlight.Done()
 
 	// Extract OTel trace context from AMQP headers so the consumer span is

@@ -56,6 +56,32 @@ func NewFromClient(client *redis.Client) *Cache {
 	return &Cache{client: client}
 }
 
+// NewClientWithoutPing builds a *redis.Client from cfg WITHOUT verifying
+// connectivity first (docs/plan/45 Task T3/K4) — for a caller that must be
+// able to START even if Redis isn't reachable YET (fraud-service's
+// FailClosedVelocityStore keeps probing in the background and starts
+// serving amount-threshold screening immediately regardless). go-redis
+// clients are lazy by construction; the only thing New's own eager Ping
+// adds is "fail fast at startup instead of on first use" — exactly the
+// behavior this constructor deliberately skips. Every other Redis consumer
+// in this codebase should keep using New, not this.
+func NewClientWithoutPing(cfg Config) *redis.Client {
+	return redis.NewClient(&redis.Options{
+		Addr:            cfg.Addr,
+		Password:        cfg.Password,
+		DB:              cfg.DB,
+		MaxRetries:      cfg.MaxRetries,
+		DialTimeout:     cfg.DialTimeout,
+		ReadTimeout:     cfg.ReadTimeout,
+		WriteTimeout:    cfg.WriteTimeout,
+		PoolSize:        cfg.PoolSize,
+		MinIdleConns:    cfg.MinIdleConns,
+		PoolTimeout:     cfg.PoolTimeout,
+		MinRetryBackoff: 8 * time.Millisecond,
+		MaxRetryBackoff: 512 * time.Millisecond,
+	})
+}
+
 // Client exposes the underlying client for advanced operations.
 func (c *Cache) Client() *redis.Client {
 	return c.client

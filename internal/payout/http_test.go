@@ -212,21 +212,19 @@ func TestAdminRouter_Retry_InvalidTransition_409(t *testing.T) {
 func TestAdminRouter_Retry_Success(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	repo := repository.NewMockRepository(ctrl)
+	cmdRepo := repository.NewMockVendorCommandRepository(ctrl)
 	id := uuid.New()
 	req := sampleRequest(id, model.StatusSubmitted)
 
-	repo.EXPECT().Get(gomock.Any(), id).Return(req, nil).Times(2)
-	repo.EXPECT().TransitionToSubmitted(gomock.Any(), id).Return(true, nil)
-	repo.EXPECT().InsertVendorCall(gomock.Any(), gomock.Any()).Return(nil)
-	repo.EXPECT().TransitionToVendorPending(gomock.Any(), id, "vref-retry").Return(true, nil)
+	// docs/plan/45 Task T1: AdminRetry only ensures a command exists — it
+	// never calls the vendor itself; the relay dispatches whatever it
+	// enqueues.
+	repo.EXPECT().Get(gomock.Any(), id).Return(req, nil)
+	cmdRepo.EXPECT().GetLiveCommand(gomock.Any(), id).Return(model.PayoutVendorCommand{}, false, nil)
+	cmdRepo.EXPECT().EnsureSubmitCommand(gomock.Any(), id, req.Vendor).Return(true, nil)
 
-	provider := &stubPayoutProvider{
-		name: "mockvendor",
-		submitFn: func(context.Context, string, decimal.Decimal, string, json.RawMessage) (vendorgw.PayoutResult, error) {
-			return vendorgw.PayoutResult{Status: vendorgw.PayoutPending, VendorRef: "vref-retry"}, nil
-		},
-	}
-	m := newTestModule(repo, stubPoster{}, registryWith(provider))
+	m := newTestModule(repo, stubPoster{}, vendorgw.NewRegistry())
+	m.commandRepo = cmdRepo
 	router := newAdminTestRouter(m)
 
 	w := doReq(t, router, http.MethodPost, "/admin/payout/requests/"+id.String()+"/retry", tokenForUser(t, uuid.New(), "admin"), "")
@@ -284,39 +282,39 @@ func TestCreateHandler_NonIntegralAmount_400(t *testing.T) {
 func TestCreateHandler_Success_201(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	repo := repository.NewMockRepository(ctrl)
+	cmdRepo := repository.NewMockVendorCommandRepository(ctrl)
 	userID := uuid.New()
 	holdTxID := uuid.New()
-	settleTxID := uuid.New()
 
-	heldReq := sampleRequest(uuid.Nil, model.StatusHeld)
+	// docs/plan/45 Task T1: Create returns after hold+enqueue, without ever
+	// calling the vendor — dispatch is the relay's job alone.
+	heldReq := sampleRequest(uuid.Nil, model.StatusSubmitted)
 	heldReq.UserID = userID
-	heldReq.HoldTxID = &holdTxID
 
 	repo.EXPECT().Insert(gomock.Any(), gomock.Any()).Return(nil)
 	repo.EXPECT().TransitionToHeld(gomock.Any(), gomock.Any(), gomock.Any()).Return(true, nil)
-	repo.EXPECT().Get(gomock.Any(), gomock.Any()).Return(heldReq, nil).Times(3)
-	repo.EXPECT().TransitionToSubmitted(gomock.Any(), gomock.Any()).Return(true, nil)
-	repo.EXPECT().InsertVendorCall(gomock.Any(), gomock.Any()).Return(nil)
-	repo.EXPECT().TransitionToSettled(gomock.Any(), gomock.Any(), settleTxID).Return(true, nil)
+	cmdRepo.EXPECT().EnqueueInitialSubmit(gomock.Any(), gomock.Any(), "mockvendor").Return(true, nil)
+	// CreateHandler re-fetches the row to build the JSON response.
+	repo.EXPECT().Get(gomock.Any(), gomock.Any()).Return(heldReq, nil)
 
 	provider := &stubPayoutProvider{
 		name: "mockvendor",
 		submitFn: func(context.Context, string, decimal.Decimal, string, json.RawMessage) (vendorgw.PayoutResult, error) {
-			return vendorgw.PayoutResult{Status: vendorgw.PayoutSettled}, nil
+			t.Fatal("Create must never call provider.Submit directly")
+			return vendorgw.PayoutResult{}, nil
 		},
 	}
 	poster := stubPoster{
 		postFn: func(_ context.Context, _ ledgerclient.Command) error { return nil },
 		getTxFn: func(_ context.Context, key, _ string) (ledgerclient.Transaction, error) {
-			if strings.HasSuffix(key, "hold") {
-				return ledgerclient.Transaction{ID: holdTxID}, nil
-			}
-			return ledgerclient.Transaction{ID: settleTxID}, nil
+			require.True(t, strings.HasSuffix(key, "hold"))
+			return ledgerclient.Transaction{ID: holdTxID}, nil
 		},
 		getCurrencyFn: func(context.Context, uuid.UUID, string) (string, error) { return "IDR", nil },
 	}
 
 	m := newTestModule(repo, poster, registryWith(provider))
+	m.commandRepo = cmdRepo
 	router := newPublicTestRouter(m)
 
 	body := `{"amount":"100000","destination":{"bank_code":"014","account_no":"123"}}`
@@ -476,9 +474,9 @@ func TestAdminRouter_VendorHealth_ReportsAllThreeStates(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	repo := repository.NewMockRepository(ctrl) // no calls expected
 	breaker := vendorgw.NewHealthTracker(1, time.Nanosecond, nil)
-	breaker.RecordFailure("open-vendor") // trips open, cooldown effectively never elapses in this test
-	breaker.RecordFailure("half-open-vendor")
-	assert.True(t, breaker.Allow("half-open-vendor"), "cooldown of 1ns has elapsed by the time Allow is called, promoting to half-open")
+	breaker.RecordFailure(context.Background(), "open-vendor") // trips open, cooldown effectively never elapses in this test
+	breaker.RecordFailure(context.Background(), "half-open-vendor")
+	assert.True(t, breaker.Allow(context.Background(), "half-open-vendor"), "cooldown of 1ns has elapsed by the time Allow is called, promoting to half-open")
 	// "closed-vendor" is never touched — stays closed by default.
 
 	m := newTestModule(repo, stubPoster{}, vendorgw.NewRegistry())

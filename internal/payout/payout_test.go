@@ -15,6 +15,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	fraudv1 "github.com/herdifirdausss/seev/gen/fraud/v1"
 	"github.com/herdifirdausss/seev/internal/payout/model"
@@ -164,48 +166,46 @@ func TestCreate_RoutedVendorNotRegistered_Error(t *testing.T) {
 	require.Error(t, err)
 }
 
-// TestCreate_HappyPath_InstantSettle proves Create drives created -> held ->
-// submitted -> settled in one call when the vendor settles synchronously
-// (docs/plan/23 Task T3's "instant-settle" mode).
-func TestCreate_HappyPath_InstantSettle(t *testing.T) {
+// TestCreate_HappyPath_EnqueuesSubmitWithoutCallingVendor proves Create
+// drives created -> held -> submitted and durably enqueues the first
+// command, returning WITHOUT ever calling the vendor — dispatch is now
+// always the relay's own separate, asynchronous job (docs/plan/45 Task T1),
+// even for what used to be called "instant-settle" mode (docs/plan/23 Task
+// T3).
+func TestCreate_HappyPath_EnqueuesSubmitWithoutCallingVendor(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	repo := repository.NewMockRepository(ctrl)
+	cmdRepo := repository.NewMockVendorCommandRepository(ctrl)
 	userID := uuid.New()
 	holdTxID := uuid.New()
-	settleTxID := uuid.New()
-
-	heldReq := sampleRequest(uuid.Nil, model.StatusHeld)
-	heldReq.HoldTxID = &holdTxID
 
 	repo.EXPECT().Insert(gomock.Any(), gomock.Any()).Return(nil)
 	repo.EXPECT().TransitionToHeld(gomock.Any(), gomock.Any(), gomock.Any()).Return(true, nil)
-	repo.EXPECT().Get(gomock.Any(), gomock.Any()).Return(heldReq, nil).Times(2)
-	repo.EXPECT().TransitionToSubmitted(gomock.Any(), gomock.Any()).Return(true, nil)
-	repo.EXPECT().InsertVendorCall(gomock.Any(), gomock.Any()).Return(nil)
-	repo.EXPECT().TransitionToSettled(gomock.Any(), gomock.Any(), settleTxID).Return(true, nil)
+	cmdRepo.EXPECT().EnqueueInitialSubmit(gomock.Any(), gomock.Any(), "mockvendor").Return(true, nil)
 
+	// docs/plan/45 Task T1: Create must enqueue and return WITHOUT ever
+	// calling the vendor — dispatch is the relay's job alone.
 	provider := &stubPayoutProvider{
 		name: "mockvendor",
 		submitFn: func(context.Context, string, decimal.Decimal, string, json.RawMessage) (vendorgw.PayoutResult, error) {
-			return vendorgw.PayoutResult{Status: vendorgw.PayoutSettled}, nil
+			t.Fatal("Create must never call provider.Submit directly")
+			return vendorgw.PayoutResult{}, nil
 		},
 	}
 
 	poster := stubPoster{
 		postFn: func(_ context.Context, _ ledgerclient.Command) error { return nil },
-		getTxFn: func(_ context.Context, key, _ string) (ledgerclient.Transaction, error) {
-			if key[len(key)-4:] == "hold" {
-				return ledgerclient.Transaction{ID: holdTxID}, nil
-			}
-			return ledgerclient.Transaction{ID: settleTxID}, nil
+		getTxFn: func(_ context.Context, _, _ string) (ledgerclient.Transaction, error) {
+			return ledgerclient.Transaction{ID: holdTxID}, nil
 		},
 	}
 
 	m := newTestModule(repo, poster, registryWith(provider))
+	m.commandRepo = cmdRepo
 	id, err := m.Create(context.Background(), userID, decimal.NewFromInt(100_000), []byte(`{}`), "test", "")
 	require.NoError(t, err)
 	assert.NotEqual(t, uuid.Nil, id)
-	assert.Equal(t, int64(1), provider.submitted.Load())
+	assert.Equal(t, int64(0), provider.submitted.Load())
 }
 
 // TestCreate_FraudBlock_NoRowInserted_NoHold proves docs/plan/37 Task T5: a
@@ -235,42 +235,54 @@ func TestCreate_FraudBlock_NoRowInserted_NoHold(t *testing.T) {
 func TestCreate_FraudInfraError_FailsOpen_StillCreates(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	repo := repository.NewMockRepository(ctrl)
+	cmdRepo := repository.NewMockVendorCommandRepository(ctrl)
 	userID := uuid.New()
 	holdTxID := uuid.New()
-	settleTxID := uuid.New()
-
-	heldReq := sampleRequest(uuid.Nil, model.StatusHeld)
-	heldReq.HoldTxID = &holdTxID
 
 	repo.EXPECT().Insert(gomock.Any(), gomock.Any()).Return(nil)
 	repo.EXPECT().TransitionToHeld(gomock.Any(), gomock.Any(), gomock.Any()).Return(true, nil)
-	repo.EXPECT().Get(gomock.Any(), gomock.Any()).Return(heldReq, nil).Times(2)
-	repo.EXPECT().TransitionToSubmitted(gomock.Any(), gomock.Any()).Return(true, nil)
-	repo.EXPECT().InsertVendorCall(gomock.Any(), gomock.Any()).Return(nil)
-	repo.EXPECT().TransitionToSettled(gomock.Any(), gomock.Any(), settleTxID).Return(true, nil)
+	cmdRepo.EXPECT().EnqueueInitialSubmit(gomock.Any(), gomock.Any(), "mockvendor").Return(true, nil)
 
-	provider := &stubPayoutProvider{
-		name: "mockvendor",
-		submitFn: func(context.Context, string, decimal.Decimal, string, json.RawMessage) (vendorgw.PayoutResult, error) {
-			return vendorgw.PayoutResult{Status: vendorgw.PayoutSettled}, nil
-		},
-	}
 	poster := stubPoster{
 		postFn: func(_ context.Context, _ ledgerclient.Command) error { return nil },
-		getTxFn: func(_ context.Context, key, _ string) (ledgerclient.Transaction, error) {
-			if key[len(key)-4:] == "hold" {
-				return ledgerclient.Transaction{ID: holdTxID}, nil
-			}
-			return ledgerclient.Transaction{ID: settleTxID}, nil
+		getTxFn: func(_ context.Context, _, _ string) (ledgerclient.Transaction, error) {
+			return ledgerclient.Transaction{ID: holdTxID}, nil
 		},
 	}
 
 	fraudClient := fraudcheck.New(&fakeFraudGRPCClient{err: errors.New("fraud-service unreachable")}, "payout")
 
-	m := &Module{repo: repo, poster: poster, registry: registryWith(provider), routing: routeTo("mockvendor", "bca"), logger: discardLogger(), fraudClient: fraudClient}
+	provider := &stubPayoutProvider{
+		name: "mockvendor",
+		submitFn: func(context.Context, string, decimal.Decimal, string, json.RawMessage) (vendorgw.PayoutResult, error) {
+			t.Fatal("Create must never call provider.Submit directly")
+			return vendorgw.PayoutResult{}, nil
+		},
+	}
+	m := &Module{repo: repo, commandRepo: cmdRepo, poster: poster, registry: registryWith(provider), routing: routeTo("mockvendor", "bca"), logger: discardLogger(), fraudClient: fraudClient}
 	id, err := m.Create(context.Background(), userID, decimal.NewFromInt(100_000), []byte(`{}`), "test", "")
 	require.NoError(t, err)
 	assert.NotEqual(t, uuid.Nil, id)
+}
+
+// TestCreate_FraudDependencyUnavailable_FailsClosed_NoRowInserted proves
+// docs/plan/45 Task T3/K4: fraud-service reachable but explicitly
+// signaling its velocity dependency is down must fail CLOSED — like
+// ErrScreeningBlocked above, no row is ever inserted and no hold posted —
+// unlike the generic infra-error fail-open case above it.
+func TestCreate_FraudDependencyUnavailable_FailsClosed_NoRowInserted(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	repo := repository.NewMockRepository(ctrl) // no calls expected at all
+
+	fraudClient := fraudcheck.New(&fakeFraudGRPCClient{
+		err: status.Error(codes.FailedPrecondition, "DEPENDENCY_UNAVAILABLE"),
+	}, "payout")
+
+	m := &Module{repo: repo, poster: stubPoster{}, registry: vendorgw.NewRegistry(), routing: routeTo("mockvendor", "bca"), logger: discardLogger(), fraudClient: fraudClient}
+	id, err := m.Create(context.Background(), uuid.New(), decimal.NewFromInt(1_000_000), []byte(`{}`), "test", "")
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrScreeningDependencyUnavailable)
+	assert.Equal(t, uuid.Nil, id)
 }
 
 // TestSettle_NeverScreened_EvenWithBlockingFraudClient proves docs/plan/37
@@ -308,19 +320,31 @@ func TestSettle_NeverScreened_EvenWithBlockingFraudClient(t *testing.T) {
 	require.NoError(t, err, "settle must never screen — a blocking fraud client must have no effect on it")
 }
 
-// TestSubmit_VendorPending_TransitionsToVendorPending proves the async path
-// (docs/plan/23 Task T3's "async" mode) leaves the request in
+// sampleCommand builds a claimed ('processing') vendor command for a given
+// request/vendor/attempt — dispatchOne's own input shape, mirroring what
+// ClaimPendingCommands would have returned.
+func sampleCommand(payoutRequestID uuid.UUID, vendor string, attempt int) model.PayoutVendorCommand {
+	return model.PayoutVendorCommand{
+		ID: uuid.New(), PayoutRequestID: payoutRequestID, Vendor: vendor, Attempt: attempt,
+		Status: model.CommandProcessing,
+	}
+}
+
+// TestDispatchOne_VendorPending_TransitionsToVendorPending proves the async
+// path (docs/plan/23 Task T3's "async" mode) leaves the request in
 // vendor_pending for the resume job to poll later, rather than forcing a
 // terminal state immediately.
-func TestSubmit_VendorPending_TransitionsToVendorPending(t *testing.T) {
+func TestDispatchOne_VendorPending_TransitionsToVendorPending(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	repo := repository.NewMockRepository(ctrl)
+	cmdRepo := repository.NewMockVendorCommandRepository(ctrl)
 	id := uuid.New()
+	cmd := sampleCommand(id, "mockvendor", 1)
 
-	repo.EXPECT().Get(gomock.Any(), id).Return(sampleRequest(id, model.StatusHeld), nil)
-	repo.EXPECT().TransitionToSubmitted(gomock.Any(), id).Return(true, nil)
+	repo.EXPECT().Get(gomock.Any(), id).Return(sampleRequest(id, model.StatusSubmitted), nil)
 	repo.EXPECT().InsertVendorCall(gomock.Any(), gomock.Any()).Return(nil)
 	repo.EXPECT().TransitionToVendorPending(gomock.Any(), id, "vendor-ref-1").Return(true, nil)
+	cmdRepo.EXPECT().CompleteCommand(gomock.Any(), cmd.ID).Return(nil)
 
 	provider := &stubPayoutProvider{
 		name: "mockvendor",
@@ -330,34 +354,38 @@ func TestSubmit_VendorPending_TransitionsToVendorPending(t *testing.T) {
 	}
 
 	m := newTestModule(repo, stubPoster{}, registryWith(provider))
-	err := m.submit(context.Background(), id)
-	require.NoError(t, err)
+	m.commandRepo = cmdRepo
+	m.dispatchOne(context.Background(), cmd)
+	assert.Equal(t, int64(1), provider.submitted.Load())
 }
 
-// TestSubmit_VendorFailed_TransitionsToCancelled proves a synchronous vendor
-// failure drives cancel() (which returns the held money) instead of leaving
-// the request stuck.
-func TestSubmit_VendorFailed_CancelsAndReturnsHold(t *testing.T) {
+// TestDispatchOne_VendorFailed_NoOtherCandidate_CancelsAndReturnsHold
+// proves a synchronous vendor rejection drives cancel() (which returns the
+// held money) when no failover candidate remains.
+func TestDispatchOne_VendorFailed_NoOtherCandidate_CancelsAndReturnsHold(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	repo := repository.NewMockRepository(ctrl)
+	cmdRepo := repository.NewMockVendorCommandRepository(ctrl)
 	id := uuid.New()
 	holdTxID := uuid.New()
 	cancelTxID := uuid.New()
+	cmd := sampleCommand(id, "mockvendor", 1)
 
-	req := sampleRequest(id, model.StatusHeld)
+	req := sampleRequest(id, model.StatusSubmitted)
 	req.HoldTxID = &holdTxID
 
 	repo.EXPECT().Get(gomock.Any(), id).Return(req, nil).Times(2)
-	repo.EXPECT().TransitionToSubmitted(gomock.Any(), id).Return(true, nil)
 	repo.EXPECT().InsertVendorCall(gomock.Any(), gomock.Any()).Return(nil)
 	// mayFailover check (docs/plan/40 Task T3) — no prior calls, so
 	// failover WOULD be allowed, but the only registered/routed vendor is
 	// "mockvendor" itself, so ResolvePayoutRoute (excluding it) finds no
-	// other candidate and submit() falls through to cancel exactly as
-	// before this feature existed.
+	// other candidate and dispatchOne falls through to cancel exactly as
+	// submit() did before this feature existed.
 	repo.EXPECT().ListVendorCalls(gomock.Any(), id).Return(nil, nil)
 	repo.EXPECT().TransitionToCancelled(gomock.Any(), id, cancelTxID).Return(true, nil)
 	repo.EXPECT().SetError(gomock.Any(), id, "vendor declined").Return(nil)
+	cmdRepo.EXPECT().ListTriedVendors(gomock.Any(), id).Return([]string{"mockvendor"}, nil)
+	cmdRepo.EXPECT().CompleteCommand(gomock.Any(), cmd.ID).Return(nil)
 
 	provider := &stubPayoutProvider{
 		name: "mockvendor",
@@ -374,8 +402,9 @@ func TestSubmit_VendorFailed_CancelsAndReturnsHold(t *testing.T) {
 	}
 
 	m := newTestModule(repo, poster, registryWith(provider))
-	err := m.submit(context.Background(), id)
-	require.NoError(t, err)
+	m.commandRepo = cmdRepo
+	m.dispatchOne(context.Background(), cmd)
+	assert.Equal(t, int64(1), provider.submitted.Load())
 }
 
 // TestSettle_LostRace_Reconciles proves the K3-guard-reliance philosophy
@@ -426,13 +455,16 @@ func TestCancel_LostRace_Reconciles(t *testing.T) {
 	assert.NoError(t, err, "a lost K3 race must be reconciled, never surfaced as a caller-visible error")
 }
 
-// TestResumeStuck_RetriesSubmittedAndPollsVendorPending proves the resume
-// job's two-pronged behavior (docs/plan/23 Task T3 step 3): a stuck
-// 'submitted' request gets Submit retried; a stuck 'vendor_pending' request
-// gets Query'd and routed to a terminal state.
-func TestResumeStuck_RetriesSubmittedAndPollsVendorPending(t *testing.T) {
+// TestResumeStuck_SubmittedWithLiveCommand_NoOp_PollsVendorPending proves
+// the resume job's docs/plan/45 Task T1 behavior: a stuck 'submitted'
+// request with a live command is left alone (the relay owns dispatching
+// it, not resume); a stuck 'vendor_pending' request still gets Query'd and
+// routed to a terminal state directly by resume, unchanged from
+// docs/plan/23 Task T3 step 3.
+func TestResumeStuck_SubmittedWithLiveCommand_NoOp_PollsVendorPending(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	repo := repository.NewMockRepository(ctrl)
+	cmdRepo := repository.NewMockVendorCommandRepository(ctrl)
 	stuckSubmittedID := uuid.New()
 	stuckPendingID := uuid.New()
 	settleTxID := uuid.New()
@@ -450,24 +482,20 @@ func TestResumeStuck_RetriesSubmittedAndPollsVendorPending(t *testing.T) {
 	repo.EXPECT().ListStuck(gomock.Any(), model.StatusVendorPending, gomock.Any(), gomock.Any()).
 		Return([]model.PayoutRequest{pendingReq}, nil)
 
-	// stuckSubmittedID: submit() retried (Get once for submit, once more
-	// inside the settle() it triggers since the vendor now reports Settled).
-	repo.EXPECT().Get(gomock.Any(), stuckSubmittedID).Return(submittedReq, nil).Times(2)
-	repo.EXPECT().TransitionToSubmitted(gomock.Any(), stuckSubmittedID).Return(true, nil)
+	// stuckSubmittedID already has a live command — resume must leave it
+	// alone (the relay's own claim loop owns dispatching it), never call
+	// provider.Submit and never query HasDeadCommand/EnsureSubmitCommand.
+	cmdRepo.EXPECT().GetLiveCommand(gomock.Any(), stuckSubmittedID).
+		Return(model.PayoutVendorCommand{Status: model.CommandFailed}, true, nil)
 
 	// stuckPendingID: polled directly via the ListStuck row (no repo.Get in
 	// pollVendorPending itself), then settle() does its own single Get.
 	repo.EXPECT().Get(gomock.Any(), stuckPendingID).Return(pendingReq, nil)
-	repo.EXPECT().TransitionToSettled(gomock.Any(), stuckSubmittedID, settleTxID).Return(true, nil)
 	repo.EXPECT().TransitionToSettled(gomock.Any(), stuckPendingID, settleTxID).Return(true, nil)
-
-	repo.EXPECT().InsertVendorCall(gomock.Any(), gomock.Any()).Return(nil).Times(2)
+	repo.EXPECT().InsertVendorCall(gomock.Any(), gomock.Any()).Return(nil)
 
 	provider := &stubPayoutProvider{
 		name: "mockvendor",
-		submitFn: func(context.Context, string, decimal.Decimal, string, json.RawMessage) (vendorgw.PayoutResult, error) {
-			return vendorgw.PayoutResult{Status: vendorgw.PayoutSettled}, nil
-		},
 		queryFn: func(context.Context, string) (vendorgw.PayoutResult, error) {
 			return vendorgw.PayoutResult{Status: vendorgw.PayoutSettled}, nil
 		},
@@ -481,12 +509,68 @@ func TestResumeStuck_RetriesSubmittedAndPollsVendorPending(t *testing.T) {
 	}
 
 	m := newTestModule(repo, poster, registryWith(provider))
+	m.commandRepo = cmdRepo
 	resumed, failed, err := m.ResumeStuck(context.Background(), 0)
 	require.NoError(t, err)
 	assert.Equal(t, 2, resumed)
 	assert.Equal(t, 0, failed)
-	assert.Equal(t, int64(1), provider.submitted.Load())
+	assert.Equal(t, int64(0), provider.submitted.Load(), "resume must never call provider.Submit itself — only the relay does")
 	assert.Equal(t, int64(1), provider.queried.Load())
+}
+
+// TestResumeStuck_SubmittedWithNoCommand_InsertsFresh proves the genuine
+// crash-gap recovery path (docs/plan/45 Task T1/K1): a 'submitted' request
+// with NEITHER a live NOR a dead command gets a fresh one inserted so the
+// relay has something to claim.
+func TestResumeStuck_SubmittedWithNoCommand_InsertsFresh(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	repo := repository.NewMockRepository(ctrl)
+	cmdRepo := repository.NewMockVendorCommandRepository(ctrl)
+	id := uuid.New()
+	req := sampleRequest(id, model.StatusSubmitted)
+
+	repo.EXPECT().ListStuck(gomock.Any(), model.StatusCreated, gomock.Any(), gomock.Any()).Return(nil, nil)
+	repo.EXPECT().ListStuck(gomock.Any(), model.StatusHeld, gomock.Any(), gomock.Any()).Return(nil, nil)
+	repo.EXPECT().ListStuck(gomock.Any(), model.StatusSubmitted, gomock.Any(), gomock.Any()).Return([]model.PayoutRequest{req}, nil)
+	repo.EXPECT().ListStuck(gomock.Any(), model.StatusVendorPending, gomock.Any(), gomock.Any()).Return(nil, nil)
+
+	cmdRepo.EXPECT().GetLiveCommand(gomock.Any(), id).Return(model.PayoutVendorCommand{}, false, nil)
+	cmdRepo.EXPECT().HasDeadCommand(gomock.Any(), id).Return(false, nil)
+	cmdRepo.EXPECT().EnsureSubmitCommand(gomock.Any(), id, "mockvendor").Return(true, nil)
+
+	m := newTestModule(repo, stubPoster{}, vendorgw.NewRegistry())
+	m.commandRepo = cmdRepo
+	resumed, failed, err := m.ResumeStuck(context.Background(), 0)
+	require.NoError(t, err)
+	assert.Equal(t, 1, resumed)
+	assert.Equal(t, 0, failed)
+}
+
+// TestResumeStuck_SubmittedWithDeadCommand_LeftForOperator proves resume
+// never silently revives a dead-lettered command — that stays visible to
+// the operator (AdminRetry is the deliberate human action for it).
+func TestResumeStuck_SubmittedWithDeadCommand_LeftForOperator(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	repo := repository.NewMockRepository(ctrl)
+	cmdRepo := repository.NewMockVendorCommandRepository(ctrl)
+	id := uuid.New()
+	req := sampleRequest(id, model.StatusSubmitted)
+
+	repo.EXPECT().ListStuck(gomock.Any(), model.StatusCreated, gomock.Any(), gomock.Any()).Return(nil, nil)
+	repo.EXPECT().ListStuck(gomock.Any(), model.StatusHeld, gomock.Any(), gomock.Any()).Return(nil, nil)
+	repo.EXPECT().ListStuck(gomock.Any(), model.StatusSubmitted, gomock.Any(), gomock.Any()).Return([]model.PayoutRequest{req}, nil)
+	repo.EXPECT().ListStuck(gomock.Any(), model.StatusVendorPending, gomock.Any(), gomock.Any()).Return(nil, nil)
+
+	cmdRepo.EXPECT().GetLiveCommand(gomock.Any(), id).Return(model.PayoutVendorCommand{}, false, nil)
+	cmdRepo.EXPECT().HasDeadCommand(gomock.Any(), id).Return(true, nil)
+	// No EnsureSubmitCommand call expected — a dead command already exists.
+
+	m := newTestModule(repo, stubPoster{}, vendorgw.NewRegistry())
+	m.commandRepo = cmdRepo
+	resumed, failed, err := m.ResumeStuck(context.Background(), 0)
+	require.NoError(t, err)
+	assert.Equal(t, 1, resumed)
+	assert.Equal(t, 0, failed)
 }
 
 // TestResumeStuck_VendorStillPending_NotCountedAsFailure proves a genuinely
@@ -528,16 +612,13 @@ func TestResumeStuck_VendorStillPending_NoTransitionCalled(t *testing.T) {
 // forever — the resume job retries hold() (idempotent by deterministic
 // ledger idempotency key) and then falls through into submit() in the same
 // pass, exactly mirroring what Create() itself does inline.
-func TestResumeStuck_CreatedStuck_RetriesHoldThenSubmit(t *testing.T) {
+func TestResumeStuck_CreatedStuck_RetriesHoldThenEnqueuesSubmit(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	repo := repository.NewMockRepository(ctrl)
+	cmdRepo := repository.NewMockVendorCommandRepository(ctrl)
 	id := uuid.New()
 	holdTxID := uuid.New()
 	createdReq := sampleRequest(id, model.StatusCreated)
-
-	heldReq := createdReq
-	heldReq.Status = model.StatusHeld
-	heldReq.HoldTxID = &holdTxID
 
 	repo.EXPECT().ListStuck(gomock.Any(), model.StatusCreated, gomock.Any(), gomock.Any()).
 		Return([]model.PayoutRequest{createdReq}, nil)
@@ -546,17 +627,11 @@ func TestResumeStuck_CreatedStuck_RetriesHoldThenSubmit(t *testing.T) {
 	repo.EXPECT().ListStuck(gomock.Any(), model.StatusVendorPending, gomock.Any(), gomock.Any()).Return(nil, nil)
 
 	repo.EXPECT().TransitionToHeld(gomock.Any(), id, gomock.Any()).Return(true, nil)
-	repo.EXPECT().Get(gomock.Any(), id).Return(heldReq, nil)
-	repo.EXPECT().TransitionToSubmitted(gomock.Any(), id).Return(true, nil)
-	repo.EXPECT().InsertVendorCall(gomock.Any(), gomock.Any()).Return(nil)
-	repo.EXPECT().TransitionToVendorPending(gomock.Any(), id, "vref-resume").Return(true, nil)
+	// enqueueSubmit uses createdReq.Vendor directly (already loaded by
+	// ListStuck) — no additional repo.Get call, unlike the pre-outbox
+	// submit() this replaces.
+	cmdRepo.EXPECT().EnqueueInitialSubmit(gomock.Any(), id, createdReq.Vendor).Return(true, nil)
 
-	provider := &stubPayoutProvider{
-		name: "mockvendor",
-		submitFn: func(context.Context, string, decimal.Decimal, string, json.RawMessage) (vendorgw.PayoutResult, error) {
-			return vendorgw.PayoutResult{Status: vendorgw.PayoutPending, VendorRef: "vref-resume"}, nil
-		},
-	}
 	poster := stubPoster{
 		postFn: func(context.Context, ledgerclient.Command) error { return nil },
 		getTxFn: func(context.Context, string, string) (ledgerclient.Transaction, error) {
@@ -564,7 +639,8 @@ func TestResumeStuck_CreatedStuck_RetriesHoldThenSubmit(t *testing.T) {
 		},
 	}
 
-	m := newTestModule(repo, poster, registryWith(provider))
+	m := newTestModule(repo, poster, vendorgw.NewRegistry())
+	m.commandRepo = cmdRepo
 	resumed, failed, err := m.ResumeStuck(context.Background(), 0)
 	require.NoError(t, err)
 	assert.Equal(t, 1, resumed)

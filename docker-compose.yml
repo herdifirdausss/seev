@@ -1,3 +1,13 @@
+# Bounded log rotation for the six app-profile containers (docs/plan/43 T1
+# Langkah 5) — without this, Docker's default json-file driver keeps
+# container stdout/stderr forever, which on a laptop-scale disk eventually
+# fills up regardless of Loki's own 48h retention.
+x-app-logging: &app-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -20,7 +30,7 @@ services:
       # "localhost:5432", silently routing the app at the WRONG database
       # instead of failing loudly. Override with POSTGRES_PORT in .env if
       # your machine has no such conflict and you'd rather use 5432.
-      - "${POSTGRES_PORT:-5433}:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-5433}:5432"
     volumes:
       - seev_postgres_data:/var/lib/postgresql/data
       - ./scripts/postgres-init:/docker-entrypoint-initdb.d:ro
@@ -36,7 +46,7 @@ services:
     ports:
       # Host uses 6380 to avoid colliding with a locally installed Redis.
       # Containers keep reaching this service as redis:6379.
-      - "6380:6379"
+      - "127.0.0.1:6380:6379"
     volumes:
       - seev_redis_data:/data
     healthcheck:
@@ -51,8 +61,8 @@ services:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME:-seev}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-seev}
     ports:
-      - "5672:5672"   # AMQP
-      - "15672:15672" # management UI
+      - "127.0.0.1:5672:5672"   # AMQP
+      - "127.0.0.1:15672:15672" # management UI
     volumes:
       - seev_rabbitmq_data:/var/lib/rabbitmq
     healthcheck:
@@ -64,12 +74,19 @@ services:
 
   ledger-service:
     profiles: ["app"]
+    image: seev/ledger-service:${SEEV_IMAGE_TAG:-dev}
     build:
       context: .
       args:
         SERVICE: ledger-service
+    logging: *app-logging
     environment:
       APP_NAME: ledger-service
+      LOG_FORMAT: json
+      OTEL_EXPORTER_OTLP_ENDPOINT: "${OTEL_EXPORTER_OTLP_ENDPOINT:-}"
+      OTEL_TRACES_SAMPLER: parentbased_traceidratio
+      OTEL_TRACES_SAMPLER_ARG: "${OTEL_TRACES_SAMPLER_ARG:-0.10}"
+      OTEL_EXPORTER_OTLP_INSECURE: "${OTEL_EXPORTER_OTLP_INSECURE:-true}"
       APP_PORT: "8090"
       INTERNAL_APP_PORT: "8091"
       INTERNAL_APP_BIND_ADDR: 0.0.0.0
@@ -91,9 +108,9 @@ services:
       FRAUD_GRPC_ADDR: fraud-service:9094
       JWT_SECRET: ${JWT_SECRET:-change-me-to-a-random-32-plus-character-secret}
     ports:
-      - "8090:8090"
-      - "8091:8091"
-      - "9091:9091"
+      - "127.0.0.1:8090:8090"
+      - "127.0.0.1:8091:8091"
+      - "127.0.0.1:9091:9091"
     depends_on:
       postgres:
         condition: service_healthy
@@ -109,12 +126,19 @@ services:
 
   auth-service:
     profiles: ["app"]
+    image: seev/auth-service:${SEEV_IMAGE_TAG:-dev}
     build:
       context: .
       args:
         SERVICE: auth-service
+    logging: *app-logging
     environment:
       APP_NAME: auth-service
+      LOG_FORMAT: json
+      OTEL_EXPORTER_OTLP_ENDPOINT: "${OTEL_EXPORTER_OTLP_ENDPOINT:-}"
+      OTEL_TRACES_SAMPLER: parentbased_traceidratio
+      OTEL_TRACES_SAMPLER_ARG: "${OTEL_TRACES_SAMPLER_ARG:-0.10}"
+      OTEL_EXPORTER_OTLP_INSECURE: "${OTEL_EXPORTER_OTLP_INSECURE:-true}"
       APP_PORT: "8082"
       INTERNAL_APP_PORT: "8083"
       INTERNAL_APP_BIND_ADDR: 0.0.0.0
@@ -130,8 +154,8 @@ services:
       INTERNAL_GRPC_TOKEN: ${INTERNAL_GRPC_TOKEN:-}
       JWT_SECRET: ${JWT_SECRET:-change-me-to-a-random-32-plus-character-secret}
     ports:
-      - "8082:8082"
-      - "8083:8083"
+      - "127.0.0.1:8082:8082"
+      - "127.0.0.1:8083:8083"
     depends_on:
       postgres:
         condition: service_healthy
@@ -147,12 +171,19 @@ services:
 
   payin-service:
     profiles: ["app"]
+    image: seev/payin-service:${SEEV_IMAGE_TAG:-dev}
     build:
       context: .
       args:
         SERVICE: payin-service
+    logging: *app-logging
     environment:
       APP_NAME: payin-service
+      LOG_FORMAT: json
+      OTEL_EXPORTER_OTLP_ENDPOINT: "${OTEL_EXPORTER_OTLP_ENDPOINT:-}"
+      OTEL_TRACES_SAMPLER: parentbased_traceidratio
+      OTEL_TRACES_SAMPLER_ARG: "${OTEL_TRACES_SAMPLER_ARG:-0.10}"
+      OTEL_EXPORTER_OTLP_INSECURE: "${OTEL_EXPORTER_OTLP_INSECURE:-true}"
       APP_PORT: "8092"
       GRPC_PORT: "9092"
       INTERNAL_GRPC_TOKEN: ${INTERNAL_GRPC_TOKEN:-}
@@ -170,8 +201,8 @@ services:
       MOCKVENDOR2_ENABLED: "true"
       MOCKVENDOR2_SECRET: ${MOCKVENDOR2_SECRET:-change-me-mockvendor2-secret}
     ports:
-      - "8092:8092"
-      - "9092:9092"
+      - "127.0.0.1:8092:8092"
+      - "127.0.0.1:9092:9092"
     depends_on:
       postgres:
         condition: service_healthy
@@ -185,12 +216,19 @@ services:
 
   payout-service:
     profiles: ["app"]
+    image: seev/payout-service:${SEEV_IMAGE_TAG:-dev}
     build:
       context: .
       args:
         SERVICE: payout-service
+    logging: *app-logging
     environment:
       APP_NAME: payout-service
+      LOG_FORMAT: json
+      OTEL_EXPORTER_OTLP_ENDPOINT: "${OTEL_EXPORTER_OTLP_ENDPOINT:-}"
+      OTEL_TRACES_SAMPLER: parentbased_traceidratio
+      OTEL_TRACES_SAMPLER_ARG: "${OTEL_TRACES_SAMPLER_ARG:-0.10}"
+      OTEL_EXPORTER_OTLP_INSECURE: "${OTEL_EXPORTER_OTLP_INSECURE:-true}"
       APP_PORT: "8093"
       GRPC_PORT: "9093"
       INTERNAL_GRPC_TOKEN: ${INTERNAL_GRPC_TOKEN:-}
@@ -211,8 +249,8 @@ services:
       MOCKVENDOR2_ENABLED: "true"
       MOCKVENDOR2_SECRET: ${MOCKVENDOR2_SECRET:-change-me-mockvendor2-secret}
     ports:
-      - "8093:8093"
-      - "9093:9093"
+      - "127.0.0.1:8093:8093"
+      - "127.0.0.1:9093:9093"
     depends_on:
       postgres:
         condition: service_healthy
@@ -228,12 +266,19 @@ services:
 
   fraud-service:
     profiles: ["app"]
+    image: seev/fraud-service:${SEEV_IMAGE_TAG:-dev}
     build:
       context: .
       args:
         SERVICE: fraud-service
+    logging: *app-logging
     environment:
       APP_NAME: fraud-service
+      LOG_FORMAT: json
+      OTEL_EXPORTER_OTLP_ENDPOINT: "${OTEL_EXPORTER_OTLP_ENDPOINT:-}"
+      OTEL_TRACES_SAMPLER: parentbased_traceidratio
+      OTEL_TRACES_SAMPLER_ARG: "${OTEL_TRACES_SAMPLER_ARG:-0.10}"
+      OTEL_EXPORTER_OTLP_INSECURE: "${OTEL_EXPORTER_OTLP_INSECURE:-true}"
       APP_PORT: "8094"
       GRPC_PORT: "9094"
       INTERNAL_GRPC_TOKEN: ${INTERNAL_GRPC_TOKEN:-}
@@ -256,8 +301,8 @@ services:
       SCREENING_AMOUNT_THRESHOLD: ${SCREENING_AMOUNT_THRESHOLD:-0}
       SCREENING_VELOCITY_MAX_PER_HOUR: ${SCREENING_VELOCITY_MAX_PER_HOUR:-0}
     ports:
-      - "8094:8094"
-      - "9094:9094"
+      - "127.0.0.1:8094:8094"
+      - "127.0.0.1:9094:9094"
     depends_on:
       postgres:
         condition: service_healthy
@@ -273,12 +318,19 @@ services:
 
   gateway-service:
     profiles: ["app"]
+    image: seev/gateway-service:${SEEV_IMAGE_TAG:-dev}
     build:
       context: .
       args:
         SERVICE: gateway
+    logging: *app-logging
     environment:
       APP_NAME: gateway-service
+      LOG_FORMAT: json
+      OTEL_EXPORTER_OTLP_ENDPOINT: "${OTEL_EXPORTER_OTLP_ENDPOINT:-}"
+      OTEL_TRACES_SAMPLER: parentbased_traceidratio
+      OTEL_TRACES_SAMPLER_ARG: "${OTEL_TRACES_SAMPLER_ARG:-0.10}"
+      OTEL_EXPORTER_OTLP_INSECURE: "${OTEL_EXPORTER_OTLP_INSECURE:-true}"
       APP_PORT: "8080"
       INTERNAL_APP_PORT: "8081"
       INTERNAL_APP_BIND_ADDR: 0.0.0.0
@@ -302,8 +354,8 @@ services:
       INTERNAL_GRPC_TOKEN: ${INTERNAL_GRPC_TOKEN:-}
       JWT_SECRET: ${JWT_SECRET:-change-me-to-a-random-32-plus-character-secret}
     ports:
-      - "8080:8080"
-      - "8081:8081"
+      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:8081:8081"
     depends_on:
       postgres:
         condition: service_healthy
@@ -323,26 +375,236 @@ services:
       timeout: 5s
       retries: 10
 
-  # Local trace backend for docs/plan/12 Task T5 — NOT started by `docker
-  # compose up` (no default profile membership on the other services means
-  # they run by default; jaeger has an explicit profile so it's opt-in
-  # only). Run with:
-  #   docker compose --profile observability up -d
-  # Then set OTEL_EXPORTER_OTLP_ENDPOINT=localhost:4317 and open
-  # http://localhost:16686 to view traces.
-  jaeger:
-    # :latest is acceptable here (unlike the other services) — this is a
-    # local dev-only trace viewer behind an opt-in profile, never part of
-    # any deployed environment.
-    image: jaegertracing/all-in-one:latest
+  # docs/plan/43 (track A1) — local observability stack: Prometheus, Grafana,
+  # Loki, Tempo, Alloy, and a Docker socket proxy, all opt-in behind the
+  # `observability` profile (never started by a bare `docker compose up`).
+  # Replaces the old Jaeger-only trace viewer — Tempo keeps the same host
+  # port 4317 so OTEL_EXPORTER_OTLP_ENDPOINT does not change. Run with:
+  #   make observability-secret   # once per machine, generates Grafana password
+  #   docker compose --profile app --profile observability up -d
+  # Then open http://localhost:3000 (Grafana; see K1 for the admin password
+  # location) and http://localhost:9090 (Prometheus). All observability
+  # ports are bound to 127.0.0.1 only — see docs/plan/43 K1.
+  #
+  # RAM budget: ~1.9 GiB on top of the app+infra profiles, inside the 4 GB
+  # Docker Desktop budget documented in CLAUDE.md — do NOT run this profile
+  # at the same time as the testcontainers integration suite.
+  prometheus:
+    image: prom/prometheus@sha256:f39df5334dee301b885f77e0ff1159f5d8a43bf9db518f885544594799a1e3c2 # v3.12.0-distroless
     profiles: ["observability"]
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=35d
+      - --storage.tsdb.retention.size=1GB
+      - --web.listen-address=0.0.0.0:9090
+    volumes:
+      - ./deploy/observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./deploy/observability/prometheus/rules:/etc/prometheus/rules:ro
+      - seev_prometheus_data:/prometheus
     ports:
-      - "4317:4317"   # OTLP gRPC receiver
-      - "16686:16686" # Jaeger UI
+      - "127.0.0.1:9090:9090"
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs:
+      - /tmp
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+    # The distroless image has no shell/wget/curl, so no container-level
+    # healthcheck is possible (docs/plan/43 K1 hardening exception).
+    # Readiness is verified externally: curl 127.0.0.1:9090/-/ready.
+
+  grafana:
+    image: grafana/grafana@sha256:121a7a9ece6dc10b969f1f96eed64b4f07dfac0d0b8abc070f7cb83bbde86f63 # 13.1.0
+    profiles: ["observability"]
     environment:
-      COLLECTOR_OTLP_ENABLED: "true"
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana_admin_password
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_AUTH_DISABLE_LOGIN_FORM: "false"
+      GF_USERS_PASSWORD_POLICY: "true"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+      GF_UNIFIED_ALERTING_ENABLED: "true"
+    secrets:
+      - grafana_admin_password
+    volumes:
+      - ./deploy/observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - seev_grafana_data:/var/lib/grafana
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      prometheus:
+        condition: service_started
+      loki:
+        condition: service_started
+      tempo:
+        condition: service_started
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs:
+      - /tmp
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  loki:
+    image: grafana/loki@sha256:70b9f699fc9bb868b62f1cfd4f787dfa50242f1fd92e6089787d5d7daea75fe8 # 3.7.3
+    profiles: ["observability"]
+    command:
+      - -config.file=/etc/loki/loki.yaml
+    volumes:
+      - ./deploy/observability/loki/loki.yaml:/etc/loki/loki.yaml:ro
+      - seev_loki_data:/loki
+    ports:
+      - "127.0.0.1:3100:3100"
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs:
+      - /tmp
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+    # No shell in the loki image — no container healthcheck possible
+    # (docs/plan/43 K1 hardening exception). Readiness verified externally:
+    # curl 127.0.0.1:3100/ready.
+
+  tempo:
+    image: grafana/tempo@sha256:ee21727732c7a7199cb71c3eee9153bbf23f9b0b87619f0555a0cf21a67f1a33 # 2.10.5
+    profiles: ["observability"]
+    command:
+      - -config.file=/etc/tempo/tempo.yaml
+    volumes:
+      - ./deploy/observability/tempo/tempo.yaml:/etc/tempo/tempo.yaml:ro
+      - seev_tempo_data:/var/tempo
+    ports:
+      - "127.0.0.1:3200:3200"
+      - "127.0.0.1:4317:4317"
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs:
+      - /tmp
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+    # No shell in the tempo image — no container healthcheck possible
+    # (docs/plan/43 K1 hardening exception). Readiness verified externally:
+    # curl 127.0.0.1:3200/ready.
+
+  # Only component allowed to touch the real Docker socket — exposes a
+  # restricted, allowlisted TCP API to Alloy instead (docs/plan/43 K1/K9).
+  # No host port; lives only on the private observability_socket_net.
+  docker-socket-proxy:
+    image: ghcr.io/tecnativa/docker-socket-proxy@sha256:1f3a6f303320723d199d2316a3e82b2e2685d86c275d5e3deeaf182573b47476 # v0.4.2
+    profiles: ["observability"]
+    environment:
+      CONTAINERS: "1"
+      # NETWORKS=1 is required (not originally planned — see docs/plan/43
+      # T1 Hasil): Alloy's discovery.docker component calls GET /networks
+      # to resolve each container's network labels, even though it never
+      # needs to create/modify a network. Still read-only; POST stays 0.
+      NETWORKS: "1"
+      EVENTS: "1"
+      PING: "1"
+      VERSION: "1"
+      POST: "0"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - observability_socket_net
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs:
+      - /tmp
+      - /run
+      - /var/lib/haproxy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:2375/_ping || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+    # Runs as root: it's the one component intentionally trusted to read
+    # /var/run/docker.sock (docs/plan/43 K1 hardening exception, by design).
+
+  alloy:
+    image: grafana/alloy@sha256:51aeb9d829239345070619dad3edd6873186f913c84f45b365b74574fcb38ec0 # v1.16.1
+    profiles: ["observability"]
+    # The image's own entrypoint drops root -> uid 473 (alloy) via a setuid
+    # call that needs CAP_SETUID/CAP_SETGID; cap_drop: ALL below removes
+    # those, so the privilege drop silently fails and the process is left
+    # running as root without CAP_DAC_OVERRIDE, unable to write into the
+    # image's own 473:473-owned /var/lib/alloy/data. Setting user: here
+    # sets the UID at container-create time instead (no in-container
+    # syscall needed), so it works even with every capability dropped.
+    user: "473:473"
+    command:
+      - run
+      - /etc/alloy/config.alloy
+      - --storage.path=/var/lib/alloy/data
+      - --server.http.listen-addr=127.0.0.1:12345
+    volumes:
+      - ./deploy/observability/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - seev_alloy_data:/var/lib/alloy/data
+    networks:
+      - default
+      - observability_socket_net
+    depends_on:
+      docker-socket-proxy:
+        condition: service_healthy
+      loki:
+        condition: service_started
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs:
+      - /tmp
+    deploy:
+      resources:
+        limits:
+          memory: 192M
+    # Runs as non-root uid 473 (see `user:` above) and never mounts the
+    # Docker socket itself — only reaches it through docker-socket-proxy's
+    # allowlisted TCP API (docs/plan/43 K1).
+
+networks:
+  # Isolates docker-socket-proxy + Alloy from every other container —
+  # nothing else can reach the proxy's allowlisted Docker API (docs/plan/43 K1).
+  observability_socket_net:
+    internal: true
+
+secrets:
+  # Generated locally by `make observability-secret` (mode 0600, gitignored;
+  # never a default/committed password — docs/plan/43 K1).
+  grafana_admin_password:
+    file: ./deploy/observability/secrets/grafana_admin_password
 
 volumes:
   seev_postgres_data:
   seev_redis_data:
   seev_rabbitmq_data:
+  seev_prometheus_data:
+  seev_grafana_data:
+  seev_loki_data:
+  seev_tempo_data:
+  seev_alloy_data:

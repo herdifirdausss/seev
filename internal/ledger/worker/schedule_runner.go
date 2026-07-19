@@ -45,7 +45,7 @@ func NewScheduleRunnerJob(runner scheduleRunner, lock scheduler.LockProvider, lo
 	}
 	return &ScheduleRunnerJob{
 		runner: runner, logger: logger, loc: loc,
-		sched: scheduler.NewScheduler(lock, nil, scheduler.WithLocation(loc)),
+		sched: scheduler.NewScheduler(lock, scheduler.NewPrometheusMetrics(), scheduler.WithLocation(loc)),
 	}
 }
 

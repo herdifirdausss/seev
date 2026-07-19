@@ -13,7 +13,7 @@ var (
 	transactionsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "ledger",
 		Name:      "transactions_total",
-		Help:      "Total ledger transactions processed via Handle, by type and outcome (posted|error).",
+		Help:      "Total ledger transactions processed via Handle, by type and outcome (posted|rejected|error). rejected = valid business/input rejection, not a system fault; see apperror.IsBusinessRejection.",
 	}, []string{"type", "status"})
 
 	postDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{

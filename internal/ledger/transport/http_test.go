@@ -19,6 +19,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	fraudv1 "github.com/herdifirdausss/seev/gen/fraud/v1"
 	"github.com/herdifirdausss/seev/internal/ledger/apperror"
@@ -760,6 +762,31 @@ func TestPostTransaction_PublicRouter_FraudInfraError_FailsOpen(t *testing.T) {
 	body := `{"idempotency_key":"abc12345","type":"transfer_p2p","amount":"1000","target_user_id":"` + targetID.String() + `"}`
 	w := doReq(t, h, http.MethodPost, "/transactions", tokenFor(t, userID.String(), "user"), body)
 	assert.Equal(t, http.StatusCreated, w.Code)
+}
+
+// TestPostTransaction_PublicRouter_FraudDependencyUnavailable_FailsClosed503
+// proves docs/plan/45 Task T3/K4: fraud-service reachable but explicitly
+// signaling its velocity dependency is down (codes.FailedPrecondition +
+// "DEPENDENCY_UNAVAILABLE") must fail CLOSED — 503, svc.Post NEVER
+// called — unlike the generic infra-error fail-open case above.
+func TestPostTransaction_PublicRouter_FraudDependencyUnavailable_FailsClosed503(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+	svc := NewMockService(ctrl)
+	svc.EXPECT().GetUserCurrency(gomock.Any(), gomock.Any(), gomock.Any()).Return("IDR", nil).AnyTimes()
+	svc.EXPECT().Post(gomock.Any(), gomock.Any()).Times(0)
+
+	fraudClient := fraudcheck.New(&fakeFraudGRPCClient{
+		err: status.Error(codes.FailedPrecondition, "DEPENDENCY_UNAVAILABLE"),
+	}, "ledger")
+	h := middleware.WithAuth(testSecret, "")(NewRouterWithFraud(svc, nil, nil, fraudClient, nil, 0))
+
+	userID := uuid.New()
+	targetID := uuid.New()
+	body := `{"idempotency_key":"abc12345","type":"transfer_p2p","amount":"1000","target_user_id":"` + targetID.String() + `"}`
+	w := doReq(t, h, http.MethodPost, "/transactions", tokenFor(t, userID.String(), "user"), body)
+	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
+	assert.Contains(t, w.Body.String(), "DEPENDENCY_UNAVAILABLE")
 }
 
 // TestPostTransaction_InternalRouter_NotScreened proves the internal

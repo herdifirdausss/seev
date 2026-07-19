@@ -25,3 +25,11 @@ var ErrNoVendorAvailable = errors.New("payout: no vendor available")
 // The audit trail for a blocked attempt lives only in fraud-service's own
 // screening_events, since payout never persists anything for it.
 var ErrScreeningBlocked = errors.New("payout: screening blocked")
+
+// ErrScreeningDependencyUnavailable means fraud-service is reachable but
+// explicitly reported its velocity dependency (Redis) is down
+// (docs/plan/45 Task T3/K4) — like ErrScreeningBlocked, no payout_requests
+// row is ever inserted and no hold is posted; unlike a generic screening
+// infra error (which fails open), this one fails CLOSED. The gateway
+// handler maps this to 503 DEPENDENCY_UNAVAILABLE.
+var ErrScreeningDependencyUnavailable = errors.New("payout: screening dependency unavailable")

@@ -47,7 +47,7 @@ func startServer(t *testing.T, service Service) payinv1.PayinServiceClient {
 	t.Helper()
 	listener := bufconn.Listen(1024 * 1024)
 	server := grpc.NewServer()
-	payinv1.RegisterPayinServiceServer(server, New(service, errors.New("not found"), errors.New("no route"), errors.New("no vendor available")))
+	payinv1.RegisterPayinServiceServer(server, New(service, errors.New("not found"), errors.New("no route"), errors.New("no vendor available"), errors.New("screening dependency unavailable")))
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(func() { server.Stop(); _ = listener.Close() })
 	connection, err := grpc.NewClient("passthrough:///bufnet",
@@ -92,4 +92,34 @@ func TestHandleWebhook_AllOutcomes(t *testing.T) {
 			assert.Equal(t, raw, service.body, "raw webhook bytes must cross the wire unchanged")
 		})
 	}
+}
+
+// TestHandleWebhook_ScreeningDependencyUnavailable_MapsToUnavailable
+// proves docs/plan/45 Task T3/K4: the service returning the configured
+// screeningDependencyUnavailable sentinel maps to codes.Unavailable with a
+// message distinguishable from noVendorAvailable's own codes.Unavailable
+// use elsewhere in this contract.
+func TestHandleWebhook_ScreeningDependencyUnavailable_MapsToUnavailable(t *testing.T) {
+	depUnavailable := errors.New("screening dependency unavailable")
+	service := &fakeService{err: depUnavailable}
+
+	listener := bufconn.Listen(1024 * 1024)
+	server := grpc.NewServer()
+	payinv1.RegisterPayinServiceServer(server, New(service, errors.New("not found"), errors.New("no route"), errors.New("no vendor available"), depUnavailable))
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(func() { server.Stop(); _ = listener.Close() })
+	connection, err := grpc.NewClient("passthrough:///bufnet",
+		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return listener.Dial() }),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = connection.Close() })
+	client := payinv1.NewPayinServiceClient(connection)
+
+	_, callErr := client.HandleWebhook(context.Background(), &payinv1.HandleWebhookRequest{
+		Vendor: "mockvendor", Headers: map[string]string{"X-Signature": "abc"}, RawBody: []byte("{}"),
+	})
+	require.Error(t, callErr)
+	assert.Equal(t, codes.Unavailable, status.Code(callErr))
+	assert.Equal(t, "screening dependency unavailable", status.Convert(callErr).Message())
 }

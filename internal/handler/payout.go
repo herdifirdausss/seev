@@ -93,6 +93,14 @@ func createPayoutHandler(client payoutv1.PayoutServiceClient) http.HandlerFunc {
 					response.UnprocessableEntity(w, msg)
 				}
 			case codes.Unavailable:
+				msg := status.Convert(err).Message()
+				if msg == "screening dependency unavailable" {
+					// docs/plan/45 Task T3/K4 — fraud-service is reachable
+					// but its velocity dependency is down; fail closed
+					// before any hold is posted.
+					response.ServiceUnavailable(w, "DEPENDENCY_UNAVAILABLE", "fraud screening dependency unavailable")
+					break
+				}
 				// docs/plan/40 Task T2 — every candidate vendor is
 				// registered but circuit-broken; distinct from NO_ROUTE
 				// (a config problem) since this is transient.

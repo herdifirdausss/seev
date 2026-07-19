@@ -22,6 +22,7 @@ import (
 	"github.com/herdifirdausss/seev/pkg/grpcx"
 	"github.com/herdifirdausss/seev/pkg/logger"
 	"github.com/herdifirdausss/seev/pkg/messaging"
+	"github.com/herdifirdausss/seev/pkg/tracing"
 )
 
 func main() {
@@ -56,11 +57,16 @@ func main() {
 	// observability, never load-bearing for moving money, so a
 	// misconfigured OTEL_EXPORTER_OTLP_ENDPOINT must not take down the
 	// payment system the way a misconfigured Postgres/RabbitMQ would.
-	shutdownTracing, err := setupTracing(ctx, cfg.Tracing.OTLPEndpoint)
+	shutdownTracing, err := tracing.Setup(ctx, tracing.Config{
+		ServiceName: "gateway-service",
+		Endpoint:    cfg.Tracing.OTLPEndpoint,
+		SampleRatio: cfg.Tracing.SampleRatio,
+		Insecure:    cfg.Tracing.Insecure,
+	})
 	if err != nil {
 		log.Error("tracing: setup failed, continuing without a tracer provider", "error", err)
 	} else if cfg.Tracing.OTLPEndpoint != "" {
-		log.Info("tracing: exporting to OTLP endpoint", "endpoint", cfg.Tracing.OTLPEndpoint)
+		log.Info("tracing: exporting to OTLP endpoint", "endpoint", cfg.Tracing.OTLPEndpoint, "sample_ratio", cfg.Tracing.SampleRatio)
 	}
 
 	// ─── PostgreSQL ───────────────────────────────────────────────────────────

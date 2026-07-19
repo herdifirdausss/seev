@@ -1,0 +1,208 @@
+# docs/plan/43 Task T5 — SLO recording rules (K6). Generated once by a
+# scratch script for consistency across three SLOs x six windows; edit by
+# hand from here on, this file is the source of truth.
+groups:
+- name: slo_sli_ratios
+  interval: 30s
+  rules:
+  - record: slo:sli_ratio:rate5m
+    labels:
+      slo: posting_availability
+    expr: (sum(rate(ledger_transactions_total{status="posted"}[5m]))) / (sum(rate(ledger_transactions_total{status=~"posted|error"}[5m])))
+  - record: slo:sli_ratio:rate30m
+    labels:
+      slo: posting_availability
+    expr: (sum(rate(ledger_transactions_total{status="posted"}[30m]))) / (sum(rate(ledger_transactions_total{status=~"posted|error"}[30m])))
+  - record: slo:sli_ratio:rate1h
+    labels:
+      slo: posting_availability
+    expr: (sum(rate(ledger_transactions_total{status="posted"}[1h]))) / (sum(rate(ledger_transactions_total{status=~"posted|error"}[1h])))
+  - record: slo:sli_ratio:rate6h
+    labels:
+      slo: posting_availability
+    expr: (sum(rate(ledger_transactions_total{status="posted"}[6h]))) / (sum(rate(ledger_transactions_total{status=~"posted|error"}[6h])))
+  - record: slo:sli_ratio:rate3d
+    labels:
+      slo: posting_availability
+    expr: (sum(rate(ledger_transactions_total{status="posted"}[3d]))) / (sum(rate(ledger_transactions_total{status=~"posted|error"}[3d])))
+  - record: slo:sli_ratio:rate30d
+    labels:
+      slo: posting_availability
+    expr: (sum(rate(ledger_transactions_total{status="posted"}[30d]))) / (sum(rate(ledger_transactions_total{status=~"posted|error"}[30d])))
+  - record: slo:eligible_events:rate1h
+    labels:
+      slo: posting_availability
+    expr: sum(rate(ledger_transactions_total{status=~"posted|error"}[1h]))
+  - record: slo:eligible_events:rate6h
+    labels:
+      slo: posting_availability
+    expr: sum(rate(ledger_transactions_total{status=~"posted|error"}[6h]))
+  - record: slo:eligible_events:rate3d
+    labels:
+      slo: posting_availability
+    expr: sum(rate(ledger_transactions_total{status=~"posted|error"}[3d]))
+  - record: slo:sli_ratio:rate5m
+    labels:
+      slo: webhook_latency
+    expr: (sum(rate(http_server_request_duration_seconds_bucket{job="gateway-service", method="POST",
+      route="/webhooks/{vendor}", le="2.0"}[5m]))) / (sum(rate(http_server_request_duration_seconds_count{job="gateway-service",
+      method="POST", route="/webhooks/{vendor}"}[5m])))
+  - record: slo:sli_ratio:rate30m
+    labels:
+      slo: webhook_latency
+    expr: (sum(rate(http_server_request_duration_seconds_bucket{job="gateway-service", method="POST",
+      route="/webhooks/{vendor}", le="2.0"}[30m]))) / (sum(rate(http_server_request_duration_seconds_count{job="gateway-service",
+      method="POST", route="/webhooks/{vendor}"}[30m])))
+  - record: slo:sli_ratio:rate1h
+    labels:
+      slo: webhook_latency
+    expr: (sum(rate(http_server_request_duration_seconds_bucket{job="gateway-service", method="POST",
+      route="/webhooks/{vendor}", le="2.0"}[1h]))) / (sum(rate(http_server_request_duration_seconds_count{job="gateway-service",
+      method="POST", route="/webhooks/{vendor}"}[1h])))
+  - record: slo:sli_ratio:rate6h
+    labels:
+      slo: webhook_latency
+    expr: (sum(rate(http_server_request_duration_seconds_bucket{job="gateway-service", method="POST",
+      route="/webhooks/{vendor}", le="2.0"}[6h]))) / (sum(rate(http_server_request_duration_seconds_count{job="gateway-service",
+      method="POST", route="/webhooks/{vendor}"}[6h])))
+  - record: slo:sli_ratio:rate3d
+    labels:
+      slo: webhook_latency
+    expr: (sum(rate(http_server_request_duration_seconds_bucket{job="gateway-service", method="POST",
+      route="/webhooks/{vendor}", le="2.0"}[3d]))) / (sum(rate(http_server_request_duration_seconds_count{job="gateway-service",
+      method="POST", route="/webhooks/{vendor}"}[3d])))
+  - record: slo:sli_ratio:rate30d
+    labels:
+      slo: webhook_latency
+    expr: (sum(rate(http_server_request_duration_seconds_bucket{job="gateway-service", method="POST",
+      route="/webhooks/{vendor}", le="2.0"}[30d]))) / (sum(rate(http_server_request_duration_seconds_count{job="gateway-service",
+      method="POST", route="/webhooks/{vendor}"}[30d])))
+  - record: slo:eligible_events:rate1h
+    labels:
+      slo: webhook_latency
+    expr: sum(rate(http_server_request_duration_seconds_count{job="gateway-service", method="POST", route="/webhooks/{vendor}"}[1h]))
+  - record: slo:eligible_events:rate6h
+    labels:
+      slo: webhook_latency
+    expr: sum(rate(http_server_request_duration_seconds_count{job="gateway-service", method="POST", route="/webhooks/{vendor}"}[6h]))
+  - record: slo:eligible_events:rate3d
+    labels:
+      slo: webhook_latency
+    expr: sum(rate(http_server_request_duration_seconds_count{job="gateway-service", method="POST", route="/webhooks/{vendor}"}[3d]))
+  - record: slo:sli_ratio:rate5m
+    labels:
+      slo: notification_success
+    expr: (sum(rate(rabbitmq_messages_consumed_total{queue="ledger.events.notifications", status="ok"}[5m])))
+      / (sum(rate(rabbitmq_messages_consumed_total{queue="ledger.events.notifications"}[5m])))
+  - record: slo:sli_ratio:rate30m
+    labels:
+      slo: notification_success
+    expr: (sum(rate(rabbitmq_messages_consumed_total{queue="ledger.events.notifications", status="ok"}[30m])))
+      / (sum(rate(rabbitmq_messages_consumed_total{queue="ledger.events.notifications"}[30m])))
+  - record: slo:sli_ratio:rate1h
+    labels:
+      slo: notification_success
+    expr: (sum(rate(rabbitmq_messages_consumed_total{queue="ledger.events.notifications", status="ok"}[1h])))
+      / (sum(rate(rabbitmq_messages_consumed_total{queue="ledger.events.notifications"}[1h])))
+  - record: slo:sli_ratio:rate6h
+    labels:
+      slo: notification_success
+    expr: (sum(rate(rabbitmq_messages_consumed_total{queue="ledger.events.notifications", status="ok"}[6h])))
+      / (sum(rate(rabbitmq_messages_consumed_total{queue="ledger.events.notifications"}[6h])))
+  - record: slo:sli_ratio:rate3d
+    labels:
+      slo: notification_success
+    expr: (sum(rate(rabbitmq_messages_consumed_total{queue="ledger.events.notifications", status="ok"}[3d])))
+      / (sum(rate(rabbitmq_messages_consumed_total{queue="ledger.events.notifications"}[3d])))
+  - record: slo:sli_ratio:rate30d
+    labels:
+      slo: notification_success
+    expr: (sum(rate(rabbitmq_messages_consumed_total{queue="ledger.events.notifications", status="ok"}[30d])))
+      / (sum(rate(rabbitmq_messages_consumed_total{queue="ledger.events.notifications"}[30d])))
+  - record: slo:eligible_events:rate1h
+    labels:
+      slo: notification_success
+    expr: sum(rate(rabbitmq_messages_consumed_total{queue="ledger.events.notifications"}[1h]))
+  - record: slo:eligible_events:rate6h
+    labels:
+      slo: notification_success
+    expr: sum(rate(rabbitmq_messages_consumed_total{queue="ledger.events.notifications"}[6h]))
+  - record: slo:eligible_events:rate3d
+    labels:
+      slo: notification_success
+    expr: sum(rate(rabbitmq_messages_consumed_total{queue="ledger.events.notifications"}[3d]))
+- name: slo_burnrate_and_budget
+  interval: 30s
+  rules:
+  - record: slo:burnrate:rate5m
+    labels:
+      slo: posting_availability
+    expr: (1 - slo:sli_ratio:rate5m{slo="posting_availability"}) / 0.0050000000000000044
+  - record: slo:burnrate:rate30m
+    labels:
+      slo: posting_availability
+    expr: (1 - slo:sli_ratio:rate30m{slo="posting_availability"}) / 0.0050000000000000044
+  - record: slo:burnrate:rate1h
+    labels:
+      slo: posting_availability
+    expr: (1 - slo:sli_ratio:rate1h{slo="posting_availability"}) / 0.0050000000000000044
+  - record: slo:burnrate:rate6h
+    labels:
+      slo: posting_availability
+    expr: (1 - slo:sli_ratio:rate6h{slo="posting_availability"}) / 0.0050000000000000044
+  - record: slo:burnrate:rate3d
+    labels:
+      slo: posting_availability
+    expr: (1 - slo:sli_ratio:rate3d{slo="posting_availability"}) / 0.0050000000000000044
+  - record: slo:error_budget_remaining
+    labels:
+      slo: posting_availability
+    expr: 1 - ((1 - slo:sli_ratio:rate30d{slo="posting_availability"}) / 0.0050000000000000044)
+  - record: slo:burnrate:rate5m
+    labels:
+      slo: webhook_latency
+    expr: (1 - slo:sli_ratio:rate5m{slo="webhook_latency"}) / 0.050000000000000044
+  - record: slo:burnrate:rate30m
+    labels:
+      slo: webhook_latency
+    expr: (1 - slo:sli_ratio:rate30m{slo="webhook_latency"}) / 0.050000000000000044
+  - record: slo:burnrate:rate1h
+    labels:
+      slo: webhook_latency
+    expr: (1 - slo:sli_ratio:rate1h{slo="webhook_latency"}) / 0.050000000000000044
+  - record: slo:burnrate:rate6h
+    labels:
+      slo: webhook_latency
+    expr: (1 - slo:sli_ratio:rate6h{slo="webhook_latency"}) / 0.050000000000000044
+  - record: slo:burnrate:rate3d
+    labels:
+      slo: webhook_latency
+    expr: (1 - slo:sli_ratio:rate3d{slo="webhook_latency"}) / 0.050000000000000044
+  - record: slo:error_budget_remaining
+    labels:
+      slo: webhook_latency
+    expr: 1 - ((1 - slo:sli_ratio:rate30d{slo="webhook_latency"}) / 0.050000000000000044)
+  - record: slo:burnrate:rate5m
+    labels:
+      slo: notification_success
+    expr: (1 - slo:sli_ratio:rate5m{slo="notification_success"}) / 0.010000000000000009
+  - record: slo:burnrate:rate30m
+    labels:
+      slo: notification_success
+    expr: (1 - slo:sli_ratio:rate30m{slo="notification_success"}) / 0.010000000000000009
+  - record: slo:burnrate:rate1h
+    labels:
+      slo: notification_success
+    expr: (1 - slo:sli_ratio:rate1h{slo="notification_success"}) / 0.010000000000000009
+  - record: slo:burnrate:rate6h
+    labels:
+      slo: notification_success
+    expr: (1 - slo:sli_ratio:rate6h{slo="notification_success"}) / 0.010000000000000009
+  - record: slo:burnrate:rate3d
+    labels:
+      slo: notification_success
+    expr: (1 - slo:sli_ratio:rate3d{slo="notification_success"}) / 0.010000000000000009
+  - record: slo:error_budget_remaining
+    labels:
+      slo: notification_success
+    expr: 1 - ((1 - slo:sli_ratio:rate30d{slo="notification_success"}) / 0.010000000000000009)

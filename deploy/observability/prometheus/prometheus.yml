@@ -1,0 +1,39 @@
+# docs/plan/43 Task T1 — scrapes /metrics on each service's internal/admin
+# listener only, never the public listener (docs/plan/10 Task T6 boundary).
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - /etc/prometheus/rules/slo.yml
+
+scrape_configs:
+  - job_name: gateway-service
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["gateway-service:8081"]
+
+  - job_name: auth-service
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["auth-service:8083"]
+
+  - job_name: ledger-service
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["ledger-service:8091"]
+
+  - job_name: payin-service
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["payin-service:8092"]
+
+  - job_name: payout-service
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["payout-service:8093"]
+
+  - job_name: fraud-service
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["fraud-service:8094"]

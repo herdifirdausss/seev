@@ -25,14 +25,18 @@ type Service interface {
 
 type Server struct {
 	payinv1.UnimplementedPayinServiceServer
-	service           Service
-	notFound          error
-	noRoute           error
-	noVendorAvailable error
+	service                        Service
+	notFound                       error
+	noRoute                        error
+	noVendorAvailable              error
+	screeningDependencyUnavailable error
 }
 
-func New(service Service, notFound, noRoute, noVendorAvailable error) *Server {
-	return &Server{service: service, notFound: notFound, noRoute: noRoute, noVendorAvailable: noVendorAvailable}
+func New(service Service, notFound, noRoute, noVendorAvailable, screeningDependencyUnavailable error) *Server {
+	return &Server{
+		service: service, notFound: notFound, noRoute: noRoute, noVendorAvailable: noVendorAvailable,
+		screeningDependencyUnavailable: screeningDependencyUnavailable,
+	}
 }
 
 func (s *Server) HandleWebhook(ctx context.Context, request *payinv1.HandleWebhookRequest) (*payinv1.HandleWebhookResponse, error) {
@@ -50,6 +54,12 @@ func (s *Server) HandleWebhook(ctx context.Context, request *payinv1.HandleWebho
 			return nil, status.Error(codes.NotFound, "unknown vendor")
 		case errors.Is(err, vendorgw.ErrInvalidSignature):
 			return nil, status.Error(codes.Unauthenticated, "invalid webhook signature")
+		case errors.Is(err, s.screeningDependencyUnavailable):
+			// docs/plan/45 Task T3/K4 — fraud-service is reachable but its
+			// velocity dependency is down; distinct message from
+			// noVendorAvailable's own codes.Unavailable use elsewhere so
+			// the gateway can tell them apart.
+			return nil, status.Error(codes.Unavailable, "screening dependency unavailable")
 		default:
 			return nil, status.Error(codes.Internal, "payin webhook processing failed")
 		}

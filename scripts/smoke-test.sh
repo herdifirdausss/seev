@@ -34,7 +34,11 @@ source "$ROOT_DIR/scripts/lib.sh"
 
 trap cleanup EXIT
 
-MOCKVENDOR_SECRET="script-test-mockvendor-secret-at-least-32-chars-long"
+# docs/plan/44 K6: same env var name lib.sh's start_*_service functions
+# export to the service processes — a CI-generated VENDOR_MOCKVENDOR_SECRET
+# must sign AND verify with the identical value, not silently diverge
+# because this script's own webhook-signing copy had a different name.
+MOCKVENDOR_SECRET="${VENDOR_MOCKVENDOR_SECRET:-script-test-mockvendor-secret-at-least-32-chars-long}"
 
 # json_field extracts "key":"value" (string fields only) from a JSON blob
 # read on stdin — good enough for this script's flat response shapes,
@@ -167,11 +171,15 @@ smoke_payout() {
 	create1="$(curl -s -X POST "http://localhost:$APP_PORT/api/v1/payout" \
 		-H "Authorization: Bearer $token" -H "Content-Type: application/json" \
 		-d '{"amount":"50000","destination":{"bank_code":"014","account_no":"1"}}')"
-	local id1 status1
+	local id1
 	id1="$(echo "$create1" | json_field id)"
-	status1="$(echo "$create1" | json_field status)"
-	[ -n "$id1" ] && [ "$status1" = "settled" ] && ok "instant-settle payout created and settled immediately ($id1)" \
-		|| fail "instant-settle create response unexpected: $create1"
+	[ -n "$id1" ] || fail "instant-settle create response unexpected: $create1"
+	# docs/plan/45 Task T1: the create response itself only reports
+	# 'submitted' (hold+enqueue) — the vendor result always comes from a
+	# separate, asynchronous relay dispatch pass now, even in what used to
+	# be called "instant-settle" mode.
+	wait_for_payout_status "$id1" "settled" 10
+	ok "instant-settle payout created and settled via the relay ($id1)"
 
 	log "GET /api/v1/payout/{id} as the owner..."
 	local code
@@ -187,11 +195,11 @@ smoke_payout() {
 	create2="$(curl -s -X POST "http://localhost:$APP_PORT/api/v1/payout" \
 		-H "Authorization: Bearer $token" -H "Content-Type: application/json" \
 		-d '{"amount":"20000","destination":{"bank_code":"014","account_no":"1","mock_mode":"async"}}')"
-	local id2 status2
+	local id2
 	id2="$(echo "$create2" | json_field id)"
-	status2="$(echo "$create2" | json_field status)"
-	[ -n "$id2" ] && [ "$status2" = "vendor_pending" ] && ok "async payout created and left vendor_pending ($id2)" \
-		|| fail "async create response unexpected: $create2"
+	[ -n "$id2" ] || fail "async create response unexpected: $create2"
+	wait_for_payout_status "$id2" "vendor_pending" 10
+	ok "async payout dispatched and left vendor_pending ($id2)"
 
 	log "GET /admin/payout/requests?status=vendor_pending (admin)..."
 	local list_resp

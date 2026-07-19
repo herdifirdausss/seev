@@ -37,13 +37,17 @@ func publicRouter(cfg *config.Config, handlers authHandlers, redisCache *cache.C
 	limiterConfig := cache.RateConfig{Requests: 10, Per: time.Minute, Burst: 10}
 	var limiter cache.Limiter
 	if redisCache != nil {
-		limiter = cache.NewRedisRateLimiter(redisCache.Redis(), limiterConfig)
+		// docs/plan/45 Task T3/K4: fails over to an in-memory limiter at
+		// runtime if Redis becomes unreachable, recovering automatically.
+		limiter = cache.NewFailoverLimiter(redisCache.Redis(), limiterConfig, log)
 	} else {
 		limiter = cache.NewMemoryRateLimiter(limiterConfig)
 	}
 
 	global := middleware.Chain(
 		middleware.WithRequestID(),
+		middleware.WithRoutePattern(apiRoot),
+		middleware.WithTracing(log), middleware.WithHTTPMetrics(),
 		middleware.WithLogger(log),
 		middleware.WithRecovery(),
 		middleware.WithSecurityHeaders(authSecurityHeaders(cfg)),

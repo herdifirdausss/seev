@@ -1,0 +1,707 @@
+# docs/plan/43 Task T5 — Grafana unified alerting, file-provisioned.
+# Generated once by a scratch script for consistency across 3 SLOs x 3
+# burn-rate pairs (K7) plus 6 operational alerts (K8); edit by hand from
+# here on, this file is the source of truth. Every rule's `runbook`
+# annotation maps to the K8 table in docs/plan/43-a1-observability.md.
+apiVersion: 1
+groups:
+- orgId: 1
+  name: slo_burn_alerts
+  folder: Seev
+  interval: 1m
+  rules:
+  - uid: seev-slo-posting-fast
+    title: 'SLO burn: posting_availability (fast_burn, 5m&1h > 14.4x)'
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 21600
+        to: 0
+      datasourceUid: seev-prometheus
+      model:
+        editorMode: code
+        expr: "count(\n  slo:burnrate:rate5m{slo=\"posting_availability\"} > 14.4\n  and slo:burnrate:rate1h{slo=\"\
+          posting_availability\"} > 14.4\n  and slo:eligible_events:rate1h{slo=\"posting_availability\"\
+          } * 3600 >= 20\n)"
+        instant: true
+        range: false
+        refId: A
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 0
+          operator:
+            type: and
+          query:
+            params:
+            - A
+          reducer:
+            type: last
+        refId: C
+    noDataState: OK
+    execErrState: Alerting
+    for: 2m
+    annotations:
+      summary: "posting_availability is burning its error budget at over 14.4x the sustainable rate across\
+        \ both the 5m and 1h windows (multi-window multi-burn-rate alert, docs/plan/43 K7) \u2014 eligible-event\
+        \ volume also cleared the 20/1h minimum gate, so this is not a low-traffic false positive."
+      runbook: docs/runbooks/ledger-integrity-alert.md
+    labels:
+      severity: critical
+      slo: posting_availability
+      alert_type: slo_burn
+  - uid: seev-slo-posting-slow
+    title: 'SLO burn: posting_availability (slow_burn, 30m&6h > 6x)'
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 21600
+        to: 0
+      datasourceUid: seev-prometheus
+      model:
+        editorMode: code
+        expr: "count(\n  slo:burnrate:rate30m{slo=\"posting_availability\"} > 6\n  and slo:burnrate:rate6h{slo=\"\
+          posting_availability\"} > 6\n  and slo:eligible_events:rate6h{slo=\"posting_availability\"}\
+          \ * 21600 >= 50\n)"
+        instant: true
+        range: false
+        refId: A
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 0
+          operator:
+            type: and
+          query:
+            params:
+            - A
+          reducer:
+            type: last
+        refId: C
+    noDataState: OK
+    execErrState: Alerting
+    for: 2m
+    annotations:
+      summary: "posting_availability is burning its error budget at over 6x the sustainable rate across\
+        \ both the 30m and 6h windows (multi-window multi-burn-rate alert, docs/plan/43 K7) \u2014 eligible-event\
+        \ volume also cleared the 50/6h minimum gate, so this is not a low-traffic false positive."
+      runbook: docs/runbooks/ledger-integrity-alert.md
+    labels:
+      severity: critical
+      slo: posting_availability
+      alert_type: slo_burn
+  - uid: seev-slo-posting-ext
+    title: 'SLO burn: posting_availability (extended_burn, 6h&3d > 1x)'
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 21600
+        to: 0
+      datasourceUid: seev-prometheus
+      model:
+        editorMode: code
+        expr: "count(\n  slo:burnrate:rate6h{slo=\"posting_availability\"} > 1\n  and slo:burnrate:rate3d{slo=\"\
+          posting_availability\"} > 1\n  and slo:eligible_events:rate3d{slo=\"posting_availability\"}\
+          \ * 259200 >= 100\n)"
+        instant: true
+        range: false
+        refId: A
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 0
+          operator:
+            type: and
+          query:
+            params:
+            - A
+          reducer:
+            type: last
+        refId: C
+    noDataState: OK
+    execErrState: Alerting
+    for: 2m
+    annotations:
+      summary: "posting_availability is burning its error budget at over 1x the sustainable rate across\
+        \ both the 6h and 3d windows (multi-window multi-burn-rate alert, docs/plan/43 K7) \u2014 eligible-event\
+        \ volume also cleared the 100/3d minimum gate, so this is not a low-traffic false positive."
+      runbook: docs/runbooks/ledger-integrity-alert.md
+    labels:
+      severity: warning
+      slo: posting_availability
+      alert_type: slo_burn
+  - uid: seev-slo-webhook-fast
+    title: 'SLO burn: webhook_latency (fast_burn, 5m&1h > 14.4x)'
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 21600
+        to: 0
+      datasourceUid: seev-prometheus
+      model:
+        editorMode: code
+        expr: "count(\n  slo:burnrate:rate5m{slo=\"webhook_latency\"} > 14.4\n  and slo:burnrate:rate1h{slo=\"\
+          webhook_latency\"} > 14.4\n  and slo:eligible_events:rate1h{slo=\"webhook_latency\"} * 3600\
+          \ >= 20\n)"
+        instant: true
+        range: false
+        refId: A
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 0
+          operator:
+            type: and
+          query:
+            params:
+            - A
+          reducer:
+            type: last
+        refId: C
+    noDataState: OK
+    execErrState: Alerting
+    for: 2m
+    annotations:
+      summary: "webhook_latency is burning its error budget at over 14.4x the sustainable rate across\
+        \ both the 5m and 1h windows (multi-window multi-burn-rate alert, docs/plan/43 K7) \u2014 eligible-event\
+        \ volume also cleared the 20/1h minimum gate, so this is not a low-traffic false positive."
+      runbook: docs/runbooks/reconciliation.md
+    labels:
+      severity: critical
+      slo: webhook_latency
+      alert_type: slo_burn
+  - uid: seev-slo-webhook-slow
+    title: 'SLO burn: webhook_latency (slow_burn, 30m&6h > 6x)'
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 21600
+        to: 0
+      datasourceUid: seev-prometheus
+      model:
+        editorMode: code
+        expr: "count(\n  slo:burnrate:rate30m{slo=\"webhook_latency\"} > 6\n  and slo:burnrate:rate6h{slo=\"\
+          webhook_latency\"} > 6\n  and slo:eligible_events:rate6h{slo=\"webhook_latency\"} * 21600 >=\
+          \ 50\n)"
+        instant: true
+        range: false
+        refId: A
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 0
+          operator:
+            type: and
+          query:
+            params:
+            - A
+          reducer:
+            type: last
+        refId: C
+    noDataState: OK
+    execErrState: Alerting
+    for: 2m
+    annotations:
+      summary: "webhook_latency is burning its error budget at over 6x the sustainable rate across both\
+        \ the 30m and 6h windows (multi-window multi-burn-rate alert, docs/plan/43 K7) \u2014 eligible-event\
+        \ volume also cleared the 50/6h minimum gate, so this is not a low-traffic false positive."
+      runbook: docs/runbooks/reconciliation.md
+    labels:
+      severity: critical
+      slo: webhook_latency
+      alert_type: slo_burn
+  - uid: seev-slo-webhook-ext
+    title: 'SLO burn: webhook_latency (extended_burn, 6h&3d > 1x)'
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 21600
+        to: 0
+      datasourceUid: seev-prometheus
+      model:
+        editorMode: code
+        expr: "count(\n  slo:burnrate:rate6h{slo=\"webhook_latency\"} > 1\n  and slo:burnrate:rate3d{slo=\"\
+          webhook_latency\"} > 1\n  and slo:eligible_events:rate3d{slo=\"webhook_latency\"} * 259200 >=\
+          \ 100\n)"
+        instant: true
+        range: false
+        refId: A
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 0
+          operator:
+            type: and
+          query:
+            params:
+            - A
+          reducer:
+            type: last
+        refId: C
+    noDataState: OK
+    execErrState: Alerting
+    for: 2m
+    annotations:
+      summary: "webhook_latency is burning its error budget at over 1x the sustainable rate across both\
+        \ the 6h and 3d windows (multi-window multi-burn-rate alert, docs/plan/43 K7) \u2014 eligible-event\
+        \ volume also cleared the 100/3d minimum gate, so this is not a low-traffic false positive."
+      runbook: docs/runbooks/reconciliation.md
+    labels:
+      severity: warning
+      slo: webhook_latency
+      alert_type: slo_burn
+  - uid: seev-slo-notif-fast
+    title: 'SLO burn: notification_success (fast_burn, 5m&1h > 14.4x)'
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 21600
+        to: 0
+      datasourceUid: seev-prometheus
+      model:
+        editorMode: code
+        expr: "count(\n  slo:burnrate:rate5m{slo=\"notification_success\"} > 14.4\n  and slo:burnrate:rate1h{slo=\"\
+          notification_success\"} > 14.4\n  and slo:eligible_events:rate1h{slo=\"notification_success\"\
+          } * 3600 >= 20\n)"
+        instant: true
+        range: false
+        refId: A
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 0
+          operator:
+            type: and
+          query:
+            params:
+            - A
+          reducer:
+            type: last
+        refId: C
+    noDataState: OK
+    execErrState: Alerting
+    for: 2m
+    annotations:
+      summary: "notification_success is burning its error budget at over 14.4x the sustainable rate across\
+        \ both the 5m and 1h windows (multi-window multi-burn-rate alert, docs/plan/43 K7) \u2014 eligible-event\
+        \ volume also cleared the 20/1h minimum gate, so this is not a low-traffic false positive."
+      runbook: docs/runbooks/reconciliation.md
+    labels:
+      severity: critical
+      slo: notification_success
+      alert_type: slo_burn
+  - uid: seev-slo-notif-slow
+    title: 'SLO burn: notification_success (slow_burn, 30m&6h > 6x)'
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 21600
+        to: 0
+      datasourceUid: seev-prometheus
+      model:
+        editorMode: code
+        expr: "count(\n  slo:burnrate:rate30m{slo=\"notification_success\"} > 6\n  and slo:burnrate:rate6h{slo=\"\
+          notification_success\"} > 6\n  and slo:eligible_events:rate6h{slo=\"notification_success\"}\
+          \ * 21600 >= 50\n)"
+        instant: true
+        range: false
+        refId: A
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 0
+          operator:
+            type: and
+          query:
+            params:
+            - A
+          reducer:
+            type: last
+        refId: C
+    noDataState: OK
+    execErrState: Alerting
+    for: 2m
+    annotations:
+      summary: "notification_success is burning its error budget at over 6x the sustainable rate across\
+        \ both the 30m and 6h windows (multi-window multi-burn-rate alert, docs/plan/43 K7) \u2014 eligible-event\
+        \ volume also cleared the 50/6h minimum gate, so this is not a low-traffic false positive."
+      runbook: docs/runbooks/reconciliation.md
+    labels:
+      severity: critical
+      slo: notification_success
+      alert_type: slo_burn
+  - uid: seev-slo-notif-ext
+    title: 'SLO burn: notification_success (extended_burn, 6h&3d > 1x)'
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 21600
+        to: 0
+      datasourceUid: seev-prometheus
+      model:
+        editorMode: code
+        expr: "count(\n  slo:burnrate:rate6h{slo=\"notification_success\"} > 1\n  and slo:burnrate:rate3d{slo=\"\
+          notification_success\"} > 1\n  and slo:eligible_events:rate3d{slo=\"notification_success\"}\
+          \ * 259200 >= 100\n)"
+        instant: true
+        range: false
+        refId: A
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 0
+          operator:
+            type: and
+          query:
+            params:
+            - A
+          reducer:
+            type: last
+        refId: C
+    noDataState: OK
+    execErrState: Alerting
+    for: 2m
+    annotations:
+      summary: "notification_success is burning its error budget at over 1x the sustainable rate across\
+        \ both the 6h and 3d windows (multi-window multi-burn-rate alert, docs/plan/43 K7) \u2014 eligible-event\
+        \ volume also cleared the 100/3d minimum gate, so this is not a low-traffic false positive."
+      runbook: docs/runbooks/reconciliation.md
+    labels:
+      severity: warning
+      slo: notification_success
+      alert_type: slo_burn
+- orgId: 1
+  name: operational_alerts
+  folder: Seev
+  interval: 1m
+  rules:
+  - uid: seev-op-ledger-verifier-discrepancy
+    title: 'Ledger verifier: integrity discrepancy found'
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 21600
+        to: 0
+      datasourceUid: seev-prometheus
+      model:
+        editorMode: code
+        expr: sum(increase(ledger_verification_discrepancies_total[15m]))
+        instant: true
+        range: false
+        refId: A
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 0
+          operator:
+            type: and
+          query:
+            params:
+            - A
+          reducer:
+            type: last
+        refId: C
+    noDataState: OK
+    execErrState: Alerting
+    for: 0m
+    annotations:
+      summary: The ledger verifier worker found at least one balance/entry integrity discrepancy in the
+        last 15 minutes.
+      runbook: docs/runbooks/ledger-integrity-alert.md
+    labels:
+      severity: critical
+      component: ledger_verifier
+      alert_type: operational
+  - uid: seev-op-outbox-pending-backlog
+    title: 'Ledger outbox: pending backlog'
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 21600
+        to: 0
+      datasourceUid: seev-prometheus
+      model:
+        editorMode: code
+        expr: ledger_outbox_pending > 50
+        instant: true
+        range: false
+        refId: A
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 0
+          operator:
+            type: and
+          query:
+            params:
+            - A
+          reducer:
+            type: last
+        refId: C
+    noDataState: OK
+    execErrState: Alerting
+    for: 5m
+    annotations:
+      summary: "ledger_outbox_pending has stayed above 50 for 5 minutes \u2014 the outbox relay worker\
+        \ is falling behind or stalled; downstream consumers (notifications, fraud velocity) are seeing\
+        \ delayed events."
+      runbook: docs/runbooks/ledger-integrity-alert.md
+    labels:
+      severity: warning
+      component: ledger_outbox
+      alert_type: operational
+  - uid: seev-op-outbox-dead-events
+    title: 'Ledger outbox: dead events present'
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 21600
+        to: 0
+      datasourceUid: seev-prometheus
+      model:
+        editorMode: code
+        expr: ledger_outbox_dead_total > 0
+        instant: true
+        range: false
+        refId: A
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 0
+          operator:
+            type: and
+          query:
+            params:
+            - A
+          reducer:
+            type: last
+        refId: C
+    noDataState: OK
+    execErrState: Alerting
+    for: 0m
+    annotations:
+      summary: "At least one outbox event has exhausted its retry budget and moved to status=dead \u2014\
+        \ requires manual replay via POST /admin/outbox/dead/{id}/replay."
+      runbook: docs/runbooks/ledger-integrity-alert.md
+    labels:
+      severity: critical
+      component: ledger_outbox
+      alert_type: operational
+  - uid: seev-op-notification-handler-slow
+    title: 'Notification consumer: handler p95 latency high'
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 21600
+        to: 0
+      datasourceUid: seev-prometheus
+      model:
+        editorMode: code
+        expr: histogram_quantile(0.95, sum(rate(rabbitmq_consume_handler_duration_seconds_bucket{queue="ledger.events.notifications"}[5m]))
+          by (le)) > 2
+        instant: true
+        range: false
+        refId: A
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 0
+          operator:
+            type: and
+          query:
+            params:
+            - A
+          reducer:
+            type: last
+        refId: C
+    noDataState: OK
+    execErrState: Alerting
+    for: 5m
+    annotations:
+      summary: "Notification consumer handler p95 latency has exceeded 2s over the last 5 minutes \u2014\
+        \ matches the webhook_latency SLO's own 2s threshold for consistency."
+      runbook: docs/runbooks/reconciliation.md
+    labels:
+      severity: warning
+      component: notify_consumer
+      alert_type: operational
+  - uid: seev-op-payout-stuck-backlog
+    title: 'Payout: stuck request backlog'
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 21600
+        to: 0
+      datasourceUid: seev-prometheus
+      model:
+        editorMode: code
+        expr: sum(payout_stuck_requests) > 5
+        instant: true
+        range: false
+        refId: A
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 0
+          operator:
+            type: and
+          query:
+            params:
+            - A
+          reducer:
+            type: last
+        refId: C
+    noDataState: OK
+    execErrState: Alerting
+    for: 5m
+    annotations:
+      summary: "More than 5 payout requests have stayed in created/held/submitted/vendor_pending past\
+        \ the resume job's staleness threshold for 5 minutes \u2014 money is parked in the hold account\
+        \ (not lost) but not progressing."
+      runbook: docs/runbooks/reconciliation.md
+    labels:
+      severity: warning
+      component: payout_resume
+      alert_type: operational
+  - uid: seev-op-breaker-open-extended
+    title: 'Vendor circuit breaker: open for an extended period'
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 21600
+        to: 0
+      datasourceUid: seev-prometheus
+      model:
+        editorMode: code
+        expr: vendorgw_breaker_state == 2
+        instant: true
+        range: false
+        refId: A
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 0
+          operator:
+            type: and
+          query:
+            params:
+            - A
+          reducer:
+            type: last
+        refId: C
+    noDataState: OK
+    execErrState: Alerting
+    for: 5m
+    annotations:
+      summary: "A vendor's circuit breaker has stayed OPEN for 5 minutes straight \u2014 payin/payout\
+        \ traffic to that vendor is being failed over or rejected; check vendor health."
+      runbook: docs/runbooks/reconciliation.md
+    labels:
+      severity: warning
+      component: vendor_breaker
+      alert_type: operational

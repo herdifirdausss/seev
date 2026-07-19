@@ -72,6 +72,13 @@ func TestIsSensitiveKey(t *testing.T) {
 		{"id", false},
 		{"created_at", false},
 		{"amount", false},
+
+		// docs/plan/43 Task T6: full idempotency keys must never be
+		// searchable in logs — idempotency_key/idempotency_scope both
+		// normalize to a form containing "idempotencykey".
+		{"idempotency_key", true},
+		{"idempotencyKey", true},
+		{"idempotency_scope", false},
 	}
 
 	for _, tc := range cases {

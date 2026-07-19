@@ -1,28 +1,136 @@
 name: CI
 
+# docs/plan/44 K3: no workflow-level paths-ignore — the workflow ALWAYS
+# runs so a required check (`ci-gate`) never goes permanently pending; the
+# `changes` job below classifies docs-only vs runtime and the three heavy
+# jobs skip themselves via `needs.changes.outputs.runtime`.
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  # docs/plan/44 K2: pinned actionlint/ShellCheck release, verified at T0
+  # (MIT / GPL-3.0 respectively — see doc 44 T0 Hasil). Bump both here only
+  # after re-verifying the new release + license per constraint #8.
+  ACTIONLINT_VERSION: "1.7.12"
+  SHELLCHECK_VERSION: "0.11.0"
+
 jobs:
-  lint-and-test:
-    runs-on: ubuntu-latest
+  # ─── changes: docs-only classifier (docs/plan/44 K3) ───────────────────────
+  # Deliberately uses ONLY actions/checkout (official) — no third-party
+  # paths-filter action, per K2's allowed-owner list.
+  changes:
+    name: changes
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      runtime: ${{ steps.classify.outputs.runtime }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Classify docs-only vs runtime
+        id: classify
+        run: |
+          set -euo pipefail
+          ZERO="0000000000000000000000000000000000000000"
+          BASE="${{ github.event.pull_request.base.sha }}"
+          if [ -z "$BASE" ]; then
+            BASE="${{ github.event.before }}"
+          fi
+          HEAD="${{ github.sha }}"
+
+          if [ -z "$BASE" ] || [ "$BASE" = "$ZERO" ] || ! git cat-file -e "$BASE" 2>/dev/null; then
+            echo "no usable base SHA (new branch / force-push / before=0000...) — treating as runtime, not docs-only"
+            echo "runtime=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          CHANGED="$(git diff --name-only "$BASE" "$HEAD")"
+          echo "changed files ($BASE..$HEAD):"
+          echo "$CHANGED"
+
+          # Runtime the instant ANY changed file falls outside docs/** or is
+          # not a *.md file — .github/**, scripts, Compose, Dockerfile,
+          # Makefile, Go, SQL, proto all count as runtime/CI per K3.
+          if echo "$CHANGED" | grep -qvE '^(docs/.*|.*\.md)$'; then
+            echo "runtime=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "runtime=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # ─── lint-and-test: actionlint, ShellCheck, SHA-pin policy, golangci-lint, unit ──
+  lint-and-test:
+    name: lint-and-test
+    needs: changes
+    if: needs.changes.outputs.runtime == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+          fetch-depth: 1
 
       - name: Read Go version from go.mod
         id: goversion
         run: echo "version=$(grep -E '^go ' go.mod | awk '{print $2}')" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ steps.goversion.outputs.version }}
           cache: true
 
+      # Downloaded as a pinned release tarball, never `curl | sh` (K2).
+      - name: Install actionlint (pinned)
+        run: |
+          set -euo pipefail
+          cd /tmp
+          curl -sSLO "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          tar xzf "actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz" actionlint
+          install -m 0755 actionlint /usr/local/bin/actionlint
+          actionlint -version
+
+      # ShellCheck 0.9.0 ships on the runner image already; pin the exact
+      # release verified at T0 instead, so this check's behavior doesn't
+      # silently drift with whatever the runner image happens to bundle.
+      - name: Install ShellCheck (pinned)
+        run: |
+          set -euo pipefail
+          cd /tmp
+          curl -sSLO "https://github.com/koalaman/shellcheck/releases/download/v${SHELLCHECK_VERSION}/shellcheck-v${SHELLCHECK_VERSION}.linux.x86_64.tar.xz"
+          tar xJf "shellcheck-v${SHELLCHECK_VERSION}.linux.x86_64.tar.xz"
+          install -m 0755 "shellcheck-v${SHELLCHECK_VERSION}/shellcheck" /usr/local/bin/shellcheck
+          shellcheck --version
+
+      - name: actionlint
+        run: actionlint -shellcheck "$(command -v shellcheck)"
+
+      - name: ShellCheck (scripts/*.sh, severity=error)
+        run: shellcheck --severity=error scripts/*.sh
+
+      - name: External action SHA-pin policy
+        run: ./scripts/ci/check-action-pins.sh
+
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@2226d7cb06a077cd73e56eedd38eecad18e5d837 # v6.5.0
         with:
           version: v1.64.8
           # The release binary is built with Go 1.24 and cannot analyze this
@@ -32,16 +140,27 @@ jobs:
       - name: Test
         run: go test -race -cover ./...
 
+  # ─── integration: testcontainers-backed integration suite ──────────────────
   integration:
-    runs-on: ubuntu-latest
+    name: integration
+    needs: changes
+    if: needs.changes.outputs.runtime == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+          fetch-depth: 1
 
       - name: Read Go version from go.mod
         id: goversion
         run: echo "version=$(grep -E '^go ' go.mod | awk '{print $2}')" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ steps.goversion.outputs.version }}
           cache: true
@@ -51,3 +170,125 @@ jobs:
       # GitHub-hosted runners — no separate `services:` container needed.
       - name: Integration tests
         run: go test -tags=integration -race ./...
+
+  # ─── smoke-container: full-container round-trip (docs/plan/44 K4/K5) ───────
+  # Six images built ONCE via a single Bake invocation (reads the build
+  # config straight out of docker-compose.yml — no separate Bake file, K5),
+  # cached via the GHA backend, loaded into the daemon; smoke-container.sh
+  # then runs with --no-build against exactly those loaded images. No push,
+  # no registry login, no provenance/SBOM (K5 — ephemeral functional gate
+  # only).
+  smoke-container:
+    name: smoke-container
+    needs: changes
+    if: needs.changes.outputs.runtime == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      SEEV_IMAGE_TAG: ci
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: Build six images (Bake, GHA cache, load into daemon)
+        uses: docker/bake-action@d3418bd7d0e9324001bca92fa8ba175ea7e6dc9b # v7.3.0
+        with:
+          files: docker-compose.yml
+          targets: |
+            auth-service
+            fraud-service
+            gateway-service
+            ledger-service
+            payin-service
+            payout-service
+          load: true
+          set: |
+            *.args.REVISION=${{ github.sha }}
+            *.cache-from=type=gha
+            *.cache-to=type=gha,mode=max
+
+      # K5: prove every loaded image is a real, non-empty image built from
+      # THIS commit — not a stale cache hit silently reused from a
+      # different revision, and not an accidental no-op.
+      - name: Verify image revision labels
+        run: |
+          set -euo pipefail
+          for svc in auth-service fraud-service gateway-service ledger-service payin-service payout-service; do
+            image="seev/${svc}:ci"
+            id="$(docker image inspect "$image" --format '{{.Id}}')"
+            rev="$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')"
+            if [ -z "$id" ]; then
+              echo "::error::$image has an empty image ID"
+              exit 1
+            fi
+            if [ "$rev" != "${{ github.sha }}" ]; then
+              echo "::error::$image revision label '$rev' does not match commit ${{ github.sha }}"
+              exit 1
+            fi
+            echo "$image: id=$id revision=$rev OK"
+          done
+
+      - name: Run smoke-container (pre-loaded images, --no-build)
+        env:
+          SEEV_SMOKE_NO_BUILD: "1"
+        run: make smoke-container
+
+      - name: Upload failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: smoke-container-diagnostics
+          path: .smoke-container-artifacts/
+          retention-days: 7
+          if-no-files-found: ignore
+
+  # ─── ci-gate: the ONE required check (docs/plan/44 K3) ─────────────────────
+  ci-gate:
+    name: ci-gate
+    needs: [changes, lint-and-test, integration, smoke-container]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Evaluate gate
+        run: |
+          set -euo pipefail
+          echo "changes: ${{ needs.changes.result }} (runtime=${{ needs.changes.outputs.runtime }})"
+          echo "lint-and-test: ${{ needs.lint-and-test.result }}"
+          echo "integration: ${{ needs.integration.result }}"
+          echo "smoke-container: ${{ needs.smoke-container.result }}"
+
+          if [ "${{ needs.changes.result }}" != "success" ]; then
+            echo "::error::changes job did not succeed"
+            exit 1
+          fi
+
+          if [ "${{ needs.changes.outputs.runtime }}" = "false" ]; then
+            # docs-only: the three heavy jobs must have been skipped, not
+            # failed/cancelled/silently absent.
+            for r in "${{ needs.lint-and-test.result }}" "${{ needs.integration.result }}" "${{ needs.smoke-container.result }}"; do
+              if [ "$r" != "skipped" ]; then
+                echo "::error::docs-only PR but a heavy job result was '$r', expected 'skipped'"
+                exit 1
+              fi
+            done
+            echo "docs-only change: three heavy jobs correctly skipped — gate green"
+            exit 0
+          fi
+
+          for r in "${{ needs.lint-and-test.result }}" "${{ needs.integration.result }}" "${{ needs.smoke-container.result }}"; do
+            if [ "$r" != "success" ]; then
+              echo "::error::a heavy job result was '$r', expected 'success'"
+              exit 1
+            fi
+          done
+          echo "all gates green"

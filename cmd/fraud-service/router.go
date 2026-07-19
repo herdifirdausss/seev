@@ -24,7 +24,7 @@ func adminRouter(cfg *config.Config, handlers adminHandlers, log *slog.Logger) h
 	authed := middleware.Chain(middleware.WithAuth(cfg.JWT.Secret, cfg.JWT.Issuer), middleware.RequireJSON())
 	root.Handle("/api/v1/admin/fraud/", authed(handlers.AdminRouter()))
 	return middleware.Chain(
-		middleware.WithRequestID(), middleware.WithLogger(log), middleware.WithRecovery(),
+		middleware.WithRequestID(), middleware.WithRoutePattern(root), middleware.WithTracing(log), middleware.WithHTTPMetrics(), middleware.WithLogger(log), middleware.WithRecovery(),
 		middleware.WithSecurityHeaders(middleware.DefaultSecurityHeadersConfig()), middleware.WithTimeout(30*time.Second),
 	)(root)
 }

@@ -2,6 +2,8 @@ package grpcserver
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net"
 	"testing"
 	"time"
@@ -83,4 +85,36 @@ func TestScreenRejectsInvalidInput(t *testing.T) {
 	_, err := client.Screen(context.Background(), &fraudv1.ScreenRequest{TxType: "transfer_p2p", UserId: "bad", Amount: "1", Currency: "IDR"})
 	require.Error(t, err)
 	assert.Equal(t, codes.InvalidArgument, status.Code(err))
+}
+
+// TestScreenDependencyUnavailable_MapsToDistinguishableStatus proves
+// docs/plan/45 Task T3/K4: Module.Screen returning
+// model.ErrDependencyUnavailable (wrapped, as VelocityAnomalyRule.Screen
+// actually does) maps to codes.FailedPrecondition with the exact
+// "DEPENDENCY_UNAVAILABLE" message pkg/fraudcheck.Client checks for —
+// distinct from every OTHER Screen error, which stays codes.Internal.
+func TestScreenDependencyUnavailable_MapsToDistinguishableStatus(t *testing.T) {
+	service := &serviceStub{err: fmt.Errorf("velocity counter: %w", model.ErrDependencyUnavailable)}
+	client := testClient(t, service)
+
+	_, err := client.Screen(context.Background(), &fraudv1.ScreenRequest{
+		TxType: "transfer_p2p", UserId: uuid.New().String(), Amount: "100000", Currency: "IDR",
+	})
+	require.Error(t, err)
+	assert.Equal(t, codes.FailedPrecondition, status.Code(err))
+	assert.Equal(t, dependencyUnavailableMessage, status.Convert(err).Message())
+}
+
+// TestScreenGenericError_StaysInternal proves an unrelated Screen error
+// (not the dependency-unavailable sentinel) still maps to codes.Internal,
+// unchanged from before this track.
+func TestScreenGenericError_StaysInternal(t *testing.T) {
+	service := &serviceStub{err: errors.New("database exploded")}
+	client := testClient(t, service)
+
+	_, err := client.Screen(context.Background(), &fraudv1.ScreenRequest{
+		TxType: "transfer_p2p", UserId: uuid.New().String(), Amount: "100000", Currency: "IDR",
+	})
+	require.Error(t, err)
+	assert.Equal(t, codes.Internal, status.Code(err))
 }

@@ -1,11 +1,26 @@
 package model
 
 import (
+	"errors"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 )
+
+// ErrDependencyUnavailable is returned by VelocityAnomalyRule.Screen (and
+// therefore Module.Screen) when the velocity store's Redis dependency is
+// currently unavailable (docs/plan/45 Task T3/K4) — deliberately NOT a
+// generic error: it lives here (internal/fraud/model), not in
+// internal/fraud itself, specifically so internal/fraud/grpcserver can
+// check errors.Is against it without importing internal/fraud (which
+// would cycle back, since internal/fraud imports internal/fraud/grpcserver
+// to register the RPC service). grpcserver maps this to a distinguishable
+// gRPC status; every caller (ledger/payin/payout, via pkg/fraudcheck) must
+// map THAT to a fail-closed 503 DEPENDENCY_UNAVAILABLE response BEFORE any
+// money moves — never a silent fail-open, and never a memory-based
+// velocity approximation.
+var ErrDependencyUnavailable = errors.New("fraud: velocity dependency unavailable")
 
 type ScreenInput struct {
 	TxType   string

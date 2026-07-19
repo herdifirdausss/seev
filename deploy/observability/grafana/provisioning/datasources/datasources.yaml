@@ -1,0 +1,48 @@
+# docs/plan/43 Task T1 — three datasources, UIDs kept stable so dashboard
+# JSON (Task T4) can reference them without a manual re-link. Loki->Tempo
+# and Tempo->Loki derived-field wiring is completed in Task T6 (K9); this
+# file carries the stable UID + basic trace-to-logs skeleton so T6 only
+# needs to add fields, not restructure datasources.
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: seev-prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    jsonData:
+      timeInterval: 15s
+
+  - name: Loki
+    uid: seev-loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    jsonData:
+      derivedFields:
+        - datasourceUid: seev-tempo
+          matcherRegex: '"trace_id":"(\w+)"'
+          name: TraceID
+          url: '${__value.raw}'
+
+  - name: Tempo
+    uid: seev-tempo
+    type: tempo
+    access: proxy
+    url: http://tempo:3200
+    jsonData:
+      tracesToLogsV2:
+        datasourceUid: seev-loki
+        filterByTraceID: true
+        customQuery: false
+        # docs/plan/43 Task T6 — without a tags mapping, "logs for this
+        # span" has no label matcher to scope the generated Loki query to
+        # (a bare trace-ID text search across every stream); mapping the
+        # span's own service.name resource attribute to Loki's
+        # compose_service label produces {compose_service="..."} |=
+        # "<traceID>", which is both correct and efficient.
+        tags:
+          - key: service.name
+            value: compose_service

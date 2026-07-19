@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/redis/go-redis/v9"
 	"google.golang.org/grpc"
 
 	fraudv1 "github.com/herdifirdausss/seev/gen/fraud/v1"
@@ -20,11 +21,13 @@ import (
 	"github.com/herdifirdausss/seev/internal/payin"
 	"github.com/herdifirdausss/seev/internal/vendorgw"
 	"github.com/herdifirdausss/seev/internal/vendorgw/mockvendor"
+	"github.com/herdifirdausss/seev/pkg/cache"
 	"github.com/herdifirdausss/seev/pkg/database"
 	"github.com/herdifirdausss/seev/pkg/fraudcheck"
 	"github.com/herdifirdausss/seev/pkg/grpcx"
 	"github.com/herdifirdausss/seev/pkg/ledgerclient"
 	"github.com/herdifirdausss/seev/pkg/logger"
+	"github.com/herdifirdausss/seev/pkg/tracing"
 )
 
 func main() {
@@ -74,12 +77,45 @@ func run(parent context.Context) error {
 	log := logger.New(cfg.Logger.Pkg())
 	ctx, cancel := signal.NotifyContext(parent, syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
+	shutdownTracing, err := tracing.Setup(ctx, tracing.Config{
+		ServiceName: "payin-service",
+		Endpoint:    cfg.Tracing.OTLPEndpoint,
+		SampleRatio: cfg.Tracing.SampleRatio,
+		Insecure:    cfg.Tracing.Insecure,
+	})
+	if err != nil {
+		log.Error("tracing: setup failed, continuing without a tracer provider", "error", err)
+		shutdownTracing = func(context.Context) error { return nil }
+	}
 	db, err := database.New(ctx, cfg.Postgres.Pkg())
 	if err != nil {
 		return fmt.Errorf("connect postgres: %w", err)
 	}
+	// Redis is entirely optional for payin-service today — its only
+	// consumer is an opt-in distributed breaker (docs/plan/45 Task T2,
+	// BREAKER_DISTRIBUTED, default false). Same nil-means-disabled
+	// convention as payout/ledger-service's own Redis wiring; DB 0 is safe
+	// to share with payout's own breaker keys since every key is namespaced
+	// ("breaker:payin:..." vs "breaker:payout:...").
+	cfg.Redis.DB = 0
+	var redisCache *cache.Cache
+	var redisClient *redis.Client
+	// Payin only consumes Redis for the optional distributed breaker. Keep the
+	// default local breaker self-contained so a container does not try to dial
+	// the host-oriented Redis default (localhost:6380) during startup.
+	if cfg.Breaker.Distributed && cfg.Redis.Enabled {
+		redisCache, err = cache.New(ctx, cfg.Redis.Pkg())
+		if err != nil {
+			_ = db.Close()
+			return fmt.Errorf("connect redis db 0: %w", err)
+		}
+		redisClient = redisCache.Redis()
+	}
 	ledgerConn, err := grpcx.Dial(ctx, cfg.LedgerGRPCAddr, cfg.InternalGRPCToken)
 	if err != nil {
+		if redisCache != nil {
+			_ = redisCache.Close()
+		}
 		_ = db.Close()
 		return fmt.Errorf("connect ledger-service: %w", err)
 	}
@@ -92,7 +128,11 @@ func run(parent context.Context) error {
 		registry.AddPayin(mockvendor.New("mockvendor2", cfg.Vendor.Mockvendor2Secret))
 		log.Warn("vendorgw: mockvendor2 enabled — test-only second vendor for failover demos")
 	}
-	breaker := vendorgw.NewHealthTracker(cfg.Breaker.FailureThreshold, cfg.Breaker.Cooldown, log)
+	var breaker vendorgw.Breaker = vendorgw.NewHealthTracker(cfg.Breaker.FailureThreshold, cfg.Breaker.Cooldown, log)
+	if cfg.Breaker.Distributed && redisClient != nil {
+		breaker = vendorgw.NewDistributedBreaker(redisClient, "payin", cfg.Breaker.FailureThreshold, cfg.Breaker.Cooldown, 0, log)
+		log.Info("vendorgw: distributed breaker enabled", "namespace", "payin")
+	}
 
 	// fraud client screens deposits pre-posting (docs/plan/37 Task T4).
 	// FRAUD_GRPC_ADDR unset (dev/test defaults) => nil client => no screening.
@@ -102,6 +142,9 @@ func run(parent context.Context) error {
 		fraudConn, err = grpcx.DialLazy(ctx, cfg.FraudGRPCAddr, cfg.InternalGRPCToken)
 		if err != nil {
 			_ = ledgerConn.Close()
+			if redisCache != nil {
+				_ = redisCache.Close()
+			}
 			_ = db.Close()
 			return fmt.Errorf("create fraud-service client: %w", err)
 		}
@@ -115,6 +158,9 @@ func run(parent context.Context) error {
 	grpcListener, err := net.Listen("tcp", ":"+cfg.GRPCPort)
 	if err != nil {
 		_ = ledgerConn.Close()
+		if redisCache != nil {
+			_ = redisCache.Close()
+		}
 		_ = db.Close()
 		return fmt.Errorf("listen grpc: %w", err)
 	}
@@ -138,8 +184,16 @@ func run(parent context.Context) error {
 	if err := ledgerConn.Close(); err != nil {
 		log.Error("close ledger grpc", "error", err)
 	}
+	if redisCache != nil {
+		if err := redisCache.Close(); err != nil {
+			log.Error("close redis", "error", err)
+		}
+	}
 	if err := db.Close(); err != nil {
 		log.Error("close postgres", "error", err)
+	}
+	if err := shutdownTracing(context.Background()); err != nil {
+		log.Error("close tracing", "error", err)
 	}
 	return serveErr
 }

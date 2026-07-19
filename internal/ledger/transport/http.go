@@ -594,6 +594,15 @@ func (h *handler) postTransaction(w http.ResponseWriter, r *http.Request) {
 		}
 		verdict, ferr := h.fraudClient.Check(r.Context(), "p2p_transfer", req.Type, userID, amount, screenCurrency)
 		if ferr != nil {
+			if errors.Is(ferr, fraudcheck.ErrDependencyUnavailable) {
+				// docs/plan/45 Task T3/K4: fraud-service is reachable but its
+				// velocity dependency is down — fail CLOSED, unlike every
+				// other Check error below (fail open). No posting has
+				// happened yet.
+				h.logger.Warn("screening dependency unavailable, failing closed", "type", req.Type)
+				response.ServiceUnavailable(w, "DEPENDENCY_UNAVAILABLE", "fraud screening dependency unavailable")
+				return
+			}
 			h.logger.Error("screening check error, failing open", "error", ferr, "type", req.Type)
 		} else if verdict.Block {
 			writeError(w, apperror.NewBizErr(apperror.ErrScreeningBlocked, verdict.Reason))

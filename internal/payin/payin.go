@@ -56,7 +56,7 @@ type Poster interface {
 
 // RegisterGRPC exposes the internal payin service contract.
 func (m *Module) RegisterGRPC(server *grpc.Server) {
-	payinv1.RegisterPayinServiceServer(server, grpcserver.New(m, ErrTopupIntentNotFound, ErrNoRoute, ErrNoVendorAvailable))
+	payinv1.RegisterPayinServiceServer(server, grpcserver.New(m, ErrTopupIntentNotFound, ErrNoRoute, ErrNoVendorAvailable, ErrScreeningDependencyUnavailable))
 }
 
 // Module is the public facade for the payin module.
@@ -75,13 +75,13 @@ type Module struct {
 	// breaker tracks per-vendor circuit health (docs/plan/40 Task T1) — nil
 	// is a valid, fully-supported configuration (byte-identical to before
 	// this feature existed: every registered vendor is always "allowed").
-	breaker *vendorgw.HealthTracker
+	breaker vendorgw.Breaker
 }
 
 // NewModule wires the payin module. Vendor and gateway selection comes
 // from the routing repository; topupTTL <=0 defaults to 24h. fraudClient
 // may be nil to disable pre-posting fraud screening entirely.
-func NewModule(db database.DatabaseSQL, poster Poster, registry *vendorgw.Registry, topupTTL time.Duration, logger *slog.Logger, fraudClient *fraudcheck.Client, breaker *vendorgw.HealthTracker) *Module {
+func NewModule(db database.DatabaseSQL, poster Poster, registry *vendorgw.Registry, topupTTL time.Duration, logger *slog.Logger, fraudClient *fraudcheck.Client, breaker vendorgw.Breaker) *Module {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -229,6 +229,16 @@ func (m *Module) postAndFinalize(ctx context.Context, ev model.WebhookEvent, gat
 	if m.fraudClient != nil {
 		verdict, ferr := m.fraudClient.Check(ctx, "topup", "money_in", ev.UserID, ev.Amount, ev.Currency)
 		if ferr != nil {
+			if errors.Is(ferr, fraudcheck.ErrDependencyUnavailable) {
+				// docs/plan/45 Task T3/K4: fraud-service is reachable but
+				// its velocity dependency is down — fail CLOSED, unlike a
+				// generic infra error below (fail open). NOT a
+				// businessError: the identical redelivery succeeds once
+				// Redis recovers, so the webhook receiver must respond in a
+				// way that makes the vendor retry, not give up.
+				m.logger.Warn("payin: screening dependency unavailable, failing closed", slog.String("event_id", ev.ID.String()))
+				return ErrScreeningDependencyUnavailable
+			}
 			// Infra failure — fail open: a real deposit already arrived at
 			// the vendor, so we don't strand it over a screening outage.
 			// The vendor's own idempotent event still flows into fraud's

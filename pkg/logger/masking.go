@@ -34,6 +34,19 @@ var sensitiveKeys = []string{
 	"credential",
 	"privatekey",
 	"clientsecret",
+	// docs/plan/43 Task T6 / CLAUDE.md: "do not expose ... full idempotency
+	// keys in public logs" — Contains-based matching also catches
+	// idempotency_key/idempotency_scope. "amount" is deliberately NOT
+	// added here (see TestIsSensitiveKey's own "amount"->false case,
+	// predates this task) — this masking layer scopes to
+	// credentials/secrets, not general business data; the amount-in-logs
+	// concern is handled precisely where it actually creates a
+	// replay/correlation risk (a per-request structured logger pairing the
+	// full idempotency key with its exact amount on every subsequent log
+	// line — see internal/ledger/service/handle/service.go's Handle()),
+	// not by redacting every amount field from every request/response body
+	// system-wide.
+	"idempotencykey",
 }
 
 var blockedHeaders = map[string]struct{}{

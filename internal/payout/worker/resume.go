@@ -17,6 +17,11 @@ import (
 // internal/ledger/worker.scheduleRunner.
 type resumer interface {
 	ResumeStuck(ctx context.Context, olderThan time.Duration) (resumed, failed int, err error)
+	// CountStuck reports the full per-status backlog (docs/plan/43 K5) —
+	// separate from ResumeStuck's own 100-row-capped passes, so the
+	// payout_stuck_requests gauge reflects the true backlog even when a
+	// single resume tick can't drain all of it.
+	CountStuck(ctx context.Context, olderThan time.Duration) (map[string]int, error)
 }
 
 // ResumeJob runs docs/plan/23 Task T3 step 3's resume/polling job: unlike
@@ -47,7 +52,7 @@ func NewResumeJob(r resumer, lock scheduler.LockProvider, logger *slog.Logger, o
 	}
 	return &ResumeJob{
 		resumer: r, logger: logger, olderThan: olderThan,
-		sched: scheduler.NewScheduler(lock, nil),
+		sched: scheduler.NewScheduler(lock, scheduler.NewPrometheusMetrics()),
 	}
 }
 
@@ -91,5 +96,20 @@ func (j *ResumeJob) runOnce(ctx context.Context) error {
 	if resumed > 0 || failed > 0 {
 		j.logger.Info("payout-resume: run complete", slog.Int("resumed", resumed), slog.Int("failed", failed))
 	}
+	j.refreshStuckGauge(ctx)
 	return nil
+}
+
+// refreshStuckGauge sets payout_stuck_requests from one grouped-count query
+// (docs/plan/43 K5) — a failure here is logged, not propagated: the gauge
+// going briefly stale must never fail the resume job's own cron result.
+func (j *ResumeJob) refreshStuckGauge(ctx context.Context) {
+	counts, err := j.resumer.CountStuck(ctx, j.olderThan)
+	if err != nil {
+		j.logger.Error("payout-resume: count stuck failed", slog.Any("error", err))
+		return
+	}
+	for status, count := range counts {
+		stuckRequests.WithLabelValues(status).Set(float64(count))
+	}
 }

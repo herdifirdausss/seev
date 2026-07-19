@@ -23,6 +23,7 @@ import (
 	"github.com/herdifirdausss/seev/pkg/grpcx"
 	"github.com/herdifirdausss/seev/pkg/logger"
 	"github.com/herdifirdausss/seev/pkg/messaging"
+	"github.com/herdifirdausss/seev/pkg/tracing"
 )
 
 func main() {
@@ -71,6 +72,16 @@ func run(parent context.Context) error {
 	log := logger.New(cfg.Logger.Pkg())
 	ctx, cancel := signal.NotifyContext(parent, syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
+	shutdownTracing, err := tracing.Setup(ctx, tracing.Config{
+		ServiceName: "fraud-service",
+		Endpoint:    cfg.Tracing.OTLPEndpoint,
+		SampleRatio: cfg.Tracing.SampleRatio,
+		Insecure:    cfg.Tracing.Insecure,
+	})
+	if err != nil {
+		log.Error("tracing: setup failed, continuing without a tracer provider", "error", err)
+		shutdownTracing = func(context.Context) error { return nil }
+	}
 
 	db, err := database.New(ctx, cfg.Postgres.Pkg())
 	if err != nil {
@@ -78,26 +89,31 @@ func run(parent context.Context) error {
 	}
 	cfg.Redis.Enabled = true
 	cfg.Redis.DB = 1
-	redisCache, err := cache.New(ctx, cfg.Redis.Pkg())
-	if err != nil {
-		_ = db.Close()
-		return fmt.Errorf("connect redis db 1: %w", err)
-	}
+	// docs/plan/45 Task T3/K4: fraud-service may now START without Redis
+	// being reachable — NewClientWithoutPing never fails at construction,
+	// unlike cache.New's eager Ping. FailClosedVelocityStore's own
+	// background probe (started inside its constructor) is what actually
+	// detects Redis health from here on; velocity operations fail closed
+	// with model.ErrDependencyUnavailable while it's down instead of the
+	// service refusing to boot at all. Amount-threshold screening (which
+	// doesn't touch Redis) keeps working the entire time.
+	redisClient := cache.NewClientWithoutPing(cfg.Redis.Pkg())
 	broker, err := messaging.New(ctx, cfg.RabbitMQ.Broker())
 	if err != nil {
-		_ = redisCache.Close()
+		_ = redisClient.Close()
 		_ = db.Close()
 		return fmt.Errorf("connect rabbitmq: %w", err)
 	}
-	store := fraud.NewRedisVelocityStore(redisCache.Redis())
+	store := fraud.NewFailClosedVelocityStore(redisClient, log)
 	module := fraud.NewModule(db, store, broker, fraud.Config{
 		Mode:               cfg.Fraud.ScreeningMode,
 		AmountThreshold:    decimal.NewFromInt(cfg.Fraud.ScreeningAmountThreshold),
 		VelocityMaxPerHour: cfg.Fraud.ScreeningVelocityMaxPerHour,
 	}, log)
 	if err := module.Start(ctx); err != nil {
+		store.Stop()
 		_ = broker.Close()
-		_ = redisCache.Close()
+		_ = redisClient.Close()
 		_ = db.Close()
 		return err
 	}
@@ -107,8 +123,9 @@ func run(parent context.Context) error {
 	listener, err := net.Listen("tcp", ":"+cfg.GRPCPort)
 	if err != nil {
 		module.Stop()
+		store.Stop()
 		_ = broker.Close()
-		_ = redisCache.Close()
+		_ = redisClient.Close()
 		_ = db.Close()
 		return err
 	}
@@ -135,9 +152,11 @@ func run(parent context.Context) error {
 	}
 	gracefulStopGRPC(grpcServer, cfg.App.ShutdownTimeout)
 	module.Stop()
+	store.Stop()
 	_ = broker.Close()
-	_ = redisCache.Close()
+	_ = redisClient.Close()
 	_ = db.Close()
+	_ = shutdownTracing(context.Background())
 	return serveErr
 }
 

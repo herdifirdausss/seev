@@ -10,16 +10,26 @@ import (
 
 // ─── Structured Logger ────────────────────────────────────────────────────────
 
-// WithLogger logs every request with structured fields.
+// WithLogger logs every request with structured fields and hands the real
+// handler a fully-enriched, context-scoped logger. When WithTracing ran
+// earlier in the chain (docs/plan/43 K4's mandated order), the context
+// already carries a logger with trace_id/span_id attached — WithLogger adds
+// request_id on top and re-stores the result, so any downstream handler
+// calling logger.FromContext(ctx) gets all three fields without doing
+// anything itself (docs/plan/43 K4). Falls back to log itself when nothing
+// is in context (WithTracing absent, e.g. a route deliberately excluded
+// from tracing, or standalone use in a test).
 func WithLogger(log *slog.Logger) Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			start := time.Now()
 			rw := &captureWriter{ResponseWriter: w, statusCode: http.StatusOK}
 
+			reqLog := logger.FromContextOrDefault(r.Context(), log).With("request_id", RequestIDFromCtx(r.Context()))
+			r = r.WithContext(logger.WithContext(r.Context(), reqLog))
+
 			reqBody := logger.ReadAndMaskRequestBody(r, 16*1024)
-			log.Info("http request received",
-				"request_id", RequestIDFromCtx(r.Context()),
+			reqLog.Info("http request received",
 				"method", r.Method,
 				"path", r.URL.Path,
 				"query", r.URL.RawQuery,
@@ -39,7 +49,6 @@ func WithLogger(log *slog.Logger) Middleware {
 			)
 
 			fields := []any{
-				"request_id", RequestIDFromCtx(r.Context()),
 				"method", r.Method,
 				"path", r.URL.Path,
 				"status", rw.statusCode,
@@ -50,11 +59,11 @@ func WithLogger(log *slog.Logger) Middleware {
 
 			switch {
 			case rw.statusCode >= 500:
-				log.Error("http request completed", fields...)
+				reqLog.Error("http request completed", fields...)
 			case rw.statusCode >= 400:
-				log.Warn("http request completed", fields...)
+				reqLog.Warn("http request completed", fields...)
 			default:
-				log.Info("http request completed", fields...)
+				reqLog.Info("http request completed", fields...)
 			}
 		})
 	}

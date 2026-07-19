@@ -1,0 +1,229 @@
+# docs/plan/43 Task T5 — promtool unit tests for slo.yml's recording rules.
+# Grafana owns alert *evaluation* (K8: no native Prometheus `alert:` rules
+# exist in slo.yml, only `record:` rules), so these tests validate the
+# recording-rule math the Grafana burn-rate alerts are built directly on top
+# of — the same signal Grafana's threshold expressions read. Run with:
+#   docker compose exec prometheus promtool test rules /etc/prometheus/rules/slo_test.yml
+rule_files:
+  - slo.yml
+
+evaluation_interval: 30s
+
+tests:
+  # ── 1. healthy: steady posted/ok/fast traffic, all three SLOs green ──────
+  - interval: 30s
+    input_series:
+      - series: 'ledger_transactions_total{type="money_in",status="posted"}'
+        values: "0+10x120"
+      - series: 'http_server_request_duration_seconds_count{job="gateway-service",method="POST",route="/webhooks/{vendor}"}'
+        values: "0+10x120"
+      - series: 'http_server_request_duration_seconds_bucket{job="gateway-service",method="POST",route="/webhooks/{vendor}",le="2.0"}'
+        values: "0+10x120"
+      - series: 'rabbitmq_messages_consumed_total{queue="ledger.events.notifications",status="ok"}'
+        values: "0+10x120"
+    promql_expr_test:
+      - expr: slo:sli_ratio:rate5m{slo="posting_availability"}
+        eval_time: 30m
+        exp_samples:
+          - labels: 'slo:sli_ratio:rate5m{slo="posting_availability"}'
+            value: 1
+      - expr: slo:sli_ratio:rate5m{slo="webhook_latency"}
+        eval_time: 30m
+        exp_samples:
+          - labels: 'slo:sli_ratio:rate5m{slo="webhook_latency"}'
+            value: 1
+      - expr: slo:sli_ratio:rate5m{slo="notification_success"}
+        eval_time: 30m
+        exp_samples:
+          - labels: 'slo:sli_ratio:rate5m{slo="notification_success"}'
+            value: 1
+      - expr: slo:burnrate:rate5m{slo="posting_availability"}
+        eval_time: 30m
+        exp_samples:
+          - labels: 'slo:burnrate:rate5m{slo="posting_availability"}'
+            value: 0
+
+  # ── 2. business rejections must NOT burn the posting_availability budget ─
+  # (docs/plan/43 T5 fix: apperror.IsBusinessRejection classifies these as
+  # status="rejected", excluded from BOTH eligible and good — see slo.yml's
+  # own comment). Heavy rejected traffic alongside light-but-100%-posted
+  # traffic must still show ratio=1 / burnrate=0, proving 4xx-equivalent
+  # rejections never count as bad.
+  - interval: 30s
+    input_series:
+      - series: 'ledger_transactions_total{type="transfer_p2p",status="posted"}'
+        values: "0+5x120"
+      - series: 'ledger_transactions_total{type="transfer_p2p",status="rejected"}'
+        values: "0+50x120"
+    promql_expr_test:
+      - expr: slo:sli_ratio:rate5m{slo="posting_availability"}
+        eval_time: 30m
+        exp_samples:
+          - labels: 'slo:sli_ratio:rate5m{slo="posting_availability"}'
+            value: 1
+      - expr: slo:burnrate:rate5m{slo="posting_availability"}
+        eval_time: 30m
+        exp_samples:
+          - labels: 'slo:burnrate:rate5m{slo="posting_availability"}'
+            value: 0
+      - expr: slo:eligible_events:rate1h{slo="posting_availability"}
+        eval_time: 30m
+        exp_samples:
+          # eligible excludes "rejected" entirely — only the 5/step posted
+          # series contributes, NOT the 50/step rejected series. Absolute
+          # value here is rate()'s own extrapolation arithmetic (a 1h
+          # window sampled only 30 min in) — promtool's own computed value
+          # taken as ground truth; what this case actually proves is
+          # ratio=1 / burnrate=0 above, unaffected by the 50x rejected
+          # volume.
+          - labels: 'slo:eligible_events:rate1h{slo="posting_availability"}'
+            value: 0.08333333333333333
+
+  # ── 3. genuine infra errors DO burn the posting_availability budget ──────
+  - interval: 30s
+    input_series:
+      - series: 'ledger_transactions_total{type="money_in",status="posted"}'
+        values: "0+5x120"
+      - series: 'ledger_transactions_total{type="money_in",status="error"}'
+        values: "0+15x120"
+    promql_expr_test:
+      - expr: slo:sli_ratio:rate5m{slo="posting_availability"}
+        eval_time: 30m
+        exp_samples:
+          # 5 posted / (5 posted + 15 error) = 0.25
+          - labels: 'slo:sli_ratio:rate5m{slo="posting_availability"}'
+            value: 0.25
+      - expr: slo:burnrate:rate5m{slo="posting_availability"}
+        eval_time: 30m
+        exp_samples:
+          # (1 - 0.25) / (1 - 0.995) = 150 — comfortably over the 14.4x
+          # fast-burn threshold. (149.99999999999986 is rate()'s own
+          # floating-point extrapolation arithmetic, not a logic error.)
+          - labels: 'slo:burnrate:rate5m{slo="posting_availability"}'
+            value: 149.99999999999986
+
+  # ── 4. webhook handling slower than the 2s SLO threshold ─────────────────
+  - interval: 30s
+    input_series:
+      - series: 'http_server_request_duration_seconds_count{job="gateway-service",method="POST",route="/webhooks/{vendor}"}'
+        values: "0+20x120"
+      # Only 1/4 of requests land within the le=2.0 bucket — the rest take
+      # longer than 2s.
+      - series: 'http_server_request_duration_seconds_bucket{job="gateway-service",method="POST",route="/webhooks/{vendor}",le="2.0"}'
+        values: "0+5x120"
+    promql_expr_test:
+      - expr: slo:sli_ratio:rate5m{slo="webhook_latency"}
+        eval_time: 30m
+        exp_samples:
+          - labels: 'slo:sli_ratio:rate5m{slo="webhook_latency"}'
+            value: 0.25
+      - expr: slo:burnrate:rate5m{slo="webhook_latency"}
+        eval_time: 30m
+        exp_samples:
+          # target 0.95 -> (1-0.25)/(1-0.95) = 15x, over the 14.4x threshold.
+          - labels: 'slo:burnrate:rate5m{slo="webhook_latency"}'
+            value: 14.999999999999988
+
+  # ── 5. notification consumer status != ok ─────────────────────────────────
+  - interval: 30s
+    input_series:
+      - series: 'rabbitmq_messages_consumed_total{queue="ledger.events.notifications",status="ok"}'
+        values: "0+2x120"
+      - series: 'rabbitmq_messages_consumed_total{queue="ledger.events.notifications",status="error"}'
+        values: "0+8x120"
+    promql_expr_test:
+      - expr: slo:sli_ratio:rate5m{slo="notification_success"}
+        eval_time: 30m
+        exp_samples:
+          - labels: 'slo:sli_ratio:rate5m{slo="notification_success"}'
+            value: 0.2
+      - expr: slo:burnrate:rate5m{slo="notification_success"}
+        eval_time: 30m
+        exp_samples:
+          # target 0.99 -> (1-0.2)/(1-0.99) = 80x.
+          - labels: 'slo:burnrate:rate5m{slo="notification_success"}'
+            value: 79.99999999999993
+
+  # ── 6. low-traffic window must fall below the K7 minimum-event gate ──────
+  # (docs/plan/43 T5 regression: an earlier draft used
+  # clamp_min(eligible,1) in the ratio denominator, which turned a true
+  # zero-traffic window into a fabricated ratio=0 / ~100x burn rate instead
+  # of NaN/no-data — caught live against the real stack, see service.go's
+  # git history. This case proves a near-zero-traffic window's eligible
+  # count stays under the documented 20/1h gate, AND that the ratio itself
+  # is NaN rather than a phantom bad reading.)
+  - interval: 30s
+    input_series:
+      - series: 'ledger_transactions_total{type="money_in",status="posted"}'
+        values: "0 0 0 0 0 0 0 0 0 0 1"
+    promql_expr_test:
+      # Before the single event lands: truly zero eligible traffic -> ratio
+      # is NaN (no data), NOT a fabricated bad reading (docs/plan/43 T5
+      # clamp_min regression, see slo.yml's own comment) — a NaN sample
+      # produces exp_samples: [] here since PromQL comparisons/equality
+      # against NaN never match.
+      # promtool's exp_samples equality check can't match NaN==NaN directly
+      # (IEEE754), so this uses the standard PromQL "is NaN" idiom
+      # (self-inequality is true only for NaN) rather than asserting the
+      # raw ratio value — manually cross-checked against the live stack
+      # (see slo.yml's own comment / this fix's commit) that the raw value
+      # really is NaN, not some other falsy-looking number.
+      - expr: slo:sli_ratio:rate5m{slo="posting_availability"} != bool slo:sli_ratio:rate5m{slo="posting_availability"}
+        eval_time: 2m
+        exp_samples:
+          - labels: '{slo="posting_availability"}'
+            value: 1
+      # Right after the one-off event: eligible-event volume is still far
+      # below the K7 20/1h minimum gate, proving one blip can't fake enough
+      # volume to pass the gate.
+      - expr: slo:eligible_events:rate1h{slo="posting_availability"} * 3600 < bool 20
+        eval_time: 5m
+        exp_samples:
+          - labels: '{slo="posting_availability"}'
+            value: 1
+
+  # ── 7. burn alert condition transitions firing -> resolved ───────────────
+  # First 30 minutes: heavy error traffic (burn > 14.4x threshold). Then
+  # traffic shifts to all-posted for the remaining window — by the last
+  # eval_time the 5m burn rate has returned to 0, proving the same
+  # recording-rule expression Grafana's alert reads naturally resolves once
+  # the underlying signal recovers (no separate "resolve" code path to
+  # test — burn rate is stateless per evaluation, which is the point).
+  - interval: 30s
+    input_series:
+      - series: 'ledger_transactions_total{type="money_in",status="posted"}'
+        values: "0+1x60 60+20x120"
+      - series: 'ledger_transactions_total{type="money_in",status="error"}'
+        values: "0+9x60 540+0x120"
+    promql_expr_test:
+      - expr: slo:burnrate:rate5m{slo="posting_availability"}
+        eval_time: 25m
+        exp_samples:
+          # 1 posted / (1 posted + 9 error) = 0.1 -> (1-0.1)/0.005 = 180x
+          - labels: 'slo:burnrate:rate5m{slo="posting_availability"}'
+            value: 179.99999999999986
+      - expr: slo:burnrate:rate5m{slo="posting_availability"}
+        eval_time: 55m
+        exp_samples:
+          # error series flat (no new errors) while posted keeps climbing
+          # -> 5m window is 100% posted -> burn rate back to 0.
+          - labels: 'slo:burnrate:rate5m{slo="posting_availability"}'
+            value: 0
+
+  # ── 8. fraud-service-down fail-open must NOT burn the posting SLO ────────
+  # (docs/plan/43 K7 / T5 "Test wajib": fraud down -> all three screening
+  # call sites fail OPEN (CLAUDE.md runbook), so ledger.Handle keeps
+  # posting normally — screening being skipped never surfaces as a
+  # ledger_transactions_total status change at all. This case proves that:
+  # 100% posted traffic with zero screening-related errors recorded means
+  # zero burn, regardless of what fraud-service is doing.
+  - interval: 30s
+    input_series:
+      - series: 'ledger_transactions_total{type="transfer_p2p",status="posted"}'
+        values: "0+8x120"
+    promql_expr_test:
+      - expr: slo:burnrate:rate5m{slo="posting_availability"}
+        eval_time: 30m
+        exp_samples:
+          - labels: 'slo:burnrate:rate5m{slo="posting_availability"}'
+            value: 0

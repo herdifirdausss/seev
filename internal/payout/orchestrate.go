@@ -12,6 +12,7 @@ import (
 
 	"github.com/herdifirdausss/seev/internal/payout/model"
 	"github.com/herdifirdausss/seev/internal/vendorgw"
+	"github.com/herdifirdausss/seev/pkg/fraudcheck"
 	"github.com/herdifirdausss/seev/pkg/generalutil"
 	"github.com/herdifirdausss/seev/pkg/ledgerclient"
 	"github.com/herdifirdausss/seev/pkg/ledgererr"
@@ -46,6 +47,14 @@ func (m *Module) Create(ctx context.Context, userID uuid.UUID, amount decimal.De
 	if m.fraudClient != nil {
 		verdict, ferr := m.fraudClient.Check(ctx, "payout", "withdraw_initiate", userID, amount, currency)
 		if ferr != nil {
+			if errors.Is(ferr, fraudcheck.ErrDependencyUnavailable) {
+				// docs/plan/45 Task T3/K4: fraud-service is reachable but its
+				// velocity dependency is down — fail CLOSED, unlike a
+				// generic infra error below (fail open). No row inserted,
+				// no hold posted.
+				m.logger.Warn("payout: screening dependency unavailable, failing closed", slog.String("user_id", userID.String()))
+				return uuid.Nil, ErrScreeningDependencyUnavailable
+			}
 			// Infra failure — fail open: proceed as if unscreened rather
 			// than block a legitimate withdrawal over a screening outage.
 			m.logger.Error("payout: screening check error, failing open", slog.Any("error", ferr), slog.String("user_id", userID.String()))
@@ -110,12 +119,12 @@ func (m *Module) Create(ctx context.Context, userID uuid.UUID, amount decimal.De
 		return id, fmt.Errorf("payout: hold: %w", err)
 	}
 
-	if err := m.submit(ctx, id); err != nil {
+	if err := m.enqueueSubmit(ctx, id, vendor); err != nil {
 		// Hold already succeeded — money is safely parked in the user's
-		// hold account. A submit failure here is not a Create-level
-		// error; the resume job (step 3) retries Submit, which is
-		// idempotent by request ID.
-		m.logger.Error("payout: initial submit failed, resume job will retry",
+		// hold account. An enqueue failure here is not a Create-level
+		// error; the resume job (step 3) retries the enqueue, which is
+		// itself idempotent (EnqueueInitialSubmit's transition guard).
+		m.logger.Error("payout: initial enqueue submit failed, resume job will retry",
 			slog.Any("error", err), slog.String("request_id", id.String()))
 	}
 
@@ -145,14 +154,6 @@ func (m *Module) hold(ctx context.Context, req model.PayoutRequest) error {
 	}
 	return nil
 }
-
-// maxFailoverAttempts bounds the failover loop in submit() (docs/plan/40
-// Task T3 step 4) — belt-and-braces only: the routing exclusion list
-// already guarantees termination in at most len(candidates) iterations
-// (each rejected attempt permanently excludes one more vendor from a
-// finite routing-rule set), so this cap only matters if that invariant is
-// ever broken by a bug. Comfortably above any realistic candidate count.
-const maxFailoverAttempts = 20
 
 // classifySubmitOutcome maps one Submit round-trip to the outcome
 // classification the anti-double-payout failover rule (mayFailover) reads
@@ -198,116 +199,34 @@ func mayFailover(calls []model.PayoutVendorCall) bool {
 	return true
 }
 
-// submit moves held/vendor_pending -> submitted and calls the vendor,
-// failing over to the next routing candidate on a definitive synchronous
-// rejection (docs/plan/40 Task T3) as long as mayFailover allows it.
-// Called from Create (fresh request), the resume job (retrying a stuck
-// 'submitted' request — Submit is idempotent by request ID, so re-calling
-// it after an infra failure is always safe), and admin retry (Task T5).
-func (m *Module) submit(ctx context.Context, id uuid.UUID) error {
-	req, err := m.repo.Get(ctx, id)
+// enqueueSubmit moves held/vendor_pending -> submitted and durably enqueues
+// the first vendor dispatch command, atomically (docs/plan/45 Task T1/K1)
+// — relay.go's dispatchOne is the ONLY place that ever calls
+// provider.Submit from here on; this call just makes the work durable and
+// returns immediately. won=false (the transition's own guard didn't match)
+// is surfaced as ErrInvalidTransition rather than silently ignored, same
+// spirit as every other Transition* caller in this file — callers that
+// consider a lost race benign (the resume job) already treat it that way.
+func (m *Module) enqueueSubmit(ctx context.Context, id uuid.UUID, vendor string) error {
+	won, err := m.commandRepo.EnqueueInitialSubmit(ctx, id, vendor)
 	if err != nil {
-		return err
+		return fmt.Errorf("payout: enqueue initial submit: %w", err)
 	}
-
-	// TransitionToSubmitted is a no-op (won=false) if the request is
-	// already terminal or mid-flight elsewhere — proceed with Submit
-	// regardless (it's idempotent by request ID either way), but skip if
-	// we're clearly not in a submittable state at all.
-	if req.Status != model.StatusHeld && req.Status != model.StatusSubmitted && req.Status != model.StatusVendorPending {
-		return fmt.Errorf("%w: cannot submit request in status %q", ErrInvalidTransition, req.Status)
+	if !won {
+		return fmt.Errorf("%w: cannot submit request in current status", ErrInvalidTransition)
 	}
-	if _, err := m.repo.TransitionToSubmitted(ctx, id); err != nil {
-		return fmt.Errorf("transition to submitted: %w", err)
+	return nil
+}
+
+// ensureSubmitCommand is the resume job's idempotent recovery for a
+// 'held'/'submitted' request that currently has no live command
+// (docs/plan/45 Task T1/K1) — safe to call speculatively; EnsureSubmitCommand
+// itself no-ops under multi-replica races via a conflicting insert.
+func (m *Module) ensureSubmitCommand(ctx context.Context, id uuid.UUID, vendor string) error {
+	if _, err := m.commandRepo.EnsureSubmitCommand(ctx, id, vendor); err != nil {
+		return fmt.Errorf("payout: ensure submit command: %w", err)
 	}
-
-	vendor := req.Vendor
-	tried := make([]string, 0, 1)
-
-	for attempt := 0; attempt < maxFailoverAttempts; attempt++ {
-		provider, ok := m.registry.Payout(vendor)
-		if !ok {
-			return fmt.Errorf("%w: %s", ErrUnknownVendor, vendor)
-		}
-
-		result, submitErr := provider.Submit(ctx, id.String(), req.Amount, req.Currency, req.Destination)
-		outcome := classifySubmitOutcome(result, submitErr)
-		recordErr := m.recordVendorCall(ctx, id, fmt.Sprintf("submit amount=%s currency=%s vendor=%s", req.Amount, req.Currency, vendor), result, submitErr, outcome)
-		if m.breaker != nil {
-			if submitErr != nil {
-				m.breaker.RecordFailure(vendor)
-			} else {
-				// Includes a business rejection (PayoutFailed with no
-				// error) — the vendor WAS reachable, gotcha #13 master.
-				m.breaker.RecordSuccess(vendor)
-			}
-		}
-		if recordErr != nil {
-			// The persisted call history is the safety boundary that prevents a
-			// later retry from paying through a second vendor. If it cannot be
-			// written, leave the request pinned and make no further state change.
-			return recordErr
-		}
-
-		if submitErr != nil {
-			// Uncertain — status stays 'submitted', PINNED to this vendor;
-			// the resume job retries the SAME vendor (Submit is idempotent
-			// by request ID), never a new one.
-			if setErr := m.repo.SetError(ctx, id, submitErr.Error()); setErr != nil {
-				m.logger.Error("payout: set error failed", slog.Any("error", setErr), slog.String("request_id", id.String()))
-			}
-			return submitErr
-		}
-
-		if result.Status == vendorgw.PayoutFailed {
-			tried = append(tried, vendor)
-			calls, callsErr := m.repo.ListVendorCalls(ctx, id)
-			if callsErr != nil {
-				return fmt.Errorf("payout: list vendor calls before failover: %w", callsErr)
-			}
-			if !mayFailover(calls) {
-				// Another concurrent attempt has already recorded an accepted or
-				// uncertain outcome. It owns completion; cancelling here could race
-				// its settlement and return money that is already being paid out.
-				return nil
-			}
-			nextVendor, _, routeErr := m.ResolvePayoutRoute(ctx, req.UserID, req.Currency, req.Amount, tried)
-			if routeErr == nil {
-				if setErr := m.repo.SetVendor(ctx, id, nextVendor); setErr != nil {
-					return fmt.Errorf("payout: persist failover vendor: %w", setErr)
-				}
-				vendor = nextVendor
-				continue
-			}
-			if !errors.Is(routeErr, ErrNoRoute) && !errors.Is(routeErr, ErrNoVendorAvailable) {
-				return fmt.Errorf("payout: resolve failover route: %w", routeErr)
-			}
-			// No safe candidate remains after only definitive rejections, so
-			// returning the hold is now safe.
-			gateway, gErr := m.gatewayForVendor(ctx, vendor)
-			if gErr != nil {
-				return gErr
-			}
-			return m.cancel(ctx, id, gateway, result.Reason)
-		}
-
-		gateway, gErr := m.gatewayForVendor(ctx, vendor)
-		if gErr != nil {
-			return gErr
-		}
-		switch result.Status {
-		case vendorgw.PayoutSettled:
-			return m.settle(ctx, id, gateway)
-		case vendorgw.PayoutPending:
-			if _, err := m.repo.TransitionToVendorPending(ctx, id, result.VendorRef); err != nil {
-				return fmt.Errorf("transition to vendor_pending: %w", err)
-			}
-			return nil
-		default:
-			return fmt.Errorf("payout: unknown vendor result status %q", result.Status)
-		}
-	}
-	return fmt.Errorf("payout: exhausted failover attempts for request %s", id)
+	return nil
 }
 
 // settle posts withdraw_settle (docs/plan/23 Task T4) and moves the
@@ -498,8 +417,8 @@ func (m *Module) ResumeStuck(ctx context.Context, olderThan time.Duration) (resu
 			failed++
 			continue
 		}
-		if err := m.submit(ctx, req.ID); err != nil {
-			m.logger.Error("payout-resume: retry submit (from created) failed",
+		if err := m.enqueueSubmit(ctx, req.ID, req.Vendor); err != nil {
+			m.logger.Error("payout-resume: retry enqueue submit (from created) failed",
 				slog.Any("error", err), slog.String("request_id", req.ID.String()))
 			failed++
 			continue
@@ -507,20 +426,65 @@ func (m *Module) ResumeStuck(ctx context.Context, olderThan time.Duration) (resu
 		resumed++
 	}
 
-	for _, status := range []string{model.StatusHeld, model.StatusSubmitted} {
-		stuck, listErr := m.repo.ListStuck(ctx, status, cutoff, 100)
-		if listErr != nil {
-			return resumed, failed, fmt.Errorf("payout: resume: list stuck %s: %w", status, listErr)
+	heldStuck, err := m.repo.ListStuck(ctx, model.StatusHeld, cutoff, 100)
+	if err != nil {
+		return resumed, failed, fmt.Errorf("payout: resume: list stuck held: %w", err)
+	}
+	for _, req := range heldStuck {
+		// A crash between hold() succeeding and EnqueueInitialSubmit's own
+		// transaction is the exact gap this recovers — the money is
+		// already parked, the request just never made it to 'submitted'
+		// with a first command.
+		if err := m.enqueueSubmit(ctx, req.ID, req.Vendor); err != nil {
+			m.logger.Error("payout-resume: retry enqueue submit (from held) failed",
+				slog.Any("error", err), slog.String("request_id", req.ID.String()))
+			failed++
+			continue
 		}
-		for _, req := range stuck {
-			if err := m.submit(ctx, req.ID); err != nil {
-				m.logger.Error("payout-resume: retry submit failed",
-					slog.Any("error", err), slog.String("request_id", req.ID.String()))
-				failed++
-				continue
-			}
+		resumed++
+	}
+
+	submittedStuck, err := m.repo.ListStuck(ctx, model.StatusSubmitted, cutoff, 100)
+	if err != nil {
+		return resumed, failed, fmt.Errorf("payout: resume: list stuck submitted: %w", err)
+	}
+	for _, req := range submittedStuck {
+		// docs/plan/45 Task T1/K2: resume's job here is only to ensure a
+		// command exists at all, live OR dead-and-operator-visible — a live
+		// command is already being retried on its own backoff by the
+		// relay, and a dead one is a deliberate stop for a human, neither
+		// should be silently re-enqueued by this automatic pass. Every
+		// other case (no command ever recorded, or the most recent one
+		// simply completed toward some other status) is a genuine gap
+		// worth a fresh command.
+		if _, live, liveErr := m.commandRepo.GetLiveCommand(ctx, req.ID); liveErr != nil {
+			m.logger.Error("payout-resume: get live command failed", slog.Any("error", liveErr), slog.String("request_id", req.ID.String()))
+			failed++
+			continue
+		} else if live {
 			resumed++
+			continue
 		}
+		dead, err := m.commandRepo.HasDeadCommand(ctx, req.ID)
+		if err != nil {
+			m.logger.Error("payout-resume: has dead command failed", slog.Any("error", err), slog.String("request_id", req.ID.String()))
+			failed++
+			continue
+		}
+		if dead {
+			// The most recent command dead-lettered — visible to the
+			// operator, left alone (AdminRetry is the deliberate human
+			// action to revive it).
+			resumed++
+			continue
+		}
+		if err := m.ensureSubmitCommand(ctx, req.ID, req.Vendor); err != nil {
+			m.logger.Error("payout-resume: ensure submit command (from submitted) failed",
+				slog.Any("error", err), slog.String("request_id", req.ID.String()))
+			failed++
+			continue
+		}
+		resumed++
 	}
 
 	pendingStuck, err := m.repo.ListStuck(ctx, model.StatusVendorPending, cutoff, 100)
@@ -538,6 +502,29 @@ func (m *Module) ResumeStuck(ctx context.Context, olderThan time.Duration) (resu
 	}
 
 	return resumed, failed, nil
+}
+
+// stuckStatuses is every status the resume job re-drives (docs/plan/23
+// Task T3) — the exhaustive set CountStuck reports on for the
+// payout_stuck_requests gauge (docs/plan/43 K5).
+var stuckStatuses = []string{model.StatusCreated, model.StatusHeld, model.StatusSubmitted, model.StatusVendorPending}
+
+// CountStuck reports the FULL backlog per status (no 100-row cap, unlike
+// ResumeStuck's per-pass ListStuck calls) — feeds the payout_stuck_requests
+// gauge (docs/plan/43 K5). Every status in stuckStatuses is present in the
+// result, 0 when the repository reported none, so the gauge always reflects
+// the true state instead of silently going stale for an empty status.
+func (m *Module) CountStuck(ctx context.Context, olderThan time.Duration) (map[string]int, error) {
+	cutoff := time.Now().Add(-olderThan)
+	counts, err := m.repo.CountStuck(ctx, stuckStatuses, cutoff)
+	if err != nil {
+		return nil, fmt.Errorf("payout: count stuck: %w", err)
+	}
+	out := make(map[string]int, len(stuckStatuses))
+	for _, status := range stuckStatuses {
+		out[status] = counts[status]
+	}
+	return out, nil
 }
 
 // pollVendorPending queries the vendor for a 'vendor_pending' request's
@@ -600,8 +587,14 @@ func (m *Module) AdminCancel(ctx context.Context, id uuid.UUID, reason string) e
 }
 
 // AdminRetry re-submits a request stuck in 'submitted' (docs/plan/23 Task
-// T5) — identical to what the resume job itself does on its next pass,
-// exposed as a manual action for an operator who doesn't want to wait.
+// T5), exposed as a manual action for an operator who doesn't want to
+// wait. Unlike the automatic resume job (which deliberately leaves a
+// dead-lettered command alone for the operator to see, docs/plan/45 Task
+// T1/K2), THIS is the operator's own decision to act: if no live command
+// exists — whether because none was ever created or because the previous
+// one dead-lettered after exhausting its retry budget — a fresh command
+// (a new attempt, a clean retry budget) is enqueued. A live command already
+// in flight or backing off is left alone; there is nothing to force.
 func (m *Module) AdminRetry(ctx context.Context, id uuid.UUID) error {
 	req, err := m.repo.Get(ctx, id)
 	if err != nil {
@@ -610,7 +603,12 @@ func (m *Module) AdminRetry(ctx context.Context, id uuid.UUID) error {
 	if req.Status != model.StatusSubmitted {
 		return fmt.Errorf("%w: cannot retry request in status %q", ErrInvalidTransition, req.Status)
 	}
-	return m.submit(ctx, id)
+	if _, live, err := m.commandRepo.GetLiveCommand(ctx, id); err != nil {
+		return fmt.Errorf("payout: admin retry: get live command: %w", err)
+	} else if live {
+		return nil
+	}
+	return m.ensureSubmitCommand(ctx, id, req.Vendor)
 }
 
 // Get returns one payout request by id.

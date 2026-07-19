@@ -1,7 +1,7 @@
 //go:build integration
 
-// White-box (package payout) so this can drive m.submit() directly against
-// a real Postgres-backed repository and ledger, mirroring
+// White-box (package payout) so this can drive m.enqueueSubmit/dispatchOne
+// directly against a real Postgres-backed repository and ledger, mirroring
 // race_integration_test.go's pattern — reuses its setupRaceTestDB,
 // raceGetBalance, and raceAssertLedgerBalanced helpers directly since this
 // file shares the same package and build tag.
@@ -26,19 +26,20 @@ import (
 	"github.com/herdifirdausss/seev/pkg/ledgerclient"
 )
 
-// TestFailover_ConcurrentSubmit_RaceResumeJobVsFailover is docs/plan/40 Task
-// T3's required race scenario (d): the resume job retrying a stuck request
-// concurrently with another in-flight submit() attempt for the SAME
-// request (e.g. Create's own initial submit still unwinding) must never
-// produce a double payout, even when one caller fails over to a different
-// vendor while another is mid-flight. Every concurrent submit() call reads
-// the same deterministic routing candidates and gets an idempotent-per-
-// caller vendor result, so all callers converge on the SAME winning vendor
-// and the SAME settle idempotency key — the ledger's own dedup (not this
-// package's) is what makes the loser's Post a safe no-op, exactly like
-// TestDoubleCallback_ConcurrentSettle_ExactlyOnePosted already proves for a
-// single-vendor double-callback.
-func TestFailover_ConcurrentSubmit_RaceResumeJobVsFailover(t *testing.T) {
+// TestFailover_ConcurrentDispatch_RaceRelayReplicasVsFailover is
+// docs/plan/40 Task T3's required race scenario (d), re-verified under
+// docs/plan/45 Task T1's outbox architecture: N concurrent relay-replica
+// dispatch passes racing the SAME live command must never produce a
+// double payout. Unlike the pre-outbox synchronous submit() (which had to
+// defend against N truly concurrent in-process callers), the partial
+// unique index (idx_payout_vendor_commands_one_live, docs/plan/45 T0)
+// structurally guarantees at most ONE command is ever live per request —
+// FOR UPDATE SKIP LOCKED then guarantees at most one of N concurrent
+// DispatchPendingCommands callers ever claims and dispatches it. This test
+// proves that guarantee holds through a full reject-then-failover-then-
+// settle pipeline, with N concurrent callers racing at EVERY stage, not
+// just a single dispatch.
+func TestFailover_ConcurrentDispatch_RaceRelayReplicasVsFailover(t *testing.T) {
 	db := setupRaceTestDB(t)
 	ledgerModule := testutil.NewLedgerHarness(db)
 	ctx := context.Background()
@@ -78,24 +79,19 @@ func TestFailover_ConcurrentSubmit_RaceResumeJobVsFailover(t *testing.T) {
 		{Vendor: "vendorB", Gateway: "bca"},
 	}}
 
-	m := &Module{repo: repo, poster: ledgerModule, registry: registry, routing: routing, logger: discardLogger()}
+	commandRepo := repository.NewVendorCommandRepository(db)
+	m := &Module{repo: repo, commandRepo: commandRepo, poster: ledgerModule, registry: registry, routing: routing, logger: discardLogger()}
 	require.NoError(t, m.hold(ctx, req))
+	require.NoError(t, m.enqueueSubmit(ctx, req.ID, "vendorA"))
 
 	const concurrency = 10
-	var wg sync.WaitGroup
-	errs := make([]error, concurrency)
-	for i := 0; i < concurrency; i++ {
-		wg.Add(1)
-		go func(i int) {
-			defer wg.Done()
-			errs[i] = m.submit(ctx, req.ID)
-		}(i)
-	}
-	wg.Wait()
-
-	for i, err := range errs {
-		assert.NoError(t, err, "concurrent submit() call %d must not surface an error (lost races reconcile silently)", i)
-	}
+	// Round 1: vendorA's live command exists exactly once — N concurrent
+	// dispatch passes race to claim it; vendorA rejects, so this round
+	// ends with a failover to vendorB enqueued as attempt 2.
+	dispatchConcurrently(ctx, m, concurrency)
+	// Round 2: vendorB's live command (attempt 2) — same race, vendorB
+	// settles this time.
+	dispatchConcurrently(ctx, m, concurrency)
 
 	final, err := repo.Get(ctx, req.ID)
 	require.NoError(t, err)
@@ -106,7 +102,7 @@ func TestFailover_ConcurrentSubmit_RaceResumeJobVsFailover(t *testing.T) {
 	require.NoError(t, db.QueryRowContext(ctx,
 		`SELECT count(*) FROM ledger_transactions WHERE idempotency_key = $1`, settleIdempotencyKey(req.ID),
 	).Scan(&txCount))
-	assert.Equal(t, 1, txCount, "exactly one withdraw_settle transaction despite %d concurrent submit() callers", concurrency)
+	assert.Equal(t, 1, txCount, "exactly one withdraw_settle transaction despite %d concurrent dispatch callers per round", concurrency)
 
 	accounts, err := ledgerModule.ListAccounts(ctx, userID)
 	require.NoError(t, err)
@@ -132,4 +128,21 @@ func TestFailover_ConcurrentSubmit_RaceResumeJobVsFailover(t *testing.T) {
 	for _, c := range calls {
 		assert.NotEqual(t, model.VendorCallUncertain, c.Outcome, "no call should be uncertain in this all-synchronous scenario")
 	}
+}
+
+// dispatchConcurrently fires n concurrent DispatchPendingCommands(ctx, 1)
+// calls at m — with at most one live command ever present for a given
+// request (idx_payout_vendor_commands_one_live, docs/plan/45 T0), FOR
+// UPDATE SKIP LOCKED guarantees at most one of these n callers actually
+// claims and dispatches it; the rest simply claim nothing.
+func dispatchConcurrently(ctx context.Context, m *Module, n int) {
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, _ = m.DispatchPendingCommands(ctx, 1)
+		}()
+	}
+	wg.Wait()
 }

@@ -1,0 +1,574 @@
+{
+  "uid": "seev-money-flow",
+  "title": "Seev / Money Flow",
+  "description": "Cross-service view of the money-moving pipeline: posting, outbox, integrity verifier, payout backlog, vendor health, and the RabbitMQ transport between them (docs/plan/43 K7).",
+  "tags": [
+    "seev",
+    "observability",
+    "money"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Ledger posting",
+      "type": "row",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 1
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 2,
+      "title": "Postings by type/status",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "seev-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 1,
+        "w": 8,
+        "h": 8
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "seev-prometheus"
+          },
+          "expr": "sum(rate(ledger_transactions_total[5m])) by (type, status)",
+          "refId": "A",
+          "legendFormat": "{{type}} {{status}}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Posting error ratio",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "seev-prometheus"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 1,
+        "w": 8,
+        "h": 8
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "seev-prometheus"
+          },
+          "expr": "sum(rate(ledger_transactions_total{status=\"error\"}[5m])) / sum(rate(ledger_transactions_total[5m]))",
+          "refId": "A",
+          "legendFormat": "error ratio"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Posting duration (p50/p95/p99)",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "seev-prometheus"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 1,
+        "w": 8,
+        "h": 8
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "seev-prometheus"
+          },
+          "expr": "histogram_quantile(0.50, sum(rate(ledger_post_duration_seconds_bucket[5m])) by (le))",
+          "refId": "A",
+          "legendFormat": "p50"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "seev-prometheus"
+          },
+          "expr": "histogram_quantile(0.95, sum(rate(ledger_post_duration_seconds_bucket[5m])) by (le))",
+          "refId": "B",
+          "legendFormat": "p95"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "seev-prometheus"
+          },
+          "expr": "histogram_quantile(0.99, sum(rate(ledger_post_duration_seconds_bucket[5m])) by (le))",
+          "refId": "C",
+          "legendFormat": "p99"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Outbox",
+      "type": "row",
+      "gridPos": {
+        "x": 0,
+        "y": 9,
+        "w": 24,
+        "h": 1
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 6,
+      "title": "Outbox pending",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "seev-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 10,
+        "w": 6,
+        "h": 8
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "seev-prometheus"
+          },
+          "expr": "ledger_outbox_pending",
+          "refId": "A",
+          "legendFormat": "pending"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Outbox dead",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "seev-prometheus"
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 10,
+        "w": 6,
+        "h": 8
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "seev-prometheus"
+          },
+          "expr": "ledger_outbox_dead_total",
+          "refId": "A",
+          "legendFormat": "dead"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Publish rate",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "seev-prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 10,
+        "w": 6,
+        "h": 8
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "seev-prometheus"
+          },
+          "expr": "rate(ledger_outbox_published_total[5m])",
+          "refId": "A",
+          "legendFormat": "published/s"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "Publish failure rate",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "seev-prometheus"
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 10,
+        "w": 6,
+        "h": 8
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "seev-prometheus"
+          },
+          "expr": "rate(ledger_outbox_publish_failures_total[5m])",
+          "refId": "A",
+          "legendFormat": "failures/s"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "title": "Verifier",
+      "type": "row",
+      "gridPos": {
+        "x": 0,
+        "y": 19,
+        "w": 24,
+        "h": 1
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 11,
+      "title": "Integrity discrepancies",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "seev-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 20,
+        "w": 12,
+        "h": 8
+      },
+      "description": "docs/runbooks/ledger-integrity-alert.md \u2014 any nonzero value here means fn_verify_ledger_balance or the balance projection audit found a real inconsistency.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "seev-prometheus"
+          },
+          "expr": "ledger_verification_discrepancies_total",
+          "refId": "A",
+          "legendFormat": "discrepancies"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "title": "Balance snapshot mismatches",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "seev-prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 20,
+        "w": 12,
+        "h": 8
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "seev-prometheus"
+          },
+          "expr": "ledger_balance_snapshot_mismatches_total",
+          "refId": "A",
+          "legendFormat": "mismatches"
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "title": "Payout",
+      "type": "row",
+      "gridPos": {
+        "x": 0,
+        "y": 29,
+        "w": 24,
+        "h": 1
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 14,
+      "title": "Payout backlog by status",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "seev-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 30,
+        "w": 12,
+        "h": 8
+      },
+      "description": "docs/runbooks/reconciliation.md \u2014 requests older than the resume threshold, grouped by status.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "seev-prometheus"
+          },
+          "expr": "payout_stuck_requests",
+          "refId": "A",
+          "legendFormat": "{{status}}"
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "title": "Vendor breaker state",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "seev-prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 30,
+        "w": 12,
+        "h": 8
+      },
+      "description": "0=closed 1=half_open 2=open. docs/runbooks/reconciliation.md",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "seev-prometheus"
+          },
+          "expr": "vendorgw_breaker_state",
+          "refId": "A",
+          "legendFormat": "{{vendor}}"
+        }
+      ]
+    },
+    {
+      "id": 16,
+      "title": "RabbitMQ",
+      "type": "row",
+      "gridPos": {
+        "x": 0,
+        "y": 39,
+        "w": 24,
+        "h": 1
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 17,
+      "title": "Publish/consume rate",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "seev-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 40,
+        "w": 8,
+        "h": 8
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "seev-prometheus"
+          },
+          "expr": "sum(rate(rabbitmq_messages_published_total[5m])) by (exchange)",
+          "refId": "A",
+          "legendFormat": "published {{exchange}}"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "seev-prometheus"
+          },
+          "expr": "sum(rate(rabbitmq_messages_consumed_total[5m])) by (queue)",
+          "refId": "B",
+          "legendFormat": "consumed {{queue}}"
+        }
+      ]
+    },
+    {
+      "id": 18,
+      "title": "Connection up",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "seev-prometheus"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 40,
+        "w": 8,
+        "h": 8
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "seev-prometheus"
+          },
+          "expr": "rabbitmq_connection_up",
+          "refId": "A",
+          "legendFormat": "up"
+        }
+      ]
+    },
+    {
+      "id": 19,
+      "title": "Dead-letter messages",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "seev-prometheus"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 40,
+        "w": 8,
+        "h": 8
+      },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "seev-prometheus"
+          },
+          "expr": "rabbitmq_dlq_messages_total",
+          "refId": "A",
+          "legendFormat": "{{queue}}"
+        }
+      ]
+    }
+  ]
+}
