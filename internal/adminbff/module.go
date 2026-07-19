@@ -2,7 +2,9 @@ package adminbff
 
 import (
 	"context"
+	"encoding/json"
 	"html/template"
+	"io"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -11,6 +13,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/herdifirdausss/seev/internal/adminbff/client"
 	"github.com/herdifirdausss/seev/internal/config"
 	"github.com/herdifirdausss/seev/pkg/database"
 	"github.com/herdifirdausss/seev/pkg/middleware"
@@ -38,6 +41,7 @@ type Module struct {
 	repo      SessionRepository
 	audit     auditWriter
 	auth      *AuthClient
+	clients   client.Clients
 	cfg       config.AdminBFFConfig
 	logger    *slog.Logger
 	lock      scheduler.LockProvider
@@ -50,7 +54,7 @@ func NewModule(db database.DatabaseSQL, cfg config.AdminBFFConfig, logger *slog.
 		logger = slog.Default()
 	}
 	lock := scheduler.NewMemoryLock(2 * time.Minute)
-	return &Module{repo: NewSessionRepository(db), auth: NewAuthClient(cfg.AuthServiceURL), cfg: cfg, logger: logger,
+	return &Module{repo: NewSessionRepository(db), auth: NewAuthClient(cfg.AuthServiceURL), clients: client.NewClients(cfg.AuthServiceURL, cfg.AuthAdminServiceURL, cfg.LedgerServiceURL, cfg.PayinServiceURL, cfg.PayoutServiceURL, cfg.FraudServiceURL, cfg.GatewayServiceURL), cfg: cfg, logger: logger,
 		audit: newAuditRepository(db),
 		lock:  lock, scheduler: scheduler.NewScheduler(lock, scheduler.NewPrometheusMetrics())}
 }
@@ -73,11 +77,69 @@ func (m *Module) Stop() {
 }
 
 func (m *Module) AdminRouter() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	mux := http.NewServeMux()
+	// The BFF exposes a stable operator namespace while each downstream keeps
+	// its existing internal admin route. No domain repository is opened here.
+	mux.Handle("/api/v1/admin/ledger/", m.proxy("ledger", m.clients.Ledger, "/api/v1/admin/ledger/", "/api/v1/admin/ledger/"))
+	mux.Handle("/api/v1/admin/policy/", m.proxy("ledger", m.clients.Ledger, "/api/v1/admin/policy/", "/api/v1/admin/policy/"))
+	mux.Handle("/api/v1/admin/payin/", m.proxy("payin", m.clients.Payin, "/api/v1/admin/payin/", "/admin/payin/"))
+	mux.Handle("/api/v1/admin/payout/", m.proxy("payout", m.clients.Payout, "/api/v1/admin/payout/", "/admin/payout/"))
+	mux.Handle("/api/v1/admin/fraud/", m.proxy("fraud", m.clients.Fraud, "/api/v1/admin/fraud/", "/api/v1/admin/fraud/"))
+	mux.Handle("/api/v1/admin/kyc/", m.proxy("auth", m.clients.AuthAdmin, "/api/v1/admin/kyc/", "/api/v1/admin/kyc/"))
+	mux.Handle("/api/v1/admin/gateway/", m.proxy("gateway", m.clients.Gateway, "/api/v1/admin/gateway/", "/api/v1/admin/gateway/"))
+	mux.HandleFunc("/api/v1/admin/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/admin/" {
+			htmlHeader(w)
+			http.NotFound(w, r)
+			return
+		}
 		htmlHeader(w)
-		w.WriteHeader(http.StatusNotFound)
-		_, _ = w.Write([]byte("<main><h1>Admin console</h1><p>Panel belum diaktifkan.</p></main>"))
+		_, _ = w.Write([]byte("<main><h1>Admin console</h1><nav><a href=\"/api/v1/admin/payout/requests\">Payout</a> <a href=\"/api/v1/admin/ledger/adjustments\">Ledger</a> <a href=\"/api/v1/admin/kyc/submissions\">KYC</a></nav></main>"))
 	})
+	return mux
+}
+
+func (m *Module) proxy(target string, downstream *client.ServiceClient, publicPrefix, downstreamPrefix string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(io.LimitReader(r.Body, 4<<20))
+		if err != nil {
+			http.Error(w, "invalid request body", http.StatusBadRequest)
+			return
+		}
+		token, err := m.MintDownstreamToken(r.Context())
+		if err != nil {
+			http.Error(w, "authentication required", http.StatusUnauthorized)
+			return
+		}
+		suffix := strings.TrimPrefix(r.URL.Path, publicPrefix)
+		path := downstreamPrefix + suffix
+		if r.URL.RawQuery != "" {
+			path += "?" + r.URL.RawQuery
+		}
+		status, headers, responseBody, callErr := downstream.Do(r.Context(), token, r.Method, path, body)
+		if ct := headers.Get("Content-Type"); ct != "" {
+			w.Header().Set("Content-Type", ct)
+		} else {
+			w.Header().Set("Content-Type", "application/json")
+		}
+		if callErr != nil && status == 0 {
+			m.AuditMutation(r.Context(), r, target, http.StatusServiceUnavailable, map[string]any{"error": "unavailable"})
+			writeJSONError(w, http.StatusServiceUnavailable, "DOWNSTREAM_UNAVAILABLE", "admin service temporarily unavailable")
+			return
+		}
+		if status == 0 {
+			status = http.StatusBadGateway
+		}
+		m.AuditMutation(r.Context(), r, target, status, map[string]any{"downstream_status": status})
+		w.WriteHeader(status)
+		_, _ = w.Write(responseBody)
+	})
+}
+
+func writeJSONError(w http.ResponseWriter, status int, code, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]any{"success": false, "error": map[string]string{"code": code, "message": message}})
 }
 
 func (m *Module) LoginPage() http.Handler {

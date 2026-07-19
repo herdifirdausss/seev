@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 
+	"github.com/herdifirdausss/seev/internal/payout/model"
 	"github.com/herdifirdausss/seev/internal/payout/repository"
 	"github.com/herdifirdausss/seev/internal/vendorgw"
 	"github.com/herdifirdausss/seev/pkg/middleware"
@@ -186,7 +187,106 @@ func (m *Module) AdminRouter() http.Handler {
 	mux.HandleFunc("PUT /admin/payout/vendor-gateways/{vendor}", m.putVendorGatewayHandler)
 	mux.HandleFunc("POST /admin/payout/vendors/{vendor}/force-fail", m.vendorForceFailHandler)
 	mux.HandleFunc("GET /admin/payout/vendors/health", m.vendorHealthHandler)
+	mux.HandleFunc("GET /admin/payout/vendor-commands/dead", m.listDeadCommandsHandler)
+	mux.HandleFunc("POST /admin/payout/vendor-commands/dead/{id}/replay", m.replayDeadCommandHandler)
+	mux.HandleFunc("POST /admin/payout/vendor-commands/dead/replay-all", m.replayAllDeadCommandsHandler)
 	return mux
+}
+
+type deadCommandResponse struct {
+	ID              uuid.UUID `json:"id"`
+	PayoutRequestID uuid.UUID `json:"payout_request_id"`
+	Vendor          string    `json:"vendor"`
+	Attempt         int       `json:"attempt"`
+	Status          string    `json:"status"`
+	RetryCount      int       `json:"retry_count"`
+	MaxRetries      int       `json:"max_retries"`
+	LastError       string    `json:"last_error,omitempty"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
+}
+
+func toDeadCommandResponse(c model.PayoutVendorCommand) deadCommandResponse {
+	return deadCommandResponse{ID: c.ID, PayoutRequestID: c.PayoutRequestID, Vendor: c.Vendor,
+		Attempt: c.Attempt, Status: c.Status, RetryCount: c.RetryCount, MaxRetries: c.MaxRetries,
+		LastError: c.LastError, CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt}
+}
+
+func (m *Module) listDeadCommandsHandler(w http.ResponseWriter, r *http.Request) {
+	if !isAdmin(r) {
+		response.Forbidden(w, "admin privileges required")
+		return
+	}
+	limit, offset := 50, 0
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		if value, err := strconv.Atoi(raw); err != nil || value <= 0 {
+			response.BadRequest(w, "limit must be positive")
+			return
+		} else {
+			limit = value
+		}
+	}
+	if raw := r.URL.Query().Get("offset"); raw != "" {
+		if value, err := strconv.Atoi(raw); err != nil || value < 0 {
+			response.BadRequest(w, "offset must be non-negative")
+			return
+		} else {
+			offset = value
+		}
+	}
+	commands, err := m.commandRepo.ListDeadCommands(r.Context(), limit, offset)
+	if err != nil {
+		response.InternalServerError(w, err)
+		return
+	}
+	out := make([]deadCommandResponse, len(commands))
+	for i, command := range commands {
+		out[i] = toDeadCommandResponse(command)
+	}
+	response.OK(w, map[string]any{"commands": out})
+}
+
+func (m *Module) replayDeadCommandHandler(w http.ResponseWriter, r *http.Request) {
+	if !isAdmin(r) {
+		response.Forbidden(w, "admin privileges required")
+		return
+	}
+	id, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		response.BadRequest(w, "invalid vendor command id")
+		return
+	}
+	if err := m.commandRepo.ReplayDeadCommand(r.Context(), id); err != nil {
+		if errors.Is(err, repository.ErrCommandNotFound) {
+			response.NotFound(w, "dead vendor command not found")
+		} else {
+			response.InternalServerError(w, err)
+		}
+		return
+	}
+	response.OK(w, map[string]any{"replayed": true, "id": id})
+}
+
+func (m *Module) replayAllDeadCommandsHandler(w http.ResponseWriter, r *http.Request) {
+	if !isAdmin(r) {
+		response.Forbidden(w, "admin privileges required")
+		return
+	}
+	olderThan := time.Now()
+	if raw := r.URL.Query().Get("older_than"); raw != "" {
+		parsed, err := time.Parse(time.RFC3339, raw)
+		if err != nil {
+			response.BadRequest(w, "older_than must be RFC3339")
+			return
+		}
+		olderThan = parsed
+	}
+	count, err := m.commandRepo.ReplayAllDeadCommands(r.Context(), olderThan)
+	if err != nil {
+		response.InternalServerError(w, err)
+		return
+	}
+	response.OK(w, map[string]any{"replayed": count})
 }
 
 type vendorHealthResponse struct {

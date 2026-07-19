@@ -98,6 +98,9 @@ type VendorCommandRepository interface {
 	// must never be able to flood the vendor with an unbounded replay
 	// burst). Returns the number replayed.
 	ReplayAllDeadCommands(ctx context.Context, olderThan time.Time) (int, error)
+	// ListDeadCommands returns operator-visible dead commands without exposing
+	// destination payloads or credentials.
+	ListDeadCommands(ctx context.Context, limit, offset int) ([]model.PayoutVendorCommand, error)
 
 	// CountCommandsByStatuses returns the number of commands in each
 	// requested status in one query — feeds the payout_vendor_commands
@@ -297,10 +300,10 @@ func (r *commandRepo) EnsureSubmitCommand(ctx context.Context, payoutRequestID u
 
 // commandColumns is reused both in a plain SELECT (GetLiveCommand) and
 // inside a WITH ... RETURNING ... SELECT chain (claim) — it must therefore
-// list bare column names only. An expression like COALESCE(last_error, '')
+// list bare column names only. An expression like COALESCE(last_error, ”)
 // would work in the plain-SELECT case but break the RETURNING case: an
 // unaliased expression in RETURNING gets an auto-generated name (e.g.
-// "coalesce"), and the outer SELECT's own COALESCE(last_error, '') then
+// "coalesce"), and the outer SELECT's own COALESCE(last_error, ”) then
 // fails to resolve "last_error" as a column of the CTE. NULL handling for
 // nullable columns lives in scanCommand instead.
 const commandColumns = `id, command_key, payout_request_id, vendor, attempt, status, retry_count, max_retries,
@@ -488,6 +491,37 @@ func (r *commandRepo) ReplayAllDeadCommands(ctx context.Context, olderThan time.
 		return 0, fmt.Errorf("replay all dead vendor commands rows affected: %w", err)
 	}
 	return int(affected), nil
+}
+
+func (r *commandRepo) ListDeadCommands(ctx context.Context, limit, offset int) ([]model.PayoutVendorCommand, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT `+commandColumns+`
+		FROM payout_vendor_commands
+		WHERE status = 'dead'
+		ORDER BY created_at ASC, id ASC
+		LIMIT $1 OFFSET $2`, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("list dead vendor commands: %w", err)
+	}
+	defer rows.Close()
+	commands := make([]model.PayoutVendorCommand, 0, limit)
+	for rows.Next() {
+		command, scanErr := scanCommand(rows)
+		if scanErr != nil {
+			return nil, scanErr
+		}
+		commands = append(commands, command)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list dead vendor commands rows: %w", err)
+	}
+	return commands, nil
 }
 
 func (r *commandRepo) CountCommandsByStatuses(ctx context.Context, statuses []string) (map[string]int, error) {

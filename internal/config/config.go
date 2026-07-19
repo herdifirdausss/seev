@@ -159,13 +159,19 @@ type FraudConfig struct {
 // AdminBFFConfig contains only BFF-owned session and downstream transport
 // settings. Domain service URLs are added as thin-client configuration in T4.
 type AdminBFFConfig struct {
-	AuthServiceURL     string
-	JWTSecret          string
-	JWTIssuer          string
-	SecureCookie       bool
-	SessionIdleTTL     time.Duration
-	SessionAbsoluteTTL time.Duration
-	DownstreamTokenTTL time.Duration
+	AuthServiceURL      string
+	AuthAdminServiceURL string
+	JWTSecret           string
+	JWTIssuer           string
+	LedgerServiceURL    string
+	PayinServiceURL     string
+	PayoutServiceURL    string
+	FraudServiceURL     string
+	GatewayServiceURL   string
+	SecureCookie        bool
+	SessionIdleTTL      time.Duration
+	SessionAbsoluteTTL  time.Duration
+	DownstreamTokenTTL  time.Duration
 }
 
 type AppConfig struct {
@@ -498,13 +504,19 @@ func loadFromEnvMode(getenv func(string) string, requireRabbitMQ bool) (*Config,
 			BootstrapCheckerPassword: getenv("AUTH_BOOTSTRAP_CHECKER_PASSWORD"),
 		},
 		AdminBFF: AdminBFFConfig{
-			AuthServiceURL:     getWithDefault(getenv, "AUTH_SERVICE_URL", "http://localhost:8082"),
-			JWTSecret:          getenv("JWT_SECRET"),
-			JWTIssuer:          getenv("JWT_ISSUER"),
-			SecureCookie:       parseBool(getenv("ADMIN_BFF_SECURE_COOKIE"), true),
-			SessionIdleTTL:     parseDuration(getenv("ADMIN_BFF_SESSION_IDLE_TTL"), 30*time.Minute),
-			SessionAbsoluteTTL: parseDuration(getenv("ADMIN_BFF_SESSION_ABSOLUTE_TTL"), 8*time.Hour),
-			DownstreamTokenTTL: parseDuration(getenv("ADMIN_BFF_DOWNSTREAM_TOKEN_TTL"), time.Minute),
+			AuthServiceURL:      getWithDefault(getenv, "AUTH_SERVICE_URL", "http://localhost:8082"),
+			AuthAdminServiceURL: getWithDefault(getenv, "AUTH_ADMIN_SERVICE_URL", "http://localhost:8083"),
+			JWTSecret:           getenv("JWT_SECRET"),
+			JWTIssuer:           getenv("JWT_ISSUER"),
+			LedgerServiceURL:    getWithDefault(getenv, "LEDGER_SERVICE_URL", "http://localhost:8091"),
+			PayinServiceURL:     getWithDefault(getenv, "PAYIN_SERVICE_URL", "http://localhost:8092"),
+			PayoutServiceURL:    getWithDefault(getenv, "PAYOUT_SERVICE_URL", "http://localhost:8093"),
+			FraudServiceURL:     getWithDefault(getenv, "FRAUD_SERVICE_URL", "http://localhost:8094"),
+			GatewayServiceURL:   getWithDefault(getenv, "GATEWAY_SERVICE_URL", "http://localhost:8081"),
+			SecureCookie:        parseBool(getenv("ADMIN_BFF_SECURE_COOKIE"), true),
+			SessionIdleTTL:      parseDuration(getenv("ADMIN_BFF_SESSION_IDLE_TTL"), 30*time.Minute),
+			SessionAbsoluteTTL:  parseDuration(getenv("ADMIN_BFF_SESSION_ABSOLUTE_TTL"), 8*time.Hour),
+			DownstreamTokenTTL:  parseDuration(getenv("ADMIN_BFF_DOWNSTREAM_TOKEN_TTL"), time.Minute),
 		},
 		GRPCPort:          getWithDefault(getenv, "GRPC_PORT", "9091"),
 		InternalGRPCToken: getenv("INTERNAL_GRPC_TOKEN"),

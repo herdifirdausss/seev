@@ -341,6 +341,12 @@ services:
       JWT_SECRET: ${JWT_SECRET:-change-me-to-a-random-32-plus-character-secret}
       JWT_ISSUER: ${JWT_ISSUER:-}
       AUTH_SERVICE_URL: http://auth-service:8082
+      AUTH_ADMIN_SERVICE_URL: http://auth-service:8083
+      LEDGER_SERVICE_URL: http://ledger-service:8091
+      PAYIN_SERVICE_URL: http://payin-service:8092
+      PAYOUT_SERVICE_URL: http://payout-service:8093
+      FRAUD_SERVICE_URL: http://fraud-service:8094
+      GATEWAY_SERVICE_URL: http://gateway-service:8081
       ADMIN_BFF_SECURE_COOKIE: "false"
     ports:
       - "127.0.0.1:8095:8095"
