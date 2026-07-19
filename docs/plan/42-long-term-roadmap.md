@@ -171,7 +171,7 @@ Dua framing kunci:
 
 ### A10 — Product assurance & emergency intake control
 
-> **Status: AKTIF → dokumen eksekusi [48](48-a10-product-assurance.md)**
+> **Status: AKTIF / IMPLEMENTASI BERJALAN → dokumen eksekusi [48](48-a10-product-assurance.md)**
 > (2026-07-19, trigger jalur belajar: baseline product 36–41 selesai dan
 > keputusan sadar untuk membuktikan invariant bisnis lintas service secara
 > durable). T1–T4 independen dari A4/A5; emergency control T5 menunggu role

@@ -54,7 +54,7 @@ Dokumen ini adalah **indeks plan implementasi**. Setiap file di folder ini self-
 | 45 | [45-a3-external-resilience.md](45-a3-external-resilience.md) | **Track A3 — resiliensi dependency eksternal**: durable payout command outbox, breaker Redis ber-fallback lokal, degradasi Redis selektif, fraud fail-closed, dan chaos recovery tanpa dependency proprietary | ✅ done (core scope) |
 | 46 | [46-a4-compliance.md](46-a4-compliance.md) | **Track A4 — compliance naik kelas**: retry durable KYC tier, downgrade, mode screening per-rule, sanctions lokal, serta dokumen KYC terenkripsi | ✅ core T1–T7 done; provider/MinIO/re-screen deployment follow-up |
 | 47 | [47-a5-admin-console.md](47-a5-admin-console.md) | **Track A5 — admin console**: BFF Go/htmx, sesi admin, role maker/checker, audit append-only, dan panel operasi lintas service | ✅ core T1–T6; full-stack gate pending |
-| 48 | [48-a10-product-assurance.md](48-a10-product-assurance.md) | **Track A10 — product assurance & emergency intake control**: verifier durable korelasi payin–payout–ledger, finding/alert lifecycle, operator API/CLI, serta pause intake maker/checker tanpa auto-remediation | ⬜ todo |
+| 48 | [48-a10-product-assurance.md](48-a10-product-assurance.md) | **Track A10 — product assurance & emergency intake control**: verifier durable korelasi payin–payout–ledger, finding/alert lifecycle, operator API/CLI, serta pause intake maker/checker tanpa auto-remediation | 🚧 in progress (T0–T6 implementation; full gate pending) |
 
 Selesai Phase 1 (dokumen 3–6) = **MVP ledger yang bisa dipakai**: posting engine double-entry yang aman, API HTTP, event reliable via outbox, dan job yang membuktikan integritas ledger setiap hari.
 
