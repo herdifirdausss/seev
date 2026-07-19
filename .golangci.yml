@@ -1,15 +1,23 @@
+version: "2"
 linters:
   enable:
-    - errcheck
-    - govet
-    - staticcheck
-    - ineffassign
-    - unused
     - misspell
-
-run:
-  timeout: 5m
-
-issues:
-  exclude-dirs:
-    - docs/design/legacy-schemas
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    paths:
+      - docs/design/legacy-schemas
+      - third_party$
+      - builtin$
+      - examples$
+formatters:
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
