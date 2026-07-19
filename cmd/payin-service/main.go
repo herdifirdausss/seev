@@ -100,7 +100,10 @@ func run(parent context.Context) error {
 	cfg.Redis.DB = 0
 	var redisCache *cache.Cache
 	var redisClient *redis.Client
-	if cfg.Redis.Enabled {
+	// Payin only consumes Redis for the optional distributed breaker. Keep the
+	// default local breaker self-contained so a container does not try to dial
+	// the host-oriented Redis default (localhost:6380) during startup.
+	if cfg.Breaker.Distributed && cfg.Redis.Enabled {
 		redisCache, err = cache.New(ctx, cfg.Redis.Pkg())
 		if err != nil {
 			_ = db.Close()
