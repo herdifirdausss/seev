@@ -138,16 +138,26 @@ func (m *Module) pageData(r *http.Request, title, page string) adminweb.PageData
 }
 
 func (m *Module) auditListHandler(w http.ResponseWriter, r *http.Request) {
-	limit := 100
+	filter := AuditFilter{Limit: 100, Operator: r.URL.Query().Get("operator"), Service: r.URL.Query().Get("service")}
 	if raw := r.URL.Query().Get("limit"); raw != "" {
 		if value, err := strconv.Atoi(raw); err != nil || value <= 0 {
 			writeJSONError(w, http.StatusBadRequest, "INVALID_LIMIT", "limit must be positive")
 			return
-		} else if value < limit {
-			limit = value
+		} else if value < filter.Limit {
+			filter.Limit = value
 		}
 	}
-	entries, err := m.auditRead.ListAudit(r.Context(), limit)
+	for name, destination := range map[string]**time.Time{"from": &filter.From, "to": &filter.To} {
+		if raw := r.URL.Query().Get(name); raw != "" {
+			value, parseErr := time.Parse(time.RFC3339, raw)
+			if parseErr != nil {
+				writeJSONError(w, http.StatusBadRequest, "INVALID_TIME", name+" must be RFC3339")
+				return
+			}
+			*destination = &value
+		}
+	}
+	entries, err := m.auditRead.ListAudit(r.Context(), filter)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "AUDIT_UNAVAILABLE", "audit log unavailable")
 		return
@@ -159,6 +169,7 @@ func (m *Module) auditListHandler(w http.ResponseWriter, r *http.Request) {
 			"method": entry.Method, "route_pattern": entry.RoutePattern,
 			"target_service": entry.TargetService, "resource_id": entry.ResourceID,
 			"outcome": entry.Outcome, "request_id": entry.RequestID, "summary": entry.Summary,
+			"created_at": entry.CreatedAt,
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"entries": response})

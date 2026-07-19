@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/herdifirdausss/seev/pkg/database"
 )
@@ -21,6 +22,15 @@ type AuditEntry struct {
 	Outcome       int
 	RequestID     string
 	Summary       map[string]any
+	CreatedAt     time.Time
+}
+
+type AuditFilter struct {
+	Limit    int
+	Operator string
+	Service  string
+	From     *time.Time
+	To       *time.Time
 }
 
 type auditWriter interface {
@@ -28,7 +38,7 @@ type auditWriter interface {
 }
 
 type auditReader interface {
-	ListAudit(context.Context, int) ([]AuditEntry, error)
+	ListAudit(context.Context, AuditFilter) ([]AuditEntry, error)
 }
 
 type auditRepo struct{ db database.DatabaseSQL }
@@ -52,26 +62,32 @@ func (r *auditRepo) WriteAudit(ctx context.Context, entry AuditEntry) error {
 	return nil
 }
 
-func (r *auditRepo) ListAudit(ctx context.Context, limit int) ([]AuditEntry, error) {
-	if limit <= 0 || limit > 100 {
-		limit = 100
+func (r *auditRepo) ListAudit(ctx context.Context, filter AuditFilter) ([]AuditEntry, error) {
+	if filter.Limit <= 0 || filter.Limit > 100 {
+		filter.Limit = 100
 	}
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT user_id, email, role, method, route_pattern, target_service,
-		       resource_id, outcome, request_id, summary
-		FROM audit_log ORDER BY created_at DESC, id DESC LIMIT $1`, limit)
+		       resource_id, outcome, request_id, summary, created_at
+		FROM audit_log
+		WHERE ($1 = '' OR user_id::text = $1 OR email = $1)
+		  AND ($2 = '' OR target_service = $2)
+		  AND ($3::timestamptz IS NULL OR created_at >= $3)
+		  AND ($4::timestamptz IS NULL OR created_at < $4)
+		ORDER BY created_at DESC, id DESC LIMIT $5`,
+		filter.Operator, filter.Service, filter.From, filter.To, filter.Limit)
 	if err != nil {
 		return nil, fmt.Errorf("adminbff: list audit: %w", err)
 	}
 	defer rows.Close()
-	entries := make([]AuditEntry, 0, limit)
+	entries := make([]AuditEntry, 0, filter.Limit)
 	for rows.Next() {
 		var entry AuditEntry
 		var userID string
 		var summary []byte
 		if err := rows.Scan(&userID, &entry.Email, &entry.Role, &entry.Method,
 			&entry.RoutePattern, &entry.TargetService, &entry.ResourceID,
-			&entry.Outcome, &entry.RequestID, &summary); err != nil {
+			&entry.Outcome, &entry.RequestID, &summary, &entry.CreatedAt); err != nil {
 			return nil, fmt.Errorf("adminbff: scan audit: %w", err)
 		}
 		entry.UserID = userID
