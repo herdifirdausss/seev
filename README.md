@@ -23,7 +23,7 @@ Eight deployable services are built from this repository:
 | Payout | 8093, gRPC 9093 | seev_payout | Withdrawal orchestration, vendor commands, recovery, and routing |
 | Fraud | 8094, gRPC 9094 | seev_fraud | Synchronous screening rules and asynchronous event enrichment |
 | Admin BFF | 8095 | seev_adminbff | Operator sessions, maker/checker console, typed admin proxy, and audit log |
-| Assurance | 8096 (host 18096) | seev_assurance | Read-only pay-in/payout/ledger assurance, durable findings, alert delivery, and explicit intake controls |
+| Assurance | 8096 (Compose), 18096 host-binary | seev_assurance | Read-only pay-in/payout/ledger assurance, durable findings, alert delivery, and explicit intake controls |
 
 PostgreSQL stores service-owned data, Redis supports caching, rate limiting,
 velocity checks, and distributed coordination, and RabbitMQ carries ledger
