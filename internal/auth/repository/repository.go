@@ -27,6 +27,7 @@ var ErrDuplicateEmail = errors.New("auth: email already registered")
 var ErrKYCSubmissionNotFound = errors.New("auth: kyc submission not found")
 var ErrKYCSubmissionNotPending = errors.New("auth: kyc submission is not pending")
 var ErrKYCTierConflict = errors.New("auth: kyc tier conflict")
+var ErrKYCApplyTier = errors.New("auth: apply kyc tier failed")
 
 // Repository persists auth identities, credentials, and refresh tokens
 // (docs/plan/25 Task T1).
@@ -62,6 +63,14 @@ type Repository interface {
 	// commits the auth level/submission decision only after it succeeds.
 	ApproveKYCSubmission(ctx context.Context, id uuid.UUID, decidedBy, providerRef, reason string, applyTier func(context.Context, uuid.UUID, int) error) error
 	RejectKYCSubmission(ctx context.Context, id uuid.UUID, decidedBy, reason string) error
+
+	// KYC apply retry intents use a short lease rather than a processing status:
+	// a crashed worker leaves the row pending and it becomes claimable again
+	// after locked_until.
+	EnqueueKYCApplyRetry(ctx context.Context, retry model.KYCApplyRetry) error
+	ClaimKYCApplyRetries(ctx context.Context, limit int, lease time.Duration) ([]model.KYCApplyRetry, error)
+	MarkKYCApplyRetrySucceeded(ctx context.Context, id uuid.UUID) error
+	MarkKYCApplyRetryFailure(ctx context.Context, id uuid.UUID, retryCount int, nextAttemptAt time.Time, lastError string, dead bool) error
 }
 
 type repo struct {
@@ -305,7 +314,10 @@ func (r *repo) ApproveKYCSubmission(ctx context.Context, id uuid.UUID, decidedBy
 			return ErrKYCSubmissionNotPending
 		}
 		if err := applyTier(ctx, userID, level); err != nil {
-			return err
+			// Keep the original dependency error available to errors.Is while
+			// making it possible for the facade to distinguish this rollback
+			// from an auth DB failure.
+			return fmt.Errorf("%w: %w", ErrKYCApplyTier, err)
 		}
 		result, err := tx.ExecContext(ctx, `UPDATE auth_users SET kyc_level = $1, updated_at = now() WHERE id = $2 AND kyc_level + 1 = $1`, level, userID)
 		if err != nil {
@@ -329,6 +341,130 @@ func (r *repo) ApproveKYCSubmission(ctx context.Context, id uuid.UUID, decidedBy
 		}
 		return nil
 	})
+}
+
+func (r *repo) EnqueueKYCApplyRetry(ctx context.Context, retry model.KYCApplyRetry) error {
+	_, err := r.db.ExecContext(ctx, `
+		INSERT INTO kyc_apply_retries
+			(id, submission_id, user_id, level, status, retry_count, next_attempt_at, last_error)
+		VALUES ($1, $2, $3, $4, 'pending', $5, $6, NULLIF($7, ''))
+		ON CONFLICT DO NOTHING`,
+		retry.ID, retry.SubmissionID, retry.UserID, retry.Level, retry.RetryCount,
+		retry.NextAttemptAt, retry.LastError)
+	if err != nil {
+		return fmt.Errorf("auth: enqueue kyc apply retry: %w", err)
+	}
+	return nil
+}
+
+const kycApplyRetryColumns = `id, submission_id, user_id, level, status, retry_count, next_attempt_at, last_error, locked_until, created_at, updated_at`
+
+func scanKYCApplyRetry(scanner interface{ Scan(...any) error }) (model.KYCApplyRetry, error) {
+	var retry model.KYCApplyRetry
+	var lastError sql.NullString
+	var lockedUntil sql.NullTime
+	if err := scanner.Scan(&retry.ID, &retry.SubmissionID, &retry.UserID, &retry.Level,
+		&retry.Status, &retry.RetryCount, &retry.NextAttemptAt, &lastError,
+		&lockedUntil, &retry.CreatedAt, &retry.UpdatedAt); err != nil {
+		return model.KYCApplyRetry{}, fmt.Errorf("auth: scan kyc apply retry: %w", err)
+	}
+	if lastError.Valid {
+		retry.LastError = lastError.String
+	}
+	if lockedUntil.Valid {
+		value := lockedUntil.Time
+		retry.LockedUntil = &value
+	}
+	return retry, nil
+}
+
+func (r *repo) ClaimKYCApplyRetries(ctx context.Context, limit int, lease time.Duration) ([]model.KYCApplyRetry, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 500 {
+		limit = 500
+	}
+	if lease <= 0 {
+		lease = 45 * time.Second
+	}
+	var out []model.KYCApplyRetry
+	err := r.db.WithTx(ctx, nil, func(tx *sql.Tx) error {
+		rows, err := tx.QueryContext(ctx, `
+			SELECT `+kycApplyRetryColumns+`
+			FROM kyc_apply_retries
+			WHERE status = 'pending'
+			  AND next_attempt_at <= now()
+			  AND (locked_until IS NULL OR locked_until <= now())
+			ORDER BY next_attempt_at ASC, id ASC
+			FOR UPDATE SKIP LOCKED
+			LIMIT $1`, limit)
+		if err != nil {
+			return fmt.Errorf("auth: claim kyc apply retries query: %w", err)
+		}
+		defer rows.Close()
+		for rows.Next() {
+			retry, scanErr := scanKYCApplyRetry(rows)
+			if scanErr != nil {
+				return scanErr
+			}
+			out = append(out, retry)
+		}
+		if err := rows.Err(); err != nil {
+			return fmt.Errorf("auth: claim kyc apply retries rows: %w", err)
+		}
+		if err := rows.Close(); err != nil {
+			return fmt.Errorf("auth: close kyc apply retries rows: %w", err)
+		}
+		if len(out) == 0 {
+			return nil
+		}
+		for _, retry := range out {
+			if _, err = tx.ExecContext(ctx, `
+				UPDATE kyc_apply_retries
+				SET locked_until = now() + $1::interval, updated_at = now()
+				WHERE id = $2`, lease.String(), retry.ID); err != nil {
+				return fmt.Errorf("auth: lease kyc apply retry %s: %w", retry.ID, err)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (r *repo) MarkKYCApplyRetrySucceeded(ctx context.Context, id uuid.UUID) error {
+	result, err := r.db.ExecContext(ctx, `
+		UPDATE kyc_apply_retries
+		SET status = 'succeeded', locked_until = NULL, updated_at = now()
+		WHERE id = $1 AND status = 'pending'`, id)
+	if err != nil {
+		return fmt.Errorf("auth: mark kyc apply retry succeeded: %w", err)
+	}
+	if changed, err := result.RowsAffected(); err != nil {
+		return fmt.Errorf("auth: mark kyc apply retry succeeded rows: %w", err)
+	} else if changed == 0 {
+		return nil // idempotent acknowledgement after a worker retry
+	}
+	return nil
+}
+
+func (r *repo) MarkKYCApplyRetryFailure(ctx context.Context, id uuid.UUID, retryCount int, nextAttemptAt time.Time, lastError string, dead bool) error {
+	status := "pending"
+	if dead {
+		status = "dead"
+	}
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE kyc_apply_retries
+		SET status = $1, retry_count = $2, next_attempt_at = $3,
+			last_error = NULLIF($4, ''), locked_until = NULL, updated_at = now()
+		WHERE id = $5 AND status = 'pending'`, status, retryCount, nextAttemptAt, lastError, id)
+	if err != nil {
+		return fmt.Errorf("auth: mark kyc apply retry failure: %w", err)
+	}
+	return nil
 }
 
 func (r *repo) RejectKYCSubmission(ctx context.Context, id uuid.UUID, decidedBy, reason string) error {

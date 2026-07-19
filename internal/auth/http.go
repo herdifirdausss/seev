@@ -230,6 +230,11 @@ func (m *Module) SubmitKYCHandler() http.HandlerFunc {
 		}
 		s, err := m.SubmitKYC(r.Context(), userID, req.LevelRequested, req.Payload)
 		if err != nil {
+			var queued *KYCApplyQueuedError
+			if errors.As(err, &queued) {
+				response.Accepted(w, map[string]any{"status": "queued", "retry_id": queued.RetryID, "submission": toKYCSubmissionResponse(s)})
+				return
+			}
 			writeAuthError(w, err)
 			return
 		}
@@ -298,6 +303,11 @@ func (m *Module) AdminApproveKYCHandler() http.HandlerFunc {
 			return
 		}
 		if err := m.ApproveKYC(r.Context(), id, adminID(r)); err != nil {
+			var queued *KYCApplyQueuedError
+			if errors.As(err, &queued) {
+				response.Accepted(w, map[string]any{"status": "queued", "retry_id": queued.RetryID, "id": id})
+				return
+			}
 			writeAuthError(w, err)
 			return
 		}

@@ -44,6 +44,23 @@ type KYCSubmission struct {
 	DecidedAt      *time.Time
 }
 
+// KYCApplyRetry is the durable intent to re-apply ledger policy limits for a
+// pending KYC approval.  It intentionally contains no ledger credentials or
+// payload data; the submission is re-read by auth when the intent is claimed.
+type KYCApplyRetry struct {
+	ID            uuid.UUID
+	SubmissionID  uuid.UUID
+	UserID        uuid.UUID
+	Level         int
+	Status        string
+	RetryCount    int
+	NextAttemptAt time.Time
+	LastError     string
+	LockedUntil   *time.Time
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+}
+
 // MarshalPayload keeps JSON encoding in the auth repository boundary.
 func (s KYCSubmission) MarshalPayload() ([]byte, error) { return json.Marshal(s.Payload) }
 

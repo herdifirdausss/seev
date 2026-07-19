@@ -41,6 +41,12 @@ func Created(w http.ResponseWriter, data any) {
 	JSON(w, http.StatusCreated, Envelope{Success: true, Data: data})
 }
 
+// Accepted is used when work was durably queued and will complete
+// asynchronously (for example KYC policy application after a ledger outage).
+func Accepted(w http.ResponseWriter, data any) {
+	JSON(w, http.StatusAccepted, Envelope{Success: true, Data: data})
+}
+
 func NoContent(w http.ResponseWriter) {
 	w.WriteHeader(http.StatusNoContent)
 }

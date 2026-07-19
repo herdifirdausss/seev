@@ -12,6 +12,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/redis/go-redis/v9"
+
 	"github.com/herdifirdausss/seev/internal/auth"
 	"github.com/herdifirdausss/seev/internal/config"
 	"github.com/herdifirdausss/seev/internal/kycvendor/mockkyc"
@@ -108,6 +110,11 @@ func run(parent context.Context) error {
 		closeAuthDependencies(log, ledgerConn.Close, redisCache, db, shutdownTracing)
 		return fmt.Errorf("ensure bootstrap admin: %w", err)
 	}
+	retryJob := module.NewKYCApplyRetryJob(redisClientClient(redisCache), log)
+	if err := retryJob.Start(ctx); err != nil {
+		closeAuthDependencies(log, ledgerConn.Close, redisCache, db, shutdownTracing)
+		return fmt.Errorf("start kyc apply retry worker: %w", err)
+	}
 
 	publicServer := newHTTPServer(cfg.App, ":"+cfg.App.Port, publicRouter(cfg, module, redisCache, log))
 	internalServer := newHTTPServer(cfg.App, cfg.App.InternalBindAddr+":"+cfg.App.InternalPort, internalRouter(cfg, module))
@@ -124,6 +131,7 @@ func run(parent context.Context) error {
 	}
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), cfg.App.ShutdownTimeout)
 	defer shutdownCancel()
+	retryJob.Stop()
 	if err := publicServer.Shutdown(shutdownCtx); err != nil && serveErr == nil {
 		serveErr = err
 	}
@@ -132,6 +140,13 @@ func run(parent context.Context) error {
 	}
 	closeAuthDependencies(log, ledgerConn.Close, redisCache, db, shutdownTracing)
 	return serveErr
+}
+
+func redisClientClient(c *cache.Cache) *redis.Client {
+	if c == nil {
+		return nil
+	}
+	return c.Client()
 }
 
 func newHTTPServer(cfg config.AppConfig, addr string, handler http.Handler) *http.Server {

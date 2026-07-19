@@ -12,6 +12,7 @@ package repository
 import (
 	context "context"
 	reflect "reflect"
+	time "time"
 
 	uuid "github.com/google/uuid"
 	model "github.com/herdifirdausss/seev/internal/auth/model"
@@ -56,6 +57,21 @@ func (mr *MockRepositoryMockRecorder) ApproveKYCSubmission(ctx, id, decidedBy, p
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ApproveKYCSubmission", reflect.TypeOf((*MockRepository)(nil).ApproveKYCSubmission), ctx, id, decidedBy, providerRef, reason, applyTier)
 }
 
+// ClaimKYCApplyRetries mocks base method.
+func (m *MockRepository) ClaimKYCApplyRetries(ctx context.Context, limit int, lease time.Duration) ([]model.KYCApplyRetry, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ClaimKYCApplyRetries", ctx, limit, lease)
+	ret0, _ := ret[0].([]model.KYCApplyRetry)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ClaimKYCApplyRetries indicates an expected call of ClaimKYCApplyRetries.
+func (mr *MockRepositoryMockRecorder) ClaimKYCApplyRetries(ctx, limit, lease any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ClaimKYCApplyRetries", reflect.TypeOf((*MockRepository)(nil).ClaimKYCApplyRetries), ctx, limit, lease)
+}
+
 // CreateKYCSubmission mocks base method.
 func (m *MockRepository) CreateKYCSubmission(ctx context.Context, s model.KYCSubmission) error {
 	m.ctrl.T.Helper()
@@ -82,6 +98,20 @@ func (m *MockRepository) CreateUser(ctx context.Context, u model.User, passwordH
 func (mr *MockRepositoryMockRecorder) CreateUser(ctx, u, passwordHash any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateUser", reflect.TypeOf((*MockRepository)(nil).CreateUser), ctx, u, passwordHash)
+}
+
+// EnqueueKYCApplyRetry mocks base method.
+func (m *MockRepository) EnqueueKYCApplyRetry(ctx context.Context, retry model.KYCApplyRetry) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "EnqueueKYCApplyRetry", ctx, retry)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// EnqueueKYCApplyRetry indicates an expected call of EnqueueKYCApplyRetry.
+func (mr *MockRepositoryMockRecorder) EnqueueKYCApplyRetry(ctx, retry any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "EnqueueKYCApplyRetry", reflect.TypeOf((*MockRepository)(nil).EnqueueKYCApplyRetry), ctx, retry)
 }
 
 // GetKYCSubmission mocks base method.
@@ -201,6 +231,34 @@ func (m *MockRepository) ListKYCSubmissions(ctx context.Context, status string) 
 func (mr *MockRepositoryMockRecorder) ListKYCSubmissions(ctx, status any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListKYCSubmissions", reflect.TypeOf((*MockRepository)(nil).ListKYCSubmissions), ctx, status)
+}
+
+// MarkKYCApplyRetryFailure mocks base method.
+func (m *MockRepository) MarkKYCApplyRetryFailure(ctx context.Context, id uuid.UUID, retryCount int, nextAttemptAt time.Time, lastError string, dead bool) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "MarkKYCApplyRetryFailure", ctx, id, retryCount, nextAttemptAt, lastError, dead)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// MarkKYCApplyRetryFailure indicates an expected call of MarkKYCApplyRetryFailure.
+func (mr *MockRepositoryMockRecorder) MarkKYCApplyRetryFailure(ctx, id, retryCount, nextAttemptAt, lastError, dead any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MarkKYCApplyRetryFailure", reflect.TypeOf((*MockRepository)(nil).MarkKYCApplyRetryFailure), ctx, id, retryCount, nextAttemptAt, lastError, dead)
+}
+
+// MarkKYCApplyRetrySucceeded mocks base method.
+func (m *MockRepository) MarkKYCApplyRetrySucceeded(ctx context.Context, id uuid.UUID) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "MarkKYCApplyRetrySucceeded", ctx, id)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// MarkKYCApplyRetrySucceeded indicates an expected call of MarkKYCApplyRetrySucceeded.
+func (mr *MockRepositoryMockRecorder) MarkKYCApplyRetrySucceeded(ctx, id any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MarkKYCApplyRetrySucceeded", reflect.TypeOf((*MockRepository)(nil).MarkKYCApplyRetrySucceeded), ctx, id)
 }
 
 // RejectKYCSubmission mocks base method.

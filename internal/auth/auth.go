@@ -21,16 +21,20 @@ import (
 	"fmt"
 	"log/slog"
 	"net/mail"
+	"os"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/redis/go-redis/v9"
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/herdifirdausss/seev/internal/auth/model"
 	"github.com/herdifirdausss/seev/internal/auth/repository"
+	"github.com/herdifirdausss/seev/internal/auth/worker"
 	"github.com/herdifirdausss/seev/internal/kycvendor"
 	"github.com/herdifirdausss/seev/pkg/database"
 	"github.com/herdifirdausss/seev/pkg/middleware"
+	"github.com/herdifirdausss/seev/pkg/scheduler"
 )
 
 // Re-exported types so callers never need to import internal/auth/model.
@@ -74,6 +78,32 @@ type Module struct {
 	cfg         Config
 	logger      *slog.Logger
 	kycProvider kycvendor.Provider
+}
+
+// ErrKYCApplyQueued marks the safe degraded response when the ledger could
+// not apply policy limits inline.  The submission remains pending until the
+// durable relay completes; callers can use errors.Is without parsing text.
+var ErrKYCApplyQueued = errors.New("auth: kyc apply queued for retry")
+
+// KYCApplyQueuedError retains both the durable intent id and the dependency
+// error for logs/tests while exposing ErrKYCApplyQueued through errors.Is.
+type KYCApplyQueuedError struct {
+	RetryID uuid.UUID
+	Cause   error
+}
+
+func (e *KYCApplyQueuedError) Error() string {
+	if e == nil || e.Cause == nil {
+		return ErrKYCApplyQueued.Error()
+	}
+	return fmt.Sprintf("%s: %v", ErrKYCApplyQueued, e.Cause)
+}
+
+func (e *KYCApplyQueuedError) Unwrap() error {
+	if e == nil {
+		return ErrKYCApplyQueued
+	}
+	return errors.Join(ErrKYCApplyQueued, e.Cause)
 }
 
 type unavailableKYCProvider struct{}
@@ -369,7 +399,77 @@ func (m *Module) ListKYCSubmissions(ctx context.Context, status string) ([]model
 }
 
 func (m *Module) approveSubmission(ctx context.Context, submission model.KYCSubmission, decidedBy string) error {
-	return m.repo.ApproveKYCSubmission(ctx, submission.ID, decidedBy, submission.ProviderRef, submission.DecisionReason, m.provisioner.ApplyKycTier)
+	err := m.repo.ApproveKYCSubmission(ctx, submission.ID, decidedBy, submission.ProviderRef, submission.DecisionReason, m.provisioner.ApplyKycTier)
+	if err == nil || !errors.Is(err, repository.ErrKYCApplyTier) {
+		return err
+	}
+
+	// ApproveKYCSubmission owns the fast-path transaction. It has rolled back
+	// completely at this point, so this insert is intentionally a separate
+	// transaction and cannot advance auth_users. A duplicate pending intent
+	// is harmless when an admin click races the relay.
+	// Derive the intent id from the submission so concurrent approval callers
+	// converge on one durable row and return the same retry id.
+	retry := model.KYCApplyRetry{
+		ID:            uuid.NewSHA1(uuid.Nil, []byte("kyc-apply:"+submission.ID.String())),
+		SubmissionID:  submission.ID,
+		UserID:        submission.UserID,
+		Level:         submission.LevelRequested,
+		Status:        "pending",
+		NextAttemptAt: time.Now(),
+		LastError:     truncateRetryError(err),
+	}
+	// The request context may already be cancelled because the ledger call
+	// timed out. Durable recovery must not depend on the caller staying
+	// connected, so use a short detached persistence context.
+	queueCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
+	defer cancel()
+	if enqueueErr := m.repo.EnqueueKYCApplyRetry(queueCtx, retry); enqueueErr != nil {
+		return fmt.Errorf("auth: persist kyc apply retry: %w (original: %v)", enqueueErr, err)
+	}
+	kycApplyRetriesQueuedTotal.Inc()
+	return &KYCApplyQueuedError{RetryID: retry.ID, Cause: err}
+}
+
+// RetryKYCApply re-runs the full limits-first approval flow for a claimed
+// intent. A non-pending submission is already converged (for example an
+// admin approved it manually), so it is treated as a successful no-op.
+func (m *Module) RetryKYCApply(ctx context.Context, retry model.KYCApplyRetry) error {
+	submission, err := m.repo.GetKYCSubmission(ctx, retry.SubmissionID)
+	if err != nil {
+		return err
+	}
+	if submission.Status != "pending" {
+		return nil
+	}
+	err = m.approveSubmission(ctx, submission, "system-retry")
+	if errors.Is(err, repository.ErrKYCSubmissionNotPending) {
+		// A manual admin approval may have won the row lock after the initial
+		// read. Re-read once and converge the intent to succeeded instead of
+		// needlessly burning another retry.
+		latest, readErr := m.repo.GetKYCSubmission(ctx, retry.SubmissionID)
+		if readErr == nil && latest.Status != "pending" {
+			return nil
+		}
+	}
+	return err
+}
+
+// NewKYCApplyRetryJob wires the auth-owned relay. Keeping construction here
+// means cmd/auth-service only depends on the auth facade and never reaches
+// into repository internals.
+func (m *Module) NewKYCApplyRetryJob(redisClient *redis.Client, logger *slog.Logger) *worker.RetryJob {
+	var lock scheduler.LockProvider
+	if redisClient != nil {
+		instanceID, err := os.Hostname()
+		if err != nil || instanceID == "" {
+			instanceID = uuid.NewString()
+		}
+		lock = scheduler.NewRedisLock(redisClient, instanceID)
+	} else {
+		lock = scheduler.NewMemoryLock(2 * time.Minute)
+	}
+	return worker.NewRetryJob(m.repo, m, lock, logger)
 }
 
 func (m *Module) ApproveKYC(ctx context.Context, submissionID uuid.UUID, decidedBy string) error {
@@ -439,6 +539,18 @@ func (m *Module) issueTokensWithID(ctx context.Context, u model.User) (TokenPair
 func hashToken(token string) string {
 	sum := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(sum[:])
+}
+
+func truncateRetryError(err error) string {
+	if err == nil {
+		return ""
+	}
+	const max = 1024
+	message := err.Error()
+	if len(message) > max {
+		return message[:max]
+	}
+	return message
 }
 
 func validateEmail(email string) error {

@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
 	"testing"
@@ -366,10 +367,12 @@ func TestSubmitKYC_ApplyTierFailureLeavesApprovalPending(t *testing.T) {
 	repo.EXPECT().GetLatestKYCSubmission(gomock.Any(), userID).Return(model.KYCSubmission{}, repository.ErrKYCSubmissionNotFound)
 	repo.EXPECT().CreateKYCSubmission(gomock.Any(), gomock.Any()).Return(nil)
 	repo.EXPECT().ApproveKYCSubmission(gomock.Any(), gomock.Any(), "system", gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, _ uuid.UUID, _ string, _ string, _ string, apply func(context.Context, uuid.UUID, int) error) error {
-		return apply(ctx, userID, 1)
+		return fmt.Errorf("%w: %w", repository.ErrKYCApplyTier, apply(ctx, userID, 1))
 	})
+	repo.EXPECT().EnqueueKYCApplyRetry(gomock.Any(), gomock.Any()).Return(nil)
 
 	m := newTestModule(repo, &stubProvisioner{err: context.DeadlineExceeded})
 	_, err := m.SubmitKYC(context.Background(), userID, 1, nil)
+	assert.ErrorIs(t, err, ErrKYCApplyQueued)
 	assert.ErrorIs(t, err, context.DeadlineExceeded)
 }

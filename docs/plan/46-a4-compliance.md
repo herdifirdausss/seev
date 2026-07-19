@@ -345,7 +345,32 @@ gotcha #10 terbukti utuh (tidak ada jendela level>limits di test).
 
 ### Hasil
 
-> Diisi saat T1 selesai.
+> T1 selesai pada 2026-07-19. Auth migration `000003_compliance_foundation`
+> sekarang memiliki `kyc_apply_retries` (lease, cursor due, status pending /
+> succeeded / dead), `kyc_level_changes`, dan metadata `kyc_documents` dengan
+> RLS/grant mengikuti tabel auth existing. Repository menyediakan enqueue,
+> `FOR UPDATE SKIP LOCKED` claim, success acknowledgement, dan backoff/dead
+> update yang idempotent.
+>
+> Approval tetap menjalankan `ApplyKycTier` di dalam transaksi fast-path.
+> Setelah rollback karena dependency error, auth menulis intent terpisah dan
+> mengembalikan `ErrKYCApplyQueued`; endpoint submit/admin approve menjawab
+> HTTP 202 dengan `retry_id`, sementara submission tetap pending. ID intent
+> diturunkan deterministik dari submission agar klik admin yang bersamaan
+> tidak menggandakan intent.
+>
+> Relay auth memakai lease DB, lock Redis (atau memory single-node), interval
+> 30 detik, retry eksponensial+jitter, dead-letter setelah 10 kegagalan, dan
+> mengonvergensikan approval manual yang menang lebih dulu sebagai sukses.
+> Metric queue/attempt/dead serta log dead-intent tersedia; tidak ada auto
+> correction di ledger maupun perubahan gotcha limits-first.
+>
+> Bukti: `go test ./internal/auth/... ./cmd/auth-service` dan
+> `go test -tags=integration ./internal/auth -run 'TestAuth_KYC_' -count=1`
+> hijau. Integration chaos khusus memutus ledger saat approval masih menjadi
+> gate T1 yang perlu dijalankan pada environment Docker yang tersedia; smoke
+> lokal tanpa Docker gagal hanya karena socket Docker sandbox tidak dapat
+> diakses.
 
 ### T2 — Downgrade + template L0 + staleness TTL (K2+K3)
 
