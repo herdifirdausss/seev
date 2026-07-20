@@ -108,7 +108,12 @@ func setupNotifyTestBroker(t *testing.T) *messaging.RabbitMQ {
 	// broker is healthy but its startup log wording changes.
 	container, err := rmqcontainer.Run(ctx, "rabbitmq:3.13-management-alpine",
 		testcontainers.WithWaitStrategy(
-			wait.ForListeningPort(rmqcontainer.DefaultAMQPPort).WithStartupTimeout(90*time.Second),
+			// The full integration race gate starts several Postgres
+			// containers concurrently. Docker Desktop can take longer than the
+			// normal broker warm-up while those containers contend for CPU; the
+			// bounded five-minute ceiling keeps the test deterministic without
+			// turning a genuinely stuck broker into an unbounded wait.
+			wait.ForListeningPort(rmqcontainer.DefaultAMQPPort).WithStartupTimeout(5*time.Minute),
 		),
 	)
 	require.NoError(t, err)
