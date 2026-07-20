@@ -171,10 +171,11 @@ Dua framing kunci:
 
 ### A10 — Product assurance & emergency intake control
 
-> **Status: AKTIF / IMPLEMENTASI BERJALAN → dokumen eksekusi [48](48-a10-product-assurance.md)**
-> (2026-07-19, trigger jalur belajar: baseline product 36–41 selesai dan
-> keputusan sadar untuk membuktikan invariant bisnis lintas service secara
-> durable). T1–T4 independen dari A4/A5; emergency control T5 menunggu role
+> **Status: ✅ SELESAI → dokumen eksekusi [48](48-a10-product-assurance.md)**
+> (2026-07-20, implementasi T0–T6 dan acceptance/final gate sudah hijau;
+> trigger jalur belajar: baseline product 36–41 selesai dan keputusan sadar
+> untuk membuktikan invariant bisnis lintas service secara durable). T1–T4
+> independen dari A4/A5; emergency control T5 sudah memenuhi role
 > maker/checker [47](47-a5-admin-console.md) T3.
 
 - **Tujuan bisnis**: mendeteksi kurang dari tiga menit ketika status payin atau payout tidak lagi sesuai dengan uang yang benar-benar dibukukan ledger, menyimpan bukti dan lifecycle finding secara durable, serta memberi operator rem darurat yang hanya menghentikan intake baru tanpa menghambat penyelesaian uang yang sudah berjalan.
