@@ -588,6 +588,10 @@ scenario_7() {
 	export SCREENING_AMOUNT_THRESHOLD=100
 	export SCREENING_VELOCITY_MAX_PER_HOUR=0
 	ensure_deps_up
+	# Per-rule overrides are durable and take precedence over the environment
+	# fallback. Set the threshold rule explicitly so a reused fraud DB cannot
+	# leave this scenario silently in the migration's default `off` mode.
+	psql_exec "$FRAUD_DB_NAME" -c "UPDATE screening_rule_modes SET mode = 'block', updated_by = 'chaos7' WHERE rule = 'amount_threshold';" >/dev/null
 	build_server
 	start_services
 
@@ -727,6 +731,8 @@ scenario_7() {
 	assert_ledger_balanced
 	assert_no_inconsistent_projections
 	stop_services
+	# Do not leak the scenario's operator mode into subsequent runs.
+	psql_exec "$FRAUD_DB_NAME" -c "UPDATE screening_rule_modes SET mode = 'off', updated_by = 'chaos7-cleanup' WHERE rule = 'amount_threshold';" >/dev/null
 	unset SCREENING_MODE SCREENING_AMOUNT_THRESHOLD SCREENING_VELOCITY_MAX_PER_HOUR
 }
 
@@ -914,6 +920,10 @@ scenario_9() {
 	export SCREENING_VELOCITY_MAX_PER_HOUR=1000
 	export POLICY_CACHE_TTL=2s
 	ensure_deps_up
+	# Durable per-rule modes override SCREENING_MODE. Explicitly enable the
+	# velocity rule for this Redis-dependency proof; otherwise the migration's
+	# default `off` would make a Redis outage invisible to the request path.
+	psql_exec "$FRAUD_DB_NAME" -c "UPDATE screening_rule_modes SET mode = 'block', updated_by = 'chaos9' WHERE rule = 'velocity_anomaly';" >/dev/null
 	build_server
 	start_services
 
@@ -1075,6 +1085,7 @@ scenario_9() {
 	assert_ledger_balanced
 	assert_no_inconsistent_projections
 	stop_services
+	psql_exec "$FRAUD_DB_NAME" -c "UPDATE screening_rule_modes SET mode = 'off', updated_by = 'chaos9-cleanup' WHERE rule = 'velocity_anomaly';" >/dev/null
 	unset SCREENING_MODE SCREENING_AMOUNT_THRESHOLD SCREENING_VELOCITY_MAX_PER_HOUR POLICY_CACHE_TTL
 }
 

@@ -45,11 +45,11 @@ ARTIFACT_DIR="${SEEV_SMOKE_ARTIFACT_DIR:-$ROOT_DIR/.smoke-container-artifacts}"
 HEALTH_DEADLINE_SECS="${SEEV_SMOKE_HEALTH_DEADLINE:-180}"
 SETTLE_DEADLINE_SECS="${SEEV_SMOKE_SETTLE_DEADLINE:-30}"
 
-# Expected app-profile services (3 infra + 6 app = 9) — K4 step 4 requires
+# Expected app-profile services (3 infra + 8 app = 11) — K4 step 4 requires
 # asserting this EXACT set, not just "however many containers the project
 # happens to report" (a stale container from an unrelated profile must not
-# silently count as one of the nine).
-EXPECTED_SERVICES=(postgres redis rabbitmq ledger-service auth-service payin-service payout-service fraud-service gateway-service)
+# silently count as one of the eleven).
+EXPECTED_SERVICES=(postgres redis rabbitmq ledger-service auth-service payin-service payout-service fraud-service admin-bff-service assurance-service gateway-service)
 
 # Per-run credentials (K6) — generated fresh, never committed, never logged
 # raw. docker compose picks these up as env overrides for the `app` profile
@@ -147,16 +147,16 @@ fi
 # regardless of profile — confirmed empirically: on a machine that also has
 # the `observability` profile containers up (docs/plan/43), `ps --services
 # --status running` returned alloy/grafana/loki/prometheus/tempo alongside
-# the 9 app-profile services, which would have made this assertion falsely
+# the 11 app-profile services, which would have made this assertion falsely
 # fail. `config --services` is the STATIC definition instead — immune to
 # whatever else happens to be running in the same Compose project — and is
-# exactly what "the app profile defines precisely these nine services"
+# exactly what "the app profile defines precisely these eleven services"
 # means; each service's own runtime health was already verified above,
 # individually, by name.
 defined_services="$(docker compose --profile app config --services | sort)"
 expected_sorted="$(printf '%s\n' "${EXPECTED_SERVICES[@]}" | sort)"
 if [ "$defined_services" = "$expected_sorted" ]; then
-	ok "'app' profile defines exactly the expected nine services"
+	ok "'app' profile defines exactly the expected eleven services"
 else
 	fail "'app' profile service set does not match expected: got [$defined_services] want [$expected_sorted]"
 fi
