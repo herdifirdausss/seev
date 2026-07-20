@@ -771,6 +771,16 @@ kill_fraud_hard() {
 	fi
 }
 
+kill_assurance_hard() {
+	if [ -f "$ASSURANCE_PID_FILE" ]; then
+		local pid
+		pid="$(cat "$ASSURANCE_PID_FILE")"
+		log "kill -9 assurance-service pid $pid"
+		kill -9 "$pid" 2>/dev/null || true
+		rm -f "$ASSURANCE_PID_FILE"
+	fi
+}
+
 # ─── Test data helpers ───────────────────────────────────────────────────────
 
 provision_user() {

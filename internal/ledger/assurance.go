@@ -78,7 +78,11 @@ func (m *Module) BatchGetAssuranceTransactions(ctx context.Context, req *ledgerv
 }
 
 func (m *Module) assuranceLookup(ctx context.Context, selector *ledgerv1.AssuranceSelector) ([]*ledgerv1.AssuranceTransaction, error) {
-	query := `SELECT id, type, status, amount, currency, gateway, external_ref, closed_by_tx_id, closed_reason, created_at, updated_at FROM ledger_transactions WHERE `
+	// gateway/external_ref are nullable for internal lifecycle and legacy
+	// transactions. The assurance wire contract is data-minimal and uses an
+	// empty string for an absent correlation, so normalize NULL at the SQL
+	// boundary instead of allowing one unrelated transaction to abort a page.
+	query := `SELECT id, type, status, amount, currency, COALESCE(gateway, ''), COALESCE(external_ref, ''), closed_by_tx_id, closed_reason, created_at, updated_at FROM ledger_transactions WHERE `
 	args := make([]any, 0, 3)
 	switch {
 	case selector.GetTransactionId() != "":

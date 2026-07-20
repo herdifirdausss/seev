@@ -22,7 +22,10 @@
 #   ./scripts/chaos-test.sh 9        # Redis outage: selective hot-swap + fraud fail-closed (docs/plan/45 Task T4)
 #   ./scripts/chaos-test.sh 10       # distributed breaker across two payout replicas (docs/plan/45 Task T4)
 #   ./scripts/chaos-test.sh 11       # payout crash after command enqueue / after network timeout (docs/plan/45 Task T4)
-#   ./scripts/chaos-test.sh all      # run all eleven in sequence
+#   ./scripts/chaos-test.sh 12       # assurance restart catches backlog and resolves recovery (docs/plan/48)
+#   ./scripts/chaos-test.sh 13       # ledger outage preserves assurance cursor/finding (docs/plan/48)
+#   ./scripts/chaos-test.sh 14       # owner outage durable intake pause + maker/checker resume (docs/plan/48)
+#   ./scripts/chaos-test.sh all      # run all fourteen in sequence
 #
 # Each scenario is independent and re-runs migrations against a throwaway
 # schema state (it does NOT reset the docker volumes — accounts/balances
@@ -1324,6 +1327,249 @@ scenario_11() {
 	stop_services
 }
 
+# ─── Scenario 12: assurance restart/backlog recovery (Plan 48) ─────────────
+
+wait_for_assurance_finding() {
+	local resource_id=$1 rule_code=$2 want=$3 tries=${4:-45} status=""
+	while [ "$tries" -gt 0 ]; do
+		status="$(psql_exec "$ASSURANCE_DB_NAME" -c "SELECT status FROM assurance_findings WHERE resource_id = '$resource_id' AND rule_code = '$rule_code' ORDER BY last_seen_at DESC LIMIT 1;")"
+		[ "$status" = "$want" ] && return 0
+		sleep 1
+		tries=$((tries - 1))
+	done
+	fail "assurance finding resource=$resource_id rule=$rule_code did not reach '$want' (last='$status')"
+	return 1
+}
+
+wait_for_assurance_idle() {
+	local tries=${1:-45} status=""
+	while [ "$tries" -gt 0 ]; do
+		status="$(psql_exec "$ASSURANCE_DB_NAME" -c "SELECT status FROM assurance_runs ORDER BY started_at DESC, id DESC LIMIT 1;")"
+		[ "$status" != "running" ] && [ -n "$status" ] && return 0
+		sleep 1
+		tries=$((tries - 1))
+	done
+	fail "assurance did not finish its active run in time (last='$status')"
+	return 1
+}
+
+trigger_assurance_run() {
+	local token=$1
+	curl -fsS -o /dev/null -X POST "http://localhost:$ASSURANCE_PORT/admin/assurance/runs" \
+		-H "Authorization: Bearer $token" -H "Content-Type: application/json" -d '{}'
+}
+
+wait_for_assurance_run_after() {
+	local before=$1 want=$2 tries=${3:-45} count status=""
+	while [ "$tries" -gt 0 ]; do
+		count="$(psql_exec "$ASSURANCE_DB_NAME" -c "SELECT count(*) FROM assurance_runs;")"
+		if [ "$count" -gt "$before" ]; then
+			status="$(psql_exec "$ASSURANCE_DB_NAME" -c "SELECT status FROM assurance_runs ORDER BY started_at DESC, id DESC LIMIT 1;")"
+			[ "$status" = "$want" ] && return 0
+			[ "$status" = "failed" ] && [ "$want" != "failed" ] && return 1
+		fi
+		sleep 1
+		tries=$((tries - 1))
+	done
+	fail "assurance run after count=$before did not reach '$want' (count=$count status='$status')"
+	return 1
+}
+
+scenario_12() {
+	log "=== Scenario 12: assurance restart catches backlog and resolves recovered finding (docs/plan/48) ==="
+	ensure_deps_up
+	build_server
+	# Start domain owners first so the assurance process can be stopped and
+	# restarted around a durable inconsistency without taking the owners down.
+	start_ledger_service
+	start_fraud_service
+	start_auth_service
+	start_payin_service
+	start_payout_service
+	start_gateway
+
+	local event_id external_ref admin_token
+	event_id="$(psql_exec "$PAYIN_DB_NAME" -c "SELECT gen_random_uuid();")"
+	external_ref="chaos12-$event_id"
+	psql_exec "$PAYIN_DB_NAME" -c "
+		INSERT INTO payin_webhook_events
+		(id, vendor, vendor_event_id, external_ref, user_id, amount, currency, raw, status, request_id, created_at, updated_at)
+		VALUES ('$event_id', 'mockvendor', '$external_ref', '$external_ref', gen_random_uuid(), 1234, 'IDR', '{}'::jsonb, 'posted', 'chaos12', now() - interval '2 minutes 1 second', now() - interval '2 minutes 1 second');" >/dev/null
+
+	start_assurance_service
+	wait_for_assurance_finding "$event_id" PA01 open 45
+	ok "assurance detected a disposable PA01 mismatch before the outage"
+
+	# The service is down while the owner row is repaired. The restart must
+	# resume from the persisted cursor and inspect this newly eligible update.
+	kill_assurance_hard
+	psql_exec "$PAYIN_DB_NAME" -c "UPDATE payin_webhook_events SET status='failed', updated_at=now() - interval '2 minutes 1 second' WHERE id='$event_id';" >/dev/null
+	admin_token="$(gen_token "$(psql_exec "$AUTH_DB_NAME" -c 'SELECT gen_random_uuid();')" admin)"
+	start_assurance_service
+	wait_for_assurance_idle 45
+	local before_runs
+	before_runs="$(psql_exec "$ASSURANCE_DB_NAME" -c "SELECT count(*) FROM assurance_runs;")"
+	trigger_assurance_run "$admin_token"
+	wait_for_assurance_run_after "$before_runs" succeeded 45
+	wait_for_assurance_finding "$event_id" PA01 resolved 45
+	ok "assurance restart recovered backlog and resolved the finding without deleting it"
+
+	local occurrence_count
+	occurrence_count="$(psql_exec "$ASSURANCE_DB_NAME" -c "SELECT occurrence_count FROM assurance_findings WHERE resource_id='$event_id' AND rule_code='PA01';")"
+	[ "$occurrence_count" -ge 1 ] && ok "finding history remained durable (occurrences=$occurrence_count)" \
+		|| fail "finding history was lost after recovery (occurrences=$occurrence_count)"
+	stop_services
+}
+
+# ─── Scenario 13: ledger outage preserves assurance cursor/finding (Plan 48)
+
+scenario_13() {
+	log "=== Scenario 13: ledger unavailable preserves assurance cursor and avoids false resolve (docs/plan/48) ==="
+	ensure_deps_up
+	build_server
+	start_ledger_service
+	start_fraud_service
+	start_auth_service
+	start_payin_service
+	start_payout_service
+	start_gateway
+
+	local event_id external_ref admin_token before_cursor after_cursor before_runs
+	event_id="$(psql_exec "$PAYIN_DB_NAME" -c "SELECT gen_random_uuid();")"
+	external_ref="chaos13-$event_id"
+	psql_exec "$PAYIN_DB_NAME" -c "
+		INSERT INTO payin_webhook_events
+		(id, vendor, vendor_event_id, external_ref, user_id, amount, currency, raw, status, request_id, created_at, updated_at)
+		VALUES ('$event_id', 'mockvendor', '$external_ref', '$external_ref', gen_random_uuid(), 2345, 'IDR', '{}'::jsonb, 'posted', 'chaos13', now() - interval '2 minutes 1 second', now() - interval '2 minutes 1 second');" >/dev/null
+	start_assurance_service
+	wait_for_assurance_finding "$event_id" PA01 open 45
+	before_cursor="$(psql_exec "$ASSURANCE_DB_NAME" -c "SELECT COALESCE(updated_at::text,'') || '|' || COALESCE(resource_id::text,'') FROM assurance_cursors WHERE source='payin';")"
+
+	# Repair the owner row while the proof dependency is unavailable. The
+	# failed run must not observe the repair as evidence or move the cursor.
+	kill_ledger_hard
+	psql_exec "$PAYIN_DB_NAME" -c "UPDATE payin_webhook_events SET status='failed', updated_at=now() - interval '2 minutes 1 second' WHERE id='$event_id';" >/dev/null
+	admin_token="$(gen_token "$(psql_exec "$AUTH_DB_NAME" -c 'SELECT gen_random_uuid();')" admin)"
+	wait_for_assurance_idle 45
+	before_runs="$(psql_exec "$ASSURANCE_DB_NAME" -c "SELECT count(*) FROM assurance_runs;")"
+	trigger_assurance_run "$admin_token"
+	wait_for_assurance_run_after "$before_runs" failed 45
+	after_cursor="$(psql_exec "$ASSURANCE_DB_NAME" -c "SELECT COALESCE(updated_at::text,'') || '|' || COALESCE(resource_id::text,'') FROM assurance_cursors WHERE source='payin';")"
+	[ "$after_cursor" = "$before_cursor" ] && ok "ledger outage preserved the payin cursor" \
+		|| fail "ledger outage advanced the payin cursor: before='$before_cursor' after='$after_cursor'"
+	wait_for_assurance_finding "$event_id" PA01 open 10
+	ok "ledger outage did not falsely resolve the open PA01 finding"
+
+	start_ledger_service
+	wait_for_assurance_idle 45
+	before_runs="$(psql_exec "$ASSURANCE_DB_NAME" -c "SELECT count(*) FROM assurance_runs;")"
+	trigger_assurance_run "$admin_token"
+	wait_for_assurance_run_after "$before_runs" succeeded 45
+	wait_for_assurance_finding "$event_id" PA01 resolved 45
+	ok "ledger recovery replayed the page and resolved PA01"
+	stop_services
+}
+
+# ─── Scenario 14: durable pause, owner recovery, maker/checker resume ─────
+
+scenario_14() {
+	log "=== Scenario 14: owner outage during intake pause, durable retry, and two-person resume (docs/plan/48) ==="
+	ensure_deps_up
+	build_server
+	start_services
+
+	local maker_id checker_id user_id maker_token checker_token user_token
+	maker_id="$(psql_exec "$AUTH_DB_NAME" -c "SELECT gen_random_uuid();")"
+	checker_id="$(psql_exec "$AUTH_DB_NAME" -c "SELECT gen_random_uuid();")"
+	user_id="$(psql_exec "$LEDGER_DB_NAME" -c "SELECT gen_random_uuid();")"
+	provision_user "$user_id" >/dev/null
+	maker_token="$(gen_token "$maker_id" admin_maker)"
+	checker_token="$(gen_token "$checker_id" admin_checker)"
+	user_token="$(gen_token "$user_id")"
+
+	local payin_revision payout_revision command_id code response
+	payin_revision="$(psql_exec "$PAYIN_DB_NAME" -c "SELECT revision FROM payin_intake_control WHERE id=1;")"
+	command_id="$(psql_exec "$ASSURANCE_DB_NAME" -c "SELECT gen_random_uuid();")"
+	kill_payin_hard
+	code="$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$ASSURANCE_PORT/admin/assurance/intake/payin/pause" \
+		-H "Authorization: Bearer $maker_token" -H 'Content-Type: application/json' \
+		-d "{\"command_id\":\"$command_id\",\"expected_revision\":$payin_revision,\"reason\":\"chaos14 owner outage\"}")"
+	[ "$code" = "503" ] && ok "pause remained durable while payin owner was unavailable" \
+		|| fail "pause with payin owner unavailable returned HTTP $code (want 503)"
+	start_payin_service
+	response="$(curl -fsS -X POST "http://localhost:$ASSURANCE_PORT/admin/assurance/intake/payin/pause" \
+		-H "Authorization: Bearer $maker_token" -H 'Content-Type: application/json' \
+		-d "{\"command_id\":\"$command_id\",\"expected_revision\":$payin_revision,\"reason\":\"chaos14 retry\"}")"
+	if echo "$response" | grep -q '"paused":true'; then
+		ok "retrying the same pause command applied exactly once after owner recovery"
+	else
+		fail "payin pause retry did not return paused=true: $response"
+	fi
+	local paused_revision
+	paused_revision="$(psql_exec "$PAYIN_DB_NAME" -c "SELECT revision FROM payin_intake_control WHERE id=1 AND paused=true;")"
+	[ "$paused_revision" = "$((payin_revision + 1))" ] && ok "payin pause revision advanced once" \
+		|| fail "payin pause revision mismatch: before=$payin_revision after=$paused_revision"
+
+	code="$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$APP_PORT/api/v1/topup" \
+		-H "Authorization: Bearer $user_token" -H 'Content-Type: application/json' -d '{"amount":"100"}')"
+	[ "$code" = "422" ] && ok "new topup intent rejected while payin intake is paused" \
+		|| fail "topup while paused returned HTTP $code (want 422)"
+
+	local resume_id resume_revision
+	resume_revision="$paused_revision"
+	resume_id="$(psql_exec "$ASSURANCE_DB_NAME" -c "SELECT gen_random_uuid();")"
+	curl -fsS -o /dev/null -X POST "http://localhost:$ASSURANCE_PORT/admin/assurance/intake/payin/resume-requests" \
+		-H "Authorization: Bearer $maker_token" -H 'Content-Type: application/json' \
+		-d "{\"command_id\":\"$resume_id\",\"expected_revision\":$resume_revision,\"reason\":\"chaos14 resume\"}"
+	code="$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$ASSURANCE_PORT/admin/assurance/intake/payin/resume-requests/$resume_id/approve" \
+		-H "Authorization: Bearer $maker_token" -H 'Content-Type: application/json')"
+	[ "$code" = "403" ] && ok "same principal cannot approve its own resume request" \
+		|| fail "same-principal resume approval returned HTTP $code (want 403)"
+	response="$(curl -fsS -X POST "http://localhost:$ASSURANCE_PORT/admin/assurance/intake/payin/resume-requests/$resume_id/approve" \
+		-H "Authorization: Bearer $checker_token" -H 'Content-Type: application/json')"
+	local payin_paused_after
+	payin_paused_after="$(psql_exec "$PAYIN_DB_NAME" -c "SELECT paused FROM payin_intake_control WHERE id=1;")"
+	if echo "$response" | grep -q '"applied":true' && [ "$payin_paused_after" = "f" ]; then
+		ok "second principal approved payin resume"
+	else
+		fail "checker resume approval did not persist paused=false: response=$response owner_paused=$payin_paused_after"
+	fi
+	local resumed_revision
+	resumed_revision="$(psql_exec "$PAYIN_DB_NAME" -c "SELECT revision FROM payin_intake_control WHERE id=1;")"
+	[ "$resumed_revision" = "$((resume_revision + 1))" ] && ok "payin resume changed owner revision exactly once" \
+		|| fail "payin resume revision mismatch: before=$resume_revision after=$resumed_revision"
+
+	# Repeat the same role/revision proof on payout while its owner is healthy;
+	# this also proves the pause guard is present on both create paths.
+	payout_revision="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT revision FROM payout_intake_control WHERE id=1;")"
+	command_id="$(psql_exec "$ASSURANCE_DB_NAME" -c "SELECT gen_random_uuid();")"
+	response="$(curl -fsS -X POST "http://localhost:$ASSURANCE_PORT/admin/assurance/intake/payout/pause" \
+		-H "Authorization: Bearer $maker_token" -H 'Content-Type: application/json' \
+		-d "{\"command_id\":\"$command_id\",\"expected_revision\":$payout_revision,\"reason\":\"chaos14 payout pause\"}")"
+	if echo "$response" | grep -q '"paused":true'; then
+		ok "payout intake pause applied"
+	else
+		fail "payout pause did not return paused=true: $response"
+	fi
+	code="$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$APP_PORT/api/v1/payout" \
+		-H "Authorization: Bearer $user_token" -H 'Content-Type: application/json' \
+		-d '{"amount":"100","destination":{"bank_code":"014","account_no":"1"}}')"
+	[ "$code" = "422" ] && ok "new payout rejected while payout intake is paused" \
+		|| fail "payout while paused returned HTTP $code (want 422)"
+	resume_revision="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT revision FROM payout_intake_control WHERE id=1;")"
+	resume_id="$(psql_exec "$ASSURANCE_DB_NAME" -c "SELECT gen_random_uuid();")"
+	curl -fsS -o /dev/null -X POST "http://localhost:$ASSURANCE_PORT/admin/assurance/intake/payout/resume-requests" \
+		-H "Authorization: Bearer $maker_token" -H 'Content-Type: application/json' \
+		-d "{\"command_id\":\"$resume_id\",\"expected_revision\":$resume_revision,\"reason\":\"chaos14 payout resume\"}"
+	curl -fsS -o /dev/null -X POST "http://localhost:$ASSURANCE_PORT/admin/assurance/intake/payout/resume-requests/$resume_id/approve" \
+		-H "Authorization: Bearer $checker_token" -H 'Content-Type: application/json'
+	local payout_resumed_revision
+	payout_resumed_revision="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT revision FROM payout_intake_control WHERE id=1;")"
+	[ "$payout_resumed_revision" = "$((resume_revision + 1))" ] && ok "payout resume changed owner revision exactly once" \
+		|| fail "payout resume revision mismatch: before=$resume_revision after=$payout_resumed_revision"
+	stop_services
+}
+
 # ─── Main ────────────────────────────────────────────────────────────────────
 
 case "${1:-}" in
@@ -1338,6 +1584,9 @@ case "${1:-}" in
 9) scenario_9 ;;
 10) scenario_10 ;;
 11) scenario_11 ;;
+12) scenario_12 ;;
+13) scenario_13 ;;
+14) scenario_14 ;;
 all)
 	scenario_1
 	scenario_2
@@ -1350,9 +1599,12 @@ all)
 	scenario_9
 	scenario_10
 	scenario_11
+	scenario_12
+	scenario_13
+	scenario_14
 	;;
 *)
-	echo "Usage: $0 {1|2|3|4|5|6|7|8|9|10|11|all}"
+	echo "Usage: $0 {1|2|3|4|5|6|7|8|9|10|11|12|13|14|all}"
 	exit 2
 	;;
 esac
