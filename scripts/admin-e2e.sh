@@ -25,17 +25,17 @@ start_services
 start_adminbff_service
 
 log "login through admin BFF"
-login_page="$(curl -fsS -c "$COOKIE_JAR" -b "$COOKIE_JAR" -L -X POST "http://localhost:$ADMINBFF_PORT/login" \
+login_page="$(curl_internal -fsS -c "$COOKIE_JAR" -b "$COOKIE_JAR" -L -X POST "http://localhost:$ADMINBFF_PORT/login" \
 	-H 'Content-Type: application/x-www-form-urlencoded' \
 	--data-urlencode "email=$ADMIN_EMAIL" --data-urlencode "password=$ADMIN_PASSWORD")"
 csrf="$(printf '%s' "$login_page" | sed -n 's/.*name="csrf_token" value="\([^"]*\)".*/\1/p' | head -1)"
 [ -n "$csrf" ] && ok "admin session established and CSRF token rendered" || fail "admin login did not render a CSRF token"
 
-dashboard="$(curl -fsS -b "$COOKIE_JAR" "http://localhost:$ADMINBFF_PORT/api/v1/admin/")"
+dashboard="$(curl_internal -fsS -b "$COOKIE_JAR" "http://localhost:$ADMINBFF_PORT/api/v1/admin/")"
 printf '%s' "$dashboard" | grep -q 'Seev Admin' && ok "protected dashboard is reachable" || fail "protected dashboard response missing console marker"
 
 before="$(psql_exec "$ADMINBFF_DB_NAME" -c "SELECT count(*) FROM audit_log;" | tr -d '[:space:]')"
-code="$(curl -sS -o "$WORK_DIR/replay.json" -w '%{http_code}' -b "$COOKIE_JAR" -X POST \
+code="$(curl_internal -sS -o "$WORK_DIR/replay.json" -w '%{http_code}' -b "$COOKIE_JAR" -X POST \
 	"http://localhost:$ADMINBFF_PORT/api/v1/admin/payout/vendor-commands/dead/replay-all" \
 	-H 'Content-Type: application/x-www-form-urlencoded' --data-urlencode "csrf_token=$csrf")"
 [ "$code" = "200" ] && ok "payout dead-command replay endpoint accepted a CSRF-protected mutation" || fail "replay-all returned HTTP $code"
@@ -43,7 +43,7 @@ code="$(curl -sS -o "$WORK_DIR/replay.json" -w '%{http_code}' -b "$COOKIE_JAR" -
 after="$(psql_exec "$ADMINBFF_DB_NAME" -c "SELECT count(*) FROM audit_log;" | tr -d '[:space:]')"
 [ "$after" -gt "$before" ] && ok "BFF audit row recorded for mutation" || fail "audit row count did not increase ($before -> $after)"
 
-curl -fsS -b "$COOKIE_JAR" "http://localhost:$ADMINBFF_PORT/api/v1/admin/catalog" | grep -q 'Audit log' \
+curl_internal -fsS -b "$COOKIE_JAR" "http://localhost:$ADMINBFF_PORT/api/v1/admin/catalog" | grep -q 'Audit log' \
 	&& ok "batch-2 operations panels render" || fail "batch-2 operations panel missing"
 
 if [ "${FAILED:-0}" -ne 0 ]; then

@@ -549,7 +549,142 @@ teradaptasi tanpa memindahkan permukaan apa pun ke plain.
 
 ### Hasil
 
-> Diisi saat T3 selesai.
+**8 listener HTTP di-flip ke mTLS** (bukan 7 seperti estimasi §2 awal —
+assurance-service ikut, konsisten TM-09): gateway internal `:8081`
+(allowlist `{dev-operator,prometheus,admin-bff}`); ledger publik `:8090`
+(`{gateway,dev-operator}` — satu-satunya pemanggil legal adalah proxy
+gateway sendiri, meski melayani rute user-facing) + ledger internal
+`:8091` (`{dev-operator,prometheus,admin-bff}`); auth internal `:8083`
+(sama) — auth publik `:8082` TETAP plain (anti-scope, edge-public); payin
+`:8092`, payout `:8093`, fraud `:8094` (semua `{dev-operator,prometheus,
+admin-bff}`); admin-bff `:8095` (`{dev-operator,prometheus}` — tak ada
+service lain yang memanggilnya via HTTP); assurance `:8096`
+(`{dev-operator,prometheus}`).
+
+**pkg/tlsx**: `HTTPClient(src, expectedServerIdentity, timeout) *http.Client`
+baru — pembungkus `ClientConfig` untuk pemanggil `*http.Client` (dipakai di
+7 fungsi `-healthcheck` + admin-bff downstream clients).
+**internal/server**: `NewWithAddrTLS` baru + `listenAndServe` bercabang ke
+`ListenAndServeTLS("", "")` saat `TLSConfig` terisi — dipakai gateway.
+**Per-service main.go**: `newHTTPServer`/inline `&http.Server{}` di ledger,
+auth, payin, payout, fraud, assurance semuanya menambah `TLSConfig` +
+`ListenAndServeTLS` (via `serveHTTP` yang kini bercabang). Setiap
+`-healthcheck` (kecuali gateway, yang tetap probe publik `:8080` plain)
+memuat identitas `dev-operator` on-the-fly dari `TLS_CERT_DIR` — bukan
+identitas service sendiri, supaya matriks allowlist tetap mencerminkan
+pemanggil ASLI (dev-operator/harness), bukan self-referential.
+
+**gateway→ledger proxy** (`ledger_remote.go`): `newLedgerProxy` menerima
+`certSrc`, transport dasar jadi `&http.Transport{TLSClientConfig:
+tlsx.ClientConfig(certSrc, tlsx.IdentityLedger)}` (nil-toleran — test yang
+menembak `httptest.Server` biasa lewat `nil`, dikonfirmasi di
+`ledger_remote_test.go`). `LEDGER_USER_API_URL` default → `https://` di
+config.go, `.env.example`, docker-compose, `scripts/lib.sh`.
+
+**admin-bff** (sebelumnya sengaja dilewati T2): sekarang memuat
+`certSrc` sendiri di `run()`; listenernya mTLS; `internal/adminbff/
+client/client.go`'s `New()` diubah menerima `*http.Client` eksplisit
+(package tetap "wire-only, no domain knowledge" — pemanggil yang
+menentukan transport) — `NewModule` sekarang menerima `certSrc` (nil-
+toleran, dipakai test dengan `httptest.Server` biasa) dan membangun 6
+klien mTLS terpisah (satu per identitas target: `auth-admin`, `ledger`,
+`payin`, `payout`, `fraud`, `gateway` — SATU `*http.Client` tidak bisa
+dipakai bersama karena tiap target punya `expectedServerIdentity`
+berbeda), plus 1 klien plain untuk `auth`'s endpoint login publik.
+compose: `TLS_CERT_DIR` + `volumes: *cert-volume` ditambahkan ke
+admin-bff-service block (satu-satunya app service yang belum
+punya sejak T2).
+
+**Prometheus**: `prometheus.yml` — 6 job existing dapat `scheme: https` +
+`tls_config` (identitas `prometheus`); 2 job BARU ditambahkan
+(`admin-bff-service`, `assurance-service` — sebelumnya sama sekali tak
+ter-scrape, TM-04/TM-09) bukan wajib literal K6 tapi konsisten dengan
+"tak ada permukaan mTLS baru yang jadi metrics blind spot". Container
+Prometheus (read_only + cap_drop ALL) dapat mount `./deploy/certs:/certs:ro`
+ke-4, sejalan pola `cert-volume` yang sudah ada.
+
+**Harness (`scripts/lib.sh`)**: `curl_internal()` baru — pembungkus drop-in
+untuk `curl` yang menulis ulang `http://`→`https://` di argumen APA PUN
+sebelum delegasi (jadi pemanggil cukup ganti kata `curl`→`curl_internal`,
+TIDAK perlu menyentuh string URL) plus `--cacert/--cert/--key` identitas
+`dev-operator`. `wait_for_service_up` dan `assert_metric_value` jadi
+scheme-aware (cabang berdasar prefix `https://` pada `$url`, gateway tetap
+lewat `curl` polos). `TLS_CERT_DIR` + URL admin-bff diekspor lengkap di
+`start_adminbff_service`. Sapuan `curl`→`curl_internal` diterapkan di
+`smoke-test.sh`, `business-e2e.sh`, `admin-e2e.sh`, `chaos-test.sh` pada
+tiap port internal/admin (dibiarkan plain: `APP_PORT` gateway, `AUTH_APP_PORT`
+publik).
+
+**3 bug nyata ditemukan LEWAT eksekusi live, bukan review kode** (semuanya
+diperbaiki, dibuktikan lewat re-run bersih):
+
+1. **`curl` butuh `-k`**: `pkg/tlsx`'s klien Go memverifikasi identitas
+   peer lewat `VerifyConnection` custom (`InsecureSkipVerify:true` +
+   verifikasi chain manual + cek URI SAN) — persis karena sertifikat di
+   repo ini CUMA punya URI SAN, tanpa DNS SAN, sehingga verifikasi
+   hostname bawaan `crypto/tls` MESTI gagal. `curl` tidak punya padanan
+   "verifikasi chain, lewati cocok-hostname" — hanya all-or-nothing.
+   Dikonfirmasi manual: `curl --cacert ... --cert ... --key ...` (tanpa
+   `-k`) ke ledger-service sungguhan → `SSL: certificate subject name
+   'ledger' does not match target host name 'localhost'`. Setelah `-k`
+   ditambahkan ke `curl_internal`: identitas diizinkan → 200; tanpa cert
+   klien → ditolak (curl exit 000); identitas DI LUAR allowlist (`auth`
+   mencoba ledger publik yang cuma mengizinkan `{gateway,dev-operator}`)
+   → ditolak. Ketiganya dikonfirmasi manual sebelum lanjut ke gate
+   penuh.
+2. **`fee_url` di `business-e2e.sh`**: satu variabel URL dibangun sekali
+   lalu dipakai ulang di 5 pemanggilan `curl` berikutnya — sapuan
+   otomatis (regex per-baris) tidak menangkap ini karena hanya melacak
+   variabel port literal DALAM satu statement yang sama, bukan
+   indirection lewat variabel. Menyebabkan SEMUA 13 kegagalan
+   business-e2e.sh pertama (satu akar masalah tunggal — `Client sent an
+   HTTP request to an HTTPS server` berantai ke setiap assertion fee
+   yang bergantung padanya). Diperbaiki: 5 situs `curl`→`curl_internal`.
+3. **12 pemanggilan `assert_metric_value` di `chaos-test.sh`**: meneruskan
+   string literal `http://` ke FUNGSI helper (bukan kata kunci `curl`),
+   yang tidak pernah tersentuh sapuan berbasis kata "curl". Dengan
+   `set -euo pipefail`, `curl` gagal di dalam `assert_metric_value` (via
+   `matches="$(curl -s "$url" | grep ...)"`, pipeline gagal di bawah
+   pipefail) memicu KELUAR SENYAP — tidak ada baris `[ FAIL]` sama
+   sekali, chaos-test.sh langsung mati di tengah Scenario 9 tanpa pesan
+   error. Ini yang PALING halus dari ketiganya — butuh perbandingan
+   `ps aux` + log servis langsung untuk memastikan proses sungguh
+   berhenti (bukan sekadar lambat), lalu membaca kode `scenario_9`
+   baris-per-baris untuk menemukan pemanggilan generik yang lolos dari
+   sapuan berbasis kata. Diperbaiki: 12 situs `http://`→`https://`.
+
+**Verifikasi (GATE 2)**: `go build ./...`, `go vet ./...`,
+`go vet -tags=integration ./...`, `make lint`, `go test ./... -race
+-count=1` — bersih, baik di working tree penuh maupun di worktree
+terisolasi berisi HANYA commit T3 ini (`git worktree add` + `git diff
+--cached | git apply`, cara yang sama seperti verifikasi T2).
+
+`make verify-full` dari volume bersih (masing-masing script dijalankan
+manual, bukan lewat `make verify-full` langsung, agar bug bisa
+diperbaiki-lalu-diverifikasi-ulang per script tanpa mengulang seluruh
+rantai): `smoke-test.sh` PASS (setelah fix #1); `business-e2e.sh` PASS
+(setelah fix #1+#2, 0 dari 13 kegagalan awal tersisa); `admin-e2e.sh`
+PASS bersih di percobaan pertama (termasuk mutasi lewat klien mTLS
+admin-bff→payout — replay-all endpoint); `chaos-test.sh all` (14
+skenario) PASS bersih setelah fix #3 — kill/restart di scenario
+1,3,5,6,8,10,11,12,13,14 semuanya tetap hijau dengan listener HTTP kini
+mTLS, tepat perhatian khusus §5 T3 (regresi paling mungkin) yang
+TIDAK terjadi.
+
+**Kedisiplinan commit**: sama seperti T2 — beberapa file yang T3 sentuh
+(`.env.example`, `Makefile`, `docker-compose.yml`, `internal/config/
+config.go`, `cmd/auth-service/main.go`, `scripts/lib.sh`,
+`scripts/admin-e2e.sh`, `scripts/chaos-test.sh`) bercampur baris dengan
+pekerjaan tak-terkait yang masih ada di working tree sejak sebelum T2
+(fitur KYC rescreen) maupun perbaikan flakiness chaos-test yang sudah
+ada duluan (`wait_for_container_restart`, `tries=48`, `sleep 125`,
+retry-loop di scenario 14). Untuk file dengan hunk campuran yang TIDAK
+bisa dipisah bersih lewat `git add -p` (rewrite besar yang saling
+menjalin baris baru), dipakai teknik "bangun ulang diff murni terhadap
+HEAD": checkout isi HEAD sementara, terapkan HANYA perubahan T3 secara
+terprogram, stage, lalu kembalikan working tree penuh — dipakai untuk
+`scripts/admin-e2e.sh` dan `scripts/chaos-test.sh` yang hunk campurannya
+terlalu dalam untuk `git add -p` biasa/split.
 
 ### T4 — Vault dev-mode + seed + plumbing config (K7)
 

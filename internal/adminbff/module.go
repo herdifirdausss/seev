@@ -22,6 +22,7 @@ import (
 	"github.com/herdifirdausss/seev/pkg/database"
 	"github.com/herdifirdausss/seev/pkg/middleware"
 	"github.com/herdifirdausss/seev/pkg/scheduler"
+	"github.com/herdifirdausss/seev/pkg/tlsx"
 )
 
 const sessionCookieName = "admin_session"
@@ -56,13 +57,37 @@ type Module struct {
 	startOnce sync.Once
 }
 
-func NewModule(db database.DatabaseSQL, cfg config.AdminBFFConfig, logger *slog.Logger) *Module {
+// NewModule wires the admin BFF's downstream clients. certSrc is nil in
+// tests that talk to plain httptest.Server instances (docs/plan/49 K6) —
+// every downstream target then gets client.DefaultHTTPClient() instead of
+// an mTLS transport, matching those tests' plain HTTP fixtures exactly.
+// In production certSrc is always set: auth's PUBLIC login endpoint stays
+// plain (anti-scope edge exception); every other target — all genuinely
+// internal — gets its own mTLS client keyed to ITS identity, since one
+// shared client can't satisfy six different expected-server-identity
+// checks.
+func NewModule(db database.DatabaseSQL, cfg config.AdminBFFConfig, logger *slog.Logger, certSrc *tlsx.CertSource) *Module {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	lock := scheduler.NewMemoryLock(2 * time.Minute)
 	auditRepo := newAuditRepository(db)
-	return &Module{repo: NewSessionRepository(db), auth: NewAuthClient(cfg.AuthServiceURL), clients: client.NewClients(cfg.AuthServiceURL, cfg.AuthAdminServiceURL, cfg.LedgerServiceURL, cfg.PayinServiceURL, cfg.PayoutServiceURL, cfg.FraudServiceURL, cfg.GatewayServiceURL), cfg: cfg, logger: logger,
+	internalClient := func(identity string) *http.Client {
+		if certSrc == nil {
+			return client.DefaultHTTPClient()
+		}
+		return tlsx.HTTPClient(certSrc, identity, 5*time.Second)
+	}
+	clients := client.Clients{
+		Auth:      client.New("auth", cfg.AuthServiceURL, client.DefaultHTTPClient()),
+		AuthAdmin: client.New("auth-admin", cfg.AuthAdminServiceURL, internalClient(tlsx.IdentityAuth)),
+		Ledger:    client.New("ledger", cfg.LedgerServiceURL, internalClient(tlsx.IdentityLedger)),
+		Payin:     client.New("payin", cfg.PayinServiceURL, internalClient(tlsx.IdentityPayin)),
+		Payout:    client.New("payout", cfg.PayoutServiceURL, internalClient(tlsx.IdentityPayout)),
+		Fraud:     client.New("fraud", cfg.FraudServiceURL, internalClient(tlsx.IdentityFraud)),
+		Gateway:   client.New("gateway", cfg.GatewayServiceURL, internalClient(tlsx.IdentityGateway)),
+	}
+	return &Module{repo: NewSessionRepository(db), auth: NewAuthClient(cfg.AuthServiceURL), clients: clients, cfg: cfg, logger: logger,
 		audit: auditRepo, auditRead: auditRepo,
 		lock: lock, scheduler: scheduler.NewScheduler(lock, scheduler.NewPrometheusMetrics())}
 }

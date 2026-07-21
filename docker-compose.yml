@@ -161,6 +161,7 @@ services:
       REDIS_ENABLED: "true"
       REDIS_ADDR: redis:6379
       LEDGER_GRPC_ADDR: ledger-service:9091
+      FRAUD_GRPC_ADDR: fraud-service:9094
       INTERNAL_GRPC_TOKEN: ${INTERNAL_GRPC_TOKEN:-change-me-to-a-random-32-plus-character-token}
       TLS_CERT_DIR: /certs
       JWT_SECRET: ${JWT_SECRET:-change-me-to-a-random-32-plus-character-secret}
@@ -358,14 +359,16 @@ services:
       POSTGRES_SSL_MODE: disable
       JWT_SECRET: ${JWT_SECRET:-change-me-to-a-random-32-plus-character-secret}
       JWT_ISSUER: ${JWT_ISSUER:-}
+      TLS_CERT_DIR: /certs
       AUTH_SERVICE_URL: http://auth-service:8082
-      AUTH_ADMIN_SERVICE_URL: http://auth-service:8083
-      LEDGER_SERVICE_URL: http://ledger-service:8091
-      PAYIN_SERVICE_URL: http://payin-service:8092
-      PAYOUT_SERVICE_URL: http://payout-service:8093
-      FRAUD_SERVICE_URL: http://fraud-service:8094
-      GATEWAY_SERVICE_URL: http://gateway-service:8081
+      AUTH_ADMIN_SERVICE_URL: https://auth-service:8083
+      LEDGER_SERVICE_URL: https://ledger-service:8091
+      PAYIN_SERVICE_URL: https://payin-service:8092
+      PAYOUT_SERVICE_URL: https://payout-service:8093
+      FRAUD_SERVICE_URL: https://fraud-service:8094
+      GATEWAY_SERVICE_URL: https://gateway-service:8081
       ADMIN_BFF_SECURE_COOKIE: "false"
+    volumes: *cert-volume
     ports:
       - "127.0.0.1:8095:8095"
     depends_on:
@@ -471,7 +474,7 @@ services:
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-seev}
       RABBITMQ_EXCHANGE: ledger.events
       LEDGER_GRPC_ADDR: ledger-service:9091
-      LEDGER_USER_API_URL: http://ledger-service:8090
+      LEDGER_USER_API_URL: https://ledger-service:8090
       PAYIN_GRPC_ADDR: payin-service:9092
       PAYOUT_GRPC_ADDR: payout-service:9093
       INTERNAL_GRPC_TOKEN: ${INTERNAL_GRPC_TOKEN:-change-me-to-a-random-32-plus-character-token}
@@ -527,6 +530,10 @@ services:
       - ./deploy/observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./deploy/observability/prometheus/rules:/etc/prometheus/rules:ro
       - seev_prometheus_data:/prometheus
+      # docs/plan/49 K6: every scrape target now requires mTLS — Prometheus
+      # presents the "prometheus" identity, mirrors the app-tier cert-volume
+      # pattern (read-only; the container is also read_only itself below).
+      - ./deploy/certs:/certs:ro
     ports:
       - "127.0.0.1:9090:9090"
     read_only: true

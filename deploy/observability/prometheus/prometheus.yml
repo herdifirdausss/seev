@@ -1,5 +1,8 @@
 # docs/plan/43 Task T1 — scrapes /metrics on each service's internal/admin
 # listener only, never the public listener (docs/plan/10 Task T6 boundary).
+# docs/plan/49 K6: every one of those listeners now requires mTLS —
+# Prometheus presents the "prometheus" client identity and trusts only the
+# shared CA, mirroring what a real dev-operator curl session needs.
 global:
   scrape_interval: 15s
   evaluation_interval: 15s
@@ -9,31 +12,85 @@ rule_files:
 
 scrape_configs:
   - job_name: gateway-service
+    scheme: https
+    tls_config:
+      ca_file: /certs/ca.pem
+      cert_file: /certs/prometheus.pem
+      key_file: /certs/prometheus-key.pem
     metrics_path: /metrics
     static_configs:
       - targets: ["gateway-service:8081"]
 
   - job_name: auth-service
+    scheme: https
+    tls_config:
+      ca_file: /certs/ca.pem
+      cert_file: /certs/prometheus.pem
+      key_file: /certs/prometheus-key.pem
     metrics_path: /metrics
     static_configs:
       - targets: ["auth-service:8083"]
 
   - job_name: ledger-service
+    scheme: https
+    tls_config:
+      ca_file: /certs/ca.pem
+      cert_file: /certs/prometheus.pem
+      key_file: /certs/prometheus-key.pem
     metrics_path: /metrics
     static_configs:
       - targets: ["ledger-service:8091"]
 
   - job_name: payin-service
+    scheme: https
+    tls_config:
+      ca_file: /certs/ca.pem
+      cert_file: /certs/prometheus.pem
+      key_file: /certs/prometheus-key.pem
     metrics_path: /metrics
     static_configs:
       - targets: ["payin-service:8092"]
 
   - job_name: payout-service
+    scheme: https
+    tls_config:
+      ca_file: /certs/ca.pem
+      cert_file: /certs/prometheus.pem
+      key_file: /certs/prometheus-key.pem
     metrics_path: /metrics
     static_configs:
       - targets: ["payout-service:8093"]
 
   - job_name: fraud-service
+    scheme: https
+    tls_config:
+      ca_file: /certs/ca.pem
+      cert_file: /certs/prometheus.pem
+      key_file: /certs/prometheus-key.pem
     metrics_path: /metrics
     static_configs:
       - targets: ["fraud-service:8094"]
+
+  # admin-bff-service and assurance-service had no scrape job at all before
+  # docs/plan/49 (TM-04/TM-09 in docs/security/threat-model.md) — added
+  # here rather than left as a metrics blind spot now that both listeners
+  # are being flipped to mTLS in this same task anyway.
+  - job_name: admin-bff-service
+    scheme: https
+    tls_config:
+      ca_file: /certs/ca.pem
+      cert_file: /certs/prometheus.pem
+      key_file: /certs/prometheus-key.pem
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["admin-bff-service:8095"]
+
+  - job_name: assurance-service
+    scheme: https
+    tls_config:
+      ca_file: /certs/ca.pem
+      cert_file: /certs/prometheus.pem
+      key_file: /certs/prometheus-key.pem
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["assurance-service:8096"]

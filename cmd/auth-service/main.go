@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"flag"
 	"fmt"
@@ -45,13 +46,25 @@ func main() {
 	}
 }
 
+// probeHealth dials the INTERNAL :8083 listener, which is mTLS since
+// docs/plan/49 K6 flips it — auth's PUBLIC :8082 has no separate
+// healthcheck path and stays plain (anti-scope: edge-public exception).
 func probeHealth(getenv func(string) string) error {
 	port := getenv("INTERNAL_APP_PORT")
 	if port == "" {
 		port = "8083"
 	}
-	client := &http.Client{Timeout: 3 * time.Second}
-	response, err := client.Get("http://127.0.0.1:" + port + "/health")
+	certDir := getenv("TLS_CERT_DIR")
+	if certDir == "" {
+		certDir = "deploy/certs"
+	}
+	certSrc, err := tlsx.LoadFromDir(certDir, "dev-operator", slog.Default())
+	if err != nil {
+		return fmt.Errorf("load healthcheck TLS identity: %w", err)
+	}
+	defer certSrc.Stop()
+	client := tlsx.HTTPClient(certSrc, tlsx.IdentityAuth, 3*time.Second)
+	response, err := client.Get("https://127.0.0.1:" + port + "/health")
 	if err != nil {
 		return err
 	}
@@ -152,8 +165,12 @@ func run(parent context.Context) error {
 		return fmt.Errorf("start kyc apply retry worker: %w", err)
 	}
 
-	publicServer := newHTTPServer(cfg.App, ":"+cfg.App.Port, publicRouter(cfg, module, redisCache, log))
-	internalServer := newHTTPServer(cfg.App, cfg.App.InternalBindAddr+":"+cfg.App.InternalPort, internalRouter(cfg, module))
+	// docs/plan/49 K6: auth's public :8082 stays plain (anti-scope edge
+	// exception); only the internal :8083 listener flips to mTLS.
+	publicServer := newHTTPServer(cfg.App, ":"+cfg.App.Port, publicRouter(cfg, module, redisCache, log), nil)
+	internalServer := newHTTPServer(cfg.App, cfg.App.InternalBindAddr+":"+cfg.App.InternalPort, internalRouter(cfg, module), tlsx.ServerConfig(certSrc, []string{
+		tlsx.IdentityDevOperator, tlsx.IdentityPrometheus, tlsx.IdentityAdminBFF,
+	}))
 	errCh := make(chan error, 2)
 	go serveHTTP(publicServer, errCh)
 	go serveHTTP(internalServer, errCh)
@@ -185,13 +202,19 @@ func redisClientClient(c *cache.Cache) *redis.Client {
 	return c.Client()
 }
 
-func newHTTPServer(cfg config.AppConfig, addr string, handler http.Handler) *http.Server {
+func newHTTPServer(cfg config.AppConfig, addr string, handler http.Handler, tlsConfig *tls.Config) *http.Server {
 	return &http.Server{Addr: addr, Handler: handler, ReadTimeout: cfg.ReadTimeout, WriteTimeout: cfg.WriteTimeout,
-		IdleTimeout: cfg.IdleTimeout, ReadHeaderTimeout: 5 * time.Second, MaxHeaderBytes: 1 << 20}
+		IdleTimeout: cfg.IdleTimeout, ReadHeaderTimeout: 5 * time.Second, MaxHeaderBytes: 1 << 20, TLSConfig: tlsConfig}
 }
 
 func serveHTTP(server *http.Server, errCh chan<- error) {
-	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+	var err error
+	if server.TLSConfig != nil {
+		err = server.ListenAndServeTLS("", "")
+	} else {
+		err = server.ListenAndServe()
+	}
+	if err != nil && !errors.Is(err, http.ErrServerClosed) {
 		errCh <- fmt.Errorf("http %s: %w", server.Addr, err)
 	}
 }

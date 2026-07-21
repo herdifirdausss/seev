@@ -333,7 +333,7 @@ start_fraud_service() {
 		nohup "$FRAUD_BIN" >>"$FRAUD_LOG" 2>&1 &
 		echo $! >"$FRAUD_PID_FILE"
 	)
-	wait_for_service_up fraud-service "http://localhost:$FRAUD_ADMIN_PORT/health" "$FRAUD_PID_FILE" "$FRAUD_LOG"
+	wait_for_service_up fraud-service "https://localhost:$FRAUD_ADMIN_PORT/health" "$FRAUD_PID_FILE" "$FRAUD_LOG"
 }
 
 start_payout_service() {
@@ -372,7 +372,7 @@ start_payout_service() {
 		nohup "$PAYOUT_BIN" >>"$PAYOUT_LOG" 2>&1 &
 		echo $! >"$PAYOUT_PID_FILE"
 	)
-	wait_for_service_up payout-service "http://localhost:$PAYOUT_ADMIN_PORT/health" "$PAYOUT_PID_FILE" "$PAYOUT_LOG"
+	wait_for_service_up payout-service "https://localhost:$PAYOUT_ADMIN_PORT/health" "$PAYOUT_PID_FILE" "$PAYOUT_LOG"
 }
 
 # start_payout_service_replica starts a SECOND payout-service process (same
@@ -411,7 +411,7 @@ start_payout_service_replica() {
 		nohup "$PAYOUT_BIN" >>"$PAYOUT2_LOG" 2>&1 &
 		echo $! >"$PAYOUT2_PID_FILE"
 	)
-	wait_for_service_up payout-service-2 "http://localhost:$PAYOUT2_ADMIN_PORT/health" "$PAYOUT2_PID_FILE" "$PAYOUT2_LOG"
+	wait_for_service_up payout-service-2 "https://localhost:$PAYOUT2_ADMIN_PORT/health" "$PAYOUT2_PID_FILE" "$PAYOUT2_LOG"
 }
 
 kill_payout_replica_hard() {
@@ -459,7 +459,7 @@ start_payin_service() {
 		nohup "$PAYIN_BIN" >>"$PAYIN_LOG" 2>&1 &
 		echo $! >"$PAYIN_PID_FILE"
 	)
-	wait_for_service_up payin-service "http://localhost:$PAYIN_ADMIN_PORT/health" "$PAYIN_PID_FILE" "$PAYIN_LOG"
+	wait_for_service_up payin-service "https://localhost:$PAYIN_ADMIN_PORT/health" "$PAYIN_PID_FILE" "$PAYIN_LOG"
 }
 
 # gen_token mints a JWT via cmd/gentoken (see that package's own doc comment)
@@ -500,7 +500,7 @@ start_ledger_service() {
 		nohup "$LEDGER_BIN" >>"$LEDGER_LOG" 2>&1 &
 		echo $! >"$LEDGER_PID_FILE"
 	)
-	wait_for_service_up ledger-service "http://localhost:$LEDGER_APP_PORT/health" "$LEDGER_PID_FILE" "$LEDGER_LOG"
+	wait_for_service_up ledger-service "https://localhost:$LEDGER_APP_PORT/health" "$LEDGER_PID_FILE" "$LEDGER_LOG"
 }
 
 start_gateway() {
@@ -527,7 +527,7 @@ start_gateway() {
 		export TLS_CERT_DIR=$CERT_DIR
 		export INTERNAL_GRPC_TOKEN=$INTERNAL_GRPC_TOKEN
 		export LEDGER_GRPC_ADDR=localhost:$LEDGER_GRPC_PORT
-		export LEDGER_USER_API_URL=http://localhost:$LEDGER_APP_PORT
+		export LEDGER_USER_API_URL=https://localhost:$LEDGER_APP_PORT
 		export PAYIN_GRPC_ADDR=localhost:$PAYIN_GRPC_PORT
 		export PAYOUT_GRPC_ADDR=localhost:$PAYOUT_GRPC_PORT
 		export LOG_FORMAT=json
@@ -564,7 +564,7 @@ start_auth_service() {
 		nohup "$AUTH_BIN" >>"$AUTH_LOG" 2>&1 &
 		echo $! >"$AUTH_PID_FILE"
 	)
-	wait_for_service_up auth-service "http://localhost:$AUTH_INTERNAL_PORT/health" "$AUTH_PID_FILE" "$AUTH_LOG"
+	wait_for_service_up auth-service "https://localhost:$AUTH_INTERNAL_PORT/health" "$AUTH_PID_FILE" "$AUTH_LOG"
 }
 
 start_services() {
@@ -600,7 +600,7 @@ start_assurance_service() {
 		nohup "$ASSURANCE_BIN" >>"$ASSURANCE_LOG" 2>&1 &
 		echo $! >"$ASSURANCE_PID_FILE"
 	)
-	wait_for_service_up assurance-service "http://localhost:$ASSURANCE_PORT/health" "$ASSURANCE_PID_FILE" "$ASSURANCE_LOG"
+	wait_for_service_up assurance-service "https://localhost:$ASSURANCE_PORT/health" "$ASSURANCE_PID_FILE" "$ASSURANCE_LOG"
 }
 
 start_adminbff_service() {
@@ -615,26 +615,64 @@ start_adminbff_service() {
 		export POSTGRES_DB=$ADMINBFF_DB_NAME
 		export POSTGRES_SSL_MODE=disable
 		export JWT_SECRET=$JWT_SECRET
+		export TLS_CERT_DIR=$CERT_DIR
+		# AUTH_SERVICE_URL targets auth's PUBLIC login endpoint and stays
+		# plain (docs/plan/49 anti-scope edge exception); every other
+		# downstream target here is genuinely internal and flips to https.
 		export AUTH_SERVICE_URL="${AUTH_SERVICE_URL:-http://localhost:$AUTH_APP_PORT}"
-		export AUTH_ADMIN_SERVICE_URL="${AUTH_ADMIN_SERVICE_URL:-http://localhost:$AUTH_INTERNAL_PORT}"
-		export LEDGER_SERVICE_URL="${LEDGER_SERVICE_URL:-http://localhost:$LEDGER_INTERNAL_PORT}"
-		export PAYIN_SERVICE_URL="${PAYIN_SERVICE_URL:-http://localhost:$PAYIN_ADMIN_PORT}"
-		export PAYOUT_SERVICE_URL="${PAYOUT_SERVICE_URL:-http://localhost:$PAYOUT_ADMIN_PORT}"
-		export FRAUD_SERVICE_URL="${FRAUD_SERVICE_URL:-http://localhost:$FRAUD_ADMIN_PORT}"
-		export GATEWAY_SERVICE_URL="${GATEWAY_SERVICE_URL:-http://localhost:$INTERNAL_PORT}"
+		export AUTH_ADMIN_SERVICE_URL="${AUTH_ADMIN_SERVICE_URL:-https://localhost:$AUTH_INTERNAL_PORT}"
+		export LEDGER_SERVICE_URL="${LEDGER_SERVICE_URL:-https://localhost:$LEDGER_INTERNAL_PORT}"
+		export PAYIN_SERVICE_URL="${PAYIN_SERVICE_URL:-https://localhost:$PAYIN_ADMIN_PORT}"
+		export PAYOUT_SERVICE_URL="${PAYOUT_SERVICE_URL:-https://localhost:$PAYOUT_ADMIN_PORT}"
+		export FRAUD_SERVICE_URL="${FRAUD_SERVICE_URL:-https://localhost:$FRAUD_ADMIN_PORT}"
+		export GATEWAY_SERVICE_URL="${GATEWAY_SERVICE_URL:-https://localhost:$INTERNAL_PORT}"
 		export ADMIN_BFF_SECURE_COOKIE="${ADMIN_BFF_SECURE_COOKIE:-false}"
 		export LOG_FORMAT=json
 		nohup "$ADMINBFF_BIN" >>"$ADMINBFF_LOG" 2>&1 &
 		echo $! >"$ADMINBFF_PID_FILE"
 	)
-	wait_for_service_up admin-bff-service "http://localhost:$ADMINBFF_PORT/health" "$ADMINBFF_PID_FILE" "$ADMINBFF_LOG"
+	wait_for_service_up admin-bff-service "https://localhost:$ADMINBFF_PORT/health" "$ADMINBFF_PID_FILE" "$ADMINBFF_LOG"
+}
+
+# docs/plan/49 K6: every internal/admin listener now requires mTLS, so any
+# curl targeting one must present the dev-operator client identity — the
+# same identity a real operator's manual curl/browser session would use.
+# A drop-in wrapper rather than touching every call site's URL string:
+# rewrites http:// to https:// anywhere in the arguments before delegating
+# to real curl, so callers only need their `curl` renamed to
+# `curl_internal`, nothing else. Public endpoints (gateway/auth's edge)
+# must never be routed through this — they stay on plain curl.
+#
+# -k/--insecure is required, not optional: this repo's certs carry ONLY a
+# URI SAN (spiffe://seev/<service>, docs/plan/49 K3/K4), never a DNS SAN —
+# pkg/tlsx's Go clients handle that via a custom VerifyConnection hook
+# (InsecureSkipVerify + manual chain verification + URI SAN check), but
+# curl exposes no equivalent "verify the chain, skip hostname matching"
+# knob — only all-or-nothing. --cacert/--cert/--key above still present a
+# real client identity and the SERVER still enforces its allowlist; this
+# harness simply doesn't verify the server's identity back, which is an
+# acceptable, deliberately scoped gap for local dev/test tooling — never
+# how two Go services actually talk to each other in this repo.
+curl_internal() {
+	local args=() arg
+	for arg in "$@"; do
+		case "$arg" in
+		http://*) args+=("https://${arg#http://}") ;;
+		*) args+=("$arg") ;;
+		esac
+	done
+	curl -k --cacert "$CERT_DIR/ca.pem" --cert "$CERT_DIR/dev-operator.pem" --key "$CERT_DIR/dev-operator-key.pem" "${args[@]}"
 }
 
 wait_for_service_up() {
 	local name=$1 url=$2 pid_file=$3 log_file=$4
 	local tries=30
+	local check=curl
+	case "$url" in
+	https://*) check=curl_internal ;;
+	esac
 	while [ "$tries" -gt 0 ]; do
-		if curl -s -o /dev/null "$url"; then
+		if "$check" -s -o /dev/null "$url"; then
 			log "$name is up (pid $(cat "$pid_file" 2>/dev/null))"
 			return 0
 		fi
@@ -878,7 +916,7 @@ fund_user() {
 	fi
 	local fund_token
 	fund_token="$(gen_token "$user_id")"
-	curl -s -o /dev/null -X POST "http://localhost:$LEDGER_INTERNAL_PORT/api/v1/ledger/transactions" \
+	curl_internal -s -o /dev/null -X POST "http://localhost:$LEDGER_INTERNAL_PORT/api/v1/ledger/transactions" \
 		-H "Authorization: Bearer $fund_token" -H "Content-Type: application/json" \
 		-d "{\"idempotency_key\":\"fund-$user_id-$delta\",\"type\":\"money_in\",\"amount\":\"$delta\",\"metadata\":{\"gateway\":\"bca\"}}"
 }
@@ -1004,7 +1042,7 @@ kyc_submit_l2_and_admin_approve() {
 		-H "Authorization: Bearer $access_token" -H "Content-Type: application/json" \
 		-d '{"level_requested":2}')"
 	submission_id="$(echo "$submit_resp" | json_field id)"
-	curl -s -o /dev/null -X POST "http://localhost:$auth_internal_port/api/v1/admin/kyc/submissions/$submission_id/approve" \
+	curl_internal -s -o /dev/null -X POST "http://localhost:$auth_internal_port/api/v1/admin/kyc/submissions/$submission_id/approve" \
 		-H "Authorization: Bearer $admin_token" -H "Content-Type: application/json"
 	curl -s -X POST "http://localhost:$auth_port/api/v1/auth/refresh" \
 		-H "Content-Type: application/json" -d "{\"refresh_token\":\"$refresh_token\"}"
@@ -1061,7 +1099,11 @@ assert_metric_value() {
 	local url=$1 metric=$2 expected=$3 desc=$4
 	shift 4
 	local matches="" label value
-	matches="$(curl -s "$url" | grep "^${metric}{")"
+	local fetch=curl
+	case "$url" in
+	https://*) fetch=curl_internal ;;
+	esac
+	matches="$("$fetch" -s "$url" | grep "^${metric}{")"
 	for label in "$@"; do
 		matches="$(printf '%s\n' "$matches" | grep -F -- "$label")"
 	done

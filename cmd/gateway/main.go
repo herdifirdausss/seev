@@ -116,7 +116,7 @@ func main() {
 		log.Error("failed to connect to ledger-service", "error", err)
 		os.Exit(1)
 	}
-	ledgerProxy, err := newLedgerProxy(cfg.LedgerUserAPIURL, log)
+	ledgerProxy, err := newLedgerProxy(cfg.LedgerUserAPIURL, certSrc, log)
 	if err != nil {
 		log.Error("failed to configure ledger proxy", "error", err)
 		os.Exit(1)
@@ -183,8 +183,14 @@ func main() {
 	internalRouter := handler.NewInternalRouter(cfg, deps, log)
 
 	// ─── Servers ──────────────────────────────────────────────────────────────
+	// Public listener stays plain HTTP (docs/plan/49 anti-scope: gateway
+	// :8080 is one of the two deliberate edge-public exceptions). The
+	// internal listener requires mTLS (K6) — admin-bff, Prometheus, and
+	// dev-operator/harness are its only legitimate callers.
 	publicSrv := server.New(cfg.App, publicRouter)
-	internalSrv := server.NewWithAddr(cfg.App, cfg.App.InternalBindAddr+":"+cfg.App.InternalPort, internalRouter)
+	internalSrv := server.NewWithAddrTLS(cfg.App, cfg.App.InternalBindAddr+":"+cfg.App.InternalPort, internalRouter, tlsx.ServerConfig(certSrc, []string{
+		tlsx.IdentityDevOperator, tlsx.IdentityPrometheus, tlsx.IdentityAdminBFF,
+	}))
 
 	// ─── Start + Graceful Shutdown ────────────────────────────────────────────
 	if err := server.StartMulti(func() {

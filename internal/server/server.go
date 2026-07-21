@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -45,6 +46,18 @@ func NewWithAddr(cfg config.AppConfig, addr string, handler http.Handler) *Serve
 	}
 }
 
+// NewWithAddrTLS is like NewWithAddr but serves mutual TLS using tlsConfig
+// (docs/plan/49 K6) — used for the internal-only listener once its peers
+// are required to present a client certificate. listenAndServe below calls
+// ListenAndServeTLS("", "") when this is set; empty cert/key file
+// arguments are correct because tlsConfig.GetCertificate (built via
+// pkg/tlsx) already supplies the certificate.
+func NewWithAddrTLS(cfg config.AppConfig, addr string, handler http.Handler, tlsConfig *tls.Config) *Server {
+	s := NewWithAddr(cfg, addr, handler)
+	s.httpServer.TLSConfig = tlsConfig
+	return s
+}
+
 // startWithSignals is the testable inner implementation; callers can inject signals.
 func (s *Server) StartWithSignals(cleanup func(), sigs ...os.Signal) error {
 	quit := make(chan os.Signal, 1)
@@ -81,8 +94,14 @@ func (s *Server) StartWithSignals(cleanup func(), sigs ...os.Signal) error {
 func (s *Server) listenAndServe() <-chan error {
 	errCh := make(chan error, 1)
 	go func() {
-		slog.Info("server: listening", "addr", s.httpServer.Addr, "env", s.cfg.Env)
-		if err := s.httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		slog.Info("server: listening", "addr", s.httpServer.Addr, "env", s.cfg.Env, "tls", s.httpServer.TLSConfig != nil)
+		var err error
+		if s.httpServer.TLSConfig != nil {
+			err = s.httpServer.ListenAndServeTLS("", "")
+		} else {
+			err = s.httpServer.ListenAndServe()
+		}
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- fmt.Errorf("server: listen and serve: %w", err)
 		}
 	}()

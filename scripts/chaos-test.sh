@@ -404,7 +404,7 @@ scenario_5() {
 	# ── Kill point 2: 'held' — real hold_tx_id via a genuine withdraw_initiate ──
 	log "--- kill point 2/4: held ---"
 	local held_key="chaos5-held-$RANDOM"
-	curl -s -o /dev/null -X POST "http://localhost:$LEDGER_INTERNAL_PORT/api/v1/ledger/transactions" \
+	curl_internal -s -o /dev/null -X POST "http://localhost:$LEDGER_INTERNAL_PORT/api/v1/ledger/transactions" \
 		-H "Authorization: Bearer $token" -H "Content-Type: application/json" \
 		-d "{\"idempotency_key\":\"$held_key\",\"type\":\"withdraw_initiate\",\"amount\":\"10000\"}"
 	local held_tx_id
@@ -473,7 +473,7 @@ scenario_5() {
 	# ── Ledger crash between a completed hold and settle ───────────────────
 	log "--- ledger kill point: after hold, before settle ---"
 	local ledger_key="chaos5-ledger-$RANDOM" ledger_hold_tx id_ledger
-	curl -s -o /dev/null -X POST "http://localhost:$LEDGER_INTERNAL_PORT/api/v1/ledger/transactions" -H "Authorization: Bearer $token" -H "Content-Type: application/json" -d "{\"idempotency_key\":\"$ledger_key\",\"type\":\"withdraw_initiate\",\"amount\":\"10000\"}"
+	curl_internal -s -o /dev/null -X POST "http://localhost:$LEDGER_INTERNAL_PORT/api/v1/ledger/transactions" -H "Authorization: Bearer $token" -H "Content-Type: application/json" -d "{\"idempotency_key\":\"$ledger_key\",\"type\":\"withdraw_initiate\",\"amount\":\"10000\"}"
 	ledger_hold_tx="$(psql_exec "$LEDGER_DB_NAME" -c "SELECT id FROM ledger_transactions WHERE idempotency_key='$ledger_key';")"
 	id_ledger="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT gen_random_uuid();")"
 	psql_exec "$PAYOUT_DB_NAME" -c "INSERT INTO payout_requests (id,user_id,amount,currency,vendor,destination,status,hold_tx_id,created_by,created_at,updated_at) VALUES ('$id_ledger','$user_id',10000,'IDR','mockvendor','{\"bank_code\":\"014\",\"account_no\":\"1\"}'::jsonb,'held','$ledger_hold_tx','chaos_test',now(),now()-interval '2 minutes');" >/dev/null
@@ -729,7 +729,7 @@ scenario_7() {
 		|| fail "payout_requests row count changed on a blocked attempt: $payout_count_before -> $payout_count_after"
 
 	admin_token="$(gen_token "$(psql_exec "$LEDGER_DB_NAME" -c "SELECT gen_random_uuid();")" admin)"
-	code=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:$FRAUD_ADMIN_PORT/api/v1/admin/fraud/events?user_id=$user_id" -H "Authorization: Bearer $admin_token")
+	code=$(curl_internal -s -o /dev/null -w '%{http_code}' "http://localhost:$FRAUD_ADMIN_PORT/api/v1/admin/fraud/events?user_id=$user_id" -H "Authorization: Bearer $admin_token")
 	[ "$code" = "200" ] && ok "fraud admin events endpoint serves the moved audit row" || fail "fraud admin events returned $code"
 	assert_ledger_balanced
 	assert_no_inconsistent_projections
@@ -774,11 +774,11 @@ scenario_8() {
 	admin_token="$(gen_token "$(uuidgen | tr '[:upper:]' '[:lower:]')" admin)"
 
 	log "-- seeding mockvendor2 (gateway + routing rule, priority 1001, global fallback) --"
-	curl -s -o /dev/null -X PUT "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendor-gateways/mockvendor2" \
+	curl_internal -s -o /dev/null -X PUT "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendor-gateways/mockvendor2" \
 		-H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" -d '{"gateway":"gopay"}'
 	psql_exec "$PAYOUT_DB_NAME" -c "DELETE FROM payout_routing_rules WHERE priority = 1001;" >/dev/null
 	local route_json route_id
-	route_json="$(curl -s -X POST "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/routing-rules" \
+	route_json="$(curl_internal -s -X POST "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/routing-rules" \
 		-H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" \
 		-d '{"flow":"payout","priority":1001,"enabled":true,"vendor":"mockvendor2"}')"
 	route_id="$(echo "$route_json" | json_field id)"
@@ -794,7 +794,7 @@ scenario_8() {
 	cash="$(cash_account_id "$user_id")"
 
 	log "-- force-failing mockvendor --"
-	curl -s -o /dev/null -X POST "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendors/mockvendor/force-fail" \
+	curl_internal -s -o /dev/null -X POST "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendors/mockvendor/force-fail" \
 		-H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" -d '{"fail":true}'
 
 	log "-- creating payout #1 while mockvendor is force-failed (still the top-priority candidate) --"
@@ -826,7 +826,7 @@ scenario_8() {
 
 	log "-- asserting admin health reports mockvendor open --"
 	local health_resp
-	health_resp="$(curl -s "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendors/health" -H "Authorization: Bearer $admin_token")"
+	health_resp="$(curl_internal -s "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendors/health" -H "Authorization: Bearer $admin_token")"
 	echo "$health_resp" | grep -q '"vendor":"mockvendor","state":"open"' \
 		&& ok "admin vendor health reports mockvendor as open" \
 		|| fail "admin vendor health did not report mockvendor open: $health_resp"
@@ -847,7 +847,7 @@ scenario_8() {
 		|| fail "payout #2 unexpected vendor='$vendor2' status='$status2', expected vendor=mockvendor2 status=settled"
 
 	log "-- recovering mockvendor; the relay's own retry must settle payout #1 against the SAME vendor --"
-	curl -s -o /dev/null -X POST "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendors/mockvendor/force-fail" \
+	curl_internal -s -o /dev/null -X POST "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendors/mockvendor/force-fail" \
 		-H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" -d '{"fail":false}'
 	backdate_payout "$id1"
 	# docs/plan/45 Task T1: payout #1's retry is now the relay's own
@@ -944,11 +944,11 @@ scenario_9() {
 	code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$APP_PORT/api/v1/topup" \
 		-H "Authorization: Bearer $token" -H "Content-Type: application/json" -d '{"amount":"10000"}')
 	[ "${code:0:1}" = "2" ] && ok "baseline topup intent create succeeded (code=$code)" || fail "baseline topup intent create got $code"
-	assert_metric_value "http://localhost:$INTERNAL_PORT/metrics" cache_redis_backend_active 1 \
+	assert_metric_value "https://localhost:$INTERNAL_PORT/metrics" cache_redis_backend_active 1 \
 		"gateway rate limiter backend=redis before outage" 'primitive="rate_limiter"' 'backend="redis"'
 
 	log "-- seeding max_daily_count=1 on withdraw_initiate (policy_limits_max_daily_count_check requires > 0 — 0 is rejected at the DB layer, confirmed empirically) --"
-	curl -s -o /dev/null -X PUT "http://localhost:$LEDGER_INTERNAL_PORT/api/v1/admin/policy/limits" \
+	curl_internal -s -o /dev/null -X PUT "http://localhost:$LEDGER_INTERNAL_PORT/api/v1/admin/policy/limits" \
 		-H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" \
 		-d "{\"user_id\":\"$user_id\",\"transaction_type\":\"withdraw_initiate\",\"max_daily_count\":1,\"enabled\":true}"
 	sleep 3
@@ -966,7 +966,7 @@ scenario_9() {
 		-H "Authorization: Bearer $token" -H "Content-Type: application/json" \
 		-d "{\"idempotency_key\":\"chaos9-wd-baseline\",\"type\":\"withdraw_initiate\",\"amount\":\"10000\"}")
 	[ "${code:0:1}" = "2" ] && ok "baseline withdraw_initiate under the 1-use cap succeeded (code=$code)" || fail "baseline withdraw_initiate got $code, expected 2xx"
-	assert_metric_value "http://localhost:$LEDGER_INTERNAL_PORT/metrics" cache_redis_backend_active 1 \
+	assert_metric_value "https://localhost:$LEDGER_INTERNAL_PORT/metrics" cache_redis_backend_active 1 \
 		"ledger policy counter backend=redis before outage" 'primitive="policy_counter"' 'backend="redis"'
 
 	log "-- baseline (Redis up): fraud velocity screening on transfer_p2p succeeds --"
@@ -974,7 +974,7 @@ scenario_9() {
 		-H "Authorization: Bearer $token" -H "Content-Type: application/json" \
 		-d "{\"idempotency_key\":\"chaos9-p2p-baseline\",\"type\":\"transfer_p2p\",\"amount\":\"1\",\"target_user_id\":\"$recipient_id\"}")
 	[ "${code:0:1}" = "2" ] && ok "baseline P2P transfer (fraud screening reachable) succeeded (code=$code)" || fail "baseline P2P transfer got $code"
-	assert_metric_value "http://localhost:$FRAUD_ADMIN_PORT/metrics" cache_redis_backend_active 1 \
+	assert_metric_value "https://localhost:$FRAUD_ADMIN_PORT/metrics" cache_redis_backend_active 1 \
 		"fraud velocity store backend=redis before outage" 'primitive="fraud_velocity"' 'backend="redis"'
 
 	log "stopping redis..."
@@ -1020,7 +1020,7 @@ scenario_9() {
 		|| fail "expected at least one successful topup create among 11 with Redis down, got 0"
 	[ "$rl_429" -ge "1" ] && ok "rate limiter still actively enforces from memory with Redis down ($rl_429/11 got 429)" \
 		|| fail "expected at least one 429 among 11 rapid topup creates with Redis down — limiter may have silently bypassed"
-	assert_metric_value "http://localhost:$INTERNAL_PORT/metrics" cache_redis_backend_active 1 \
+	assert_metric_value "https://localhost:$INTERNAL_PORT/metrics" cache_redis_backend_active 1 \
 		"gateway rate limiter hot-swapped to backend=local with Redis down" 'primitive="rate_limiter"' 'backend="local"'
 	grep -q 'cache: redis backend degraded' "$GATEWAY_LOG" \
 		&& ok "gateway logged the rate-limiter degrade transition" || fail "gateway log missing the rate-limiter degrade line"
@@ -1046,7 +1046,7 @@ scenario_9() {
 	[ "$wd2_code" = "503" ] && echo "$wd2_resp" | grep -q "DEPENDENCY_UNAVAILABLE" \
 		&& ok "withdraw_initiate fails closed with 503 DEPENDENCY_UNAVAILABLE while fraud's Redis dependency is down (policy itself allowed it — memory counter was consulted, not bypassed)" \
 		|| fail "withdraw_initiate with Redis down got: $wd2_resp — expected 503 DEPENDENCY_UNAVAILABLE"
-	assert_metric_value "http://localhost:$LEDGER_INTERNAL_PORT/metrics" cache_redis_backend_active 1 \
+	assert_metric_value "https://localhost:$LEDGER_INTERNAL_PORT/metrics" cache_redis_backend_active 1 \
 		"ledger policy counter hot-swapped to backend=local with Redis down" 'primitive="policy_counter"' 'backend="local"'
 	grep -q "screening dependency unavailable, failing closed" "$LEDGER_LOG" \
 		&& ok "ledger logged the fail-closed screening decision" || fail "ledger log missing the fail-closed screening line"
@@ -1062,11 +1062,11 @@ scenario_9() {
 	sleep 20
 
 	log "-- Redis back: all three primitives recover to backend=redis WITHOUT any process restart --"
-	assert_metric_value "http://localhost:$INTERNAL_PORT/metrics" cache_redis_backend_active 1 \
+	assert_metric_value "https://localhost:$INTERNAL_PORT/metrics" cache_redis_backend_active 1 \
 		"gateway rate limiter recovered to backend=redis without restart" 'primitive="rate_limiter"' 'backend="redis"'
-	assert_metric_value "http://localhost:$LEDGER_INTERNAL_PORT/metrics" cache_redis_backend_active 1 \
+	assert_metric_value "https://localhost:$LEDGER_INTERNAL_PORT/metrics" cache_redis_backend_active 1 \
 		"ledger policy counter recovered to backend=redis without restart" 'primitive="policy_counter"' 'backend="redis"'
-	assert_metric_value "http://localhost:$FRAUD_ADMIN_PORT/metrics" cache_redis_backend_active 1 \
+	assert_metric_value "https://localhost:$FRAUD_ADMIN_PORT/metrics" cache_redis_backend_active 1 \
 		"fraud velocity store recovered to backend=redis without restart" 'primitive="fraud_velocity"' 'backend="redis"'
 
 	log "-- Redis back: the policy counter resumes enforcement from Redis's TRUE count (1, from baseline) — the outage's phantom memory count of 0 is correctly discarded, never merged back --"
@@ -1147,17 +1147,17 @@ scenario_10() {
 	token="$(gen_token "$user_id")"
 
 	log "-- priming each replica's breaker with one Snapshot call (the backend gauge has no value until a real call resolves) --"
-	curl -s -o /dev/null "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendors/health" -H "Authorization: Bearer $admin_token"
-	curl -s -o /dev/null "http://localhost:$PAYOUT2_ADMIN_PORT/admin/payout/vendors/health" -H "Authorization: Bearer $admin_token"
-	assert_metric_value "http://localhost:$PAYOUT_ADMIN_PORT/metrics" vendorgw_breaker_backend 1 \
+	curl_internal -s -o /dev/null "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendors/health" -H "Authorization: Bearer $admin_token"
+	curl_internal -s -o /dev/null "http://localhost:$PAYOUT2_ADMIN_PORT/admin/payout/vendors/health" -H "Authorization: Bearer $admin_token"
+	assert_metric_value "https://localhost:$PAYOUT_ADMIN_PORT/metrics" vendorgw_breaker_backend 1 \
 		"replica A (primary) breaker backend=redis before any vendor call" 'namespace="payout"' 'backend="redis"'
-	assert_metric_value "http://localhost:$PAYOUT2_ADMIN_PORT/metrics" vendorgw_breaker_backend 1 \
+	assert_metric_value "https://localhost:$PAYOUT2_ADMIN_PORT/metrics" vendorgw_breaker_backend 1 \
 		"replica B breaker backend=redis before any vendor call" 'namespace="payout"' 'backend="redis"'
 
 	log "-- force-failing mockvendor on BOTH replicas (avoids the claim-race described above) and tripping the breaker --"
-	curl -s -o /dev/null -X POST "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendors/mockvendor/force-fail" \
+	curl_internal -s -o /dev/null -X POST "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendors/mockvendor/force-fail" \
 		-H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" -d '{"fail":true}'
-	curl -s -o /dev/null -X POST "http://localhost:$PAYOUT2_ADMIN_PORT/admin/payout/vendors/mockvendor/force-fail" \
+	curl_internal -s -o /dev/null -X POST "http://localhost:$PAYOUT2_ADMIN_PORT/admin/payout/vendors/mockvendor/force-fail" \
 		-H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" -d '{"fail":true}'
 
 	local resp id
@@ -1169,19 +1169,19 @@ scenario_10() {
 	wait_for_vendor_call "$id" "uncertain" 15
 
 	local health_a health_b
-	health_a="$(curl -s "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendors/health" -H "Authorization: Bearer $admin_token")"
+	health_a="$(curl_internal -s "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendors/health" -H "Authorization: Bearer $admin_token")"
 	echo "$health_a" | grep -q '"vendor":"mockvendor","state":"open"' \
 		&& ok "replica A reports mockvendor open" \
 		|| fail "replica A did not report mockvendor open: $health_a"
 
-	health_b="$(curl -s "http://localhost:$PAYOUT2_ADMIN_PORT/admin/payout/vendors/health" -H "Authorization: Bearer $admin_token")"
+	health_b="$(curl_internal -s "http://localhost:$PAYOUT2_ADMIN_PORT/admin/payout/vendors/health" -H "Authorization: Bearer $admin_token")"
 	echo "$health_b" | grep -q '"vendor":"mockvendor","state":"open"' \
 		&& ok "replica B reports mockvendor open via the SAME shared Redis breaker state as replica A — state converged across replicas" \
 		|| fail "replica B did not report mockvendor open — distributed breaker state did not converge: $health_b"
 
-	curl -s -o /dev/null -X POST "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendors/mockvendor/force-fail" \
+	curl_internal -s -o /dev/null -X POST "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendors/mockvendor/force-fail" \
 		-H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" -d '{"fail":false}'
-	curl -s -o /dev/null -X POST "http://localhost:$PAYOUT2_ADMIN_PORT/admin/payout/vendors/mockvendor/force-fail" \
+	curl_internal -s -o /dev/null -X POST "http://localhost:$PAYOUT2_ADMIN_PORT/admin/payout/vendors/mockvendor/force-fail" \
 		-H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" -d '{"fail":false}'
 
 	log "stopping redis: both replicas must degrade to their own local fallback without crashing..."
@@ -1193,15 +1193,15 @@ scenario_10() {
 	done
 
 	local code_a code_b
-	code_a=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendors/health" -H "Authorization: Bearer $admin_token")
-	code_b=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:$PAYOUT2_ADMIN_PORT/admin/payout/vendors/health" -H "Authorization: Bearer $admin_token")
+	code_a=$(curl_internal -s -o /dev/null -w '%{http_code}' "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendors/health" -H "Authorization: Bearer $admin_token")
+	code_b=$(curl_internal -s -o /dev/null -w '%{http_code}' "http://localhost:$PAYOUT2_ADMIN_PORT/admin/payout/vendors/health" -H "Authorization: Bearer $admin_token")
 	[ "$code_a" = "200" ] && ok "replica A still answers admin health with Redis down (code=$code_a, no crash)" \
 		|| fail "replica A admin health returned $code_a with Redis down — expected 200"
 	[ "$code_b" = "200" ] && ok "replica B still answers admin health with Redis down (code=$code_b, no crash)" \
 		|| fail "replica B admin health returned $code_b with Redis down — expected 200"
-	assert_metric_value "http://localhost:$PAYOUT_ADMIN_PORT/metrics" vendorgw_breaker_backend 1 \
+	assert_metric_value "https://localhost:$PAYOUT_ADMIN_PORT/metrics" vendorgw_breaker_backend 1 \
 		"replica A breaker degraded to backend=local with Redis down" 'namespace="payout"' 'backend="local"'
-	assert_metric_value "http://localhost:$PAYOUT2_ADMIN_PORT/metrics" vendorgw_breaker_backend 1 \
+	assert_metric_value "https://localhost:$PAYOUT2_ADMIN_PORT/metrics" vendorgw_breaker_backend 1 \
 		"replica B breaker degraded to backend=local with Redis down" 'namespace="payout"' 'backend="local"'
 	kill -0 "$(cat "$PAYOUT_PID_FILE")" 2>/dev/null && ok "replica A process still alive with Redis down" || fail "replica A process died with Redis down"
 	kill -0 "$(cat "$PAYOUT2_PID_FILE")" 2>/dev/null && ok "replica B process still alive with Redis down" || fail "replica B process died with Redis down"
@@ -1255,7 +1255,7 @@ scenario_11() {
 
 	log "--- sub-case A: crash after command enqueue, before dispatch ---"
 	local held_key_a="chaos11-held-$RANDOM" held_tx_id_a id_a
-	curl -s -o /dev/null -X POST "http://localhost:$LEDGER_INTERNAL_PORT/api/v1/ledger/transactions" \
+	curl_internal -s -o /dev/null -X POST "http://localhost:$LEDGER_INTERNAL_PORT/api/v1/ledger/transactions" \
 		-H "Authorization: Bearer $token" -H "Content-Type: application/json" \
 		-d "{\"idempotency_key\":\"$held_key_a\",\"type\":\"withdraw_initiate\",\"amount\":\"10000\"}"
 	held_tx_id_a="$(psql_exec "$LEDGER_DB_NAME" -c "SELECT id FROM ledger_transactions WHERE idempotency_key = '$held_key_a';")"
@@ -1355,7 +1355,7 @@ wait_for_assurance_idle() {
 
 trigger_assurance_run() {
 	local token=$1
-	curl -fsS -o /dev/null -X POST "http://localhost:$ASSURANCE_PORT/admin/assurance/runs" \
+	curl_internal -fsS -o /dev/null -X POST "http://localhost:$ASSURANCE_PORT/admin/assurance/runs" \
 		-H "Authorization: Bearer $token" -H "Content-Type: application/json" -d '{}'
 }
 
@@ -1491,13 +1491,13 @@ scenario_14() {
 	payin_revision="$(psql_exec "$PAYIN_DB_NAME" -c "SELECT revision FROM payin_intake_control WHERE id=1;")"
 	command_id="$(psql_exec "$ASSURANCE_DB_NAME" -c "SELECT gen_random_uuid();")"
 	kill_payin_hard
-	code="$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$ASSURANCE_PORT/admin/assurance/intake/payin/pause" \
+	code="$(curl_internal -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$ASSURANCE_PORT/admin/assurance/intake/payin/pause" \
 		-H "Authorization: Bearer $maker_token" -H 'Content-Type: application/json' \
 		-d "{\"command_id\":\"$command_id\",\"expected_revision\":$payin_revision,\"reason\":\"chaos14 owner outage\"}")"
 	[ "$code" = "503" ] && ok "pause remained durable while payin owner was unavailable" \
 		|| fail "pause with payin owner unavailable returned HTTP $code (want 503)"
 	start_payin_service
-	response="$(curl -fsS -X POST "http://localhost:$ASSURANCE_PORT/admin/assurance/intake/payin/pause" \
+	response="$(curl_internal -fsS -X POST "http://localhost:$ASSURANCE_PORT/admin/assurance/intake/payin/pause" \
 		-H "Authorization: Bearer $maker_token" -H 'Content-Type: application/json' \
 		-d "{\"command_id\":\"$command_id\",\"expected_revision\":$payin_revision,\"reason\":\"chaos14 retry\"}")"
 	if echo "$response" | grep -q '"paused":true'; then
@@ -1518,14 +1518,14 @@ scenario_14() {
 	local resume_id resume_revision
 	resume_revision="$paused_revision"
 	resume_id="$(psql_exec "$ASSURANCE_DB_NAME" -c "SELECT gen_random_uuid();")"
-	curl -fsS -o /dev/null -X POST "http://localhost:$ASSURANCE_PORT/admin/assurance/intake/payin/resume-requests" \
+	curl_internal -fsS -o /dev/null -X POST "http://localhost:$ASSURANCE_PORT/admin/assurance/intake/payin/resume-requests" \
 		-H "Authorization: Bearer $maker_token" -H 'Content-Type: application/json' \
 		-d "{\"command_id\":\"$resume_id\",\"expected_revision\":$resume_revision,\"reason\":\"chaos14 resume\"}"
-	code="$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$ASSURANCE_PORT/admin/assurance/intake/payin/resume-requests/$resume_id/approve" \
+	code="$(curl_internal -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$ASSURANCE_PORT/admin/assurance/intake/payin/resume-requests/$resume_id/approve" \
 		-H "Authorization: Bearer $maker_token" -H 'Content-Type: application/json')"
 	[ "$code" = "403" ] && ok "same principal cannot approve its own resume request" \
 		|| fail "same-principal resume approval returned HTTP $code (want 403)"
-	response="$(curl -fsS -X POST "http://localhost:$ASSURANCE_PORT/admin/assurance/intake/payin/resume-requests/$resume_id/approve" \
+	response="$(curl_internal -fsS -X POST "http://localhost:$ASSURANCE_PORT/admin/assurance/intake/payin/resume-requests/$resume_id/approve" \
 		-H "Authorization: Bearer $checker_token" -H 'Content-Type: application/json')"
 	local payin_paused_after
 	payin_paused_after="$(psql_exec "$PAYIN_DB_NAME" -c "SELECT paused FROM payin_intake_control WHERE id=1;")"
@@ -1543,7 +1543,7 @@ scenario_14() {
 	# this also proves the pause guard is present on both create paths.
 	payout_revision="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT revision FROM payout_intake_control WHERE id=1;")"
 	command_id="$(psql_exec "$ASSURANCE_DB_NAME" -c "SELECT gen_random_uuid();")"
-	response="$(curl -fsS -X POST "http://localhost:$ASSURANCE_PORT/admin/assurance/intake/payout/pause" \
+	response="$(curl_internal -fsS -X POST "http://localhost:$ASSURANCE_PORT/admin/assurance/intake/payout/pause" \
 		-H "Authorization: Bearer $maker_token" -H 'Content-Type: application/json' \
 		-d "{\"command_id\":\"$command_id\",\"expected_revision\":$payout_revision,\"reason\":\"chaos14 payout pause\"}")"
 	if echo "$response" | grep -q '"paused":true'; then
@@ -1558,10 +1558,10 @@ scenario_14() {
 		|| fail "payout while paused returned HTTP $code (want 422)"
 	resume_revision="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT revision FROM payout_intake_control WHERE id=1;")"
 	resume_id="$(psql_exec "$ASSURANCE_DB_NAME" -c "SELECT gen_random_uuid();")"
-	curl -fsS -o /dev/null -X POST "http://localhost:$ASSURANCE_PORT/admin/assurance/intake/payout/resume-requests" \
+	curl_internal -fsS -o /dev/null -X POST "http://localhost:$ASSURANCE_PORT/admin/assurance/intake/payout/resume-requests" \
 		-H "Authorization: Bearer $maker_token" -H 'Content-Type: application/json' \
 		-d "{\"command_id\":\"$resume_id\",\"expected_revision\":$resume_revision,\"reason\":\"chaos14 payout resume\"}"
-	curl -fsS -o /dev/null -X POST "http://localhost:$ASSURANCE_PORT/admin/assurance/intake/payout/resume-requests/$resume_id/approve" \
+	curl_internal -fsS -o /dev/null -X POST "http://localhost:$ASSURANCE_PORT/admin/assurance/intake/payout/resume-requests/$resume_id/approve" \
 		-H "Authorization: Bearer $checker_token" -H 'Content-Type: application/json'
 	local payout_resumed_revision
 	payout_resumed_revision="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT revision FROM payout_intake_control WHERE id=1;")"

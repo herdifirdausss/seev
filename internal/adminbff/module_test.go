@@ -73,7 +73,7 @@ func TestLoginAcceptsOnlyAdminRoles(t *testing.T) {
 	defer authServer.Close()
 
 	db := &database.MockDatabaseSQL{}
-	m := NewModule(db, config.AdminBFFConfig{AuthServiceURL: authServer.URL, SecureCookie: false, SessionIdleTTL: 30 * time.Minute, SessionAbsoluteTTL: 8 * time.Hour, JWTSecret: "secret"}, nil)
+	m := NewModule(db, config.AdminBFFConfig{AuthServiceURL: authServer.URL, SecureCookie: false, SessionIdleTTL: 30 * time.Minute, SessionAbsoluteTTL: 8 * time.Hour, JWTSecret: "secret"}, nil, nil)
 	fake := &sessionRepoFake{}
 	m.repo = fake
 	req := httptest.NewRequest(http.MethodPost, "/login", nil)

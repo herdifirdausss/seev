@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -51,13 +52,28 @@ func main() {
 	}
 }
 
+// probeHealth dials the PUBLIC :8090 listener, which is also mTLS since
+// docs/plan/49 K6 flips it (gateway's proxy is its only legitimate machine
+// caller) — presents the "dev-operator" identity, the same one a real
+// operator's manual healthcheck/curl session uses, loaded fresh from the
+// same mounted cert directory the service itself uses (docs/plan/49 K3:
+// certgen writes every identity into one shared directory).
 func probeHealth(getenv func(string) string) error {
 	port := getenv("APP_PORT")
 	if port == "" {
 		port = "8090"
 	}
-	client := &http.Client{Timeout: 3 * time.Second}
-	response, err := client.Get("http://127.0.0.1:" + port + "/health")
+	certDir := getenv("TLS_CERT_DIR")
+	if certDir == "" {
+		certDir = "deploy/certs"
+	}
+	certSrc, err := tlsx.LoadFromDir(certDir, "dev-operator", slog.Default())
+	if err != nil {
+		return fmt.Errorf("load healthcheck TLS identity: %w", err)
+	}
+	defer certSrc.Stop()
+	client := tlsx.HTTPClient(certSrc, tlsx.IdentityLedger, 3*time.Second)
+	response, err := client.Get("https://127.0.0.1:" + port + "/health")
 	if err != nil {
 		return err
 	}
@@ -196,8 +212,17 @@ func run(parent context.Context) error {
 		return fmt.Errorf("listen grpc: %w", err)
 	}
 
-	publicServer := newHTTPServer(cfg.App, ":"+cfg.App.Port, publicRouter(cfg, module, db, redisCache, mq, log))
-	internalServer := newHTTPServer(cfg.App, cfg.App.InternalBindAddr+":"+cfg.App.InternalPort, internalRouter(cfg, module, policyHandler, log))
+	// docs/plan/49 K6: both HTTP listeners require mTLS now. :8090 is the
+	// user-facing API that only gateway's proxy legitimately calls
+	// (plus dev-operator for manual/harness use); :8091 is the genuinely
+	// internal/admin surface, reachable by dev-operator, Prometheus (for
+	// /metrics), and admin-bff.
+	publicServer := newHTTPServer(cfg.App, ":"+cfg.App.Port, publicRouter(cfg, module, db, redisCache, mq, log), tlsx.ServerConfig(certSrc, []string{
+		tlsx.IdentityGateway, tlsx.IdentityDevOperator,
+	}))
+	internalServer := newHTTPServer(cfg.App, cfg.App.InternalBindAddr+":"+cfg.App.InternalPort, internalRouter(cfg, module, policyHandler, log), tlsx.ServerConfig(certSrc, []string{
+		tlsx.IdentityDevOperator, tlsx.IdentityPrometheus, tlsx.IdentityAdminBFF,
+	}))
 	errCh := make(chan error, 3)
 	go serveGRPC(grpcServer, grpcListener, errCh)
 	go serveHTTP(publicServer, errCh)
@@ -292,13 +317,19 @@ func ready(db healthDB, redisCache healthCache, mq healthMQ) http.HandlerFunc {
 	}
 }
 
-func newHTTPServer(cfg config.AppConfig, addr string, handler http.Handler) *http.Server {
+func newHTTPServer(cfg config.AppConfig, addr string, handler http.Handler, tlsConfig *tls.Config) *http.Server {
 	return &http.Server{Addr: addr, Handler: handler, ReadTimeout: cfg.ReadTimeout, WriteTimeout: cfg.WriteTimeout,
-		IdleTimeout: cfg.IdleTimeout, ReadHeaderTimeout: 5 * time.Second, MaxHeaderBytes: 1 << 20}
+		IdleTimeout: cfg.IdleTimeout, ReadHeaderTimeout: 5 * time.Second, MaxHeaderBytes: 1 << 20, TLSConfig: tlsConfig}
 }
 
 func serveHTTP(server *http.Server, errCh chan<- error) {
-	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+	var err error
+	if server.TLSConfig != nil {
+		err = server.ListenAndServeTLS("", "")
+	} else {
+		err = server.ListenAndServe()
+	}
+	if err != nil && !errors.Is(err, http.ErrServerClosed) {
 		errCh <- fmt.Errorf("http %s: %w", server.Addr, err)
 	}
 }

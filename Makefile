@@ -93,7 +93,7 @@ smoke-container:
 # scenario re-run) leaves state behind that smoke-test.sh's fixed-UUID
 # fixtures will misreport as a regression — this target always starts from
 # zero so its PASS/FAIL is trustworthy.
-## verify-full: Full doc-completion gate from a CLEAN volume (build/vet/lint/test + smoke + business-e2e + chaos-all)
+## verify-full: Full doc-completion gate from a CLEAN volume (build/vet/lint/test + smoke + business/admin e2e + chaos-all)
 verify-full:
 	go build ./...
 	go vet ./...
@@ -103,12 +103,13 @@ verify-full:
 	docker compose down -v
 	./scripts/smoke-test.sh
 	./scripts/business-e2e.sh
+	./scripts/admin-e2e.sh
 	./scripts/chaos-test.sh all
 
 # Preserves /tmp/seev-chaos.*/*.log past the exit trap instead of deleting
 # them, so a failing scenario can be inspected after the fact. Usage:
 #   make chaos-debug SCENARIO=8
-## chaos-debug: Re-run one chaos scenario (SCENARIO=1..11, default all) with logs preserved after exit
+## chaos-debug: Re-run one chaos scenario (SCENARIO=1..14, default all) with logs preserved after exit
 SCENARIO ?= all
 chaos-debug:
 	KEEP_WORK_DIR=1 ./scripts/chaos-test.sh $(SCENARIO)

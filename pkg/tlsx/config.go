@@ -4,6 +4,8 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"net/http"
+	"time"
 )
 
 // minTLSVersion matches internal/config's parseTLSConfig convention for
@@ -64,6 +66,17 @@ func ClientConfig(src *CertSource, expectedServerIdentity string) *tls.Config {
 			}
 			return verifyPeerIdentity(cs, allowed)
 		},
+	}
+}
+
+// HTTPClient is the *http.Client counterpart to ClientConfig (docs/plan/49
+// K6) — the many internal HTTP callers (admin-bff's downstream clients,
+// gateway's ledger proxy, every service's own -healthcheck probe) need a
+// ready-to-use client rather than a raw *tls.Config.
+func HTTPClient(src *CertSource, expectedServerIdentity string, timeout time.Duration) *http.Client {
+	return &http.Client{
+		Timeout:   timeout,
+		Transport: &http.Transport{TLSClientConfig: ClientConfig(src, expectedServerIdentity)},
 	}
 }
 

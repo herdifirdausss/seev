@@ -30,7 +30,7 @@ func TestNewLedgerProxy_ForwardsClientSuppliedRequestID(t *testing.T) {
 	}))
 	defer backend.Close()
 
-	proxy, err := newLedgerProxy(backend.URL, discardLogger())
+	proxy, err := newLedgerProxy(backend.URL, nil, discardLogger())
 	require.NoError(t, err)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/ledger/accounts", nil)
@@ -52,7 +52,7 @@ func TestNewLedgerProxy_ForwardsGeneratedRequestID(t *testing.T) {
 	}))
 	defer backend.Close()
 
-	proxy, err := newLedgerProxy(backend.URL, discardLogger())
+	proxy, err := newLedgerProxy(backend.URL, nil, discardLogger())
 	require.NoError(t, err)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/ledger/accounts", nil)

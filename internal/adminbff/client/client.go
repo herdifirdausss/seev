@@ -35,12 +35,19 @@ type Clients struct {
 	Auth, AuthAdmin, Ledger, Payin, Payout, Fraud, Gateway *ServiceClient
 }
 
-func New(name, baseURL string) *ServiceClient {
-	return &ServiceClient{Name: name, BaseURL: strings.TrimRight(baseURL, "/"), HTTP: &http.Client{Timeout: 5 * time.Second}}
+// New builds a ServiceClient using httpClient as-is — callers decide the
+// transport (plain for auth's public login endpoint, mTLS for every other,
+// genuinely internal target — docs/plan/49 K6). Keeps this package
+// transport-agnostic, matching its "wire-only, no domain knowledge" intent.
+func New(name, baseURL string, httpClient *http.Client) *ServiceClient {
+	return &ServiceClient{Name: name, BaseURL: strings.TrimRight(baseURL, "/"), HTTP: httpClient}
 }
 
-func NewClients(auth, authAdmin, ledger, payin, payout, fraud, gateway string) Clients {
-	return Clients{Auth: New("auth", auth), AuthAdmin: New("auth-admin", authAdmin), Ledger: New("ledger", ledger), Payin: New("payin", payin), Payout: New("payout", payout), Fraud: New("fraud", fraud), Gateway: New("gateway", gateway)}
+// DefaultHTTPClient is the plain (non-mTLS) client used for auth's public
+// login endpoint — the one downstream target that stays plain HTTP
+// (docs/plan/49 anti-scope: auth :8082 is an edge-public exception).
+func DefaultHTTPClient() *http.Client {
+	return &http.Client{Timeout: 5 * time.Second}
 }
 
 func (c *ServiceClient) Do(ctx context.Context, token, method, path string, body []byte) (int, http.Header, []byte, error) {

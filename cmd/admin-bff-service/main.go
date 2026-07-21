@@ -16,6 +16,7 @@ import (
 	"github.com/herdifirdausss/seev/internal/config"
 	"github.com/herdifirdausss/seev/pkg/database"
 	"github.com/herdifirdausss/seev/pkg/logger"
+	"github.com/herdifirdausss/seev/pkg/tlsx"
 	"github.com/herdifirdausss/seev/pkg/tracing"
 )
 
@@ -40,7 +41,16 @@ func probeHealth(getenv func(string) string) error {
 	if port == "" {
 		port = "8095"
 	}
-	response, err := (&http.Client{Timeout: 3 * time.Second}).Get("http://127.0.0.1:" + port + "/health")
+	certDir := getenv("TLS_CERT_DIR")
+	if certDir == "" {
+		certDir = "deploy/certs"
+	}
+	certSrc, err := tlsx.LoadFromDir(certDir, "dev-operator", slog.Default())
+	if err != nil {
+		return fmt.Errorf("load healthcheck TLS identity: %w", err)
+	}
+	defer certSrc.Stop()
+	response, err := tlsx.HTTPClient(certSrc, tlsx.IdentityAdminBFF, 3*time.Second).Get("https://127.0.0.1:" + port + "/health")
 	if err != nil {
 		return err
 	}
@@ -60,6 +70,16 @@ func run(parent context.Context) error {
 		cfg.App.Port = "8095"
 	}
 	log := logger.New(cfg.Logger.Pkg())
+	// docs/plan/49 K6: admin-bff was deliberately excluded from T2's gRPC-
+	// only cert mount ("itu lingkup T3 HTTP bukan T2 gRPC") — this is
+	// where it gains its own identity, both to serve its own listener and
+	// to dial every downstream service it proxies for except auth's
+	// public login endpoint.
+	certSrc, err := tlsx.LoadFromDir(cfg.TLSCertDir, "admin-bff", log)
+	if err != nil {
+		return fmt.Errorf("load TLS certificates: %w", err)
+	}
+	defer certSrc.Stop()
 	ctx, cancel := signal.NotifyContext(parent, syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 	shutdownTracing, err := tracing.Setup(ctx, tracing.Config{
@@ -82,20 +102,27 @@ func run(parent context.Context) error {
 		}
 	}()
 
-	module := adminbff.NewModule(db, cfg.AdminBFF, log)
+	module := adminbff.NewModule(db, cfg.AdminBFF, log, certSrc)
 	if err := module.Start(); err != nil {
 		return fmt.Errorf("start admin-bff jobs: %w", err)
 	}
 	defer module.Stop()
+	// docs/plan/49 K6: admin-bff's console listener requires mTLS like
+	// every other internal surface — an operator's browser needs a
+	// dev-operator client certificate loaded, same as this harness's own
+	// curl_internal (docs/plan/49 §T3 constraint 5's own justification).
 	server := &http.Server{
 		Addr: ":" + cfg.App.Port, Handler: adminRouter(cfg, module, log),
 		ReadTimeout: cfg.App.ReadTimeout, WriteTimeout: cfg.App.WriteTimeout,
 		IdleTimeout: cfg.App.IdleTimeout, ReadHeaderTimeout: 5 * time.Second,
 		MaxHeaderBytes: 1 << 20,
+		TLSConfig: tlsx.ServerConfig(certSrc, []string{
+			tlsx.IdentityDevOperator, tlsx.IdentityPrometheus,
+		}),
 	}
 	errCh := make(chan error, 1)
 	go func() {
-		if serveErr := server.ListenAndServe(); serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
+		if serveErr := server.ListenAndServeTLS("", ""); serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
 			errCh <- serveErr
 		}
 	}()

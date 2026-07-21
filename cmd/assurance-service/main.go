@@ -52,7 +52,16 @@ func probeHealth(getenv func(string) string) error {
 	if port == "" {
 		port = "8096"
 	}
-	response, err := (&http.Client{Timeout: 3 * time.Second}).Get("http://127.0.0.1:" + port + "/health")
+	certDir := getenv("TLS_CERT_DIR")
+	if certDir == "" {
+		certDir = "deploy/certs"
+	}
+	certSrc, err := tlsx.LoadFromDir(certDir, "dev-operator", slog.Default())
+	if err != nil {
+		return fmt.Errorf("load healthcheck TLS identity: %w", err)
+	}
+	defer certSrc.Stop()
+	response, err := tlsx.HTTPClient(certSrc, tlsx.IdentityAssurance, 3*time.Second).Get("https://127.0.0.1:" + port + "/health")
 	if err != nil {
 		return err
 	}
@@ -157,10 +166,20 @@ func run(parent context.Context) error {
 	mux.Handle("GET /metrics", promhttp.Handler())
 	authed := middleware.Chain(middleware.WithAuth(cfg.JWT.Secret, cfg.JWT.Issuer), middleware.RequireJSON())
 	mux.Handle("/admin/assurance/", authed(module.AdminRouter()))
-	server := &http.Server{Addr: ":" + cfg.App.Port, Handler: mux, ReadTimeout: cfg.App.ReadTimeout, WriteTimeout: cfg.App.WriteTimeout, IdleTimeout: cfg.App.IdleTimeout, ReadHeaderTimeout: 5 * time.Second, MaxHeaderBytes: 1 << 20}
+	// docs/plan/49 K6: assurance's admin listener is internal-only mTLS —
+	// no other service dials it over HTTP, only dev-operator/Prometheus.
+	server := &http.Server{Addr: ":" + cfg.App.Port, Handler: mux, ReadTimeout: cfg.App.ReadTimeout, WriteTimeout: cfg.App.WriteTimeout, IdleTimeout: cfg.App.IdleTimeout, ReadHeaderTimeout: 5 * time.Second, MaxHeaderBytes: 1 << 20, TLSConfig: tlsx.ServerConfig(certSrc, []string{
+		tlsx.IdentityDevOperator, tlsx.IdentityPrometheus,
+	})}
 	errCh := make(chan error, 1)
 	go func() {
-		if serveErr := server.ListenAndServe(); serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
+		var serveErr error
+		if server.TLSConfig != nil {
+			serveErr = server.ListenAndServeTLS("", "")
+		} else {
+			serveErr = server.ListenAndServe()
+		}
+		if serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
 			errCh <- serveErr
 		}
 	}()

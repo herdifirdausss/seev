@@ -554,7 +554,7 @@ func loadFromEnvMode(getenv func(string) string, requireRabbitMQ bool) (*Config,
 		PayinGRPCAddr:     getWithDefault(getenv, "PAYIN_GRPC_ADDR", "localhost:9092"),
 		PayoutGRPCAddr:    getWithDefault(getenv, "PAYOUT_GRPC_ADDR", "localhost:9093"),
 		FraudGRPCAddr:     getenv("FRAUD_GRPC_ADDR"),
-		LedgerUserAPIURL:  getWithDefault(getenv, "LEDGER_USER_API_URL", "http://localhost:8090"),
+		LedgerUserAPIURL:  getWithDefault(getenv, "LEDGER_USER_API_URL", "https://localhost:8090"),
 		TLSCertDir:        getWithDefault(getenv, "TLS_CERT_DIR", "deploy/certs"),
 	}
 
