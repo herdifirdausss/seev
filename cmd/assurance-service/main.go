@@ -27,6 +27,7 @@ import (
 	"github.com/herdifirdausss/seev/pkg/grpcx"
 	"github.com/herdifirdausss/seev/pkg/logger"
 	"github.com/herdifirdausss/seev/pkg/middleware"
+	"github.com/herdifirdausss/seev/pkg/tlsx"
 	"github.com/herdifirdausss/seev/pkg/tracing"
 )
 
@@ -80,6 +81,16 @@ func run(parent context.Context) error {
 		cfg.Postgres.MaxIdleConns = 5
 	}
 	log := logger.New(cfg.Logger.Pkg())
+	// docs/plan/49 K3/K5: load this process's own identity + the shared
+	// CA before anything else. assurance-service itself was added to the
+	// repo after doc 49's K3/K4/K6 were written — see docs/security/
+	// threat-model.md TM-09 — so it is treated exactly like every other
+	// gRPC client here despite not being enumerated in the original doc.
+	certSrc, err := tlsx.LoadFromDir(cfg.TLSCertDir, "assurance", log)
+	if err != nil {
+		return fmt.Errorf("load TLS certificates: %w", err)
+	}
+	defer certSrc.Stop()
 	ctx, cancel := signal.NotifyContext(parent, syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 	shutdownTracing, err := tracing.Setup(ctx, tracing.Config{ServiceName: "assurance-service", Endpoint: cfg.Tracing.OTLPEndpoint, SampleRatio: cfg.Tracing.SampleRatio, Insecure: cfg.Tracing.Insecure})
@@ -92,17 +103,17 @@ func run(parent context.Context) error {
 		return fmt.Errorf("connect postgres: %w", err)
 	}
 	defer db.Close()
-	payinConn, err := grpcx.DialLazy(ctx, cfg.PayinGRPCAddr, cfg.InternalGRPCToken)
+	payinConn, err := grpcx.DialLazy(ctx, cfg.PayinGRPCAddr, cfg.InternalGRPCToken, tlsx.ClientConfig(certSrc, tlsx.IdentityPayin))
 	if err != nil {
 		return fmt.Errorf("dial payin: %w", err)
 	}
 	defer payinConn.Close()
-	payoutConn, err := grpcx.DialLazy(ctx, cfg.PayoutGRPCAddr, cfg.InternalGRPCToken)
+	payoutConn, err := grpcx.DialLazy(ctx, cfg.PayoutGRPCAddr, cfg.InternalGRPCToken, tlsx.ClientConfig(certSrc, tlsx.IdentityPayout))
 	if err != nil {
 		return fmt.Errorf("dial payout: %w", err)
 	}
 	defer payoutConn.Close()
-	ledgerConn, err := grpcx.DialLazy(ctx, cfg.LedgerGRPCAddr, cfg.InternalGRPCToken)
+	ledgerConn, err := grpcx.DialLazy(ctx, cfg.LedgerGRPCAddr, cfg.InternalGRPCToken, tlsx.ClientConfig(certSrc, tlsx.IdentityLedger))
 	if err != nil {
 		return fmt.Errorf("dial ledger: %w", err)
 	}

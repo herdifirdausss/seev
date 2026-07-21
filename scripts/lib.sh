@@ -26,6 +26,11 @@ GATEWAY_DB_NAME="${GATEWAY_DB_NAME:-seev_gateway}"
 ADMINBFF_DB_NAME="${ADMINBFF_DB_NAME:-seev_adminbff}"
 ASSURANCE_DB_NAME="${ASSURANCE_DB_NAME:-seev_assurance}"
 JWT_SECRET="${JWT_SECRET:-change-me-to-a-random-32-plus-character-secret}"
+# docs/plan/49 K5: every gRPC server now REFUSES to boot with an empty
+# token (pkg/grpcx.NewServer fails fast — the old no-op-when-empty
+# behavior that silently accepted every call is gone), so this can no
+# longer default to empty the way it used to across this whole harness.
+INTERNAL_GRPC_TOKEN="${INTERNAL_GRPC_TOKEN:-change-me-to-a-random-32-plus-character-token}"
 APP_PORT="${APP_PORT:-18080}"
 INTERNAL_PORT="${INTERNAL_PORT:-18081}"
 LEDGER_GRPC_PORT="${LEDGER_GRPC_PORT:-19091}"
@@ -89,6 +94,11 @@ FRAUD_BIN="$WORK_DIR/fraud-service"
 ADMINBFF_BIN="$WORK_DIR/admin-bff-service"
 ASSURANCE_BIN="$WORK_DIR/assurance-service"
 GENTOKEN_BIN="$WORK_DIR/gentoken"
+CERTGEN_BIN="$WORK_DIR/certgen"
+# docs/plan/49 K3: every service loads its own identity + the shared CA
+# from one directory (cmd/certgen's output layout) — generated fresh into
+# this run's own WORK_DIR, never committed, never reused across runs.
+CERT_DIR="$WORK_DIR/certs"
 GATEWAY_LOG="$WORK_DIR/gateway.log"
 LEDGER_LOG="$WORK_DIR/ledger-service.log"
 AUTH_LOG="$WORK_DIR/auth-service.log"
@@ -266,7 +276,7 @@ ensure_app_role() {
 # ─── Server lifecycle ───────────────────────────────────────────────────────
 
 build_server() {
-	log "building gateway + ledger-service + auth-service + payin-service + payout-service + fraud-service + admin-bff-service + assurance-service + gentoken binaries..."
+	log "building gateway + ledger-service + auth-service + payin-service + payout-service + fraud-service + admin-bff-service + assurance-service + gentoken + certgen binaries..."
 	go build -o "$GATEWAY_BIN" ./cmd/gateway
 	go build -o "$LEDGER_BIN" ./cmd/ledger-service
 	go build -o "$AUTH_BIN" ./cmd/auth-service
@@ -276,6 +286,22 @@ build_server() {
 	go build -o "$ADMINBFF_BIN" ./cmd/admin-bff-service
 	go build -o "$ASSURANCE_BIN" ./cmd/assurance-service
 	go build -o "$GENTOKEN_BIN" ./cmd/gentoken
+	go build -o "$CERTGEN_BIN" ./cmd/certgen
+	generate_certs
+}
+
+# generate_certs (docs/plan/49 K3) issues a fresh CA plus one leaf per
+# known identity into $CERT_DIR, once per run — every start_*_service
+# function below points TLS_CERT_DIR at this same directory. Idempotent
+# within a run (certgen's own --force-less issue skips a still-fresh
+# leaf), but $CERT_DIR itself lives under $WORK_DIR so a genuinely fresh
+# CA is generated every run, never reused stale across runs.
+generate_certs() {
+	log "generating mTLS certificates (docs/plan/49 K3) into $CERT_DIR..."
+	"$CERTGEN_BIN" init-ca --out "$CERT_DIR"
+	for service in gateway auth ledger payin payout fraud admin-bff assurance dev-operator prometheus; do
+		"$CERTGEN_BIN" issue --service "$service" --out "$CERT_DIR"
+	done
 }
 
 start_fraud_service() {
@@ -298,6 +324,8 @@ start_fraud_service() {
 		export RABBITMQ_PASSWORD=seev
 		export RABBITMQ_EXCHANGE=ledger.events
 		export JWT_SECRET=$JWT_SECRET
+		export TLS_CERT_DIR=$CERT_DIR
+		export INTERNAL_GRPC_TOKEN=$INTERNAL_GRPC_TOKEN
 		export SCREENING_MODE="${SCREENING_MODE:-off}"
 		export SCREENING_AMOUNT_THRESHOLD="${SCREENING_AMOUNT_THRESHOLD:-0}"
 		export SCREENING_VELOCITY_MAX_PER_HOUR="${SCREENING_VELOCITY_MAX_PER_HOUR:-0}"
@@ -326,6 +354,8 @@ start_payout_service() {
 		export LEDGER_GRPC_ADDR=localhost:$LEDGER_GRPC_PORT
 		export FRAUD_GRPC_ADDR=localhost:$FRAUD_GRPC_PORT
 		export JWT_SECRET=$JWT_SECRET
+		export TLS_CERT_DIR=$CERT_DIR
+		export INTERNAL_GRPC_TOKEN=$INTERNAL_GRPC_TOKEN
 		export VENDOR_MOCKVENDOR_ENABLED=true
 		export VENDOR_MOCKVENDOR_SECRET="${VENDOR_MOCKVENDOR_SECRET:-script-test-mockvendor-secret-at-least-32-chars-long}"
 		# mockvendor2 registered alongside mockvendor (docs/plan/40 Task T4) —
@@ -370,6 +400,8 @@ start_payout_service_replica() {
 		export LEDGER_GRPC_ADDR=localhost:$LEDGER_GRPC_PORT
 		export FRAUD_GRPC_ADDR=localhost:$FRAUD_GRPC_PORT
 		export JWT_SECRET=$JWT_SECRET
+		export TLS_CERT_DIR=$CERT_DIR
+		export INTERNAL_GRPC_TOKEN=$INTERNAL_GRPC_TOKEN
 		export VENDOR_MOCKVENDOR_ENABLED=true
 		export VENDOR_MOCKVENDOR_SECRET="${VENDOR_MOCKVENDOR_SECRET:-script-test-mockvendor-secret-at-least-32-chars-long}"
 		export MOCKVENDOR2_ENABLED=true
@@ -417,6 +449,8 @@ start_payin_service() {
 		export LEDGER_GRPC_ADDR=localhost:$LEDGER_GRPC_PORT
 		export FRAUD_GRPC_ADDR=localhost:$FRAUD_GRPC_PORT
 		export JWT_SECRET=$JWT_SECRET
+		export TLS_CERT_DIR=$CERT_DIR
+		export INTERNAL_GRPC_TOKEN=$INTERNAL_GRPC_TOKEN
 		export VENDOR_MOCKVENDOR_ENABLED=true
 		export VENDOR_MOCKVENDOR_SECRET="${VENDOR_MOCKVENDOR_SECRET:-script-test-mockvendor-secret-at-least-32-chars-long}"
 		export MOCKVENDOR2_ENABLED=true
@@ -460,6 +494,8 @@ start_ledger_service() {
 		export RABBITMQ_EXCHANGE=ledger.events
 		export FRAUD_GRPC_ADDR=localhost:$FRAUD_GRPC_PORT
 		export JWT_SECRET=$JWT_SECRET
+		export TLS_CERT_DIR=$CERT_DIR
+		export INTERNAL_GRPC_TOKEN=$INTERNAL_GRPC_TOKEN
 		export LOG_FORMAT=json
 		nohup "$LEDGER_BIN" >>"$LEDGER_LOG" 2>&1 &
 		echo $! >"$LEDGER_PID_FILE"
@@ -488,6 +524,8 @@ start_gateway() {
 		export RABBITMQ_PASSWORD=seev
 		export RABBITMQ_EXCHANGE=ledger.events
 		export JWT_SECRET=$JWT_SECRET
+		export TLS_CERT_DIR=$CERT_DIR
+		export INTERNAL_GRPC_TOKEN=$INTERNAL_GRPC_TOKEN
 		export LEDGER_GRPC_ADDR=localhost:$LEDGER_GRPC_PORT
 		export LEDGER_USER_API_URL=http://localhost:$LEDGER_APP_PORT
 		export PAYIN_GRPC_ADDR=localhost:$PAYIN_GRPC_PORT
@@ -520,6 +558,8 @@ start_auth_service() {
 		export REDIS_ADDR=localhost:$REDIS_HOST_PORT
 		export LEDGER_GRPC_ADDR=localhost:$LEDGER_GRPC_PORT
 		export JWT_SECRET=$JWT_SECRET
+		export TLS_CERT_DIR=$CERT_DIR
+		export INTERNAL_GRPC_TOKEN=$INTERNAL_GRPC_TOKEN
 		export LOG_FORMAT=json
 		nohup "$AUTH_BIN" >>"$AUTH_LOG" 2>&1 &
 		echo $! >"$AUTH_PID_FILE"
@@ -551,7 +591,8 @@ start_assurance_service() {
 		export PAYIN_GRPC_ADDR=localhost:$PAYIN_GRPC_PORT
 		export PAYOUT_GRPC_ADDR=localhost:$PAYOUT_GRPC_PORT
 		export LEDGER_GRPC_ADDR=localhost:$LEDGER_GRPC_PORT
-		export INTERNAL_GRPC_TOKEN="${INTERNAL_GRPC_TOKEN:-}"
+		export INTERNAL_GRPC_TOKEN=$INTERNAL_GRPC_TOKEN
+		export TLS_CERT_DIR=$CERT_DIR
 		export JWT_SECRET=$JWT_SECRET
 		export ASSURANCE_INTERVAL="${ASSURANCE_INTERVAL:-60s}"
 		export ASSURANCE_CONSISTENCY_DELAY="${ASSURANCE_CONSISTENCY_DELAY:-2m}"

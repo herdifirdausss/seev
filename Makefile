@@ -3,7 +3,7 @@ BUILD_DIR := bin
 CMD_DIR   := ./cmd/gateway
 GOFLAGS   := -trimpath -ldflags="-s -w"
 
-.PHONY: build build-all run dev test lint tidy tools proto proto-lint proto-breaking docker-up docker-down smoke-container migrate-up migrate-up-all migrate-down grant-app-role verify-full chaos-debug observability-secret observability-up observability-down
+.PHONY: build build-all run dev test lint tidy tools proto proto-lint proto-breaking docker-up docker-down smoke-container migrate-up migrate-up-all migrate-down grant-app-role verify-full chaos-debug observability-secret observability-up observability-down certs
 
 BUF_VERSION                := v1.47.2
 PROTOC_GEN_GO_VERSION      := v1.36.11
@@ -167,6 +167,22 @@ observability-up: observability-secret
 ## observability-down: Stop app + observability profiles
 observability-down:
 	docker compose --profile app --profile observability down
+
+# docs/plan/49 K3: mTLS CA + one leaf cert per service identity, generated
+# locally into ./deploy/certs (gitignored, mirrors the observability-secret
+# pattern above). `docker compose --profile app` paths that don't go through
+# scripts/lib.sh (manual dev, smoke-container.sh, nightly.yml) mount this
+# directory read-only, so it must exist before those containers start.
+# certgen itself is idempotent (init-ca skips an existing CA, issue skips a
+# leaf that's still fresh), so re-running this is always safe.
+## certs: Generate the local mTLS CA + per-service leaf certs (run before `docker compose --profile app up`)
+certs:
+	mkdir -p $(BUILD_DIR)
+	go build $(GOFLAGS) -o $(BUILD_DIR)/certgen ./cmd/certgen
+	$(BUILD_DIR)/certgen init-ca --out deploy/certs
+	@for service in gateway auth ledger payin payout fraud admin-bff assurance dev-operator prometheus; do \
+		$(BUILD_DIR)/certgen issue --service $$service --out deploy/certs || exit $$?; \
+	done
 
 ## help: Print this help message
 help:

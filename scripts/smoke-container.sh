@@ -108,6 +108,13 @@ save_diagnostics() {
 log "resetting: docker compose --profile app down -v --remove-orphans"
 docker compose --profile app down -v --remove-orphans >/dev/null 2>&1 || true
 
+# docs/plan/49 K3: every app-profile container now mounts ./deploy/certs
+# read-only (x-cert-volume in docker-compose.yml) — `make certs` writes the
+# CA + per-service leaves there before compose ever starts a container.
+# Idempotent, so re-running this script never thrashes still-fresh certs.
+log "generating mTLS certificates (docs/plan/49 K3)..."
+make certs >/dev/null
+
 if [ "${SEEV_SMOKE_NO_BUILD:-0}" = "1" ]; then
 	log "starting profile 'app' with pre-loaded images (--no-build)..."
 	SEEV_IMAGE_TAG="${SEEV_IMAGE_TAG:-ci}" docker compose --profile app up --no-build -d

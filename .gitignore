@@ -41,6 +41,12 @@ go.work.sum
 /deploy/observability/secrets/*
 !/deploy/observability/secrets/.gitkeep
 
+# docs/plan/49 K3: mTLS CA + per-service leaf certs generated locally by
+# `make certs` (cmd/certgen) — private keys, never committed, mirrors the
+# observability-secret pattern above.
+/deploy/certs/*
+!/deploy/certs/.gitkeep
+
 # Editor/IDE
 # .idea/
 # .vscode/

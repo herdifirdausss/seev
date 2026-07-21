@@ -27,6 +27,7 @@ import (
 	"github.com/herdifirdausss/seev/pkg/grpcx"
 	"github.com/herdifirdausss/seev/pkg/ledgerclient"
 	"github.com/herdifirdausss/seev/pkg/logger"
+	"github.com/herdifirdausss/seev/pkg/tlsx"
 	"github.com/herdifirdausss/seev/pkg/tracing"
 )
 
@@ -74,6 +75,16 @@ func run(parent context.Context) error {
 		cfg.GRPCPort = "9093"
 	}
 	log := logger.New(cfg.Logger.Pkg())
+	// docs/plan/49 K3/K5: load this process's own identity + the shared
+	// CA before anything else. A second payout-service replica (docs/
+	// plan/45 T4's start_payout_service_replica) is the SAME workload
+	// identity, not a distinct one — SPIFFE-style identity is per-service,
+	// not per-instance, so it loads this exact same "payout" cert too.
+	certSrc, err := tlsx.LoadFromDir(cfg.TLSCertDir, "payout", log)
+	if err != nil {
+		return fmt.Errorf("load TLS certificates: %w", err)
+	}
+	defer certSrc.Stop()
 	ctx, cancel := signal.NotifyContext(parent, syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 	shutdownTracing, err := tracing.Setup(ctx, tracing.Config{
@@ -101,7 +112,7 @@ func run(parent context.Context) error {
 		}
 		redisClient = redisCache.Redis()
 	}
-	ledgerConn, err := grpcx.Dial(ctx, cfg.LedgerGRPCAddr, cfg.InternalGRPCToken)
+	ledgerConn, err := grpcx.Dial(ctx, cfg.LedgerGRPCAddr, cfg.InternalGRPCToken, tlsx.ClientConfig(certSrc, tlsx.IdentityLedger))
 	if err != nil {
 		if redisCache != nil {
 			_ = redisCache.Close()
@@ -129,7 +140,7 @@ func run(parent context.Context) error {
 	var fraudClient *fraudcheck.Client
 	var fraudConn *grpc.ClientConn
 	if cfg.FraudGRPCAddr != "" {
-		fraudConn, err = grpcx.DialLazy(ctx, cfg.FraudGRPCAddr, cfg.InternalGRPCToken)
+		fraudConn, err = grpcx.DialLazy(ctx, cfg.FraudGRPCAddr, cfg.InternalGRPCToken, tlsx.ClientConfig(certSrc, tlsx.IdentityFraud))
 		if err != nil {
 			_ = ledgerConn.Close()
 			if redisCache != nil {
@@ -144,7 +155,21 @@ func run(parent context.Context) error {
 
 	module := payout.NewModule(db, ledgerclient.New(ledgerConn), registry, redisClient, log, fraudClient, breaker)
 	module.StartWorkers(ctx)
-	grpcServer := grpcx.NewServer(log, cfg.InternalGRPCToken)
+	// docs/plan/49 K4: gateway calls payout's gRPC surface for user-facing
+	// payout flows; assurance-service (TM-09) reads it for cross-service
+	// correlation.
+	grpcServer, err := grpcx.NewServer(log, cfg.InternalGRPCToken, tlsx.ServerConfig(certSrc, []string{
+		tlsx.IdentityGateway, tlsx.IdentityAssurance,
+	}))
+	if err != nil {
+		module.StopWorkers()
+		_ = ledgerConn.Close()
+		if redisCache != nil {
+			_ = redisCache.Close()
+		}
+		_ = db.Close()
+		return fmt.Errorf("create grpc server: %w", err)
+	}
 	module.RegisterGRPC(grpcServer)
 	listener, err := net.Listen("tcp", ":"+cfg.GRPCPort)
 	if err != nil {

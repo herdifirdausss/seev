@@ -25,6 +25,7 @@ import (
 	"github.com/herdifirdausss/seev/pkg/grpcx"
 	"github.com/herdifirdausss/seev/pkg/ledgerclient"
 	"github.com/herdifirdausss/seev/pkg/logger"
+	"github.com/herdifirdausss/seev/pkg/tlsx"
 	"github.com/herdifirdausss/seev/pkg/tracing"
 )
 
@@ -73,6 +74,13 @@ func run(parent context.Context) error {
 		cfg.App.InternalPort = "8083"
 	}
 	log := logger.New(cfg.Logger.Pkg())
+	// docs/plan/49 K3/K5: load this process's own identity + the shared CA
+	// before anything else.
+	certSrc, err := tlsx.LoadFromDir(cfg.TLSCertDir, "auth", log)
+	if err != nil {
+		return fmt.Errorf("load TLS certificates: %w", err)
+	}
+	defer certSrc.Stop()
 	ctx, cancel := signal.NotifyContext(parent, syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 	shutdownTracing, err := tracing.Setup(ctx, tracing.Config{
@@ -99,7 +107,7 @@ func run(parent context.Context) error {
 			return fmt.Errorf("connect redis: %w", err)
 		}
 	}
-	ledgerConn, err := grpcx.Dial(ctx, cfg.LedgerGRPCAddr, cfg.InternalGRPCToken)
+	ledgerConn, err := grpcx.Dial(ctx, cfg.LedgerGRPCAddr, cfg.InternalGRPCToken, tlsx.ClientConfig(certSrc, tlsx.IdentityLedger))
 	if err != nil {
 		closeAuthDependencies(log, nil, nil, redisCache, db, shutdownTracing)
 		return fmt.Errorf("connect ledger-service: %w", err)
@@ -107,7 +115,7 @@ func run(parent context.Context) error {
 	var fraudConn *grpc.ClientConn
 	var closeFraud func() error
 	if cfg.FraudGRPCAddr != "" {
-		conn, dialErr := grpcx.DialLazy(ctx, cfg.FraudGRPCAddr, cfg.InternalGRPCToken)
+		conn, dialErr := grpcx.DialLazy(ctx, cfg.FraudGRPCAddr, cfg.InternalGRPCToken, tlsx.ClientConfig(certSrc, tlsx.IdentityFraud))
 		if dialErr != nil {
 			closeAuthDependencies(log, ledgerConn.Close, nil, redisCache, db, shutdownTracing)
 			return fmt.Errorf("connect fraud-service: %w", dialErr)

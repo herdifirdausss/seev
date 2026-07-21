@@ -44,6 +44,13 @@ type Config struct {
 	PayoutGRPCAddr    string
 	FraudGRPCAddr     string
 	LedgerUserAPIURL  string
+
+	// TLSCertDir is where cmd/certgen (docs/plan/49 K3) writes ca.pem plus
+	// one <service>.pem/<service>-key.pem pair per identity — every
+	// process loads exactly its own pair plus the shared CA from here via
+	// pkg/tlsx. Never a per-file env var: one directory convention keeps
+	// compose/lib.sh wiring to a single mount/volume.
+	TLSCertDir string
 }
 
 // AuthConfig configures the auth module (docs/plan/25 Task T1).
@@ -548,6 +555,7 @@ func loadFromEnvMode(getenv func(string) string, requireRabbitMQ bool) (*Config,
 		PayoutGRPCAddr:    getWithDefault(getenv, "PAYOUT_GRPC_ADDR", "localhost:9093"),
 		FraudGRPCAddr:     getenv("FRAUD_GRPC_ADDR"),
 		LedgerUserAPIURL:  getWithDefault(getenv, "LEDGER_USER_API_URL", "http://localhost:8090"),
+		TLSCertDir:        getWithDefault(getenv, "TLS_CERT_DIR", "deploy/certs"),
 	}
 
 	if err := validate(cfg, requireRabbitMQ, &errs); err != nil {

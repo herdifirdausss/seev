@@ -8,6 +8,14 @@ x-app-logging: &app-logging
     max-size: "10m"
     max-file: "3"
 
+# docs/plan/49 K3: every internal-facing app container mounts the same
+# host-generated CA + per-service leaf certs read-only — `make certs`
+# (mirrors the `observability-secret` pattern: generated, gitignored,
+# never committed) writes them to ./deploy/certs before compose ever
+# reads this file.
+x-cert-volume: &cert-volume
+  - ./deploy/certs:/certs:ro
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -91,7 +99,8 @@ services:
       INTERNAL_APP_PORT: "8091"
       INTERNAL_APP_BIND_ADDR: 0.0.0.0
       GRPC_PORT: "9091"
-      INTERNAL_GRPC_TOKEN: ${INTERNAL_GRPC_TOKEN:-}
+      INTERNAL_GRPC_TOKEN: ${INTERNAL_GRPC_TOKEN:-change-me-to-a-random-32-plus-character-token}
+      TLS_CERT_DIR: /certs
       POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"
       POSTGRES_USER: ledger_app
@@ -107,6 +116,7 @@ services:
       RABBITMQ_EXCHANGE: ledger.events
       FRAUD_GRPC_ADDR: fraud-service:9094
       JWT_SECRET: ${JWT_SECRET:-change-me-to-a-random-32-plus-character-secret}
+    volumes: *cert-volume
     ports:
       - "127.0.0.1:8090:8090"
       - "127.0.0.1:8091:8091"
@@ -151,8 +161,10 @@ services:
       REDIS_ENABLED: "true"
       REDIS_ADDR: redis:6379
       LEDGER_GRPC_ADDR: ledger-service:9091
-      INTERNAL_GRPC_TOKEN: ${INTERNAL_GRPC_TOKEN:-}
+      INTERNAL_GRPC_TOKEN: ${INTERNAL_GRPC_TOKEN:-change-me-to-a-random-32-plus-character-token}
+      TLS_CERT_DIR: /certs
       JWT_SECRET: ${JWT_SECRET:-change-me-to-a-random-32-plus-character-secret}
+    volumes: *cert-volume
     ports:
       - "127.0.0.1:8082:8082"
       - "127.0.0.1:8083:8083"
@@ -186,7 +198,8 @@ services:
       OTEL_EXPORTER_OTLP_INSECURE: "${OTEL_EXPORTER_OTLP_INSECURE:-true}"
       APP_PORT: "8092"
       GRPC_PORT: "9092"
-      INTERNAL_GRPC_TOKEN: ${INTERNAL_GRPC_TOKEN:-}
+      INTERNAL_GRPC_TOKEN: ${INTERNAL_GRPC_TOKEN:-change-me-to-a-random-32-plus-character-token}
+      TLS_CERT_DIR: /certs
       POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"
       POSTGRES_USER: payin_app
@@ -200,6 +213,7 @@ services:
       VENDOR_MOCKVENDOR_SECRET: ${VENDOR_MOCKVENDOR_SECRET:-change-me-mockvendor-secret}
       MOCKVENDOR2_ENABLED: "true"
       MOCKVENDOR2_SECRET: ${MOCKVENDOR2_SECRET:-change-me-mockvendor2-secret}
+    volumes: *cert-volume
     ports:
       - "127.0.0.1:8092:8092"
       - "127.0.0.1:9092:9092"
@@ -231,7 +245,8 @@ services:
       OTEL_EXPORTER_OTLP_INSECURE: "${OTEL_EXPORTER_OTLP_INSECURE:-true}"
       APP_PORT: "8093"
       GRPC_PORT: "9093"
-      INTERNAL_GRPC_TOKEN: ${INTERNAL_GRPC_TOKEN:-}
+      INTERNAL_GRPC_TOKEN: ${INTERNAL_GRPC_TOKEN:-change-me-to-a-random-32-plus-character-token}
+      TLS_CERT_DIR: /certs
       POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"
       POSTGRES_USER: payout_app
@@ -248,6 +263,7 @@ services:
       VENDOR_MOCKVENDOR_SECRET: ${VENDOR_MOCKVENDOR_SECRET:-change-me-mockvendor-secret}
       MOCKVENDOR2_ENABLED: "true"
       MOCKVENDOR2_SECRET: ${MOCKVENDOR2_SECRET:-change-me-mockvendor2-secret}
+    volumes: *cert-volume
     ports:
       - "127.0.0.1:8093:8093"
       - "127.0.0.1:9093:9093"
@@ -281,7 +297,8 @@ services:
       OTEL_EXPORTER_OTLP_INSECURE: "${OTEL_EXPORTER_OTLP_INSECURE:-true}"
       APP_PORT: "8094"
       GRPC_PORT: "9094"
-      INTERNAL_GRPC_TOKEN: ${INTERNAL_GRPC_TOKEN:-}
+      INTERNAL_GRPC_TOKEN: ${INTERNAL_GRPC_TOKEN:-change-me-to-a-random-32-plus-character-token}
+      TLS_CERT_DIR: /certs
       POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"
       POSTGRES_USER: fraud_app
@@ -300,6 +317,7 @@ services:
       SCREENING_MODE: ${SCREENING_MODE:-off}
       SCREENING_AMOUNT_THRESHOLD: ${SCREENING_AMOUNT_THRESHOLD:-0}
       SCREENING_VELOCITY_MAX_PER_HOUR: ${SCREENING_VELOCITY_MAX_PER_HOUR:-0}
+    volumes: *cert-volume
     ports:
       - "127.0.0.1:8094:8094"
       - "127.0.0.1:9094:9094"
@@ -390,7 +408,8 @@ services:
       PAYIN_GRPC_ADDR: payin-service:9092
       PAYOUT_GRPC_ADDR: payout-service:9093
       LEDGER_GRPC_ADDR: ledger-service:9091
-      INTERNAL_GRPC_TOKEN: ${INTERNAL_GRPC_TOKEN:-}
+      INTERNAL_GRPC_TOKEN: ${INTERNAL_GRPC_TOKEN:-change-me-to-a-random-32-plus-character-token}
+      TLS_CERT_DIR: /certs
       JWT_SECRET: ${JWT_SECRET:-change-me-to-a-random-32-plus-character-secret}
       ASSURANCE_INTERVAL: ${ASSURANCE_INTERVAL:-60s}
       ASSURANCE_CONSISTENCY_DELAY: ${ASSURANCE_CONSISTENCY_DELAY:-2m}
@@ -398,6 +417,7 @@ services:
       ASSURANCE_RPC_TIMEOUT: ${ASSURANCE_RPC_TIMEOUT:-3s}
       ASSURANCE_CONCURRENCY: ${ASSURANCE_CONCURRENCY:-2}
       ALERT_WEBHOOK_URL: ${ALERT_WEBHOOK_URL:-}
+    volumes: *cert-volume
     ports:
       - "127.0.0.1:8096:8096"
     depends_on:
@@ -454,8 +474,10 @@ services:
       LEDGER_USER_API_URL: http://ledger-service:8090
       PAYIN_GRPC_ADDR: payin-service:9092
       PAYOUT_GRPC_ADDR: payout-service:9093
-      INTERNAL_GRPC_TOKEN: ${INTERNAL_GRPC_TOKEN:-}
+      INTERNAL_GRPC_TOKEN: ${INTERNAL_GRPC_TOKEN:-change-me-to-a-random-32-plus-character-token}
+      TLS_CERT_DIR: /certs
       JWT_SECRET: ${JWT_SECRET:-change-me-to-a-random-32-plus-character-secret}
+    volumes: *cert-volume
     ports:
       - "127.0.0.1:8080:8080"
       - "127.0.0.1:8081:8081"

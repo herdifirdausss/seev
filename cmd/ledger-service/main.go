@@ -31,6 +31,7 @@ import (
 	"github.com/herdifirdausss/seev/pkg/logger"
 	"github.com/herdifirdausss/seev/pkg/messaging"
 	"github.com/herdifirdausss/seev/pkg/middleware"
+	"github.com/herdifirdausss/seev/pkg/tlsx"
 	"github.com/herdifirdausss/seev/pkg/tracing"
 )
 
@@ -84,6 +85,14 @@ func run(parent context.Context) error {
 	for _, warning := range cfg.Warnings() {
 		log.Warn("config: " + warning)
 	}
+	// docs/plan/49 K3/K5: load this process's own identity + the shared CA
+	// before anything else — a service must never boot believing it's
+	// running mTLS when its certificates are missing or invalid.
+	certSrc, err := tlsx.LoadFromDir(cfg.TLSCertDir, "ledger", log)
+	if err != nil {
+		return fmt.Errorf("load TLS certificates: %w", err)
+	}
+	defer certSrc.Stop()
 
 	ctx, cancel := signal.NotifyContext(parent, syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
@@ -151,7 +160,7 @@ func run(parent context.Context) error {
 	var fraudClient *fraudcheck.Client
 	var fraudConn *grpc.ClientConn
 	if cfg.FraudGRPCAddr != "" {
-		fraudConn, err = grpcx.DialLazy(ctx, cfg.FraudGRPCAddr, cfg.InternalGRPCToken)
+		fraudConn, err = grpcx.DialLazy(ctx, cfg.FraudGRPCAddr, cfg.InternalGRPCToken, tlsx.ClientConfig(certSrc, tlsx.IdentityFraud))
 		if err != nil {
 			closeDependencies(log, nil, mq, redisCache, db, shutdownTracing)
 			return fmt.Errorf("create fraud-service client: %w", err)
@@ -170,7 +179,16 @@ func run(parent context.Context) error {
 	}
 	module.StartWorkers(ctx)
 
-	grpcServer := grpcx.NewServer(log, cfg.InternalGRPCToken)
+	// docs/plan/49 K4: ledger's gRPC listener accepts the four services
+	// that legitimately call it (assurance added post-doc-49-write —
+	// docs/security/threat-model.md TM-09).
+	grpcServer, err := grpcx.NewServer(log, cfg.InternalGRPCToken, tlsx.ServerConfig(certSrc, []string{
+		tlsx.IdentityGateway, tlsx.IdentityAuth, tlsx.IdentityPayin, tlsx.IdentityPayout, tlsx.IdentityAssurance,
+	}))
+	if err != nil {
+		closeDependencies(log, module, mq, redisCache, db, shutdownTracing)
+		return fmt.Errorf("create grpc server: %w", err)
+	}
 	module.RegisterGRPC(grpcServer)
 	grpcListener, err := net.Listen("tcp", ":"+cfg.GRPCPort)
 	if err != nil {

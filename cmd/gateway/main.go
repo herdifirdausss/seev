@@ -22,6 +22,7 @@ import (
 	"github.com/herdifirdausss/seev/pkg/grpcx"
 	"github.com/herdifirdausss/seev/pkg/logger"
 	"github.com/herdifirdausss/seev/pkg/messaging"
+	"github.com/herdifirdausss/seev/pkg/tlsx"
 	"github.com/herdifirdausss/seev/pkg/tracing"
 )
 
@@ -51,6 +52,14 @@ func main() {
 	for _, w := range cfg.Warnings() {
 		log.Warn("config: " + w)
 	}
+
+	// ─── TLS identity (docs/plan/49 K3/K5) ─────────────────────────────────────
+	certSrc, err := tlsx.LoadFromDir(cfg.TLSCertDir, "gateway", log)
+	if err != nil {
+		log.Error("failed to load TLS certificates", "error", err)
+		os.Exit(1)
+	}
+	defer certSrc.Stop()
 
 	// ─── Tracing (optional — docs/plan/12 Task T5) ─────────────────────────────
 	// A setup failure here is deliberately non-fatal: tracing is pure
@@ -102,7 +111,7 @@ func main() {
 	}
 
 	// ─── Remote ledger boundary ────────────────────────────────────────────────
-	ledgerConn, err := grpcx.Dial(ctx, cfg.LedgerGRPCAddr, cfg.InternalGRPCToken)
+	ledgerConn, err := grpcx.Dial(ctx, cfg.LedgerGRPCAddr, cfg.InternalGRPCToken, tlsx.ClientConfig(certSrc, tlsx.IdentityLedger))
 	if err != nil {
 		log.Error("failed to connect to ledger-service", "error", err)
 		os.Exit(1)
@@ -112,12 +121,12 @@ func main() {
 		log.Error("failed to configure ledger proxy", "error", err)
 		os.Exit(1)
 	}
-	payinConn, err := grpcx.Dial(ctx, cfg.PayinGRPCAddr, cfg.InternalGRPCToken)
+	payinConn, err := grpcx.Dial(ctx, cfg.PayinGRPCAddr, cfg.InternalGRPCToken, tlsx.ClientConfig(certSrc, tlsx.IdentityPayin))
 	if err != nil {
 		log.Error("failed to connect to payin-service", "error", err)
 		os.Exit(1)
 	}
-	payoutConn, err := grpcx.Dial(ctx, cfg.PayoutGRPCAddr, cfg.InternalGRPCToken)
+	payoutConn, err := grpcx.Dial(ctx, cfg.PayoutGRPCAddr, cfg.InternalGRPCToken, tlsx.ClientConfig(certSrc, tlsx.IdentityPayout))
 	if err != nil {
 		log.Error("failed to connect to payout-service", "error", err)
 		os.Exit(1)

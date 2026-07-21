@@ -52,8 +52,10 @@ func TestLoggingInterceptor_ObservesNonOKCode(t *testing.T) {
 	const method = "/seev.ping.v1.PingService/Ping"
 	before := grpcObservationCount(t, method, "Unauthenticated")
 
+	serverTLS, clientTLS := testMTLSPair(t)
 	listener := bufconn.Listen(1024 * 1024)
-	server := NewServer(slog.Default(), "correct")
+	server, err := NewServer(slog.Default(), "correct", serverTLS)
+	require.NoError(t, err)
 	pingv1.RegisterPingServiceServer(server, &pingServer{})
 	go func() { _ = server.Serve(listener) }()
 	defer server.Stop()
@@ -61,7 +63,7 @@ func TestLoggingInterceptor_ObservesNonOKCode(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	conn, err := dial(ctx, "bufnet", "wrong", grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+	conn, err := dial(ctx, "bufnet", "wrong", clientTLS, grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
 		return listener.Dial()
 	}))
 	require.NoError(t, err)

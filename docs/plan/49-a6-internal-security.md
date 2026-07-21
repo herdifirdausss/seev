@@ -416,7 +416,111 @@ tidak pernah lagi bisa kosong-menerima-semua.
 
 ### Hasil
 
-> Diisi saat T2 selesai.
+**pkg/tlsx (K2)**: `identity.go` (10 konstanta `spiffe://seev/<service>`), `source.go`
+(`CertSource` dengan poll-mtime hot-reload, tanpa fsnotify; `identityOf` menolak
+sertifikat yang bukan tepat 1 URI SAN), `config.go` (`ServerConfig` =
+`RequireAndVerifyClientCert` + `VerifyConnection` cek SAN vs allowlist;
+`ClientConfig` = `InsecureSkipVerify:true` + `VerifyConnection` manual
+`x509.Certificate.Verify` — didokumentasikan eksplisit KENAPA, karena cert di
+repo ini hanya punya URI SAN, tidak ada DNS SAN, jadi hostname verification
+bawaan Go tidak mungkin lolos). 9 unit test (`TestCertSource_*`,
+`TestServerConfig_*`, `TestClientConfig_*`) pakai `tls.Listen`/`tls.Dial`
+sungguhan (bukan bufconn) — semua PASS dengan `-race`.
+
+Bug nyata ditemukan saat menulis test, bukan saat review: TLS 1.3 menunda
+alert kegagalan post-handshake — `tls.Dial` bisa return `nil` error dan
+bahkan `Write()` pertama bisa sukses walau server SUDAH menolak handshake;
+kegagalan baru muncul di `Read()` berikutnya. Helper `dial()` di
+`config_test.go` diperbaiki untuk selalu `Read()` (toleransi `io.EOF`)
+setelah `Write()`, dengan komentar penjelas supaya tidak terulang.
+
+**cmd/certgen (K3)**: subcommand `init-ca`/`issue --service <name>`/`rotate`;
+ECDSA P-256; leaf `ExtKeyUsage={ServerAuth,ClientAuth}` (satu cert per
+service dipakai sebagai server DAN client); TTL CA 30 hari, leaf 72 jam;
+`issue` idempoten (skip jika leaf tersisa >25% TTL). Diverifikasi manual:
+`certgen init-ca` + `issue --service ledger` → `openssl verify -CAfile
+ca.pem ledger.pem` → OK, URI SAN terkonfirmasi via `openssl x509 -text`.
+Target `make certs` (mirror pola `observability-secret`) ditambahkan +
+idempoten (dites 2x berturut, kedua kali "already exists"/"still fresh").
+
+**pkg/grpcx (K5)**: `NewServer`/`Dial`/`DialLazy` sekarang wajib
+`token != ""` DAN `tlsConfig != nil` — `authInterceptor`'s cabang no-op
+`if token == "" { return handler(...) }` (lubang nyata TM-01) DIHAPUS
+total, bukan dijaga kondisional. 2 test baru
+(`TestNewServer_EmptyTokenFailsFast`, `TestNewServer_NilTLSConfigFailsFast`)
+membuktikan fail-closed. Test tambahan
+`TestServerRejectsClientOutsideAllowlist` (baru, `pkg/grpcx/allowlist_test.go`)
+membuktikan K4 ujung-ke-ujung lewat jalur `NewServer`/`dial()` yang
+sungguhan dipakai tiap service — sertifikat valid (ditandatangani CA yang
+sama) tapi identitas DI LUAR allowlist server DITOLAK (muncul sebagai
+`context deadline exceeded` pada `dial()` sendiri, karena `dial()` pakai
+`grpc.WithBlock()` — grpc terus mencoba ulang handshake yang terus ditolak
+sampai deadline, bukan gagal di RPC call berikutnya; ini didokumentasikan
+di komentar test).
+
+**Wiring K4 per-hop** (semua `cmd/*/main.go`, memuat identitas via
+`tlsx.LoadFromDir(cfg.TLSCertDir, "<service>", log)` sebelum apa pun lain):
+ledger server ← {gateway,auth,payin,payout,assurance}; payin server ←
+{gateway,assurance}; payout server ← {gateway,assurance}; fraud server ←
+{ledger,payin,payout}. `assurance` ditambahkan ke allowlist ledger/payin/
+payout — bukan bagian K4 asli di §2 dokumen ini, tapi temuan TM-09 (T1) yang
+memang harus ditutup di sini, bukan ditunda. Total 13 dial-site (bukan 8
+seperti estimasi awal §2 — selisihnya persis 3 dial-site assurance-service
+yang sebelumnya tak terhitung) + 4 server gRPC (ledger, payin, payout,
+fraud) — semua sekarang mTLS wajib.
+
+**Wiring compose/harness**: `docker-compose.yml` — anchor `x-cert-volume`
+baru dipasang read-only ke 7 service (ledger, auth, payin, payout, fraud,
+assurance, gateway — admin-bff sengaja TIDAK, itu lingkup T3 HTTP bukan T2
+gRPC); `INTERNAL_GRPC_TOKEN` tak lagi berdefault kosong. `scripts/lib.sh` —
+`generate_certs()` baru (dipanggil dari `build_server()`, sebelum service
+mana pun start) + `TLS_CERT_DIR`/`INTERNAL_GRPC_TOKEN` diekspor di semua 8
+fungsi `start_*_service`. `scripts/smoke-container.sh` — `make certs`
+dipanggil sebelum `docker compose --profile app up` (jalur ini TIDAK lewat
+lib.sh, jadi butuh langkah terpisah). `.github/workflows/ci.yml` —
+job `smoke-container` ditambah `actions/setup-go` (sebelumnya job ini
+tak punya toolchain Go sama sekali, padahal `make certs`/`smoke-container.sh`
+sekarang butuh `go build ./cmd/certgen`). `nightly.yml` DIPERIKSA ulang dan
+TERNYATA TIDAK butuh langkah cert eksplisit (dugaan awal §2 K3 keliru) —
+satu-satunya job-nya (`full-stack`) memanggil `business-e2e.sh`/
+`chaos-test.sh`, keduanya lib.sh-based dan sudah cukup diri sendiri lewat
+`generate_certs()`. Makefile: target `certs` baru (mirror pola
+`observability-secret`, idempoten, dites langsung).
+
+**Verifikasi (GATE 1)**: `go build ./...`, `go vet ./...`,
+`go vet -tags=integration ./...`, `make lint`, `go test ./... -race
+-count=1` — semua bersih (0 error, 0 FAIL) baik di working tree penuh
+maupun di worktree terisolasi berisi HANYA isi staged commit ini (dibuat
+via `git worktree add` + `git diff --cached | git apply`, untuk memastikan
+commit T2 ini bisa build sendiri tanpa bergantung diam-diam pada perubahan
+lain yang masih ada di working tree tapi bukan bagian task ini).
+
+`make verify-full` dari volume bersih: `smoke-test.sh`, `business-e2e.sh`,
+`admin-e2e.sh` semua PASS — mengonfirmasi mTLS hidup di jalur normal (8
+proses real, sertifikat real, request lintas-service real). `chaos-test.sh
+all` (14 skenario) dijalankan 3x total: run pertama 1 kegagalan (detail
+hilang karena `KEEP_WORK_DIR` tak diset saat itu dan output di-tail
+sehingga baris FAIL tergulung keluar jendela); run kedua DAN ketiga —
+keduanya dengan `KEEP_WORK_DIR=1`/log lengkap — 100% bersih (0 baris
+`[ FAIL]`, `ALL CHAOS ASSERTIONS PASSED`). Diperlakukan sebagai flake
+(bukan regresi mTLS): 2 run bersih berturut lebih kuat sebagai bukti
+daripada 1 kegagalan tak terekam yang tak bisa direproduksi. Kill/restart
+di scenario 1,3,5,6,8,10,11,12,13,14 semuanya tetap hijau dengan cert mount
+aktif — perhatian khusus §5 T2 (regresi paling mungkin) TIDAK terjadi.
+
+**Kedisiplinan commit (catatan proses)**: repo ini punya sejumlah
+perubahan tak-terkait yang sudah ada di working tree SEBELUM T2 dimulai
+(fitur KYC rescreen `internal/auth/worker/rescreen.go` + `internal/
+kycvendor/httpkyc/`, dan beberapa perbaikan flakiness chaos-test yang
+sudah ada duluan seperti `wait_for_container_restart`). Beberapa file yang
+T2 sentuh (`.env.example`, `Makefile`, `docker-compose.yml`,
+`internal/config/config.go`, `cmd/auth-service/main.go`, `scripts/lib.sh`)
+ternyata BERCAMPUR baris dengan perubahan tak-terkait itu di file yang
+sama. Commit T2 ini di-stage per-hunk (`git add -p`, dan untuk baris
+tunggal yang tercampur dalam satu hunk — dihapus sementara dari working
+tree, di-`git add`, lalu dikembalikan) supaya HANYA baris T2 yang masuk
+commit; sisanya tetap ada di working tree tak ter-commit, utuh, untuk
+task/sesi lain.
 
 ### T3 — mTLS HTTP internal + migrasi harness (K6)
 

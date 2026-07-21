@@ -23,6 +23,7 @@ import (
 	"github.com/herdifirdausss/seev/pkg/grpcx"
 	"github.com/herdifirdausss/seev/pkg/logger"
 	"github.com/herdifirdausss/seev/pkg/messaging"
+	"github.com/herdifirdausss/seev/pkg/tlsx"
 	"github.com/herdifirdausss/seev/pkg/tracing"
 )
 
@@ -70,6 +71,14 @@ func run(parent context.Context) error {
 		cfg.GRPCPort = "9094"
 	}
 	log := logger.New(cfg.Logger.Pkg())
+	// docs/plan/49 K3/K5: load this process's own identity + the shared CA
+	// before anything else — a service must never boot believing it's
+	// running mTLS when its certificates are missing or invalid.
+	certSrc, err := tlsx.LoadFromDir(cfg.TLSCertDir, "fraud", log)
+	if err != nil {
+		return fmt.Errorf("load TLS certificates: %w", err)
+	}
+	defer certSrc.Stop()
 	ctx, cancel := signal.NotifyContext(parent, syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 	shutdownTracing, err := tracing.Setup(ctx, tracing.Config{
@@ -118,7 +127,19 @@ func run(parent context.Context) error {
 		return err
 	}
 
-	grpcServer := grpcx.NewServer(log, cfg.InternalGRPCToken)
+	// docs/plan/49 K4: fraud's gRPC listener only accepts the three
+	// services that legitimately call it.
+	grpcServer, err := grpcx.NewServer(log, cfg.InternalGRPCToken, tlsx.ServerConfig(certSrc, []string{
+		tlsx.IdentityLedger, tlsx.IdentityPayin, tlsx.IdentityPayout,
+	}))
+	if err != nil {
+		module.Stop()
+		store.Stop()
+		_ = broker.Close()
+		_ = redisClient.Close()
+		_ = db.Close()
+		return fmt.Errorf("create grpc server: %w", err)
+	}
 	module.RegisterGRPC(grpcServer)
 	listener, err := net.Listen("tcp", ":"+cfg.GRPCPort)
 	if err != nil {
