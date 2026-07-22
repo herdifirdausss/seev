@@ -71,7 +71,9 @@ type Config struct {
 
 // Module is the public facade for the auth module.
 type Module struct {
-	repo             repository.Repository
+	users            repository.UserRepository
+	refreshTokens    repository.RefreshTokenRepository
+	kyc              repository.KYCRepository
 	provisioner      Provisioner
 	cfg              Config
 	logger           *slog.Logger
@@ -101,11 +103,13 @@ func NewModule(db database.DatabaseSQL, provisioner Provisioner, cfg Config, log
 		provider = providers[0]
 	}
 	return &Module{
-		repo:        repository.NewRepository(db),
-		provisioner: provisioner,
-		cfg:         cfg,
-		logger:      logger,
-		kycProvider: provider,
+		users:         repository.NewUserRepository(db),
+		refreshTokens: repository.NewRefreshTokenRepository(db),
+		kyc:           repository.NewKYCRepository(db),
+		provisioner:   provisioner,
+		cfg:           cfg,
+		logger:        logger,
+		kycProvider:   provider,
 	}
 }
 
@@ -140,7 +144,7 @@ func (m *Module) Register(ctx context.Context, email, password, fullName string)
 		Role:     model.RoleUser,
 		Status:   model.StatusActive,
 	}
-	if err := m.repo.CreateUser(ctx, u, string(hash)); err != nil {
+	if err := m.users.CreateUser(ctx, u, string(hash)); err != nil {
 		if errors.Is(err, repository.ErrDuplicateEmail) {
 			return User{}, TokenPair{}, ErrEmailTaken
 		}
@@ -167,7 +171,7 @@ func (m *Module) Register(ctx context.Context, email, password, fullName string)
 // re-provisions ledger accounts (idempotent) so a register whose provision
 // step failed heals here.
 func (m *Module) Login(ctx context.Context, email, password string) (User, TokenPair, error) {
-	u, err := m.repo.GetUserByEmail(ctx, email)
+	u, err := m.users.GetUserByEmail(ctx, email)
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
 			// Burn roughly the same time as a real bcrypt compare so the
@@ -178,7 +182,7 @@ func (m *Module) Login(ctx context.Context, email, password string) (User, Token
 		return User{}, TokenPair{}, err
 	}
 
-	hash, err := m.repo.GetPasswordHash(ctx, u.ID)
+	hash, err := m.users.GetPasswordHash(ctx, u.ID)
 	if err != nil {
 		return User{}, TokenPair{}, err
 	}
@@ -206,7 +210,7 @@ func (m *Module) Login(ctx context.Context, email, password string) (User, Token
 // replay — every live token the user has is revoked and the caller gets 401
 // (docs/plan/25 T1 step 2).
 func (m *Module) Refresh(ctx context.Context, refreshToken string) (User, TokenPair, error) {
-	t, err := m.repo.GetRefreshTokenByHash(ctx, hashToken(refreshToken))
+	t, err := m.refreshTokens.GetRefreshTokenByHash(ctx, hashToken(refreshToken))
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
 			return User{}, TokenPair{}, ErrInvalidRefreshToken
@@ -219,7 +223,7 @@ func (m *Module) Refresh(ctx context.Context, refreshToken string) (User, TokenP
 		// stale copy — kill the whole chain.
 		m.logger.Warn("auth: revoked refresh token presented, revoking all user tokens",
 			slog.String("user_id", t.UserID.String()))
-		if err := m.repo.RevokeAllForUser(ctx, t.UserID); err != nil {
+		if err := m.refreshTokens.RevokeAllForUser(ctx, t.UserID); err != nil {
 			m.logger.Error("auth: revoke-all after replay failed", slog.Any("error", err))
 		}
 		return User{}, TokenPair{}, ErrInvalidRefreshToken
@@ -228,7 +232,7 @@ func (m *Module) Refresh(ctx context.Context, refreshToken string) (User, TokenP
 		return User{}, TokenPair{}, ErrInvalidRefreshToken
 	}
 
-	u, err := m.repo.GetUserByID(ctx, t.UserID)
+	u, err := m.users.GetUserByID(ctx, t.UserID)
 	if err != nil {
 		return User{}, TokenPair{}, err
 	}
@@ -244,7 +248,7 @@ func (m *Module) Refresh(ctx context.Context, refreshToken string) (User, TokenP
 	if err != nil {
 		return User{}, TokenPair{}, err
 	}
-	won, err := m.repo.RevokeRefreshToken(ctx, t.ID, &newTokenID)
+	won, err := m.refreshTokens.RevokeRefreshToken(ctx, t.ID, &newTokenID)
 	if err != nil {
 		return User{}, TokenPair{}, err
 	}
@@ -258,7 +262,7 @@ func (m *Module) Refresh(ctx context.Context, refreshToken string) (User, TokenP
 
 // Me returns the profile for an authenticated user id (from JWT claims).
 func (m *Module) Me(ctx context.Context, userID uuid.UUID) (User, error) {
-	u, err := m.repo.GetUserByID(ctx, userID)
+	u, err := m.users.GetUserByID(ctx, userID)
 	if errors.Is(err, repository.ErrNotFound) {
 		return User{}, ErrInvalidCredentials
 	}
@@ -268,13 +272,13 @@ func (m *Module) Me(ctx context.Context, userID uuid.UUID) (User, error) {
 // UpdateMe updates the caller's own mutable profile fields (full name only
 // for now — email/role/status changes are admin/security flows, not here).
 func (m *Module) UpdateMe(ctx context.Context, userID uuid.UUID, fullName string) (User, error) {
-	if err := m.repo.UpdateFullName(ctx, userID, fullName); err != nil {
+	if err := m.users.UpdateFullName(ctx, userID, fullName); err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
 			return User{}, ErrInvalidCredentials
 		}
 		return User{}, err
 	}
-	return m.repo.GetUserByID(ctx, userID)
+	return m.users.GetUserByID(ctx, userID)
 }
 
 // ─── internals ───────────────────────────────────────────────────────────────
@@ -311,7 +315,7 @@ func (m *Module) issueTokensWithID(ctx context.Context, u model.User) (TokenPair
 	refreshExp := now.Add(m.cfg.RefreshExpiry)
 
 	tokenID := uuid.New()
-	if err := m.repo.InsertRefreshToken(ctx, model.RefreshToken{
+	if err := m.refreshTokens.InsertRefreshToken(ctx, model.RefreshToken{
 		ID: tokenID, UserID: u.ID, TokenHash: hashToken(refresh), ExpiresAt: refreshExp,
 	}); err != nil {
 		return TokenPair{}, uuid.Nil, err

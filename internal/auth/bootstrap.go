@@ -32,7 +32,7 @@ func (m *Module) ensureBootstrapOperator(ctx context.Context, email, password, r
 	if email == "" || password == "" {
 		return nil // bootstrap admin not configured — fine
 	}
-	if _, err := m.repo.GetUserByEmail(ctx, email); err == nil {
+	if _, err := m.users.GetUserByEmail(ctx, email); err == nil {
 		return nil // already exists
 	} else if !errors.Is(err, repository.ErrNotFound) {
 		return err
@@ -46,7 +46,7 @@ func (m *Module) ensureBootstrapOperator(ctx context.Context, email, password, r
 		ID: uuid.New(), Email: email, FullName: fullName,
 		Role: role, Status: model.StatusActive, KYCLevel: 2,
 	}
-	if err := m.repo.CreateUser(ctx, u, string(hash)); err != nil {
+	if err := m.users.CreateUser(ctx, u, string(hash)); err != nil {
 		if errors.Is(err, repository.ErrDuplicateEmail) {
 			return nil // raced another replica — fine, it exists
 		}

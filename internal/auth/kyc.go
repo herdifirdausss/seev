@@ -53,20 +53,20 @@ type KYCStatus struct {
 }
 
 func (m *Module) SubmitKYC(ctx context.Context, userID uuid.UUID, levelRequested int, payload map[string]any) (model.KYCSubmission, error) {
-	user, err := m.repo.GetUserByID(ctx, userID)
+	user, err := m.users.GetUserByID(ctx, userID)
 	if err != nil {
 		return model.KYCSubmission{}, err
 	}
 	if levelRequested != user.KYCLevel+1 || levelRequested < 1 || levelRequested > 2 {
 		return model.KYCSubmission{}, ErrKYCLevelSequence
 	}
-	if latest, latestErr := m.repo.GetLatestKYCSubmission(ctx, userID); latestErr == nil && latest.Status == "pending" {
+	if latest, latestErr := m.kyc.GetLatestKYCSubmission(ctx, userID); latestErr == nil && latest.Status == "pending" {
 		return model.KYCSubmission{}, ErrKYCPending
 	} else if latestErr != nil && !errors.Is(latestErr, repository.ErrKYCSubmissionNotFound) {
 		return model.KYCSubmission{}, latestErr
 	}
 	submission := model.KYCSubmission{ID: uuid.New(), UserID: userID, LevelRequested: levelRequested, Status: "pending", Payload: payload, Provider: m.kycProvider.Name()}
-	if err := m.repo.CreateKYCSubmission(ctx, submission); err != nil {
+	if err := m.kyc.CreateKYCSubmission(ctx, submission); err != nil {
 		if errors.Is(err, repository.ErrKYCSubmissionNotPending) {
 			return model.KYCSubmission{}, ErrKYCPending
 		}
@@ -84,7 +84,7 @@ func (m *Module) SubmitKYC(ctx context.Context, userID uuid.UUID, levelRequested
 				return submission, fmt.Errorf("auth: sanctions screening: %w", screenErr)
 			}
 			if verdict.Block {
-				if rejectErr := m.repo.RejectKYCSubmission(ctx, submission.ID, "sanctions", verdict.Reason); rejectErr != nil {
+				if rejectErr := m.kyc.RejectKYCSubmission(ctx, submission.ID, "sanctions", verdict.Reason); rejectErr != nil {
 					return submission, rejectErr
 				}
 				submission.Status = "rejected"
@@ -104,7 +104,7 @@ func (m *Module) SubmitKYC(ctx context.Context, userID uuid.UUID, levelRequested
 		}
 		submission.Status = "approved"
 	case kycvendor.VerdictReject:
-		if err := m.repo.RejectKYCSubmission(ctx, submission.ID, "provider", decision.Reason); err != nil {
+		if err := m.kyc.RejectKYCSubmission(ctx, submission.ID, "provider", decision.Reason); err != nil {
 			return submission, err
 		}
 		submission.Status = "rejected"
@@ -117,12 +117,12 @@ func (m *Module) SubmitKYC(ctx context.Context, userID uuid.UUID, levelRequested
 }
 
 func (m *Module) KYC(ctx context.Context, userID uuid.UUID) (KYCStatus, error) {
-	u, err := m.repo.GetUserByID(ctx, userID)
+	u, err := m.users.GetUserByID(ctx, userID)
 	if err != nil {
 		return KYCStatus{}, err
 	}
 	result := KYCStatus{Level: u.KYCLevel}
-	if s, err := m.repo.GetLatestKYCSubmission(ctx, userID); err == nil {
+	if s, err := m.kyc.GetLatestKYCSubmission(ctx, userID); err == nil {
 		result.Submission = &s
 	} else if !errors.Is(err, repository.ErrKYCSubmissionNotFound) {
 		return KYCStatus{}, err
@@ -131,11 +131,11 @@ func (m *Module) KYC(ctx context.Context, userID uuid.UUID) (KYCStatus, error) {
 }
 
 func (m *Module) ListKYCSubmissions(ctx context.Context, status string) ([]model.KYCSubmission, error) {
-	return m.repo.ListKYCSubmissions(ctx, status)
+	return m.kyc.ListKYCSubmissions(ctx, status)
 }
 
 func (m *Module) approveSubmission(ctx context.Context, submission model.KYCSubmission, decidedBy string) error {
-	err := m.repo.ApproveKYCSubmission(ctx, submission.ID, decidedBy, submission.ProviderRef, submission.DecisionReason, m.provisioner.ApplyKycTier)
+	err := m.kyc.ApproveKYCSubmission(ctx, submission.ID, decidedBy, submission.ProviderRef, submission.DecisionReason, m.provisioner.ApplyKycTier)
 	if err == nil || !errors.Is(err, repository.ErrKYCApplyTier) {
 		return err
 	}
@@ -162,14 +162,14 @@ func (m *Module) DowngradeKYC(ctx context.Context, userID uuid.UUID, level int, 
 	if reason == "" || level < 0 || level > 2 {
 		return ErrValidation
 	}
-	user, err := m.repo.GetUserByID(ctx, userID)
+	user, err := m.users.GetUserByID(ctx, userID)
 	if err != nil {
 		return err
 	}
 	if user.KYCLevel <= level {
 		return repository.ErrKYCTierConflict
 	}
-	err = m.repo.DowngradeKYCLevel(ctx, userID, level, decidedBy, reason, m.provisioner.ApplyKycTier)
+	err = m.kyc.DowngradeKYCLevel(ctx, userID, level, decidedBy, reason, m.provisioner.ApplyKycTier)
 	if err == nil || !errors.Is(err, repository.ErrKYCApplyTier) {
 		return err
 	}
@@ -188,7 +188,7 @@ func (m *Module) DowngradeKYC(ctx context.Context, userID uuid.UUID, level int, 
 }
 
 func (m *Module) ApproveKYC(ctx context.Context, submissionID uuid.UUID, decidedBy string) error {
-	s, err := m.repo.GetKYCSubmission(ctx, submissionID)
+	s, err := m.kyc.GetKYCSubmission(ctx, submissionID)
 	if err != nil {
 		return err
 	}
@@ -202,7 +202,7 @@ func (m *Module) RejectKYC(ctx context.Context, submissionID uuid.UUID, decidedB
 	if reason == "" {
 		return ErrValidation
 	}
-	return m.repo.RejectKYCSubmission(ctx, submissionID, decidedBy, reason)
+	return m.kyc.RejectKYCSubmission(ctx, submissionID, decidedBy, reason)
 }
 
 func truncateRetryError(err error) string {

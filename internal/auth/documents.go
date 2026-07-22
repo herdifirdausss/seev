@@ -127,7 +127,7 @@ func (m *Module) UploadKYCDocument(ctx context.Context, userID uuid.UUID, conten
 	if !allowed[contentType] {
 		return model.KYCDocument{}, fmt.Errorf("%w: MIME type is not allowed", ErrDocumentInvalid)
 	}
-	submission, err := m.repo.GetLatestKYCSubmission(ctx, userID)
+	submission, err := m.kyc.GetLatestKYCSubmission(ctx, userID)
 	if err != nil {
 		return model.KYCDocument{}, err
 	}
@@ -139,7 +139,7 @@ func (m *Module) UploadKYCDocument(ctx context.Context, userID uuid.UUID, conten
 	if err := m.documentStore.Put(ctx, document.ObjectKey, encrypted, "application/octet-stream"); err != nil {
 		return model.KYCDocument{}, ErrDocumentStorageUnavailable
 	}
-	if err := m.repo.CreateKYCDocument(ctx, document); err != nil {
+	if err := m.kyc.CreateKYCDocument(ctx, document); err != nil {
 		return model.KYCDocument{}, err
 	}
 	return document, nil
@@ -149,7 +149,7 @@ func (m *Module) DownloadKYCDocument(ctx context.Context, id uuid.UUID) (model.K
 	if m.documentStore == nil || len(m.documentKEK) != 32 {
 		return model.KYCDocument{}, nil, ErrDocumentStorageUnavailable
 	}
-	document, err := m.repo.GetKYCDocument(ctx, id)
+	document, err := m.kyc.GetKYCDocument(ctx, id)
 	if err != nil {
 		return model.KYCDocument{}, nil, err
 	}

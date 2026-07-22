@@ -23,7 +23,7 @@ func (m *Module) queueKYCApplyRetry(ctx context.Context, retry model.KYCApplyRet
 	// connected, so use a short detached persistence context.
 	queueCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
 	defer cancel()
-	if enqueueErr := m.repo.EnqueueKYCApplyRetry(queueCtx, retry); enqueueErr != nil {
+	if enqueueErr := m.kyc.EnqueueKYCApplyRetry(queueCtx, retry); enqueueErr != nil {
 		return fmt.Errorf("auth: persist kyc apply retry: %w (original: %v)", enqueueErr, cause)
 	}
 	kycApplyRetriesQueuedTotal.Inc()
@@ -35,7 +35,7 @@ func (m *Module) queueKYCApplyRetry(ctx context.Context, retry model.KYCApplyRet
 // admin approved it manually), so it is treated as a successful no-op.
 func (m *Module) RetryKYCApply(ctx context.Context, retry model.KYCApplyRetry) error {
 	if retry.Direction == "downgrade" {
-		user, err := m.repo.GetUserByID(ctx, retry.UserID)
+		user, err := m.users.GetUserByID(ctx, retry.UserID)
 		if err != nil {
 			return err
 		}
@@ -44,7 +44,7 @@ func (m *Module) RetryKYCApply(ctx context.Context, retry model.KYCApplyRetry) e
 		}
 		return m.DowngradeKYC(ctx, retry.UserID, retry.Level, retry.DecidedBy, retry.DecisionReason)
 	}
-	submission, err := m.repo.GetKYCSubmission(ctx, retry.SubmissionID)
+	submission, err := m.kyc.GetKYCSubmission(ctx, retry.SubmissionID)
 	if err != nil {
 		return err
 	}
@@ -56,7 +56,7 @@ func (m *Module) RetryKYCApply(ctx context.Context, retry model.KYCApplyRetry) e
 		// A manual admin approval may have won the row lock after the initial
 		// read. Re-read once and converge the intent to succeeded instead of
 		// needlessly burning another retry.
-		latest, readErr := m.repo.GetKYCSubmission(ctx, retry.SubmissionID)
+		latest, readErr := m.kyc.GetKYCSubmission(ctx, retry.SubmissionID)
 		if readErr == nil && latest.Status != "pending" {
 			return nil
 		}
@@ -78,5 +78,5 @@ func (m *Module) NewKYCApplyRetryJob(redisClient *redis.Client, logger *slog.Log
 	} else {
 		lock = scheduler.NewMemoryLock(2 * time.Minute)
 	}
-	return worker.NewRetryJob(m.repo, m, lock, logger)
+	return worker.NewRetryJob(m.kyc, m, lock, logger)
 }

@@ -18,7 +18,7 @@ import (
 // auth repository gains unrelated methods; only methods used by RunOnce are
 // overridden below.
 type retryRepoFake struct {
-	repository.Repository
+	repository.KYCRepository
 	intents   []model.KYCApplyRetry
 	succeeded []uuid.UUID
 	failures  []retryFailure

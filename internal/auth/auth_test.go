@@ -52,8 +52,18 @@ func testConfig() Config {
 	}
 }
 
-func newTestModule(repo repository.Repository, prov Provisioner) *Module {
-	return &Module{repo: repo, provisioner: prov, cfg: testConfig(), logger: discardLogger(), kycProvider: mockkyc.New()}
+// newTestModule wires a Module against three independent mocks — one per
+// repository.go split — so each test can set expectations only on the
+// mock(s) its scenario actually touches.
+func newTestModule(ctrl *gomock.Controller, prov Provisioner) (*Module, *repository.MockUserRepository, *repository.MockRefreshTokenRepository, *repository.MockKYCRepository) {
+	users := repository.NewMockUserRepository(ctrl)
+	refreshTokens := repository.NewMockRefreshTokenRepository(ctrl)
+	kyc := repository.NewMockKYCRepository(ctrl)
+	m := &Module{
+		users: users, refreshTokens: refreshTokens, kyc: kyc,
+		provisioner: prov, cfg: testConfig(), logger: discardLogger(), kycProvider: mockkyc.New(),
+	}
+	return m, users, refreshTokens, kyc
 }
 
 // mustHash produces a real bcrypt hash for test fixtures — MinCost keeps the
@@ -67,10 +77,10 @@ func mustHash(t *testing.T, password string) string {
 
 func TestRegister_HappyPath_IssuesTokensAndProvisions(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	repo := repository.NewMockRepository(ctrl)
 	prov := &stubProvisioner{}
+	m, users, refreshTokens, _ := newTestModule(ctrl, prov)
 
-	repo.EXPECT().CreateUser(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
+	users.EXPECT().CreateUser(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
 		func(_ context.Context, u model.User, hash string) error {
 			assert.Equal(t, "user", u.Role)
 			assert.Equal(t, "active", u.Status)
@@ -78,9 +88,8 @@ func TestRegister_HappyPath_IssuesTokensAndProvisions(t *testing.T) {
 				"stored hash must verify against the original password")
 			return nil
 		})
-	repo.EXPECT().InsertRefreshToken(gomock.Any(), gomock.Any()).Return(nil)
+	refreshTokens.EXPECT().InsertRefreshToken(gomock.Any(), gomock.Any()).Return(nil)
 
-	m := newTestModule(repo, prov)
 	u, pair, err := m.Register(context.Background(), "alice@example.com", "hunter22!", "Alice")
 	require.NoError(t, err)
 	assert.Equal(t, "alice@example.com", u.Email)
@@ -97,18 +106,16 @@ func TestRegister_HappyPath_IssuesTokensAndProvisions(t *testing.T) {
 
 func TestRegister_DuplicateEmail_ErrEmailTaken(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	repo := repository.NewMockRepository(ctrl)
-	repo.EXPECT().CreateUser(gomock.Any(), gomock.Any(), gomock.Any()).Return(repository.ErrDuplicateEmail)
+	m, users, _, _ := newTestModule(ctrl, &stubProvisioner{})
+	users.EXPECT().CreateUser(gomock.Any(), gomock.Any(), gomock.Any()).Return(repository.ErrDuplicateEmail)
 
-	m := newTestModule(repo, &stubProvisioner{})
 	_, _, err := m.Register(context.Background(), "dup@example.com", "hunter22!", "")
 	assert.ErrorIs(t, err, ErrEmailTaken)
 }
 
 func TestRegister_InvalidInput_400Class(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	repo := repository.NewMockRepository(ctrl) // no calls expected
-	m := newTestModule(repo, &stubProvisioner{})
+	m, _, _, _ := newTestModule(ctrl, &stubProvisioner{}) // no calls expected
 
 	_, _, err := m.Register(context.Background(), "not-an-email", "hunter22!", "")
 	assert.ErrorIs(t, err, ErrValidation)
@@ -119,12 +126,11 @@ func TestRegister_InvalidInput_400Class(t *testing.T) {
 
 func TestRegister_ProvisionFails_RegistrationStillSucceeds(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	repo := repository.NewMockRepository(ctrl)
-	repo.EXPECT().CreateUser(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
-	repo.EXPECT().InsertRefreshToken(gomock.Any(), gomock.Any()).Return(nil)
-
 	prov := &stubProvisioner{err: context.DeadlineExceeded}
-	m := newTestModule(repo, prov)
+	m, users, refreshTokens, _ := newTestModule(ctrl, prov)
+	users.EXPECT().CreateUser(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+	refreshTokens.EXPECT().InsertRefreshToken(gomock.Any(), gomock.Any()).Return(nil)
+
 	_, pair, err := m.Register(context.Background(), "bob@example.com", "hunter22!", "")
 	require.NoError(t, err, "a provision failure must not fail registration — login lazily heals it")
 	assert.NotEmpty(t, pair.AccessToken)
@@ -132,16 +138,15 @@ func TestRegister_ProvisionFails_RegistrationStillSucceeds(t *testing.T) {
 
 func TestLogin_HappyPath(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	repo := repository.NewMockRepository(ctrl)
 	userID := uuid.New()
 	u := model.User{ID: userID, Email: "alice@example.com", Role: "user", Status: "active"}
 
-	repo.EXPECT().GetUserByEmail(gomock.Any(), "alice@example.com").Return(u, nil)
-	repo.EXPECT().GetPasswordHash(gomock.Any(), userID).Return(mustHash(t, "hunter22!"), nil)
-	repo.EXPECT().InsertRefreshToken(gomock.Any(), gomock.Any()).Return(nil)
-
 	prov := &stubProvisioner{}
-	m := newTestModule(repo, prov)
+	m, users, refreshTokens, _ := newTestModule(ctrl, prov)
+	users.EXPECT().GetUserByEmail(gomock.Any(), "alice@example.com").Return(u, nil)
+	users.EXPECT().GetPasswordHash(gomock.Any(), userID).Return(mustHash(t, "hunter22!"), nil)
+	refreshTokens.EXPECT().InsertRefreshToken(gomock.Any(), gomock.Any()).Return(nil)
+
 	got, pair, err := m.Login(context.Background(), "alice@example.com", "hunter22!")
 	require.NoError(t, err)
 	assert.Equal(t, userID, got.ID)
@@ -151,23 +156,21 @@ func TestLogin_HappyPath(t *testing.T) {
 
 func TestLogin_WrongPassword_ErrInvalidCredentials(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	repo := repository.NewMockRepository(ctrl)
 	userID := uuid.New()
-	repo.EXPECT().GetUserByEmail(gomock.Any(), gomock.Any()).Return(
+	m, users, _, _ := newTestModule(ctrl, &stubProvisioner{})
+	users.EXPECT().GetUserByEmail(gomock.Any(), gomock.Any()).Return(
 		model.User{ID: userID, Status: "active"}, nil)
-	repo.EXPECT().GetPasswordHash(gomock.Any(), userID).Return(mustHash(t, "correct-password"), nil)
+	users.EXPECT().GetPasswordHash(gomock.Any(), userID).Return(mustHash(t, "correct-password"), nil)
 
-	m := newTestModule(repo, &stubProvisioner{})
 	_, _, err := m.Login(context.Background(), "alice@example.com", "wrong-password")
 	assert.ErrorIs(t, err, ErrInvalidCredentials)
 }
 
 func TestLogin_UnknownEmail_SameErrorAsWrongPassword(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	repo := repository.NewMockRepository(ctrl)
-	repo.EXPECT().GetUserByEmail(gomock.Any(), gomock.Any()).Return(model.User{}, repository.ErrNotFound)
+	m, users, _, _ := newTestModule(ctrl, &stubProvisioner{})
+	users.EXPECT().GetUserByEmail(gomock.Any(), gomock.Any()).Return(model.User{}, repository.ErrNotFound)
 
-	m := newTestModule(repo, &stubProvisioner{})
 	_, _, err := m.Login(context.Background(), "ghost@example.com", "whatever12")
 	assert.ErrorIs(t, err, ErrInvalidCredentials,
 		"unknown email must be indistinguishable from wrong password")
@@ -175,32 +178,30 @@ func TestLogin_UnknownEmail_SameErrorAsWrongPassword(t *testing.T) {
 
 func TestLogin_DisabledUser_ErrUserDisabled(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	repo := repository.NewMockRepository(ctrl)
 	userID := uuid.New()
-	repo.EXPECT().GetUserByEmail(gomock.Any(), gomock.Any()).Return(
+	m, users, _, _ := newTestModule(ctrl, &stubProvisioner{})
+	users.EXPECT().GetUserByEmail(gomock.Any(), gomock.Any()).Return(
 		model.User{ID: userID, Status: "disabled"}, nil)
-	repo.EXPECT().GetPasswordHash(gomock.Any(), userID).Return(mustHash(t, "hunter22!"), nil)
+	users.EXPECT().GetPasswordHash(gomock.Any(), userID).Return(mustHash(t, "hunter22!"), nil)
 
-	m := newTestModule(repo, &stubProvisioner{})
 	_, _, err := m.Login(context.Background(), "off@example.com", "hunter22!")
 	assert.ErrorIs(t, err, ErrUserDisabled)
 }
 
 func TestRefresh_Rotation_RevokesOldIssuesNew(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	repo := repository.NewMockRepository(ctrl)
 	userID := uuid.New()
 	oldID := uuid.New()
 
-	repo.EXPECT().GetRefreshTokenByHash(gomock.Any(), hashToken("old-token")).Return(model.RefreshToken{
+	m, users, refreshTokens, _ := newTestModule(ctrl, &stubProvisioner{})
+	refreshTokens.EXPECT().GetRefreshTokenByHash(gomock.Any(), hashToken("old-token")).Return(model.RefreshToken{
 		ID: oldID, UserID: userID, ExpiresAt: time.Now().Add(time.Hour),
 	}, nil)
-	repo.EXPECT().GetUserByID(gomock.Any(), userID).Return(
+	users.EXPECT().GetUserByID(gomock.Any(), userID).Return(
 		model.User{ID: userID, Status: "active", Role: "user"}, nil)
-	repo.EXPECT().InsertRefreshToken(gomock.Any(), gomock.Any()).Return(nil)
-	repo.EXPECT().RevokeRefreshToken(gomock.Any(), oldID, gomock.Not(gomock.Nil())).Return(true, nil)
+	refreshTokens.EXPECT().InsertRefreshToken(gomock.Any(), gomock.Any()).Return(nil)
+	refreshTokens.EXPECT().RevokeRefreshToken(gomock.Any(), oldID, gomock.Not(gomock.Nil())).Return(true, nil)
 
-	m := newTestModule(repo, &stubProvisioner{})
 	_, pair, err := m.Refresh(context.Background(), "old-token")
 	require.NoError(t, err)
 	assert.NotEqual(t, "old-token", pair.RefreshToken, "rotation must issue a NEW opaque token")
@@ -208,16 +209,15 @@ func TestRefresh_Rotation_RevokesOldIssuesNew(t *testing.T) {
 
 func TestRefresh_ReusedRevokedToken_RevokesAllAndRejects(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	repo := repository.NewMockRepository(ctrl)
 	userID := uuid.New()
 	revoked := time.Now().Add(-time.Minute)
 
-	repo.EXPECT().GetRefreshTokenByHash(gomock.Any(), gomock.Any()).Return(model.RefreshToken{
+	m, _, refreshTokens, _ := newTestModule(ctrl, &stubProvisioner{})
+	refreshTokens.EXPECT().GetRefreshTokenByHash(gomock.Any(), gomock.Any()).Return(model.RefreshToken{
 		ID: uuid.New(), UserID: userID, ExpiresAt: time.Now().Add(time.Hour), RevokedAt: &revoked,
 	}, nil)
-	repo.EXPECT().RevokeAllForUser(gomock.Any(), userID).Return(nil)
+	refreshTokens.EXPECT().RevokeAllForUser(gomock.Any(), userID).Return(nil)
 
-	m := newTestModule(repo, &stubProvisioner{})
 	_, _, err := m.Refresh(context.Background(), "stolen-token")
 	assert.ErrorIs(t, err, ErrInvalidRefreshToken,
 		"a replayed (already-revoked) token must be rejected AND nuke the chain")
@@ -225,67 +225,61 @@ func TestRefresh_ReusedRevokedToken_RevokesAllAndRejects(t *testing.T) {
 
 func TestRefresh_ExpiredToken_Rejected(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	repo := repository.NewMockRepository(ctrl)
-
-	repo.EXPECT().GetRefreshTokenByHash(gomock.Any(), gomock.Any()).Return(model.RefreshToken{
+	m, _, refreshTokens, _ := newTestModule(ctrl, &stubProvisioner{})
+	refreshTokens.EXPECT().GetRefreshTokenByHash(gomock.Any(), gomock.Any()).Return(model.RefreshToken{
 		ID: uuid.New(), UserID: uuid.New(), ExpiresAt: time.Now().Add(-time.Minute),
 	}, nil)
 
-	m := newTestModule(repo, &stubProvisioner{})
 	_, _, err := m.Refresh(context.Background(), "expired-token")
 	assert.ErrorIs(t, err, ErrInvalidRefreshToken)
 }
 
 func TestRefresh_UnknownToken_Rejected(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	repo := repository.NewMockRepository(ctrl)
-	repo.EXPECT().GetRefreshTokenByHash(gomock.Any(), gomock.Any()).Return(model.RefreshToken{}, repository.ErrNotFound)
+	m, _, refreshTokens, _ := newTestModule(ctrl, &stubProvisioner{})
+	refreshTokens.EXPECT().GetRefreshTokenByHash(gomock.Any(), gomock.Any()).Return(model.RefreshToken{}, repository.ErrNotFound)
 
-	m := newTestModule(repo, &stubProvisioner{})
 	_, _, err := m.Refresh(context.Background(), "no-such-token")
 	assert.ErrorIs(t, err, ErrInvalidRefreshToken)
 }
 
 func TestEnsureBootstrapAdmin_CreatesOnceThenNoop(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	repo := repository.NewMockRepository(ctrl)
+	m, users, _, _ := newTestModule(ctrl, &stubProvisioner{})
 
 	// First call: not found -> creates with role admin.
-	repo.EXPECT().GetUserByEmail(gomock.Any(), "root@example.com").Return(model.User{}, repository.ErrNotFound)
-	repo.EXPECT().CreateUser(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
+	users.EXPECT().GetUserByEmail(gomock.Any(), "root@example.com").Return(model.User{}, repository.ErrNotFound)
+	users.EXPECT().CreateUser(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
 		func(_ context.Context, u model.User, _ string) error {
 			assert.Equal(t, "admin", u.Role)
 			return nil
 		})
 	// Second call: exists -> no create.
-	repo.EXPECT().GetUserByEmail(gomock.Any(), "root@example.com").Return(model.User{ID: uuid.New()}, nil)
+	users.EXPECT().GetUserByEmail(gomock.Any(), "root@example.com").Return(model.User{ID: uuid.New()}, nil)
 
-	m := newTestModule(repo, &stubProvisioner{})
 	require.NoError(t, m.EnsureBootstrapAdmin(context.Background(), "root@example.com", "super-secret-pass"))
 	require.NoError(t, m.EnsureBootstrapAdmin(context.Background(), "root@example.com", "super-secret-pass"))
 }
 
 func TestEnsureBootstrapAdmin_Unconfigured_Noop(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	repo := repository.NewMockRepository(ctrl) // no calls expected
-	m := newTestModule(repo, &stubProvisioner{})
+	m, _, _, _ := newTestModule(ctrl, &stubProvisioner{}) // no calls expected
 	require.NoError(t, m.EnsureBootstrapAdmin(context.Background(), "", ""))
 }
 
 func TestSubmitKYC_L1AutoApprove(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	repo := repository.NewMockRepository(ctrl)
 	userID := uuid.New()
-	repo.EXPECT().GetUserByID(gomock.Any(), userID).Return(model.User{ID: userID, KYCLevel: 0}, nil)
-	repo.EXPECT().GetLatestKYCSubmission(gomock.Any(), userID).Return(model.KYCSubmission{}, repository.ErrKYCSubmissionNotFound)
+	prov := &stubProvisioner{}
+	m, users, _, kyc := newTestModule(ctrl, prov)
+	users.EXPECT().GetUserByID(gomock.Any(), userID).Return(model.User{ID: userID, KYCLevel: 0}, nil)
+	kyc.EXPECT().GetLatestKYCSubmission(gomock.Any(), userID).Return(model.KYCSubmission{}, repository.ErrKYCSubmissionNotFound)
 	var submission model.KYCSubmission
-	repo.EXPECT().CreateKYCSubmission(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, s model.KYCSubmission) error { submission = s; return nil })
-	repo.EXPECT().ApproveKYCSubmission(gomock.Any(), gomock.Any(), "system", gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, _ uuid.UUID, _ string, _ string, _ string, apply func(context.Context, uuid.UUID, int) error) error {
+	kyc.EXPECT().CreateKYCSubmission(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, s model.KYCSubmission) error { submission = s; return nil })
+	kyc.EXPECT().ApproveKYCSubmission(gomock.Any(), gomock.Any(), "system", gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, _ uuid.UUID, _ string, _ string, _ string, apply func(context.Context, uuid.UUID, int) error) error {
 		return apply(ctx, userID, 1)
 	})
 
-	prov := &stubProvisioner{}
-	m := newTestModule(repo, prov)
 	got, err := m.SubmitKYC(context.Background(), userID, 1, map[string]any{"name": "Alice"})
 	require.NoError(t, err)
 	assert.Equal(t, submission.ID, got.ID)
@@ -300,20 +294,19 @@ func TestSubmitKYC_L1AutoApprove(t *testing.T) {
 // unchanged.
 func TestSubmitKYC_RejectVerdict_MarksRejectedNoLevelChange(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	repo := repository.NewMockRepository(ctrl)
 	userID := uuid.New()
-	repo.EXPECT().GetUserByID(gomock.Any(), userID).Return(model.User{ID: userID, KYCLevel: 0}, nil)
-	repo.EXPECT().GetLatestKYCSubmission(gomock.Any(), userID).Return(model.KYCSubmission{}, repository.ErrKYCSubmissionNotFound)
+	prov := &stubProvisioner{}
+	m, users, _, kyc := newTestModule(ctrl, prov)
+	users.EXPECT().GetUserByID(gomock.Any(), userID).Return(model.User{ID: userID, KYCLevel: 0}, nil)
+	kyc.EXPECT().GetLatestKYCSubmission(gomock.Any(), userID).Return(model.KYCSubmission{}, repository.ErrKYCSubmissionNotFound)
 	var submissionID uuid.UUID
-	repo.EXPECT().CreateKYCSubmission(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, s model.KYCSubmission) error { submissionID = s.ID; return nil })
-	repo.EXPECT().RejectKYCSubmission(gomock.Any(), gomock.Any(), "provider", "mock verification rejected").
+	kyc.EXPECT().CreateKYCSubmission(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, s model.KYCSubmission) error { submissionID = s.ID; return nil })
+	kyc.EXPECT().RejectKYCSubmission(gomock.Any(), gomock.Any(), "provider", "mock verification rejected").
 		DoAndReturn(func(_ context.Context, id uuid.UUID, _, _ string) error {
 			assert.Equal(t, submissionID, id)
 			return nil
 		})
 
-	prov := &stubProvisioner{}
-	m := newTestModule(repo, prov)
 	got, err := m.SubmitKYC(context.Background(), userID, 1, map[string]any{"mock_mode": mockkyc.ModeReject})
 	require.NoError(t, err)
 	assert.Equal(t, "rejected", got.Status)
@@ -324,37 +317,36 @@ func TestSubmitKYC_RejectsLevelJumpAndDuplicatePending(t *testing.T) {
 	userID := uuid.New()
 	t.Run("level jump", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
-		repo := repository.NewMockRepository(ctrl)
-		repo.EXPECT().GetUserByID(gomock.Any(), userID).Return(model.User{ID: userID, KYCLevel: 0}, nil)
-		_, err := newTestModule(repo, &stubProvisioner{}).SubmitKYC(context.Background(), userID, 2, nil)
+		m, users, _, _ := newTestModule(ctrl, &stubProvisioner{})
+		users.EXPECT().GetUserByID(gomock.Any(), userID).Return(model.User{ID: userID, KYCLevel: 0}, nil)
+		_, err := m.SubmitKYC(context.Background(), userID, 2, nil)
 		assert.ErrorIs(t, err, ErrKYCLevelSequence)
 	})
 	t.Run("pending duplicate", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
-		repo := repository.NewMockRepository(ctrl)
-		repo.EXPECT().GetUserByID(gomock.Any(), userID).Return(model.User{ID: userID, KYCLevel: 0}, nil)
-		repo.EXPECT().GetLatestKYCSubmission(gomock.Any(), userID).Return(model.KYCSubmission{Status: "pending"}, nil)
-		_, err := newTestModule(repo, &stubProvisioner{}).SubmitKYC(context.Background(), userID, 1, nil)
+		m, users, _, kyc := newTestModule(ctrl, &stubProvisioner{})
+		users.EXPECT().GetUserByID(gomock.Any(), userID).Return(model.User{ID: userID, KYCLevel: 0}, nil)
+		kyc.EXPECT().GetLatestKYCSubmission(gomock.Any(), userID).Return(model.KYCSubmission{Status: "pending"}, nil)
+		_, err := m.SubmitKYC(context.Background(), userID, 1, nil)
 		assert.ErrorIs(t, err, ErrKYCPending)
 	})
 }
 
 func TestSubmitKYC_L2ReferThenAdminApprove(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	repo := repository.NewMockRepository(ctrl)
 	userID, submissionID := uuid.New(), uuid.New()
-	repo.EXPECT().GetUserByID(gomock.Any(), userID).Return(model.User{ID: userID, KYCLevel: 1}, nil)
-	repo.EXPECT().GetLatestKYCSubmission(gomock.Any(), userID).Return(model.KYCSubmission{}, repository.ErrKYCSubmissionNotFound)
-	repo.EXPECT().CreateKYCSubmission(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, s model.KYCSubmission) error { submissionID = s.ID; return nil })
 	prov := &stubProvisioner{}
-	m := newTestModule(repo, prov)
+	m, users, _, kyc := newTestModule(ctrl, prov)
+	users.EXPECT().GetUserByID(gomock.Any(), userID).Return(model.User{ID: userID, KYCLevel: 1}, nil)
+	kyc.EXPECT().GetLatestKYCSubmission(gomock.Any(), userID).Return(model.KYCSubmission{}, repository.ErrKYCSubmissionNotFound)
+	kyc.EXPECT().CreateKYCSubmission(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, s model.KYCSubmission) error { submissionID = s.ID; return nil })
 	submission, err := m.SubmitKYC(context.Background(), userID, 2, map[string]any{"mock_mode": mockkyc.ModeApprove})
 	require.NoError(t, err)
 	assert.Equal(t, "pending", submission.Status)
 	assert.Zero(t, prov.calls)
 
-	repo.EXPECT().GetKYCSubmission(gomock.Any(), submissionID).Return(submission, nil)
-	repo.EXPECT().ApproveKYCSubmission(gomock.Any(), submissionID, "admin-1", gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, _ uuid.UUID, _ string, _ string, _ string, apply func(context.Context, uuid.UUID, int) error) error {
+	kyc.EXPECT().GetKYCSubmission(gomock.Any(), submissionID).Return(submission, nil)
+	kyc.EXPECT().ApproveKYCSubmission(gomock.Any(), submissionID, "admin-1", gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, _ uuid.UUID, _ string, _ string, _ string, apply func(context.Context, uuid.UUID, int) error) error {
 		return apply(ctx, userID, 2)
 	})
 	require.NoError(t, m.ApproveKYC(context.Background(), submissionID, "admin-1"))
@@ -363,17 +355,16 @@ func TestSubmitKYC_L2ReferThenAdminApprove(t *testing.T) {
 
 func TestSubmitKYC_ApplyTierFailureLeavesApprovalPending(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	repo := repository.NewMockRepository(ctrl)
 	userID := uuid.New()
-	repo.EXPECT().GetUserByID(gomock.Any(), userID).Return(model.User{ID: userID, KYCLevel: 0}, nil)
-	repo.EXPECT().GetLatestKYCSubmission(gomock.Any(), userID).Return(model.KYCSubmission{}, repository.ErrKYCSubmissionNotFound)
-	repo.EXPECT().CreateKYCSubmission(gomock.Any(), gomock.Any()).Return(nil)
-	repo.EXPECT().ApproveKYCSubmission(gomock.Any(), gomock.Any(), "system", gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, _ uuid.UUID, _ string, _ string, _ string, apply func(context.Context, uuid.UUID, int) error) error {
+	m, users, _, kyc := newTestModule(ctrl, &stubProvisioner{err: context.DeadlineExceeded})
+	users.EXPECT().GetUserByID(gomock.Any(), userID).Return(model.User{ID: userID, KYCLevel: 0}, nil)
+	kyc.EXPECT().GetLatestKYCSubmission(gomock.Any(), userID).Return(model.KYCSubmission{}, repository.ErrKYCSubmissionNotFound)
+	kyc.EXPECT().CreateKYCSubmission(gomock.Any(), gomock.Any()).Return(nil)
+	kyc.EXPECT().ApproveKYCSubmission(gomock.Any(), gomock.Any(), "system", gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, _ uuid.UUID, _ string, _ string, _ string, apply func(context.Context, uuid.UUID, int) error) error {
 		return fmt.Errorf("%w: %w", repository.ErrKYCApplyTier, apply(ctx, userID, 1))
 	})
-	repo.EXPECT().EnqueueKYCApplyRetry(gomock.Any(), gomock.Any()).Return(nil)
+	kyc.EXPECT().EnqueueKYCApplyRetry(gomock.Any(), gomock.Any()).Return(nil)
 
-	m := newTestModule(repo, &stubProvisioner{err: context.DeadlineExceeded})
 	_, err := m.SubmitKYC(context.Background(), userID, 1, nil)
 	assert.ErrorIs(t, err, ErrKYCApplyQueued)
 	assert.ErrorIs(t, err, context.DeadlineExceeded)
@@ -381,11 +372,11 @@ func TestSubmitKYC_ApplyTierFailureLeavesApprovalPending(t *testing.T) {
 
 func TestDowngradeKYC_LimitsFirst(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	repo := repository.NewMockRepository(ctrl)
 	userID := uuid.New()
-	repo.EXPECT().GetUserByID(gomock.Any(), userID).Return(model.User{ID: userID, KYCLevel: 2}, nil)
+	m, users, _, kyc := newTestModule(ctrl, &stubProvisioner{})
+	users.EXPECT().GetUserByID(gomock.Any(), userID).Return(model.User{ID: userID, KYCLevel: 2}, nil)
 	var order []string
-	repo.EXPECT().DowngradeKYCLevel(gomock.Any(), userID, 0, "admin-1", "sanctions review", gomock.Any()).DoAndReturn(
+	kyc.EXPECT().DowngradeKYCLevel(gomock.Any(), userID, 0, "admin-1", "sanctions review", gomock.Any()).DoAndReturn(
 		func(ctx context.Context, id uuid.UUID, level int, _ string, _ string, apply func(context.Context, uuid.UUID, int) error) error {
 			order = append(order, "limits")
 			require.NoError(t, apply(ctx, id, level))
@@ -393,21 +384,20 @@ func TestDowngradeKYC_LimitsFirst(t *testing.T) {
 			return nil
 		})
 
-	m := newTestModule(repo, &stubProvisioner{})
 	require.NoError(t, m.DowngradeKYC(context.Background(), userID, 0, "admin-1", "sanctions review"))
 	assert.Equal(t, []string{"limits", "auth"}, order)
 }
 
 func TestDowngradeKYC_ApplyFailureQueuesDurableIntent(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	repo := repository.NewMockRepository(ctrl)
 	userID := uuid.New()
-	repo.EXPECT().GetUserByID(gomock.Any(), userID).Return(model.User{ID: userID, KYCLevel: 2}, nil)
-	repo.EXPECT().DowngradeKYCLevel(gomock.Any(), userID, 1, "admin-1", "policy review", gomock.Any()).DoAndReturn(
+	m, users, _, kyc := newTestModule(ctrl, &stubProvisioner{err: context.DeadlineExceeded})
+	users.EXPECT().GetUserByID(gomock.Any(), userID).Return(model.User{ID: userID, KYCLevel: 2}, nil)
+	kyc.EXPECT().DowngradeKYCLevel(gomock.Any(), userID, 1, "admin-1", "policy review", gomock.Any()).DoAndReturn(
 		func(ctx context.Context, id uuid.UUID, level int, _, _ string, apply func(context.Context, uuid.UUID, int) error) error {
 			return fmt.Errorf("%w: %w", repository.ErrKYCApplyTier, apply(ctx, id, level))
 		})
-	repo.EXPECT().EnqueueKYCApplyRetry(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, retry model.KYCApplyRetry) error {
+	kyc.EXPECT().EnqueueKYCApplyRetry(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, retry model.KYCApplyRetry) error {
 		assert.Equal(t, "downgrade", retry.Direction)
 		assert.Equal(t, 1, retry.Level)
 		assert.Equal(t, userID, retry.UserID)
@@ -415,7 +405,6 @@ func TestDowngradeKYC_ApplyFailureQueuesDurableIntent(t *testing.T) {
 		return nil
 	})
 
-	m := newTestModule(repo, &stubProvisioner{err: context.DeadlineExceeded})
 	err := m.DowngradeKYC(context.Background(), userID, 1, "admin-1", "policy review")
 	assert.ErrorIs(t, err, ErrKYCApplyQueued)
 	assert.ErrorIs(t, err, context.DeadlineExceeded)
@@ -429,18 +418,17 @@ func (s sanctionsCheckerStub) CheckWithSubject(context.Context, string, string, 
 
 func TestSubmitKYC_SanctionsBlockRejectsBeforeProvider(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	repo := repository.NewMockRepository(ctrl)
 	userID := uuid.New()
-	repo.EXPECT().GetUserByID(gomock.Any(), userID).Return(model.User{ID: userID, KYCLevel: 0}, nil)
-	repo.EXPECT().GetLatestKYCSubmission(gomock.Any(), userID).Return(model.KYCSubmission{}, repository.ErrKYCSubmissionNotFound)
+	m, users, _, kyc := newTestModule(ctrl, &stubProvisioner{})
+	users.EXPECT().GetUserByID(gomock.Any(), userID).Return(model.User{ID: userID, KYCLevel: 0}, nil)
+	kyc.EXPECT().GetLatestKYCSubmission(gomock.Any(), userID).Return(model.KYCSubmission{}, repository.ErrKYCSubmissionNotFound)
 	var submissionID uuid.UUID
-	repo.EXPECT().CreateKYCSubmission(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, s model.KYCSubmission) error { submissionID = s.ID; return nil })
-	repo.EXPECT().RejectKYCSubmission(gomock.Any(), gomock.Any(), "sanctions", "sanctions match").DoAndReturn(func(_ context.Context, id uuid.UUID, _, _ string) error {
+	kyc.EXPECT().CreateKYCSubmission(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, s model.KYCSubmission) error { submissionID = s.ID; return nil })
+	kyc.EXPECT().RejectKYCSubmission(gomock.Any(), gomock.Any(), "sanctions", "sanctions match").DoAndReturn(func(_ context.Context, id uuid.UUID, _, _ string) error {
 		assert.Equal(t, submissionID, id)
 		return nil
 	})
 
-	m := newTestModule(repo, &stubProvisioner{})
 	m.sanctionsChecker = sanctionsCheckerStub{verdict: fraudcheck.Verdict{Block: true, Reason: "sanctions match"}}
 	got, err := m.SubmitKYC(context.Background(), userID, 1, map[string]any{"name": "Jane Doe"})
 	require.NoError(t, err)

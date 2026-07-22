@@ -1,6 +1,6 @@
 package repository
 
-//go:generate mockgen -source=repository.go -destination=repository_mock.go -package=repository
+//go:generate mockgen -source=kyc_repository.go -destination=kyc_repository_mock.go -package=repository
 
 import (
 	"context"
@@ -17,44 +17,9 @@ import (
 	"github.com/herdifirdausss/seev/pkg/generalerror"
 )
 
-// ErrNotFound is returned when no row matches the lookup.
-var ErrNotFound = errors.New("auth: not found")
-
-// ErrDuplicateEmail is returned by CreateUser when the (case-insensitive)
-// email is already registered — backed by idx_auth_users_email, never a
-// read-then-write race.
-var ErrDuplicateEmail = errors.New("auth: email already registered")
-var ErrKYCSubmissionNotFound = errors.New("auth: kyc submission not found")
-var ErrKYCSubmissionNotPending = errors.New("auth: kyc submission is not pending")
-var ErrKYCTierConflict = errors.New("auth: kyc tier conflict")
-var ErrKYCApplyTier = errors.New("auth: apply kyc tier failed")
-
-// Repository persists auth identities, credentials, and refresh tokens
-// (docs/plan/25 Task T1).
-type Repository interface {
-	// CreateUser inserts the identity + credential rows in one transaction.
-	// Returns ErrDuplicateEmail on a case-insensitive email collision.
-	CreateUser(ctx context.Context, u model.User, passwordHash string) error
-	// GetUserByEmail looks up by lower(email). ErrNotFound when absent.
-	GetUserByEmail(ctx context.Context, email string) (model.User, error)
-	GetUserByID(ctx context.Context, id uuid.UUID) (model.User, error)
-	// GetPasswordHash returns the bcrypt hash for the user — the ONLY read
-	// path for auth_credentials, used solely inside Module.Login.
-	GetPasswordHash(ctx context.Context, userID uuid.UUID) (string, error)
-	UpdateFullName(ctx context.Context, userID uuid.UUID, fullName string) error
-
-	InsertRefreshToken(ctx context.Context, t model.RefreshToken) error
-	// GetRefreshTokenByHash looks up by token_hash (SHA-256 hex).
-	// ErrNotFound when absent.
-	GetRefreshTokenByHash(ctx context.Context, tokenHash string) (model.RefreshToken, error)
-	// RevokeRefreshToken marks one token revoked, recording its successor.
-	// Conditional on not already being revoked — returns won=false if
-	// another refresh raced us to it (caller treats that as token reuse).
-	RevokeRefreshToken(ctx context.Context, id uuid.UUID, replacedBy *uuid.UUID) (bool, error)
-	// RevokeAllForUser revokes every live token the user has — the replay
-	// containment response when a revoked token is presented again.
-	RevokeAllForUser(ctx context.Context, userID uuid.UUID) error
-
+// KYCRepository persists KYC submissions, decisions, the durable
+// apply-retry queue, and uploaded document metadata.
+type KYCRepository interface {
 	CreateKYCSubmission(ctx context.Context, s model.KYCSubmission) error
 	GetLatestKYCSubmission(ctx context.Context, userID uuid.UUID) (model.KYCSubmission, error)
 	GetKYCSubmission(ctx context.Context, id uuid.UUID) (model.KYCSubmission, error)
@@ -79,152 +44,12 @@ type Repository interface {
 	GetKYCDocument(context.Context, uuid.UUID) (model.KYCDocument, error)
 }
 
-type repo struct {
+type kycRepo struct {
 	db database.DatabaseSQL
 }
 
-func NewRepository(db database.DatabaseSQL) Repository {
-	return &repo{db: db}
-}
-
-func (r *repo) CreateUser(ctx context.Context, u model.User, passwordHash string) error {
-	err := r.db.WithTx(ctx, nil, func(tx *sql.Tx) error {
-		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO auth_users (id, email, full_name, role, status, kyc_level)
-			VALUES ($1, $2, $3, $4, $5, $6)`,
-			u.ID, u.Email, u.FullName, u.Role, u.Status, u.KYCLevel); err != nil {
-			return err
-		}
-		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO auth_credentials (user_id, password_hash)
-			VALUES ($1, $2)`,
-			u.ID, passwordHash); err != nil {
-			return err
-		}
-		return nil
-	})
-	if err != nil {
-		if generalerror.IsDuplicateKey(err) {
-			return ErrDuplicateEmail
-		}
-		return fmt.Errorf("auth: create user: %w", err)
-	}
-	return nil
-}
-
-const userColumns = `id, email, full_name, role, status, kyc_level, created_at, updated_at`
-
-func scanUser(row *sql.Row) (model.User, error) {
-	var u model.User
-	err := row.Scan(&u.ID, &u.Email, &u.FullName, &u.Role, &u.Status, &u.KYCLevel, &u.CreatedAt, &u.UpdatedAt)
-	if errors.Is(err, sql.ErrNoRows) {
-		return model.User{}, ErrNotFound
-	}
-	if err != nil {
-		return model.User{}, fmt.Errorf("auth: scan user: %w", err)
-	}
-	return u, nil
-}
-
-func (r *repo) GetUserByEmail(ctx context.Context, email string) (model.User, error) {
-	return scanUser(r.db.QueryRowContext(ctx,
-		`SELECT `+userColumns+` FROM auth_users WHERE lower(email) = lower($1)`, email))
-}
-
-func (r *repo) GetUserByID(ctx context.Context, id uuid.UUID) (model.User, error) {
-	return scanUser(r.db.QueryRowContext(ctx,
-		`SELECT `+userColumns+` FROM auth_users WHERE id = $1`, id))
-}
-
-func (r *repo) GetPasswordHash(ctx context.Context, userID uuid.UUID) (string, error) {
-	var hash string
-	err := r.db.QueryRowContext(ctx,
-		`SELECT password_hash FROM auth_credentials WHERE user_id = $1`, userID).Scan(&hash)
-	if errors.Is(err, sql.ErrNoRows) {
-		return "", ErrNotFound
-	}
-	if err != nil {
-		return "", fmt.Errorf("auth: get password hash: %w", err)
-	}
-	return hash, nil
-}
-
-func (r *repo) UpdateFullName(ctx context.Context, userID uuid.UUID, fullName string) error {
-	res, err := r.db.ExecContext(ctx,
-		`UPDATE auth_users SET full_name = $1, updated_at = now() WHERE id = $2`, fullName, userID)
-	if err != nil {
-		return fmt.Errorf("auth: update full name: %w", err)
-	}
-	n, err := res.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("auth: update full name: rows affected: %w", err)
-	}
-	if n == 0 {
-		return ErrNotFound
-	}
-	return nil
-}
-
-func (r *repo) InsertRefreshToken(ctx context.Context, t model.RefreshToken) error {
-	_, err := r.db.ExecContext(ctx, `
-		INSERT INTO auth_refresh_tokens (id, user_id, token_hash, expires_at)
-		VALUES ($1, $2, $3, $4)`,
-		t.ID, t.UserID, t.TokenHash, t.ExpiresAt)
-	if err != nil {
-		return fmt.Errorf("auth: insert refresh token: %w", err)
-	}
-	return nil
-}
-
-func (r *repo) GetRefreshTokenByHash(ctx context.Context, tokenHash string) (model.RefreshToken, error) {
-	var t model.RefreshToken
-	var revokedAt sql.NullTime
-	var replacedBy sql.NullString
-	err := r.db.QueryRowContext(ctx, `
-		SELECT id, user_id, token_hash, expires_at, created_at, revoked_at, replaced_by
-		FROM auth_refresh_tokens WHERE token_hash = $1`, tokenHash).
-		Scan(&t.ID, &t.UserID, &t.TokenHash, &t.ExpiresAt, &t.CreatedAt, &revokedAt, &replacedBy)
-	if errors.Is(err, sql.ErrNoRows) {
-		return model.RefreshToken{}, ErrNotFound
-	}
-	if err != nil {
-		return model.RefreshToken{}, fmt.Errorf("auth: get refresh token: %w", err)
-	}
-	if revokedAt.Valid {
-		v := revokedAt.Time
-		t.RevokedAt = &v
-	}
-	if replacedBy.Valid {
-		id, parseErr := uuid.Parse(replacedBy.String)
-		if parseErr == nil {
-			t.ReplacedBy = &id
-		}
-	}
-	return t, nil
-}
-
-func (r *repo) RevokeRefreshToken(ctx context.Context, id uuid.UUID, replacedBy *uuid.UUID) (bool, error) {
-	res, err := r.db.ExecContext(ctx, `
-		UPDATE auth_refresh_tokens SET revoked_at = now(), replaced_by = $1
-		WHERE id = $2 AND revoked_at IS NULL`, replacedBy, id)
-	if err != nil {
-		return false, fmt.Errorf("auth: revoke refresh token: %w", err)
-	}
-	n, err := res.RowsAffected()
-	if err != nil {
-		return false, fmt.Errorf("auth: revoke refresh token: rows affected: %w", err)
-	}
-	return n == 1, nil
-}
-
-func (r *repo) RevokeAllForUser(ctx context.Context, userID uuid.UUID) error {
-	_, err := r.db.ExecContext(ctx, `
-		UPDATE auth_refresh_tokens SET revoked_at = now()
-		WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > $2`, userID, time.Now())
-	if err != nil {
-		return fmt.Errorf("auth: revoke all for user: %w", err)
-	}
-	return nil
+func NewKYCRepository(db database.DatabaseSQL) KYCRepository {
+	return &kycRepo{db: db}
 }
 
 const kycSubmissionColumns = `id, user_id, level_requested, status, payload, provider, provider_ref, decided_by, decision_reason, created_at, decided_at`
@@ -259,7 +84,7 @@ func scanKYCSubmission(scanner interface{ Scan(...any) error }) (model.KYCSubmis
 	return s, nil
 }
 
-func (r *repo) CreateKYCSubmission(ctx context.Context, s model.KYCSubmission) error {
+func (r *kycRepo) CreateKYCSubmission(ctx context.Context, s model.KYCSubmission) error {
 	payload, err := s.MarshalPayload()
 	if err != nil {
 		return fmt.Errorf("auth: encode kyc payload: %w", err)
@@ -276,15 +101,15 @@ func (r *repo) CreateKYCSubmission(ctx context.Context, s model.KYCSubmission) e
 	return nil
 }
 
-func (r *repo) GetLatestKYCSubmission(ctx context.Context, userID uuid.UUID) (model.KYCSubmission, error) {
+func (r *kycRepo) GetLatestKYCSubmission(ctx context.Context, userID uuid.UUID) (model.KYCSubmission, error) {
 	return scanKYCSubmission(r.db.QueryRowContext(ctx, `SELECT `+kycSubmissionColumns+` FROM kyc_submissions WHERE user_id = $1 ORDER BY created_at DESC, id DESC LIMIT 1`, userID))
 }
 
-func (r *repo) GetKYCSubmission(ctx context.Context, id uuid.UUID) (model.KYCSubmission, error) {
+func (r *kycRepo) GetKYCSubmission(ctx context.Context, id uuid.UUID) (model.KYCSubmission, error) {
 	return scanKYCSubmission(r.db.QueryRowContext(ctx, `SELECT `+kycSubmissionColumns+` FROM kyc_submissions WHERE id = $1`, id))
 }
 
-func (r *repo) ListKYCSubmissions(ctx context.Context, status string) ([]model.KYCSubmission, error) {
+func (r *kycRepo) ListKYCSubmissions(ctx context.Context, status string) ([]model.KYCSubmission, error) {
 	rows, err := r.db.QueryContext(ctx, `SELECT `+kycSubmissionColumns+` FROM kyc_submissions WHERE ($1 = '' OR status = $1) ORDER BY created_at ASC, id ASC`, status)
 	if err != nil {
 		return nil, fmt.Errorf("auth: list kyc submissions: %w", err)
@@ -304,7 +129,7 @@ func (r *repo) ListKYCSubmissions(ctx context.Context, status string) ([]model.K
 	return out, nil
 }
 
-func (r *repo) ApproveKYCSubmission(ctx context.Context, id uuid.UUID, decidedBy, providerRef, reason string, applyTier func(context.Context, uuid.UUID, int) error) error {
+func (r *kycRepo) ApproveKYCSubmission(ctx context.Context, id uuid.UUID, decidedBy, providerRef, reason string, applyTier func(context.Context, uuid.UUID, int) error) error {
 	return r.db.WithTx(ctx, nil, func(tx *sql.Tx) error {
 		var userID uuid.UUID
 		var level int
@@ -365,7 +190,7 @@ func (r *repo) ApproveKYCSubmission(ctx context.Context, id uuid.UUID, decidedBy
 	})
 }
 
-func (r *repo) EnqueueKYCApplyRetry(ctx context.Context, retry model.KYCApplyRetry) error {
+func (r *kycRepo) EnqueueKYCApplyRetry(ctx context.Context, retry model.KYCApplyRetry) error {
 	_, err := r.db.ExecContext(ctx, `
 		INSERT INTO kyc_apply_retries
 			(id, submission_id, user_id, level, status, retry_count, next_attempt_at, last_error, direction, decided_by, decision_reason)
@@ -412,7 +237,7 @@ func scanKYCApplyRetry(scanner interface{ Scan(...any) error }) (model.KYCApplyR
 	return retry, nil
 }
 
-func (r *repo) DowngradeKYCLevel(ctx context.Context, userID uuid.UUID, level int, decidedBy, reason string, applyTier func(context.Context, uuid.UUID, int) error) error {
+func (r *kycRepo) DowngradeKYCLevel(ctx context.Context, userID uuid.UUID, level int, decidedBy, reason string, applyTier func(context.Context, uuid.UUID, int) error) error {
 	if level < 0 || level > 2 {
 		return ErrKYCTierConflict
 	}
@@ -443,7 +268,7 @@ func (r *repo) DowngradeKYCLevel(ctx context.Context, userID uuid.UUID, level in
 	})
 }
 
-func (r *repo) CreateKYCDocument(ctx context.Context, document model.KYCDocument) error {
+func (r *kycRepo) CreateKYCDocument(ctx context.Context, document model.KYCDocument) error {
 	_, err := r.db.ExecContext(ctx, `
 		INSERT INTO kyc_documents (id, submission_id, user_id, object_key, sha256, size_bytes, content_type)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)`, document.ID, document.SubmissionID, document.UserID,
@@ -454,7 +279,7 @@ func (r *repo) CreateKYCDocument(ctx context.Context, document model.KYCDocument
 	return nil
 }
 
-func (r *repo) GetKYCDocument(ctx context.Context, id uuid.UUID) (model.KYCDocument, error) {
+func (r *kycRepo) GetKYCDocument(ctx context.Context, id uuid.UUID) (model.KYCDocument, error) {
 	var document model.KYCDocument
 	err := r.db.QueryRowContext(ctx, `
 		SELECT id, submission_id, user_id, object_key, sha256, size_bytes, content_type, created_at
@@ -469,7 +294,7 @@ func (r *repo) GetKYCDocument(ctx context.Context, id uuid.UUID) (model.KYCDocum
 	return document, nil
 }
 
-func (r *repo) ClaimKYCApplyRetries(ctx context.Context, limit int, lease time.Duration) ([]model.KYCApplyRetry, error) {
+func (r *kycRepo) ClaimKYCApplyRetries(ctx context.Context, limit int, lease time.Duration) ([]model.KYCApplyRetry, error) {
 	if limit <= 0 {
 		limit = 50
 	}
@@ -526,7 +351,7 @@ func (r *repo) ClaimKYCApplyRetries(ctx context.Context, limit int, lease time.D
 	return out, nil
 }
 
-func (r *repo) MarkKYCApplyRetrySucceeded(ctx context.Context, id uuid.UUID) error {
+func (r *kycRepo) MarkKYCApplyRetrySucceeded(ctx context.Context, id uuid.UUID) error {
 	result, err := r.db.ExecContext(ctx, `
 		UPDATE kyc_apply_retries
 		SET status = 'succeeded', locked_until = NULL, updated_at = now()
@@ -542,7 +367,7 @@ func (r *repo) MarkKYCApplyRetrySucceeded(ctx context.Context, id uuid.UUID) err
 	return nil
 }
 
-func (r *repo) MarkKYCApplyRetryFailure(ctx context.Context, id uuid.UUID, retryCount int, nextAttemptAt time.Time, lastError string, dead bool) error {
+func (r *kycRepo) MarkKYCApplyRetryFailure(ctx context.Context, id uuid.UUID, retryCount int, nextAttemptAt time.Time, lastError string, dead bool) error {
 	status := "pending"
 	if dead {
 		status = "dead"
@@ -558,7 +383,7 @@ func (r *repo) MarkKYCApplyRetryFailure(ctx context.Context, id uuid.UUID, retry
 	return nil
 }
 
-func (r *repo) RejectKYCSubmission(ctx context.Context, id uuid.UUID, decidedBy, reason string) error {
+func (r *kycRepo) RejectKYCSubmission(ctx context.Context, id uuid.UUID, decidedBy, reason string) error {
 	result, err := r.db.ExecContext(ctx, `UPDATE kyc_submissions SET status = 'rejected', decided_by = $1, decision_reason = $2, decided_at = now() WHERE id = $3 AND status = 'pending'`, decidedBy, reason, id)
 	if err != nil {
 		return fmt.Errorf("auth: reject kyc submission: %w", err)

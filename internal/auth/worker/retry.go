@@ -35,7 +35,7 @@ type retryApprover interface {
 // intentionally minute-granular, so this worker uses an explicit 30-second
 // ticker while retaining the shared lock semantics.
 type RetryJob struct {
-	repo     repository.Repository
+	repo     repository.KYCRepository
 	approver retryApprover
 	lock     scheduler.LockProvider
 	logger   *slog.Logger
@@ -45,7 +45,7 @@ type RetryJob struct {
 	done   chan struct{}
 }
 
-func NewRetryJob(repo repository.Repository, approver retryApprover, lock scheduler.LockProvider, logger *slog.Logger) *RetryJob {
+func NewRetryJob(repo repository.KYCRepository, approver retryApprover, lock scheduler.LockProvider, logger *slog.Logger) *RetryJob {
 	if logger == nil {
 		logger = slog.Default()
 	}
