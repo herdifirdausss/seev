@@ -1,0 +1,50 @@
+# docs/plan/50 T3 (K7): dedicated, minimal Compose definition for isolated
+# PITR/latest restore drills — deliberately NOT the main docker-compose.yml's
+# `postgres` service, which runs with `archive_mode=on` pointed at the
+# shared backup repository. A restored/promoted drill instance must never
+# be allowed to archive a WAL segment back into the very repository its
+# own data came from, so this service omits archive_mode entirely (off by
+# default) and mounts the repository read-only — it only ever reads from
+# it, via pgBackRest's own `restore_command` during recovery replay.
+#
+# scripts/restore-cluster.sh is the only intended caller. It always
+# passes an explicit, non-default `--project-name` (refuses to run
+# otherwise — K7), so Compose's own per-project volume/network namespacing
+# keeps `drill_postgres_data` here completely separate from the real dev
+# stack's `seev_postgres_data`, with no shared state whatsoever.
+services:
+  postgres-restore:
+    image: seev/postgres-backup:${SEEV_IMAGE_TAG:-dev}
+    command: ["postgres"]
+    environment:
+      POSTGRES_USER: ${POSTGRES_MIGRATE_USER:-seev}
+      POSTGRES_PASSWORD: ${POSTGRES_MIGRATE_PASSWORD:-seev}
+      POSTGRES_DB: ${POSTGRES_DB:-seev}
+    # deploy/backup/entrypoint.sh needs this to export
+    # PGBACKREST_REPO1_CIPHER_PASS for its own archive-get calls
+    # (restore_command, invoked throughout WAL replay) — found live: recovery
+    # failed outright with "archive-get command requires option:
+    # repo1-cipher-pass" without it.
+    secrets:
+      - pgbackrest_repo_passphrase
+    volumes:
+      - drill_postgres_data:/var/lib/postgresql/data
+      - ${BACKUP_REPO_PATH:-./deploy/backup/repo}:/backup-repo:ro
+      - ./deploy/backup/pgbackrest.conf:/etc/pgbackrest/pgbackrest.conf:ro
+    healthcheck:
+      # Only proves the postmaster is accepting connections — NOT that
+      # recovery has reached its target/promoted. scripts/restore-cluster.sh
+      # polls pg_is_in_recovery() separately for that; a hot-standby
+      # instance mid-replay can already answer pg_isready successfully.
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_MIGRATE_USER:-seev} -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 10s
+
+volumes:
+  drill_postgres_data:
+
+secrets:
+  pgbackrest_repo_passphrase:
+    file: ./deploy/backup/secrets/pgbackrest_repo_passphrase
