@@ -710,7 +710,94 @@ env existing; tidak ada secret hardcoded baru.
 
 ### Hasil
 
-> Diisi saat T4 selesai.
+**`internal/config/vault.go` (seam baru)**: `vaultGetenv(getenv) (func(string) string, error)` —
+jika `VAULT_ADDR`/`VAULT_TOKEN` KOSONG (default, satu-satunya jalur yang
+dilalui CI/nightly), mengembalikan `getenv` APA ADANYA, tanpa dependency
+Vault sama sekali. Jika keduanya diset: fetch `secret/<APP_NAME>` (KV v2),
+lalu setiap key yang Vault PUNYA menang atas env; key yang Vault TIDAK
+punya jatuh ke env seperti biasa (overlay per-key, bukan all-or-nothing —
+dibuktikan test `TestVaultGetenv_FallsThroughToEnvForKeysVaultDoesNotHave`).
+Dikaitkan ke `load()` (satu titik yang dipakai SEMUA `LoadXXXService()`),
+jadi tiap service dapat kemampuan ini gratis tanpa perubahan lain.
+
+**Fail-closed vs fail-open, dipilih sadar per skenario**: Vault yang
+DIKONFIGURASI (VAULT_ADDR+VAULT_TOKEN diset) tapi tak terjangkau atau
+token ditolak → **error keras**, boot gagal — operator yang men-set
+kedua var itu menyatakan niat eksplisit bersumber dari Vault; melanjutkan
+diam-diam dengan nilai env basi lebih berbahaya daripada gagal jelas.
+Sebaliknya, service yang BELUM PERNAH di-seed (404 dari Vault) → BUKAN
+error, overlay kosong, semua key jatuh ke env — supaya instance Vault dev
+yang baru saja dinyalakan tanpa isi tidak pernah memblokir boot. Keduanya
+dibuktikan test (`TestVaultGetenv_WrongTokenIsHardError`,
+`TestVaultGetenv_UnreachableAddrIsHardError` vs
+`TestVaultGetenv_NoSecretWrittenYetFallsBackToEnvEntirely`).
+
+**docker-compose `vault` service**: profile BARU `secrets` (opt-in,
+sejalan pola `observability`), image `hashicorp/vault` di-pin by digest
+— **versi live-verified**: `v2.0.3`, digest
+`sha256:a296a888b118615dc01d5f1a6846e6d4a7277946caaed5b447008fff5fe06b54`
+(ditarik + `docker inspect` + `vault version` langsung sebelum ditulis ke
+compose, sesuai instruksi K7 "versi DIVERIFIKASI saat eksekusi"). Dev
+mode auto-unseal + auto-mount `secret/` KV v2 saat boot — dikonfirmasi
+lewat container smoke-test manual (`docker run` langsung) sebelum ditulis
+ke compose. Host `127.0.0.1:18200`, healthcheck `wget` ke `/v1/sys/health`
+(image PUNYA `wget`, beda dari image Prometheus yang distroless —
+dicek langsung `docker run ... which wget curl vault` sebelum menulis
+healthcheck, bukan diasumsikan).
+
+**`scripts/vault-seed.sh`**: idempoten, HTTP langsung (curl+openssl,
+tanpa Vault CLI atau dependency berat, sesuai K7). **Bug nyata ditemukan
+saat menulis skrip, DIPERBAIKI SEBELUM pernah dijalankan**: desain awal
+menulis `AUTH_BOOTSTRAP_ADMIN_PASSWORD` auth-service lewat POST TERPISAH
+setelah `JWT_SECRET`+`INTERNAL_GRPC_TOKEN` — karena tulisan KV v2
+MENGGANTI SELURUH secret di path itu (bukan merge), POST kedua akan
+menghapus diam-diam dua key yang baru saja ditulis POST pertama. Ditemukan
+lewat pembacaan ulang kode sendiri sebelum eksekusi pertama (bukan lewat
+kegagalan test), diperbaiki dengan menggabungkan ketiga key auth-service
+dalam SATU body POST. Dites live terhadap container Vault sungguhan:
+seed pertama menulis 8 service (2 key masing-masing, 3 untuk
+auth-service); re-run kedua correctly report "already seeded" untuk
+seluruh 8 (idempoten dibuktikan, bukan diasumsikan); `GET
+secret/data/auth-service` dikonfirmasi berisi ketiga key utuh setelah
+re-run (membuktikan bug di atas benar-benar tidak terjadi setelah fix).
+
+**Cakupan seed SENGAJA sempit** — HANYA `JWT_SECRET` + `INTERNAL_GRPC_TOKEN`
+(dibagikan seluruh 8 service, digenerate SEKALI lalu ditulis identik ke
+tiap path — keduanya perlu nilai SAMA lintas service karena
+issuer/verifier atau client/server pair) plus `AUTH_BOOTSTRAP_ADMIN_PASSWORD`
+(khusus auth-service, aman diacak independen). `POSTGRES_PASSWORD` dan
+secret vendor (`VENDOR_MOCKVENDOR_SECRET`/`MOCKVENDOR2_SECRET`) SENGAJA
+TIDAK di-seed: docker-compose.yml sudah meng-hardcode password Postgres
+per-role (`scripts/postgres-init` provisioning database dengan nilai PERSIS
+itu) — nilai berbeda dari Vault akan gagal autentikasi ke role yang
+Postgres sendiri tidak pernah tahu; secret vendor perlu tetap sinkron
+dengan apa pun yang menandatangani webhook mock di lingkungan yang sama,
+dan `vault-seed.sh` tidak (dan tidak seharusnya) tahu konteks itu.
+
+**Verifikasi (Test wajib)**: Unit (`internal/config/vault_test.go`, 7
+test, mock HTTP via `httptest.Server`) — precedence Vault>env per-key,
+fallback penuh saat 404, error keras saat token salah/tak terjangkau,
+parsing envelope KV v2. Integration (`internal/config/vault_integration_test.go`,
+tag `integration`, testcontainers `GenericContainer` — TANPA modul
+testcontainers baru, sesuai "tanpa dependency berat" K7) — **dua jalur
+boot dites terhadap Vault SUNGGUHAN**: `TestLoad_WithoutVaultConfigured_
+BehavesIdenticalToEnvOnly` (VAULT_ADDR/TOKEN kosong → `LoadAuthService()`
+persis seperti hari ini) DAN `TestLoad_WithVaultSeeded_VaultValueWinsOverEnv`
+(container Vault nyata di-boot, satu secret ditulis, `LoadAuthService()`
+mengambil nilai Vault untuk `JWT_SECRET` tapi TETAP jatuh ke env untuk
+`POSTGRES_PASSWORD` yang tak pernah ditulis ke Vault — membuktikan
+overlay per-key, bukan all-or-nothing, di jalur nyata bukan mock).
+Keduanya PASS, container Vault benar-benar boot+terminate (12.8 detik).
+
+**`go build ./...`, `go vet ./...`, `go vet -tags=integration ./...`,
+`make lint`, `go test ./... -race -count=1`** — bersih. `docker compose
+config --quiet` — valid. `smoke-test.sh` (volume bersih, TANPA
+VAULT_ADDR/TOKEN diset sama sekali) — PASS penuh, membuktikan jalur
+boot hari ini benar-benar tidak berubah (DoD: "tidak mengubah jalur env
+existing").
+
+**CI/nightly**: tidak disentuh sama sekali — keduanya TETAP env-generated
+seperti sebelumnya, Vault sepenuhnya di luar jalur itu, persis sesuai K7.
 
 ### T5 — Review pentest-style ber-bukti (K8)
 

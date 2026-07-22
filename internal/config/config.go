@@ -386,7 +386,15 @@ func load(requireRabbitMQ bool) (*Config, error) {
 	default:
 		_ = godotenv.Load(".env")
 	}
-	return loadFromEnvMode(os.Getenv, requireRabbitMQ)
+	// docs/plan/49 K7: overlays os.Getenv with Vault KV v2 values when
+	// VAULT_ADDR/VAULT_TOKEN are set; a no-op wrapper otherwise, so every
+	// existing env-only deployment (including CI/nightly, which never set
+	// these) is byte-for-byte unaffected.
+	getenv, err := vaultGetenv(os.Getenv)
+	if err != nil {
+		return nil, err
+	}
+	return loadFromEnvMode(getenv, requireRabbitMQ)
 }
 
 // loadFromEnv is the testable inner implementation that accepts a getter function.
