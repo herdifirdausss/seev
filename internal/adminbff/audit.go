@@ -5,11 +5,22 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/herdifirdausss/seev/pkg/database"
 )
+
+var auditWriteFailuresTotal = prometheus.NewCounter(prometheus.CounterOpts{
+	Namespace: "adminbff", Name: "audit_write_failures_total", Help: "Admin BFF audit writes that failed while the mutation continued.",
+})
+
+func init() {
+	_ = prometheus.Register(auditWriteFailuresTotal)
+}
 
 type AuditEntry struct {
 	UserID        string
@@ -125,4 +136,48 @@ func resourceID(r *http.Request) string {
 		return ""
 	}
 	return parts[len(parts)-1]
+}
+
+func (m *Module) auditListHandler(w http.ResponseWriter, r *http.Request) {
+	filter := AuditFilter{Limit: 100, Operator: r.URL.Query().Get("operator"), Service: r.URL.Query().Get("service")}
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		if value, err := strconv.Atoi(raw); err != nil || value <= 0 {
+			writeJSONError(w, http.StatusBadRequest, "INVALID_LIMIT", "limit must be positive")
+			return
+		} else if value < filter.Limit {
+			filter.Limit = value
+		}
+	}
+	for name, destination := range map[string]**time.Time{"from": &filter.From, "to": &filter.To} {
+		if raw := r.URL.Query().Get(name); raw != "" {
+			value, parseErr := time.Parse(time.RFC3339, raw)
+			if parseErr != nil {
+				writeJSONError(w, http.StatusBadRequest, "INVALID_TIME", name+" must be RFC3339")
+				return
+			}
+			*destination = &value
+		}
+	}
+	entries, err := m.auditRead.ListAudit(r.Context(), filter)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "AUDIT_UNAVAILABLE", "audit log unavailable")
+		return
+	}
+	response := make([]map[string]any, 0, len(entries))
+	for _, entry := range entries {
+		response = append(response, map[string]any{
+			"user_id": entry.UserID, "email": entry.Email, "role": entry.Role,
+			"method": entry.Method, "route_pattern": entry.RoutePattern,
+			"target_service": entry.TargetService, "resource_id": entry.ResourceID,
+			"outcome": entry.Outcome, "request_id": entry.RequestID, "summary": entry.Summary,
+			"created_at": entry.CreatedAt,
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"entries": response})
+}
+
+func writeJSON(w http.ResponseWriter, status int, value any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(value)
 }
