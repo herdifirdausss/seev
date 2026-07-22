@@ -47,6 +47,18 @@ go.work.sum
 /deploy/certs/*
 !/deploy/certs/.gitkeep
 
+# docs/plan/50 K3/K5: pgBackRest repository passphrase and the seev_backup
+# role password generated locally by `make backup-secret` — never
+# committed, mirrors the observability-secret pattern above. The backup
+# repository itself (encrypted physical backups + WAL) is host-path data,
+# not something a machine's checkout should ever carry.
+/deploy/backup/secrets/*
+!/deploy/backup/secrets/.gitkeep
+/deploy/backup/repo/*
+!/deploy/backup/repo/.gitkeep
+/deploy/backup/manifests/*
+!/deploy/backup/manifests/.gitkeep
+
 # Editor/IDE
 # .idea/
 # .vscode/

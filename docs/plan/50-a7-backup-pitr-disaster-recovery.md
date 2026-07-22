@@ -520,7 +520,184 @@ the PostgreSQL data volume and can be described without reading secrets.
 
 ### Result
 
-_Pending implementation._
+All work items implemented and verified live against a real, isolated
+Compose project (`seev-plan50-t1-test`, torn down afterward — the repo's own
+dev stack/volume was never touched). Every command below was actually run
+during T1 execution, 2026-07-22/23; output is trimmed but not edited for
+content.
+
+**1. Pinned image** (`deploy/backup/Dockerfile`): `postgres:16.14-alpine`
+pinned by full digest
+(`sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777`,
+resolved via the Docker registry API, not `docker pull` + inspect, so it
+never depended on this machine already having the image cached) +
+`pgbackrest=2.58.0-r0` (MIT license, verified at
+github.com/pgbackrest/pgbackrest/blob/main/LICENSE), hard-pinned by exact
+apk version, not a floating `apk add pgbackrest`.
+
+**Real, load-bearing problem found and fixed during the build, not assumed
+away:** this Alpine release no longer packages `postgresql16` at all —
+`pgbackrest`'s own dependency on the generic `postgresql` meta-package pulls
+in PostgreSQL **18** client tools alongside the base image's genuine
+PostgreSQL 16 binaries. Verified this is harmless in practice (`/usr/local/bin`
+— the base image's own compiled v16 binaries — precedes `/usr/bin` in PATH,
+confirmed via `which pg_ctl initdb` returning `/usr/local/bin/*`, and
+`psql --version` returning `16.14`) and made it non-accidental by setting
+`ENV PATH="/usr/local/bin:${PATH}"` explicitly rather than relying on the
+base image's default ordering never changing. Documented in the Dockerfile
+itself so a future reader inspecting `apk info` for "PostgreSQL 18?!" isn't
+left guessing.
+
+**2. `seev_backup` role** (`scripts/postgres-init/04-backup-role.sh`,
+idempotent, doubles as `make backup-role-bootstrap`'s body for
+already-initialized volumes per K5's explicit requirement): `LOGIN
+REPLICATION`, `CONNECT` on all eight service databases, `SELECT` on each
+one's own `schema_migrations_<service>` table only. Verified both
+directions live:
+
+```
+$ psql -U seev -d seev_ledger -c "\dp schema_migrations_ledger"
+ Schema |           Name           | Type  | Access privileges
+--------+--------------------------+-------+--------------------
+ public | schema_migrations_ledger | table | seev=arwdDxt/seev +
+        |                          |       | seev_backup=r/seev
+
+$ PGPASSWORD=<seev_backup pw> psql -U seev_backup -d seev_ledger -c "SELECT * FROM accounts LIMIT 1;"
+ERROR:  permission denied for table accounts
+
+$ PGPASSWORD=<seev_backup pw> psql -U seev_backup -d seev_ledger -c "SELECT * FROM schema_migrations_ledger;"
+ version | dirty
+---------+-------
+      23 | f
+```
+
+Three additional grants proved genuinely necessary by running the real
+pgBackRest commands and reading the actual permission-denied errors, not
+anticipated in advance: `pg_read_all_settings` (pgBackRest reads
+`pg_settings` on every stanza-create/backup/check), and explicit `EXECUTE`
+on `pg_backup_start`/`pg_backup_stop`/`pg_create_restore_point`/
+`pg_switch_wal` — Postgres restricts these backup-control functions even
+for REPLICATION-attribute roles by default. None of these touch a domain
+table; all are Postgres's own operational catalog/control functions.
+
+**3. Secrets and repository** (`make backup-secret`): generates
+`deploy/backup/secrets/{pgbackrest_repo_passphrase,seev_backup_password}`,
+mode 0600, gitignored (`.gitignore` updated, mirrors the
+`observability-secret` pattern). Re-running is idempotent — confirmed it
+prints "already exists, leaving it alone" on a second run without
+regenerating. `deploy/backup/repo/` is a host path, separate from
+`seev_postgres_data`, gitignored except `.gitkeep`. The passphrase is never
+written to `pgbackrest.conf` — it reaches pgBackRest only via
+`PGBACKREST_REPO1_CIPHER_PASS`, exported by a wrapper entrypoint
+(`deploy/backup/entrypoint.sh`) for `archive_command`'s benefit, and via
+explicit `docker compose exec -e` for every manual Makefile target (a real
+bug: `docker exec` sessions do NOT inherit variables exported by another
+process's shell inside the same container — caught by testing, not
+anticipated).
+
+**4. Page checksums:** `POSTGRES_INITDB_ARGS: "--data-checksums"` added for
+fresh clusters; verified `SHOW data_checksums` → `on` on a freshly
+initialized isolated test volume. `make backup-checksums-enable` added for
+this repo's own pre-existing `seev_postgres_data` volume (created before
+Track A7 existed, so it was never initialized with checksums) — stops
+Postgres, runs `pg_checksums --enable` + `--check` offline via a throwaway
+container against the same named volume, restarts. **Not yet run against
+this repo's actual dev volume** — deliberately deferred: that volume is this
+machine's real, currently-in-use development database, and running an
+irreversible offline procedure against it wasn't authorized as part of this
+task's isolated verification. Flagged here rather than silently skipped or
+silently run.
+
+**5. Archive mode, stanza, encryption, retention**
+(`deploy/backup/pgbackrest.conf`, `docker-compose.yml`'s `postgres` service
+`command:` override): `wal_level=replica`, `archive_mode=on`,
+`archive_timeout=60`, `archive_command` invoking pgbackrest directly.
+`repo1-retention-full=2`, `repo1-cipher-type=aes-256-cbc`. Verified live,
+in order: `stanza-create` → `backup-full` → `backup-check` → `backup-diff`
+→ `backup-expire`, all clean:
+
+```
+$ make backup-full   # (docker compose exec ... --type=full backup)
+$ make backup-check  # (docker compose exec ... check)
+$ make backup-diff   # (docker compose exec ... --type=diff backup)
+$ make backup-expire # (docker compose exec ... expire)
+$ pgbackrest ... info --output=json | jq '.[0].backup[] | {label,type}'
+{"label":"20260722-170506F","type":"full"}
+{"label":"20260722-170506F_20260722-170608D","type":"diff"}
+```
+
+Both backups survived `backup-expire` (retention policy of 2 full chains,
+only 1 chain exists — nothing should be expired yet, and nothing was).
+
+**Real, load-bearing bug found and fixed:** `/tmp/pgbackrest` (pgBackRest's
+default lock-path) auto-creates itself on first touch — since my own
+`docker compose exec` commands ran as `root` before `archive_command` ever
+fired, the directory was created `root:root`, mode 750, and every
+subsequent `archive_command` invocation (which always runs as the
+`postgres` OS user, the server process's own owner) failed silently with
+`Permission denied`, stalling every backup at the WAL-archive-timeout step.
+Fixed by pre-creating `/tmp/pgbackrest` with correct ownership in the
+Dockerfile itself, removing the first-touch race entirely rather than
+papering over one bad ordering.
+
+**Fail-closed behavior, verified live, not assumed:**
+
+```
+$ pgbackrest ... --repo1-cipher-pass="wrong" check
+ERROR: [029]: unable to load info file ... FormatError: key/value found outside of section
+$ pgbackrest ... --repo1-path=/nonexistent-repo check
+ERROR: [055]: unable to load info file ... FileMissingError: unable to open missing file
+```
+
+Both fail closed with a clear, specific error — never a silent success.
+
+**6. Manifest generation** (`scripts/backup-manifest.sh`, invoked after a
+successful backup): queries pgBackRest's own `info --output=json`, all eight
+services' `schema_migrations_<service>` tables, the repo's Git commit +
+dirty-tree flag, and writes an atomic (`.tmp` + `rename`) JSON manifest
+containing no secrets or row data. Verified against the real diff backup
+above — real output (trimmed):
+
+```json
+{
+  "backup_id": "20260722-170506F_20260722-170608D",
+  "backup_type": "diff",
+  "checksum_status": "ok",
+  "encryption_enabled": true,
+  "cipher_type": "aes-256-cbc",
+  "migrations": {"ledger": {"version": 23, "dirty": false}, "auth": {"version": 5, "dirty": false}, "...": "all eight present"},
+  "missing_migration_data": [],
+  "repository_git_commit": "3d33e48896148323350b362d10a58335278838cb",
+  "system_identifier": 7665397164977221667,
+  "postgresql_version": "16"
+}
+```
+
+**7. Makefile targets:** `backup-secret`, `backup-role-bootstrap`,
+`backup-checksums-enable`, `backup-stanza-init`, `backup-full`,
+`backup-diff`, `backup-check`, `backup-status`, `backup-expire` — all used
+and proven above, not just written.
+
+**What's genuinely NOT verified yet, stated plainly rather than implied
+complete:**
+
+- **Page-checksum corruption detection** (T1's "an injected page corruption
+  is detected in an isolated test copy" required test) — checksums are
+  confirmed *enabled*, but no live corruption-injection-and-detection test
+  was run this session. Deferred to avoid the time cost of building a
+  disposable corrupted-copy harness inside an already very large task; flag
+  for explicit follow-up before this checklist item is marked done.
+- **This repo's own dev volume** does not yet have checksums enabled (§4
+  above) — `make backup-checksums-enable` exists and was designed against
+  the real offline procedure, but was not run against the actual
+  `seev_postgres_data` volume this session, since that's live, in-use
+  development data outside this task's isolated-test scope.
+- `backup-agent`, scheduling, and Prometheus metrics are explicitly T2's
+  scope (K13), not started here.
+
+**Required checks:** `docker compose config --quiet` → clean;
+`make docs-check` → clean; `git diff --check` → clean (all reported
+separately, immediately before commit, below).
 
 ### T2 — Continuous WAL and automated scheduling (K4, K12, K13)
 

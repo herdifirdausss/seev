@@ -18,7 +18,9 @@ x-cert-volume: &cert-volume
 
 services:
   postgres:
-    image: postgres:16-alpine
+    image: seev/postgres-backup:${SEEV_IMAGE_TAG:-dev}
+    build:
+      context: ./deploy/backup
     environment:
       # The image's own bootstrap superuser is the SCHEMA-OWNER identity
       # (POSTGRES_MIGRATE_USER), never the app's restricted connection — see
@@ -30,6 +32,31 @@ services:
       # to provision the app's restricted login role at first boot.
       APP_DB_USER: ${POSTGRES_USER:-seev_app}
       APP_DB_PASSWORD: ${POSTGRES_PASSWORD:-seev_app}
+      # docs/plan/50 K2: --data-checksums only takes effect on a FRESH
+      # initdb — an already-initialized volume (like this repo's own dev
+      # volume, seev_postgres_data, created before Track A7) needs the
+      # separate offline `make backup-checksums-enable` procedure instead;
+      # see docs/plan/50 T1 Result for that procedure and its evidence.
+      POSTGRES_INITDB_ARGS: "--data-checksums"
+      BACKUP_PASSWORD_FILE: /run/secrets/seev_backup_password
+    secrets:
+      - seev_backup_password
+      - pgbackrest_repo_passphrase
+    # docs/plan/50 K2/K4: continuous WAL archiving via pgBackRest, a 60s
+    # archive_timeout so an idle workload still closes the RPO window
+    # (K4), and wal_level=replica (pgBackRest's baseline requirement —
+    # logical is not needed here and costs more WAL volume for no benefit
+    # this track uses).
+    command:
+      - postgres
+      - -c
+      - wal_level=replica
+      - -c
+      - archive_mode=on
+      - -c
+      - archive_timeout=60
+      - -c
+      - archive_command=pgbackrest --stanza=seev --config=/etc/pgbackrest/pgbackrest.conf archive-push %p
     ports:
       # Host port defaults to 5433, not Postgres's standard 5432: a native
       # (Homebrew-installed) Postgres commonly already occupies 5432 on a
@@ -43,6 +70,11 @@ services:
       - seev_postgres_data:/var/lib/postgresql/data
       - ./scripts/postgres-init:/docker-entrypoint-initdb.d:ro
       - ./migrations:/migrations:ro
+      - ./deploy/backup/pgbackrest.conf:/etc/pgbackrest/pgbackrest.conf:ro
+      # docs/plan/50 K3: the backup repository is a HOST PATH, deliberately
+      # separate from seev_postgres_data — a destructive drill cleanup may
+      # remove only an isolated restore target volume, never this path.
+      - ${BACKUP_REPO_PATH:-./deploy/backup/repo}:/backup-repo
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_MIGRATE_USER:-seev} -d ${POSTGRES_DB:-seev}"]
       interval: 5s
@@ -768,6 +800,12 @@ secrets:
   # never a default/committed password — docs/plan/43 K1).
   grafana_admin_password:
     file: ./deploy/observability/secrets/grafana_admin_password
+  # docs/plan/50 K3/K5: generated locally by `make backup-secret`, mode
+  # 0600, gitignored — never a default/committed credential.
+  seev_backup_password:
+    file: ./deploy/backup/secrets/seev_backup_password
+  pgbackrest_repo_passphrase:
+    file: ./deploy/backup/secrets/pgbackrest_repo_passphrase
 
 volumes:
   seev_postgres_data:

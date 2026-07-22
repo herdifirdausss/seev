@@ -3,7 +3,7 @@ BUILD_DIR := bin
 CMD_DIR   := ./cmd/gateway
 GOFLAGS   := -trimpath -ldflags="-s -w"
 
-.PHONY: build build-all run dev test lint tidy tools proto proto-lint proto-breaking docker-up docker-down smoke-container migrate-up migrate-up-all migrate-down grant-app-role verify-full chaos-debug observability-secret observability-up observability-down certs
+.PHONY: build build-all run dev test lint tidy tools proto proto-lint proto-breaking docker-up docker-down smoke-container migrate-up migrate-up-all migrate-down grant-app-role verify-full chaos-debug observability-secret observability-up observability-down certs backup-secret backup-role-bootstrap backup-checksums-enable backup-stanza-init backup-full backup-diff backup-check backup-status backup-expire
 
 BUF_VERSION                := v1.47.2
 PROTOC_GEN_GO_VERSION      := v1.36.11
@@ -184,6 +184,86 @@ certs:
 	@for service in gateway auth ledger payin payout fraud admin-bff assurance dev-operator prometheus; do \
 		$(BUILD_DIR)/certgen issue --service $$service --out deploy/certs || exit $$?; \
 	done
+
+# docs/plan/50 K3/K5: two independent secrets — the pgBackRest repository
+# encryption passphrase and the seev_backup role's own password — generated
+# locally, mode 0600, gitignored, mirrors the observability-secret pattern.
+# Idempotent: does nothing to a secret that already exists.
+## backup-secret: Generate the pgBackRest repository passphrase and seev_backup role password (run once per machine)
+backup-secret:
+	@mkdir -p deploy/backup/secrets deploy/backup/repo
+	@if [ ! -f deploy/backup/secrets/pgbackrest_repo_passphrase ]; then \
+		openssl rand -base64 32 > deploy/backup/secrets/pgbackrest_repo_passphrase; \
+		chmod 600 deploy/backup/secrets/pgbackrest_repo_passphrase; \
+		echo "generated deploy/backup/secrets/pgbackrest_repo_passphrase"; \
+	else \
+		echo "deploy/backup/secrets/pgbackrest_repo_passphrase already exists, leaving it alone"; \
+	fi
+	@if [ ! -f deploy/backup/secrets/seev_backup_password ]; then \
+		openssl rand -base64 24 > deploy/backup/secrets/seev_backup_password; \
+		chmod 600 deploy/backup/secrets/seev_backup_password; \
+		echo "generated deploy/backup/secrets/seev_backup_password"; \
+	else \
+		echo "deploy/backup/secrets/seev_backup_password already exists, leaving it alone"; \
+	fi
+
+# docs/plan/50 K5: 04-backup-role.sh only runs automatically via
+# /docker-entrypoint-initdb.d on a FRESH volume's first boot. An existing
+# volume (like this repo's own dev seev_postgres_data, provisioned before
+# Track A7 existed) never re-runs first-boot scripts, so this target
+# re-invokes the EXACT SAME script inside the running container — never a
+# hand-copied variant that could drift from the first-boot behavior.
+## backup-role-bootstrap: Create/refresh the seev_backup role on an ALREADY-INITIALIZED volume (run once per environment after `make backup-secret`)
+backup-role-bootstrap:
+	docker compose exec postgres sh /docker-entrypoint-initdb.d/04-backup-role.sh
+
+# docs/plan/50 K2: --data-checksums (POSTGRES_INITDB_ARGS) only takes effect
+# on a fresh initdb. An existing volume needs Postgres fully STOPPED and
+# pg_checksums run offline directly against the data directory — this
+# target does exactly that, then restarts and verifies. Never run this
+# against a volume with the server still accepting connections; pg_checksums
+# refuses an active data directory by design, so a lock-file check backs
+# that up rather than relying on the refusal alone.
+## backup-checksums-enable: Enable data page checksums on the EXISTING seev_postgres_data volume (postgres must be stopped first)
+backup-checksums-enable:
+	docker compose stop postgres
+	docker compose run --rm --no-deps -v seev_postgres_data:/var/lib/postgresql/data postgres \
+		sh -c 'pg_checksums --enable --pgdata=/var/lib/postgresql/data && pg_checksums --check --pgdata=/var/lib/postgresql/data'
+	docker compose up -d postgres
+
+# docs/plan/50 K3: `docker compose exec` starts a fresh process attached to
+# the container, NOT a child of the entrypoint's own shell — it does not
+# inherit the PGBACKREST_REPO1_CIPHER_PASS the entrypoint exported for
+# archive_command's benefit (that export only reaches the postgres server
+# process's own children). Every manual pgbackrest invocation below reads
+# the passphrase from the host-side secret file (the Makefile always runs
+# on the host) and passes it via `exec -e` instead — never printed, never
+# passed as a CLI argument (which would leak into `ps`/process listings).
+PGBACKREST_ENV = -e PGBACKREST_REPO1_CIPHER_PASS="$$(cat deploy/backup/secrets/pgbackrest_repo_passphrase)"
+
+## backup-stanza-init: Create the pgBackRest stanza (run once, after backup-secret and backup-role-bootstrap)
+backup-stanza-init:
+	docker compose exec $(PGBACKREST_ENV) postgres pgbackrest --stanza=seev --config=/etc/pgbackrest/pgbackrest.conf stanza-create
+
+## backup-full: Run a full backup
+backup-full:
+	docker compose exec $(PGBACKREST_ENV) postgres pgbackrest --stanza=seev --config=/etc/pgbackrest/pgbackrest.conf --type=full backup
+
+## backup-diff: Run a differential backup
+backup-diff:
+	docker compose exec $(PGBACKREST_ENV) postgres pgbackrest --stanza=seev --config=/etc/pgbackrest/pgbackrest.conf --type=diff backup
+
+## backup-check: Verify the backup repository and WAL archive are consistent
+backup-check:
+	docker compose exec $(PGBACKREST_ENV) postgres pgbackrest --stanza=seev --config=/etc/pgbackrest/pgbackrest.conf check
+
+## backup-status: Show backup/repository info (oldest/latest restorable point, backup set list)
+backup-status:
+	docker compose exec $(PGBACKREST_ENV) postgres pgbackrest --stanza=seev --config=/etc/pgbackrest/pgbackrest.conf info --output=json
+
+## backup-expire: Expire backups/WAL outside the retention policy (K4: run only after a successful backup + check)
+backup-expire:
+	docker compose exec $(PGBACKREST_ENV) postgres pgbackrest --stanza=seev --config=/etc/pgbackrest/pgbackrest.conf expire
 
 ## help: Print this help message
 help:
