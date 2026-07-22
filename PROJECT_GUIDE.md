@@ -135,6 +135,30 @@ behavior belongs in scripts/lib.sh.
 - Preserve executable bits on shell scripts and run ShellCheck-compatible
   syntax.
 
+## Package layout conventions
+
+Each service's `internal/<domain>` module escalates through three tiers as it
+grows — start at tier 0, move up only when a file actually earns it:
+
+- **Tier 0 (default)**: one `http.go` for HTTP handlers, one `<name>.go` for
+  business logic, one `repository/repository.go` for all queries. Fine while
+  the business-logic file stays under ~400-500 lines and covers one cohesive
+  concern.
+- **Tier 1 (file-per-concern)**: split when a file mixes genuinely distinct
+  concerns or crosses ~400-500 lines. For repositories specifically: one file
+  = one interface = one private struct = one constructor = one `_mock.go` —
+  never a shared struct backing multiple interfaces. See
+  `internal/ledger/repository/*.go` for the reference shape, including the
+  `//go:generate mockgen -source=<file>.go -destination=<file>_mock.go
+  -package=repository` directive each file carries. Regenerate with
+  `go generate ./internal/<service>/repository/...` (no `make mocks` target
+  exists).
+- **Tier 2 (subpackage-per-concern)**: reserved for a domain with multiple
+  genuinely independent sub-processes, each with its own lifecycle and test
+  surface — see `internal/ledger/service/{accrual,adjustments,disbursement,
+  provision,recon,schedule,handle}`. Don't jump here just because a service
+  is growing; promote a Tier 1 file only once it would itself need splitting.
+
 ## Runtime references
 
 - .env.example is the source of local host-process configuration examples.
