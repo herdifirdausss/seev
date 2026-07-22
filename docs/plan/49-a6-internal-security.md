@@ -819,7 +819,109 @@ yang belum diuji dengan bukti.
 
 ### Hasil
 
-> Diisi saat T5 selesai.
+Checklist K8 dijalankan penuh lewat stack live (`scripts/lib.sh`
+`ensure_deps_up` + `build_server` + `start_services` + `start_adminbff_service`,
+8 proses real, cert real, mTLS aktif) — bukan klaim desain. Register
+`docs/security/threat-model.md` §6 diperbarui: **5 temuan lama ditutup**
+(TM-01, TM-02, TM-03, TM-04, TM-09 — semuanya sudah diselesaikan oleh
+T2/T3, dikonfirmasi ulang di sini), **3 temuan lama dikonfirmasi dengan
+bukti live** (TM-06, TM-07, TM-08 — tetap open, diteruskan ke T6), dan
+**2 temuan BARU** ditambahkan (TM-11, TM-12).
+
+**Matriks authz bypass (TM-03, dikonfirmasi RESOLVED)**: request ke
+`ledger:8091` (internal) TANPA sertifikat klien → ditolak di TLS
+handshake (`SSL certificate problem`), request dengan sertifikat
+identitas `auth` (bukan anggota allowlist `{dev-operator,prometheus,
+admin-bff}`) → ditolak (`sslv3 alert bad certificate`) — JWT TIDAK
+PERNAH dicek karena koneksi gagal sebelum lapisan HTTP. Dengan identitas
+`dev-operator` (anggota allowlist) yang benar: token admin → 200; token
+role `user` biasa → 403 (app-layer role check); tanpa header
+Authorization sama sekali → 401. Defense-in-depth dua lapis (mTLS
+network-layer + JWT/role app-layer) terbukti bekerja SECARA NYATA, bukan
+cuma desain — inilah bukti T3 menutup TM-03 sepenuhnya.
+
+**IDOR sweep**: `GET /accounts/{id}/balance|entries|statement` (ledger,
+BELUM pernah diuji live sebelumnya) — dua user teregistrasi asli (via
+`POST /api/v1/auth/register` di auth-service), akun cash diprovisikan
+untuk User A, User B mencoba mengakses akun User A lewat ketiga endpoint
+→ ketiganya `404 account not found` (bukan 403 — tidak membocorkan
+keberadaan akun), User A mengakses akun sendiri → 200 normal. Ditambah
+bukti yang sudah ada dari `business-e2e.sh`/`smoke-test.sh`:
+`GET /api/v1/payout/{id}` dan ownership check lain — non-owner 404
+konsisten. Tidak ada temuan baru dari sweep ini — perilaku benar.
+
+**Webhook forgery/replay/oversize/stale**: signature valid → 200 +
+saldo bertambah; signature SALAH → 401, tanpa efek samping; REPLAY
+`event_id` yang sama dengan signature valid → 200 (ack, sesuai desain
+vendor-tetap-dapat-2xx) TAPI saldo TIDAK bertambah dua kali (dibuktikan
+lewat pembacaan saldo sebelum/sesudah — dedup `VendorEventID` bekerja);
+`occurred_at` 10 tahun lalu dengan signature valid → 200, DITERIMA
+(mengonfirmasi TM-08 — tidak ada binding timestamp kriptografis, murni
+freshness bisnis + dedup event_id). **Oversize (>64KiB) MEMBUKA TEMUAN
+BARU (TM-12)** — lihat di bawah, bukan langsung 413 seperti seharusnya.
+
+**Rate-limit keying (TM-11, temuan formal baru — sebelumnya cuma
+catatan desain chaos scenario 9)**: 15 request cepat dari 15 KONEKSI
+TCP BARU (curl per-invocation, port efemeral baru tiap kali) → 0/15
+kena 429 — limiter EFEKTIF TIDAK AKTIF untuk pola ini. 15 request yang
+SAMA lewat SATU koneksi keep-alive (port tetap) → PERSIS 10 lolos lalu 5
+kena 429, cocok 1:1 dengan konfigurasi `Requests:10, Per:1m`
+(`internal/handler/router.go:207`). Membuktikan limiter-nya SENDIRI
+benar; kuncinya (`r.RemoteAddr` mentah, termasuk port) yang membuatnya
+trivial dihindari klien mana pun yang tidak memakai keep-alive.
+
+**CORS wildcard (TM-06, dikonfirmasi)**: preflight `OPTIONS` dari
+`Origin: https://evil.attacker.example` (origin sembarang, tidak pernah
+didaftarkan di mana pun) → `Access-Control-Allow-Origin: *` dikembalikan
+apa adanya. `AllowCredentials:false` membatasi dampak (tidak ada
+cookie leak cross-origin), tapi tetap membuka pintu bagi skrip pihak
+ketiga memanggil API secara terprogram jika token sudah didapat lewat
+jalur lain.
+
+**Issuer JWT opsional (TM-07, dikonfirmasi)**: token bertanda tangan
+SAH (HMAC dengan `JWT_SECRET` yang benar) dengan klaim `iss` sembarang
+(`https://totally-not-seev.attacker.example`, tidak pernah didaftarkan)
+→ DITERIMA 200, karena `JWT_ISSUER` kosong di seluruh
+compose/`.env.example`/`scripts/lib.sh` hari ini.
+
+**Alg-confinement HS256 (bersih, tanpa temuan)**: token `alg:none`
+(tanpa signature sama sekali) → 401 ditolak. Konfirmasi kode:
+`pkg/middleware/auth.go:37` HARDCODE header ke `{"alg":"HS256","typ":
+"JWT"}` di sisi server — algoritma tidak pernah dipercaya dari klaim
+token itu sendiri, jadi RS256-confusion secara arsitektural mustahil
+(tidak perlu bukti live terpisah — bacaan kode ini konklusif).
+
+**TM-12 — bug body-truncation BARU, ditemukan lewat eksekusi live
+(bukan review)**: uji oversize webhook (70KB, `Content-Length: 70210`
+dikonfirmasi via `curl -v` benar-benar terkirim utuh) mengembalikan
+**401**, bukan **413** yang diharapkan dari `maxWebhookBodyBytes=64KiB`
+(`internal/handler/webhook.go:17`). Ditelusuri ke akar: `WithLogger`
+middleware (dipakai di 12 router, `pkg/middleware/logger.go:31`)
+memanggil `logger.ReadAndMaskRequestBody(r, 16*1024)` untuk keperluan
+LOGGING, yang secara internal (`pkg/logger/masking.go:183-189`)
+memotong body ke 16KiB DAN me-REKONSTRUKSI `r.Body` dari potongan itu —
+bukan body asli utuh — sebelum handler sungguhan pernah berjalan.
+Akibatnya: signature HMAC dihitung terhadap body 70KB tapi handler
+memverifikasi terhadap body 16KB yang sudah terpotong → mismatch → 401
+yang MENYESATKAN (menyaru kegagalan auth, padahal sebenarnya masalah
+ukuran). Proteksi 64KiB yang didokumentasikan jadi DEAD CODE untuk
+webhook — batas EFEKTIF adalah 16KB, senyap, di layer yang salah, dan
+ini memengaruhi SEMUA 12 router yang memakai `WithLogger`, bukan cuma
+webhook. Didaftarkan sebagai TM-12, severity Medium-High (bukan
+kerentanan bypass-auth — signature tetap wajib valid terhadap apa pun
+yang BENAR-BENAR diterima handler — tapi bug korupsi-request nyata
+dengan cakupan luas + pesan error yang menyesatkan operator).
+
+**Tidak ada perbaikan di T5** (sesuai DoD — review murni, kecuali
+temuan trivial satu-baris yang aman; TM-11 dan TM-12 keduanya butuh
+keputusan desain non-trivial — kunci rate-limit baru dan restrukturisasi
+urutan baca body — jadi diteruskan ke T6 seperti TM-06/07/08).
+
+**DoD terpenuhi**: seluruh item checklist K8 (authz bypass, IDOR,
+webhook forgery/replay/oversize/stale, rate-limit keying, CORS, issuer,
+alg-confinement) diuji dengan bukti perintah nyata + output, tidak ada
+yang hanya klaim desain. Register lengkap dengan severity untuk setiap
+temuan terbuka.
 
 ### T6 — Fix temuan prioritas + rotation drill + penutup (K9,K10)
 
