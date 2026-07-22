@@ -62,7 +62,7 @@ func requireKYCForLedgerPostings(min int) middleware.Middleware {
 // serves system-transaction types, /metrics, and admin tooling
 // (docs/plan/10 Task T1).
 func NewRouter(cfg *config.Config, deps *Dependencies, logger *slog.Logger) http.Handler {
-	limiter := buildRateLimiter(deps, logger)
+	limiter := buildRateLimiter(cfg, deps, logger)
 	root := http.NewServeMux()
 	apiRoot := http.NewServeMux()
 
@@ -203,8 +203,8 @@ func NewInternalRouter(cfg *config.Config, deps *Dependencies, logger *slog.Logg
 // failover machinery at all when Redis is disabled/unavailable at startup
 // (docs/plan/12 Task T1's original behavior, unchanged for that case: there
 // is nothing to fail over TO).
-func buildRateLimiter(deps *Dependencies, logger *slog.Logger) cache.Limiter {
-	rateCfg := cache.RateConfig{Requests: 10, Per: 1 * time.Minute, Burst: 10}
+func buildRateLimiter(cfg *config.Config, deps *Dependencies, logger *slog.Logger) cache.Limiter {
+	rateCfg := cache.RateConfig{Requests: cfg.App.RateLimitRequests, Per: cfg.App.RateLimitPer, Burst: cfg.App.RateLimitBurst}
 	if deps.Cache != nil {
 		return cache.NewFailoverLimiter(deps.Cache.Redis(), rateCfg, logger)
 	}
@@ -213,9 +213,12 @@ func buildRateLimiter(deps *Dependencies, logger *slog.Logger) cache.Limiter {
 
 func corsConfig(cfg *config.Config) middleware.CORSConfig {
 	corsCfg := middleware.DefaultCORSConfig()
-	if cfg.IsProduction() {
+	switch {
+	case cfg.IsProduction():
 		corsCfg.AllowedOrigins = []string{cfg.App.BaseURL}
 		corsCfg.AllowCredentials = true
+	case len(cfg.App.AllowedOrigins) > 0:
+		corsCfg.AllowedOrigins = cfg.App.AllowedOrigins
 	}
 	return corsCfg
 }

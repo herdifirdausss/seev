@@ -61,6 +61,26 @@ func (s *RedisVelocityStore) Record(ctx context.Context, eventID, counterKey str
 // what lets fraud-service start and keep serving amount-threshold
 // screening even when Redis is down at boot or fails mid-flight, while
 // still refusing to silently under-screen for velocity specifically.
+// redisAttemptTimeout bounds a live Redis attempt taken while the
+// switcher is still (possibly stale-)Healthy — Degrade is immediate on a
+// real failure, but only AFTER that failure is observed, and there is a
+// window right after Redis actually goes down, before Degrade fires, where
+// Healthy() still reports true. Without its own bound here, that one
+// attempt inherits the CALLER's full remaining deadline — pkg/fraudcheck's
+// screenTimeout budgets the ENTIRE round trip (network out + this call +
+// classify + respond + network back) at 500ms total, so a slow-to-fail
+// connection attempt (go-redis's own dial/retry timeouts run well past
+// 150ms) can consume the whole budget, leaving no time for a properly
+// classified DEPENDENCY_UNAVAILABLE response to reach the caller before
+// ITS deadline also expires — that raw context.DeadlineExceeded doesn't
+// match ErrDependencyUnavailable, so the caller falls through to fraud's
+// fail-OPEN branch instead of fail-closed (found live by docs/plan/49 T6's
+// isolated GATE 3 run — chaos scenario 9 flagged this).  150ms leaves
+// generous room for the rest of that 500ms round trip even in the worst
+// case, while remaining far above any latency a genuinely healthy
+// same-network Redis would ever need to answer GET/EVALSHA.
+const redisAttemptTimeout = 150 * time.Millisecond
+
 type FailClosedVelocityStore struct {
 	switcher *cache.RedisHealthSwitcher
 	redis    VelocityStore
@@ -84,7 +104,9 @@ func (s *FailClosedVelocityStore) Get(ctx context.Context, key string) (int64, e
 	if !s.switcher.Healthy() {
 		return 0, model.ErrDependencyUnavailable
 	}
-	v, err := s.redis.Get(ctx, key)
+	attemptCtx, cancel := context.WithTimeout(ctx, redisAttemptTimeout)
+	defer cancel()
+	v, err := s.redis.Get(attemptCtx, key)
 	if err != nil {
 		s.switcher.Degrade(err)
 		return 0, model.ErrDependencyUnavailable
@@ -96,7 +118,9 @@ func (s *FailClosedVelocityStore) Record(ctx context.Context, eventID, counterKe
 	if !s.switcher.Healthy() {
 		return model.ErrDependencyUnavailable
 	}
-	if err := s.redis.Record(ctx, eventID, counterKey, ttl); err != nil {
+	attemptCtx, cancel := context.WithTimeout(ctx, redisAttemptTimeout)
+	defer cancel()
+	if err := s.redis.Record(attemptCtx, eventID, counterKey, ttl); err != nil {
 		s.switcher.Degrade(err)
 		return model.ErrDependencyUnavailable
 	}

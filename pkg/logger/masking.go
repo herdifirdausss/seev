@@ -162,8 +162,26 @@ func parseMediaType(ct string) string {
 	return mt
 }
 
-// readBody membaca body request hingga max byte, lalu me-restore body
-// agar bisa dibaca ulang oleh handler downstream.
+// maxBodyRestoreBytes bounds how much of a request body this middleware
+// will ever buffer into memory before restoring r.Body — a generous
+// GLOBAL safety net, never the real per-route limit (docs/plan/49 TM-12).
+// Must stay >= the largest legitimate body any WithLogger-wrapped route
+// accepts, or that route's own real size limit (e.g. a handler's
+// http.MaxBytesReader) would appear to reject an upload that was actually
+// within ITS limit, because this middleware corrupted it first. Currently
+// the largest known case is the ledger reconciliation CSV upload's own
+// 10MiB cap (internal/ledger/transport/http.go maxReconCSVUploadBytes).
+const maxBodyRestoreBytes = 10 << 20 // 10MiB
+
+// readBody reads up to maxBodyRestoreBytes of the request body and
+// restores r.Body with the FULL bytes read — a downstream handler must
+// see exactly what the client sent. It returns a SEPARATE copy truncated
+// to max bytes for the caller to log; that limit governs log-line size
+// only and must never be the one used to reconstruct r.Body (docs/plan/49
+// TM-12 — the previous version conflated the two, so any request body
+// over the 16KiB log-line size was silently truncated before the real
+// handler ever saw it, corrupting HMAC-signed payloads and multipart
+// uploads well within their own documented, larger limits).
 //
 // FIX: jika Content-Encoding adalah gzip, body di-restore dengan bytes
 // yang sudah didekompresi (bukan bytes terkompresi), dan LimitReader
@@ -173,20 +191,15 @@ func readBody(r *http.Request, max int64) ([]byte, error) {
 		return nil, nil
 	}
 
-	raw, err := io.ReadAll(io.LimitReader(r.Body, max+1))
+	raw, err := io.ReadAll(io.LimitReader(r.Body, maxBodyRestoreBytes+1))
 	if err != nil {
 		r.Body = io.NopCloser(bytes.NewReader(nil))
 		return nil, err
 	}
 
-	// Potong tepat di batas max agar tidak bocor lebih dari yang diminta
-	if int64(len(raw)) > max {
-		raw = raw[:max]
-	}
-
 	if !strings.EqualFold(r.Header.Get("Content-Encoding"), "gzip") {
 		r.Body = io.NopCloser(bytes.NewReader(raw))
-		return raw, nil
+		return truncateForLog(raw, max), nil
 	}
 
 	// Dekompresi gzip
@@ -198,7 +211,7 @@ func readBody(r *http.Request, max int64) ([]byte, error) {
 	}
 	defer gr.Close()
 
-	decompressed, err := io.ReadAll(io.LimitReader(gr, max))
+	decompressed, err := io.ReadAll(io.LimitReader(gr, maxBodyRestoreBytes))
 	if err != nil {
 		r.Body = io.NopCloser(bytes.NewReader(raw))
 		return nil, err
@@ -207,7 +220,16 @@ func readBody(r *http.Request, max int64) ([]byte, error) {
 	// FIX: restore dengan bytes dekompresi agar handler downstream
 	// menerima payload yang sudah siap pakai
 	r.Body = io.NopCloser(bytes.NewReader(decompressed))
-	return decompressed, nil
+	return truncateForLog(decompressed, max), nil
+}
+
+// truncateForLog caps body at max bytes for LOG-LINE purposes only —
+// never used to decide what a downstream handler receives (see readBody).
+func truncateForLog(body []byte, max int64) []byte {
+	if int64(len(body)) > max {
+		return body[:max]
+	}
+	return body
 }
 
 // decodeJSON mem-parse JSON menggunakan json.Number agar presisi

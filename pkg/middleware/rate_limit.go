@@ -3,6 +3,7 @@ package middleware
 import (
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/herdifirdausss/seev/pkg/cache"
 )
@@ -49,7 +50,22 @@ func WithRateLimit(
 }
 
 func RateLimitByIP(r *http.Request) string {
-	return "rl:ip:" + r.RemoteAddr
+	return "rl:ip:" + rateLimitIP(r)
+}
+
+// rateLimitIP strips the ephemeral client port from r.RemoteAddr so that a
+// client's rate-limit bucket survives across new TCP connections (docs/plan/49
+// TM-11). Deliberately does NOT trust X-Forwarded-For/X-Real-Ip the way the
+// logger's realIP helper does: those headers are client-suppliable, and
+// honoring them here would let an attacker rotate the rate-limit key on every
+// request just by changing a header, which is strictly easier than the
+// port-rotation bypass this fix closes.
+func rateLimitIP(r *http.Request) string {
+	addr := r.RemoteAddr
+	if i := strings.LastIndex(addr, ":"); i != -1 {
+		return addr[:i]
+	}
+	return addr
 }
 
 // RateLimitByUser keys by the authenticated user id set by WithAuth. Falls
@@ -71,7 +87,7 @@ func RateLimitByUser(r *http.Request) string {
 }
 
 func RateLimitByIPAndPath(r *http.Request) string {
-	return "rl:" + r.RemoteAddr + ":" + r.URL.Path
+	return "rl:" + rateLimitIP(r) + ":" + r.URL.Path
 }
 
 // RateLimitByVendor keys by the {vendor} path value, not the caller's IP —

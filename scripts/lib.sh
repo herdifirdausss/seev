@@ -26,11 +26,25 @@ GATEWAY_DB_NAME="${GATEWAY_DB_NAME:-seev_gateway}"
 ADMINBFF_DB_NAME="${ADMINBFF_DB_NAME:-seev_adminbff}"
 ASSURANCE_DB_NAME="${ASSURANCE_DB_NAME:-seev_assurance}"
 JWT_SECRET="${JWT_SECRET:-change-me-to-a-random-32-plus-character-secret}"
+# docs/plan/49 TM-07: every service now REFUSES to boot with an empty
+# JWT_ISSUER (internal/config validate()) — issuer validation used to be
+# silently skippable by leaving this unset.
+JWT_ISSUER="${JWT_ISSUER:-seev}"
 # docs/plan/49 K5: every gRPC server now REFUSES to boot with an empty
 # token (pkg/grpcx.NewServer fails fast — the old no-op-when-empty
 # behavior that silently accepted every call is gone), so this can no
 # longer default to empty the way it used to across this whole harness.
 INTERNAL_GRPC_TOKEN="${INTERNAL_GRPC_TOKEN:-change-me-to-a-random-32-plus-character-token}"
+# docs/plan/49 TM-11: the per-IP(+path) rate limiter now actually enforces
+# (previously bypassed by keying on the ephemeral source port) — this
+# harness legitimately fires many requests per minute from ONE machine
+# across many scenarios/scripts sharing that one IP, which production's
+# 10-per-minute default was never sized for. Individual scenarios that
+# specifically test rate-limiter enforcement (e.g. chaos scenario 9) export
+# a much lower override around just their own server startup.
+RATE_LIMIT_REQUESTS="${RATE_LIMIT_REQUESTS:-500}"
+RATE_LIMIT_PER="${RATE_LIMIT_PER:-1m}"
+RATE_LIMIT_BURST="${RATE_LIMIT_BURST:-500}"
 APP_PORT="${APP_PORT:-18080}"
 INTERNAL_PORT="${INTERNAL_PORT:-18081}"
 LEDGER_GRPC_PORT="${LEDGER_GRPC_PORT:-19091}"
@@ -324,6 +338,10 @@ start_fraud_service() {
 		export RABBITMQ_PASSWORD=seev
 		export RABBITMQ_EXCHANGE=ledger.events
 		export JWT_SECRET=$JWT_SECRET
+		export JWT_ISSUER=$JWT_ISSUER
+		export RATE_LIMIT_REQUESTS=$RATE_LIMIT_REQUESTS
+		export RATE_LIMIT_PER=$RATE_LIMIT_PER
+		export RATE_LIMIT_BURST=$RATE_LIMIT_BURST
 		export TLS_CERT_DIR=$CERT_DIR
 		export INTERNAL_GRPC_TOKEN=$INTERNAL_GRPC_TOKEN
 		export SCREENING_MODE="${SCREENING_MODE:-off}"
@@ -354,6 +372,10 @@ start_payout_service() {
 		export LEDGER_GRPC_ADDR=localhost:$LEDGER_GRPC_PORT
 		export FRAUD_GRPC_ADDR=localhost:$FRAUD_GRPC_PORT
 		export JWT_SECRET=$JWT_SECRET
+		export JWT_ISSUER=$JWT_ISSUER
+		export RATE_LIMIT_REQUESTS=$RATE_LIMIT_REQUESTS
+		export RATE_LIMIT_PER=$RATE_LIMIT_PER
+		export RATE_LIMIT_BURST=$RATE_LIMIT_BURST
 		export TLS_CERT_DIR=$CERT_DIR
 		export INTERNAL_GRPC_TOKEN=$INTERNAL_GRPC_TOKEN
 		export VENDOR_MOCKVENDOR_ENABLED=true
@@ -400,6 +422,10 @@ start_payout_service_replica() {
 		export LEDGER_GRPC_ADDR=localhost:$LEDGER_GRPC_PORT
 		export FRAUD_GRPC_ADDR=localhost:$FRAUD_GRPC_PORT
 		export JWT_SECRET=$JWT_SECRET
+		export JWT_ISSUER=$JWT_ISSUER
+		export RATE_LIMIT_REQUESTS=$RATE_LIMIT_REQUESTS
+		export RATE_LIMIT_PER=$RATE_LIMIT_PER
+		export RATE_LIMIT_BURST=$RATE_LIMIT_BURST
 		export TLS_CERT_DIR=$CERT_DIR
 		export INTERNAL_GRPC_TOKEN=$INTERNAL_GRPC_TOKEN
 		export VENDOR_MOCKVENDOR_ENABLED=true
@@ -449,6 +475,10 @@ start_payin_service() {
 		export LEDGER_GRPC_ADDR=localhost:$LEDGER_GRPC_PORT
 		export FRAUD_GRPC_ADDR=localhost:$FRAUD_GRPC_PORT
 		export JWT_SECRET=$JWT_SECRET
+		export JWT_ISSUER=$JWT_ISSUER
+		export RATE_LIMIT_REQUESTS=$RATE_LIMIT_REQUESTS
+		export RATE_LIMIT_PER=$RATE_LIMIT_PER
+		export RATE_LIMIT_BURST=$RATE_LIMIT_BURST
 		export TLS_CERT_DIR=$CERT_DIR
 		export INTERNAL_GRPC_TOKEN=$INTERNAL_GRPC_TOKEN
 		export VENDOR_MOCKVENDOR_ENABLED=true
@@ -470,7 +500,7 @@ start_payin_service() {
 # ("1h" "0") only if a script specifically wants to exercise the KYC gate
 # itself.
 gen_token() {
-	JWT_SECRET="$JWT_SECRET" "$GENTOKEN_BIN" "$@"
+	JWT_SECRET="$JWT_SECRET" JWT_ISSUER="$JWT_ISSUER" "$GENTOKEN_BIN" "$@"
 }
 
 start_ledger_service() {
@@ -494,6 +524,10 @@ start_ledger_service() {
 		export RABBITMQ_EXCHANGE=ledger.events
 		export FRAUD_GRPC_ADDR=localhost:$FRAUD_GRPC_PORT
 		export JWT_SECRET=$JWT_SECRET
+		export JWT_ISSUER=$JWT_ISSUER
+		export RATE_LIMIT_REQUESTS=$RATE_LIMIT_REQUESTS
+		export RATE_LIMIT_PER=$RATE_LIMIT_PER
+		export RATE_LIMIT_BURST=$RATE_LIMIT_BURST
 		export TLS_CERT_DIR=$CERT_DIR
 		export INTERNAL_GRPC_TOKEN=$INTERNAL_GRPC_TOKEN
 		export LOG_FORMAT=json
@@ -524,6 +558,10 @@ start_gateway() {
 		export RABBITMQ_PASSWORD=seev
 		export RABBITMQ_EXCHANGE=ledger.events
 		export JWT_SECRET=$JWT_SECRET
+		export JWT_ISSUER=$JWT_ISSUER
+		export RATE_LIMIT_REQUESTS=$RATE_LIMIT_REQUESTS
+		export RATE_LIMIT_PER=$RATE_LIMIT_PER
+		export RATE_LIMIT_BURST=$RATE_LIMIT_BURST
 		export TLS_CERT_DIR=$CERT_DIR
 		export INTERNAL_GRPC_TOKEN=$INTERNAL_GRPC_TOKEN
 		export LEDGER_GRPC_ADDR=localhost:$LEDGER_GRPC_PORT
@@ -558,6 +596,10 @@ start_auth_service() {
 		export REDIS_ADDR=localhost:$REDIS_HOST_PORT
 		export LEDGER_GRPC_ADDR=localhost:$LEDGER_GRPC_PORT
 		export JWT_SECRET=$JWT_SECRET
+		export JWT_ISSUER=$JWT_ISSUER
+		export RATE_LIMIT_REQUESTS=$RATE_LIMIT_REQUESTS
+		export RATE_LIMIT_PER=$RATE_LIMIT_PER
+		export RATE_LIMIT_BURST=$RATE_LIMIT_BURST
 		export TLS_CERT_DIR=$CERT_DIR
 		export INTERNAL_GRPC_TOKEN=$INTERNAL_GRPC_TOKEN
 		export LOG_FORMAT=json
@@ -594,6 +636,10 @@ start_assurance_service() {
 		export INTERNAL_GRPC_TOKEN=$INTERNAL_GRPC_TOKEN
 		export TLS_CERT_DIR=$CERT_DIR
 		export JWT_SECRET=$JWT_SECRET
+		export JWT_ISSUER=$JWT_ISSUER
+		export RATE_LIMIT_REQUESTS=$RATE_LIMIT_REQUESTS
+		export RATE_LIMIT_PER=$RATE_LIMIT_PER
+		export RATE_LIMIT_BURST=$RATE_LIMIT_BURST
 		export ASSURANCE_INTERVAL="${ASSURANCE_INTERVAL:-60s}"
 		export ASSURANCE_CONSISTENCY_DELAY="${ASSURANCE_CONSISTENCY_DELAY:-2m}"
 		export LOG_FORMAT=json
@@ -615,6 +661,10 @@ start_adminbff_service() {
 		export POSTGRES_DB=$ADMINBFF_DB_NAME
 		export POSTGRES_SSL_MODE=disable
 		export JWT_SECRET=$JWT_SECRET
+		export JWT_ISSUER=$JWT_ISSUER
+		export RATE_LIMIT_REQUESTS=$RATE_LIMIT_REQUESTS
+		export RATE_LIMIT_PER=$RATE_LIMIT_PER
+		export RATE_LIMIT_BURST=$RATE_LIMIT_BURST
 		export TLS_CERT_DIR=$CERT_DIR
 		# AUTH_SERVICE_URL targets auth's PUBLIC login endpoint and stays
 		# plain (docs/plan/49 anti-scope edge exception); every other

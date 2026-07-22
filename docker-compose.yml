@@ -147,6 +147,7 @@ services:
       RABBITMQ_EXCHANGE: ledger.events
       FRAUD_GRPC_ADDR: fraud-service:9094
       JWT_SECRET: ${JWT_SECRET:-change-me-to-a-random-32-plus-character-secret}
+      JWT_ISSUER: ${JWT_ISSUER:-seev}
     volumes: *cert-volume
     ports:
       - "127.0.0.1:8090:8090"
@@ -196,6 +197,7 @@ services:
       INTERNAL_GRPC_TOKEN: ${INTERNAL_GRPC_TOKEN:-change-me-to-a-random-32-plus-character-token}
       TLS_CERT_DIR: /certs
       JWT_SECRET: ${JWT_SECRET:-change-me-to-a-random-32-plus-character-secret}
+      JWT_ISSUER: ${JWT_ISSUER:-seev}
     volumes: *cert-volume
     ports:
       - "127.0.0.1:8082:8082"
@@ -241,6 +243,7 @@ services:
       LEDGER_GRPC_ADDR: ledger-service:9091
       FRAUD_GRPC_ADDR: fraud-service:9094
       JWT_SECRET: ${JWT_SECRET:-change-me-to-a-random-32-plus-character-secret}
+      JWT_ISSUER: ${JWT_ISSUER:-seev}
       VENDOR_MOCKVENDOR_ENABLED: "true"
       VENDOR_MOCKVENDOR_SECRET: ${VENDOR_MOCKVENDOR_SECRET:-change-me-mockvendor-secret}
       MOCKVENDOR2_ENABLED: "true"
@@ -291,6 +294,7 @@ services:
       LEDGER_GRPC_ADDR: ledger-service:9091
       FRAUD_GRPC_ADDR: fraud-service:9094
       JWT_SECRET: ${JWT_SECRET:-change-me-to-a-random-32-plus-character-secret}
+      JWT_ISSUER: ${JWT_ISSUER:-seev}
       VENDOR_MOCKVENDOR_ENABLED: "true"
       VENDOR_MOCKVENDOR_SECRET: ${VENDOR_MOCKVENDOR_SECRET:-change-me-mockvendor-secret}
       MOCKVENDOR2_ENABLED: "true"
@@ -346,6 +350,7 @@ services:
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-seev}
       RABBITMQ_EXCHANGE: ledger.events
       JWT_SECRET: ${JWT_SECRET:-change-me-to-a-random-32-plus-character-secret}
+      JWT_ISSUER: ${JWT_ISSUER:-seev}
       SCREENING_MODE: ${SCREENING_MODE:-off}
       SCREENING_AMOUNT_THRESHOLD: ${SCREENING_AMOUNT_THRESHOLD:-0}
       SCREENING_VELOCITY_MAX_PER_HOUR: ${SCREENING_VELOCITY_MAX_PER_HOUR:-0}
@@ -389,7 +394,7 @@ services:
       POSTGRES_DB: seev_adminbff
       POSTGRES_SSL_MODE: disable
       JWT_SECRET: ${JWT_SECRET:-change-me-to-a-random-32-plus-character-secret}
-      JWT_ISSUER: ${JWT_ISSUER:-}
+      JWT_ISSUER: ${JWT_ISSUER:-seev}
       TLS_CERT_DIR: /certs
       AUTH_SERVICE_URL: http://auth-service:8082
       AUTH_ADMIN_SERVICE_URL: https://auth-service:8083
@@ -445,6 +450,7 @@ services:
       INTERNAL_GRPC_TOKEN: ${INTERNAL_GRPC_TOKEN:-change-me-to-a-random-32-plus-character-token}
       TLS_CERT_DIR: /certs
       JWT_SECRET: ${JWT_SECRET:-change-me-to-a-random-32-plus-character-secret}
+      JWT_ISSUER: ${JWT_ISSUER:-seev}
       ASSURANCE_INTERVAL: ${ASSURANCE_INTERVAL:-60s}
       ASSURANCE_CONSISTENCY_DELAY: ${ASSURANCE_CONSISTENCY_DELAY:-2m}
       ASSURANCE_PAGE_SIZE: ${ASSURANCE_PAGE_SIZE:-500}
@@ -511,6 +517,7 @@ services:
       INTERNAL_GRPC_TOKEN: ${INTERNAL_GRPC_TOKEN:-change-me-to-a-random-32-plus-character-token}
       TLS_CERT_DIR: /certs
       JWT_SECRET: ${JWT_SECRET:-change-me-to-a-random-32-plus-character-secret}
+      JWT_ISSUER: ${JWT_ISSUER:-seev}
     volumes: *cert-volume
     ports:
       - "127.0.0.1:8080:8080"

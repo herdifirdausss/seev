@@ -4,7 +4,7 @@
 // curl-based testing, so nobody needs to hand-write a throwaway token
 // generator again.
 //
-// Usage: JWT_SECRET=... gentoken <user-id> [role] [ttl] [kyc_level]
+// Usage: JWT_SECRET=... JWT_ISSUER=... gentoken <user-id> [role] [ttl] [kyc_level]
 //
 //	role defaults to "user"; ttl defaults to "1h" (Go duration syntax);
 //	kyc_level defaults to 1 (docs/plan/39 Task T6, gotcha #9 master) — every
@@ -32,6 +32,14 @@ func main() {
 	secret := os.Getenv("JWT_SECRET")
 	if secret == "" {
 		fmt.Fprintln(os.Stderr, "gentoken: JWT_SECRET must be set in the environment")
+		os.Exit(2)
+	}
+	issuer := os.Getenv("JWT_ISSUER")
+	if issuer == "" {
+		// docs/plan/49 TM-07: JWT_ISSUER is now mandatory for every real
+		// service, so a token minted without one would fail issuer
+		// validation everywhere it's used.
+		fmt.Fprintln(os.Stderr, "gentoken: JWT_ISSUER must be set in the environment")
 		os.Exit(2)
 	}
 
@@ -63,6 +71,7 @@ func main() {
 		UserID:   userID,
 		Role:     role,
 		KYCLevel: kycLevel,
+		Iss:      issuer,
 		Exp:      time.Now().Add(ttl).Unix(),
 	})
 	if err != nil {

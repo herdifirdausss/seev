@@ -953,7 +953,231 @@ baru teramati; dokumentasi/hutang ter-update.
 
 ### Hasil
 
-> Diisi saat T6 selesai.
+Semua temuan prioritas dari register ditutup, drill rotasi dibuktikan live,
+bidang K10 baru teramati, dokumentasi/hutang ter-update, dan **GATE
+3/final** (project Compose terisolasi) hijau bersih — build+vet+lint+test+
+smoke+business-e2e+admin-e2e+seluruh 14 skenario chaos, nol kegagalan.
+
+**TM-06 (CORS wildcard) — resolved**: `DefaultCORSConfig()` diubah dari
+`AllowedOrigins: []string{"*"}` menjadi `nil` (API-only by default —
+gateway/auth-service 100% bearer-token, tidak pernah `http.SetCookie`).
+`authCORS`/`corsConfig` sekarang: production tetap pin ke `App.BaseURL`
+(tidak berubah), non-production baca allowlist eksplisit dari env baru
+`CORS_ALLOWED_ORIGINS` (field `AppConfig.AllowedOrigins` yang sudah ada di
+struct tapi tidak pernah di-wire, sejak sebelum doc 49). Dibuktikan unit
+test end-to-end lewat router asli: origin sembarang lewat preflight
+`OPTIONS` tidak lagi mendapat header `Access-Control-Allow-Origin`.
+
+**TM-07 (issuer JWT opsional) — resolved**: `internal/config.validate()`
+sekarang menolak boot bila `JWT_ISSUER` kosong, di SEMUA environment
+(bukan cuma warning produksi) — pola sama dengan `JWT_SECRET` dan token
+fail-closed K5. Blast radius diselesaikan penuh: `docker-compose.yml`
+(8 service block, sebelumnya cuma admin-bff-service yang punya baris ini),
+`scripts/lib.sh` (default `seev` + export di 9 titik start-service +
+`gen_token()`), `.env.example`, dan `cmd/gentoken` (dipakai
+chaos/smoke-test untuk mint token — sekarang wajib `JWT_ISSUER` dan
+menyertakan klaim `iss`, atau token buatan harness sendiri akan ditolak
+begitu semua service mewajibkan issuer).
+
+**TM-08 (webhook timestamp) — accepted-risk, alasan tertulis**: TIDAK
+diperbaiki. `mockvendor` eksplisit test-double buatan sendiri (dokumentasi
+paketnya sendiri: "made up... not modeled on any real vendor"), dipakai
+hanya untuk menguji jalur dedup/posting `internal/payin`. Risiko dibatasi
+ganda tanpa perlu perbaikan kriptografis: signature (mencakup SELURUH
+body termasuk `occurred_at`) tetap wajib valid, dan dedup `VendorEventID`
+mencegah event yang SAMA diproses dua kali (dibuktikan live T5). Mendesain
+kebijakan freshness-window terhadap wire format buatan sendiri tidak
+men-generalisasi ke vendor sungguhan — follow-up saat vendor real pertama
+diintegrasikan, bukan sekarang.
+
+**TM-11 (rate limit key termasuk port efemeral) — resolved, DENGAN
+fallout yang juga diperbaiki**: `RateLimitByIP`/`RateLimitByIPAndPath`
+sekarang strip port dari `r.RemoteAddr` (helper baru `rateLimitIP`,
+sengaja TIDAK memakai `realIP()`'s logger yang mempercayai
+`X-Forwarded-For`/`X-Real-Ip` — mempercayai header itu untuk keying rate
+limit akan membuka bypass yang LEBIH mudah dari bug port yang sedang
+diperbaiki). Dibuktikan unit test: dua request IP sama port beda kini
+berbagi satu bucket; header `X-Forwarded-For` palsu tidak memengaruhi
+key. **Fallout yang ditemukan lewat GATE 3 (bukan lewat review)**: begitu
+limiter BENAR-BENAR aktif, skenario chaos 1-3 (yang men-generate 10-40
+request cepat dari SATU mesin test) mulai kolaps ke 429 berantai —
+sebelumnya "lolos" hanya karena limiter efektif tidak aktif (persis bug
+TM-11). Root cause: `Requests:10, Per:1m` di-hardcode
+(`cmd/auth-service/router.go`, `internal/handler/router.go`) TANPA jalur
+konfigurasi — field `AppConfig.RateLimitRPS` sudah ada tapi tidak pernah
+dipakai (mati, pola sama seperti `AllowedOrigins` sebelum TM-06).
+Diperbaiki dengan mengganti field mati itu dengan tiga field bertipe
+benar (`RateLimitRequests`/`RateLimitPer`/`RateLimitBurst`, cocok dengan
+`cache.RateConfig`), default IDENTIK dengan nilai lama (10/1m/10 —
+perilaku produksi tidak berubah), dibaca dari env baru
+`RATE_LIMIT_REQUESTS`/`RATE_LIMIT_PER`/`RATE_LIMIT_BURST`.
+`scripts/lib.sh` memberi harness default 500/menit (cukup besar untuk
+traffic burst SEMUA skenario, sengaja bukan "tak terbatas" agar limiter
+yang sungguhan tetap teruji), sementara skenario chaos 9 (yang SPESIFIK
+menguji mekanisme limiter itu sendiri lewat burst 11 request) meng-override
+balik ke 10/1m/10 di server proses miliknya sendiri. Dibuktikan: skenario
+1, 2, 3 lulus bersih ulang (sebelumnya kolaps 429), skenario 9 tetap lulus
+assersi limiter-nya sendiri.
+
+**TM-12 (body-truncation `WithLogger`) — resolved**: `pkg/logger/masking.go`
+`readBody` diubah — membaca hingga `maxBodyRestoreBytes=10MiB` (batas
+global generous, dipilih dari upload CSV rekonsiliasi ledger 10MiB
+terbesar yang diketahui) dan me-restore `r.Body` dengan bytes UTUH, bukan
+potongan `max`-byte yang dulu dipakai untuk logging. Log-line tetap
+dipotong ke `max` (16KiB) lewat helper terpisah `truncateForLog` —
+memisahkan "berapa banyak yang di-log" dari "apa yang handler sungguhan
+terima", konflasi yang jadi akar bug. Dibuktikan unit test body 50KB:
+salinan log persis 16KiB, `r.Body` yang di-restore persis 50KB utuh.
+
+**TM-13 (`ServerConfig` `ClientCAs` beku setelah rotasi) — ditemukan DAN
+resolved lewat K9 rotation drill (T6)**: bukan temuan review kode — drill
+awal (`scripts/rotation-drill.sh`) melaporkan 58/64 request loop gagal dan
+TIDAK PERNAH pulih dalam observasi 15 detik pasca-rotasi. Root cause:
+`pkg/tlsx/config.go`'s `ServerConfig` menetapkan `ClientCAs: src.CAPool()`
+sebagai SNAPSHOT saat `*tls.Config` dikonstruksi (sekali, saat proses
+boot) — `tls.RequireAndVerifyClientCert` memverifikasi klien terhadap
+pool BEKU itu SELAMANYA, tidak pernah dibaca ulang, walau
+`CertSource`-nya sendiri sudah hot-reload dengan benar. Komentar T2 di
+kode SUDAH mencatat ini sebagai "a T6 concern" tapi belum diperbaiki
+sampai drill ini membuktikannya nyata. Efeknya sebelum fix: setelah
+`certgen rotate`, SEMUA listener server (gRPC+HTTP, ke-8 service — satu
+titik `ServerConfig` dipakai semua) menolak klien yang baru direissue
+SELAMANYA sampai proses di-restart — membatalkan premis inti "rotasi
+tanpa restart" K2/K9. Diperbaiki: `ClientAuth` diubah ke
+`tls.RequireAnyClientCert` (hanya memastikan cert ADA, tidak minta Go
+memverifikasi terhadap pool beku), `VerifyConnection` sekarang memanggil
+`verifyChainAgainst(cs, src.CAPool(), x509.ExtKeyUsageClientAuth)` secara
+manual — `src.CAPool()` dibaca FRESH di setiap handshake, pola yang sama
+yang sudah benar dipakai `ClientConfig` untuk arah sebaliknya. Dibuktikan:
+(a) unit test baru `TestServerConfig_HotRotatesCAWithoutRebuildingConfig`
+— SATU `*tls.Config` yang sama, tidak pernah dikonstruksi ulang, menerima
+klien baru DAN menolak klien lama, lulus 15/15 run stress `-race
+-count=15`; (b) drill live end-to-end: SEBELUM fix 58/64 gagal tanpa
+pulih; SESUDAH fix hanya 9/93 gagal, seluruhnya dalam jendela 10 detik
+pasca-rotasi (dibatasi `defaultPollInterval=5s` — karakteristik desain
+poll-based K2 yang melekat, bukan bug baru), lalu 100% pulih sendiri untuk
+sisa loop, dan klien pra-rotasi tetap konsisten ditolak tanpa batas waktu.
+Kriteria lulus drill diberi bentuk jujur (nol kegagalan sebelum rotasi +
+semua kegagalan dalam grace window 2× poll interval + ekor loop 100%
+sukses) — bukan menuntut nol kegagalan mutlak yang tidak realistis untuk
+desain poll-based apa pun.
+
+**TM-14 (fail-closed fraud velocity race, di LUAR scope doc 49) —
+ditemukan lewat GATE 3, diperbaiki dengan otorisasi eksplisit user**:
+skenario chaos 9 (money-safety, fail-closed saat Redis mati) gagal
+konsisten 100% baik di GATE 3 maupun re-run terisolasi — `withdraw_initiate`
+kedua yang seharusnya ditolak 503 malah lolos 201 DAN saldo benar-benar
+berpindah. Dikonfirmasi VIA `git diff HEAD -- scripts/chaos-test.sh`
+bahwa kode skenario 9 sendiri nol-diff dari HEAD — bug ini SUDAH ADA di
+kode ter-commit, sama sekali tidak terkait perubahan sesi ini (mTLS,
+rate-limit, JWT-issuer, atau kerja KYC yang tidak terkait). Karena ini
+menyentuh logika money-safety yang eksplisit ada di daftar
+do-not-touch §6, temuan ini dilaporkan ke user (bukan diperbaiki
+sepihak) — user secara eksplisit mengotorisasi perbaikan sebagai bagian
+sesi ini. Root cause: `internal/fraud/velocity_store.go`'s
+`FailClosedVelocityStore.Get()`/`Record()` meneruskan context PEMANGGIL
+APA ADANYA ke percobaan Redis LIVE yang diambil selagi
+`switcher.Healthy()` MASIH (basi-)true — jendela tepat setelah Redis
+benar-benar mati tapi sebelum `Degrade()` pernah terpicu. `docker stop`
+pada container Redis bisa meninggalkan black-hole jaringan (tanpa RST,
+tanpa respons) alih-alih connection-refused instan, sehingga satu
+percobaan itu bisa lebih lama dari budget 500ms `screenTimeout`
+`pkg/fraudcheck` — deadline PEMANGGIL (identik, dipropagasi via gRPC)
+kadaluarsa lebih dulu dengan `context.DeadlineExceeded` mentah, yang
+TIDAK cocok `errors.Is(err, ErrDependencyUnavailable)`, sehingga
+`internal/ledger/transport/http.go` jatuh ke cabang fail-OPEN, bukan
+fail-closed. Diperbaiki: `redisAttemptTimeout=150ms` — percobaan Redis
+sekarang dibatasi `context.WithTimeout(ctx, redisAttemptTimeout)`,
+sub-deadline TEGAS dari context pemanggil (tidak pernah lebih lama —
+`context.WithTimeout` pada parent yang sudah ber-deadline memakai mana
+yang lebih cepat). Dibuktikan: (a) unit test baru
+`TestFailClosedVelocityStore_SlowFirstAttempt_FailsClosedWithinBudget`
+memakai `hangingVelocityStore` sintetis yang blok sampai context
+dibatalkan — PERSIS mode kegagalan black-hole yang ditinggalkan container
+`docker stop`, dan yang TIDAK direproduksi test unit lama (miniredis
+`Close()` lokal gagal cepat) — inilah kenapa bug ini lolos test unit
+tapi gagal live; (b) skenario chaos 9 di-re-run live dua kali (terisolasi
+dan default stack) — 100% lulus, dimana sebelumnya 100% gagal.
+`pkg/cache.FailoverLimiter`/`FailoverCounter` (rate limiter, policy
+counter) SENGAJA TIDAK disentuh — tidak teramati menunjukkan gejala ini
+(budget timeout pemanggilnya jauh lebih besar), dan menyentuh
+`pkg/cache` bersama punya blast radius lintas semua jalur rate-limited/
+policy-counted di semua service, jauh melebihi apa yang diotorisasi.
+
+**K9 — rotation drill, dibuktikan live**: `scripts/rotation-drill.sh`
+(standalone, BUKAN chaos scenario permanen) membangun+menjalankan
+ledger-service throwaway sungguhan, loop request mTLS berkelanjutan
+sepanjang jendela rotasi, `certgen rotate` sungguhan, lalu tiga
+pembuktian: zero-downtime (baseline bersih + kegagalan transient dalam
+grace window + ekor 100% sukses), klien baru berhasil, klien lama
+ditolak. Inilah yang menemukan TM-13 — bukti langsung nilai live-testing
+di atas review kode untuk klaim "zero-downtime" apa pun.
+
+**K10 — metrik observability baru**: `pkg/tlsx/metrics.go` menambah
+`tlsx_cert_expiry_seconds{identity}` (gauge, unix timestamp absolut
+NotAfter, di-update tiap reload sukses — alerting rule menghitung sisa
+waktu sebagai `metric - time()`, bukan proses ini re-publish nilai yang
+terus menurun) dan `tlsx_handshake_failures_total{identity,reason}`
+(counter, `reason∈{untrusted_ca,identity_not_allowed}` — `identity` HANYA
+diisi nilai asli untuk `identity_not_allowed`, di mana chain SUDAH
+terverifikasi jadi nilainya berasal dari closed set `certgen`; untuk
+`untrusted_ca`, chain belum terverifikasi jadi `identity="unknown"`
+sengaja dipakai — klaim identitas dari cert yang BELUM terverifikasi
+tidak pernah jadi label Prometheus, mencegah cardinality-injection oleh
+penyerang). Panel kecil baru `deploy/observability/grafana/dashboards/
+mtls-security.json` (2 panel: cert expiry hari tersisa, rate kegagalan
+handshake). Dibuktikan 3 unit test baru (expiry ter-set benar + di-update
+saat rotasi, kedua reason counter naik dengan label yang benar).
+
+**Runbook baru `docs/runbooks/`**: `cert-rotation.md` (prosedur rotasi +
+drill + eskalasi jika tidak pulih sendiri), `vault-seed.md` (semantik KV
+v2 replace-bukan-merge, apa yang sengaja TIDAK di-seed dan kenapa,
+residual risk Vault-plaintext), `handshake-failure-response.md`
+(triase `untrusted_ca` vs `identity_not_allowed`, kapan itu propagasi
+rotasi normal vs insiden nyata). `PROJECT_GUIDE.md` "Security rules"
+ditambah baris eksplisit: mTLS wajib tiap hop internal, identitas = URI
+SAN, sertifikat pendek+rotasi via `certgen rotate` — hutang "mTLS +
+rotated service identity" yang jadi trigger awal doc 49 kini terbayar
+lunas di dokumen kontributor repo, bukan cuma di docs/plan.
+
+**GATE 3/final — hijau bersih**: dijalankan di project Compose terisolasi
+mengikuti pola doc 45 T4 (nama container harus di-override eksplisit,
+`scripts/lib.sh` tidak menurunkannya dari `COMPOSE_PROJECT_NAME`):
+
+```bash
+docker compose down -v
+COMPOSE_PROJECT_NAME=seev-plan49-gate \
+POSTGRES_CONTAINER=seev-plan49-gate-postgres-1 \
+REDIS_CONTAINER=seev-plan49-gate-redis-1 \
+RABBITMQ_CONTAINER=seev-plan49-gate-rabbitmq-1 \
+make verify-full
+COMPOSE_PROJECT_NAME=seev-plan49-gate docker compose down -v
+```
+
+Dua percobaan pertama gagal — bukan gate yang di-skip, keduanya
+ditelusuri sampai akar dan diperbaiki (nama container di percobaan
+pertama; TM-11 fallout + TM-14 di percobaan kedua, lihat di atas).
+Percobaan ketiga: `go build`+`go vet`+`go vet -tags=integration`+`make
+lint`+`make test` bersih, `smoke-test.sh` ALL SMOKE ASSERTIONS PASSED,
+`business-e2e.sh` FULL BUSINESS JOURNEY PASSED, `admin-e2e.sh` bersih
+(0 FAIL), `chaos-test.sh all` (14 skenario) ALL CHAOS ASSERTIONS PASSED
+— **nol baris `[ FAIL]` di seluruh log**. Project terisolasi di-`down -v`
+setelah gate; default stack dikonfirmasi bersih (tidak ada compose
+project tersisa).
+
+**Handoff eksplisit (bukan diselesaikan doc 49, dicatat sadar)**:
+
+1. **Admin 2FA/SSO/WebAuthn hardening** (warisan handoff doc 47) — tetap
+   follow-up terpisah. Doc 49/A6 menutup bidang SERVICE-plane (mTLS,
+   identitas antar-service, secrets, rate-limit/CORS/issuer hardening),
+   BUKAN hardening user-plane admin console.
+2. **TLS listener Vault + persistence + auto-unseal** — follow-up di
+   luar scope doc 49 (dicatat TM-10, accepted-risk sejak T4).
+3. **Terminasi TLS edge publik** (gateway/auth dev port plain) — urusan
+   deployment/doc 35, bukan doc 49 (K3/K4 hanya mencakup mTLS internal).
+
+**Prasyarat C1 (doc 42)**: "A6 wajib sebelum C1" kini TERPENUHI — semua
+DoD global §7 di bawah terpenuhi lewat T1-T6.
 
 ## 6. Constraint eksekutor
 
@@ -982,29 +1206,29 @@ baru teramati; dokumentasi/hutang ter-update.
 
 ## 7. Definition of Done global
 
-- [ ] `make lint`, `make test`, vet dua tag, `make verify-full` hijau dari
+- [x] `make lint`, `make test`, vet dua tag, `make verify-full` hijau dari
       volume bersih di ketiga gate (final = project terisolasi).
-- [ ] Seluruh hop gRPC + HTTP internal (termasuk admin-bff + Prometheus
+- [x] Seluruh hop gRPC + HTTP internal (termasuk admin-bff + Prometheus
       scrape) mTLS dengan verifikasi URI SAN per-hop; test negatif membuktikan
       tanpa-cert dan SAN-salah DITOLAK.
-- [ ] Server gRPC boot GAGAL saat `INTERNAL_GRPC_TOKEN` kosong (lubang no-op
+- [x] Server gRPC boot GAGAL saat `INTERNAL_GRPC_TOKEN` kosong (lubang no-op
       tertutup).
-- [ ] `docs/security/threat-model.md` + register `TM-nn` terisi; temuan
+- [x] `docs/security/threat-model.md` + register `TM-nn` terisi; temuan
       severity tinggi diperbaiki atau di-accept dengan alasan tertulis.
-- [ ] Vault dev jalan + seed idempoten; precedence Vault>env terbukti;
+- [x] Vault dev jalan + seed idempoten; precedence Vault>env terbukti;
       fallback env hari ini utuh; CI tetap env-generated.
-- [ ] Review pentest-style ber-bukti (perintah + output di Hasil T5).
-- [ ] Rotation drill membuktikan zero-downtime + penolakan cert lama.
-- [ ] Tidak ada private key/secret di git; `deploy/certs/` gitignored.
-- [ ] PROJECT_GUIDE.md hutang "mTLS + rotated service identity" ditandai
+- [x] Review pentest-style ber-bukti (perintah + output di Hasil T5).
+- [x] Rotation drill membuktikan zero-downtime + penolakan cert lama.
+- [x] Tidak ada private key/secret di git; `deploy/certs/` gitignored.
+- [x] PROJECT_GUIDE.md hutang "mTLS + rotated service identity" ditandai
       lunas; runbook baru tersedia.
 
 ## 8. Penutup setelah GATE 3
 
-- [ ] Isi semua `### Hasil` dengan bukti command + output ringkas.
-- [ ] Update baris plan 49 di [README](README.md) menjadi selesai.
-- [ ] Update status A6 di [42](42-long-term-roadmap.md) menjadi selesai via 49.
-- [ ] Catat handoff eksplisit: (a) hardening autentikasi user-admin
+- [x] Isi semua `### Hasil` dengan bukti command + output ringkas.
+- [x] Update baris plan 49 di [README](README.md) menjadi selesai.
+- [x] Update status A6 di [42](42-long-term-roadmap.md) menjadi selesai via 49.
+- [x] Catat handoff eksplisit: (a) hardening autentikasi user-admin
       (2FA/SSO/WebAuthn operator console, warisan doc 47) = follow-up
       terpisah — A6 ini menutup bidang service-plane, bukan user-plane;
       (b) TLS listener Vault + persistence + auto-unseal = follow-up;

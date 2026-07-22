@@ -63,7 +63,10 @@ func (f *fakeAuthHandlers) UpdateMeHandler() http.HandlerFunc {
 
 func authRouterTestConfig() *config.Config {
 	return &config.Config{
-		App: config.AppConfig{Env: "development", BaseURL: "http://localhost:8082"},
+		App: config.AppConfig{
+			Env: "development", BaseURL: "http://localhost:8082",
+			RateLimitRequests: 10, RateLimitPer: time.Minute, RateLimitBurst: 10,
+		},
 		JWT: config.JWTConfig{Secret: authTestSecret, AccessExpiry: 15 * time.Minute},
 	}
 }
@@ -117,4 +120,53 @@ func TestAuthServiceInternalRouter(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	internalRouter().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/health", nil))
 	assert.Equal(t, http.StatusOK, recorder.Code)
+}
+
+// ─── CORS config (docs/plan/49 TM-06) ──────────────────────────────────────────
+
+func TestAuthCORS_Development_NoOriginsConfigured(t *testing.T) {
+	cfg := authRouterTestConfig()
+	assert.Empty(t, authCORS(cfg).AllowedOrigins)
+}
+
+func TestAuthCORS_Development_ExplicitAllowlist(t *testing.T) {
+	cfg := authRouterTestConfig()
+	cfg.App.AllowedOrigins = []string{"https://staging.example.com"}
+	assert.Equal(t, []string{"https://staging.example.com"}, authCORS(cfg).AllowedOrigins)
+}
+
+func TestAuthCORS_Production(t *testing.T) {
+	cfg := authRouterTestConfig()
+	cfg.App.Env = "production"
+	cfg.App.BaseURL = "https://auth.production.example.com"
+
+	cors := authCORS(cfg)
+	assert.Equal(t, []string{"https://auth.production.example.com"}, cors.AllowedOrigins)
+	assert.True(t, cors.AllowCredentials)
+}
+
+func TestAuthCORS_Production_IgnoresExplicitAllowlist(t *testing.T) {
+	cfg := authRouterTestConfig()
+	cfg.App.Env = "production"
+	cfg.App.BaseURL = "https://auth.production.example.com"
+	cfg.App.AllowedOrigins = []string{"https://staging.example.com"}
+
+	assert.Equal(t, []string{"https://auth.production.example.com"}, authCORS(cfg).AllowedOrigins)
+}
+
+// TestAuthServiceRouter_NoWildcardCORSByDefault proves the fix end-to-end
+// through the real router: an arbitrary origin must NOT get
+// Access-Control-Allow-Origin back when CORS_ALLOWED_ORIGINS is unset.
+func TestAuthServiceRouter_NoWildcardCORSByDefault(t *testing.T) {
+	handlers := &fakeAuthHandlers{}
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	router := publicRouter(authRouterTestConfig(), handlers, nil, log)
+
+	req := httptest.NewRequest(http.MethodOptions, "/api/v1/auth/login", nil)
+	req.Header.Set("Origin", "https://evil.attacker.example")
+	req.Header.Set("Access-Control-Request-Method", "POST")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Empty(t, w.Header().Get("Access-Control-Allow-Origin"))
 }

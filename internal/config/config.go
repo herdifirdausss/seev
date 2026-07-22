@@ -201,8 +201,30 @@ type AppConfig struct {
 	WriteTimeout    time.Duration
 	IdleTimeout     time.Duration
 	ShutdownTimeout time.Duration
-	RateLimitRPS    int
-	AllowedOrigins  []string
+
+	// RateLimitRequests/RateLimitPer/RateLimitBurst configure the
+	// per-IP(+path) rate limiter (cmd/auth-service/router.go,
+	// internal/handler/router.go). Defaults (10 per minute) match this
+	// repo's original hardcoded values exactly — production behavior is
+	// unchanged unless these env vars are set. Needed as an override
+	// because this repo's own test harness (scripts/lib.sh) legitimately
+	// fires many requests per minute from ONE machine across many chaos/
+	// business-e2e/admin-e2e scenarios sharing that machine's one IP —
+	// traffic the port-keyed rate limiter used to (incorrectly) never
+	// actually enforce (docs/plan/49 TM-11). Now that it's fixed, the test
+	// harness needs its own realistic ceiling rather than production's.
+	RateLimitRequests int
+	RateLimitPer      time.Duration
+	RateLimitBurst    int
+
+	// AllowedOrigins is an explicit CORS origin allowlist read from
+	// CORS_ALLOWED_ORIGINS (comma-separated). Empty by default — this API
+	// is bearer-token only (no cookies set by auth-service/gateway), so an
+	// empty allowlist is the correct "API-only" default rather than a
+	// wildcard (docs/plan/49 TM-06). Only used outside production; in
+	// production CORS is pinned to App.BaseURL regardless (see
+	// authCORS/corsConfig).
+	AllowedOrigins []string
 
 	// InternalPort/InternalBindAddr configure the second HTTP listener that
 	// serves transaction types unsafe for direct end-user use, plus
@@ -418,6 +440,10 @@ func loadFromEnvMode(getenv func(string) string, requireRabbitMQ bool) (*Config,
 			InternalPort:      getWithDefault(getenv, "INTERNAL_APP_PORT", "8081"),
 			InternalBindAddr:  getWithDefault(getenv, "INTERNAL_APP_BIND_ADDR", "127.0.0.1"),
 			TrustProxyHeaders: parseBool(getenv("TRUST_PROXY_HEADERS"), false),
+			AllowedOrigins:    parseCommaList(getenv("CORS_ALLOWED_ORIGINS")),
+			RateLimitRequests: parseInt(getenv("RATE_LIMIT_REQUESTS"), 10),
+			RateLimitPer:      parseDuration(getenv("RATE_LIMIT_PER"), time.Minute),
+			RateLimitBurst:    parseInt(getenv("RATE_LIMIT_BURST"), 10),
 		},
 		Postgres: PostgresConfig{
 			Host:     getWithDefault(getenv, "POSTGRES_HOST", "localhost"),
@@ -679,6 +705,15 @@ func validate(cfg *Config, requireRabbitMQ bool, errs *[]string) error {
 		*errs = append(*errs, "JWT_SECRET must be at least 32 characters long")
 	}
 
+	// docs/plan/49 TM-07: issuer validation used to be skippable by simply
+	// leaving JWT_ISSUER unset, in every environment — a token signed with
+	// the right secret but any issuer (or none) was accepted. Fail closed
+	// at boot instead, mirroring JWT_SECRET above and the K5 internal-token
+	// fail-closed pattern.
+	if cfg.JWT.Issuer == "" {
+		*errs = append(*errs, "JWT_ISSUER must be set — issuer validation cannot be skipped")
+	}
+
 	if cfg.Vendor.MockvendorEnabled && cfg.Vendor.MockvendorSecret == "" {
 		*errs = append(*errs, "VENDOR_MOCKVENDOR_SECRET must be set when VENDOR_MOCKVENDOR_ENABLED=true — an empty HMAC secret would accept any signature")
 	}
@@ -792,9 +827,10 @@ func (c *Config) Warnings() []string {
 	if c.IsProduction() && c.App.InternalBindAddr == "0.0.0.0" {
 		warnings = append(warnings, "INTERNAL_APP_BIND_ADDR=0.0.0.0 in production — the internal ledger router (money_in, refund, withdraw settlement, /metrics, etc.) will be reachable from any network interface; ensure a firewall/security-group provides isolation instead")
 	}
-	if c.IsProduction() && c.JWT.Issuer == "" {
-		warnings = append(warnings, "JWT_ISSUER is empty in production — issuer validation is skipped, tokens from any issuer sharing the secret are accepted")
-	}
+	// docs/plan/49 TM-07: JWT_ISSUER emptiness used to be a soft warning
+	// here. It's now a hard validate() failure (see validate()), so by the
+	// time Warnings() runs post-Load() it can never be empty — no warning
+	// left to give.
 	return warnings
 }
 
@@ -805,6 +841,24 @@ func getWithDefault(getenv func(string) string, key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// parseCommaList splits a comma-separated env value into a trimmed,
+// non-empty slice. Returns nil (not an empty slice) when unset, so callers
+// can distinguish "not configured" from "configured empty" if that ever
+// matters (docs/plan/49 TM-06 — CORS_ALLOWED_ORIGINS uses this).
+func parseCommaList(s string) []string {
+	if s == "" {
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 func requireValue(getenv func(string) string, key string, errs *[]string) string {

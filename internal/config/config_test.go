@@ -26,6 +26,7 @@ func validEnv(overrides map[string]string) func(string) string {
 		"RABBITMQ_ROUTING_KEY": "app.routing",
 
 		"JWT_SECRET": "supersecretkeythatisatleast32chars!",
+		"JWT_ISSUER": "seev",
 	}
 	for k, v := range overrides {
 		base[k] = v
@@ -84,7 +85,7 @@ func TestLoadFromEnv_Defaults(t *testing.T) {
 
 	assert.Equal(t, 5*time.Minute, cfg.JWT.AccessExpiry)
 	assert.Equal(t, 7*24*time.Hour, cfg.JWT.RefreshExpiry)
-	assert.Equal(t, "", cfg.JWT.Issuer)
+	assert.Equal(t, "seev", cfg.JWT.Issuer)
 
 	assert.Equal(t, "info", cfg.Logger.Level)
 	assert.Equal(t, "json", cfg.Logger.Format)
@@ -220,6 +221,7 @@ func TestLoadFromEnv_MissingRequiredVars(t *testing.T) {
 	assert.Contains(t, err.Error(), "RABBITMQ_USERNAME")
 	assert.Contains(t, err.Error(), "RABBITMQ_PASSWORD")
 	assert.Contains(t, err.Error(), "JWT_SECRET")
+	assert.Contains(t, err.Error(), "JWT_ISSUER")
 }
 
 func TestLoadFromEnv_InvalidAppEnv(t *testing.T) {
@@ -260,6 +262,16 @@ func TestLoadFromEnv_JWTSecretTooShort(t *testing.T) {
 	}))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "JWT_SECRET")
+}
+
+func TestLoadFromEnv_MissingJWTIssuer(t *testing.T) {
+	// docs/plan/49 TM-07: JWT_ISSUER is now mandatory in every environment,
+	// not just a production warning — an empty issuer must fail boot.
+	_, err := loadFromEnv(validEnv(map[string]string{
+		"JWT_ISSUER": "",
+	}))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "JWT_ISSUER")
 }
 
 func TestLoadFromEnv_InvalidDurationFallsback(t *testing.T) {
@@ -371,13 +383,6 @@ func TestConfig_Warnings_Production_WildcardBind_Warns(t *testing.T) {
 	warnings := cfg.Warnings()
 	require.Len(t, warnings, 1)
 	assert.Contains(t, warnings[0], "INTERNAL_APP_BIND_ADDR")
-}
-
-func TestConfig_Warnings_Production_EmptyIssuer_Warns(t *testing.T) {
-	cfg := &Config{App: AppConfig{Env: "production", InternalBindAddr: "127.0.0.1"}, JWT: JWTConfig{Issuer: ""}}
-	warnings := cfg.Warnings()
-	require.Len(t, warnings, 1)
-	assert.Contains(t, warnings[0], "JWT_ISSUER")
 }
 
 func TestHelpers_ParseDuration(t *testing.T) {

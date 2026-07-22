@@ -37,7 +37,7 @@ func publicRouter(cfg *config.Config, handlers authHandlers, redisCache *cache.C
 	apiRoot := http.NewServeMux()
 	api := http.NewServeMux()
 
-	limiterConfig := cache.RateConfig{Requests: 10, Per: time.Minute, Burst: 10}
+	limiterConfig := cache.RateConfig{Requests: cfg.App.RateLimitRequests, Per: cfg.App.RateLimitPer, Burst: cfg.App.RateLimitBurst}
 	var limiter cache.Limiter
 	if redisCache != nil {
 		// docs/plan/45 Task T3/K4: fails over to an in-memory limiter at
@@ -109,9 +109,12 @@ func health(w http.ResponseWriter, _ *http.Request) {
 
 func authCORS(cfg *config.Config) middleware.CORSConfig {
 	cors := middleware.DefaultCORSConfig()
-	if cfg.IsProduction() {
+	switch {
+	case cfg.IsProduction():
 		cors.AllowedOrigins = []string{cfg.App.BaseURL}
 		cors.AllowCredentials = true
+	case len(cfg.App.AllowedOrigins) > 0:
+		cors.AllowedOrigins = cfg.App.AllowedOrigins
 	}
 	return cors
 }

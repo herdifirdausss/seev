@@ -19,22 +19,42 @@ const minTLSVersion = tls.VersionTLS12
 // SAN, never just "signed by our CA"). A connection from a validly-signed
 // certificate whose identity isn't on the list is rejected just as hard
 // as an unsigned one.
+//
+// ClientAuth is deliberately RequireAnyClientCert, not
+// RequireAndVerifyClientCert: the latter has Go's tls package verify the
+// client's chain against a ClientCAs pool fixed at construction time —
+// under this repo's short-lived leaves and rotate-in-place CA (K3/K9),
+// that pool would never see a rotated CA for the rest of the process's
+// life, permanently rejecting every legitimately-reissued client after a
+// single rotation (docs/plan/49 TM-13, found live by the T6 rotation
+// drill — cert files and CertSource's in-memory state were both correctly
+// current; only this static field was stale). VerifyConnection below does
+// the chain verification itself, reading src.CAPool() fresh on every
+// handshake — the same pattern ClientConfig already uses below.
 func ServerConfig(src *CertSource, allowedClientIdentities []string) *tls.Config {
 	allowed := toSet(allowedClientIdentities)
 	return &tls.Config{
 		MinVersion:     minTLSVersion,
 		GetCertificate: src.GetCertificate,
-		ClientAuth:     tls.RequireAndVerifyClientCert,
-		ClientCAs:      src.CAPool(),
+		ClientAuth:     tls.RequireAnyClientCert,
 		VerifyConnection: func(cs tls.ConnectionState) error {
-			// ClientCAs above is a snapshot from construction time; a CA
-			// rotation is picked up on identity checks via CAPool() being
-			// re-read here would require rebuilding the chain, which Go's
-			// tls package already did against the ClientCAs pool in effect
-			// for THIS handshake. Full CA hot-rotation is a T6 concern
-			// (rotate CA -> reissue leaves -> old leaves stop verifying);
-			// this function's job is strictly the identity allowlist.
-			return verifyPeerIdentity(cs, allowed)
+			if err := verifyChainAgainst(cs, src.CAPool(), x509.ExtKeyUsageClientAuth); err != nil {
+				// The chain never verified, so the peer's claimed identity
+				// cannot be trusted — see handshakeFailuresTotal's doc
+				// comment on why "unknown" is used here, never a value
+				// taken from the unverified certificate itself.
+				handshakeFailuresTotal.WithLabelValues("unknown", "untrusted_ca").Inc()
+				return err
+			}
+			if err := verifyPeerIdentity(cs, allowed); err != nil {
+				// The chain DID verify here, so this identity was signed
+				// by our own CA — it comes from certgen's closed
+				// knownServices set (K3), safe as a label value.
+				id, _ := identityOf(cs.PeerCertificates[0])
+				handshakeFailuresTotal.WithLabelValues(id, "identity_not_allowed").Inc()
+				return err
+			}
+			return nil
 		},
 	}
 }
@@ -47,21 +67,27 @@ func ClientConfig(src *CertSource, expectedServerIdentity string) *tls.Config {
 	return &tls.Config{
 		MinVersion:           minTLSVersion,
 		GetClientCertificate: src.GetClientCertificate,
-		RootCAs:              src.CAPool(),
+		// No RootCAs field: it would be a snapshot fixed at construction
+		// time, same trap ServerConfig's old ClientCAs field fell into
+		// (docs/plan/49 TM-13) — and it would go entirely unused anyway,
+		// since InsecureSkipVerify below disables Go's built-in
+		// verification path that RootCAs feeds. VerifyConnection calls
+		// src.CAPool() itself, fresh on every handshake, instead.
+		//
 		// ServerName is required by crypto/tls to run its own default
 		// hostname verification against the leaf's DNS SANs; this repo's
 		// leaves carry no DNS SANs at all (identity is the URI SAN only,
 		// docs/plan/49 K3/K4), so default verification would always fail.
-		// VerifyConnection performs the ACTUAL identity check below
-		// instead — skip the built-in hostname check, not the whole
-		// handshake's trust verification (RootCAs above still applies).
+		// VerifyConnection performs the ACTUAL identity + trust check
+		// below instead — skip the built-in check entirely, not just the
+		// hostname part of it.
 		InsecureSkipVerify: true,
 		VerifyConnection: func(cs tls.ConnectionState) error {
 			// InsecureSkipVerify above disables Go's ENTIRE built-in
 			// verification (not just hostname matching) — cs.VerifiedChains
 			// is always nil in that mode, so chain trust has to be checked
 			// here manually before the identity check means anything.
-			if err := verifyChainAgainst(cs, src.CAPool()); err != nil {
+			if err := verifyChainAgainst(cs, src.CAPool(), x509.ExtKeyUsageServerAuth); err != nil {
 				return err
 			}
 			return verifyPeerIdentity(cs, allowed)
@@ -81,11 +107,11 @@ func HTTPClient(src *CertSource, expectedServerIdentity string, timeout time.Dur
 }
 
 // verifyChainAgainst manually verifies the peer's certificate chain
-// against roots — the client-side counterpart to what Go's tls package
-// would have done automatically if InsecureSkipVerify were false (which
-// it must be here; see ClientConfig's comment on why default hostname
-// verification can never succeed against this repo's URI-only SANs).
-func verifyChainAgainst(cs tls.ConnectionState, roots *x509.CertPool) error {
+// against roots for the given usage — read fresh from CertSource.CAPool()
+// by both callers below, so a CA rotation is honored on the very next
+// handshake rather than a snapshot frozen at *tls.Config construction
+// time (docs/plan/49 TM-13).
+func verifyChainAgainst(cs tls.ConnectionState, roots *x509.CertPool, usage x509.ExtKeyUsage) error {
 	if len(cs.PeerCertificates) == 0 {
 		return fmt.Errorf("tlsx: no peer certificate presented")
 	}
@@ -97,10 +123,10 @@ func verifyChainAgainst(cs tls.ConnectionState, roots *x509.CertPool) error {
 	opts := x509.VerifyOptions{
 		Roots:         roots,
 		Intermediates: intermediates,
-		KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		KeyUsages:     []x509.ExtKeyUsage{usage},
 	}
 	if _, err := leaf.Verify(opts); err != nil {
-		return fmt.Errorf("tlsx: server certificate chain verification failed: %w", err)
+		return fmt.Errorf("tlsx: peer certificate chain verification failed: %w", err)
 	}
 	return nil
 }

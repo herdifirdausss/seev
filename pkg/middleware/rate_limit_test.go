@@ -108,6 +108,51 @@ func TestRateLimitByUser_NoUserInContext_FallsBackToIP(t *testing.T) {
 	assert.NotPanics(t, func() {
 		key := RateLimitByUser(req)
 		assert.Equal(t, RateLimitByIP(req), key)
-		assert.Equal(t, "rl:ip:203.0.113.5:1234", key)
+		assert.Equal(t, "rl:ip:203.0.113.5", key)
 	})
+}
+
+// ─── RateLimitByIP / RateLimitByIPAndPath port stripping (docs/plan/49 TM-11) ──
+
+// TestRateLimitByIP_StripsEphemeralPort proves the TM-11 fix: a client that
+// opens a new TCP connection for every request (new ephemeral source port)
+// must still land on the SAME rate-limit bucket, or the limiter is trivially
+// bypassed by never reusing a connection.
+func TestRateLimitByIP_StripsEphemeralPort(t *testing.T) {
+	req1 := httptest.NewRequest(http.MethodGet, "/", nil)
+	req1.RemoteAddr = "203.0.113.5:1234"
+
+	req2 := httptest.NewRequest(http.MethodGet, "/", nil)
+	req2.RemoteAddr = "203.0.113.5:59999"
+
+	key1 := RateLimitByIP(req1)
+	key2 := RateLimitByIP(req2)
+
+	assert.Equal(t, key1, key2, "same client IP with different ephemeral ports must share one rate-limit bucket")
+	assert.Equal(t, "rl:ip:203.0.113.5", key1)
+}
+
+func TestRateLimitByIPAndPath_StripsEphemeralPort(t *testing.T) {
+	req1 := httptest.NewRequest(http.MethodGet, "/login", nil)
+	req1.RemoteAddr = "203.0.113.5:1234"
+
+	req2 := httptest.NewRequest(http.MethodGet, "/login", nil)
+	req2.RemoteAddr = "203.0.113.5:59999"
+
+	assert.Equal(t, RateLimitByIPAndPath(req1), RateLimitByIPAndPath(req2))
+	assert.Equal(t, "rl:203.0.113.5:/login", RateLimitByIPAndPath(req1))
+}
+
+// TestRateLimitByIP_DoesNotTrustForwardedHeaders proves the fix deliberately
+// does NOT honor X-Forwarded-For/X-Real-Ip: those are client-suppliable, and
+// trusting them here would let an attacker rotate the rate-limit key on every
+// request just by changing a header — an easier bypass than the ephemeral
+// port rotation this fix closes.
+func TestRateLimitByIP_DoesNotTrustForwardedHeaders(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.RemoteAddr = "203.0.113.5:1234"
+	req.Header.Set("X-Forwarded-For", "198.51.100.1")
+	req.Header.Set("X-Real-Ip", "198.51.100.2")
+
+	assert.Equal(t, "rl:ip:203.0.113.5", RateLimitByIP(req))
 }

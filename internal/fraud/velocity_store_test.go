@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herdifirdausss/seev/internal/fraud/model"
+	"github.com/herdifirdausss/seev/pkg/cache"
 )
 
 func newTestFailClosedStore(t *testing.T) (*FailClosedVelocityStore, *miniredis.Miniredis) {
@@ -74,6 +75,54 @@ func TestFailClosedVelocityStore_RedisDown_SubsequentCallsFailFastWithoutRetryin
 	elapsed := time.Since(start)
 	require.ErrorIs(t, err, model.ErrDependencyUnavailable)
 	assert.Less(t, elapsed, 50*time.Millisecond, "a degraded store must fail fast, not re-attempt Redis per call")
+}
+
+// hangingVelocityStore simulates a Redis connection attempt that never
+// resolves on its own — the network-black-hole failure mode a `docker
+// stop`'d Redis container can actually produce (no RST, no response,
+// unlike the fast connection-refused a locally-closed miniredis gives),
+// which is what let this exact bug pass unit tests while failing live
+// (docs/plan/49 T6, found by the isolated GATE 3 chaos scenario 9 run).
+// It only ever returns by respecting ctx cancellation, exactly like a real
+// redis.Client call would.
+type hangingVelocityStore struct{}
+
+func (hangingVelocityStore) Get(ctx context.Context, key string) (int64, error) {
+	<-ctx.Done()
+	return 0, ctx.Err()
+}
+
+func (hangingVelocityStore) Record(ctx context.Context, eventID, counterKey string, ttl time.Duration) error {
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+// TestFailClosedVelocityStore_SlowFirstAttempt_FailsClosedWithinBudget
+// proves the actual fix: Get/Record must return ErrDependencyUnavailable
+// within redisAttemptTimeout even on the VERY FIRST call after an outage,
+// while the switcher is still (stale-)Healthy and would otherwise let a
+// hanging connection attempt eat the caller's entire remaining deadline —
+// exactly the race that made a real fraud-service call blow through
+// pkg/fraudcheck's 500ms screenTimeout and fall through to fail-OPEN
+// instead of fail-closed.
+func TestFailClosedVelocityStore_SlowFirstAttempt_FailsClosedWithinBudget(t *testing.T) {
+	switcher := cache.NewRedisHealthSwitcher("fraud_velocity_test", func(context.Context) error { return nil }, nil)
+	t.Cleanup(switcher.Stop)
+	store := &FailClosedVelocityStore{switcher: switcher, redis: hangingVelocityStore{}}
+
+	// A generous caller deadline standing in for pkg/fraudcheck's real
+	// 500ms screenTimeout — the point is proving THIS call returns much
+	// sooner than that, bounded by redisAttemptTimeout, not that it merely
+	// respects the outer deadline eventually.
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	_, err := store.Get(ctx, "user:key")
+	elapsed := time.Since(start)
+
+	require.ErrorIs(t, err, model.ErrDependencyUnavailable)
+	assert.Less(t, elapsed, 250*time.Millisecond, "a slow/hanging first Redis attempt must fail closed well within the caller's 500ms budget, not consume all of it")
 }
 
 // Recovery hysteresis itself (two consecutive successful background

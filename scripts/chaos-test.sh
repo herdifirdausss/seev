@@ -922,6 +922,15 @@ scenario_9() {
 	export SCREENING_AMOUNT_THRESHOLD=100000000
 	export SCREENING_VELOCITY_MAX_PER_HOUR=1000
 	export POLICY_CACHE_TTL=2s
+	# docs/plan/49 TM-11: this scenario's own burst-of-11 test below
+	# specifically needs the limiter to trip WITHIN 11 requests (a mix of
+	# some 2xx, some 429) to prove enforcement — lib.sh's default harness-
+	# wide override (500/min, sized so OTHER scenarios' legitimate traffic
+	# never trips it) would let all 11 through. Scope this back down to
+	# just this scenario's own server processes.
+	export RATE_LIMIT_REQUESTS=10
+	export RATE_LIMIT_PER=1m
+	export RATE_LIMIT_BURST=10
 	ensure_deps_up
 	# Durable per-rule modes override SCREENING_MODE. Explicitly enable the
 	# velocity rule for this Redis-dependency proof; otherwise the migration's
@@ -995,16 +1004,15 @@ scenario_9() {
 		|| ok "redis confirmed unreachable before proceeding"
 
 	log "-- Redis down: rate limiter must keep enforcing from memory (burst of 11 topup-intent creates) --"
-	# RateLimitByIPAndPath keys on r.RemoteAddr, which includes the ephemeral
-	# source port (pkg/middleware/rate_limit.go:73) — 11 SEPARATE curl
-	# invocations would each open its own TCP connection and land on 11
-	# different keys, never actually exercising the SAME bucket. Chaining 11
-	# request specs with --next inside ONE curl invocation reuses a single
-	# persistent HTTP/1.1 connection (same source port throughout, verified
-	# against a real net/http keep-alive server while writing this scenario)
-	# while still giving one clean %{http_code} line per request — every
-	# request lands on the identical rate-limit key, the way one real client
-	# reusing a connection would.
+	# RateLimitByIPAndPath keys on the client IP with the ephemeral source
+	# port stripped (docs/plan/49 TM-11 — pkg/middleware/rate_limit.go)
+	# now, so 11 separate curl invocations would already land on the same
+	# bucket regardless. Still chaining them with --next inside ONE curl
+	# invocation over a single persistent HTTP/1.1 connection (same source
+	# port throughout, verified against a real net/http keep-alive server
+	# while writing this scenario) — the strongest, most direct proof this
+	# scenario can give: byte-identical to one real client reusing a
+	# connection, independent of which dimension the key happens to use.
 	local i rl_success=0 rl_429=0 rl_args=() rl_output
 	for i in $(seq 1 11); do
 		rl_args+=(-s -o /dev/null -w '%{http_code}\n' -X POST \

@@ -51,6 +51,13 @@ the verification workflow.
 - Preserve request authentication and authorization at public and internal
   boundaries. Internal gRPC authentication is not a replacement for user
   authorization.
+- Every internal hop (gRPC and internal HTTP, across all eight services) is
+  mutually authenticated with a SPIFFE-style URI SAN identity (pkg/tlsx,
+  cmd/certgen — docs/plan/49). Identity is the URI SAN, never a Common Name
+  or "signed by our CA" alone; a new hop must be added to its listener's
+  allowlist explicitly, not inferred. Certificates are short-lived and
+  rotate via `certgen rotate` (docs/runbooks/cert-rotation.md); never
+  extend a leaf's TTL as a workaround for a missed rotation.
 - Keep public logs free of raw credentials, full idempotency keys, and other
   replayable values. Reuse pkg/logger masking helpers.
 - Validate webhook signatures before any state change.

@@ -135,6 +135,12 @@ Dua framing kunci:
 
 ### A6 — Keamanan internal: mTLS, identitas service, secrets, threat model
 
+> **Status: ✅ SELESAI → dokumen eksekusi [49](49-a6-internal-security.md)**
+> (T1–T6 + GATE 3 project Compose terisolasi hijau, 2026-07-22; tiga
+> keputusan user — secrets = Vault dev-mode, CA = mini-CA Go + SPIFFE-style
+> URI SAN, lingkup mTLS = gRPC + HTTP internal penuh — di pembuka 49.
+> Prasyarat C1 "A6 wajib sebelum C1" kini terpenuhi).
+
 - **Tujuan bisnis**: network internal bukan trust boundary yang cukup untuk uang; review keamanan adalah prasyarat membuka surface partner B2B (C1).
 - **Nilai belajar**: mTLS + rotasi sertifikat (SPIFFE-ish), secrets management (sops/age atau Vault dev), threat modeling STRIDE atas arsitektur riil, latihan review ala pentest.
 - **Trigger**: setelah 36–41; **wajib sebelum C1** — jangan buka surface merchant sebelum ini.

@@ -102,6 +102,27 @@ func writeTestPEM(t *testing.T, path, blockType string, der []byte) {
 	}
 }
 
+// loadTestCert reads and parses a single PEM-encoded certificate from
+// path — used where a test needs the parsed *x509.Certificate itself
+// (e.g. to Verify it against a CertSource's live CAPool), not just a
+// tls.Certificate for a handshake.
+func loadTestCert(t *testing.T, path string) *x509.Certificate {
+	t.Helper()
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	block, _ := pem.Decode(raw)
+	if block == nil {
+		t.Fatalf("%s contains no PEM block", path)
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		t.Fatalf("parse %s: %v", path, err)
+	}
+	return cert
+}
+
 func randomSerialForTest(t *testing.T) *big.Int {
 	t.Helper()
 	limit := new(big.Int).Lsh(big.NewInt(1), 128)

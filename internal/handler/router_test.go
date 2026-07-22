@@ -22,8 +22,11 @@ import (
 func testConfig() *config.Config {
 	return &config.Config{
 		App: config.AppConfig{
-			Env:     "development",
-			BaseURL: "http://localhost:8080",
+			Env:               "development",
+			BaseURL:           "http://localhost:8080",
+			RateLimitRequests: 10,
+			RateLimitPer:      time.Minute,
+			RateLimitBurst:    10,
 		},
 		JWT: config.JWTConfig{
 			Secret:       "supersecretkeythatisatleast32chars!",
@@ -259,10 +262,21 @@ func TestRouter_SecurityHeadersPresent(t *testing.T) {
 
 // ─── Production CORS config ───────────────────────────────────────────────────
 
-func TestCORSConfig_Development(t *testing.T) {
+func TestCORSConfig_Development_NoOriginsConfigured(t *testing.T) {
+	// docs/plan/49 TM-06: no wildcard by default — this API is bearer-token
+	// only, so an unconfigured origin allowlist must deny cross-origin
+	// access rather than echo "*" back to any caller.
 	cfg := testConfig()
 	cors := corsConfig(cfg)
-	assert.Contains(t, cors.AllowedOrigins, "*")
+	assert.Empty(t, cors.AllowedOrigins)
+}
+
+func TestCORSConfig_Development_ExplicitAllowlist(t *testing.T) {
+	cfg := testConfig()
+	cfg.App.AllowedOrigins = []string{"https://staging.example.com"}
+
+	cors := corsConfig(cfg)
+	assert.Equal(t, []string{"https://staging.example.com"}, cors.AllowedOrigins)
 }
 
 func TestCORSConfig_Production(t *testing.T) {
@@ -273,6 +287,19 @@ func TestCORSConfig_Production(t *testing.T) {
 	cors := corsConfig(cfg)
 	assert.Equal(t, []string{"https://production.example.com"}, cors.AllowedOrigins)
 	assert.True(t, cors.AllowCredentials)
+}
+
+func TestCORSConfig_Production_IgnoresExplicitAllowlist(t *testing.T) {
+	// Production always pins to BaseURL — CORS_ALLOWED_ORIGINS is a
+	// non-production convenience only, so it must not widen the production
+	// allowlist even if left set from a shared .env.
+	cfg := testConfig()
+	cfg.App.Env = "production"
+	cfg.App.BaseURL = "https://production.example.com"
+	cfg.App.AllowedOrigins = []string{"https://staging.example.com"}
+
+	cors := corsConfig(cfg)
+	assert.Equal(t, []string{"https://production.example.com"}, cors.AllowedOrigins)
 }
 
 // ─── Internal router (docs/plan/10 Task T1) ────────────────────────────────────
@@ -318,7 +345,7 @@ func TestRouter_NilCache_FallsBackToMemoryLimiter_StillServesRequests(t *testing
 }
 
 func TestBuildRateLimiter_NilCache_ReturnsMemoryLimiter(t *testing.T) {
-	limiter := buildRateLimiter(&Dependencies{Cache: nil}, slog.Default())
+	limiter := buildRateLimiter(testConfig(), &Dependencies{Cache: nil}, slog.Default())
 	_, ok := limiter.(*cache.MemoryRateLimiter)
 	assert.True(t, ok, "expected *cache.MemoryRateLimiter when deps.Cache is nil")
 }
@@ -335,7 +362,7 @@ func TestBuildRateLimiter_WithCache_ReturnsFailoverLimiter(t *testing.T) {
 			},
 		},
 	}
-	limiter := buildRateLimiter(deps, slog.Default())
+	limiter := buildRateLimiter(testConfig(), deps, slog.Default())
 	failover, ok := limiter.(*cache.FailoverLimiter)
 	assert.True(t, ok, "expected *cache.FailoverLimiter when deps.Cache is set")
 	if ok {

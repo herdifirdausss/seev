@@ -214,6 +214,10 @@ func (s *CertSource) reload() error {
 	s.caPool = pool
 	s.identity = id
 	s.certMod, s.keyMod, s.caMod = certMod, keyMod, caMod
+	// docs/plan/49 K10: reported on every successful reload, including the
+	// initial load — a rotated-in leaf's new expiry must overwrite the
+	// previous value under the same identity label, never accumulate.
+	certExpirySeconds.WithLabelValues(id).Set(float64(leaf.NotAfter.Unix()))
 	return nil
 }
 

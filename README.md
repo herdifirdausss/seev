@@ -184,5 +184,5 @@ service boundaries, security controls, or verification scripts.
 - [Project guide](PROJECT_GUIDE.md) — contributor rules and verification workflow
 - [Plan index](docs/plan/README.md) — implementation history and future roadmap
 - [Event contract](docs/events.md) — versioned ledger event payloads
-- [Runbooks](docs/runbooks/) — reconciliation, integrity, disaster recovery, and reporting operations
+- [Runbooks](docs/runbooks/) — reconciliation, integrity, disaster recovery, reporting, and mTLS/secrets operations
 - [Scheduler guide](pkg/scheduler/README.md) — shared cron scheduler API and behavior

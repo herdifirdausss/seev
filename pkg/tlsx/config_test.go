@@ -1,8 +1,10 @@
 package tlsx
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"io"
 	"path/filepath"
 	"testing"
@@ -201,4 +203,126 @@ func TestClientConfig_RejectsCertFromUntrustedCA(t *testing.T) {
 		t.Fatal("dial trusting the wrong CA unexpectedly succeeded")
 	}
 	_ = result()
+}
+
+// TestServerConfig_HotRotatesCAWithoutRebuildingConfig proves the docs/plan/49
+// TM-13 fix, found live by the T6 rotation drill (scripts/rotation-drill.sh):
+// ServerConfig used to snapshot ClientCAs at construction time, so a CA
+// rotation was invisible to already-built listeners for the rest of the
+// process's life — a client reissued under the new CA was permanently
+// rejected until the server itself restarted. This builds the *tls.Config
+// exactly ONCE and never reconstructs it, proving the SAME value both (a)
+// accepts a client reissued under a newly-rotated CA, and (b) rejects a
+// client cert that predates the rotation.
+func TestServerConfig_HotRotatesCAWithoutRebuildingConfig(t *testing.T) {
+	dir := t.TempDir()
+	ca1 := newTestCA(t)
+	ca1.writeTo(t, dir)
+	ca1.issue(t, dir, "ledger", IdentityLedger, time.Hour)
+	ca1.issue(t, dir, "gateway", IdentityGateway, time.Hour)
+
+	const fastPoll = 20 * time.Millisecond
+	ledgerSrc, err := newCertSource(filepath.Join(dir, "ledger.pem"), filepath.Join(dir, "ledger-key.pem"), filepath.Join(dir, "ca.pem"), nil, fastPoll)
+	if err != nil {
+		t.Fatalf("NewCertSource(ledger): %v", err)
+	}
+	defer ledgerSrc.Stop()
+	gatewaySrc, err := newCertSource(filepath.Join(dir, "gateway.pem"), filepath.Join(dir, "gateway-key.pem"), filepath.Join(dir, "ca.pem"), nil, fastPoll)
+	if err != nil {
+		t.Fatalf("NewCertSource(gateway): %v", err)
+	}
+	defer gatewaySrc.Stop()
+
+	// Built ONCE, before any rotation, and never reconstructed again.
+	serverCfg := ServerConfig(ledgerSrc, []string{IdentityGateway})
+
+	addr, result := listenTLS(t, serverCfg)
+	if err := dial(addr, ClientConfig(gatewaySrc, IdentityLedger)); err != nil {
+		t.Fatalf("pre-rotation dial failed: %v", err)
+	}
+	if err := result(); err != nil {
+		t.Fatalf("pre-rotation server-side handshake failed: %v", err)
+	}
+
+	// A STATIC copy of the pre-rotation gateway cert/key, loaded once and
+	// never refreshed — stands in for a leaked or simply un-reissued old
+	// credential, the "old cert rejected" half of K9's proof.
+	oldCert, err := tls.LoadX509KeyPair(filepath.Join(dir, "gateway.pem"), filepath.Join(dir, "gateway-key.pem"))
+	if err != nil {
+		t.Fatalf("load pre-rotation gateway cert: %v", err)
+	}
+	oldClientCfg := &tls.Config{
+		MinVersion:           minTLSVersion,
+		GetClientCertificate: func(*tls.CertificateRequestInfo) (*tls.Certificate, error) { return &oldCert, nil },
+		InsecureSkipVerify:   true, //nolint:gosec // test-only: identical rationale to ClientConfig above (no DNS SAN to verify)
+		VerifyConnection: func(cs tls.ConnectionState) error {
+			return verifyChainAgainst(cs, ledgerSrc.CAPool(), x509.ExtKeyUsageServerAuth)
+		},
+	}
+
+	// Rotate: a brand new CA, ledger+gateway both reissued under it, IN
+	// PLACE at the same file paths both CertSources are already watching.
+	time.Sleep(1100 * time.Millisecond) // clear the mtime-granularity floor
+	ca2 := newTestCA(t)
+	ca2.writeTo(t, dir)
+	ca2.issue(t, dir, "ledger", IdentityLedger, time.Hour)
+	ca2.issue(t, dir, "gateway", IdentityGateway, time.Hour)
+
+	// Both CertSources poll independently on their own timers, and each
+	// reload() only updates cert+key+CAPool together once ALL THREE of
+	// its OWN files read back consistently — but ledgerSrc's CAPool and
+	// gatewaySrc's OWN presented leaf are two INDEPENDENT CertSources'
+	// state, converging on separate poll cycles. Wait for both cheaply,
+	// in-memory: not a real dial loop, which would otherwise open (and,
+	// under t.Cleanup, only close at the very end of the test) one TCP
+	// listener per retry and made this test flaky under full-suite
+	// parallel load.
+	newGatewayLeaf := loadTestCert(t, filepath.Join(dir, "gateway.pem"))
+	waitUntil := func(desc string, condition func() bool) {
+		t.Helper()
+		deadline := time.Now().Add(3 * time.Second)
+		for time.Now().Before(deadline) {
+			if condition() {
+				return
+			}
+			time.Sleep(fastPoll)
+		}
+		t.Fatalf("%s: condition never became true within the deadline", desc)
+	}
+	// ledgerSrc's CAPool must trust the new leaf (this is what ServerConfig's
+	// VerifyConnection checks against when verifying an incoming client).
+	waitUntil("ledgerSrc CAPool trusts the rotated CA", func() bool {
+		_, err := newGatewayLeaf.Verify(x509.VerifyOptions{Roots: ledgerSrc.CAPool(), KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}})
+		return err == nil
+	})
+	// gatewaySrc must actually be PRESENTING the new leaf itself — its own
+	// CAPool trusting ca2 is a different, independently-converging fact
+	// from whether its cert+key have finished reloading to match.
+	waitUntil("gatewaySrc presents the rotated leaf", func() bool {
+		presented, err := gatewaySrc.GetClientCertificate(nil)
+		if err != nil || len(presented.Certificate) == 0 {
+			return false
+		}
+		return bytes.Equal(presented.Certificate[0], newGatewayLeaf.Raw)
+	})
+
+	// Both sources have settled on the new CA — the same serverCfg value,
+	// still never rebuilt, must now accept a client reissued under it.
+	addr, result = listenTLS(t, serverCfg)
+	if err := dial(addr, ClientConfig(gatewaySrc, IdentityLedger)); err != nil {
+		t.Fatalf("post-rotation dial with a freshly-reissued client cert failed (ClientCAs frozen at construction time?): %v", err)
+	}
+	if err := result(); err != nil {
+		t.Fatalf("post-rotation server-side handshake failed for a freshly-reissued client: %v", err)
+	}
+
+	// ...and the OLD (pre-rotation) client cert must now be rejected,
+	// using that exact same serverCfg value.
+	addr, result = listenTLS(t, serverCfg)
+	if err := dial(addr, oldClientCfg); err == nil {
+		t.Fatal("dial with a pre-rotation client cert unexpectedly succeeded after CA rotation")
+	}
+	if err := result(); err == nil {
+		t.Fatal("server accepted a pre-rotation client cert after CA rotation — old cert was not rejected")
+	}
 }

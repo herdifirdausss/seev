@@ -317,6 +317,37 @@ func TestReadBody_TruncatesAtMax(t *testing.T) {
 	}
 }
 
+// TestReadBody_RestoresFullBodyDespiteLogTruncation proves docs/plan/49
+// TM-12: a body far larger than the log-line `max` must still be read in
+// FULL by whatever reads r.Body next — the previous implementation
+// silently truncated r.Body itself to `max`, corrupting any downstream
+// HMAC signature check or multipart parse for a body that was legitimately
+// within its OWN handler's larger limit (e.g. the ledger reconciliation
+// CSV upload's 10MiB cap).
+func TestReadBody_RestoresFullBodyDespiteLogTruncation(t *testing.T) {
+	full := strings.Repeat("x", 50_000) // far past the 16KiB log-line max
+	req := makeRequest(full, "text/plain", "")
+
+	logCopy, err := readBody(req, 16*1024)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(logCopy) != 16*1024 {
+		t.Errorf("log copy: expected exactly 16KiB, got %d", len(logCopy))
+	}
+
+	restored, err := io.ReadAll(req.Body)
+	if err != nil {
+		t.Fatalf("reading restored r.Body: %v", err)
+	}
+	if len(restored) != len(full) {
+		t.Fatalf("r.Body restored with %d bytes, want the full %d — downstream handler would see a corrupted/truncated body", len(restored), len(full))
+	}
+	if string(restored) != full {
+		t.Fatal("r.Body restored with different content than the original request")
+	}
+}
+
 // ─────────────────────────────────────────────────────────────
 // ReadAndMaskRequestBody
 // ─────────────────────────────────────────────────────────────
