@@ -730,7 +730,221 @@ visible, and manual and scheduled paths use the same implementation.
 
 ### Result
 
-_Pending implementation._
+**1. `cmd/backup-agent` — new Go binary, new `internal/backupagent` package.**
+mTLS identity `spiffe://seev/backup-agent` added to `pkg/tlsx/identity.go`,
+registered in `cmd/certgen`'s `knownServices`, and added to the `make
+certs`/`scripts/lib.sh generate_certs()` fixed service lists. The agent
+runs `pgbackrest` itself — co-located with Postgres by sharing two named
+volumes (`seev_postgres_data` read-only, and a new `seev_backup_socket`
+carrying the Unix socket directory), never a separate SSH/TLS "pg1-host"
+remote-protocol topology; `pg1-host` stays unset in
+`deploy/backup/pgbackrest.conf`, exactly as it already was for T1's
+in-container manual path. `deploy/backup/agent.Dockerfile` is a new
+multi-stage build: a `golang:1.25.12-alpine` builder stage (matching the
+root `Dockerfile`'s own build exactly) compiling `./cmd/backup-agent`,
+layered onto the same pinned `postgres:16.14-alpine@sha256:57c72fd2...`
++ `pgbackrest=2.58.0-r0` base T1's own image uses (intentionally
+duplicated rather than built `FROM` that image, to avoid a Compose
+build-order dependency — the two Dockerfiles are cross-referenced by
+comment and must be kept in sync by hand).
+
+**2. K4 policy implemented via `pkg/scheduler`, not a hand-rolled ticker.**
+`(*Agent).StartScheduler` registers two cron jobs —
+`"10 2 * * 0"` (full, Sunday) and `"10 2 * * 1-6"` (differential,
+Monday-Saturday) — against a
+`scheduler.NewScheduler(..., scheduler.WithLocation(jakartaLoc))`, with `scheduler.WithJobTimeout`
+bounding each job (1h full / 20m diff, generous for this lab-scale
+database — tune before any larger deployment, per §8). Overlap rejection
+and graceful shutdown come from `pkg/scheduler` itself
+(`scheduler.NewMemoryLock`, already used identically elsewhere in this
+repo — `internal/adminbff/module.go`, `internal/ledger/worker/*.go`) —
+this task did not re-implement or re-test that package's own lock
+correctness, only verified it was wired correctly (see Result 5 below).
+Both cron specs are env-overridable
+(`BACKUP_FULL_CRON`/`BACKUP_DIFF_CRON`, defaulting to the exact K4 spec)
+— added specifically so the scheduled path itself could be verified live
+without waiting on wall-clock time, and left in as a genuine operator
+knob.
+
+**3. Manual and scheduled paths share one implementation
+(`internal/backupagent/pgbackrest.go`'s `RunBackup`).** Both the cron
+job's closure and a new `backup-agent backup-full`/`backup-diff` CLI
+subcommand (an operator escape hatch — e.g. right before a risky
+migration, without waiting for the next cron window) call the exact same
+`(*Agent).RunBackup`, which runs `backup` → (on success only) `check` →
+`expire` → the K6 manifest write, in that order, matching K4's "expire
+only after backup and check succeed." T1's Makefile targets
+(`backup-full`/`backup-diff`/`backup-check`/`backup-status`/`backup-expire`,
+still `docker compose exec`-ing into the `postgres` container) are
+unchanged and still work — this task adds a second, automated invocation
+path against the same `pgbackrest.conf`/stanza/repository, not a
+replacement.
+
+**4. K6 manifest generation reimplemented natively in Go
+(`internal/backupagent/manifest.go`), not a shared script call.**
+`scripts/backup-manifest.sh` runs on the *host* (uses `docker compose
+exec` and a local `.git` checkout for the commit/dirty-tree fields) and
+cannot run inside backup-agent's own container. The Go version queries
+all eight `schema_migrations_<service>` tables directly over a plain
+`seev_backup`-role libpq connection to `postgres:5432` (a normal network
+query — distinct from pgBackRest's own local-file/socket access to
+PGDATA), and reports `repository_git_commit` from a `GIT_COMMIT` build
+arg baked in at image-build time (mirrors the root `Dockerfile`'s
+`REVISION` label convention) rather than a live `git diff --quiet`, since
+a built image has no working tree to inspect — `repository_dirty` is
+therefore always `false` on this automated path, documented in code as a
+real, inherent difference from the manual script (which still owns dirty-
+tree detection for ad hoc host-side runs). Both manifest writers produce
+the same JSON schema and the same atomic temp-file-then-rename write.
+
+**5. Live verification — isolated `seev-plan50-t2-test` Compose project,
+never the real dev stack (confirmed via `docker ps`/`docker compose ls`
+before and after: empty).** Built both images, bootstrapped
+`seev_backup`/stanza exactly as T1 documented, then:
+
+- Started `backup-agent` under `--profile backup`; `docker compose ps`
+  reported `healthy` and `backup-agent -healthcheck` (the same binary,
+  Docker `HEALTHCHECK` convention) exited 0.
+- **Real bug found and fixed:** `PGBACKREST_CONFIG_PATH` and
+  `PGBACKREST_REPO1_CIPHER_PASS_FILE` — the env var names originally
+  chosen for backup-agent's *own* config — collided with pgBackRest's own
+  convention of scanning its process environment for any
+  `PGBACKREST_<OPTION>`-shaped variable. `pgbackrest info` failed with
+  `unable to list file info for path
+  '/etc/pgbackrest/pgbackrest.conf/conf.d'` (it had silently reinterpreted
+  `PGBACKREST_CONFIG_PATH`'s *file* path as its own `config-path`
+  *directory* option) plus a `WARN: environment contains invalid option
+  'repo1-cipher-pass-file'`. Renamed both to `BACKUP_PGBACKREST_CONF` /
+  `BACKUP_REPO_PASSPHRASE_FILE` (neither starts with `PGBACKREST_`);
+  re-verified clean.
+- **Real bug found and fixed:** `pgbackrest info --output=json`'s
+  `db[].system-id` is a JSON *number*
+  (`7665409899274346531`, within `int64` range), not a string — the Go
+  struct originally declared it `string` and `json.Unmarshal` failed
+  outright (`cannot unmarshal number into Go struct field`). Changed to
+  `int64` in both `pgbackrestInfo` and the manifest's
+  `system_identifier` field (matching what `scripts/backup-manifest.sh`'s
+  Python already produces — a JSON number, not a string, once
+  round-tripped through `json.dump`).
+- Ran `backup-agent backup-full` via the CLI escape hatch: succeeded,
+  wrote `20260722-175240F.json` with every field populated correctly —
+  `encryption_enabled: true`, `cipher_type: "aes-256-cbc"`,
+  `backup_tool_version: "2.58.0"`, all eight services' migration
+  version/dirty flag present, `missing_migration_data: null`.
+- Set `BACKUP_DIFF_CRON="56 0 * * *"` (about two minutes out) and
+  restarted the container: the scheduler fired **exactly on time**
+  (`18:56:02 → 18:56:02 UTC` log line vs. a 00:56:00 WIB target — a
+  ~2s natural execution delay), producing a correctly-chained
+  differential manifest filename
+  (`20260722-175240F_20260722-175600D.json`). This is the required
+  "schedule/timezone boundaries" evidence from a genuinely
+  scheduler-triggered run, not the CLI shortcut.
+- Confirmed the CLI shortcut's metric writes are invisible to the running
+  server's own `/metrics` (separate OS process = separate in-memory
+  Prometheus registry) — expected, not a bug, and documents a real
+  boundary of the manual escape hatch. After the scheduled run above,
+  queried the *server process's own* `/metrics` over mTLS (dev-operator
+  identity, `curl -k --cert/--key` — `-k` only skips curl's default DNS-
+  hostname check, since this repo's leaves carry no DNS SAN by design;
+  the server still fully enforces client identity via
+  `tlsx.ServerConfig`'s `VerifyConnection`) and got real values for six
+  of K13's eight metrics:
+  `seev_backup_duration_seconds{result="ok",type="diff"} 2.105162501`,
+  `seev_backup_last_success_timestamp_seconds{type="diff"}
+  1.784742962e+09`, `seev_backup_size_bytes{type="diff"} 9.4515662e+07`,
+  `seev_backup_repository_check_total{result="ok"} 1`, and (after one
+  `/ready` call, which computes them) `seev_backup_wal_archive_age_seconds`
+  and `seev_backup_oldest_restore_point_timestamp_seconds`. The remaining
+  two (`seev_dr_drill_rpo_seconds`/`rto_seconds`) are T6 scope — declared
+  now (via `backupagent.RecordDrillResult`) so the metric set is complete
+  and stable from day one, populated with real values only once T6's
+  drill exists.
+- `/ready` correctly returned `503`
+  (`has_valid_full_backup: false`) before any backup existed, then `200`
+  (`{"status":"ready"}`) after.
+- **Failure-preserves-prior-chain, proven directly (not merely
+  asserted):** ran `pgbackrest --type=diff backup` with a deliberately
+  wrong `PGBACKREST_REPO1_CIPHER_PASS` — failed loudly, exit 29
+  (`unable to load info file ... FormatError`), matching T1's own
+  documented fail-closed behavior for a wrong passphrase. Re-queried
+  `pgbackrest info` with the *correct* passphrase immediately after: both
+  prior backups (`20260722-175240F`,
+  `20260722-175240F_20260722-175600D`) were still listed, repository
+  status still `"ok"` — a failed attempt did not touch the existing
+  chain. `backup-agent status` likewise still reported
+  `has_valid_full_backup: true` throughout.
+- **Real pre-existing (not T2-introduced) bug found and partially
+  fixed:** every scrape job in `deploy/observability/prometheus/
+  prometheus.yml` — including the seven added by docs/plan/43 and two
+  more by docs/plan/49 — uses `scheme: https` with a `tls_config` that
+  has no `insecure_skip_verify`. Since this repo's certificates carry a
+  SPIFFE URI SAN only, never a DNS SAN (`pkg/tlsx/config.go`'s own
+  comment), Prometheus's stock Go TLS client can never satisfy standard
+  hostname verification against *any* of these listeners — confirmed
+  live: the new `backup-agent` scrape job showed `health: "down"`,
+  `lastError: "tls: failed to verify certificate: x509: certificate is
+  not valid for any names, but wanted to match backup-agent"` until
+  `insecure_skip_verify: true` was added to its `tls_config`, after which
+  `docker compose exec prometheus promtool check config/rules` passed and
+  `curl http://127.0.0.1:9090/api/v1/targets` showed `health: "up"` with
+  a real scraped value for `seev_backup_last_success_timestamp_seconds`.
+  This fix was applied **only** to backup-agent's own job — the same
+  defect almost certainly affects the other eight pre-existing scrape
+  jobs too, but fixing those is out of this task's scope (K4/K12/K13, not
+  a general observability audit) and was flagged as a separate follow-up
+  task instead of bundled into this commit.
+- `docker compose exec prometheus promtool check rules
+  /etc/prometheus/rules/backup.yml` — `SUCCESS: 4 rules found` (the
+  stale-WAL/repository-check-failing/full-stale/diff-stale alerts, all
+  reading only backup-agent's own fixed metric set, no filename/LSN/
+  backup-ID/secret-path labels).
+- Torn down completely afterward: `docker compose --profile app --profile
+  backup --profile observability down -v` under the isolated project
+  name, confirmed via `docker ps -a`/`docker volume ls` filtered to that
+  project name returning nothing. The real dev stack
+  (`seev-postgres-1`/etc., pre-existing and already stopped from earlier
+  work, untouched throughout) was never started or affected.
+
+**6. `TestWALArchivingForcedRotation`
+(`internal/backupagent/wal_archiving_integration_test.go`, `-tags=
+integration`).** Proves T2 Work item 5 — WAL rotation forced via
+`SELECT pg_switch_wal()`, no `archive_timeout` wait — using a throwaway
+`testcontainers-go` Postgres (plain local-copy `archive_command`, not
+pgBackRest itself, so it needs no repository/secrets bootstrap and stays
+fast in CI). `pg_stat_archiver.archived_count` incremented and
+`last_archived_wal` was non-empty within 15s of the forced switch,
+observed in ~13.5s wall time in practice. `TestCronSpecScheduleAndTimezone`
+(`internal/backupagent/scheduler_test.go`, plain `go test`, no build tag)
+proves the "schedule/timezone boundaries" required test statically and
+fast: full only ever lands on Sunday 02:10 Asia/Jakarta, differential
+never lands on Sunday across six consecutive weekly occurrences, both
+computed via the exact `scheduler.ParseCron` specs `StartScheduler`
+registers.
+
+**7. Explicitly NOT verified this task — scope boundaries, not
+oversights:**
+- **Overlap/duplicate-run rejection under true concurrency.** Relied on
+  `pkg/scheduler`'s own established `TryLock`/lock-TTL mechanism (already
+  in production use elsewhere in this repo) plus confirming this task's
+  own wiring is correct (right constructor calls, right options,
+  confirmed by the scheduled run executing exactly once at the right
+  time) — did not additionally spin up two truly-concurrent trigger paths
+  to re-prove `pkg/scheduler`'s own generic correctness, since that
+  package is out of this track's scope and not modified here.
+- **Command timeout/cancellation under an artificially slow backup.**
+  `scheduler.WithJobTimeout` is wired (1h full / 20m diff) and
+  `context.WithTimeout` is `pkg/scheduler`'s own already-tested mechanism
+  — not re-proven against a real multi-hour-scale backup, which this
+  lab-scale database cannot produce.
+- **The other eight Prometheus scrape jobs' TLS verification gap**
+  (Result 5 above) — flagged as a separate follow-up, not fixed here.
+- **A real 5-minute WAL-archiving stall**, to watch
+  `SeevBackupWALArchiveStale` actually fire — validated the alert
+  expression/rule file syntax via `promtool check rules` only; provoking
+  a genuine multi-minute archiving stall was judged not worth the time
+  cost for this task given the expression itself is a direct, obvious
+  read of the already-proven-correct `seev_backup_wal_archive_age_seconds`
+  gauge.
 
 ### T3 — Isolated latest and PITR restore tooling (K7, K8, K12)
 

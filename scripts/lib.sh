@@ -313,7 +313,7 @@ build_server() {
 generate_certs() {
 	log "generating mTLS certificates (docs/plan/49 K3) into $CERT_DIR..."
 	"$CERTGEN_BIN" init-ca --out "$CERT_DIR"
-	for service in gateway auth ledger payin payout fraud admin-bff assurance dev-operator prometheus; do
+	for service in gateway auth ledger payin payout fraud admin-bff assurance dev-operator prometheus backup-agent; do
 		"$CERTGEN_BIN" issue --service "$service" --out "$CERT_DIR"
 	done
 }

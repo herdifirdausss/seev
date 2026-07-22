@@ -22,4 +22,8 @@ const (
 	IdentityAssurance   = "spiffe://seev/assurance"
 	IdentityDevOperator = "spiffe://seev/dev-operator"
 	IdentityPrometheus  = "spiffe://seev/prometheus"
+	// IdentityBackupAgent is docs/plan/50 K13's operational agent — not a
+	// domain service, but it still authenticates over the same mTLS fabric
+	// as everything else here.
+	IdentityBackupAgent = "spiffe://seev/backup-agent"
 )

@@ -181,7 +181,7 @@ certs:
 	mkdir -p $(BUILD_DIR)
 	go build $(GOFLAGS) -o $(BUILD_DIR)/certgen ./cmd/certgen
 	$(BUILD_DIR)/certgen init-ca --out deploy/certs
-	@for service in gateway auth ledger payin payout fraud admin-bff assurance dev-operator prometheus; do \
+	@for service in gateway auth ledger payin payout fraud admin-bff assurance dev-operator prometheus backup-agent; do \
 		$(BUILD_DIR)/certgen issue --service $$service --out deploy/certs || exit $$?; \
 	done
 

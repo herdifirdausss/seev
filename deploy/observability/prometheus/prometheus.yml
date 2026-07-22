@@ -9,6 +9,7 @@ global:
 
 rule_files:
   - /etc/prometheus/rules/slo.yml
+  - /etc/prometheus/rules/backup.yml
 
 scrape_configs:
   - job_name: gateway-service
@@ -94,3 +95,33 @@ scrape_configs:
     metrics_path: /metrics
     static_configs:
       - targets: ["assurance-service:8096"]
+
+  # docs/plan/50 T2 (K13) — backup-agent runs only under the opt-in
+  # "backup" Compose profile, so this target is unreachable (and simply
+  # shows as "down" in Prometheus, not an error) unless that profile is
+  # started; scraped the same mTLS way as every other internal listener.
+  #
+  # insecure_skip_verify is required here — found live in T2 execution,
+  # not a pre-existing pattern to copy without it: this repo's leaf certs
+  # carry a SPIFFE URI SAN only, never a DNS SAN (pkg/tlsx/config.go's own
+  # comments), so Prometheus's stock Go TLS client can never satisfy
+  # standard hostname verification against any of these listeners no
+  # matter how correct ca_file/cert_file/key_file are — every other
+  # scrape job in this file has the exact same latent gap (never
+  # confirmed by a live scrape before now, only by `promtool check
+  # config`, which only validates YAML syntax). Client identity is still
+  # fully enforced here — this only skips Prometheus's own verification
+  # of the SERVER; the server side (pkg/tlsx.ServerConfig) still requires
+  # and verifies Prometheus's own client certificate against the CA and
+  # the IdentityPrometheus allowlist, exactly as it does for every other
+  # caller.
+  - job_name: backup-agent
+    scheme: https
+    tls_config:
+      ca_file: /certs/ca.pem
+      cert_file: /certs/prometheus.pem
+      key_file: /certs/prometheus-key.pem
+      insecure_skip_verify: true
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["backup-agent:8097"]

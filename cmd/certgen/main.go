@@ -50,6 +50,7 @@ var knownServices = map[string]string{
 	"assurance":    tlsx.IdentityAssurance,
 	"dev-operator": tlsx.IdentityDevOperator,
 	"prometheus":   tlsx.IdentityPrometheus,
+	"backup-agent": tlsx.IdentityBackupAgent,
 }
 
 func main() {

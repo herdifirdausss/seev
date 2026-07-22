@@ -1,0 +1,55 @@
+# docs/plan/50 T2 (K4, K13) — alerts on backup-agent's own metrics.
+# Every expression below reads only the fixed, low-cardinality metric set
+# backup-agent exposes (internal/backupagent/metrics.go) — never a label
+# derived from a filename, LSN, backup ID, or secret path.
+groups:
+- name: backup-a7
+  interval: 30s
+  rules:
+  - alert: SeevBackupWALArchiveStale
+    # K1's five-minute RPO budget: archive_timeout=60s means a healthy
+    # cluster archives at least once a minute even when idle, so this
+    # firing means archiving is genuinely stuck, not just quiet.
+    expr: seev_backup_wal_archive_age_seconds > 300
+    for: 2m
+    labels:
+      severity: critical
+      service: backup-agent
+    annotations:
+      summary: WAL archiving has not advanced within the five-minute RPO budget
+      runbook: docs/runbooks/dr-restore-drill.md
+
+  - alert: SeevBackupRepositoryCheckFailing
+    expr: increase(seev_backup_repository_check_total{result="error"}[1h]) > 0
+    for: 1m
+    labels:
+      severity: critical
+      service: backup-agent
+    annotations:
+      summary: pgBackRest repository check failed — repository integrity is unconfirmed
+      runbook: docs/runbooks/dr-restore-drill.md
+
+  - alert: SeevBackupFullStale
+    # Weekly full (Sunday 02:10 Asia/Jakarta) plus a one-day buffer for a
+    # single missed/retried run before this pages anyone.
+    expr: time() - max(seev_backup_last_success_timestamp_seconds{type="full"}) > 8 * 24 * 3600
+    for: 5m
+    labels:
+      severity: warning
+      service: backup-agent
+    annotations:
+      summary: no successful full backup in over eight days
+      runbook: docs/runbooks/dr-restore-drill.md
+
+  - alert: SeevBackupDiffStale
+    # Daily differential (Mon-Sat 02:10 Asia/Jakarta) plus a six-hour
+    # buffer; Sunday's full backup also satisfies this via the same
+    # last-success-timestamp check pattern one alert group down.
+    expr: time() - max(seev_backup_last_success_timestamp_seconds) > 30 * 3600
+    for: 5m
+    labels:
+      severity: warning
+      service: backup-agent
+    annotations:
+      summary: no successful backup (full or differential) in over thirty hours
+      runbook: docs/runbooks/dr-restore-drill.md

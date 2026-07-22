@@ -75,11 +75,82 @@ services:
       # separate from seev_postgres_data — a destructive drill cleanup may
       # remove only an isolated restore target volume, never this path.
       - ${BACKUP_REPO_PATH:-./deploy/backup/repo}:/backup-repo
+      # docs/plan/50 T2: shared with backup-agent so pgBackRest's own
+      # libpq control connection (pg_backup_start/stop) can reach this
+      # server over a plain Unix socket — a named volume makes a Unix
+      # socket file reachable across the container boundary without any
+      # network/SSH/TLS-remote protocol on pgBackRest's side.
+      - seev_backup_socket:/var/run/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_MIGRATE_USER:-seev} -d ${POSTGRES_DB:-seev}"]
       interval: 5s
       timeout: 5s
       retries: 10
+
+  # docs/plan/50 T2 (K13): the opt-in operational backup agent — owns the
+  # weekly-full/daily-differential pgBackRest schedule and exposes
+  # mTLS-protected /health, /ready, /metrics. Not part of the "app"
+  # profile: it is an ops component, started explicitly
+  # (`docker compose --profile backup up -d backup-agent`), never implied
+  # by a normal `--profile app` boot.
+  backup-agent:
+    profiles: ["backup"]
+    image: seev/backup-agent:${SEEV_IMAGE_TAG:-dev}
+    build:
+      context: .
+      dockerfile: deploy/backup/agent.Dockerfile
+    logging: *app-logging
+    environment:
+      APP_PORT: "8097"
+      TLS_CERT_DIR: /certs
+      BACKUP_STANZA: seev
+      # Deliberately NOT prefixed PGBACKREST_ — pgBackRest itself scans its
+      # own process environment for any PGBACKREST_<OPTION>-shaped
+      # variable (that's how the real PGBACKREST_REPO1_CIPHER_PASS below
+      # reaches it) and a name like PGBACKREST_CONFIG_PATH collides with
+      # its own config-path option, corrupting config resolution — found
+      # live in docs/plan/50 T2 execution.
+      BACKUP_PGBACKREST_CONF: /etc/pgbackrest/pgbackrest.conf
+      BACKUP_REPO_PASSPHRASE_FILE: /run/secrets/pgbackrest_repo_passphrase
+      BACKUP_PASSWORD_FILE: /run/secrets/seev_backup_password
+      BACKUP_MANIFEST_DIR: /app/manifests
+      # K4's weekly-full/daily-diff Asia/Jakarta schedule is the default
+      # (internal/backupagent/config.go) — these overrides exist for an
+      # operator who needs a different window, and were exercised
+      # directly to verify the scheduled path in docs/plan/50 T2 Result.
+      BACKUP_FULL_CRON: "${BACKUP_FULL_CRON:-}"
+      BACKUP_DIFF_CRON: "${BACKUP_DIFF_CRON:-}"
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      SOURCE_ENV_LABEL: ${SOURCE_ENV_LABEL:-local-dev}
+    secrets:
+      - seev_backup_password
+      - pgbackrest_repo_passphrase
+    volumes:
+      - ./deploy/certs:/certs:ro
+      - ./deploy/backup/pgbackrest.conf:/etc/pgbackrest/pgbackrest.conf:ro
+      - ${BACKUP_REPO_PATH:-./deploy/backup/repo}:/backup-repo
+      - ./deploy/backup/manifests:/app/manifests
+      - seev_backup_socket:/var/run/postgresql
+      # Read-only: backup-agent copies data pages into the repository, it
+      # never writes to PGDATA itself (K5 least-privilege applies at the
+      # filesystem level too, not just the Postgres role level).
+      - seev_postgres_data:/var/lib/postgresql/data:ro
+    ports:
+      - "127.0.0.1:18097:8097"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "backup-agent", "-healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 128M
 
   redis:
     image: redis:7-alpine
@@ -809,6 +880,10 @@ secrets:
 
 volumes:
   seev_postgres_data:
+  # docs/plan/50 T2: shares the Postgres Unix socket directory between the
+  # postgres and backup-agent containers (see the postgres service's own
+  # volumes comment) — never mounted anywhere else.
+  seev_backup_socket:
   seev_redis_data:
   seev_rabbitmq_data:
   seev_prometheus_data:

@@ -1,0 +1,19 @@
+{
+  "uid": "seev-backup-dr",
+  "title": "Seev / Backup & Disaster Recovery",
+  "tags": ["seev", "backup", "dr"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "1m",
+  "time": {"from": "now-7d", "to": "now"},
+  "panels": [
+    {"id": 1, "type": "gauge", "title": "WAL archive age (seconds)", "gridPos": {"x": 0, "y": 0, "w": 8, "h": 8}, "datasource": {"type": "prometheus", "uid": "seev-prometheus"}, "fieldConfig": {"defaults": {"thresholds": {"steps": [{"color": "green", "value": null}, {"color": "red", "value": 300}]}}}, "targets": [{"expr": "seev_backup_wal_archive_age_seconds", "refId": "A"}]},
+    {"id": 2, "type": "timeseries", "title": "Time since last successful backup, by type", "gridPos": {"x": 8, "y": 0, "w": 16, "h": 8}, "datasource": {"type": "prometheus", "uid": "seev-prometheus"}, "targets": [{"expr": "time() - seev_backup_last_success_timestamp_seconds", "refId": "A", "legendFormat": "{{type}}"}]},
+    {"id": 3, "type": "timeseries", "title": "Backup duration, by type and result", "gridPos": {"x": 0, "y": 8, "w": 12, "h": 8}, "datasource": {"type": "prometheus", "uid": "seev-prometheus"}, "targets": [{"expr": "seev_backup_duration_seconds", "refId": "A", "legendFormat": "{{type}} / {{result}}"}]},
+    {"id": 4, "type": "timeseries", "title": "Backup size, by type", "gridPos": {"x": 12, "y": 8, "w": 12, "h": 8}, "datasource": {"type": "prometheus", "uid": "seev-prometheus"}, "targets": [{"expr": "seev_backup_size_bytes", "refId": "A", "legendFormat": "{{type}}"}]},
+    {"id": 5, "type": "timeseries", "title": "Repository check results", "gridPos": {"x": 0, "y": 16, "w": 12, "h": 8}, "datasource": {"type": "prometheus", "uid": "seev-prometheus"}, "targets": [{"expr": "increase(seev_backup_repository_check_total[1h])", "refId": "A", "legendFormat": "{{result}}"}]},
+    {"id": 6, "type": "stat", "title": "Oldest restorable point", "gridPos": {"x": 12, "y": 16, "w": 12, "h": 8}, "datasource": {"type": "prometheus", "uid": "seev-prometheus"}, "fieldConfig": {"defaults": {"unit": "dateTimeAsIso"}}, "targets": [{"expr": "seev_backup_oldest_restore_point_timestamp_seconds * 1000", "refId": "A"}]},
+    {"id": 7, "type": "timeseries", "title": "DR drill RPO/RTO (docs/plan/50 T6)", "gridPos": {"x": 0, "y": 24, "w": 24, "h": 8}, "datasource": {"type": "prometheus", "uid": "seev-prometheus"}, "targets": [{"expr": "seev_dr_drill_rpo_seconds", "refId": "A", "legendFormat": "RPO {{mode}}/{{result}}"}, {"expr": "seev_dr_drill_rto_seconds", "refId": "B", "legendFormat": "RTO {{mode}}/{{result}}"}]}
+  ]
+}
