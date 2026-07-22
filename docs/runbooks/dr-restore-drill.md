@@ -1,6 +1,30 @@
 # Runbook: Disaster Recovery Restore Drill
 
+> **Status: Current. Audience: database and service operators.** This is a
+> controlled restore drill; it is not authorization to overwrite production.
+
 Covers restoring the ledger database from a backup and proving it's usable again — restore, rebuild the balance projection, verify integrity, smoke test. Run this **periodically against staging** (not production) to keep the procedure and its RTO honest. Every drill's timing goes in the table at the bottom of this file — this is the whole point of drilling: an untimed, never-executed runbook is a guess, not a plan.
+
+> **Scope note (docs/plan/50 Track A7):** this procedure is ledger-database-only
+> and predates the cluster-wide recovery model. It remains useful as the
+> minimal projection-rebuild drill. Track A7 (T3) adds
+> `scripts/restore-cluster.sh` and `scripts/dr-drill.sh` for restoring and
+> verifying all eight authoritative service databases together via
+> pgBackRest/WAL PITR; this file will be updated to point to that procedure
+> once T3 lands. Until then, treat this runbook as covering only the
+> Ledger-authoritative slice of the state-classification table below.
+
+## What must be restored, and from where
+
+Not every kind of state is recovered the same way. Classify what you are
+looking at before choosing a recovery action:
+
+| State class | Examples | Recovery source | Notes |
+|---|---|---|---|
+| **PostgreSQL — authoritative** | `seev_ledger`, `seev_auth`, `seev_payin`, `seev_payout`, `seev_fraud`, `seev_gateway`, `seev_adminbff`, `seev_assurance` (all 8 service databases, one shared cluster) | Physical cluster backup + WAL (Track A7); `pg_dump`/projection rebuild for the ledger-only minimal case covered by this runbook | The only state that is ever wrong to silently regenerate — restore it, don't reconstruct it from inference. |
+| **Redis — reconstructable/ephemeral** | Rate-limit buckets, policy counters, fraud velocity keys, scheduler locks, circuit-breaker state | Rebuilt from PostgreSQL after a restore (Track A7 `cmd/drreseed`); safe to start empty otherwise | Never a backup target itself. A cold Redis after restore is expected, not a failure — it must be reseeded from durable evidence before production traffic resumes, not left to warm up silently. |
+| **RabbitMQ — delivery-only** | Outbox event deliveries, durable payout vendor commands in flight | Topology (exchanges/queues/bindings) is recreated from service startup code; in-flight-only deliveries are not backed up and must be treated as potentially lost | The event's *fact* lives in PostgreSQL (the outbox row); the broker is a delivery mechanism, not a source of truth. A lost in-flight delivery is recovered by replaying from the durable outbox row, never by trying to back up the broker. |
+| **Vault / certificates — external** | Vault dev-mode secrets, mTLS leaf certificates and the local mini-CA | Re-seeded (`scripts/vault-seed.sh`) / re-issued (`make certs`) from current external configuration, never from a database backup | Runtime secrets and identity material must come from the environment at restore time, not resurrected from backup data — see `docs/security/threat-model.md` for why. |
 
 ## When to run this
 
