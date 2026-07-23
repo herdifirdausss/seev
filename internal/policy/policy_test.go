@@ -16,7 +16,7 @@ import (
 )
 
 // failingCounter always errors — used to prove Check fails OPEN on an
-// infra error (docs/plan/17 Task T1, chaos-tested convention).
+// infra error (docs/roadmap/archive/17 Task T1, chaos-tested convention).
 type failingCounter struct{}
 
 func (failingCounter) IncrBy(context.Context, string, int64, time.Duration) (int64, error) {
@@ -114,7 +114,7 @@ func TestCheck_MaxDailyAmount_AccountsForPriorUsage(t *testing.T) {
 	now := time.Now().In(e.loc)
 
 	// Simulate 8000 already used today.
-	_, err := counter.IncrBy(ctx, dailyAmountKey(userID, "transfer_p2p", now), 8000, 48*time.Hour)
+	_, err := counter.IncrBy(ctx, DailyAmountKey(userID, "transfer_p2p", now), 8000, 48*time.Hour)
 	require.NoError(t, err)
 
 	allowed, _, _, err := e.Check(ctx, userID, "transfer_p2p", decimal.NewFromInt(2000))
@@ -139,7 +139,7 @@ func TestCheck_MaxDailyCount_AccountsForPriorUsage(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now().In(e.loc)
 
-	_, err := counter.IncrBy(ctx, dailyCountKey(userID, "withdraw_initiate", now), 3, 48*time.Hour)
+	_, err := counter.IncrBy(ctx, DailyCountKey(userID, "withdraw_initiate", now), 3, 48*time.Hour)
 	require.NoError(t, err)
 
 	allowed, rule, _, err := e.Check(ctx, userID, "withdraw_initiate", decimal.NewFromInt(100))
@@ -160,7 +160,7 @@ func TestCheck_MaxMonthlyAmount_AccountsForPriorUsage(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now().In(e.loc)
 
-	_, err := counter.IncrBy(ctx, monthlyAmountKey(userID, "transfer_p2p", now), 99000, 35*24*time.Hour)
+	_, err := counter.IncrBy(ctx, MonthlyAmountKey(userID, "transfer_p2p", now), 99000, 35*24*time.Hour)
 	require.NoError(t, err)
 
 	allowed, rule, _, err := e.Check(ctx, userID, "transfer_p2p", decimal.NewFromInt(1001))
@@ -248,15 +248,15 @@ func TestRecord_IncrementsAllThreeCounters(t *testing.T) {
 
 	e.Record(ctx, userID, "transfer_p2p", decimal.NewFromInt(500))
 
-	dailyAmt, err := counter.Get(ctx, dailyAmountKey(userID, "transfer_p2p", now))
+	dailyAmt, err := counter.Get(ctx, DailyAmountKey(userID, "transfer_p2p", now))
 	require.NoError(t, err)
 	assert.Equal(t, int64(500), dailyAmt)
 
-	dailyCnt, err := counter.Get(ctx, dailyCountKey(userID, "transfer_p2p", now))
+	dailyCnt, err := counter.Get(ctx, DailyCountKey(userID, "transfer_p2p", now))
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), dailyCnt)
 
-	monthlyAmt, err := counter.Get(ctx, monthlyAmountKey(userID, "transfer_p2p", now))
+	monthlyAmt, err := counter.Get(ctx, MonthlyAmountKey(userID, "transfer_p2p", now))
 	require.NoError(t, err)
 	assert.Equal(t, int64(500), monthlyAmt)
 }
