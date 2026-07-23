@@ -24,7 +24,7 @@ const dateLayout = "2006-01-02"
 // BalanceMismatch is one row where a snapshot's closing_balance disagrees
 // with the account's current stored balance, for an account with no entries
 // since that snapshot — i.e. a real projection corruption, not just a
-// snapshot that predates recent activity (docs/plan/15 Task T1).
+// snapshot that predates recent activity (docs/roadmap/archive/15 Task T1).
 type BalanceMismatch struct {
 	AccountID       uuid.UUID
 	AsOfDate        time.Time
@@ -33,7 +33,7 @@ type BalanceMismatch struct {
 }
 
 // SnapshotRepository persists and reads daily account balance snapshots
-// (docs/plan/15 Task T1, decision K6) — a cheap way to answer "what was this
+// (docs/roadmap/archive/15 Task T1, decision K6) — a cheap way to answer "what was this
 // account's balance on date X" and "opening balance for a statement period"
 // without replaying every ledger_entries row since the account was created.
 type SnapshotRepository interface {
@@ -77,7 +77,7 @@ type snapshotRepo struct {
 
 // NewSnapshotRepository requires loc (Asia/Jakarta in production) — every
 // "date" boundary in this repository is a calendar day in that location,
-// not UTC, matching how the business defines "today" (docs/plan/15 Task T1
+// not UTC, matching how the business defines "today" (docs/roadmap/archive/15 Task T1
 // timezone test: an entry at 23:30 WIB and one at 00:30 WIB must land in
 // different snapshot dates even though their UTC clock times are ~1 hour
 // apart on the same UTC day).

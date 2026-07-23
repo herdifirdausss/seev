@@ -1,5 +1,5 @@
-# Bounded log rotation for the six app-profile containers (docs/plan/43 T1
-# Langkah 5) — without this, Docker's default json-file driver keeps
+# Bounded log rotation for the six app-profile containers (docs/roadmap/archive/43 T1
+# Step 5) — without this, Docker's default json-file driver keeps
 # container stdout/stderr forever, which on a laptop-scale disk eventually
 # fills up regardless of Loki's own 48h retention.
 x-app-logging: &app-logging
@@ -8,13 +8,23 @@ x-app-logging: &app-logging
     max-size: "10m"
     max-file: "3"
 
+# docs/roadmap/archive/49 K3: every internal-facing app container mounts the same
+# host-generated CA + per-service leaf certs read-only — `make certs`
+# (mirrors the `observability-secret` pattern: generated, gitignored,
+# never committed) writes them to ./deploy/certs before compose ever
+# reads this file.
+x-cert-volume: &cert-volume
+  - ./deploy/certs:/certs:ro
+
 services:
   postgres:
-    image: postgres:16-alpine
+    image: seev/postgres-backup:${SEEV_IMAGE_TAG:-dev}
+    build:
+      context: ./deploy/backup
     environment:
       # The image's own bootstrap superuser is the SCHEMA-OWNER identity
       # (POSTGRES_MIGRATE_USER), never the app's restricted connection — see
-      # docs/plan/16 Task T3 / .env.example's PostgreSQL section for why.
+      # docs/roadmap/archive/16 Task T3 / .env.example's PostgreSQL section for why.
       POSTGRES_USER: ${POSTGRES_MIGRATE_USER:-seev}
       POSTGRES_PASSWORD: ${POSTGRES_MIGRATE_PASSWORD:-seev}
       POSTGRES_DB: ${POSTGRES_DB:-seev}
@@ -22,6 +32,31 @@ services:
       # to provision the app's restricted login role at first boot.
       APP_DB_USER: ${POSTGRES_USER:-seev_app}
       APP_DB_PASSWORD: ${POSTGRES_PASSWORD:-seev_app}
+      # docs/roadmap/active/50 K2: --data-checksums only takes effect on a FRESH
+      # initdb — an already-initialized volume (like this repo's own dev
+      # volume, seev_postgres_data, created before Track A7) needs the
+      # separate offline `make backup-checksums-enable` procedure instead;
+      # see docs/roadmap/active/50 T1 Result for that procedure and its evidence.
+      POSTGRES_INITDB_ARGS: "--data-checksums"
+      BACKUP_PASSWORD_FILE: /run/secrets/seev_backup_password
+    secrets:
+      - seev_backup_password
+      - pgbackrest_repo_passphrase
+    # docs/roadmap/active/50 K2/K4: continuous WAL archiving via pgBackRest, a 60s
+    # archive_timeout so an idle workload still closes the RPO window
+    # (K4), and wal_level=replica (pgBackRest's baseline requirement —
+    # logical is not needed here and costs more WAL volume for no benefit
+    # this track uses).
+    command:
+      - postgres
+      - -c
+      - wal_level=replica
+      - -c
+      - archive_mode=on
+      - -c
+      - archive_timeout=60
+      - -c
+      - archive_command=pgbackrest --stanza=seev --config=/etc/pgbackrest/pgbackrest.conf archive-push %p
     ports:
       # Host port defaults to 5433, not Postgres's standard 5432: a native
       # (Homebrew-installed) Postgres commonly already occupies 5432 on a
@@ -35,14 +70,90 @@ services:
       - seev_postgres_data:/var/lib/postgresql/data
       - ./scripts/postgres-init:/docker-entrypoint-initdb.d:ro
       - ./migrations:/migrations:ro
+      - ./deploy/backup/pgbackrest.conf:/etc/pgbackrest/pgbackrest.conf:ro
+      # docs/roadmap/active/50 K3: the backup repository is a HOST PATH, deliberately
+      # separate from seev_postgres_data — a destructive drill cleanup may
+      # remove only an isolated restore target volume, never this path.
+      - ${BACKUP_REPO_PATH:-./deploy/backup/repo}:/backup-repo
+      # docs/roadmap/active/50 T2: shared with backup-agent so pgBackRest's own
+      # libpq control connection (pg_backup_start/stop) can reach this
+      # server over a plain Unix socket — a named volume makes a Unix
+      # socket file reachable across the container boundary without any
+      # network/SSH/TLS-remote protocol on pgBackRest's side.
+      - seev_backup_socket:/var/run/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_MIGRATE_USER:-seev} -d ${POSTGRES_DB:-seev}"]
       interval: 5s
       timeout: 5s
       retries: 10
 
+  # docs/roadmap/active/50 T2 (K13): the opt-in operational backup agent — owns the
+  # weekly-full/daily-differential pgBackRest schedule and exposes
+  # mTLS-protected /health, /ready, /metrics. Not part of the "app"
+  # profile: it is an ops component, started explicitly
+  # (`docker compose --profile backup up -d backup-agent`), never implied
+  # by a normal `--profile app` boot.
+  backup-agent:
+    profiles: ["backup"]
+    image: seev/backup-agent:${SEEV_IMAGE_TAG:-dev}
+    build:
+      context: .
+      dockerfile: deploy/backup/agent.Dockerfile
+    logging: *app-logging
+    environment:
+      APP_PORT: "8097"
+      TLS_CERT_DIR: /certs
+      BACKUP_STANZA: seev
+      # Deliberately NOT prefixed PGBACKREST_ — pgBackRest itself scans its
+      # own process environment for any PGBACKREST_<OPTION>-shaped
+      # variable (that's how the real PGBACKREST_REPO1_CIPHER_PASS below
+      # reaches it) and a name like PGBACKREST_CONFIG_PATH collides with
+      # its own config-path option, corrupting config resolution — found
+      # live in docs/roadmap/active/50 T2 execution.
+      BACKUP_PGBACKREST_CONF: /etc/pgbackrest/pgbackrest.conf
+      BACKUP_REPO_PASSPHRASE_FILE: /run/secrets/pgbackrest_repo_passphrase
+      BACKUP_PASSWORD_FILE: /run/secrets/seev_backup_password
+      BACKUP_MANIFEST_DIR: /app/manifests
+      # K4's weekly-full/daily-diff Asia/Jakarta schedule is the default
+      # (internal/backupagent/config.go) — these overrides exist for an
+      # operator who needs a different window, and were exercised
+      # directly to verify the scheduled path in docs/roadmap/active/50 T2 Result.
+      BACKUP_FULL_CRON: "${BACKUP_FULL_CRON:-}"
+      BACKUP_DIFF_CRON: "${BACKUP_DIFF_CRON:-}"
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      SOURCE_ENV_LABEL: ${SOURCE_ENV_LABEL:-local-dev}
+    secrets:
+      - seev_backup_password
+      - pgbackrest_repo_passphrase
+    volumes:
+      - ./deploy/certs:/certs:ro
+      - ./deploy/backup/pgbackrest.conf:/etc/pgbackrest/pgbackrest.conf:ro
+      - ${BACKUP_REPO_PATH:-./deploy/backup/repo}:/backup-repo
+      - ./deploy/backup/manifests:/app/manifests
+      - seev_backup_socket:/var/run/postgresql
+      # Read-only: backup-agent copies data pages into the repository, it
+      # never writes to PGDATA itself (K5 least-privilege applies at the
+      # filesystem level too, not just the Postgres role level).
+      - seev_postgres_data:/var/lib/postgresql/data:ro
+    ports:
+      - "127.0.0.1:18097:8097"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "backup-agent", "-healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
   redis:
-    image: redis:7-alpine
+    image: redis:7.4.9-alpine
     ports:
       # Host uses 6380 to avoid colliding with a locally installed Redis.
       # Containers keep reaching this service as redis:6379.
@@ -56,7 +167,7 @@ services:
       retries: 10
 
   rabbitmq:
-    image: rabbitmq:3-management-alpine
+    image: rabbitmq:4.3.3-management-alpine
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME:-seev}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-seev}
@@ -71,6 +182,37 @@ services:
       timeout: 5s
       retries: 10
       start_period: 10s
+
+  # docs/roadmap/archive/49 K7: dev-mode Vault, opt-in behind its own `secrets`
+  # profile (never started by a bare `docker compose up`, same convention
+  # as `observability`) — an in-memory secrets backend for local
+  # experimentation, not a production secrets store. Dev mode auto-
+  # unseals and auto-mounts a KV v2 engine at `secret/` on boot; every
+  # secret is lost and must be re-seeded (`scripts/vault-seed.sh`) each
+  # time the container restarts — a deliberate, documented residual
+  # (docs/security/threat-model.md), not an oversight. Run with:
+  #   docker compose --profile secrets up -d vault
+  #   VAULT_ADDR=http://localhost:18200 VAULT_TOKEN=<see below> ./scripts/vault-seed.sh
+  vault:
+    image: hashicorp/vault@sha256:a296a888b118615dc01d5f1a6846e6d4a7277946caaed5b447008fff5fe06b54 # latest, v2.0.3, digest verified 2026-07-22
+    profiles: ["secrets"]
+    cap_add: ["IPC_LOCK"] # dev mode still locks its in-memory storage
+    environment:
+      # Fixed, non-secret dev token by design — dev mode's data never
+      # survives a restart anyway, so there's nothing this token actually
+      # protects beyond a throwaway local instance. Override for a
+      # personal machine if desired; never used in CI/nightly (K7 — those
+      # stay env-generated, Vault is entirely out of that path).
+      VAULT_DEV_ROOT_TOKEN_ID: ${VAULT_DEV_ROOT_TOKEN_ID:-seev-dev-root-token}
+      VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+    ports:
+      - "127.0.0.1:18200:8200"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1:8200/v1/sys/health || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
 
   ledger-service:
     profiles: ["app"]
@@ -91,7 +233,8 @@ services:
       INTERNAL_APP_PORT: "8091"
       INTERNAL_APP_BIND_ADDR: 0.0.0.0
       GRPC_PORT: "9091"
-      INTERNAL_GRPC_TOKEN: ${INTERNAL_GRPC_TOKEN:-}
+      INTERNAL_GRPC_TOKEN: ${INTERNAL_GRPC_TOKEN:-change-me-to-a-random-32-plus-character-token}
+      TLS_CERT_DIR: /certs
       POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"
       POSTGRES_USER: ledger_app
@@ -107,6 +250,8 @@ services:
       RABBITMQ_EXCHANGE: ledger.events
       FRAUD_GRPC_ADDR: fraud-service:9094
       JWT_SECRET: ${JWT_SECRET:-change-me-to-a-random-32-plus-character-secret}
+      JWT_ISSUER: ${JWT_ISSUER:-seev}
+    volumes: *cert-volume
     ports:
       - "127.0.0.1:8090:8090"
       - "127.0.0.1:8091:8091"
@@ -151,8 +296,12 @@ services:
       REDIS_ENABLED: "true"
       REDIS_ADDR: redis:6379
       LEDGER_GRPC_ADDR: ledger-service:9091
-      INTERNAL_GRPC_TOKEN: ${INTERNAL_GRPC_TOKEN:-}
+      FRAUD_GRPC_ADDR: fraud-service:9094
+      INTERNAL_GRPC_TOKEN: ${INTERNAL_GRPC_TOKEN:-change-me-to-a-random-32-plus-character-token}
+      TLS_CERT_DIR: /certs
       JWT_SECRET: ${JWT_SECRET:-change-me-to-a-random-32-plus-character-secret}
+      JWT_ISSUER: ${JWT_ISSUER:-seev}
+    volumes: *cert-volume
     ports:
       - "127.0.0.1:8082:8082"
       - "127.0.0.1:8083:8083"
@@ -186,7 +335,8 @@ services:
       OTEL_EXPORTER_OTLP_INSECURE: "${OTEL_EXPORTER_OTLP_INSECURE:-true}"
       APP_PORT: "8092"
       GRPC_PORT: "9092"
-      INTERNAL_GRPC_TOKEN: ${INTERNAL_GRPC_TOKEN:-}
+      INTERNAL_GRPC_TOKEN: ${INTERNAL_GRPC_TOKEN:-change-me-to-a-random-32-plus-character-token}
+      TLS_CERT_DIR: /certs
       POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"
       POSTGRES_USER: payin_app
@@ -196,10 +346,12 @@ services:
       LEDGER_GRPC_ADDR: ledger-service:9091
       FRAUD_GRPC_ADDR: fraud-service:9094
       JWT_SECRET: ${JWT_SECRET:-change-me-to-a-random-32-plus-character-secret}
+      JWT_ISSUER: ${JWT_ISSUER:-seev}
       VENDOR_MOCKVENDOR_ENABLED: "true"
       VENDOR_MOCKVENDOR_SECRET: ${VENDOR_MOCKVENDOR_SECRET:-change-me-mockvendor-secret}
       MOCKVENDOR2_ENABLED: "true"
       MOCKVENDOR2_SECRET: ${MOCKVENDOR2_SECRET:-change-me-mockvendor2-secret}
+    volumes: *cert-volume
     ports:
       - "127.0.0.1:8092:8092"
       - "127.0.0.1:9092:9092"
@@ -231,7 +383,8 @@ services:
       OTEL_EXPORTER_OTLP_INSECURE: "${OTEL_EXPORTER_OTLP_INSECURE:-true}"
       APP_PORT: "8093"
       GRPC_PORT: "9093"
-      INTERNAL_GRPC_TOKEN: ${INTERNAL_GRPC_TOKEN:-}
+      INTERNAL_GRPC_TOKEN: ${INTERNAL_GRPC_TOKEN:-change-me-to-a-random-32-plus-character-token}
+      TLS_CERT_DIR: /certs
       POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"
       POSTGRES_USER: payout_app
@@ -244,10 +397,12 @@ services:
       LEDGER_GRPC_ADDR: ledger-service:9091
       FRAUD_GRPC_ADDR: fraud-service:9094
       JWT_SECRET: ${JWT_SECRET:-change-me-to-a-random-32-plus-character-secret}
+      JWT_ISSUER: ${JWT_ISSUER:-seev}
       VENDOR_MOCKVENDOR_ENABLED: "true"
       VENDOR_MOCKVENDOR_SECRET: ${VENDOR_MOCKVENDOR_SECRET:-change-me-mockvendor-secret}
       MOCKVENDOR2_ENABLED: "true"
       MOCKVENDOR2_SECRET: ${MOCKVENDOR2_SECRET:-change-me-mockvendor2-secret}
+    volumes: *cert-volume
     ports:
       - "127.0.0.1:8093:8093"
       - "127.0.0.1:9093:9093"
@@ -281,7 +436,8 @@ services:
       OTEL_EXPORTER_OTLP_INSECURE: "${OTEL_EXPORTER_OTLP_INSECURE:-true}"
       APP_PORT: "8094"
       GRPC_PORT: "9094"
-      INTERNAL_GRPC_TOKEN: ${INTERNAL_GRPC_TOKEN:-}
+      INTERNAL_GRPC_TOKEN: ${INTERNAL_GRPC_TOKEN:-change-me-to-a-random-32-plus-character-token}
+      TLS_CERT_DIR: /certs
       POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"
       POSTGRES_USER: fraud_app
@@ -297,9 +453,11 @@ services:
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-seev}
       RABBITMQ_EXCHANGE: ledger.events
       JWT_SECRET: ${JWT_SECRET:-change-me-to-a-random-32-plus-character-secret}
+      JWT_ISSUER: ${JWT_ISSUER:-seev}
       SCREENING_MODE: ${SCREENING_MODE:-off}
       SCREENING_AMOUNT_THRESHOLD: ${SCREENING_AMOUNT_THRESHOLD:-0}
       SCREENING_VELOCITY_MAX_PER_HOUR: ${SCREENING_VELOCITY_MAX_PER_HOUR:-0}
+    volumes: *cert-volume
     ports:
       - "127.0.0.1:8094:8094"
       - "127.0.0.1:9094:9094"
@@ -315,6 +473,114 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+
+  admin-bff-service:
+    profiles: ["app"]
+    image: seev/admin-bff-service:${SEEV_IMAGE_TAG:-dev}
+    build:
+      context: .
+      args:
+        SERVICE: admin-bff-service
+    logging: *app-logging
+    environment:
+      APP_NAME: admin-bff-service
+      LOG_FORMAT: json
+      OTEL_EXPORTER_OTLP_ENDPOINT: "${OTEL_EXPORTER_OTLP_ENDPOINT:-}"
+      OTEL_TRACES_SAMPLER: parentbased_traceidratio
+      OTEL_TRACES_SAMPLER_ARG: "${OTEL_TRACES_SAMPLER_ARG:-0.10}"
+      OTEL_EXPORTER_OTLP_INSECURE: "${OTEL_EXPORTER_OTLP_INSECURE:-true}"
+      APP_PORT: "8095"
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: adminbff_app
+      POSTGRES_PASSWORD: adminbff_app
+      POSTGRES_DB: seev_adminbff
+      POSTGRES_SSL_MODE: disable
+      JWT_SECRET: ${JWT_SECRET:-change-me-to-a-random-32-plus-character-secret}
+      JWT_ISSUER: ${JWT_ISSUER:-seev}
+      TLS_CERT_DIR: /certs
+      AUTH_SERVICE_URL: http://auth-service:8082
+      AUTH_ADMIN_SERVICE_URL: https://auth-service:8083
+      LEDGER_SERVICE_URL: https://ledger-service:8091
+      PAYIN_SERVICE_URL: https://payin-service:8092
+      PAYOUT_SERVICE_URL: https://payout-service:8093
+      FRAUD_SERVICE_URL: https://fraud-service:8094
+      GATEWAY_SERVICE_URL: https://gateway-service:8081
+      ADMIN_BFF_SECURE_COOKIE: "false"
+    volumes: *cert-volume
+    ports:
+      - "127.0.0.1:8095:8095"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      auth-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/app/service", "-healthcheck"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
+  assurance-service:
+    profiles: ["app"]
+    image: seev/assurance-service:${SEEV_IMAGE_TAG:-dev}
+    build:
+      context: .
+      args:
+        SERVICE: assurance-service
+    logging: *app-logging
+    environment:
+      APP_NAME: assurance-service
+      LOG_FORMAT: json
+      OTEL_EXPORTER_OTLP_ENDPOINT: "${OTEL_EXPORTER_OTLP_ENDPOINT:-}"
+      OTEL_TRACES_SAMPLER: parentbased_traceidratio
+      OTEL_TRACES_SAMPLER_ARG: "${OTEL_TRACES_SAMPLER_ARG:-0.10}"
+      OTEL_EXPORTER_OTLP_INSECURE: "${OTEL_EXPORTER_OTLP_INSECURE:-true}"
+      APP_PORT: "8096"
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: assurance_app
+      POSTGRES_PASSWORD: assurance_app
+      POSTGRES_DB: seev_assurance
+      POSTGRES_SSL_MODE: disable
+      PAYIN_GRPC_ADDR: payin-service:9092
+      PAYOUT_GRPC_ADDR: payout-service:9093
+      LEDGER_GRPC_ADDR: ledger-service:9091
+      INTERNAL_GRPC_TOKEN: ${INTERNAL_GRPC_TOKEN:-change-me-to-a-random-32-plus-character-token}
+      TLS_CERT_DIR: /certs
+      JWT_SECRET: ${JWT_SECRET:-change-me-to-a-random-32-plus-character-secret}
+      JWT_ISSUER: ${JWT_ISSUER:-seev}
+      ASSURANCE_INTERVAL: ${ASSURANCE_INTERVAL:-60s}
+      ASSURANCE_CONSISTENCY_DELAY: ${ASSURANCE_CONSISTENCY_DELAY:-2m}
+      ASSURANCE_PAGE_SIZE: ${ASSURANCE_PAGE_SIZE:-500}
+      ASSURANCE_RPC_TIMEOUT: ${ASSURANCE_RPC_TIMEOUT:-3s}
+      ASSURANCE_CONCURRENCY: ${ASSURANCE_CONCURRENCY:-2}
+      ALERT_WEBHOOK_URL: ${ALERT_WEBHOOK_URL:-}
+    volumes: *cert-volume
+    ports:
+      - "127.0.0.1:8096:8096"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ledger-service:
+        condition: service_healthy
+      payin-service:
+        condition: service_healthy
+      payout-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/app/service", "-healthcheck"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    deploy:
+      resources:
+        limits:
+          memory: 128M
 
   gateway-service:
     profiles: ["app"]
@@ -348,11 +614,14 @@ services:
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-seev}
       RABBITMQ_EXCHANGE: ledger.events
       LEDGER_GRPC_ADDR: ledger-service:9091
-      LEDGER_USER_API_URL: http://ledger-service:8090
+      LEDGER_USER_API_URL: https://ledger-service:8090
       PAYIN_GRPC_ADDR: payin-service:9092
       PAYOUT_GRPC_ADDR: payout-service:9093
-      INTERNAL_GRPC_TOKEN: ${INTERNAL_GRPC_TOKEN:-}
+      INTERNAL_GRPC_TOKEN: ${INTERNAL_GRPC_TOKEN:-change-me-to-a-random-32-plus-character-token}
+      TLS_CERT_DIR: /certs
       JWT_SECRET: ${JWT_SECRET:-change-me-to-a-random-32-plus-character-secret}
+      JWT_ISSUER: ${JWT_ISSUER:-seev}
+    volumes: *cert-volume
     ports:
       - "127.0.0.1:8080:8080"
       - "127.0.0.1:8081:8081"
@@ -375,7 +644,7 @@ services:
       timeout: 5s
       retries: 10
 
-  # docs/plan/43 (track A1) — local observability stack: Prometheus, Grafana,
+  # docs/roadmap/archive/43 (track A1) — local observability stack: Prometheus, Grafana,
   # Loki, Tempo, Alloy, and a Docker socket proxy, all opt-in behind the
   # `observability` profile (never started by a bare `docker compose up`).
   # Replaces the old Jaeger-only trace viewer — Tempo keeps the same host
@@ -384,10 +653,10 @@ services:
   #   docker compose --profile app --profile observability up -d
   # Then open http://localhost:3000 (Grafana; see K1 for the admin password
   # location) and http://localhost:9090 (Prometheus). All observability
-  # ports are bound to 127.0.0.1 only — see docs/plan/43 K1.
+  # ports are bound to 127.0.0.1 only — see docs/roadmap/archive/43 K1.
   #
   # RAM budget: ~1.9 GiB on top of the app+infra profiles, inside the 4 GB
-  # Docker Desktop budget documented in PROJECT_GUIDE.md — do NOT run this profile
+  # Docker Desktop budget documented in docs/development/project-guide.md — do NOT run this profile
   # at the same time as the testcontainers integration suite.
   prometheus:
     image: prom/prometheus@sha256:f39df5334dee301b885f77e0ff1159f5d8a43bf9db518f885544594799a1e3c2 # v3.12.0-distroless
@@ -402,6 +671,10 @@ services:
       - ./deploy/observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./deploy/observability/prometheus/rules:/etc/prometheus/rules:ro
       - seev_prometheus_data:/prometheus
+      # docs/roadmap/archive/49 K6: every scrape target now requires mTLS — Prometheus
+      # presents the "prometheus" identity, mirrors the app-tier cert-volume
+      # pattern (read-only; the container is also read_only itself below).
+      - ./deploy/certs:/certs:ro
     ports:
       - "127.0.0.1:9090:9090"
     read_only: true
@@ -414,7 +687,7 @@ services:
         limits:
           memory: 384M
     # The distroless image has no shell/wget/curl, so no container-level
-    # healthcheck is possible (docs/plan/43 K1 hardening exception).
+    # healthcheck is possible (docs/roadmap/archive/43 K1 hardening exception).
     # Readiness is verified externally: curl 127.0.0.1:9090/-/ready.
 
   grafana:
@@ -480,7 +753,7 @@ services:
         limits:
           memory: 384M
     # No shell in the loki image — no container healthcheck possible
-    # (docs/plan/43 K1 hardening exception). Readiness verified externally:
+    # (docs/roadmap/archive/43 K1 hardening exception). Readiness verified externally:
     # curl 127.0.0.1:3100/ready.
 
   tempo:
@@ -504,19 +777,19 @@ services:
         limits:
           memory: 384M
     # No shell in the tempo image — no container healthcheck possible
-    # (docs/plan/43 K1 hardening exception). Readiness verified externally:
+    # (docs/roadmap/archive/43 K1 hardening exception). Readiness verified externally:
     # curl 127.0.0.1:3200/ready.
 
   # Only component allowed to touch the real Docker socket — exposes a
-  # restricted, allowlisted TCP API to Alloy instead (docs/plan/43 K1/K9).
+  # restricted, allowlisted TCP API to Alloy instead (docs/roadmap/archive/43 K1/K9).
   # No host port; lives only on the private observability_socket_net.
   docker-socket-proxy:
     image: ghcr.io/tecnativa/docker-socket-proxy@sha256:1f3a6f303320723d199d2316a3e82b2e2685d86c275d5e3deeaf182573b47476 # v0.4.2
     profiles: ["observability"]
     environment:
       CONTAINERS: "1"
-      # NETWORKS=1 is required (not originally planned — see docs/plan/43
-      # T1 Hasil): Alloy's discovery.docker component calls GET /networks
+      # NETWORKS=1 is required (not originally planned — see docs/roadmap/archive/43
+      # T1 Results): Alloy's discovery.docker component calls GET /networks
       # to resolve each container's network labels, even though it never
       # needs to create/modify a network. Still read-only; POST stays 0.
       NETWORKS: "1"
@@ -545,7 +818,7 @@ services:
         limits:
           memory: 64M
     # Runs as root: it's the one component intentionally trusted to read
-    # /var/run/docker.sock (docs/plan/43 K1 hardening exception, by design).
+    # /var/run/docker.sock (docs/roadmap/archive/43 K1 hardening exception, by design).
 
   alloy:
     image: grafana/alloy@sha256:51aeb9d829239345070619dad3edd6873186f913c84f45b365b74574fcb38ec0 # v1.16.1
@@ -585,22 +858,32 @@ services:
           memory: 192M
     # Runs as non-root uid 473 (see `user:` above) and never mounts the
     # Docker socket itself — only reaches it through docker-socket-proxy's
-    # allowlisted TCP API (docs/plan/43 K1).
+    # allowlisted TCP API (docs/roadmap/archive/43 K1).
 
 networks:
   # Isolates docker-socket-proxy + Alloy from every other container —
-  # nothing else can reach the proxy's allowlisted Docker API (docs/plan/43 K1).
+  # nothing else can reach the proxy's allowlisted Docker API (docs/roadmap/archive/43 K1).
   observability_socket_net:
     internal: true
 
 secrets:
   # Generated locally by `make observability-secret` (mode 0600, gitignored;
-  # never a default/committed password — docs/plan/43 K1).
+  # never a default/committed password — docs/roadmap/archive/43 K1).
   grafana_admin_password:
     file: ./deploy/observability/secrets/grafana_admin_password
+  # docs/roadmap/active/50 K3/K5: generated locally by `make backup-secret`, mode
+  # 0600, gitignored — never a default/committed credential.
+  seev_backup_password:
+    file: ./deploy/backup/secrets/seev_backup_password
+  pgbackrest_repo_passphrase:
+    file: ./deploy/backup/secrets/pgbackrest_repo_passphrase
 
 volumes:
   seev_postgres_data:
+  # docs/roadmap/active/50 T2: shares the Postgres Unix socket directory between the
+  # postgres and backup-agent containers (see the postgres service's own
+  # volumes comment) — never mounted anywhere else.
+  seev_backup_socket:
   seev_redis_data:
   seev_rabbitmq_data:
   seev_prometheus_data:

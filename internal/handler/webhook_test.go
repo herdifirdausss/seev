@@ -22,6 +22,16 @@ type fakePayinClient struct {
 	get    func(context.Context, *payinv1.GetTopupIntentRequest) (*payinv1.GetTopupIntentResponse, error)
 }
 
+func (f fakePayinClient) ListAssuranceRecords(context.Context, *payinv1.ListAssuranceRecordsRequest, ...grpc.CallOption) (*payinv1.ListAssuranceRecordsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "")
+}
+func (f fakePayinClient) GetIntakeControl(context.Context, *payinv1.GetIntakeControlRequest, ...grpc.CallOption) (*payinv1.GetIntakeControlResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "")
+}
+func (f fakePayinClient) ApplyIntakeControl(context.Context, *payinv1.ApplyIntakeControlRequest, ...grpc.CallOption) (*payinv1.ApplyIntakeControlResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "")
+}
+
 func (f fakePayinClient) HandleWebhook(ctx context.Context, request *payinv1.HandleWebhookRequest, _ ...grpc.CallOption) (*payinv1.HandleWebhookResponse, error) {
 	return f.handle(ctx, request)
 }
@@ -47,7 +57,7 @@ func payinReturning(response *payinv1.HandleWebhookResponse, err error) fakePayi
 // bypassing the full middleware chain (specifically WithLogger, whose
 // own 16KiB request-body log-snippet cap currently truncates bodies
 // before they reach any handler, a separate pre-existing bug tracked
-// elsewhere) — to prove this handler's OWN 64KiB cap (docs/plan/22 Task
+// elsewhere) — to prove this handler's OWN 64KiB cap (docs/roadmap/archive/22 Task
 // T3) is correctly enforced, independent of that issue.
 func TestWebhookHandler_BodyOverCap_413(t *testing.T) {
 	deps := &Dependencies{Payin: payinReturning(nil, status.Error(codes.Internal, ""))}
@@ -80,7 +90,7 @@ func TestWebhookHandler_BodyAtCap_NotRejectedForSize(t *testing.T) {
 }
 
 // TestWebhookHandler_NoPayinConfigured_404 proves the byte-identical-when-
-// off default (docs/plan/22 Task T3 DoD) at the handler level directly.
+// off default (docs/roadmap/archive/22 Task T3 DoD) at the handler level directly.
 func TestWebhookHandler_NoPayinConfigured_404(t *testing.T) {
 	deps := &Dependencies{} // Payin left nil
 	req := httptest.NewRequest(http.MethodPost, "/webhooks/mockvendor", strings.NewReader(`{}`))

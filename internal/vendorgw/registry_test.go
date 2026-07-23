@@ -33,7 +33,7 @@ func TestRegistry_Payin_Unregistered_NotFound(t *testing.T) {
 
 func TestRegistry_Payin_EmptyRegistry_NotFound(t *testing.T) {
 	// Default (no vendors added) — every /webhooks/{vendor} must 404
-	// (docs/plan/22 Task T3 DoD: byte-identical to before this feature
+	// (docs/roadmap/archive/22 Task T3 DoD: byte-identical to before this feature
 	// when no vendor is configured).
 	r := NewRegistry()
 	_, ok := r.Payin("mockvendor")

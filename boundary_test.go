@@ -1,6 +1,6 @@
 // Package boundary enforces the module-boundary rules from
-// docs/plan/01-target-architecture.md (rules 1–3) and
-// docs/plan/21-service-topology-review.md (K-T5) as a plain Go test — it
+// docs/roadmap/archive/01-target-architecture.md (rules 1–3) and
+// docs/roadmap/archive/21-service-topology-review.md (K-T5) as a plain Go test — it
 // runs on every `make test`, so a boundary violation fails CI the moment it
 // is written instead of waiting for a review to catch it.
 //
@@ -29,7 +29,7 @@ var skipDirs = map[string]bool{
 }
 
 // mutuallyExclusive lists module pairs that must never import each other —
-// not even each other's root facade (docs/plan/21 K-T5 point c): if the two
+// not even each other's root facade (docs/roadmap/archive/21 K-T5 point c): if the two
 // ever need to talk, it goes through events, so that splitting them into
 // separate services never creates a synchronous runtime dependency chain.
 var mutuallyExclusive = [][2]string{
@@ -40,17 +40,34 @@ var mutuallyExclusive = [][2]string{
 // Adding a new service means moving modules between entries, never widening
 // every composition root's import privileges.
 var serviceModules = map[string]map[string]bool{
-	"ledger-service": {"ledger": true, "policy": true},
-	"auth-service":   {"auth": true, "kycvendor": true},
-	"payin-service":  {"payin": true},
-	"payout-service": {"payout": true},
-	"fraud-service":  {"fraud": true},
-	"gateway":        {"handler": true, "notify": true},
-	"gentoken":       {},
+	"ledger-service":    {"ledger": true, "policy": true},
+	"auth-service":      {"auth": true, "kycvendor": true},
+	"payin-service":     {"payin": true},
+	"payout-service":    {"payout": true},
+	"fraud-service":     {"fraud": true},
+	"sanctions-loader":  {"fraud": true},
+	"admin-bff-service": {"adminbff": true},
+	"assurance-service": {"assurance": true},
+	"backup-agent":      {"backupagent": true},
+	"drreseed":          {"drreseed": true},
+	"drverify":          {"drverify": true},
+	"gateway":           {"handler": true, "notify": true},
+	"gentoken":          {},
 }
 
 var ledgerConsumers = map[string]bool{
 	"payin": true, "payout": true, "auth": true, "notify": true, "handler": true, "fraud": true,
+}
+
+// offlineRecoveryDependencies are narrow exceptions for recovery tools that
+// run against an isolated restored cluster while application traffic remains
+// fenced. They reuse owner logic to verify or rebuild ephemeral state, but
+// they are not linked into any long-running service. Keep both the importing
+// and imported modules explicit so this cannot become a general cross-service
+// escape hatch.
+var offlineRecoveryDependencies = map[string]map[string]bool{
+	"drreseed": {"fraud": true, "policy": true},
+	"drverify": {"assurance": true},
 }
 
 // grandfathered tracks pre-existing exceptions. Do not add entries; fix the
@@ -62,7 +79,7 @@ var grandfathered = map[string]bool{}
 //  1. No package outside internal/<mod> imports internal/<mod>/<sub> — a
 //     module's subpackages are private; only its root facade is importable.
 //     Single exception: internal/<mod>/events (the versioned event payload
-//     contract, docs/plan/14 T3) may be imported from anywhere. cmd/ is
+//     contract, docs/roadmap/archive/14 T3) may be imported from anywhere. cmd/ is
 //     exempt from this rule entirely (see inline comment below) — it is
 //     the composition root, not a module.
 //  2. pkg/* never imports internal/* (dependency direction cmd → internal →
@@ -77,7 +94,7 @@ var grandfathered = map[string]bool{}
 // Rules 1 and 3 are NOT enforced in _test.go files. A test exercising
 // realistic cross-module behavior (e.g. internal/payin's integration test
 // driving a real internal/vendorgw/mockvendor signature end to end,
-// docs/plan/22 Task T2) is a normal, valuable practice — test code never
+// docs/roadmap/archive/22 Task T2) is a normal, valuable practice — test code never
 // ships in the deployed binary, so it creates no runtime coupling between
 // modules. Production code (including cmd/gateway, for anything other than
 // its own subpackage-registration wiring) is held to the full rule.
@@ -169,7 +186,8 @@ func TestModuleBoundaries(t *testing.T) {
 				sameService := moduleOwner(importerMod) != "" && moduleOwner(importerMod) == moduleOwner(impMod)
 				ledgerEvent := impMod == "ledger" && len(segs) >= 2 && segs[1] == "events"
 				sharedVendorGateway := impMod == "vendorgw" && (importerMod == "payin" || importerMod == "payout")
-				if !sameService && !ledgerEvent && !sharedVendorGateway {
+				offlineRecovery := offlineRecoveryDependencies[importerMod][impMod]
+				if !sameService && !ledgerEvent && !sharedVendorGateway && !offlineRecovery {
 					violations = append(violations,
 						rel+" imports "+short+" — cross-service production imports must use internal/ledger/events or gen/*")
 				}
@@ -201,12 +219,13 @@ func TestModuleBoundaries(t *testing.T) {
 			// based on config (e.g. cache.NewRedisCounter vs
 			// cache.NewMemoryCounter) rather than hiding that behind
 			// registration magic — a module's registry pattern (e.g.
-			// vendorgw.Registry, docs/plan/22 Task T1) relies on cmd doing
+			// vendorgw.Registry, docs/roadmap/archive/22 Task T1) relies on cmd doing
 			// the same for the module's own sub-implementations.
 			if strings.HasPrefix(rel, "cmd/") {
 				continue
 			}
-			if len(segs) >= 2 && importerMod != impMod && segs[1] != "events" {
+			offlineRecovery := offlineRecoveryDependencies[importerMod][impMod]
+			if len(segs) >= 2 && importerMod != impMod && segs[1] != "events" && !offlineRecovery {
 				violations = append(violations,
 					rel+" imports "+short+" — only internal/"+impMod+
 						" itself may import its subpackages; import the root facade instead (doc 01 rule 1)")

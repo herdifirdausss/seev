@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Golden JSON tests lock the wire format (docs/plan/14 Task T3) — a change
+// Golden JSON tests lock the wire format (docs/roadmap/archive/14 Task T3) — a change
 // to a json tag, field type, or omitempty behavior fails these tests, which
 // is the point: the contract says at-least-once delivery to consumers who
 // may not upgrade in lockstep with this repo, so the wire shape must not
@@ -99,7 +99,7 @@ func TestTransactionPosted_GoldenJSON_NilSourceDest_OmitsExternalRef(t *testing.
 }
 
 // TestTransactionPosted_GoldenJSON_WithUserAndTargetUser proves the
-// docs/plan/25 Task T4 addition — an OPTIONAL, non-breaking field on an
+// docs/roadmap/archive/25 Task T4 addition — an OPTIONAL, non-breaking field on an
 // existing event type, still SchemaVersion 1 — appears in the wire format
 // exactly as internal/notify's consumer expects, for a two-party
 // transaction (transfer_p2p shape: both UserID and TargetUserID set).

@@ -4,7 +4,7 @@
 // unit tests (policy_test.go) mock Repository entirely, so they can't catch
 // a bad query, a wrong column, or a constraint violation. Runs its own
 // throwaway container + migrations, independent of internal/ledger's own
-// schema_contract_test.go (docs/plan/17 Task T1: policy has no dependency
+// schema_contract_test.go (docs/roadmap/archive/17 Task T1: policy has no dependency
 // on the ledger module in either direction, including in tests).
 package policy_test
 
@@ -42,7 +42,7 @@ func setupPolicyTestDB(t *testing.T) *database.DBSQL {
 	const dbName, dbUser, dbPassword = "seev_test", "test", "secret"
 
 	container, err := postgres.Run(ctx,
-		"postgres:16-alpine",
+		"postgres:16.14-alpine",
 		postgres.WithDatabase(dbName),
 		postgres.WithUsername(dbUser),
 		postgres.WithPassword(dbPassword),
@@ -144,7 +144,7 @@ func TestPolicy_Upsert_SecondDefaultUpdatesNotDuplicates(t *testing.T) {
 }
 
 // TestPolicy_Engine_CacheExpiresAndRefetchesFromRealDB is the specific test
-// docs/plan/17 Task T1's own "Test wajib" calls for: upsert a limit via the
+// docs/roadmap/archive/17 Task T1's own "Required test" calls for: upsert a limit via the
 // repository, Check must read the NEW value once the in-process cache TTL
 // has passed — using an injected small TTL (WithCacheTTL), never a 60s+
 // sleep.

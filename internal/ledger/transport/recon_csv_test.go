@@ -9,8 +9,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// ─── parseReconCSV (docs/plan/16 Task T2 "Test wajib": CSV malformed /
-// amount desimal / >50k baris → 400 dengan pesan jelas) ────────────────────
+// ─── parseReconCSV (docs/roadmap/archive/16 Task T2 "Required test": malformed CSV /
+// decimal amount / >50k rows → 400 with a clear message) ────────────────────
 
 func TestParseReconCSV_Valid_Succeeds(t *testing.T) {
 	csv := "external_ref,amount,settled_at\nref-1,10000,2026-07-12\nref-2,20000,2026-07-12\n"

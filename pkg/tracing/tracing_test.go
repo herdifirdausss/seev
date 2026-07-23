@@ -10,7 +10,7 @@ import (
 )
 
 // TestSetup_EmptyEndpoint_NoProviderInstalled is the regression test for
-// docs/plan/12 Task T5's core guarantee (carried into docs/plan/43 K3): an
+// docs/roadmap/archive/12 Task T5's core guarantee (carried into docs/roadmap/archive/43 K3): an
 // empty endpoint must never install a real TracerProvider, and must never
 // error or panic — this is the default for every deployment that hasn't
 // opted into tracing.
@@ -50,7 +50,7 @@ func TestSetup_ConfiguredEndpoint_DoesNotErrorOrPanicAtSetup(t *testing.T) {
 	_ = shutdown(ctx)
 }
 
-// TestSetup_InvalidSampleRatio_Rejected covers docs/plan/43 K3's explicit
+// TestSetup_InvalidSampleRatio_Rejected covers docs/roadmap/archive/43 K3's explicit
 // requirement: a ratio outside [0, 1] must fail validation clearly, not
 // silently clamp or panic deep inside the SDK's sampler.
 func TestSetup_InvalidSampleRatio_Rejected(t *testing.T) {

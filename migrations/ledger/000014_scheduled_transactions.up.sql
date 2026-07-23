@@ -1,4 +1,4 @@
--- docs/plan/19 Task T1 (S3 butir 1): recurring/deferred user transactions
+-- docs/roadmap/archive/19 Task T1 (S3 butir 1): recurring/deferred user transactions
 -- (auto-debit, scheduled transfer) executed by a daily job — no new
 -- execution state machine. "Has this run" is answered by the ledger's own
 -- idempotency key (sched:<id>:<run_date>), never a flag this table owns;

@@ -1,4 +1,4 @@
--- docs/plan/38 Task T5: a payout created with a fee quote stores the
+-- docs/roadmap/archive/38 Task T5: a payout created with a fee quote stores the
 -- QUOTED fee at create time — settle (possibly hours later, via the resume
 -- job) uses this stored value instead of re-resolving fee_rules, so an
 -- admin changing pricing in between never changes what the user was quoted.

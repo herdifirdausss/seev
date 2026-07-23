@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
@@ -55,7 +56,7 @@ func (s *Server) HandleWebhook(ctx context.Context, request *payinv1.HandleWebho
 		case errors.Is(err, vendorgw.ErrInvalidSignature):
 			return nil, status.Error(codes.Unauthenticated, "invalid webhook signature")
 		case errors.Is(err, s.screeningDependencyUnavailable):
-			// docs/plan/45 Task T3/K4 — fraud-service is reachable but its
+			// docs/roadmap/archive/45 Task T3/K4 — fraud-service is reachable but its
 			// velocity dependency is down; distinct message from
 			// noVendorAvailable's own codes.Unavailable use elsewhere so
 			// the gateway can tell them apart.
@@ -78,11 +79,14 @@ func (s *Server) CreateTopupIntent(ctx context.Context, request *payinv1.CreateT
 	}
 	intent, callErr := s.service.CreateTopupIntent(ctx, userID, amount)
 	if callErr != nil {
+		if strings.Contains(callErr.Error(), "intake paused") {
+			return nil, status.Error(codes.FailedPrecondition, "INTAKE_PAUSED")
+		}
 		if errors.Is(callErr, s.noRoute) {
 			return nil, status.Error(codes.FailedPrecondition, "no topup route available")
 		}
 		if errors.Is(callErr, s.noVendorAvailable) {
-			// docs/plan/40 Task T2 — distinct gRPC code from "no route"
+			// docs/roadmap/archive/40 Task T2 — distinct gRPC code from "no route"
 			// (FailedPrecondition/422): every candidate vendor is
 			// registered but circuit-broken, a TRANSIENT condition the
 			// caller should retry, not a config problem.
@@ -113,6 +117,43 @@ func (s *Server) GetTopupIntent(ctx context.Context, request *payinv1.GetTopupIn
 		return nil, status.Error(codes.NotFound, "topup intent not found")
 	}
 	return &payinv1.GetTopupIntentResponse{Intent: intentToProto(intent)}, nil
+}
+
+func (s *Server) ListAssuranceRecords(ctx context.Context, request *payinv1.ListAssuranceRecordsRequest) (*payinv1.ListAssuranceRecordsResponse, error) {
+	reader, ok := s.service.(interface {
+		ListAssuranceRecords(context.Context, *payinv1.ListAssuranceRecordsRequest) (*payinv1.ListAssuranceRecordsResponse, error)
+	})
+	if !ok {
+		return nil, status.Error(codes.Unimplemented, "payin assurance projection unavailable")
+	}
+	return reader.ListAssuranceRecords(ctx, request)
+}
+
+func (s *Server) GetIntakeControl(ctx context.Context, request *payinv1.GetIntakeControlRequest) (*payinv1.GetIntakeControlResponse, error) {
+	reader, ok := s.service.(interface {
+		GetIntakeControlRPC(context.Context) (*payinv1.GetIntakeControlResponse, error)
+	})
+	if !ok {
+		return nil, status.Error(codes.Unimplemented, "payin intake control unavailable")
+	}
+	return reader.GetIntakeControlRPC(ctx)
+}
+
+func (s *Server) ApplyIntakeControl(ctx context.Context, request *payinv1.ApplyIntakeControlRequest) (*payinv1.ApplyIntakeControlResponse, error) {
+	reader, ok := s.service.(interface {
+		ApplyIntakeControlRPC(context.Context, *payinv1.ApplyIntakeControlRequest) (*payinv1.ApplyIntakeControlResponse, error)
+	})
+	if !ok {
+		return nil, status.Error(codes.Unimplemented, "payin intake control unavailable")
+	}
+	response, err := reader.ApplyIntakeControlRPC(ctx, request)
+	if err != nil {
+		if strings.Contains(err.Error(), "revision mismatch") {
+			return nil, status.Error(codes.Aborted, "intake revision mismatch")
+		}
+		return nil, status.Error(codes.InvalidArgument, "invalid intake command")
+	}
+	return response, nil
 }
 
 func parseUserAndAmount(rawUserID, rawAmount string) (uuid.UUID, decimal.Decimal, error) {

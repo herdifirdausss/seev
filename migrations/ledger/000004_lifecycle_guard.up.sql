@@ -1,4 +1,4 @@
--- Lifecycle guard (docs/plan/14 Task T2, decision K3).
+-- Lifecycle guard (docs/roadmap/archive/14 Task T2, decision K3).
 --
 -- closed_by_tx_id/closed_reason make "close the original transaction"
 -- (reverse, settle, cancel, release, refund) a single atomic, race-proof

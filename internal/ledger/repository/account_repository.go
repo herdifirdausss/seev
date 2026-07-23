@@ -34,7 +34,7 @@ type AccountRepository interface {
 	// fee, escrow, chargeback, adjustment, confiscated). qualifier is the
 	// shard key documented in processors.go (gateway for settlement/fee, card
 	// network for chargeback, currency for escrow, "" for adjustment/confiscated).
-	// currency filters to the account pool for that currency (docs/plan/18
+	// currency filters to the account pool for that currency (docs/roadmap/archive/18
 	// Task T2) — a qualifier like "bca" now names a FAMILY of accounts, one
 	// per currency, not a single account; currency picks the member.
 	GetSystemAccountID(ctx context.Context, accountType string, qualifier string, currency string) (uuid.UUID, error)
@@ -51,7 +51,7 @@ type AccountRepository interface {
 type accountRepo struct {
 	db database.DatabaseSQL
 
-	// Caches for docs/plan/11 Task T3 — every one of these is positive-only
+	// Caches for docs/roadmap/archive/11 Task T3 — every one of these is positive-only
 	// (a "not found" result is never cached, so a not-yet-provisioned
 	// pocket or a genuinely missing account is always re-checked against
 	// the DB) and has no TTL/eviction: the values themselves are immutable

@@ -48,6 +48,18 @@ func TestNewWebhookAlerter_NonSuccessStatus_ReturnsError(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestNewWebhookAlerterForService_LabelsPayload(t *testing.T) {
+	var received webhookPayload
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&received))
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	require.NoError(t, NewWebhookAlerterForService(srv.URL, "seev-assurance", nil)(context.Background(), "high", "test"))
+	assert.Equal(t, "seev-assurance", received.Service)
+}
+
 func TestNewWebhookAlerter_UnreachableURL_ReturnsErrorNotPanic(t *testing.T) {
 	alert := NewWebhookAlerter("http://127.0.0.1:1/unreachable", nil)
 

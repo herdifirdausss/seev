@@ -1,7 +1,7 @@
 // Package events is the versioned wire-format contract for ledger outbox
-// events (docs/plan/14 Task T3, decision K4). It is the SINGLE subpackage of
+// events (docs/roadmap/archive/14 Task T3, decision K4). It is the SINGLE subpackage of
 // internal/ledger that external code (other modules, cmd/, internal/handler)
-// may import — see PROJECT_GUIDE.md "Module Boundaries". It contains ONLY payload
+// may import — see docs/development/project-guide.md "Module Boundaries". It contains ONLY payload
 // types and event-type constants: no repository, no processor, no DB access.
 // A consumer that only needs to decode events must not be forced to pull in
 // the whole ledger module's dependency graph.
@@ -30,7 +30,7 @@ const (
 	// care about only some transaction types filter on
 	// TransactionPosted.TransactionType; this keeps the event schema at two
 	// types total instead of growing by one for every new transaction type
-	// the registry gains (docs/plan/08 S8's interest_accrue, for instance,
+	// the registry gains (docs/roadmap/archive/08 S8's interest_accrue, for instance,
 	// needs zero new event-schema work).
 	TypeTransactionPosted = "ledger.transaction.posted.v1"
 	// TypeTransactionReversed is emitted ADDITIONALLY (alongside a
@@ -41,7 +41,7 @@ const (
 	// having to correlate two different aggregate ids itself.
 	TypeTransactionReversed = "ledger.transaction.reversed.v1"
 	// TypeAdjustmentDecided is emitted when a pending_adjustments row is
-	// approved or rejected (docs/plan/16 Task T1, decision K8) — the
+	// approved or rejected (docs/roadmap/archive/16 Task T1, decision K8) — the
 	// governance audit trail (who requested, who decided, what) rides the
 	// same outbox mechanism as every other ledger event.
 	TypeAdjustmentDecided = "ledger.adjustment.decided.v1"
@@ -68,14 +68,14 @@ type TransactionPosted struct {
 	Amount          string `json:"amount"`
 	Currency        string `json:"currency"`
 	// SourceAccountID/DestinationAccountID are nil when the transaction
-	// isn't a single source->destination pair (docs/plan/14 Task T1,
+	// isn't a single source->destination pair (docs/roadmap/archive/14 Task T1,
 	// decision K2 — e.g. Reversal).
 	SourceAccountID      *uuid.UUID     `json:"source_account_id,omitempty"`
 	DestinationAccountID *uuid.UUID     `json:"destination_account_id,omitempty"`
 	Entries              []EntrySummary `json:"entries"`
 	ExternalRef          string         `json:"external_ref,omitempty"`
 	OccurredAt           time.Time      `json:"occurred_at"`
-	// UserID/TargetUserID (docs/plan/25 Task T4) are the Command's own
+	// UserID/TargetUserID (docs/roadmap/archive/25 Task T4) are the Command's own
 	// UserID/TargetUserID, added SPECIFICALLY so a consumer (internal/notify)
 	// can determine WHICH user(s) to notify without querying the ledger back
 	// — a new OPTIONAL field, non-breaking per this package's own versioning
@@ -84,7 +84,7 @@ type TransactionPosted struct {
 	// nil for anything that isn't a two-user transfer (transfer_p2p).
 	UserID       *uuid.UUID `json:"user_id,omitempty"`
 	TargetUserID *uuid.UUID `json:"target_user_id,omitempty"`
-	// RequestID (docs/plan/36 Task T4) is the originating HTTP/gRPC
+	// RequestID (docs/roadmap/archive/36 Task T4) is the originating HTTP/gRPC
 	// request_id, added SPECIFICALLY so the outbox relay — a background
 	// worker with no request ctx of its own — can restore it as the AMQP
 	// CorrelationId when publishing. A new OPTIONAL field, non-breaking per

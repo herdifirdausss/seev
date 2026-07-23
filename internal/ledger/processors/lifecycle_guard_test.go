@@ -13,7 +13,7 @@ import (
 	"github.com/herdifirdausss/seev/internal/ledger/apperror"
 )
 
-// Unit coverage for docs/plan/14 Task T2's lifecycle guard (decision K3):
+// Unit coverage for docs/roadmap/archive/14 Task T2's lifecycle guard (decision K3):
 // ValidateCommand requiring ReferenceID, and validateOriginalForClose's
 // type/status/closed/amount checks. The race-proof guarantee itself
 // (CloseOriginal's atomic UPDATE) can only be proven against real Postgres —

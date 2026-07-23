@@ -18,7 +18,7 @@ import (
 // ErrNotFound is returned by Get when no row exists for the given id.
 var ErrNotFound = errors.New("notify: notification not found")
 
-// Repository persists in-app notifications (docs/plan/25 Task T4).
+// Repository persists in-app notifications (docs/roadmap/archive/25 Task T4).
 type Repository interface {
 	// Insert dedups via the UNIQUE(event_id, user_id) constraint —
 	// `INSERT ... ON CONFLICT (event_id, user_id) DO NOTHING`. inserted=false
@@ -37,7 +37,7 @@ type Repository interface {
 	// ownership is enforced at the SQL layer, not only the HTTP layer.
 	// matched=false covers both "no such id" and "not this user's row"; the
 	// HTTP layer maps both to 404, never confirming existence to a
-	// non-owner (docs/plan/23's GetHandler ownership pattern).
+	// non-owner (docs/roadmap/archive/23's GetHandler ownership pattern).
 	MarkRead(ctx context.Context, id, userID uuid.UUID) (matched bool, err error)
 }
 

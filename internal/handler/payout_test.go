@@ -23,6 +23,16 @@ type fakePayoutClient struct {
 	get    func(context.Context, *payoutv1.GetPayoutRequest) (*payoutv1.GetPayoutResponse, error)
 }
 
+func (f fakePayoutClient) ListAssuranceRecords(context.Context, *payoutv1.ListAssuranceRecordsRequest, ...grpc.CallOption) (*payoutv1.ListAssuranceRecordsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "")
+}
+func (f fakePayoutClient) GetIntakeControl(context.Context, *payoutv1.GetIntakeControlRequest, ...grpc.CallOption) (*payoutv1.GetIntakeControlResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "")
+}
+func (f fakePayoutClient) ApplyIntakeControl(context.Context, *payoutv1.ApplyIntakeControlRequest, ...grpc.CallOption) (*payoutv1.ApplyIntakeControlResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "")
+}
+
 func (f fakePayoutClient) CreatePayout(ctx context.Context, r *payoutv1.CreatePayoutRequest, _ ...grpc.CallOption) (*payoutv1.CreatePayoutResponse, error) {
 	return f.create(ctx, r)
 }
@@ -79,7 +89,7 @@ func TestPayoutGatewayNoRoute(t *testing.T) {
 	assert.Contains(t, w.Body.String(), `"code":"NO_ROUTE"`)
 }
 
-// TestPayoutGatewayScreeningBlocked proves docs/plan/37 Task T5: a
+// TestPayoutGatewayScreeningBlocked proves docs/roadmap/archive/37 Task T5: a
 // FailedPrecondition gRPC error whose message carries payout's own
 // ErrScreeningBlocked sentinel maps to 422 SCREENING_BLOCKED — the same
 // HTTP contract shape as the ledger's own SCREENING_BLOCKED (Task T3).

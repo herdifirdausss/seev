@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// ─── MemoryRateLimiter (docs/plan/12 Task T1) ──────────────────────────────────
+// ─── MemoryRateLimiter (docs/roadmap/archive/12 Task T1) ──────────────────────────────────
 
 func TestMemoryRateLimiter_ImplementsInterface(t *testing.T) {
 	var _ Limiter = (*MemoryRateLimiter)(nil)

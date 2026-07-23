@@ -8,7 +8,7 @@ import (
 )
 
 // NewV7 generates a time-ordered (version 7) UUID for insert-heavy tables
-// (docs/plan/11 Task T4) — ledger_transactions.id, ledger_entries.id,
+// (docs/roadmap/archive/11 Task T4) — ledger_transactions.id, ledger_entries.id,
 // outbox_events.id. A v4 (random) primary key scatters inserts across the
 // whole btree, causing more page splits and worse buffer cache locality
 // than a monotonically-ish increasing key at high insert volume; v7 keeps

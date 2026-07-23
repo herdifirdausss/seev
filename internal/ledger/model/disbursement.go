@@ -7,7 +7,7 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// DisbursementBatch is one imported CSV manifest (docs/plan/19 Task T2).
+// DisbursementBatch is one imported CSV manifest (docs/roadmap/archive/19 Task T2).
 type DisbursementBatch struct {
 	ID             uuid.UUID
 	SourceFilename string
@@ -31,7 +31,7 @@ type DisbursementItem struct {
 }
 
 // DisbursementImportRow is one CSV row before it's assigned an item number
-// and inserted (docs/plan/19 Task T2 step 2).
+// and inserted (docs/roadmap/archive/19 Task T2 step 2).
 type DisbursementImportRow struct {
 	UserID uuid.UUID
 	Amount decimal.Decimal
@@ -39,7 +39,7 @@ type DisbursementImportRow struct {
 }
 
 // DisbursementBatchReport is a batch's header plus a count per item status
-// and a page of items — GET /admin/disbursements/{id} (docs/plan/19 Task
+// and a page of items — GET /admin/disbursements/{id} (docs/roadmap/archive/19 Task
 // T2 step 5, pola recon report).
 type DisbursementBatchReport struct {
 	Batch  DisbursementBatch
@@ -48,7 +48,7 @@ type DisbursementBatchReport struct {
 }
 
 // DisbursementRunResult reports one POST /admin/disbursements/{id}/run
-// call's progress (docs/plan/19 Task T2 step 6).
+// call's progress (docs/roadmap/archive/19 Task T2 step 6).
 type DisbursementRunResult struct {
 	Processed int
 	Posted    int

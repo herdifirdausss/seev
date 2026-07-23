@@ -38,7 +38,7 @@ type LedgerEntry struct {
 	CreatedAt     time.Time
 }
 
-// StatementEntry is one line of an account statement (docs/plan/15 Task
+// StatementEntry is one line of an account statement (docs/roadmap/archive/15 Task
 // T2) — a ledger_entries row plus the type of transaction that produced it,
 // in chronological order (statements read top-to-bottom by date, unlike
 // LedgerEntry's newest-first keyset pagination).
@@ -55,7 +55,7 @@ type StatementEntry struct {
 }
 
 // Statement is the result of a period balance/entries query for one account
-// (docs/plan/15 Task T2). OpeningBalance/ClosingBalance are always integral
+// (docs/roadmap/archive/15 Task T2). OpeningBalance/ClosingBalance are always integral
 // minor-unit values, like every other monetary field in this codebase.
 type Statement struct {
 	AccountID      uuid.UUID

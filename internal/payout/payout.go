@@ -1,17 +1,17 @@
-// Package payout is the public facade for the payout module (docs/plan/23,
+// Package payout is the public facade for the payout module (docs/roadmap/archive/23,
 // decision K-T3/K-T6) — orchestrates a user withdraw request through
 // hold -> vendor submission -> terminal state (settled/cancelled/failed).
 // This is the ONLY package other code may import from internal/payout —
 // importing internal/payout/repository or internal/payout/model directly
 // from outside this module is a boundary violation
-// (docs/plan/01-target-architecture.md, enforced by boundary_test.go).
+// (docs/roadmap/archive/01-target-architecture.md, enforced by boundary_test.go).
 //
 // payout is NOT a general-purpose saga framework — it is a state machine
 // (payout_requests.status) plus a resume/polling job that re-drives
 // whatever step a crashed/interrupted request last reached. The guard that
 // actually prevents money-unsafe outcomes (double-settle,
 // settle-after-cancel) is the LEDGER's own closed_by_tx_id atomic guard
-// (docs/plan/14 Task T2, decision K3) — payout translates a lost race
+// (docs/roadmap/archive/14 Task T2, decision K3) — payout translates a lost race
 // (ledgererr.ErrAlreadyClosed) into "reconcile local state", it never builds
 // its own competing protection.
 package payout
@@ -47,18 +47,18 @@ func (m *Module) RegisterGRPC(server *grpc.Server) {
 }
 
 // Poster is the subset of ledger.Module's behavior payout needs — a local
-// structural interface (mirrors internal/payin.Poster, docs/plan/22 Task
+// structural interface (mirrors internal/payin.Poster, docs/roadmap/archive/22 Task
 // T2) rather than a dependency on the concrete *ledger.Module type.
 type Poster interface {
 	Post(ctx context.Context, cmd ledgerclient.Command) error
 	// GetTransactionByIdempotencyKey recovers the tx ID Post() itself
 	// doesn't return, so payout can later pass it as ReferenceID to
-	// withdraw_settle/withdraw_cancel (docs/plan/23 Task T3).
+	// withdraw_settle/withdraw_cancel (docs/roadmap/archive/23 Task T3).
 	GetTransactionByIdempotencyKey(ctx context.Context, key, scope string) (ledgerclient.Transaction, error)
 	// GetUserCurrency resolves the currency Create should record on a new
-	// payout_requests row (docs/plan/23 Task T3 step 1).
+	// payout_requests row (docs/roadmap/archive/23 Task T3 step 1).
 	GetUserCurrency(ctx context.Context, userID uuid.UUID, pocketCode string) (string, error)
-	// ResolveFee prices the withdraw fee (docs/plan/25 Task T2) — the
+	// ResolveFee prices the withdraw fee (docs/roadmap/archive/25 Task T2) — the
 	// boundary-clean way payout charges a fee without importing
 	// internal/ledger/feepolicy (a subpackage of another module). settle()
 	// calls this and passes the result as fee_amount/fee_gateway metadata
@@ -67,7 +67,7 @@ type Poster interface {
 	// close validation or strand the fee on a cancelled withdrawal.
 	ResolveFee(ctx context.Context, userID uuid.UUID, txType, gateway, currency string, amount decimal.Decimal) (fee decimal.Decimal, feeGateway string, ok bool, err error)
 	// ConsumeFeeQuote atomically, single-use consumes a fee quote created
-	// via ledger's POST /fees/quote (docs/plan/38 Task T5) — Create calls
+	// via ledger's POST /fees/quote (docs/roadmap/archive/38 Task T5) — Create calls
 	// this BEFORE hold (anti-burn ordering: quote consumption never moves
 	// money by itself). Returns *ledgererr.LedgerError{Code: "QUOTE_EXPIRED"
 	// | "QUOTE_MISMATCH"} on rejection.
@@ -76,20 +76,21 @@ type Poster interface {
 
 // Module is the public facade for the payout module.
 type Module struct {
+	db       database.DatabaseSQL
 	repo     repository.Repository
 	routing  repository.RoutingRepository
 	poster   Poster
 	registry *vendorgw.Registry
 	logger   *slog.Logger
 	// fraudClient screens a payout before any row is created or hold is
-	// posted (docs/plan/37 Task T5). nil is a valid, fully-supported
+	// posted (docs/roadmap/archive/37 Task T5). nil is a valid, fully-supported
 	// configuration — no screening runs.
 	fraudClient *fraudcheck.Client
-	// breaker tracks per-vendor circuit health (docs/plan/40 Task T1) — nil
+	// breaker tracks per-vendor circuit health (docs/roadmap/archive/40 Task T1) — nil
 	// is a valid, fully-supported configuration (byte-identical to before
 	// this feature existed: every registered vendor is always "allowed").
 	breaker vendorgw.Breaker
-	// commandRepo persists the durable vendor-dispatch outbox (docs/plan/45
+	// commandRepo persists the durable vendor-dispatch outbox (docs/roadmap/archive/45
 	// Task T0/T1) — relay.go's dispatchOne is the only place that ever
 	// calls provider.Submit; every other call site (Create, resume,
 	// AdminRetry) only ever enqueues/ensures a command.
@@ -111,6 +112,7 @@ func NewModule(db database.DatabaseSQL, poster Poster, registry *vendorgw.Regist
 		logger = slog.Default()
 	}
 	m := &Module{
+		db:          db,
 		repo:        repository.NewRepository(db),
 		routing:     repository.NewRoutingRepository(db),
 		commandRepo: repository.NewVendorCommandRepository(db),
@@ -137,8 +139,8 @@ func NewModule(db database.DatabaseSQL, poster Poster, registry *vendorgw.Regist
 	return m
 }
 
-// StartWorkers launches the resume/polling job (docs/plan/23 Task T3 step
-// 3) and the vendor-command relay (docs/plan/45 Task T1) — the only place
+// StartWorkers launches the resume/polling job (docs/roadmap/archive/23 Task T3 step
+// 3) and the vendor-command relay (docs/roadmap/archive/45 Task T1) — the only place
 // provider.Submit is ever called from. Call StopWorkers on shutdown.
 func (m *Module) StartWorkers(ctx context.Context) {
 	if err := m.resumeJob.Start(ctx); err != nil {

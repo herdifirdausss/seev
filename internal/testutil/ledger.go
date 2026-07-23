@@ -87,14 +87,14 @@ func (h *LedgerHarness) ResolveFee(ctx context.Context, userID uuid.UUID, txType
 
 // CreateQuote delegates to the in-process ledger module — lets
 // integration tests outside internal/ledger (e.g. internal/payout's own,
-// docs/plan/38 Task T5) create a real fee quote to consume without
+// docs/roadmap/archive/38 Task T5) create a real fee quote to consume without
 // importing the module-private internal/ledger/feepolicy package.
 func (h *LedgerHarness) CreateQuote(ctx context.Context, userID uuid.UUID, txType, gateway, currency string, amount decimal.Decimal, ttl time.Duration) (ledger.Quote, error) {
 	return h.module.CreateQuote(ctx, userID, txType, gateway, currency, amount, ttl)
 }
 
 // ConsumeFeeQuote delegates to the in-process ledger module — its feePolicy
-// is wired to the SAME test database (docs/plan/38 Task T5), so quote
+// is wired to the SAME test database (docs/roadmap/archive/38 Task T5), so quote
 // creation and consumption observe the same rows. Its error already comes
 // back as *ledger.LedgerError (ledger.Module.ConsumeFeeQuote translates the
 // raw feepolicy sentinels itself, precisely so this harness can reuse the
@@ -105,7 +105,7 @@ func (h *LedgerHarness) ConsumeFeeQuote(ctx context.Context, quoteID, userID uui
 	return fee, feeGateway, translateLedgerErr(err)
 }
 
-// ApplyKycTier delegates to the in-process ledger module (docs/plan/39 Task
+// ApplyKycTier delegates to the in-process ledger module (docs/roadmap/archive/39 Task
 // T5) — lets integration tests outside internal/ledger (e.g.
 // internal/auth's own) exercise the real ApplyKycTier wiring through the
 // same Provisioner-shaped surface a real ledgerclient.Client offers.

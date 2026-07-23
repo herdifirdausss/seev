@@ -1,6 +1,7 @@
 package payin
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
@@ -16,7 +17,7 @@ import (
 
 // AdminRouter returns the payin module's admin HTTP surface, already at
 // its final paths (/admin/payin/...) — mount directly, no prefix
-// stripping needed (docs/plan/22 Task T4, same mounting pattern as
+// stripping needed (docs/roadmap/archive/22 Task T4, same mounting pattern as
 // internal/policy.Handler.Mux). Internal-router only; every handler is
 // also admin-gated inside itself, defense in depth, same pattern as every
 // other /admin/* surface in this codebase.
@@ -30,14 +31,53 @@ func (m *Module) AdminRouter() http.Handler {
 	mux.HandleFunc("GET /admin/payin/vendor-gateways/{vendor}", m.getVendorGatewayHandler)
 	mux.HandleFunc("PUT /admin/payin/vendor-gateways/{vendor}", m.putVendorGatewayHandler)
 	mux.HandleFunc("GET /admin/payin/vendors/health", m.vendorHealthHandler)
+	mux.HandleFunc("POST /admin/payin/intake/pause", m.directPauseHandler)
 	return mux
+}
+
+type intakePauseRequest struct {
+	CommandID        string `json:"command_id"`
+	ExpectedRevision int64  `json:"expected_revision"`
+	Reason           string `json:"reason"`
+}
+
+func (m *Module) directPauseHandler(w http.ResponseWriter, r *http.Request) {
+	claims := middleware.GetClaims(r.Context())
+	if claims == nil || claims.Role != "admin" {
+		response.Forbidden(w, "direct pause requires admin role")
+		return
+	}
+	var request intakePauseRequest
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil || request.Reason == "" {
+		response.BadRequest(w, "command_id and reason are required")
+		return
+	}
+	commandID, err := uuid.Parse(request.CommandID)
+	if err != nil {
+		response.BadRequest(w, "command_id must be a UUID")
+		return
+	}
+	actor := claims.UserID
+	if actor == "" {
+		actor = claims.Email
+	}
+	result, err := m.ApplyIntakeControl(r.Context(), commandID, "pause", request.ExpectedRevision, actor, request.Reason)
+	if err != nil {
+		if errors.Is(err, ErrIntakeRevisionMismatch) {
+			response.Conflict(w, "intake revision mismatch")
+			return
+		}
+		response.InternalServerError(w, err)
+		return
+	}
+	response.OK(w, result)
 }
 
 type vendorHealthResponse struct {
 	Vendors []vendorgw.VendorHealth `json:"vendors"`
 }
 
-// vendorHealthHandler serves GET /admin/payin/vendors/health (docs/plan/40
+// vendorHealthHandler serves GET /admin/payin/vendors/health (docs/roadmap/archive/40
 // Task T5 — the doc's own shorthand path "/admin/vendors/health" isn't
 // reachable through this service's admin router, which only ever mounts
 // the "/admin/payin/" subtree, see cmd/payin-service/router.go; every
@@ -45,7 +85,7 @@ type vendorHealthResponse struct {
 // stays consistent with that convention instead). nil breaker (no
 // BREAKER_* config wired, or every vendor still closed) reports an empty
 // list — same "byte-identical when the feature is off" contract as the
-// rest of docs/plan/40.
+// rest of docs/roadmap/archive/40.
 func (m *Module) vendorHealthHandler(w http.ResponseWriter, r *http.Request) {
 	if !isAdmin(r) {
 		response.Forbidden(w, "admin privileges required")
@@ -60,7 +100,7 @@ func (m *Module) vendorHealthHandler(w http.ResponseWriter, r *http.Request) {
 
 func isAdmin(r *http.Request) bool {
 	claims := middleware.GetClaims(r.Context())
-	return claims != nil && claims.Role == "admin"
+	return claims != nil && (claims.Role == "admin" || claims.Role == "admin_maker" || claims.Role == "admin_checker")
 }
 
 type webhookEventResponse struct {

@@ -2,6 +2,8 @@ package auth
 
 import (
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"time"
 
@@ -71,6 +73,8 @@ func writeAuthError(w http.ResponseWriter, err error) {
 		response.Forbidden(w, "account disabled")
 	case errors.Is(err, ErrKYCLevelSequence):
 		response.BadRequest(w, "level_requested must be the next KYC level")
+	case errors.Is(err, repository.ErrKYCTierConflict):
+		response.Conflict(w, "KYC level change conflicts with the current level")
 	case errors.Is(err, ErrKYCPending), errors.Is(err, repository.ErrKYCSubmissionNotPending):
 		response.Conflict(w, "a KYC submission is already pending or decided")
 	case errors.Is(err, repository.ErrKYCSubmissionNotFound):
@@ -230,6 +234,11 @@ func (m *Module) SubmitKYCHandler() http.HandlerFunc {
 		}
 		s, err := m.SubmitKYC(r.Context(), userID, req.LevelRequested, req.Payload)
 		if err != nil {
+			var queued *KYCApplyQueuedError
+			if errors.As(err, &queued) {
+				response.Accepted(w, map[string]any{"status": "queued", "retry_id": queued.RetryID, "submission": toKYCSubmissionResponse(s)})
+				return
+			}
 			writeAuthError(w, err)
 			return
 		}
@@ -259,6 +268,75 @@ func (m *Module) KYCStatusHandler() http.HandlerFunc {
 			out.Submission = &converted
 		}
 		response.OK(w, out)
+	}
+}
+
+func (m *Module) UploadKYCDocumentHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID, ok := currentUserID(r)
+		if !ok {
+			response.Unauthorized(w, "invalid or missing user identity")
+			return
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, 10<<20)
+		if err := r.ParseMultipartForm(10 << 20); err != nil {
+			response.BadRequest(w, "invalid multipart document")
+			return
+		}
+		file, header, err := r.FormFile("file")
+		if err != nil {
+			response.BadRequest(w, "file is required")
+			return
+		}
+		defer file.Close()
+		if header.Size <= 0 || header.Size > 10<<20 {
+			response.BadRequest(w, "file must be between 1 and 10 MiB")
+			return
+		}
+		content, err := io.ReadAll(io.LimitReader(file, 10<<20+1))
+		if err != nil || len(content) > 10<<20 {
+			response.BadRequest(w, "file is too large")
+			return
+		}
+		contentType := http.DetectContentType(content)
+		document, err := m.UploadKYCDocument(r.Context(), userID, contentType, content)
+		if err != nil {
+			writeDocumentError(w, err)
+			return
+		}
+		response.Created(w, map[string]any{"id": document.ID, "size_bytes": document.SizeBytes, "content_type": document.ContentType, "sha256": document.SHA256})
+	}
+}
+
+func writeDocumentError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, ErrDocumentStorageUnavailable):
+		response.ServiceUnavailable(w, "DOCUMENT_STORAGE_UNAVAILABLE", "document storage is not configured or unavailable")
+	case errors.Is(err, ErrDocumentInvalid):
+		response.BadRequest(w, err.Error())
+	case errors.Is(err, repository.ErrNotFound):
+		response.NotFound(w, "KYC document or submission not found")
+	default:
+		response.InternalServerError(w, err)
+	}
+}
+
+func (m *Module) AdminDownloadKYCDocumentHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, err := uuid.Parse(r.PathValue("id"))
+		if err != nil {
+			response.BadRequest(w, "invalid document id")
+			return
+		}
+		document, content, err := m.DownloadKYCDocument(r.Context(), id)
+		if err != nil {
+			writeDocumentError(w, err)
+			return
+		}
+		w.Header().Set("Content-Type", document.ContentType)
+		w.Header().Set("Content-Length", fmt.Sprint(len(content)))
+		w.Header().Set("Content-Disposition", `attachment; filename="kyc-document"`)
+		_, _ = w.Write(content)
 	}
 }
 
@@ -298,10 +376,42 @@ func (m *Module) AdminApproveKYCHandler() http.HandlerFunc {
 			return
 		}
 		if err := m.ApproveKYC(r.Context(), id, adminID(r)); err != nil {
+			var queued *KYCApplyQueuedError
+			if errors.As(err, &queued) {
+				response.Accepted(w, map[string]any{"status": "queued", "retry_id": queued.RetryID, "id": id})
+				return
+			}
 			writeAuthError(w, err)
 			return
 		}
 		response.OK(w, map[string]any{"status": "approved", "id": id})
+	}
+}
+
+func (m *Module) AdminDowngradeKYCHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID, err := uuid.Parse(r.PathValue("id"))
+		if err != nil {
+			response.BadRequest(w, "invalid user id")
+			return
+		}
+		var req struct {
+			Level  int    `json:"level"`
+			Reason string `json:"reason"`
+		}
+		if !response.Decode(w, r, &req) {
+			return
+		}
+		if err := m.DowngradeKYC(r.Context(), userID, req.Level, adminID(r), req.Reason); err != nil {
+			var queued *KYCApplyQueuedError
+			if errors.As(err, &queued) {
+				response.Accepted(w, map[string]any{"status": "queued", "retry_id": queued.RetryID, "user_id": userID, "level": req.Level})
+				return
+			}
+			writeAuthError(w, err)
+			return
+		}
+		response.OK(w, map[string]any{"status": "downgraded", "user_id": userID, "level": req.Level})
 	}
 }
 

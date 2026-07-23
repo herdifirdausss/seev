@@ -202,7 +202,7 @@ func TestRunDue_InfraFailure_RowUntouched(t *testing.T) {
 	}
 	repo.EXPECT().ListDue(gomock.Any(), asOf).Return([]model.ScheduledTransaction{row}, nil)
 	// NO MarkSuccess/MarkBusinessFailure call expected — an infra error must
-	// leave the row completely untouched (docs/plan/19 Task T1 step 3).
+	// leave the row completely untouched (docs/roadmap/archive/19 Task T1 step 3).
 
 	svc := New(mockDB{}, repo, &fakePoster{err: assertPlainError{}}, nil)
 	executed, failed, err := svc.RunDue(context.Background(), asOf)

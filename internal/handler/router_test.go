@@ -22,8 +22,11 @@ import (
 func testConfig() *config.Config {
 	return &config.Config{
 		App: config.AppConfig{
-			Env:     "development",
-			BaseURL: "http://localhost:8080",
+			Env:               "development",
+			BaseURL:           "http://localhost:8080",
+			RateLimitRequests: 10,
+			RateLimitPer:      time.Minute,
+			RateLimitBurst:    10,
 		},
 		JWT: config.JWTConfig{
 			Secret:       "supersecretkeythatisatleast32chars!",
@@ -83,7 +86,7 @@ func TestRouter_ReadyEndpoint_LedgerDown(t *testing.T) {
 
 // ─── Public API routes ────────────────────────────────────────────────────────
 
-// TestRouter_PublicAuthRoutes_404WithoutModule: since docs/plan/25 Task T1
+// TestRouter_PublicAuthRoutes_404WithoutModule: since docs/roadmap/archive/25 Task T1
 // the auth routes are real handlers on deps.Auth (the 501 placeholders are
 // gone). A router built WITHOUT an auth module must 404 those paths — the
 // same nil-guard contract every other module uses.
@@ -119,7 +122,7 @@ func validToken(t *testing.T) string {
 	return token
 }
 
-// Since docs/plan/25 Task T1, /users/me belongs to the auth module and is
+// Since docs/roadmap/archive/25 Task T1, /users/me belongs to the auth module and is
 // nil-guarded like every other module route: without deps.Auth wired the
 // path simply doesn't exist (404), token or not. The 401-without-token
 // contract for authed chains is covered by the module-level tests that wire
@@ -163,7 +166,7 @@ func TestRouter_LedgerProxy_PreservesPathAndQuery(t *testing.T) {
 	assert.Equal(t, "/api/v1/ledger/accounts?currency=IDR", <-seen)
 }
 
-// ─── KYC gating (docs/plan/39 Task T4) ───────────────────────────────────────
+// ─── KYC gating (docs/roadmap/archive/39 Task T4) ───────────────────────────────────────
 
 func tokenWithKYCLevel(t *testing.T, level int) string {
 	t.Helper()
@@ -259,10 +262,21 @@ func TestRouter_SecurityHeadersPresent(t *testing.T) {
 
 // ─── Production CORS config ───────────────────────────────────────────────────
 
-func TestCORSConfig_Development(t *testing.T) {
+func TestCORSConfig_Development_NoOriginsConfigured(t *testing.T) {
+	// docs/roadmap/archive/49 TM-06: no wildcard by default — this API is bearer-token
+	// only, so an unconfigured origin allowlist must deny cross-origin
+	// access rather than echo "*" back to any caller.
 	cfg := testConfig()
 	cors := corsConfig(cfg)
-	assert.Contains(t, cors.AllowedOrigins, "*")
+	assert.Empty(t, cors.AllowedOrigins)
+}
+
+func TestCORSConfig_Development_ExplicitAllowlist(t *testing.T) {
+	cfg := testConfig()
+	cfg.App.AllowedOrigins = []string{"https://staging.example.com"}
+
+	cors := corsConfig(cfg)
+	assert.Equal(t, []string{"https://staging.example.com"}, cors.AllowedOrigins)
 }
 
 func TestCORSConfig_Production(t *testing.T) {
@@ -275,7 +289,20 @@ func TestCORSConfig_Production(t *testing.T) {
 	assert.True(t, cors.AllowCredentials)
 }
 
-// ─── Internal router (docs/plan/10 Task T1) ────────────────────────────────────
+func TestCORSConfig_Production_IgnoresExplicitAllowlist(t *testing.T) {
+	// Production always pins to BaseURL — CORS_ALLOWED_ORIGINS is a
+	// non-production convenience only, so it must not widen the production
+	// allowlist even if left set from a shared .env.
+	cfg := testConfig()
+	cfg.App.Env = "production"
+	cfg.App.BaseURL = "https://production.example.com"
+	cfg.App.AllowedOrigins = []string{"https://staging.example.com"}
+
+	cors := corsConfig(cfg)
+	assert.Equal(t, []string{"https://production.example.com"}, cors.AllowedOrigins)
+}
+
+// ─── Internal router (docs/roadmap/archive/10 Task T1) ────────────────────────────────────
 
 func newTestInternalRouter(cfg *config.Config) http.Handler {
 	deps := &Dependencies{
@@ -307,7 +334,7 @@ func TestInternalRouter_UnknownRoute_Returns404(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, w.Code)
 }
 
-// ─── Redis-optional rate limiter fallback (docs/plan/12 Task T1) ──────────────
+// ─── Redis-optional rate limiter fallback (docs/roadmap/archive/12 Task T1) ──────────────
 
 func TestRouter_NilCache_FallsBackToMemoryLimiter_StillServesRequests(t *testing.T) {
 	deps := &Dependencies{Cache: nil}
@@ -318,13 +345,13 @@ func TestRouter_NilCache_FallsBackToMemoryLimiter_StillServesRequests(t *testing
 }
 
 func TestBuildRateLimiter_NilCache_ReturnsMemoryLimiter(t *testing.T) {
-	limiter := buildRateLimiter(&Dependencies{Cache: nil}, slog.Default())
+	limiter := buildRateLimiter(testConfig(), &Dependencies{Cache: nil}, slog.Default())
 	_, ok := limiter.(*cache.MemoryRateLimiter)
 	assert.True(t, ok, "expected *cache.MemoryRateLimiter when deps.Cache is nil")
 }
 
 // TestBuildRateLimiter_WithCache_ReturnsFailoverLimiter proves
-// docs/plan/45 Task T3/K4: a non-nil deps.Cache now gets a runtime
+// docs/roadmap/archive/45 Task T3/K4: a non-nil deps.Cache now gets a runtime
 // Redis<->memory failover wrapper, not a bare RedisRateLimiter with no
 // degradation path.
 func TestBuildRateLimiter_WithCache_ReturnsFailoverLimiter(t *testing.T) {
@@ -335,7 +362,7 @@ func TestBuildRateLimiter_WithCache_ReturnsFailoverLimiter(t *testing.T) {
 			},
 		},
 	}
-	limiter := buildRateLimiter(deps, slog.Default())
+	limiter := buildRateLimiter(testConfig(), deps, slog.Default())
 	failover, ok := limiter.(*cache.FailoverLimiter)
 	assert.True(t, ok, "expected *cache.FailoverLimiter when deps.Cache is set")
 	if ok {

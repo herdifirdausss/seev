@@ -17,7 +17,7 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
-// multiVendorRouting is a routing stub for docs/plan/40 Task T3's
+// multiVendorRouting is a routing stub for docs/roadmap/archive/40 Task T3's
 // multi-vendor failover tests — matrixRouting (routing_test.go) also lives
 // in this package but its GetVendorGateway always reports not-found, which
 // breaks submit()'s gatewayForVendor call for a SECOND vendor; this stub
@@ -43,7 +43,7 @@ func (r multiVendorRouting) GetVendorGateway(_ context.Context, vendor string) (
 func (multiVendorRouting) UpsertVendorGateway(context.Context, model.VendorGateway) error { return nil }
 
 // TestDispatchOne_VendorRejectsSynchronously_FailsOverToNextCandidate is
-// docs/plan/40 Task T3's key scenario (a), re-verified under docs/plan/45
+// docs/roadmap/archive/40 Task T3's key scenario (a), re-verified under docs/roadmap/archive/45
 // Task T1's outbox architecture: vendor A rejects instantly — dispatchOne
 // atomically enqueues a failover command for vendor B rather than looping
 // in-process; dispatching THAT command settles it. Exactly one settle, and
@@ -110,7 +110,7 @@ func TestDispatchOne_VendorRejectsSynchronously_FailsOverToNextCandidate(t *test
 }
 
 // TestDispatchOne_VendorTimesOut_NeverFailsOver_PinnedForResume is
-// docs/plan/40 Task T3's scenario (b): a timeout (infra error, not a
+// docs/roadmap/archive/40 Task T3's scenario (b): a timeout (infra error, not a
 // business rejection) must NEVER trigger failover — the command retries
 // the SAME vendor via FailCommand's backoff, never a new one.
 func TestDispatchOne_VendorTimesOut_NeverFailsOver_PinnedForResume(t *testing.T) {
@@ -169,7 +169,7 @@ func TestDispatchOne_VendorCallPersistenceFailureRefusesProgress(t *testing.T) {
 	cmdRepo.EXPECT().FailCommand(gomock.Any(), cmd.ID, gomock.Any()).Return(nil)
 	// No settlement, cancellation, failover lookup, or vendor replacement is
 	// allowed after the durable call history fails to record the outcome
-	// (docs/plan/45 K2: audit failure = fail-closed).
+	// (docs/roadmap/archive/45 K2: audit failure = fail-closed).
 
 	providerA := &stubPayoutProvider{name: "vendorA", submitFn: func(context.Context, string, decimal.Decimal, string, json.RawMessage) (vendorgw.PayoutResult, error) {
 		return vendorgw.PayoutResult{Status: vendorgw.PayoutSettled}, nil
@@ -215,7 +215,7 @@ func TestDispatchOne_ConcurrentAcceptedCallPreventsCancellation(t *testing.T) {
 }
 
 // TestDispatchOne_CircuitAlreadyOpen_GoesStraightToSecondCandidate is
-// docs/plan/40 Task T3's scenario (c): the FIRST candidate's circuit is
+// docs/roadmap/archive/40 Task T3's scenario (c): the FIRST candidate's circuit is
 // already open before any call this dispatchOne makes — routing (Task T2)
 // must skip it entirely, so vendorA.Submit is never even called.
 func TestDispatchOne_CircuitAlreadyOpen_GoesStraightToSecondCandidate(t *testing.T) {
@@ -289,7 +289,7 @@ type assertAnErr string
 func (e assertAnErr) Error() string { return string(e) }
 
 // TestMayFailover_TableDriven unit-tests the pure decision function in
-// isolation (docs/plan/40 Task T3's own suggested signature).
+// isolation (docs/roadmap/archive/40 Task T3's own suggested signature).
 func TestMayFailover_TableDriven(t *testing.T) {
 	tests := []struct {
 		name  string

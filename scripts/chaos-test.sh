@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Chaos test suite for the seev ledger (docs/plan/12 Task T7).
+# Chaos test suite for the seev ledger (docs/roadmap/archive/12 Task T7).
 #
 # Empirical proof — not a design claim — that no money is lost when the
 # server process or a dependency dies mid-flight. Each scenario asserts
@@ -15,14 +15,17 @@
 #   ./scripts/chaos-test.sh 2        # broker (RabbitMQ) down
 #   ./scripts/chaos-test.sh 3        # Postgres restart mid-traffic
 #   ./scripts/chaos-test.sh 4        # Redis down
-#   ./scripts/chaos-test.sh 5        # payout crash-mid-flight (docs/plan/23 Task T6)
+#   ./scripts/chaos-test.sh 5        # payout crash-mid-flight (docs/roadmap/archive/23 Task T6)
 #   ./scripts/chaos-test.sh 6        # payin down -> webhook 503 -> redelivery heals
 #   ./scripts/chaos-test.sh 7        # fraud down fail-open + block-mode E2E
-#   ./scripts/chaos-test.sh 8        # vendor failover: force-fail -> failover/pin -> recovery (docs/plan/40 Task T6)
-#   ./scripts/chaos-test.sh 9        # Redis outage: selective hot-swap + fraud fail-closed (docs/plan/45 Task T4)
-#   ./scripts/chaos-test.sh 10       # distributed breaker across two payout replicas (docs/plan/45 Task T4)
-#   ./scripts/chaos-test.sh 11       # payout crash after command enqueue / after network timeout (docs/plan/45 Task T4)
-#   ./scripts/chaos-test.sh all      # run all eleven in sequence
+#   ./scripts/chaos-test.sh 8        # vendor failover: force-fail -> failover/pin -> recovery (docs/roadmap/archive/40 Task T6)
+#   ./scripts/chaos-test.sh 9        # Redis outage: selective hot-swap + fraud fail-closed (docs/roadmap/archive/45 Task T4)
+#   ./scripts/chaos-test.sh 10       # distributed breaker across two payout replicas (docs/roadmap/archive/45 Task T4)
+#   ./scripts/chaos-test.sh 11       # payout crash after command enqueue / after network timeout (docs/roadmap/archive/45 Task T4)
+#   ./scripts/chaos-test.sh 12       # assurance restart catches backlog and resolves recovery (docs/roadmap/archive/48)
+#   ./scripts/chaos-test.sh 13       # ledger outage preserves assurance cursor/finding (docs/roadmap/archive/48)
+#   ./scripts/chaos-test.sh 14       # owner outage durable intake pause + maker/checker resume (docs/roadmap/archive/48)
+#   ./scripts/chaos-test.sh all      # run all fourteen in sequence
 #
 # Each scenario is independent and re-runs migrations against a throwaway
 # schema state (it does NOT reset the docker volumes — accounts/balances
@@ -88,7 +91,7 @@ scenario_1() {
 	# silently overwrite their PID files with the new (already-dead) pids —
 	# every later stop/kill in this run would then target that dead pid while
 	# the real scenario-1-era process keeps running forever, invisible to the
-	# rest of the suite. Real bug found reproducing docs/plan/34 T2 scenario
+	# rest of the suite. Real bug found reproducing docs/roadmap/archive/34 T2 scenario
 	# 5/6/7 failures that only appeared inside `all`: the resume-job/webhook/
 	# fraud-hook checks in later scenarios were unknowingly talking to this
 	# orphaned scenario-1 ledger/payin/fraud-service the entire time.
@@ -155,7 +158,11 @@ scenario_2() {
 	docker start "$RABBITMQ_CONTAINER" >/dev/null
 	wait_for_container_healthy "$RABBITMQ_CONTAINER"
 
-	local tries=24 pending_or_failed
+	# RabbitMQ recovery can race the ledger relay's reconnect/backoff and the
+	# service restart churn in the preceding setup.  Wait four minutes for the
+	# durable outbox, rather than treating one still-retrying row as a product
+	# failure.
+	local tries=48 pending_or_failed
 	while [ "$tries" -gt 0 ]; do
 		pending_or_failed="$(psql_exec "$LEDGER_DB_NAME" -c "SELECT count(*) FROM outbox_events WHERE status IN ('pending','failed','processing');" | tr -d '[:space:]')"
 		[ "$pending_or_failed" = "0" ] && break
@@ -174,11 +181,11 @@ scenario_2() {
 
 	# The drained events include 10 transfer_p2p postings — once the relay
 	# has caught up, gateway's notify consumer must eventually see them too
-	# (docs/plan/34 Task T2: "restart -> relay drain -> notifikasi sampai").
+	# (docs/roadmap/archive/34 Task T2: "restart -> relay drain -> notifikasi sampai").
 	# This is the same outbox->RabbitMQ->consumer path as the happy-path
 	# business-e2e journey, just proven under a broker outage instead of a
 	# clean run.
-	await_notification "$token" "Transfer terkirim" || true
+	await_notification "$token" "Transfer sent" || true
 
 	assert_ledger_balanced
 	assert_no_inconsistent_projections
@@ -216,6 +223,11 @@ scenario_3() {
 		if [ "$i" -eq 10 ]; then
 			sleep 0.1
 			docker restart "$POSTGRES_CONTAINER" >/dev/null &
+			# The healthcheck can remain `healthy` for a short interval after
+			# an asynchronous restart is issued. Observe the transition before
+			# starting the next scenario (otherwise all-mode can race Postgres
+			# shutdown and make the following service fail to boot).
+			wait_for_container_restart "$POSTGRES_CONTAINER"
 		fi
 	done
 	wait
@@ -251,15 +263,15 @@ scenario_3() {
 
 scenario_4() {
 	log "=== Scenario 4: Redis down, then restarted with REDIS_ENABLED=false ==="
-	log "NOTE (docs/plan/12 Task T7, superseded in part by docs/plan/45 Task T3):"
+	log "NOTE (docs/roadmap/archive/12 Task T7, superseded in part by docs/roadmap/archive/45 Task T3):"
 	log "this scenario only proves the OPERATOR-DRIVEN mitigation path — restarting"
 	log "with REDIS_ENABLED=false to force the in-memory lock/limiter fallback."
 	log "The rate limiter and policy counter no longer NEED that restart: since"
-	log "docs/plan/45 T3, cache.FailoverLimiter/FailoverCounter hot-swap to memory"
+	log "docs/roadmap/archive/45 T3, cache.FailoverLimiter/FailoverCounter hot-swap to memory"
 	log "on Redis's first real-operation failure and recover automatically once"
 	log "Redis is healthy again, WITHOUT any restart — see scenario 9, which is the"
 	log "scenario that actually proves the hot-swap. Scheduler lock is unchanged by"
-	log "T3 (still skip-tick, by design — docs/plan/45 K4 explicitly keeps memory"
+	log "T3 (still skip-tick, by design — docs/roadmap/archive/45 K4 explicitly keeps memory"
 	log "fallback OUT of multi-replica scheduler locking)."
 	ensure_deps_up
 	build_server
@@ -287,10 +299,10 @@ scenario_4() {
 		fail "traffic rejected while Redis was down, got $code — rate limiter must fail open"
 	fi
 
-	log "restarting the server process with REDIS_ENABLED=false (the operator's actual mitigation for a known outage — picks up the in-memory lock/limiter fallback fresh; REDIS_ENABLED=true, the default, is a required-dependency fail-fast per docs/plan/12 T1 and would refuse to start against an unreachable Redis)..."
+	log "restarting the server process with REDIS_ENABLED=false (the operator's actual mitigation for a known outage — picks up the in-memory lock/limiter fallback fresh; REDIS_ENABLED=true, the default, is a required-dependency fail-fast per docs/roadmap/archive/12 T1 and would refuse to start against an unreachable Redis)..."
 	stop_server_gracefully
 	# fraud-service is excluded here: it CAN start with Redis down (since
-	# docs/plan/45 Task T3, cmd/fraud-service/main.go uses
+	# docs/roadmap/archive/45 Task T3, cmd/fraud-service/main.go uses
 	# cache.NewClientWithoutPing instead of an eager-ping constructor,
 	# specifically so fraud-service boots and runs fail-closed rather than
 	# refusing to start — see scenario 9), but this scenario simply doesn't
@@ -320,7 +332,7 @@ scenario_4() {
 	stop_server_gracefully
 }
 
-# ─── Scenario 5: payout crash mid-flight (docs/plan/23 Task T6) ─────────────
+# ─── Scenario 5: payout crash mid-flight (docs/roadmap/archive/23 Task T6) ─────────────
 #
 # Four kill points, one per non-terminal payout_requests status:
 #   - 'created' / 'held': reached by seeding the row directly via SQL rather
@@ -336,7 +348,7 @@ scenario_4() {
 #   - 'submitted': reached via a REAL POST /api/v1/payout with
 #     mock_mode=timeout — hold() succeeds, EnqueueInitialSubmit succeeds
 #     (status='submitted', a 'pending' command durably enqueued), then the
-#     relay's own async dispatch (docs/plan/45 Task T1 — provider.Submit is
+#     relay's own async dispatch (docs/roadmap/archive/45 Task T1 — provider.Submit is
 #     never called anywhere else) genuinely errors (infra failure), leaving
 #     the command 'failed'/backing-off exactly the way a real vendor timeout
 #     would. wait_for_vendor_call/wait_for_vendor_command_status prove the
@@ -370,7 +382,7 @@ backdate_payout() {
 }
 
 scenario_5() {
-	log "=== Scenario 5: payout crash-mid-flight (docs/plan/30 Task T6) ==="
+	log "=== Scenario 5: payout crash-mid-flight (docs/roadmap/archive/30 Task T6) ==="
 	ensure_deps_up
 	build_server
 	start_services
@@ -401,7 +413,7 @@ scenario_5() {
 	# ── Kill point 2: 'held' — real hold_tx_id via a genuine withdraw_initiate ──
 	log "--- kill point 2/4: held ---"
 	local held_key="chaos5-held-$RANDOM"
-	curl -s -o /dev/null -X POST "http://localhost:$LEDGER_INTERNAL_PORT/api/v1/ledger/transactions" \
+	curl_internal -s -o /dev/null -X POST "http://localhost:$LEDGER_INTERNAL_PORT/api/v1/ledger/transactions" \
 		-H "Authorization: Bearer $token" -H "Content-Type: application/json" \
 		-d "{\"idempotency_key\":\"$held_key\",\"type\":\"withdraw_initiate\",\"amount\":\"10000\"}"
 	local held_tx_id
@@ -426,7 +438,7 @@ scenario_5() {
 		fail "kill point 3: create request did not return an id"
 	fi
 	wait_for_payout_status "$id_submitted" "submitted" 10
-	# docs/plan/45 Task T1: dispatch is async now (the relay's own ~1s poll
+	# docs/roadmap/archive/45 Task T1: dispatch is async now (the relay's own ~1s poll
 	# interval) — 'submitted' lands the instant Create enqueues, before the
 	# relay has necessarily even attempted the vendor call yet. Wait for the
 	# durable evidence that the vendor was ACTUALLY called and genuinely
@@ -461,7 +473,7 @@ scenario_5() {
 	# Simulate the external vendor having completed while payout-service was
 	# down: forced back to 'submitted' with no live command (the original
 	# command already completed toward vendor_pending, so it's neither live
-	# nor dead) — docs/plan/45 Task T1's resume job inserts a fresh command
+	# nor dead) — docs/roadmap/archive/45 Task T1's resume job inserts a fresh command
 	# for this genuine gap (HasDeadCommand is false — the most recent
 	# command 'completed', it didn't dead-letter), and the relay's own next
 	# dispatch pass reaches a terminal state idempotently.
@@ -470,13 +482,16 @@ scenario_5() {
 	# ── Ledger crash between a completed hold and settle ───────────────────
 	log "--- ledger kill point: after hold, before settle ---"
 	local ledger_key="chaos5-ledger-$RANDOM" ledger_hold_tx id_ledger
-	curl -s -o /dev/null -X POST "http://localhost:$LEDGER_INTERNAL_PORT/api/v1/ledger/transactions" -H "Authorization: Bearer $token" -H "Content-Type: application/json" -d "{\"idempotency_key\":\"$ledger_key\",\"type\":\"withdraw_initiate\",\"amount\":\"10000\"}"
+	curl_internal -s -o /dev/null -X POST "http://localhost:$LEDGER_INTERNAL_PORT/api/v1/ledger/transactions" -H "Authorization: Bearer $token" -H "Content-Type: application/json" -d "{\"idempotency_key\":\"$ledger_key\",\"type\":\"withdraw_initiate\",\"amount\":\"10000\"}"
 	ledger_hold_tx="$(psql_exec "$LEDGER_DB_NAME" -c "SELECT id FROM ledger_transactions WHERE idempotency_key='$ledger_key';")"
 	id_ledger="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT gen_random_uuid();")"
 	psql_exec "$PAYOUT_DB_NAME" -c "INSERT INTO payout_requests (id,user_id,amount,currency,vendor,destination,status,hold_tx_id,created_by,created_at,updated_at) VALUES ('$id_ledger','$user_id',10000,'IDR','mockvendor','{\"bank_code\":\"014\",\"account_no\":\"1\"}'::jsonb,'held','$ledger_hold_tx','chaos_test',now(),now()-interval '2 minutes');" >/dev/null
 	kill_ledger_hard
 	log "waiting for payout resume to attempt settle while ledger is unavailable..."
-	sleep 65
+	# The payout resume scheduler is minute-granular and a -9 kill can leave its
+	# distributed lock leased for one scheduler timeout.  Two full ticks make
+	# this proof deterministic without changing the production cadence.
+	sleep 125
 	local during_ledger_down
 	during_ledger_down="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT status FROM payout_requests WHERE id='$id_ledger';")"
 	[ "$during_ledger_down" = "submitted" ] && ok "payout remained resumable while ledger was down" || fail "ledger-down payout status was '$during_ledger_down', expected submitted"
@@ -484,7 +499,7 @@ scenario_5() {
 	# Every resumable row may have recorded a fresh error timestamp while ledger
 	# was unavailable. Make all rows from this isolated run eligible immediately.
 	psql_exec "$PAYOUT_DB_NAME" -c "UPDATE payout_requests SET updated_at=now()-interval '2 minutes' WHERE user_id='$user_id' AND status IN ('created','held','submitted','vendor_pending');" >/dev/null
-	# docs/plan/45 Task T1: any command that failed while ledger was down
+	# docs/roadmap/archive/45 Task T1: any command that failed while ledger was down
 	# (e.g. kill point 2/3's dispatch reaching the vendor successfully but
 	# then failing to settle) is now backing off on its own exponential
 	# schedule (up to ~15m at higher retry counts) — reset it too, or the
@@ -493,7 +508,7 @@ scenario_5() {
 	psql_exec "$PAYOUT_DB_NAME" -c "UPDATE payout_vendor_commands SET next_attempt_at = now() WHERE payout_request_id IN (SELECT id FROM payout_requests WHERE user_id='$user_id' AND status IN ('created','held','submitted','vendor_pending'));" >/dev/null
 
 	log "waiting for the resume job's cron tick (every 1 minute) to pick up all four requests..."
-	sleep 65
+	sleep 125
 
 	log "asserting terminal states for created/held/submitted, and correct polling for vendor_pending..."
 	local final_created final_held final_submitted final_pending
@@ -583,11 +598,15 @@ scenario_6() {
 # ─── Scenario 7: fraud-service fail-open and block-mode E2E ─────────
 
 scenario_7() {
-	log "=== Scenario 7: fraud-service down fails open; block mode rejects pre-write — across all three flows (docs/plan/37 Task T6) ==="
+	log "=== Scenario 7: fraud-service down fails open; block mode rejects pre-write — across all three flows (docs/roadmap/archive/37 Task T6) ==="
 	export SCREENING_MODE=block
 	export SCREENING_AMOUNT_THRESHOLD=100
 	export SCREENING_VELOCITY_MAX_PER_HOUR=0
 	ensure_deps_up
+	# Per-rule overrides are durable and take precedence over the environment
+	# fallback. Set the threshold rule explicitly so a reused fraud DB cannot
+	# leave this scenario silently in the migration's default `off` mode.
+	psql_exec "$FRAUD_DB_NAME" -c "UPDATE screening_rule_modes SET mode = 'block', updated_by = 'chaos7' WHERE rule = 'amount_threshold';" >/dev/null
 	build_server
 	start_services
 
@@ -722,15 +741,17 @@ scenario_7() {
 		|| fail "payout_requests row count changed on a blocked attempt: $payout_count_before -> $payout_count_after"
 
 	admin_token="$(gen_token "$(psql_exec "$LEDGER_DB_NAME" -c "SELECT gen_random_uuid();")" admin)"
-	code=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:$FRAUD_ADMIN_PORT/api/v1/admin/fraud/events?user_id=$user_id" -H "Authorization: Bearer $admin_token")
+	code=$(curl_internal -s -o /dev/null -w '%{http_code}' "http://localhost:$FRAUD_ADMIN_PORT/api/v1/admin/fraud/events?user_id=$user_id" -H "Authorization: Bearer $admin_token")
 	[ "$code" = "200" ] && ok "fraud admin events endpoint serves the moved audit row" || fail "fraud admin events returned $code"
 	assert_ledger_balanced
 	assert_no_inconsistent_projections
 	stop_services
+	# Do not leak the scenario's operator mode into subsequent runs.
+	psql_exec "$FRAUD_DB_NAME" -c "UPDATE screening_rule_modes SET mode = 'off', updated_by = 'chaos7-cleanup' WHERE rule = 'amount_threshold';" >/dev/null
 	unset SCREENING_MODE SCREENING_AMOUNT_THRESHOLD SCREENING_VELOCITY_MAX_PER_HOUR
 }
 
-# ─── Scenario 8: vendor failover (docs/plan/40 Task T6) ─────────────────────
+# ─── Scenario 8: vendor failover (docs/roadmap/archive/40 Task T6) ─────────────────────
 #
 # Proves the anti-double-payout failover contract end to end against real
 # running services, not just orchestrate.go's own unit/integration tests:
@@ -738,7 +759,7 @@ scenario_7() {
 # NEXT new payout to the surviving vendor, (b) NEVER fail over an
 # already-in-flight payout whose Submit attempt landed 'uncertain' — it
 # stays pinned to the original vendor forever, and only the relay's own
-# retry (docs/plan/45 Task T1 — ClaimFailedCommandsForRetry, not the resume
+# retry (docs/roadmap/archive/45 Task T1 — ClaimFailedCommandsForRetry, not the resume
 # job, which no longer calls the vendor at all) against that SAME vendor can
 # ever settle it, and (c) never produce two settles for any payout
 # regardless of how many vendors were involved.
@@ -750,7 +771,7 @@ scenario_7() {
 # mockvendor2 is seeded at priority 1001 (mockvendor's own seed migration,
 # 000002_routing.up.sql, is priority 1000) — deliberately a HIGHER priority
 # number than mockvendor's, since ResolveCandidates orders ASC (smallest
-# number = tried first, docs/plan/40 Task T2); this makes mockvendor2 a true
+# number = tried first, docs/roadmap/archive/40 Task T2); this makes mockvendor2 a true
 # FALLBACK behind mockvendor, not a replacement for it. This differs from
 # the doc's own shorthand "priority 2" (which would have made mockvendor2
 # tried FIRST, backwards from the scenario's intent) for that reason.
@@ -765,11 +786,11 @@ scenario_8() {
 	admin_token="$(gen_token "$(uuidgen | tr '[:upper:]' '[:lower:]')" admin)"
 
 	log "-- seeding mockvendor2 (gateway + routing rule, priority 1001, global fallback) --"
-	curl -s -o /dev/null -X PUT "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendor-gateways/mockvendor2" \
+	curl_internal -s -o /dev/null -X PUT "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendor-gateways/mockvendor2" \
 		-H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" -d '{"gateway":"gopay"}'
 	psql_exec "$PAYOUT_DB_NAME" -c "DELETE FROM payout_routing_rules WHERE priority = 1001;" >/dev/null
 	local route_json route_id
-	route_json="$(curl -s -X POST "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/routing-rules" \
+	route_json="$(curl_internal -s -X POST "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/routing-rules" \
 		-H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" \
 		-d '{"flow":"payout","priority":1001,"enabled":true,"vendor":"mockvendor2"}')"
 	route_id="$(echo "$route_json" | json_field id)"
@@ -785,7 +806,7 @@ scenario_8() {
 	cash="$(cash_account_id "$user_id")"
 
 	log "-- force-failing mockvendor --"
-	curl -s -o /dev/null -X POST "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendors/mockvendor/force-fail" \
+	curl_internal -s -o /dev/null -X POST "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendors/mockvendor/force-fail" \
 		-H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" -d '{"fail":true}'
 
 	log "-- creating payout #1 while mockvendor is force-failed (still the top-priority candidate) --"
@@ -796,7 +817,7 @@ scenario_8() {
 	id1="$(echo "$resp1" | json_field id)"
 	[ -n "$id1" ] && ok "payout #1 created ($id1)" || fail "payout #1 create did not return an id: $resp1"
 
-	# docs/plan/45 Task T1: dispatch is async now (the relay's own ~1s poll
+	# docs/roadmap/archive/45 Task T1: dispatch is async now (the relay's own ~1s poll
 	# interval) — Create returns the instant hold+enqueue lands, before the
 	# relay has necessarily attempted the vendor call yet. Wait for the
 	# durable evidence (the recorded 'uncertain' outcome) before reading
@@ -817,7 +838,7 @@ scenario_8() {
 
 	log "-- asserting admin health reports mockvendor open --"
 	local health_resp
-	health_resp="$(curl -s "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendors/health" -H "Authorization: Bearer $admin_token")"
+	health_resp="$(curl_internal -s "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendors/health" -H "Authorization: Bearer $admin_token")"
 	echo "$health_resp" | grep -q '"vendor":"mockvendor","state":"open"' \
 		&& ok "admin vendor health reports mockvendor as open" \
 		|| fail "admin vendor health did not report mockvendor open: $health_resp"
@@ -838,10 +859,10 @@ scenario_8() {
 		|| fail "payout #2 unexpected vendor='$vendor2' status='$status2', expected vendor=mockvendor2 status=settled"
 
 	log "-- recovering mockvendor; the relay's own retry must settle payout #1 against the SAME vendor --"
-	curl -s -o /dev/null -X POST "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendors/mockvendor/force-fail" \
+	curl_internal -s -o /dev/null -X POST "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendors/mockvendor/force-fail" \
 		-H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" -d '{"fail":false}'
 	backdate_payout "$id1"
-	# docs/plan/45 Task T1: payout #1's retry is now the relay's own
+	# docs/roadmap/archive/45 Task T1: payout #1's retry is now the relay's own
 	# ClaimFailedCommandsForRetry poll (every 30s), not the resume job's
 	# submit-retry — resume no longer calls the vendor at all. The command's
 	# exponential backoff (FailCommand) can otherwise take up to ~90s
@@ -883,7 +904,7 @@ scenario_8() {
 
 # ─── Scenario 9: Redis outage — selective hot-swap + fraud fail-closed ─────
 #
-# docs/plan/45 Task T4, bullet 1. Proves the docs/plan/45 Task T3 design
+# docs/roadmap/archive/45 Task T4, bullet 1. Proves the docs/roadmap/archive/45 Task T3 design
 # (K4) against REAL running processes, not just pkg/cache's own unit tests:
 # the ledger rate limiter and policy velocity counter hot-swap from Redis to
 # an in-process memory fallback the INSTANT a real operation fails — no
@@ -908,12 +929,25 @@ scenario_8() {
 #     ONE flow in this scenario that's supposed to depend on Redis being
 #     reachable at all.
 scenario_9() {
-	log "=== Scenario 9: Redis outage — selective hot-swap (rate limiter/policy counter) + fraud fail-closed, recovery without restart (docs/plan/45 Task T3/T4) ==="
+	log "=== Scenario 9: Redis outage — selective hot-swap (rate limiter/policy counter) + fraud fail-closed, recovery without restart (docs/roadmap/archive/45 Task T3/T4) ==="
 	export SCREENING_MODE=block
 	export SCREENING_AMOUNT_THRESHOLD=100000000
 	export SCREENING_VELOCITY_MAX_PER_HOUR=1000
 	export POLICY_CACHE_TTL=2s
+	# docs/roadmap/archive/49 TM-11: this scenario's own burst-of-11 test below
+	# specifically needs the limiter to trip WITHIN 11 requests (a mix of
+	# some 2xx, some 429) to prove enforcement — lib.sh's default harness-
+	# wide override (500/min, sized so OTHER scenarios' legitimate traffic
+	# never trips it) would let all 11 through. Scope this back down to
+	# just this scenario's own server processes.
+	export RATE_LIMIT_REQUESTS=10
+	export RATE_LIMIT_PER=1m
+	export RATE_LIMIT_BURST=10
 	ensure_deps_up
+	# Durable per-rule modes override SCREENING_MODE. Explicitly enable the
+	# velocity rule for this Redis-dependency proof; otherwise the migration's
+	# default `off` would make a Redis outage invisible to the request path.
+	psql_exec "$FRAUD_DB_NAME" -c "UPDATE screening_rule_modes SET mode = 'block', updated_by = 'chaos9' WHERE rule = 'velocity_anomaly';" >/dev/null
 	build_server
 	start_services
 
@@ -931,11 +965,11 @@ scenario_9() {
 	code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$APP_PORT/api/v1/topup" \
 		-H "Authorization: Bearer $token" -H "Content-Type: application/json" -d '{"amount":"10000"}')
 	[ "${code:0:1}" = "2" ] && ok "baseline topup intent create succeeded (code=$code)" || fail "baseline topup intent create got $code"
-	assert_metric_value "http://localhost:$INTERNAL_PORT/metrics" cache_redis_backend_active 1 \
+	assert_metric_value "https://localhost:$INTERNAL_PORT/metrics" cache_redis_backend_active 1 \
 		"gateway rate limiter backend=redis before outage" 'primitive="rate_limiter"' 'backend="redis"'
 
 	log "-- seeding max_daily_count=1 on withdraw_initiate (policy_limits_max_daily_count_check requires > 0 — 0 is rejected at the DB layer, confirmed empirically) --"
-	curl -s -o /dev/null -X PUT "http://localhost:$LEDGER_INTERNAL_PORT/api/v1/admin/policy/limits" \
+	curl_internal -s -o /dev/null -X PUT "http://localhost:$LEDGER_INTERNAL_PORT/api/v1/admin/policy/limits" \
 		-H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" \
 		-d "{\"user_id\":\"$user_id\",\"transaction_type\":\"withdraw_initiate\",\"max_daily_count\":1,\"enabled\":true}"
 	sleep 3
@@ -953,7 +987,7 @@ scenario_9() {
 		-H "Authorization: Bearer $token" -H "Content-Type: application/json" \
 		-d "{\"idempotency_key\":\"chaos9-wd-baseline\",\"type\":\"withdraw_initiate\",\"amount\":\"10000\"}")
 	[ "${code:0:1}" = "2" ] && ok "baseline withdraw_initiate under the 1-use cap succeeded (code=$code)" || fail "baseline withdraw_initiate got $code, expected 2xx"
-	assert_metric_value "http://localhost:$LEDGER_INTERNAL_PORT/metrics" cache_redis_backend_active 1 \
+	assert_metric_value "https://localhost:$LEDGER_INTERNAL_PORT/metrics" cache_redis_backend_active 1 \
 		"ledger policy counter backend=redis before outage" 'primitive="policy_counter"' 'backend="redis"'
 
 	log "-- baseline (Redis up): fraud velocity screening on transfer_p2p succeeds --"
@@ -961,7 +995,7 @@ scenario_9() {
 		-H "Authorization: Bearer $token" -H "Content-Type: application/json" \
 		-d "{\"idempotency_key\":\"chaos9-p2p-baseline\",\"type\":\"transfer_p2p\",\"amount\":\"1\",\"target_user_id\":\"$recipient_id\"}")
 	[ "${code:0:1}" = "2" ] && ok "baseline P2P transfer (fraud screening reachable) succeeded (code=$code)" || fail "baseline P2P transfer got $code"
-	assert_metric_value "http://localhost:$FRAUD_ADMIN_PORT/metrics" cache_redis_backend_active 1 \
+	assert_metric_value "https://localhost:$FRAUD_ADMIN_PORT/metrics" cache_redis_backend_active 1 \
 		"fraud velocity store backend=redis before outage" 'primitive="fraud_velocity"' 'backend="redis"'
 
 	log "stopping redis..."
@@ -982,16 +1016,15 @@ scenario_9() {
 		|| ok "redis confirmed unreachable before proceeding"
 
 	log "-- Redis down: rate limiter must keep enforcing from memory (burst of 11 topup-intent creates) --"
-	# RateLimitByIPAndPath keys on r.RemoteAddr, which includes the ephemeral
-	# source port (pkg/middleware/rate_limit.go:73) — 11 SEPARATE curl
-	# invocations would each open its own TCP connection and land on 11
-	# different keys, never actually exercising the SAME bucket. Chaining 11
-	# request specs with --next inside ONE curl invocation reuses a single
-	# persistent HTTP/1.1 connection (same source port throughout, verified
-	# against a real net/http keep-alive server while writing this scenario)
-	# while still giving one clean %{http_code} line per request — every
-	# request lands on the identical rate-limit key, the way one real client
-	# reusing a connection would.
+	# RateLimitByIPAndPath keys on the client IP with the ephemeral source
+	# port stripped (docs/roadmap/archive/49 TM-11 — pkg/middleware/rate_limit.go)
+	# now, so 11 separate curl invocations would already land on the same
+	# bucket regardless. Still chaining them with --next inside ONE curl
+	# invocation over a single persistent HTTP/1.1 connection (same source
+	# port throughout, verified against a real net/http keep-alive server
+	# while writing this scenario) — the strongest, most direct proof this
+	# scenario can give: byte-identical to one real client reusing a
+	# connection, independent of which dimension the key happens to use.
 	local i rl_success=0 rl_429=0 rl_args=() rl_output
 	for i in $(seq 1 11); do
 		rl_args+=(-s -o /dev/null -w '%{http_code}\n' -X POST \
@@ -1007,7 +1040,7 @@ scenario_9() {
 		|| fail "expected at least one successful topup create among 11 with Redis down, got 0"
 	[ "$rl_429" -ge "1" ] && ok "rate limiter still actively enforces from memory with Redis down ($rl_429/11 got 429)" \
 		|| fail "expected at least one 429 among 11 rapid topup creates with Redis down — limiter may have silently bypassed"
-	assert_metric_value "http://localhost:$INTERNAL_PORT/metrics" cache_redis_backend_active 1 \
+	assert_metric_value "https://localhost:$INTERNAL_PORT/metrics" cache_redis_backend_active 1 \
 		"gateway rate limiter hot-swapped to backend=local with Redis down" 'primitive="rate_limiter"' 'backend="local"'
 	grep -q 'cache: redis backend degraded' "$GATEWAY_LOG" \
 		&& ok "gateway logged the rate-limiter degrade transition" || fail "gateway log missing the rate-limiter degrade line"
@@ -1033,7 +1066,7 @@ scenario_9() {
 	[ "$wd2_code" = "503" ] && echo "$wd2_resp" | grep -q "DEPENDENCY_UNAVAILABLE" \
 		&& ok "withdraw_initiate fails closed with 503 DEPENDENCY_UNAVAILABLE while fraud's Redis dependency is down (policy itself allowed it — memory counter was consulted, not bypassed)" \
 		|| fail "withdraw_initiate with Redis down got: $wd2_resp — expected 503 DEPENDENCY_UNAVAILABLE"
-	assert_metric_value "http://localhost:$LEDGER_INTERNAL_PORT/metrics" cache_redis_backend_active 1 \
+	assert_metric_value "https://localhost:$LEDGER_INTERNAL_PORT/metrics" cache_redis_backend_active 1 \
 		"ledger policy counter hot-swapped to backend=local with Redis down" 'primitive="policy_counter"' 'backend="local"'
 	grep -q "screening dependency unavailable, failing closed" "$LEDGER_LOG" \
 		&& ok "ledger logged the fail-closed screening decision" || fail "ledger log missing the fail-closed screening line"
@@ -1045,15 +1078,15 @@ scenario_9() {
 	log "restarting redis (no service process restart)..."
 	docker start "$REDIS_CONTAINER" >/dev/null
 	wait_for_container_healthy "$REDIS_CONTAINER"
-	log "waiting for the background probe loop's 2-consecutive-success recovery (docs/plan/45 K4 hysteresis, ~10-15s)..."
+	log "waiting for the background probe loop's 2-consecutive-success recovery (docs/roadmap/archive/45 K4 hysteresis, ~10-15s)..."
 	sleep 20
 
 	log "-- Redis back: all three primitives recover to backend=redis WITHOUT any process restart --"
-	assert_metric_value "http://localhost:$INTERNAL_PORT/metrics" cache_redis_backend_active 1 \
+	assert_metric_value "https://localhost:$INTERNAL_PORT/metrics" cache_redis_backend_active 1 \
 		"gateway rate limiter recovered to backend=redis without restart" 'primitive="rate_limiter"' 'backend="redis"'
-	assert_metric_value "http://localhost:$LEDGER_INTERNAL_PORT/metrics" cache_redis_backend_active 1 \
+	assert_metric_value "https://localhost:$LEDGER_INTERNAL_PORT/metrics" cache_redis_backend_active 1 \
 		"ledger policy counter recovered to backend=redis without restart" 'primitive="policy_counter"' 'backend="redis"'
-	assert_metric_value "http://localhost:$FRAUD_ADMIN_PORT/metrics" cache_redis_backend_active 1 \
+	assert_metric_value "https://localhost:$FRAUD_ADMIN_PORT/metrics" cache_redis_backend_active 1 \
 		"fraud velocity store recovered to backend=redis without restart" 'primitive="fraud_velocity"' 'backend="redis"'
 
 	log "-- Redis back: the policy counter resumes enforcement from Redis's TRUE count (1, from baseline) — the outage's phantom memory count of 0 is correctly discarded, never merged back --"
@@ -1075,21 +1108,22 @@ scenario_9() {
 	assert_ledger_balanced
 	assert_no_inconsistent_projections
 	stop_services
+	psql_exec "$FRAUD_DB_NAME" -c "UPDATE screening_rule_modes SET mode = 'off', updated_by = 'chaos9-cleanup' WHERE rule = 'velocity_anomaly';" >/dev/null
 	unset SCREENING_MODE SCREENING_AMOUNT_THRESHOLD SCREENING_VELOCITY_MAX_PER_HOUR POLICY_CACHE_TTL
 }
 
 # ─── Scenario 10: distributed breaker across two payout replicas ──────────
 #
-# docs/plan/45 Task T4, bullet 2. Two REAL payout-service processes (not two
+# docs/roadmap/archive/45 Task T4, bullet 2. Two REAL payout-service processes (not two
 # separately-provisioned stacks) sharing one Postgres DB and one Redis
-# instance, with BREAKER_DISTRIBUTED=true (docs/plan/45 Task T2).
+# instance, with BREAKER_DISTRIBUTED=true (docs/roadmap/archive/45 Task T2).
 #
 # mockvendor's force-fail flag is a PER-PROCESS in-memory switch on that
 # process's own vendorgw.Registry — it is NOT shared between replicas the
 # way the breaker's OWN state is. Force-failing only replica A's mockvendor
 # and then creating a payout is a genuine RACE: both replicas' relays poll
 # the SAME payout_vendor_commands table (FOR UPDATE SKIP LOCKED, by design,
-# docs/plan/45 K1/K2), so replica B can claim and dispatch the command
+# docs/roadmap/archive/45 K1/K2), so replica B can claim and dispatch the command
 # FIRST against ITS OWN, still-healthy mockvendor and settle it before
 # replica A ever gets a chance — reproduced empirically while writing this
 # scenario (payout settled in ~100ms via whichever replica won the claim,
@@ -1104,7 +1138,7 @@ scenario_9() {
 # their own embedded local HealthTracker fallback and keep answering
 # requests, never crash.
 scenario_10() {
-	log "=== Scenario 10: distributed breaker across two payout replicas (docs/plan/45 Task T2/T4) ==="
+	log "=== Scenario 10: distributed breaker across two payout replicas (docs/roadmap/archive/45 Task T2/T4) ==="
 	export BREAKER_DISTRIBUTED=true
 	export BREAKER_FAILURE_THRESHOLD=1
 	ensure_deps_up
@@ -1133,17 +1167,17 @@ scenario_10() {
 	token="$(gen_token "$user_id")"
 
 	log "-- priming each replica's breaker with one Snapshot call (the backend gauge has no value until a real call resolves) --"
-	curl -s -o /dev/null "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendors/health" -H "Authorization: Bearer $admin_token"
-	curl -s -o /dev/null "http://localhost:$PAYOUT2_ADMIN_PORT/admin/payout/vendors/health" -H "Authorization: Bearer $admin_token"
-	assert_metric_value "http://localhost:$PAYOUT_ADMIN_PORT/metrics" vendorgw_breaker_backend 1 \
+	curl_internal -s -o /dev/null "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendors/health" -H "Authorization: Bearer $admin_token"
+	curl_internal -s -o /dev/null "http://localhost:$PAYOUT2_ADMIN_PORT/admin/payout/vendors/health" -H "Authorization: Bearer $admin_token"
+	assert_metric_value "https://localhost:$PAYOUT_ADMIN_PORT/metrics" vendorgw_breaker_backend 1 \
 		"replica A (primary) breaker backend=redis before any vendor call" 'namespace="payout"' 'backend="redis"'
-	assert_metric_value "http://localhost:$PAYOUT2_ADMIN_PORT/metrics" vendorgw_breaker_backend 1 \
+	assert_metric_value "https://localhost:$PAYOUT2_ADMIN_PORT/metrics" vendorgw_breaker_backend 1 \
 		"replica B breaker backend=redis before any vendor call" 'namespace="payout"' 'backend="redis"'
 
 	log "-- force-failing mockvendor on BOTH replicas (avoids the claim-race described above) and tripping the breaker --"
-	curl -s -o /dev/null -X POST "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendors/mockvendor/force-fail" \
+	curl_internal -s -o /dev/null -X POST "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendors/mockvendor/force-fail" \
 		-H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" -d '{"fail":true}'
-	curl -s -o /dev/null -X POST "http://localhost:$PAYOUT2_ADMIN_PORT/admin/payout/vendors/mockvendor/force-fail" \
+	curl_internal -s -o /dev/null -X POST "http://localhost:$PAYOUT2_ADMIN_PORT/admin/payout/vendors/mockvendor/force-fail" \
 		-H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" -d '{"fail":true}'
 
 	local resp id
@@ -1155,19 +1189,19 @@ scenario_10() {
 	wait_for_vendor_call "$id" "uncertain" 15
 
 	local health_a health_b
-	health_a="$(curl -s "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendors/health" -H "Authorization: Bearer $admin_token")"
+	health_a="$(curl_internal -s "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendors/health" -H "Authorization: Bearer $admin_token")"
 	echo "$health_a" | grep -q '"vendor":"mockvendor","state":"open"' \
 		&& ok "replica A reports mockvendor open" \
 		|| fail "replica A did not report mockvendor open: $health_a"
 
-	health_b="$(curl -s "http://localhost:$PAYOUT2_ADMIN_PORT/admin/payout/vendors/health" -H "Authorization: Bearer $admin_token")"
+	health_b="$(curl_internal -s "http://localhost:$PAYOUT2_ADMIN_PORT/admin/payout/vendors/health" -H "Authorization: Bearer $admin_token")"
 	echo "$health_b" | grep -q '"vendor":"mockvendor","state":"open"' \
 		&& ok "replica B reports mockvendor open via the SAME shared Redis breaker state as replica A — state converged across replicas" \
 		|| fail "replica B did not report mockvendor open — distributed breaker state did not converge: $health_b"
 
-	curl -s -o /dev/null -X POST "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendors/mockvendor/force-fail" \
+	curl_internal -s -o /dev/null -X POST "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendors/mockvendor/force-fail" \
 		-H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" -d '{"fail":false}'
-	curl -s -o /dev/null -X POST "http://localhost:$PAYOUT2_ADMIN_PORT/admin/payout/vendors/mockvendor/force-fail" \
+	curl_internal -s -o /dev/null -X POST "http://localhost:$PAYOUT2_ADMIN_PORT/admin/payout/vendors/mockvendor/force-fail" \
 		-H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" -d '{"fail":false}'
 
 	log "stopping redis: both replicas must degrade to their own local fallback without crashing..."
@@ -1179,15 +1213,15 @@ scenario_10() {
 	done
 
 	local code_a code_b
-	code_a=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendors/health" -H "Authorization: Bearer $admin_token")
-	code_b=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:$PAYOUT2_ADMIN_PORT/admin/payout/vendors/health" -H "Authorization: Bearer $admin_token")
+	code_a=$(curl_internal -s -o /dev/null -w '%{http_code}' "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendors/health" -H "Authorization: Bearer $admin_token")
+	code_b=$(curl_internal -s -o /dev/null -w '%{http_code}' "http://localhost:$PAYOUT2_ADMIN_PORT/admin/payout/vendors/health" -H "Authorization: Bearer $admin_token")
 	[ "$code_a" = "200" ] && ok "replica A still answers admin health with Redis down (code=$code_a, no crash)" \
 		|| fail "replica A admin health returned $code_a with Redis down — expected 200"
 	[ "$code_b" = "200" ] && ok "replica B still answers admin health with Redis down (code=$code_b, no crash)" \
 		|| fail "replica B admin health returned $code_b with Redis down — expected 200"
-	assert_metric_value "http://localhost:$PAYOUT_ADMIN_PORT/metrics" vendorgw_breaker_backend 1 \
+	assert_metric_value "https://localhost:$PAYOUT_ADMIN_PORT/metrics" vendorgw_breaker_backend 1 \
 		"replica A breaker degraded to backend=local with Redis down" 'namespace="payout"' 'backend="local"'
-	assert_metric_value "http://localhost:$PAYOUT2_ADMIN_PORT/metrics" vendorgw_breaker_backend 1 \
+	assert_metric_value "https://localhost:$PAYOUT2_ADMIN_PORT/metrics" vendorgw_breaker_backend 1 \
 		"replica B breaker degraded to backend=local with Redis down" 'namespace="payout"' 'backend="local"'
 	kill -0 "$(cat "$PAYOUT_PID_FILE")" 2>/dev/null && ok "replica A process still alive with Redis down" || fail "replica A process died with Redis down"
 	kill -0 "$(cat "$PAYOUT2_PID_FILE")" 2>/dev/null && ok "replica B process still alive with Redis down" || fail "replica B process died with Redis down"
@@ -1205,7 +1239,7 @@ scenario_10() {
 # ─── Scenario 11: payout crash after command enqueue / after network
 # timeout ─────────────────────────────────────────────────────────────────
 #
-# docs/plan/45 Task T4, bullet 3, as two distinct sub-cases matching the
+# docs/roadmap/archive/45 Task T4, bullet 3, as two distinct sub-cases matching the
 # doc's own wording exactly (each already-broader in scenario 5's own
 # kill-matrix, but here isolated and asserted more sharply):
 #
@@ -1222,10 +1256,10 @@ scenario_10() {
 #      at-least-once — the SAME durable command row eventually reaches
 #      'completed', no duplicate command is created for a request that
 #      never failed over; (2) exactly one ledger settle effect; (3) the
-#      vendor column never changes — pinned per docs/plan/40 the instant the
+#      vendor column never changes — pinned per docs/roadmap/archive/40 the instant the
 #      first call landed 'uncertain', regardless of the crash in between.
 scenario_11() {
-	log "=== Scenario 11: payout crash after command enqueue / after network timeout (docs/plan/45 Task T1/T4) ==="
+	log "=== Scenario 11: payout crash after command enqueue / after network timeout (docs/roadmap/archive/45 Task T1/T4) ==="
 	ensure_deps_up
 	build_server
 	start_services
@@ -1241,7 +1275,7 @@ scenario_11() {
 
 	log "--- sub-case A: crash after command enqueue, before dispatch ---"
 	local held_key_a="chaos11-held-$RANDOM" held_tx_id_a id_a
-	curl -s -o /dev/null -X POST "http://localhost:$LEDGER_INTERNAL_PORT/api/v1/ledger/transactions" \
+	curl_internal -s -o /dev/null -X POST "http://localhost:$LEDGER_INTERNAL_PORT/api/v1/ledger/transactions" \
 		-H "Authorization: Bearer $token" -H "Content-Type: application/json" \
 		-d "{\"idempotency_key\":\"$held_key_a\",\"type\":\"withdraw_initiate\",\"amount\":\"10000\"}"
 	held_tx_id_a="$(psql_exec "$LEDGER_DB_NAME" -c "SELECT id FROM ledger_transactions WHERE idempotency_key = '$held_key_a';")"
@@ -1313,6 +1347,260 @@ scenario_11() {
 	stop_services
 }
 
+# ─── Scenario 12: assurance restart/backlog recovery (Plan 48) ─────────────
+
+wait_for_assurance_finding() {
+	local resource_id=$1 rule_code=$2 want=$3 tries=${4:-45} status=""
+	while [ "$tries" -gt 0 ]; do
+		status="$(psql_exec "$ASSURANCE_DB_NAME" -c "SELECT status FROM assurance_findings WHERE resource_id = '$resource_id' AND rule_code = '$rule_code' ORDER BY last_seen_at DESC LIMIT 1;")"
+		[ "$status" = "$want" ] && return 0
+		sleep 1
+		tries=$((tries - 1))
+	done
+	fail "assurance finding resource=$resource_id rule=$rule_code did not reach '$want' (last='$status')"
+	return 1
+}
+
+wait_for_assurance_idle() {
+	local tries=${1:-45} status=""
+	while [ "$tries" -gt 0 ]; do
+		status="$(psql_exec "$ASSURANCE_DB_NAME" -c "SELECT status FROM assurance_runs ORDER BY started_at DESC, id DESC LIMIT 1;")"
+		[ "$status" != "running" ] && [ -n "$status" ] && return 0
+		sleep 1
+		tries=$((tries - 1))
+	done
+	fail "assurance did not finish its active run in time (last='$status')"
+	return 1
+}
+
+trigger_assurance_run() {
+	local token=$1
+	curl_internal -fsS -o /dev/null -X POST "http://localhost:$ASSURANCE_PORT/admin/assurance/runs" \
+		-H "Authorization: Bearer $token" -H "Content-Type: application/json" -d '{}'
+}
+
+wait_for_assurance_run_after() {
+	local before=$1 want=$2 tries=${3:-45} count status=""
+	while [ "$tries" -gt 0 ]; do
+		count="$(psql_exec "$ASSURANCE_DB_NAME" -c "SELECT count(*) FROM assurance_runs;")"
+		if [ "$count" -gt "$before" ]; then
+			status="$(psql_exec "$ASSURANCE_DB_NAME" -c "SELECT status FROM assurance_runs ORDER BY started_at DESC, id DESC LIMIT 1;")"
+			[ "$status" = "$want" ] && return 0
+			[ "$status" = "failed" ] && [ "$want" != "failed" ] && return 1
+		fi
+		sleep 1
+		tries=$((tries - 1))
+	done
+	fail "assurance run after count=$before did not reach '$want' (count=$count status='$status')"
+	return 1
+}
+
+scenario_12() {
+	log "=== Scenario 12: assurance restart catches backlog and resolves recovered finding (docs/roadmap/archive/48) ==="
+	ensure_deps_up
+	build_server
+	# Start domain owners first so the assurance process can be stopped and
+	# restarted around a durable inconsistency without taking the owners down.
+	start_ledger_service
+	start_fraud_service
+	start_auth_service
+	start_payin_service
+	start_payout_service
+	start_gateway
+
+	local event_id external_ref admin_token
+	event_id="$(psql_exec "$PAYIN_DB_NAME" -c "SELECT gen_random_uuid();")"
+	external_ref="chaos12-$event_id"
+	psql_exec "$PAYIN_DB_NAME" -c "
+		INSERT INTO payin_webhook_events
+		(id, vendor, vendor_event_id, external_ref, user_id, amount, currency, raw, status, request_id, created_at, updated_at)
+		VALUES ('$event_id', 'mockvendor', '$external_ref', '$external_ref', gen_random_uuid(), 1234, 'IDR', '{}'::jsonb, 'posted', 'chaos12', now() - interval '2 minutes 1 second', now() - interval '2 minutes 1 second');" >/dev/null
+
+	start_assurance_service
+	wait_for_assurance_finding "$event_id" PA01 open 45
+	ok "assurance detected a disposable PA01 mismatch before the outage"
+
+	# The service is down while the owner row is repaired. The restart must
+	# resume from the persisted cursor and inspect this newly eligible update.
+	kill_assurance_hard
+	psql_exec "$PAYIN_DB_NAME" -c "UPDATE payin_webhook_events SET status='failed', updated_at=now() - interval '2 minutes 1 second' WHERE id='$event_id';" >/dev/null
+	admin_token="$(gen_token "$(psql_exec "$AUTH_DB_NAME" -c 'SELECT gen_random_uuid();')" admin)"
+	start_assurance_service
+	wait_for_assurance_idle 45
+	local before_runs
+	before_runs="$(psql_exec "$ASSURANCE_DB_NAME" -c "SELECT count(*) FROM assurance_runs;")"
+	trigger_assurance_run "$admin_token"
+	wait_for_assurance_run_after "$before_runs" succeeded 45
+	wait_for_assurance_finding "$event_id" PA01 resolved 45
+	ok "assurance restart recovered backlog and resolved the finding without deleting it"
+
+	local occurrence_count
+	occurrence_count="$(psql_exec "$ASSURANCE_DB_NAME" -c "SELECT occurrence_count FROM assurance_findings WHERE resource_id='$event_id' AND rule_code='PA01';")"
+	[ "$occurrence_count" -ge 1 ] && ok "finding history remained durable (occurrences=$occurrence_count)" \
+		|| fail "finding history was lost after recovery (occurrences=$occurrence_count)"
+	stop_services
+}
+
+# ─── Scenario 13: ledger outage preserves assurance cursor/finding (Plan 48)
+
+scenario_13() {
+	log "=== Scenario 13: ledger unavailable preserves assurance cursor and avoids false resolve (docs/roadmap/archive/48) ==="
+	ensure_deps_up
+	build_server
+	start_ledger_service
+	start_fraud_service
+	start_auth_service
+	start_payin_service
+	start_payout_service
+	start_gateway
+
+	local event_id external_ref admin_token before_cursor after_cursor before_runs
+	event_id="$(psql_exec "$PAYIN_DB_NAME" -c "SELECT gen_random_uuid();")"
+	external_ref="chaos13-$event_id"
+	psql_exec "$PAYIN_DB_NAME" -c "
+		INSERT INTO payin_webhook_events
+		(id, vendor, vendor_event_id, external_ref, user_id, amount, currency, raw, status, request_id, created_at, updated_at)
+		VALUES ('$event_id', 'mockvendor', '$external_ref', '$external_ref', gen_random_uuid(), 2345, 'IDR', '{}'::jsonb, 'posted', 'chaos13', now() - interval '2 minutes 1 second', now() - interval '2 minutes 1 second');" >/dev/null
+	start_assurance_service
+	wait_for_assurance_finding "$event_id" PA01 open 45
+	before_cursor="$(psql_exec "$ASSURANCE_DB_NAME" -c "SELECT COALESCE(updated_at::text,'') || '|' || COALESCE(resource_id::text,'') FROM assurance_cursors WHERE source='payin';")"
+
+	# Repair the owner row while the proof dependency is unavailable. The
+	# failed run must not observe the repair as evidence or move the cursor.
+	kill_ledger_hard
+	psql_exec "$PAYIN_DB_NAME" -c "UPDATE payin_webhook_events SET status='failed', updated_at=now() - interval '2 minutes 1 second' WHERE id='$event_id';" >/dev/null
+	admin_token="$(gen_token "$(psql_exec "$AUTH_DB_NAME" -c 'SELECT gen_random_uuid();')" admin)"
+	wait_for_assurance_idle 45
+	before_runs="$(psql_exec "$ASSURANCE_DB_NAME" -c "SELECT count(*) FROM assurance_runs;")"
+	trigger_assurance_run "$admin_token"
+	wait_for_assurance_run_after "$before_runs" failed 45
+	after_cursor="$(psql_exec "$ASSURANCE_DB_NAME" -c "SELECT COALESCE(updated_at::text,'') || '|' || COALESCE(resource_id::text,'') FROM assurance_cursors WHERE source='payin';")"
+	[ "$after_cursor" = "$before_cursor" ] && ok "ledger outage preserved the payin cursor" \
+		|| fail "ledger outage advanced the payin cursor: before='$before_cursor' after='$after_cursor'"
+	wait_for_assurance_finding "$event_id" PA01 open 10
+	ok "ledger outage did not falsely resolve the open PA01 finding"
+
+	start_ledger_service
+	wait_for_assurance_idle 45
+	before_runs="$(psql_exec "$ASSURANCE_DB_NAME" -c "SELECT count(*) FROM assurance_runs;")"
+	trigger_assurance_run "$admin_token"
+	wait_for_assurance_run_after "$before_runs" succeeded 45
+	wait_for_assurance_finding "$event_id" PA01 resolved 45
+	ok "ledger recovery replayed the page and resolved PA01"
+	stop_services
+}
+
+# ─── Scenario 14: durable pause, owner recovery, maker/checker resume ─────
+
+scenario_14() {
+	log "=== Scenario 14: owner outage during intake pause, durable retry, and two-person resume (docs/roadmap/archive/48) ==="
+	ensure_deps_up
+	build_server
+	start_services
+
+	local maker_id checker_id user_id maker_token checker_token user_token
+	maker_id="$(psql_exec "$AUTH_DB_NAME" -c "SELECT gen_random_uuid();")"
+	checker_id="$(psql_exec "$AUTH_DB_NAME" -c "SELECT gen_random_uuid();")"
+	user_id="$(psql_exec "$LEDGER_DB_NAME" -c "SELECT gen_random_uuid();")"
+	provision_user "$user_id" >/dev/null
+	maker_token="$(gen_token "$maker_id" admin_maker)"
+	checker_token="$(gen_token "$checker_id" admin_checker)"
+	user_token="$(gen_token "$user_id")"
+
+	local payin_revision payout_revision command_id code response
+	payin_revision="$(psql_exec "$PAYIN_DB_NAME" -c "SELECT revision FROM payin_intake_control WHERE id=1;")"
+	command_id="$(psql_exec "$ASSURANCE_DB_NAME" -c "SELECT gen_random_uuid();")"
+	kill_payin_hard
+	code="$(curl_internal -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$ASSURANCE_PORT/admin/assurance/intake/payin/pause" \
+		-H "Authorization: Bearer $maker_token" -H 'Content-Type: application/json' \
+		-d "{\"command_id\":\"$command_id\",\"expected_revision\":$payin_revision,\"reason\":\"chaos14 owner outage\"}")"
+	[ "$code" = "503" ] && ok "pause remained durable while payin owner was unavailable" \
+		|| fail "pause with payin owner unavailable returned HTTP $code (want 503)"
+	start_payin_service
+	response="$(curl_internal -sS -X POST "http://localhost:$ASSURANCE_PORT/admin/assurance/intake/payin/pause" \
+		-H "Authorization: Bearer $maker_token" -H 'Content-Type: application/json' \
+		-d "{\"command_id\":\"$command_id\",\"expected_revision\":$payin_revision,\"reason\":\"chaos14 retry\"}" || true)"
+	# The owner HTTP health endpoint can be ready a fraction before its lazy
+	# gRPC dial has re-established. Retry the same UUID command (idempotent) so
+	# this chaos proof tests durable recovery rather than a startup race.
+	local pause_attempts=20
+	while ! echo "$response" | grep -q '"paused":true' && [ "$pause_attempts" -gt 0 ]; do
+		sleep 1
+		response="$(curl_internal -sS -X POST "http://localhost:$ASSURANCE_PORT/admin/assurance/intake/payin/pause" \
+			-H "Authorization: Bearer $maker_token" -H 'Content-Type: application/json' \
+			-d "{\"command_id\":\"$command_id\",\"expected_revision\":$payin_revision,\"reason\":\"chaos14 retry\"}" || true)"
+		pause_attempts=$((pause_attempts - 1))
+	done
+	if echo "$response" | grep -q '"paused":true'; then
+		ok "retrying the same pause command applied exactly once after owner recovery"
+	else
+		fail "payin pause retry did not return paused=true: $response"
+	fi
+	local paused_revision
+	paused_revision="$(psql_exec "$PAYIN_DB_NAME" -c "SELECT revision FROM payin_intake_control WHERE id=1 AND paused=true;")"
+	[ "$paused_revision" = "$((payin_revision + 1))" ] && ok "payin pause revision advanced once" \
+		|| fail "payin pause revision mismatch: before=$payin_revision after=$paused_revision"
+
+	code="$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$APP_PORT/api/v1/topup" \
+		-H "Authorization: Bearer $user_token" -H 'Content-Type: application/json' -d '{"amount":"100"}')"
+	[ "$code" = "422" ] && ok "new topup intent rejected while payin intake is paused" \
+		|| fail "topup while paused returned HTTP $code (want 422)"
+
+	local resume_id resume_revision
+	resume_revision="$paused_revision"
+	resume_id="$(psql_exec "$ASSURANCE_DB_NAME" -c "SELECT gen_random_uuid();")"
+	curl_internal -fsS -o /dev/null -X POST "http://localhost:$ASSURANCE_PORT/admin/assurance/intake/payin/resume-requests" \
+		-H "Authorization: Bearer $maker_token" -H 'Content-Type: application/json' \
+		-d "{\"command_id\":\"$resume_id\",\"expected_revision\":$resume_revision,\"reason\":\"chaos14 resume\"}"
+	code="$(curl_internal -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$ASSURANCE_PORT/admin/assurance/intake/payin/resume-requests/$resume_id/approve" \
+		-H "Authorization: Bearer $maker_token" -H 'Content-Type: application/json')"
+	[ "$code" = "403" ] && ok "same principal cannot approve its own resume request" \
+		|| fail "same-principal resume approval returned HTTP $code (want 403)"
+	response="$(curl_internal -fsS -X POST "http://localhost:$ASSURANCE_PORT/admin/assurance/intake/payin/resume-requests/$resume_id/approve" \
+		-H "Authorization: Bearer $checker_token" -H 'Content-Type: application/json')"
+	local payin_paused_after
+	payin_paused_after="$(psql_exec "$PAYIN_DB_NAME" -c "SELECT paused FROM payin_intake_control WHERE id=1;")"
+	if echo "$response" | grep -q '"applied":true' && [ "$payin_paused_after" = "f" ]; then
+		ok "second principal approved payin resume"
+	else
+		fail "checker resume approval did not persist paused=false: response=$response owner_paused=$payin_paused_after"
+	fi
+	local resumed_revision
+	resumed_revision="$(psql_exec "$PAYIN_DB_NAME" -c "SELECT revision FROM payin_intake_control WHERE id=1;")"
+	[ "$resumed_revision" = "$((resume_revision + 1))" ] && ok "payin resume changed owner revision exactly once" \
+		|| fail "payin resume revision mismatch: before=$resume_revision after=$resumed_revision"
+
+	# Repeat the same role/revision proof on payout while its owner is healthy;
+	# this also proves the pause guard is present on both create paths.
+	payout_revision="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT revision FROM payout_intake_control WHERE id=1;")"
+	command_id="$(psql_exec "$ASSURANCE_DB_NAME" -c "SELECT gen_random_uuid();")"
+	response="$(curl_internal -fsS -X POST "http://localhost:$ASSURANCE_PORT/admin/assurance/intake/payout/pause" \
+		-H "Authorization: Bearer $maker_token" -H 'Content-Type: application/json' \
+		-d "{\"command_id\":\"$command_id\",\"expected_revision\":$payout_revision,\"reason\":\"chaos14 payout pause\"}")"
+	if echo "$response" | grep -q '"paused":true'; then
+		ok "payout intake pause applied"
+	else
+		fail "payout pause did not return paused=true: $response"
+	fi
+	code="$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$APP_PORT/api/v1/payout" \
+		-H "Authorization: Bearer $user_token" -H 'Content-Type: application/json' \
+		-d '{"amount":"100","destination":{"bank_code":"014","account_no":"1"}}')"
+	[ "$code" = "422" ] && ok "new payout rejected while payout intake is paused" \
+		|| fail "payout while paused returned HTTP $code (want 422)"
+	resume_revision="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT revision FROM payout_intake_control WHERE id=1;")"
+	resume_id="$(psql_exec "$ASSURANCE_DB_NAME" -c "SELECT gen_random_uuid();")"
+	curl_internal -fsS -o /dev/null -X POST "http://localhost:$ASSURANCE_PORT/admin/assurance/intake/payout/resume-requests" \
+		-H "Authorization: Bearer $maker_token" -H 'Content-Type: application/json' \
+		-d "{\"command_id\":\"$resume_id\",\"expected_revision\":$resume_revision,\"reason\":\"chaos14 payout resume\"}"
+	curl_internal -fsS -o /dev/null -X POST "http://localhost:$ASSURANCE_PORT/admin/assurance/intake/payout/resume-requests/$resume_id/approve" \
+		-H "Authorization: Bearer $checker_token" -H 'Content-Type: application/json'
+	local payout_resumed_revision
+	payout_resumed_revision="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT revision FROM payout_intake_control WHERE id=1;")"
+	[ "$payout_resumed_revision" = "$((resume_revision + 1))" ] && ok "payout resume changed owner revision exactly once" \
+		|| fail "payout resume revision mismatch: before=$resume_revision after=$payout_resumed_revision"
+	stop_services
+}
+
 # ─── Main ────────────────────────────────────────────────────────────────────
 
 case "${1:-}" in
@@ -1327,6 +1615,9 @@ case "${1:-}" in
 9) scenario_9 ;;
 10) scenario_10 ;;
 11) scenario_11 ;;
+12) scenario_12 ;;
+13) scenario_13 ;;
+14) scenario_14 ;;
 all)
 	scenario_1
 	scenario_2
@@ -1339,9 +1630,12 @@ all)
 	scenario_9
 	scenario_10
 	scenario_11
+	scenario_12
+	scenario_13
+	scenario_14
 	;;
 *)
-	echo "Usage: $0 {1|2|3|4|5|6|7|8|9|10|11|all}"
+	echo "Usage: $0 {1|2|3|4|5|6|7|8|9|10|11|12|13|14|all}"
 	exit 2
 	;;
 esac

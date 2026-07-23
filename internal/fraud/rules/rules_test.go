@@ -29,6 +29,21 @@ type counterStub struct {
 	err   error
 }
 
+type modeResolverStub struct{ mode Mode }
+
+func (r *modeResolverStub) ResolveMode(context.Context, string) (Mode, error) { return r.mode, nil }
+
+type sanctionsMatcherStub struct {
+	matched bool
+	name    string
+	birth   string
+}
+
+func (m *sanctionsMatcherStub) MatchSanctions(_ context.Context, name, birth string) (bool, error) {
+	m.name, m.birth = name, birth
+	return m.matched, nil
+}
+
 func (c counterStub) Get(context.Context, string) (int64, error) { return c.value, c.err }
 
 func input(amount string) model.ScreenInput {
@@ -50,8 +65,8 @@ func TestAmountThresholdModes(t *testing.T) {
 			verdict, err := rule.Screen(context.Background(), input("100"))
 			require.NoError(t, err)
 			assert.Equal(t, tc.block, verdict.Block)
-			require.Len(t, repo.events, 1)
-			assert.Equal(t, "IDR", repo.events[0].Currency)
+			require.NotNil(t, verdict.Event)
+			assert.Equal(t, "IDR", verdict.Event.Currency)
 		})
 	}
 }
@@ -64,6 +79,22 @@ func TestAmountThresholdBelowDoesNothing(t *testing.T) {
 	assert.Empty(t, repo.events)
 }
 
+func TestAmountThresholdDynamicModeOffIsNoop(t *testing.T) {
+	repo := &repoStub{}
+	resolver := &modeResolverStub{mode: ModeOff}
+	rule := NewAmountThresholdRuleWithResolver(decimal.NewFromInt(100), ModeBlock, resolver, repo, nil)
+	verdict, err := rule.Screen(context.Background(), input("100"))
+	require.NoError(t, err)
+	assert.False(t, verdict.Block)
+	assert.Empty(t, repo.events)
+
+	resolver.mode = ModeBlock
+	verdict, err = rule.Screen(context.Background(), input("100"))
+	require.NoError(t, err)
+	assert.True(t, verdict.Block)
+	assert.NotNil(t, verdict.Event)
+}
+
 func TestVelocityReadsPostedCounterWithoutIncrementing(t *testing.T) {
 	repo := &repoStub{}
 	rule := NewVelocityAnomalyRule(2, ModeBlock, counterStub{value: 3}, repo, nil)
@@ -71,13 +102,30 @@ func TestVelocityReadsPostedCounterWithoutIncrementing(t *testing.T) {
 	verdict, err := rule.Screen(context.Background(), input("10"))
 	require.NoError(t, err)
 	assert.True(t, verdict.Block)
-	assert.Equal(t, "fraud:velocity:"+repo.events[0].UserID.String()+":2026-07-15-10", VelocityKey(repo.events[0].UserID.String(), rule.now()))
+	require.NotNil(t, verdict.Event)
+	assert.Equal(t, "fraud:velocity:"+verdict.Event.UserID.String()+":2026-07-15-10", VelocityKey(verdict.Event.UserID.String(), rule.now()))
 }
 
 func TestVelocityCounterError(t *testing.T) {
 	verdict, err := NewVelocityAnomalyRule(2, ModeBlock, counterStub{err: errors.New("redis down")}, &repoStub{}, nil).Screen(context.Background(), input("10"))
 	require.Error(t, err)
 	assert.False(t, verdict.Block)
+}
+
+func TestSanctionsRuleModeAndSubject(t *testing.T) {
+	matcher := &sanctionsMatcherStub{matched: true}
+	resolver := &modeResolverStub{mode: ModeMonitor}
+	rule := NewSanctionsWatchlistRule(ModeOff, resolver, matcher, nil)
+	verdict, err := rule.Screen(context.Background(), model.ScreenInput{SubjectName: "Doe, Jane", BirthDate: "1980-01-02"})
+	require.NoError(t, err)
+	assert.False(t, verdict.Block)
+	require.NotNil(t, verdict.Event)
+	assert.Equal(t, "doe jane", matcher.name)
+
+	resolver.mode = ModeBlock
+	verdict, err = rule.Screen(context.Background(), model.ScreenInput{SubjectName: "Doe, Jane"})
+	require.NoError(t, err)
+	assert.True(t, verdict.Block)
 }
 
 func TestParseModeDefaultsOff(t *testing.T) {

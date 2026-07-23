@@ -14,7 +14,7 @@ import (
 
 // =============================================================================
 // Disbursement — system.settlement[platform][currency] -> user.cash
-// (docs/plan/19 Task T2 step 3)
+// (docs/roadmap/archive/19 Task T2 step 3)
 //
 // A platform-initiated payout to a user (payroll, mass refund) — distinct
 // from money_in (which represents a real external deposit reconciled

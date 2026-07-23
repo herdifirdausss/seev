@@ -31,8 +31,8 @@ func MetaUUID(meta map[string]any, key string) (uuid.UUID, error) {
 	return id, nil
 }
 
-// MetaDecimal mengekstrak decimal.Decimal dari metadata.
-// Mendukung string, float64, int, int64.
+// MetaDecimal extracts a decimal.Decimal from metadata.
+// Supported values are string, float64, int, and int64.
 func MetaDecimal(meta map[string]any, key string) (decimal.Decimal, error) {
 	v, ok := meta[key]
 	if !ok {
@@ -46,7 +46,7 @@ func MetaDecimal(meta map[string]any, key string) (decimal.Decimal, error) {
 		}
 		return d, nil
 	case float64:
-		// float64 → decimal: gunakan string roundtrip untuk presisi
+		// float64 → decimal: use the string round trip to preserve precision
 		return decimal.NewFromFloat(t), nil
 	case int:
 		return decimal.NewFromInt(int64(t)), nil

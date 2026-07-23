@@ -26,6 +26,7 @@ func validEnv(overrides map[string]string) func(string) string {
 		"RABBITMQ_ROUTING_KEY": "app.routing",
 
 		"JWT_SECRET": "supersecretkeythatisatleast32chars!",
+		"JWT_ISSUER": "seev",
 	}
 	for k, v := range overrides {
 		base[k] = v
@@ -82,17 +83,22 @@ func TestLoadFromEnv_Defaults(t *testing.T) {
 	assert.Equal(t, 10*time.Second, cfg.RabbitMQ.DialTimeout)
 	assert.Equal(t, "app.exchange", cfg.RabbitMQ.DefaultExchange)
 
-	assert.Equal(t, 15*time.Minute, cfg.JWT.AccessExpiry)
+	assert.Equal(t, 5*time.Minute, cfg.JWT.AccessExpiry)
 	assert.Equal(t, 7*24*time.Hour, cfg.JWT.RefreshExpiry)
-	assert.Equal(t, "", cfg.JWT.Issuer)
+	assert.Equal(t, "seev", cfg.JWT.Issuer)
 
 	assert.Equal(t, "info", cfg.Logger.Level)
 	assert.Equal(t, "json", cfg.Logger.Format)
 
 	assert.Equal(t, int64(1_000_000_000), cfg.Ledger.MaxAmountPerTx)
+	assert.Equal(t, 2*time.Minute, cfg.Assurance.ConsistencyDelay)
+	assert.Equal(t, time.Minute, cfg.Assurance.Interval)
+	assert.Equal(t, 500, cfg.Assurance.PageSize)
+	assert.Equal(t, 3*time.Second, cfg.Assurance.RPCTimeout)
+	assert.Equal(t, 2, cfg.Assurance.Concurrency)
 
-	assert.Equal(t, "", cfg.Worker.AlertWebhookURL, "no external alert by default (docs/plan/12 Task T4)")
-	assert.Equal(t, "", cfg.Tracing.OTLPEndpoint, "no tracer provider installed by default (docs/plan/12 Task T5)")
+	assert.Equal(t, "", cfg.Worker.AlertWebhookURL, "no external alert by default (docs/roadmap/archive/12 Task T4)")
+	assert.Equal(t, "", cfg.Tracing.OTLPEndpoint, "no tracer provider installed by default (docs/roadmap/archive/12 Task T5)")
 }
 
 func TestLoadFromEnvMode_AuthServiceDoesNotRequireRabbitMQ(t *testing.T) {
@@ -215,6 +221,7 @@ func TestLoadFromEnv_MissingRequiredVars(t *testing.T) {
 	assert.Contains(t, err.Error(), "RABBITMQ_USERNAME")
 	assert.Contains(t, err.Error(), "RABBITMQ_PASSWORD")
 	assert.Contains(t, err.Error(), "JWT_SECRET")
+	assert.Contains(t, err.Error(), "JWT_ISSUER")
 }
 
 func TestLoadFromEnv_InvalidAppEnv(t *testing.T) {
@@ -255,6 +262,16 @@ func TestLoadFromEnv_JWTSecretTooShort(t *testing.T) {
 	}))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "JWT_SECRET")
+}
+
+func TestLoadFromEnv_MissingJWTIssuer(t *testing.T) {
+	// docs/roadmap/archive/49 TM-07: JWT_ISSUER is now mandatory in every environment,
+	// not just a production warning — an empty issuer must fail boot.
+	_, err := loadFromEnv(validEnv(map[string]string{
+		"JWT_ISSUER": "",
+	}))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "JWT_ISSUER")
 }
 
 func TestLoadFromEnv_InvalidDurationFallsback(t *testing.T) {
@@ -300,7 +317,7 @@ func TestPostgresConfig_DSN(t *testing.T) {
 	assert.True(t, strings.Contains(dsn, "sslmode=require"))
 }
 
-// ─── Session timeout DSN options (docs/plan/11 Task T5) ────────────────────────
+// ─── Session timeout DSN options (docs/roadmap/archive/11 Task T5) ────────────────────────
 
 func TestPostgresConfig_DSN_NoTimeoutsConfigured_NoOptionsParam(t *testing.T) {
 	p := PostgresConfig{Host: "localhost", Port: "5432", User: "admin", Password: "secret", DB: "mydb", SSLMode: "disable"}
@@ -349,7 +366,7 @@ func TestConfig_IsProduction(t *testing.T) {
 	}
 }
 
-// ─── Config.Warnings (docs/plan/10 Task T1) ─────────────────────────────────────
+// ─── Config.Warnings (docs/roadmap/archive/10 Task T1) ─────────────────────────────────────
 
 func TestConfig_Warnings_Development_NoWarnings(t *testing.T) {
 	cfg := &Config{App: AppConfig{Env: "development", InternalBindAddr: "0.0.0.0"}}
@@ -366,13 +383,6 @@ func TestConfig_Warnings_Production_WildcardBind_Warns(t *testing.T) {
 	warnings := cfg.Warnings()
 	require.Len(t, warnings, 1)
 	assert.Contains(t, warnings[0], "INTERNAL_APP_BIND_ADDR")
-}
-
-func TestConfig_Warnings_Production_EmptyIssuer_Warns(t *testing.T) {
-	cfg := &Config{App: AppConfig{Env: "production", InternalBindAddr: "127.0.0.1"}, JWT: JWTConfig{Issuer: ""}}
-	warnings := cfg.Warnings()
-	require.Len(t, warnings, 1)
-	assert.Contains(t, warnings[0], "JWT_ISSUER")
 }
 
 func TestHelpers_ParseDuration(t *testing.T) {

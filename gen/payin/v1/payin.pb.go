@@ -486,6 +486,562 @@ func (x *TopupIntent) GetUpdatedAt() *timestamppb.Timestamp {
 	return nil
 }
 
+type ListAssuranceRecordsRequest struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	CursorUpdatedAt *timestamppb.Timestamp `protobuf:"bytes,1,opt,name=cursor_updated_at,json=cursorUpdatedAt,proto3" json:"cursor_updated_at,omitempty"`
+	CursorId        string                 `protobuf:"bytes,2,opt,name=cursor_id,json=cursorId,proto3" json:"cursor_id,omitempty"`
+	Cutoff          *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=cutoff,proto3" json:"cutoff,omitempty"`
+	PageSize        uint32                 `protobuf:"varint,4,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *ListAssuranceRecordsRequest) Reset() {
+	*x = ListAssuranceRecordsRequest{}
+	mi := &file_seev_payin_v1_payin_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListAssuranceRecordsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListAssuranceRecordsRequest) ProtoMessage() {}
+
+func (x *ListAssuranceRecordsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_seev_payin_v1_payin_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListAssuranceRecordsRequest.ProtoReflect.Descriptor instead.
+func (*ListAssuranceRecordsRequest) Descriptor() ([]byte, []int) {
+	return file_seev_payin_v1_payin_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *ListAssuranceRecordsRequest) GetCursorUpdatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CursorUpdatedAt
+	}
+	return nil
+}
+
+func (x *ListAssuranceRecordsRequest) GetCursorId() string {
+	if x != nil {
+		return x.CursorId
+	}
+	return ""
+}
+
+func (x *ListAssuranceRecordsRequest) GetCutoff() *timestamppb.Timestamp {
+	if x != nil {
+		return x.Cutoff
+	}
+	return nil
+}
+
+func (x *ListAssuranceRecordsRequest) GetPageSize() uint32 {
+	if x != nil {
+		return x.PageSize
+	}
+	return 0
+}
+
+type ListAssuranceRecordsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Records       []*AssuranceRecord     `protobuf:"bytes,1,rep,name=records,proto3" json:"records,omitempty"`
+	NextUpdatedAt *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=next_updated_at,json=nextUpdatedAt,proto3" json:"next_updated_at,omitempty"`
+	NextId        string                 `protobuf:"bytes,3,opt,name=next_id,json=nextId,proto3" json:"next_id,omitempty"`
+	HasMore       bool                   `protobuf:"varint,4,opt,name=has_more,json=hasMore,proto3" json:"has_more,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListAssuranceRecordsResponse) Reset() {
+	*x = ListAssuranceRecordsResponse{}
+	mi := &file_seev_payin_v1_payin_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListAssuranceRecordsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListAssuranceRecordsResponse) ProtoMessage() {}
+
+func (x *ListAssuranceRecordsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_seev_payin_v1_payin_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListAssuranceRecordsResponse.ProtoReflect.Descriptor instead.
+func (*ListAssuranceRecordsResponse) Descriptor() ([]byte, []int) {
+	return file_seev_payin_v1_payin_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *ListAssuranceRecordsResponse) GetRecords() []*AssuranceRecord {
+	if x != nil {
+		return x.Records
+	}
+	return nil
+}
+
+func (x *ListAssuranceRecordsResponse) GetNextUpdatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.NextUpdatedAt
+	}
+	return nil
+}
+
+func (x *ListAssuranceRecordsResponse) GetNextId() string {
+	if x != nil {
+		return x.NextId
+	}
+	return ""
+}
+
+func (x *ListAssuranceRecordsResponse) GetHasMore() bool {
+	if x != nil {
+		return x.HasMore
+	}
+	return false
+}
+
+type AssuranceRecord struct {
+	state                  protoimpl.MessageState `protogen:"open.v1"`
+	RecordType             string                 `protobuf:"bytes,1,opt,name=record_type,json=recordType,proto3" json:"record_type,omitempty"` // intent | webhook_event
+	Id                     string                 `protobuf:"bytes,2,opt,name=id,proto3" json:"id,omitempty"`
+	EffectiveUpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=effective_updated_at,json=effectiveUpdatedAt,proto3" json:"effective_updated_at,omitempty"`
+	CreatedAt              *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	Status                 string                 `protobuf:"bytes,5,opt,name=status,proto3" json:"status,omitempty"`
+	UserId                 string                 `protobuf:"bytes,6,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	Amount                 string                 `protobuf:"bytes,7,opt,name=amount,proto3" json:"amount,omitempty"`
+	Currency               string                 `protobuf:"bytes,8,opt,name=currency,proto3" json:"currency,omitempty"`
+	Vendor                 string                 `protobuf:"bytes,9,opt,name=vendor,proto3" json:"vendor,omitempty"`
+	Reference              string                 `protobuf:"bytes,10,opt,name=reference,proto3" json:"reference,omitempty"`
+	ExternalRef            string                 `protobuf:"bytes,11,opt,name=external_ref,json=externalRef,proto3" json:"external_ref,omitempty"`
+	SettledEventId         string                 `protobuf:"bytes,12,opt,name=settled_event_id,json=settledEventId,proto3" json:"settled_event_id,omitempty"`
+	RequestId              string                 `protobuf:"bytes,13,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	RequestIdPresent       bool                   `protobuf:"varint,14,opt,name=request_id_present,json=requestIdPresent,proto3" json:"request_id_present,omitempty"`
+	LedgerType             string                 `protobuf:"bytes,15,opt,name=ledger_type,json=ledgerType,proto3" json:"ledger_type,omitempty"`
+	LedgerGateway          string                 `protobuf:"bytes,16,opt,name=ledger_gateway,json=ledgerGateway,proto3" json:"ledger_gateway,omitempty"`
+	LedgerExternalRef      string                 `protobuf:"bytes,17,opt,name=ledger_external_ref,json=ledgerExternalRef,proto3" json:"ledger_external_ref,omitempty"`
+	LedgerIdempotencyScope string                 `protobuf:"bytes,18,opt,name=ledger_idempotency_scope,json=ledgerIdempotencyScope,proto3" json:"ledger_idempotency_scope,omitempty"`
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
+}
+
+func (x *AssuranceRecord) Reset() {
+	*x = AssuranceRecord{}
+	mi := &file_seev_payin_v1_payin_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AssuranceRecord) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AssuranceRecord) ProtoMessage() {}
+
+func (x *AssuranceRecord) ProtoReflect() protoreflect.Message {
+	mi := &file_seev_payin_v1_payin_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AssuranceRecord.ProtoReflect.Descriptor instead.
+func (*AssuranceRecord) Descriptor() ([]byte, []int) {
+	return file_seev_payin_v1_payin_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *AssuranceRecord) GetRecordType() string {
+	if x != nil {
+		return x.RecordType
+	}
+	return ""
+}
+
+func (x *AssuranceRecord) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *AssuranceRecord) GetEffectiveUpdatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.EffectiveUpdatedAt
+	}
+	return nil
+}
+
+func (x *AssuranceRecord) GetCreatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return nil
+}
+
+func (x *AssuranceRecord) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *AssuranceRecord) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+func (x *AssuranceRecord) GetAmount() string {
+	if x != nil {
+		return x.Amount
+	}
+	return ""
+}
+
+func (x *AssuranceRecord) GetCurrency() string {
+	if x != nil {
+		return x.Currency
+	}
+	return ""
+}
+
+func (x *AssuranceRecord) GetVendor() string {
+	if x != nil {
+		return x.Vendor
+	}
+	return ""
+}
+
+func (x *AssuranceRecord) GetReference() string {
+	if x != nil {
+		return x.Reference
+	}
+	return ""
+}
+
+func (x *AssuranceRecord) GetExternalRef() string {
+	if x != nil {
+		return x.ExternalRef
+	}
+	return ""
+}
+
+func (x *AssuranceRecord) GetSettledEventId() string {
+	if x != nil {
+		return x.SettledEventId
+	}
+	return ""
+}
+
+func (x *AssuranceRecord) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *AssuranceRecord) GetRequestIdPresent() bool {
+	if x != nil {
+		return x.RequestIdPresent
+	}
+	return false
+}
+
+func (x *AssuranceRecord) GetLedgerType() string {
+	if x != nil {
+		return x.LedgerType
+	}
+	return ""
+}
+
+func (x *AssuranceRecord) GetLedgerGateway() string {
+	if x != nil {
+		return x.LedgerGateway
+	}
+	return ""
+}
+
+func (x *AssuranceRecord) GetLedgerExternalRef() string {
+	if x != nil {
+		return x.LedgerExternalRef
+	}
+	return ""
+}
+
+func (x *AssuranceRecord) GetLedgerIdempotencyScope() string {
+	if x != nil {
+		return x.LedgerIdempotencyScope
+	}
+	return ""
+}
+
+type GetIntakeControlRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetIntakeControlRequest) Reset() {
+	*x = GetIntakeControlRequest{}
+	mi := &file_seev_payin_v1_payin_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetIntakeControlRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetIntakeControlRequest) ProtoMessage() {}
+
+func (x *GetIntakeControlRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_seev_payin_v1_payin_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetIntakeControlRequest.ProtoReflect.Descriptor instead.
+func (*GetIntakeControlRequest) Descriptor() ([]byte, []int) {
+	return file_seev_payin_v1_payin_proto_rawDescGZIP(), []int{10}
+}
+
+type GetIntakeControlResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Paused        bool                   `protobuf:"varint,1,opt,name=paused,proto3" json:"paused,omitempty"`
+	Revision      int64                  `protobuf:"varint,2,opt,name=revision,proto3" json:"revision,omitempty"`
+	UpdatedBy     string                 `protobuf:"bytes,3,opt,name=updated_by,json=updatedBy,proto3" json:"updated_by,omitempty"`
+	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetIntakeControlResponse) Reset() {
+	*x = GetIntakeControlResponse{}
+	mi := &file_seev_payin_v1_payin_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetIntakeControlResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetIntakeControlResponse) ProtoMessage() {}
+
+func (x *GetIntakeControlResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_seev_payin_v1_payin_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetIntakeControlResponse.ProtoReflect.Descriptor instead.
+func (*GetIntakeControlResponse) Descriptor() ([]byte, []int) {
+	return file_seev_payin_v1_payin_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *GetIntakeControlResponse) GetPaused() bool {
+	if x != nil {
+		return x.Paused
+	}
+	return false
+}
+
+func (x *GetIntakeControlResponse) GetRevision() int64 {
+	if x != nil {
+		return x.Revision
+	}
+	return 0
+}
+
+func (x *GetIntakeControlResponse) GetUpdatedBy() string {
+	if x != nil {
+		return x.UpdatedBy
+	}
+	return ""
+}
+
+func (x *GetIntakeControlResponse) GetUpdatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.UpdatedAt
+	}
+	return nil
+}
+
+type ApplyIntakeControlRequest struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	CommandId        string                 `protobuf:"bytes,1,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
+	Action           string                 `protobuf:"bytes,2,opt,name=action,proto3" json:"action,omitempty"` // pause | resume
+	ExpectedRevision int64                  `protobuf:"varint,3,opt,name=expected_revision,json=expectedRevision,proto3" json:"expected_revision,omitempty"`
+	Actor            string                 `protobuf:"bytes,4,opt,name=actor,proto3" json:"actor,omitempty"`
+	Reason           string                 `protobuf:"bytes,5,opt,name=reason,proto3" json:"reason,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *ApplyIntakeControlRequest) Reset() {
+	*x = ApplyIntakeControlRequest{}
+	mi := &file_seev_payin_v1_payin_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ApplyIntakeControlRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ApplyIntakeControlRequest) ProtoMessage() {}
+
+func (x *ApplyIntakeControlRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_seev_payin_v1_payin_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ApplyIntakeControlRequest.ProtoReflect.Descriptor instead.
+func (*ApplyIntakeControlRequest) Descriptor() ([]byte, []int) {
+	return file_seev_payin_v1_payin_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *ApplyIntakeControlRequest) GetCommandId() string {
+	if x != nil {
+		return x.CommandId
+	}
+	return ""
+}
+
+func (x *ApplyIntakeControlRequest) GetAction() string {
+	if x != nil {
+		return x.Action
+	}
+	return ""
+}
+
+func (x *ApplyIntakeControlRequest) GetExpectedRevision() int64 {
+	if x != nil {
+		return x.ExpectedRevision
+	}
+	return 0
+}
+
+func (x *ApplyIntakeControlRequest) GetActor() string {
+	if x != nil {
+		return x.Actor
+	}
+	return ""
+}
+
+func (x *ApplyIntakeControlRequest) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+type ApplyIntakeControlResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Applied       bool                   `protobuf:"varint,1,opt,name=applied,proto3" json:"applied,omitempty"`
+	Paused        bool                   `protobuf:"varint,2,opt,name=paused,proto3" json:"paused,omitempty"`
+	Revision      int64                  `protobuf:"varint,3,opt,name=revision,proto3" json:"revision,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ApplyIntakeControlResponse) Reset() {
+	*x = ApplyIntakeControlResponse{}
+	mi := &file_seev_payin_v1_payin_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ApplyIntakeControlResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ApplyIntakeControlResponse) ProtoMessage() {}
+
+func (x *ApplyIntakeControlResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_seev_payin_v1_payin_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ApplyIntakeControlResponse.ProtoReflect.Descriptor instead.
+func (*ApplyIntakeControlResponse) Descriptor() ([]byte, []int) {
+	return file_seev_payin_v1_payin_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *ApplyIntakeControlResponse) GetApplied() bool {
+	if x != nil {
+		return x.Applied
+	}
+	return false
+}
+
+func (x *ApplyIntakeControlResponse) GetPaused() bool {
+	if x != nil {
+		return x.Paused
+	}
+	return false
+}
+
+func (x *ApplyIntakeControlResponse) GetRevision() int64 {
+	if x != nil {
+		return x.Revision
+	}
+	return 0
+}
+
 var File_seev_payin_v1_payin_proto protoreflect.FileDescriptor
 
 const file_seev_payin_v1_payin_proto_rawDesc = "" +
@@ -524,16 +1080,72 @@ const file_seev_payin_v1_payin_proto_rawDesc = "" +
 	"created_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
 	"updated_at\x18\n" +
-	" \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt*\x87\x01\n" +
+	" \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\xd3\x01\n" +
+	"\x1bListAssuranceRecordsRequest\x12F\n" +
+	"\x11cursor_updated_at\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\x0fcursorUpdatedAt\x12\x1b\n" +
+	"\tcursor_id\x18\x02 \x01(\tR\bcursorId\x122\n" +
+	"\x06cutoff\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\x06cutoff\x12\x1b\n" +
+	"\tpage_size\x18\x04 \x01(\rR\bpageSize\"\xd0\x01\n" +
+	"\x1cListAssuranceRecordsResponse\x128\n" +
+	"\arecords\x18\x01 \x03(\v2\x1e.seev.payin.v1.AssuranceRecordR\arecords\x12B\n" +
+	"\x0fnext_updated_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\rnextUpdatedAt\x12\x17\n" +
+	"\anext_id\x18\x03 \x01(\tR\x06nextId\x12\x19\n" +
+	"\bhas_more\x18\x04 \x01(\bR\ahasMore\"\xb2\x05\n" +
+	"\x0fAssuranceRecord\x12\x1f\n" +
+	"\vrecord_type\x18\x01 \x01(\tR\n" +
+	"recordType\x12\x0e\n" +
+	"\x02id\x18\x02 \x01(\tR\x02id\x12L\n" +
+	"\x14effective_updated_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\x12effectiveUpdatedAt\x129\n" +
+	"\n" +
+	"created_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12\x16\n" +
+	"\x06status\x18\x05 \x01(\tR\x06status\x12\x17\n" +
+	"\auser_id\x18\x06 \x01(\tR\x06userId\x12\x16\n" +
+	"\x06amount\x18\a \x01(\tR\x06amount\x12\x1a\n" +
+	"\bcurrency\x18\b \x01(\tR\bcurrency\x12\x16\n" +
+	"\x06vendor\x18\t \x01(\tR\x06vendor\x12\x1c\n" +
+	"\treference\x18\n" +
+	" \x01(\tR\treference\x12!\n" +
+	"\fexternal_ref\x18\v \x01(\tR\vexternalRef\x12(\n" +
+	"\x10settled_event_id\x18\f \x01(\tR\x0esettledEventId\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\r \x01(\tR\trequestId\x12,\n" +
+	"\x12request_id_present\x18\x0e \x01(\bR\x10requestIdPresent\x12\x1f\n" +
+	"\vledger_type\x18\x0f \x01(\tR\n" +
+	"ledgerType\x12%\n" +
+	"\x0eledger_gateway\x18\x10 \x01(\tR\rledgerGateway\x12.\n" +
+	"\x13ledger_external_ref\x18\x11 \x01(\tR\x11ledgerExternalRef\x128\n" +
+	"\x18ledger_idempotency_scope\x18\x12 \x01(\tR\x16ledgerIdempotencyScope\"\x19\n" +
+	"\x17GetIntakeControlRequest\"\xa8\x01\n" +
+	"\x18GetIntakeControlResponse\x12\x16\n" +
+	"\x06paused\x18\x01 \x01(\bR\x06paused\x12\x1a\n" +
+	"\brevision\x18\x02 \x01(\x03R\brevision\x12\x1d\n" +
+	"\n" +
+	"updated_by\x18\x03 \x01(\tR\tupdatedBy\x129\n" +
+	"\n" +
+	"updated_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\xad\x01\n" +
+	"\x19ApplyIntakeControlRequest\x12\x1d\n" +
+	"\n" +
+	"command_id\x18\x01 \x01(\tR\tcommandId\x12\x16\n" +
+	"\x06action\x18\x02 \x01(\tR\x06action\x12+\n" +
+	"\x11expected_revision\x18\x03 \x01(\x03R\x10expectedRevision\x12\x14\n" +
+	"\x05actor\x18\x04 \x01(\tR\x05actor\x12\x16\n" +
+	"\x06reason\x18\x05 \x01(\tR\x06reason\"j\n" +
+	"\x1aApplyIntakeControlResponse\x12\x18\n" +
+	"\aapplied\x18\x01 \x01(\bR\aapplied\x12\x16\n" +
+	"\x06paused\x18\x02 \x01(\bR\x06paused\x12\x1a\n" +
+	"\brevision\x18\x03 \x01(\x03R\brevision*\x87\x01\n" +
 	"\rWebhookResult\x12\x1e\n" +
 	"\x1aWEBHOOK_RESULT_UNSPECIFIED\x10\x00\x12\x15\n" +
 	"\x11WEBHOOK_RESULT_OK\x10\x01\x12\x1a\n" +
 	"\x16WEBHOOK_RESULT_IGNORED\x10\x02\x12#\n" +
-	"\x1fWEBHOOK_RESULT_BUSINESS_FAILURE\x10\x032\xb1\x02\n" +
+	"\x1fWEBHOOK_RESULT_BUSINESS_FAILURE\x10\x032\xf2\x04\n" +
 	"\fPayinService\x12Z\n" +
 	"\rHandleWebhook\x12#.seev.payin.v1.HandleWebhookRequest\x1a$.seev.payin.v1.HandleWebhookResponse\x12f\n" +
 	"\x11CreateTopupIntent\x12'.seev.payin.v1.CreateTopupIntentRequest\x1a(.seev.payin.v1.CreateTopupIntentResponse\x12]\n" +
-	"\x0eGetTopupIntent\x12$.seev.payin.v1.GetTopupIntentRequest\x1a%.seev.payin.v1.GetTopupIntentResponseB\xa2\x01\n" +
+	"\x0eGetTopupIntent\x12$.seev.payin.v1.GetTopupIntentRequest\x1a%.seev.payin.v1.GetTopupIntentResponse\x12o\n" +
+	"\x14ListAssuranceRecords\x12*.seev.payin.v1.ListAssuranceRecordsRequest\x1a+.seev.payin.v1.ListAssuranceRecordsResponse\x12c\n" +
+	"\x10GetIntakeControl\x12&.seev.payin.v1.GetIntakeControlRequest\x1a'.seev.payin.v1.GetIntakeControlResponse\x12i\n" +
+	"\x12ApplyIntakeControl\x12(.seev.payin.v1.ApplyIntakeControlRequest\x1a).seev.payin.v1.ApplyIntakeControlResponseB\xa2\x01\n" +
 	"\x11com.seev.payin.v1B\n" +
 	"PayinProtoP\x01Z+github.com/herdifirdausss/seev/gen/payin/v1\xa2\x02\x03SPX\xaa\x02\rSeev.Payin.V1\xca\x02\rSeev\\Payin\\V1\xe2\x02\x19Seev\\Payin\\V1\\GPBMetadata\xea\x02\x0fSeev::Payin::V1b\x06proto3"
 
@@ -550,38 +1162,58 @@ func file_seev_payin_v1_payin_proto_rawDescGZIP() []byte {
 }
 
 var file_seev_payin_v1_payin_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_seev_payin_v1_payin_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_seev_payin_v1_payin_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
 var file_seev_payin_v1_payin_proto_goTypes = []any{
-	(WebhookResult)(0),                // 0: seev.payin.v1.WebhookResult
-	(*HandleWebhookRequest)(nil),      // 1: seev.payin.v1.HandleWebhookRequest
-	(*HandleWebhookResponse)(nil),     // 2: seev.payin.v1.HandleWebhookResponse
-	(*CreateTopupIntentRequest)(nil),  // 3: seev.payin.v1.CreateTopupIntentRequest
-	(*GetTopupIntentRequest)(nil),     // 4: seev.payin.v1.GetTopupIntentRequest
-	(*CreateTopupIntentResponse)(nil), // 5: seev.payin.v1.CreateTopupIntentResponse
-	(*GetTopupIntentResponse)(nil),    // 6: seev.payin.v1.GetTopupIntentResponse
-	(*TopupIntent)(nil),               // 7: seev.payin.v1.TopupIntent
-	nil,                               // 8: seev.payin.v1.HandleWebhookRequest.HeadersEntry
-	(*timestamppb.Timestamp)(nil),     // 9: google.protobuf.Timestamp
+	(WebhookResult)(0),                   // 0: seev.payin.v1.WebhookResult
+	(*HandleWebhookRequest)(nil),         // 1: seev.payin.v1.HandleWebhookRequest
+	(*HandleWebhookResponse)(nil),        // 2: seev.payin.v1.HandleWebhookResponse
+	(*CreateTopupIntentRequest)(nil),     // 3: seev.payin.v1.CreateTopupIntentRequest
+	(*GetTopupIntentRequest)(nil),        // 4: seev.payin.v1.GetTopupIntentRequest
+	(*CreateTopupIntentResponse)(nil),    // 5: seev.payin.v1.CreateTopupIntentResponse
+	(*GetTopupIntentResponse)(nil),       // 6: seev.payin.v1.GetTopupIntentResponse
+	(*TopupIntent)(nil),                  // 7: seev.payin.v1.TopupIntent
+	(*ListAssuranceRecordsRequest)(nil),  // 8: seev.payin.v1.ListAssuranceRecordsRequest
+	(*ListAssuranceRecordsResponse)(nil), // 9: seev.payin.v1.ListAssuranceRecordsResponse
+	(*AssuranceRecord)(nil),              // 10: seev.payin.v1.AssuranceRecord
+	(*GetIntakeControlRequest)(nil),      // 11: seev.payin.v1.GetIntakeControlRequest
+	(*GetIntakeControlResponse)(nil),     // 12: seev.payin.v1.GetIntakeControlResponse
+	(*ApplyIntakeControlRequest)(nil),    // 13: seev.payin.v1.ApplyIntakeControlRequest
+	(*ApplyIntakeControlResponse)(nil),   // 14: seev.payin.v1.ApplyIntakeControlResponse
+	nil,                                  // 15: seev.payin.v1.HandleWebhookRequest.HeadersEntry
+	(*timestamppb.Timestamp)(nil),        // 16: google.protobuf.Timestamp
 }
 var file_seev_payin_v1_payin_proto_depIdxs = []int32{
-	8,  // 0: seev.payin.v1.HandleWebhookRequest.headers:type_name -> seev.payin.v1.HandleWebhookRequest.HeadersEntry
+	15, // 0: seev.payin.v1.HandleWebhookRequest.headers:type_name -> seev.payin.v1.HandleWebhookRequest.HeadersEntry
 	0,  // 1: seev.payin.v1.HandleWebhookResponse.result:type_name -> seev.payin.v1.WebhookResult
 	7,  // 2: seev.payin.v1.CreateTopupIntentResponse.intent:type_name -> seev.payin.v1.TopupIntent
 	7,  // 3: seev.payin.v1.GetTopupIntentResponse.intent:type_name -> seev.payin.v1.TopupIntent
-	9,  // 4: seev.payin.v1.TopupIntent.expires_at:type_name -> google.protobuf.Timestamp
-	9,  // 5: seev.payin.v1.TopupIntent.created_at:type_name -> google.protobuf.Timestamp
-	9,  // 6: seev.payin.v1.TopupIntent.updated_at:type_name -> google.protobuf.Timestamp
-	1,  // 7: seev.payin.v1.PayinService.HandleWebhook:input_type -> seev.payin.v1.HandleWebhookRequest
-	3,  // 8: seev.payin.v1.PayinService.CreateTopupIntent:input_type -> seev.payin.v1.CreateTopupIntentRequest
-	4,  // 9: seev.payin.v1.PayinService.GetTopupIntent:input_type -> seev.payin.v1.GetTopupIntentRequest
-	2,  // 10: seev.payin.v1.PayinService.HandleWebhook:output_type -> seev.payin.v1.HandleWebhookResponse
-	5,  // 11: seev.payin.v1.PayinService.CreateTopupIntent:output_type -> seev.payin.v1.CreateTopupIntentResponse
-	6,  // 12: seev.payin.v1.PayinService.GetTopupIntent:output_type -> seev.payin.v1.GetTopupIntentResponse
-	10, // [10:13] is the sub-list for method output_type
-	7,  // [7:10] is the sub-list for method input_type
-	7,  // [7:7] is the sub-list for extension type_name
-	7,  // [7:7] is the sub-list for extension extendee
-	0,  // [0:7] is the sub-list for field type_name
+	16, // 4: seev.payin.v1.TopupIntent.expires_at:type_name -> google.protobuf.Timestamp
+	16, // 5: seev.payin.v1.TopupIntent.created_at:type_name -> google.protobuf.Timestamp
+	16, // 6: seev.payin.v1.TopupIntent.updated_at:type_name -> google.protobuf.Timestamp
+	16, // 7: seev.payin.v1.ListAssuranceRecordsRequest.cursor_updated_at:type_name -> google.protobuf.Timestamp
+	16, // 8: seev.payin.v1.ListAssuranceRecordsRequest.cutoff:type_name -> google.protobuf.Timestamp
+	10, // 9: seev.payin.v1.ListAssuranceRecordsResponse.records:type_name -> seev.payin.v1.AssuranceRecord
+	16, // 10: seev.payin.v1.ListAssuranceRecordsResponse.next_updated_at:type_name -> google.protobuf.Timestamp
+	16, // 11: seev.payin.v1.AssuranceRecord.effective_updated_at:type_name -> google.protobuf.Timestamp
+	16, // 12: seev.payin.v1.AssuranceRecord.created_at:type_name -> google.protobuf.Timestamp
+	16, // 13: seev.payin.v1.GetIntakeControlResponse.updated_at:type_name -> google.protobuf.Timestamp
+	1,  // 14: seev.payin.v1.PayinService.HandleWebhook:input_type -> seev.payin.v1.HandleWebhookRequest
+	3,  // 15: seev.payin.v1.PayinService.CreateTopupIntent:input_type -> seev.payin.v1.CreateTopupIntentRequest
+	4,  // 16: seev.payin.v1.PayinService.GetTopupIntent:input_type -> seev.payin.v1.GetTopupIntentRequest
+	8,  // 17: seev.payin.v1.PayinService.ListAssuranceRecords:input_type -> seev.payin.v1.ListAssuranceRecordsRequest
+	11, // 18: seev.payin.v1.PayinService.GetIntakeControl:input_type -> seev.payin.v1.GetIntakeControlRequest
+	13, // 19: seev.payin.v1.PayinService.ApplyIntakeControl:input_type -> seev.payin.v1.ApplyIntakeControlRequest
+	2,  // 20: seev.payin.v1.PayinService.HandleWebhook:output_type -> seev.payin.v1.HandleWebhookResponse
+	5,  // 21: seev.payin.v1.PayinService.CreateTopupIntent:output_type -> seev.payin.v1.CreateTopupIntentResponse
+	6,  // 22: seev.payin.v1.PayinService.GetTopupIntent:output_type -> seev.payin.v1.GetTopupIntentResponse
+	9,  // 23: seev.payin.v1.PayinService.ListAssuranceRecords:output_type -> seev.payin.v1.ListAssuranceRecordsResponse
+	12, // 24: seev.payin.v1.PayinService.GetIntakeControl:output_type -> seev.payin.v1.GetIntakeControlResponse
+	14, // 25: seev.payin.v1.PayinService.ApplyIntakeControl:output_type -> seev.payin.v1.ApplyIntakeControlResponse
+	20, // [20:26] is the sub-list for method output_type
+	14, // [14:20] is the sub-list for method input_type
+	14, // [14:14] is the sub-list for extension type_name
+	14, // [14:14] is the sub-list for extension extendee
+	0,  // [0:14] is the sub-list for field type_name
 }
 
 func init() { file_seev_payin_v1_payin_proto_init() }
@@ -595,7 +1227,7 @@ func file_seev_payin_v1_payin_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_seev_payin_v1_payin_proto_rawDesc), len(file_seev_payin_v1_payin_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   8,
+			NumMessages:   15,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

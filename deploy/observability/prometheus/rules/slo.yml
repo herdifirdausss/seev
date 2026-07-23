@@ -1,4 +1,4 @@
-# docs/plan/43 Task T5 — SLO recording rules (K6). Generated once by a
+# docs/roadmap/archive/43 Task T5 — SLO recording rules (K6). Generated once by a
 # scratch script for consistency across three SLOs x six windows; edit by
 # hand from here on, this file is the source of truth.
 groups:
@@ -206,3 +206,34 @@ groups:
     labels:
       slo: notification_success
     expr: 1 - ((1 - slo:sli_ratio:rate30d{slo="notification_success"}) / 0.010000000000000009)
+
+- name: compliance-a4
+  interval: 30s
+  rules:
+  - alert: SeevKYCApplyRetryDead
+    expr: increase(auth_kyc_apply_dead_total[5m]) > 0
+    for: 1m
+    labels:
+      severity: critical
+      service: auth-service
+    annotations:
+      summary: KYC policy application retry dead-lettered
+      runbook: docs/operations/runbooks/compliance-a4.md
+  - alert: SeevFraudScreeningSpillLoss
+    expr: increase(fraud_screening_events_lost_total[5m]) > 0
+    for: 1m
+    labels:
+      severity: critical
+      service: fraud-service
+    annotations:
+      summary: fraud screening audit events were dropped from bounded spill
+      runbook: docs/operations/runbooks/compliance-a4.md
+  - alert: SeevFraudScreeningSpillBacklog
+    expr: fraud_screening_event_spill_depth > 100
+    for: 5m
+    labels:
+      severity: warning
+      service: fraud-service
+    annotations:
+      summary: fraud screening spill queue is backing up
+      runbook: docs/operations/runbooks/compliance-a4.md

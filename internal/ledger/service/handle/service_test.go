@@ -146,7 +146,7 @@ func TestHandle_FractionalAmount_Rejected(t *testing.T) {
 	assert.ErrorIs(t, err, apperror.ErrValidation)
 }
 
-// ─── Handle — amount cap (docs/plan/10 Task T5) ────────────────────────────────
+// ─── Handle — amount cap (docs/roadmap/archive/10 Task T5) ────────────────────────────────
 
 func TestHandle_AmountExceedsCap_Rejected_NoDBWork(t *testing.T) {
 	transactionRepo, ctrl := newMockTransactionRepo(t)
@@ -254,7 +254,7 @@ func TestHandle_ValidateCommandError_Propagated(t *testing.T) {
 	assert.ErrorContains(t, err, "missing required metadata")
 }
 
-// ─── Handle — status label: business rejection vs infra error (docs/plan/43 T5) ─
+// ─── Handle — status label: business rejection vs infra error (docs/roadmap/archive/43 T5) ─
 
 // TestHandle_BusinessRejection_RecordsStatusRejected is the regression test
 // for the posting_availability SLI gap found while writing T5: a valid
@@ -312,7 +312,7 @@ func TestHandle_InfraError_RecordsStatusError(t *testing.T) {
 }
 
 func TestHandle_SourceNotInOrdered_RejectedAsProcessorBug(t *testing.T) {
-	// docs/plan/14 Task T1: a processor claiming a Source/Destination that
+	// docs/roadmap/archive/14 Task T1: a processor claiming a Source/Destination that
 	// isn't even in its own Ordered account list is a processor bug, not a
 	// user-facing error — Handle must refuse to post rather than write a
 	// wrong/unrelated account into ledger_transactions.source_account_id.

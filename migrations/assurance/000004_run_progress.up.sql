@@ -1,0 +1,4 @@
+ALTER TABLE assurance_runs ADD COLUMN IF NOT EXISTS cutoff_at TIMESTAMPTZ;
+ALTER TABLE assurance_runs ADD COLUMN IF NOT EXISTS pages_scanned INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE intake_control_commands ADD COLUMN IF NOT EXISTS reason TEXT NOT NULL DEFAULT '';
+ALTER TABLE intake_control_commands ADD COLUMN IF NOT EXISTS resulting_revision BIGINT;

@@ -75,8 +75,8 @@ func TestResolvePayoutRouteMatrix(t *testing.T) {
 	assert.ErrorIs(t, err, ErrNoRoute)
 }
 
-// TestResolvePayoutRoute_BreakerOpen_SkipsToNextCandidate is docs/plan/40
-// Task T2's own "Test wajib": a vendor whose circuit is open must be
+// TestResolvePayoutRoute_BreakerOpen_SkipsToNextCandidate is docs/roadmap/archive/40
+// Task T2's own "Required test": a vendor whose circuit is open must be
 // skipped in favor of the next candidate in priority order.
 func TestResolvePayoutRoute_BreakerOpen_SkipsToNextCandidate(t *testing.T) {
 	rules := []model.RoutingRule{
@@ -110,7 +110,7 @@ func TestResolvePayoutRoute_AllCandidatesOpen_ErrNoVendorAvailable(t *testing.T)
 	assert.ErrorIs(t, err, ErrNoVendorAvailable)
 }
 
-// TestResolvePayoutRoute_ExclusionList_SkipsAlreadyTried is docs/plan/40
+// TestResolvePayoutRoute_ExclusionList_SkipsAlreadyTried is docs/roadmap/archive/40
 // Task T3's failover mechanism at the routing layer: a vendor named in
 // exclude is skipped even though its circuit is closed.
 func TestResolvePayoutRoute_ExclusionList_SkipsAlreadyTried(t *testing.T) {

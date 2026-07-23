@@ -1,5 +1,5 @@
 // Package tracing installs the OpenTelemetry TracerProvider shared by all
-// six services (docs/plan/43 Task T2, decision K3) — a single implementation
+// six services (docs/roadmap/archive/43 Task T2, decision K3) — a single implementation
 // replacing what used to be a duplicated setupTracing in cmd/gateway and
 // cmd/ledger-service.
 package tracing
@@ -16,7 +16,7 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
 )
 
-// Config controls OpenTelemetry trace export (docs/plan/43 K3).
+// Config controls OpenTelemetry trace export (docs/roadmap/archive/43 K3).
 type Config struct {
 	// ServiceName identifies the resource in trace backends — one of
 	// gateway, auth-service, ledger-service, payin-service, payout-service,
@@ -34,7 +34,7 @@ type Config struct {
 	SampleRatio float64
 	// Insecure selects a plaintext (non-TLS) OTLP gRPC connection — true
 	// for every environment this repo targets (a local Tempo on the
-	// private Compose network, docs/plan/43 K1/K2).
+	// private Compose network, docs/roadmap/archive/43 K1/K2).
 	Insecure bool
 }
 

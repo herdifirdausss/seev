@@ -9,7 +9,7 @@ import (
 )
 
 // Breaker is the context-aware interface both the per-process HealthTracker
-// and the Redis-backed DistributedBreaker (docs/plan/45 Task T2/K3)
+// and the Redis-backed DistributedBreaker (docs/roadmap/archive/45 Task T2/K3)
 // satisfy — payin/payout call sites depend on this, never the concrete
 // type, so swapping backends is a construction-time decision only. ctx
 // carries no meaning for HealthTracker (pure in-memory, never blocks) but
@@ -24,7 +24,7 @@ type Breaker interface {
 var _ Breaker = (*HealthTracker)(nil)
 
 // HealthState is a circuit breaker's current state for one vendor
-// (docs/plan/40 Task T1).
+// (docs/roadmap/archive/40 Task T1).
 type HealthState string
 
 const (
@@ -34,7 +34,7 @@ const (
 )
 
 // VendorHealth is a point-in-time snapshot of one vendor's breaker state —
-// the shape the admin health endpoint (docs/plan/40 Task T5) serializes
+// the shape the admin health endpoint (docs/roadmap/archive/40 Task T5) serializes
 // directly.
 type VendorHealth struct {
 	Vendor              string      `json:"vendor"`
@@ -52,13 +52,13 @@ type vendorState struct {
 	lastProbeAt         time.Time
 }
 
-// HealthTracker is a per-vendor circuit breaker (docs/plan/40 Task T1) —
+// HealthTracker is a per-vendor circuit breaker (docs/roadmap/archive/40 Task T1) —
 // in-memory, per PROCESS. Each replica of a multi-replica deployment trips
 // independently: this is a documented, ACCEPTED limitation, not a bug — a
 // vendor outage is still detected and worked around per-replica, just with
 // slower convergence than a shared (e.g. Redis-backed) breaker would give
-// (docs/plan/42's own future-work list already names this deferral).
-// Nothing about the anti-double-payout guarantee (docs/plan/40 Task T3)
+// (docs/roadmap/42's own future-work list already names this deferral).
+// Nothing about the anti-double-payout guarantee (docs/roadmap/archive/40 Task T3)
 // depends on breaker state agreeing across replicas — the breaker is
 // PURELY an availability optimization (skip a vendor already known to be
 // down); the authoritative anti-double-payout rule lives entirely in
@@ -197,7 +197,7 @@ func (t *HealthTracker) RecordFailure(_ context.Context, vendor string) {
 }
 
 // Snapshot returns every vendor this tracker has ever seen, sorted by name
-// for deterministic output (admin endpoint, docs/plan/40 Task T5).
+// for deterministic output (admin endpoint, docs/roadmap/archive/40 Task T5).
 func (t *HealthTracker) Snapshot(_ context.Context) []VendorHealth {
 	t.mu.Lock()
 	names := make([]string, 0, len(t.vendors))

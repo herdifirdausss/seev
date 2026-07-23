@@ -7,7 +7,7 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// Status values for PayoutRequest.Status (docs/plan/23 Task T1) — mirrors
+// Status values for PayoutRequest.Status (docs/roadmap/archive/23 Task T1) — mirrors
 // the CHECK constraint on payout_requests.status exactly.
 const (
 	StatusCreated       = "created"
@@ -17,7 +17,7 @@ const (
 	StatusSettled       = "settled"
 	StatusFailed        = "failed"
 	StatusCancelled     = "cancelled"
-	// StatusRejected (docs/plan/38 Task T5) is terminal, reached ONLY when
+	// StatusRejected (docs/roadmap/archive/38 Task T5) is terminal, reached ONLY when
 	// a fee quote consumption fails (expired/mismatch) at Create — no hold
 	// was ever posted; the row exists purely to record the rejected
 	// attempt, distinct from StatusFailed (a submit/vendor-call failure
@@ -25,7 +25,7 @@ const (
 	StatusRejected = "rejected"
 )
 
-// Vendor call outcome values for PayoutVendorCall.Outcome (docs/plan/40
+// Vendor call outcome values for PayoutVendorCall.Outcome (docs/roadmap/archive/40
 // Task T3) — the classification that drives the anti-double-payout
 // failover rule (mayFailover): failover is DIYIZINKAN only while NO call
 // for a request has ever landed accepted or uncertain.
@@ -59,12 +59,12 @@ type PayoutRequest struct {
 	VendorRef    string
 	ErrorMessage string
 	CreatedBy    string
-	// RequestID (docs/plan/36 Task T5) is the HTTP request_id of the call
+	// RequestID (docs/roadmap/archive/36 Task T5) is the HTTP request_id of the call
 	// that created this payout — end-to-end trace anchor. NOT the same
 	// concept as PayoutVendorCall.PayoutRequestID below (that one is this
 	// row's own id, referenced as a foreign key).
 	RequestID string
-	// FeeQuoteID/FeeAmount/FeeGateway (docs/plan/38 Task T5) are set ONLY
+	// FeeQuoteID/FeeAmount/FeeGateway (docs/roadmap/archive/38 Task T5) are set ONLY
 	// when Create consumed a fee quote — nil/zero otherwise, in which case
 	// settle falls back to ResolveFee exactly as before this feature
 	// existed. FeeAmount is a pointer (not decimal.Decimal's own zero
@@ -83,14 +83,14 @@ type PayoutRequest struct {
 type PayoutVendorCall struct {
 	ID uuid.UUID
 	// PayoutRequestID is the payout_requests.id this call belongs to (FK) —
-	// renamed from "RequestID" (docs/plan/36 Task T5) to stop colliding in
+	// renamed from "RequestID" (docs/roadmap/archive/36 Task T5) to stop colliding in
 	// name with the HTTP/gRPC trace request_id, which this is NOT.
 	PayoutRequestID uuid.UUID
 	Attempt         int
 	ReqSummary      string
 	RespStatus      string
 	Error           string
-	// Outcome classifies this call (docs/plan/40 Task T3) — one of
+	// Outcome classifies this call (docs/roadmap/archive/40 Task T3) — one of
 	// VendorCallAccepted/Rejected/Uncertain. Drives the anti-double-payout
 	// failover rule (mayFailover): the source of truth is THIS column
 	// across every call ever recorded for a request, never breaker state.
@@ -98,7 +98,7 @@ type PayoutVendorCall struct {
 	CreatedAt time.Time
 }
 
-// Status values for PayoutVendorCommand.Status (docs/plan/45 Task T0) — a
+// Status values for PayoutVendorCommand.Status (docs/roadmap/archive/45 Task T0) — a
 // durable work item the relay (Task T1) claims and executes, distinct from
 // PayoutVendorCall above (an immutable audit record of one already-
 // completed round trip). State machine: pending -> processing ->
@@ -112,7 +112,7 @@ const (
 )
 
 // PayoutVendorCommand is one row of payout_vendor_commands — "dispatch this
-// payout to this vendor" as a durable, retryable outbox entry (docs/plan/45
+// payout to this vendor" as a durable, retryable outbox entry (docs/roadmap/archive/45
 // Task T0/K1), mirroring internal/ledger's outbox_events pattern. At most
 // one live command (pending/processing/failed) exists per PayoutRequestID
 // at any time, enforced by a partial unique index — this is what lets
@@ -123,7 +123,7 @@ type PayoutVendorCommand struct {
 	ID uuid.UUID
 	// CommandKey ("payout:<request_id>:submit:<attempt>") is an internal
 	// dedup key only — the vendor-facing idempotency key stays
-	// PayoutRequestID itself (docs/plan/40), unchanged by retries of this
+	// PayoutRequestID itself (docs/roadmap/archive/40), unchanged by retries of this
 	// same command, so a retried command never creates a second payout at
 	// the vendor.
 	CommandKey      string
@@ -161,7 +161,7 @@ type VendorGateway struct {
 }
 
 // RoutingCandidate is one matching routing rule's vendor+gateway, part of
-// the ordered candidate list ResolveCandidates returns (docs/plan/40 Task
+// the ordered candidate list ResolveCandidates returns (docs/roadmap/archive/40 Task
 // T2) — replaces the old single-winner Resolve so the caller can skip a
 // candidate whose circuit is open or who is in an exclusion list (already
 // tried this request) and fall through to the next.

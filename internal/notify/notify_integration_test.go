@@ -2,7 +2,7 @@
 
 // Package notify_test drives internal/notify.Module end to end against a
 // REAL RabbitMQ and a real ledger.Module posting to a real Postgres
-// (docs/plan/25 Task T4) — proves the whole vertical: outbox relay
+// (docs/roadmap/archive/25 Task T4) — proves the whole vertical: outbox relay
 // publishes TransactionPosted -> notify's consumer receives it -> a
 // notification row appears for the right user(s) -> redelivery of the same
 // event is deduped, not double-inserted. This is the first integration test
@@ -26,8 +26,10 @@ import (
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/testcontainers/testcontainers-go"
 	pgcontainer "github.com/testcontainers/testcontainers-go/modules/postgres"
 	rmqcontainer "github.com/testcontainers/testcontainers-go/modules/rabbitmq"
+	"github.com/testcontainers/testcontainers-go/wait"
 
 	"github.com/herdifirdausss/seev/internal/config"
 	"github.com/herdifirdausss/seev/internal/ledger"
@@ -52,7 +54,7 @@ func setupNotifyTestDBs(t *testing.T) (ledgerDB, gatewayDB *database.DBSQL) {
 	const dbUser, dbPassword = "test", "secret"
 
 	container, err := pgcontainer.Run(ctx,
-		"postgres:16-alpine",
+		"postgres:16.14-alpine",
 		pgcontainer.WithDatabase(ledgerDBName),
 		pgcontainer.WithUsername(dbUser),
 		pgcontainer.WithPassword(dbPassword),
@@ -100,7 +102,20 @@ func setupNotifyTestBroker(t *testing.T) *messaging.RabbitMQ {
 	t.Helper()
 	ctx := context.Background()
 
-	container, err := rmqcontainer.Run(ctx, "rabbitmq:3.13-management-alpine")
+	// The module's default log wait looks for a version-specific line that is
+	// absent in some RabbitMQ alpine images. AMQP listening is the readiness
+	// condition the test actually needs, and avoids false negatives when the
+	// broker is healthy but its startup log wording changes.
+	container, err := rmqcontainer.Run(ctx, "rabbitmq:4.3.3-management-alpine",
+		testcontainers.WithWaitStrategy(
+			// The full integration race gate starts several Postgres
+			// containers concurrently. Docker Desktop can take longer than the
+			// normal broker warm-up while those containers contend for CPU; the
+			// bounded five-minute ceiling keeps the test deterministic without
+			// turning a genuinely stuck broker into an unbounded wait.
+			wait.ForListeningPort(rmqcontainer.DefaultAMQPPort).WithStartupTimeout(5*time.Minute),
+		),
+	)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = container.Terminate(ctx) })
 
@@ -134,7 +149,20 @@ func setupNotifyTestBroker(t *testing.T) *messaging.RabbitMQ {
 		PublishTimeout:       5 * time.Second,
 		AppID:                "notify_integration_test",
 	}
-	broker, err := messaging.NewWithRegistry(ctx, cfg.Broker(), prometheus.NewRegistry())
+	// A listening TCP socket only proves that RabbitMQ has bound its port.
+	// During a busy parallel integration run, the broker can still reset the
+	// first AMQP handshake while it finishes booting. Retry the real client
+	// connection so readiness means "AMQP handshake completed", not merely
+	// "the port accepted a TCP connection".
+	var broker *messaging.RabbitMQ
+	connectDeadline := time.Now().Add(time.Minute)
+	for {
+		broker, err = messaging.NewWithRegistry(ctx, cfg.Broker(), prometheus.NewRegistry())
+		if err == nil || time.Now().After(connectDeadline) {
+			break
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = broker.Close() })
 
@@ -188,7 +216,7 @@ func countNotifications(t *testing.T, db *database.DBSQL, userID uuid.UUID, txTy
 }
 
 // TestNotify_MoneyIn_RealStack_NotificationRowAppears_DuplicateDeliveryDedup
-// is docs/plan/25 Task T4's required real-stack integration test: post a
+// is docs/roadmap/archive/25 Task T4's required real-stack integration test: post a
 // real money_in through a real ledger.Module (real Postgres) with a real
 // RabbitMQ broker wired all the way to internal/notify's consumer, prove a
 // notification row appears within a few seconds, then manually redeliver

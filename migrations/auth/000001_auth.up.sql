@@ -1,5 +1,5 @@
--- 000021_auth: identity & credentials for the auth module (docs/plan/25 Task
--- T1, following the internal/auth outline locked in docs/plan/24).
+-- 000021_auth: identity & credentials for the auth module (docs/roadmap/archive/25 Task
+-- T1, following the internal/auth outline locked in docs/roadmap/archive/24).
 --
 -- auth_users is the IDENTITY record — the ledger's accounts.owner_id points
 -- at auth_users.id from now on for newly registered users, but the ledger
@@ -32,7 +32,7 @@ CREATE TABLE auth_credentials (
 -- is stored — a DB leak alone can never be replayed as a live token.
 -- Rotation chain: each /auth/refresh revokes the old row (revoked_at) and
 -- records its successor (replaced_by). Reuse of a revoked token is treated
--- as replay and revokes the user's entire chain (docs/plan/25 T1 step 2).
+-- as replay and revokes the user's entire chain (docs/roadmap/archive/25 T1 step 2).
 CREATE TABLE auth_refresh_tokens (
     id          UUID        PRIMARY KEY,
     user_id     UUID        NOT NULL REFERENCES auth_users(id),

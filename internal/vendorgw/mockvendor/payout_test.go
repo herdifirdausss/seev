@@ -71,7 +71,7 @@ func TestPayoutProvider_Timeout_ReturnsErrorEveryTime(t *testing.T) {
 }
 
 // TestPayoutProvider_Submit_IdempotentAcrossModes proves the "duplicate-safe"
-// property from docs/plan/23 Task T2 test list: submitting the same key
+// property from docs/roadmap/archive/23 Task T2 test list: submitting the same key
 // twice returns the IDENTICAL result both times, never a second transfer —
 // verified across every terminal mode, not just the default.
 func TestPayoutProvider_Submit_IdempotentAcrossModes(t *testing.T) {
@@ -119,11 +119,11 @@ func TestPayoutProvider_Query_UnknownKey_Error(t *testing.T) {
 }
 
 // TestPayoutProvider_IdempotencyCache_IsolatedAcrossVendorInstances proves
-// docs/plan/40 Task T3's own required test: a payout that fails over from
+// docs/roadmap/archive/40 Task T3's own required test: a payout that fails over from
 // one vendor to another reuses the SAME idempotency key (the payout
 // request ID, see orchestrate.go's submit()) against a DIFFERENT
 // PayoutProvider instance — this must never read or leak the first
-// vendor's cached result, since each named instance (docs/plan/40 Task T4's
+// vendor's cached result, since each named instance (docs/roadmap/archive/40 Task T4's
 // pulled-forward naming parameterization) owns its own independent
 // submitted map.
 func TestPayoutProvider_IdempotencyCache_IsolatedAcrossVendorInstances(t *testing.T) {

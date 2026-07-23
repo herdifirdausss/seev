@@ -27,7 +27,7 @@ type UpsertAccountParams struct {
 // inside the caller's own transaction, a different contract entirely.
 type ProvisioningRepository interface {
 	// UpsertAccount creates an account + zero-balance row, or returns the
-	// existing one if it already exists (docs/plan/05 Task 1b.2) —
+	// existing one if it already exists (docs/roadmap/archive/05 Task 1b.2) —
 	// ON CONFLICT DO UPDATE is a no-op write used only to make RETURNING
 	// report the existing row too.
 	UpsertAccount(ctx context.Context, tx *sql.Tx, params UpsertAccountParams) (model.Account, error)

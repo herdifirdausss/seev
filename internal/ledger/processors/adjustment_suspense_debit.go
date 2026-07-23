@@ -16,7 +16,7 @@ import (
 // =============================================================================
 // 24. AdjustmentSuspenseDebit — system.suspense[gateway] → system.adjustment
 //
-// AdjustmentSuspenseCredit's mirror (docs/plan/16 Task T2, decision K5): used
+// AdjustmentSuspenseCredit's mirror (docs/roadmap/archive/16 Task T2, decision K5): used
 // when a gateway's settlement report shows LESS than the ledger recorded
 // (match_status 'amount_mismatch' the other direction, or 'missing_external'
 // where an internal transaction has no counterpart in the report).

@@ -16,7 +16,7 @@ import (
 )
 
 // TestRouteAndSpanName_MethodAlreadyInPattern is the regression test for a
-// bug caught tracing a real request through Tempo (docs/plan/43 Task T2):
+// bug caught tracing a real request through Tempo (docs/roadmap/archive/43 Task T2):
 // Go 1.22 ServeMux patterns registered with a method already have it baked
 // into r.Pattern's text, so naively prepending r.Method again produced
 // "POST POST /webhooks/{vendor}" instead of "POST /webhooks/{vendor}".
@@ -62,7 +62,7 @@ func TestWithTracing_SpanNamedAfterDispatch(t *testing.T) {
 
 // TestWithTracing_NestedMux_WithRoutePattern_ResolvesCorrectly is the
 // regression test for the bug found tracing a REAL request through Tempo
-// during docs/plan/43 Task T3 verification: payin-service's admin router
+// during docs/roadmap/archive/43 Task T3 verification: payin-service's admin router
 // (Chain(...)(root) wrapping the WHOLE dispatching mux, with WithLogger's
 // own r.WithContext(...) sitting between WithTracing and the actual
 // dispatch) reported route="unmatched" for a real, matched

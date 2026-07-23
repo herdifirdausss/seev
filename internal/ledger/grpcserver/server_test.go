@@ -143,9 +143,9 @@ func TestServerHappyPath(t *testing.T) {
 	require.Equal(t, "IDR", service.provisionCCY)
 }
 
-// TestServerPost_InjectsRequestIDFromCtx proves docs/plan/36 Task T5: the
+// TestServerPost_InjectsRequestIDFromCtx proves docs/roadmap/archive/36 Task T5: the
 // Post RPC stamps metadata["request_id"] from the gRPC ctx (populated by
-// pkg/grpcx's server interceptor, docs/plan/36 Task T3) onto the Command it
+// pkg/grpcx's server interceptor, docs/roadmap/archive/36 Task T3) onto the Command it
 // forwards to the service — regardless of what the caller's own proto
 // Metadata said (payin/payout are trusted callers, but the trace id must
 // still be the server's own ctx-derived value, not something they set).

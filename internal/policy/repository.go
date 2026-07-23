@@ -14,7 +14,7 @@ import (
 	"github.com/herdifirdausss/seev/pkg/generalutil"
 )
 
-// Repository persists policy_limits (docs/plan/17 Task T1).
+// Repository persists policy_limits (docs/roadmap/archive/17 Task T1).
 type Repository interface {
 	// GetEffective returns the limit that applies to userID+txType: a
 	// user-specific override if one exists, else the type-wide default

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Repo-local supply-chain check (docs/plan/44 K2): every external `uses:` in
+# Repo-local supply-chain check (docs/roadmap/archive/44 K2): every external `uses:` in
 # .github/workflows/*.yml must be pinned to a full 40-hex commit SHA, with a
 # `# vX.Y.Z` comment recording the human-readable version. A floating tag
 # (`@v4`, `@main`) or a short SHA is not an immutable reference — this is

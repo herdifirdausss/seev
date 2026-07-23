@@ -18,7 +18,7 @@ import (
 )
 
 // TestEnqueueInitialSubmit_TransitionsAndInsertsCommandAtomically is
-// docs/plan/45 Task T0's required rollback-invariant proof, positive half:
+// docs/roadmap/archive/45 Task T0's required rollback-invariant proof, positive half:
 // a successful call moves held->submitted AND inserts exactly one 'pending'
 // attempt-1 command, together.
 func TestEnqueueInitialSubmit_TransitionsAndInsertsCommandAtomically(t *testing.T) {
@@ -75,8 +75,8 @@ func TestEnqueueInitialSubmit_WrongStatus_NoOp(t *testing.T) {
 }
 
 // TestEnqueueInitialSubmit_RollsBackTransitionWhenCommandConflicts is
-// docs/plan/45 Task T0's core required proof: "transition tidak boleh
-// commit tanpa command dan command tidak boleh ada tanpa transition." A
+// docs/roadmap/archive/45 Task T0's core required proof: "a transition must not commit
+// without a command, and a command must not exist without a transition." A
 // live command is pre-seeded out of band (bypassing EnqueueInitialSubmit)
 // to force the one-live-command partial unique index to reject the second
 // insert — proving that when the command insert fails, the ALREADY-
@@ -219,7 +219,7 @@ func TestCompleteAndEnqueueFailover_VendorMismatch_NoOp(t *testing.T) {
 }
 
 // TestClaimPendingCommands_ConcurrentCallers_OneOwnerPerLease is the test
-// matrix's required "dua relay claim batch bersamaan: satu owner per
+// matrix's required "two relays claim a batch concurrently: exactly one owner per
 // lease" proof for FOR UPDATE SKIP LOCKED.
 func TestClaimPendingCommands_ConcurrentCallers_OneOwnerPerLease(t *testing.T) {
 	db := setupTestDB(t)
@@ -321,7 +321,7 @@ func TestFailCommand_BackoffThenDeadLetterThenReplay(t *testing.T) {
 
 // TestReapStuckCommands proves a lease-expired 'processing' command is
 // returned to 'failed' for an immediate retry WITHOUT incrementing
-// retry_count (docs/plan/45 K2 — a reap proves nothing about whether the
+// retry_count (docs/roadmap/archive/45 K2 — a reap proves nothing about whether the
 // vendor call itself completed).
 func TestReapStuckCommands(t *testing.T) {
 	db := setupTestDB(t)

@@ -1,4 +1,4 @@
-# docs/plan/43 Task T1 — three datasources, UIDs kept stable so dashboard
+# docs/roadmap/archive/43 Task T1 — three datasources, UIDs kept stable so dashboard
 # JSON (Task T4) can reference them without a manual re-link. Loki->Tempo
 # and Tempo->Loki derived-field wiring is completed in Task T6 (K9); this
 # file carries the stable UID + basic trace-to-logs skeleton so T6 only
@@ -37,7 +37,7 @@ datasources:
         datasourceUid: seev-loki
         filterByTraceID: true
         customQuery: false
-        # docs/plan/43 Task T6 — without a tags mapping, "logs for this
+        # docs/roadmap/archive/43 Task T6 — without a tags mapping, "logs for this
         # span" has no label matcher to scope the generated Loki query to
         # (a bare trace-ID text search across every stream); mapping the
         # span's own service.name resource attribute to Loki's

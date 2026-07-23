@@ -4,7 +4,7 @@
 # up` while golang-migrate remains the canonical tool for later upgrades.
 set -eu
 
-for service in ledger auth payin payout fraud gateway; do
+for service in ledger auth payin payout fraud gateway adminbff assurance; do
     database="seev_${service}"
     latest=0
 
@@ -28,5 +28,5 @@ done
 # Role membership is cluster-wide. The table privileges and RLS policies are
 # still scoped independently inside each service database.
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname postgres <<-EOSQL
-    GRANT app_service TO ledger_app, auth_app, payin_app, payout_app, fraud_app, gateway_app;
+    GRANT app_service TO ledger_app, auth_app, payin_app, payout_app, fraud_app, gateway_app, adminbff_app, assurance_app;
 EOSQL

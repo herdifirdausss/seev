@@ -50,10 +50,10 @@ func TestDistributedBreaker_CooldownGatesHalfOpen(t *testing.T) {
 }
 
 func TestDistributedBreaker_HalfOpenProbeSucceeds_Closes(t *testing.T) {
-	d, _ := newTestDistributedBreaker(t, 1, 10*time.Millisecond, time.Second)
+	d, mr := newTestDistributedBreaker(t, 1, 10*time.Millisecond, time.Second)
 	ctx := context.Background()
 	d.RecordFailure(ctx, "v1")
-	require.False(t, d.Allow(ctx, "v1"))
+	require.Equal(t, "open", mr.HGet(d.stateKey("v1"), "state"))
 	time.Sleep(20 * time.Millisecond)
 	require.True(t, d.Allow(ctx, "v1"), "cooldown elapsed — this call becomes the probe")
 	d.RecordSuccess(ctx, "v1")
@@ -88,7 +88,7 @@ func TestDistributedBreaker_ExpiredProbeToken_AllowsFreshProbe(t *testing.T) {
 }
 
 // TestDistributedBreaker_ConcurrentHalfOpenCallers_ExactlyOneProbeWins is
-// docs/plan/45 Task T2's required concurrency proof: N callers racing the
+// docs/roadmap/archive/45 Task T2's required concurrency proof: N callers racing the
 // SAME cooldown-elapsed vendor must yield exactly one true (the probe),
 // enforced by the SET NX PX probe token — never zero, never more than one,
 // regardless of how many goroutines call Allow at once.
@@ -116,7 +116,7 @@ func TestDistributedBreaker_ConcurrentHalfOpenCallers_ExactlyOneProbeWins(t *tes
 }
 
 // TestDistributedBreaker_TwoInstancesShareRedis_StateConverges is
-// docs/plan/45 Task T2's cross-replica convergence proof: two SEPARATE
+// docs/roadmap/archive/45 Task T2's cross-replica convergence proof: two SEPARATE
 // DistributedBreaker instances (simulating two payout-service replicas)
 // sharing the same Redis must see each other's writes — a failure recorded
 // via instance A must open the circuit for instance B too, without B ever
@@ -137,8 +137,8 @@ func TestDistributedBreaker_TwoInstancesShareRedis_StateConverges(t *testing.T) 
 }
 
 // TestDistributedBreaker_TwoInstancesConcurrentHalfOpen_ExactlyOneProbeWins
-// is docs/plan/45 Task T2's literal gate requirement: "dua tracker yang
-// berbagi Redis dan N caller half-open bersamaan: tepat satu probe lintas
+// is docs/roadmap/archive/45 Task T2's literal gate requirement: "two trackers sharing
+// Redis and N callers entering half-open concurrently: exactly one probe across
 // instance" — two SEPARATE DistributedBreaker instances (two simulated
 // replicas), each firing concurrent Allow calls at the SAME vendor once
 // its shared cooldown has elapsed, must still yield exactly one winning
@@ -176,7 +176,7 @@ func TestDistributedBreaker_TwoInstancesConcurrentHalfOpen_ExactlyOneProbeWins(t
 }
 
 // TestDistributedBreaker_RedisDown_FallsBackToLocal_NoErrorPropagates
-// proves docs/plan/45 K3's core safety property: a Redis error must NEVER
+// proves docs/roadmap/archive/45 K3's core safety property: a Redis error must NEVER
 // propagate into the payout/payin request path — Allow/RecordSuccess/
 // RecordFailure/Snapshot all silently degrade to the embedded local
 // HealthTracker instead.

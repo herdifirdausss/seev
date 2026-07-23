@@ -43,7 +43,7 @@ type listNotificationsResponse struct {
 	Notifications []notificationResponse `json:"notifications"`
 }
 
-// ListHandler serves GET /api/v1/notifications?limit=&before= (docs/plan/25
+// ListHandler serves GET /api/v1/notifications?limit=&before= (docs/roadmap/archive/25
 // Task T4 step 4) — the authenticated user's own rows only, newest first,
 // keyset-paginated. before is an RFC3339 timestamp (exclusive lower bound
 // on created_at); omitted means "start from the most recent".
@@ -88,7 +88,7 @@ func (m *Module) ListHandler() http.HandlerFunc {
 	}
 }
 
-// MarkReadHandler serves POST /api/v1/notifications/{id}/read (docs/plan/25
+// MarkReadHandler serves POST /api/v1/notifications/{id}/read (docs/roadmap/archive/25
 // Task T4 step 4). Ownership is enforced at the repository layer — a
 // different user's notification id reports 404, not 403, same "don't
 // confirm existence to a non-owner" reasoning as internal/payout/

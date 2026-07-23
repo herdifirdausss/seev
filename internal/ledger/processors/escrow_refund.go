@@ -15,7 +15,7 @@ import (
 // 16. EscrowRefund — escrow[currency] → buyer.cash (order cancelled)
 //
 // ReferenceID (required) must point at the escrow_hold this refunds
-// (docs/plan/14 Task T2) — full amount only, no partial refund in MVP.
+// (docs/roadmap/archive/14 Task T2) — full amount only, no partial refund in MVP.
 // =============================================================================
 
 type EscrowRefund struct {
@@ -70,7 +70,7 @@ func (p *EscrowRefund) OutboxEvents(cmd ResolvedCommand, txID uuid.UUID, entries
 }
 func (p *EscrowRefund) AfterCommit(_ context.Context, _ Command) error { return nil }
 
-// ValidateCommand requires ReferenceID (docs/plan/14 Task T2) — the
+// ValidateCommand requires ReferenceID (docs/roadmap/archive/14 Task T2) — the
 // escrow_hold this refund is closing.
 func (p *EscrowRefund) ValidateCommand(_ context.Context, cmd Command) error {
 	return requireReferenceID(cmd, "escrow_refund")

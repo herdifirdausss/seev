@@ -35,7 +35,7 @@ type BalanceRepository interface {
 	// UPDATE (AllowNegative=false — user accounts, need an accurate
 	// pre-read for overdraft checks) versus which can skip locking
 	// entirely and use ApplySystemDeltas instead (AllowNegative=true —
-	// system accounts; docs/plan/11 Task T1). Safe to read unlocked:
+	// system accounts; docs/roadmap/archive/11 Task T1). Safe to read unlocked:
 	// AllowNegative itself is immutable post-provisioning (never toggled
 	// by application code), and the Balance/Status/Currency snapshot
 	// returned here for system accounts is only ever used for structural
@@ -52,7 +52,7 @@ type BalanceRepository interface {
 	// net credit, negative = net debit) to each unlocked
 	// (AllowNegative=true) account via `balance = balance + delta`, and
 	// returns the balance AFTER the delta for each — the authoritative
-	// value to use as ledger_entries.balance_after (docs/plan/11 Task T1).
+	// value to use as ledger_entries.balance_after (docs/roadmap/archive/11 Task T1).
 	// Must be called from within the posting transaction. Atomicity is
 	// provided by Postgres's own single-row UPDATE semantics — no
 	// pre-read/lock is needed because there is no floor to violate
@@ -101,9 +101,9 @@ func (r *balanceRepo) LockBalances(
 	// clause (SQLSTATE 42P01)".
 	// JOIN accounts to get currency, status, and type for structural
 	// validation [FIX #14 iter2] — currency lives on accounts, not
-	// account_balances (decision D3, docs/plan/01-target-architecture.md).
+	// account_balances (decision D3, docs/roadmap/archive/01-target-architecture.md).
 	//
-	// [docs/plan/11 Task T1] Callers are expected to pass ONLY
+	// [docs/roadmap/archive/11 Task T1] Callers are expected to pass ONLY
 	// AllowNegative=false (user) account ids here — system accounts skip
 	// locking entirely (see GetAccountFlags/ApplySystemDeltas). This
 	// function itself doesn't enforce that; it locks whatever ids it's
@@ -181,7 +181,7 @@ func (r *balanceRepo) GetAccountFlags(
 // ApplySystemDeltas — see BalanceRepository interface doc. One round trip
 // per account: the number of system accounts touched by a single
 // transaction is always small (1-2 — a settlement/fee account, rarely
-// more), so this doesn't need InsertEntries-style batching (docs/plan/11
+// more), so this doesn't need InsertEntries-style batching (docs/roadmap/archive/11
 // Task T2 is about a different, genuinely large N).
 func (r *balanceRepo) ApplySystemDeltas(
 	ctx context.Context,
@@ -198,7 +198,7 @@ func (r *balanceRepo) ApplySystemDeltas(
 	for _, id := range ids {
 		delta := deltas[id]
 		if !delta.Equal(delta.Truncate(0)) {
-			// Same invariant as UpdateBalances (docs/plan/10 Task T4) — a
+			// Same invariant as UpdateBalances (docs/roadmap/archive/10 Task T4) — a
 			// non-integral delta here means a processor built a fractional
 			// entry amount, which IntegralAmountValidator and
 			// validateBalanced should already have caught upstream.
@@ -238,7 +238,7 @@ func (r *balanceRepo) UpdateBalances(
 	ids := generalutil.SortedDecimalKeys(newBalances)
 	n := len(ids)
 
-	// [FIX 2026-07-11, docs/plan/10 Task T4] Reject non-integral balances
+	// [FIX 2026-07-11, docs/roadmap/archive/10 Task T4] Reject non-integral balances
 	// instead of silently truncating via IntPart(). By the time execution
 	// reaches here, processors.IntegralAmountValidator and transport's
 	// decimalFromString should already have rejected any fractional amount

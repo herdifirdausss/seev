@@ -1,4 +1,4 @@
--- docs/plan/38 Task T1: fee quotes — a user requests a quote before
+-- docs/roadmap/archive/38 Task T1: fee quotes — a user requests a quote before
 -- committing to a transaction; the quoted fee is honored EXACTLY at posting
 -- time or the request is rejected (422 QUOTE_EXPIRED/QUOTE_MISMATCH),
 -- never silently repriced even if fee_rules changes in between.

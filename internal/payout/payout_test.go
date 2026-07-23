@@ -30,7 +30,7 @@ import (
 // fakeFraudGRPCClient is a minimal fraudv1.FraudServiceClient double for
 // wrapping in a real *fraudcheck.Client — mirrors the same pattern used in
 // internal/ledger/transport/http_test.go and internal/payin/payin_test.go
-// (docs/plan/37 Task T5).
+// (docs/roadmap/archive/37 Task T5).
 type fakeFraudGRPCClient struct {
 	response *fraudv1.ScreenResponse
 	err      error
@@ -46,7 +46,7 @@ func discardLogger() *slog.Logger {
 
 // stubPoster implements the payout.Poster interface directly, decoupling
 // these tests from any concrete ledger.Module wiring (mirrors
-// internal/payin's own stubPoster, docs/plan/22 Task T2).
+// internal/payin's own stubPoster, docs/roadmap/archive/22 Task T2).
 type stubPoster struct {
 	postFn         func(ctx context.Context, cmd ledgerclient.Command) error
 	getTxFn        func(ctx context.Context, key, scope string) (ledgerclient.Transaction, error)
@@ -169,8 +169,8 @@ func TestCreate_RoutedVendorNotRegistered_Error(t *testing.T) {
 // TestCreate_HappyPath_EnqueuesSubmitWithoutCallingVendor proves Create
 // drives created -> held -> submitted and durably enqueues the first
 // command, returning WITHOUT ever calling the vendor — dispatch is now
-// always the relay's own separate, asynchronous job (docs/plan/45 Task T1),
-// even for what used to be called "instant-settle" mode (docs/plan/23 Task
+// always the relay's own separate, asynchronous job (docs/roadmap/archive/45 Task T1),
+// even for what used to be called "instant-settle" mode (docs/roadmap/archive/23 Task
 // T3).
 func TestCreate_HappyPath_EnqueuesSubmitWithoutCallingVendor(t *testing.T) {
 	ctrl := gomock.NewController(t)
@@ -183,7 +183,7 @@ func TestCreate_HappyPath_EnqueuesSubmitWithoutCallingVendor(t *testing.T) {
 	repo.EXPECT().TransitionToHeld(gomock.Any(), gomock.Any(), gomock.Any()).Return(true, nil)
 	cmdRepo.EXPECT().EnqueueInitialSubmit(gomock.Any(), gomock.Any(), "mockvendor").Return(true, nil)
 
-	// docs/plan/45 Task T1: Create must enqueue and return WITHOUT ever
+	// docs/roadmap/archive/45 Task T1: Create must enqueue and return WITHOUT ever
 	// calling the vendor — dispatch is the relay's job alone.
 	provider := &stubPayoutProvider{
 		name: "mockvendor",
@@ -208,7 +208,7 @@ func TestCreate_HappyPath_EnqueuesSubmitWithoutCallingVendor(t *testing.T) {
 	assert.Equal(t, int64(0), provider.submitted.Load())
 }
 
-// TestCreate_FraudBlock_NoRowInserted_NoHold proves docs/plan/37 Task T5: a
+// TestCreate_FraudBlock_NoRowInserted_NoHold proves docs/roadmap/archive/37 Task T5: a
 // Block verdict rejects Create BEFORE any payout_requests row is inserted
 // and BEFORE any hold is posted — repo.Insert is never called at all, so the
 // only audit trail for a blocked attempt lives in fraud-service's own
@@ -229,7 +229,7 @@ func TestCreate_FraudBlock_NoRowInserted_NoHold(t *testing.T) {
 }
 
 // TestCreate_FraudInfraError_FailsOpen_StillCreates proves the fail-open
-// half of docs/plan/37 Task T5: a fraud-service/network error must not
+// half of docs/roadmap/archive/37 Task T5: a fraud-service/network error must not
 // block a legitimate payout — Create proceeds exactly as the unscreened
 // happy path does.
 func TestCreate_FraudInfraError_FailsOpen_StillCreates(t *testing.T) {
@@ -266,7 +266,7 @@ func TestCreate_FraudInfraError_FailsOpen_StillCreates(t *testing.T) {
 }
 
 // TestCreate_FraudDependencyUnavailable_FailsClosed_NoRowInserted proves
-// docs/plan/45 Task T3/K4: fraud-service reachable but explicitly
+// docs/roadmap/archive/45 Task T3/K4: fraud-service reachable but explicitly
 // signaling its velocity dependency is down must fail CLOSED — like
 // ErrScreeningBlocked above, no row is ever inserted and no hold posted —
 // unlike the generic infra-error fail-open case above it.
@@ -285,7 +285,7 @@ func TestCreate_FraudDependencyUnavailable_FailsClosed_NoRowInserted(t *testing.
 	assert.Equal(t, uuid.Nil, id)
 }
 
-// TestSettle_NeverScreened_EvenWithBlockingFraudClient proves docs/plan/37
+// TestSettle_NeverScreened_EvenWithBlockingFraudClient proves docs/roadmap/archive/37
 // Task T5's "gotcha #8" requirement: settle/cancel are NEVER screened, even
 // when a fraudClient is configured and would block everything — money is
 // already held, so blocking settle would strand funds. The fraud client
@@ -331,7 +331,7 @@ func sampleCommand(payoutRequestID uuid.UUID, vendor string, attempt int) model.
 }
 
 // TestDispatchOne_VendorPending_TransitionsToVendorPending proves the async
-// path (docs/plan/23 Task T3's "async" mode) leaves the request in
+// path (docs/roadmap/archive/23 Task T3's "async" mode) leaves the request in
 // vendor_pending for the resume job to poll later, rather than forcing a
 // terminal state immediately.
 func TestDispatchOne_VendorPending_TransitionsToVendorPending(t *testing.T) {
@@ -376,7 +376,7 @@ func TestDispatchOne_VendorFailed_NoOtherCandidate_CancelsAndReturnsHold(t *test
 
 	repo.EXPECT().Get(gomock.Any(), id).Return(req, nil).Times(2)
 	repo.EXPECT().InsertVendorCall(gomock.Any(), gomock.Any()).Return(nil)
-	// mayFailover check (docs/plan/40 Task T3) — no prior calls, so
+	// mayFailover check (docs/roadmap/archive/40 Task T3) — no prior calls, so
 	// failover WOULD be allowed, but the only registered/routed vendor is
 	// "mockvendor" itself, so ResolvePayoutRoute (excluding it) finds no
 	// other candidate and dispatchOne falls through to cancel exactly as
@@ -408,7 +408,7 @@ func TestDispatchOne_VendorFailed_NoOtherCandidate_CancelsAndReturnsHold(t *test
 }
 
 // TestSettle_LostRace_Reconciles proves the K3-guard-reliance philosophy
-// (docs/plan/23 Task T4): losing ledgererr.ErrAlreadyClosed is NOT propagated
+// (docs/roadmap/archive/23 Task T4): losing ledgererr.ErrAlreadyClosed is NOT propagated
 // as an error — it's reconciled, since the request already reached a
 // terminal state via a different concurrent path.
 func TestSettle_LostRace_Reconciles(t *testing.T) {
@@ -456,11 +456,11 @@ func TestCancel_LostRace_Reconciles(t *testing.T) {
 }
 
 // TestResumeStuck_SubmittedWithLiveCommand_NoOp_PollsVendorPending proves
-// the resume job's docs/plan/45 Task T1 behavior: a stuck 'submitted'
+// the resume job's docs/roadmap/archive/45 Task T1 behavior: a stuck 'submitted'
 // request with a live command is left alone (the relay owns dispatching
 // it, not resume); a stuck 'vendor_pending' request still gets Query'd and
 // routed to a terminal state directly by resume, unchanged from
-// docs/plan/23 Task T3 step 3.
+// docs/roadmap/archive/23 Task T3 step 3.
 func TestResumeStuck_SubmittedWithLiveCommand_NoOp_PollsVendorPending(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	repo := repository.NewMockRepository(ctrl)
@@ -519,7 +519,7 @@ func TestResumeStuck_SubmittedWithLiveCommand_NoOp_PollsVendorPending(t *testing
 }
 
 // TestResumeStuck_SubmittedWithNoCommand_InsertsFresh proves the genuine
-// crash-gap recovery path (docs/plan/45 Task T1/K1): a 'submitted' request
+// crash-gap recovery path (docs/roadmap/archive/45 Task T1/K1): a 'submitted' request
 // with NEITHER a live NOR a dead command gets a fresh one inserted so the
 // relay has something to claim.
 func TestResumeStuck_SubmittedWithNoCommand_InsertsFresh(t *testing.T) {
@@ -607,7 +607,7 @@ func TestResumeStuck_VendorStillPending_NoTransitionCalled(t *testing.T) {
 }
 
 // TestResumeStuck_CreatedStuck_RetriesHoldThenSubmit proves the gap found
-// while designing docs/plan/23 Task T6's chaos scenario: a crash right
+// while designing docs/roadmap/archive/23 Task T6's chaos scenario: a crash right
 // after 'created' (before hold() ever ran) must not orphan the request
 // forever — the resume job retries hold() (idempotent by deterministic
 // ledger idempotency key) and then falls through into submit() in the same

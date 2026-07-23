@@ -10,7 +10,7 @@ import (
 
 // ResolvePayoutRoute picks the first candidate vendor (in routing-rule
 // priority order) that is both registered and not circuit-broken, skipping
-// any vendor named in exclude (docs/plan/40 Task T3's failover — vendors
+// any vendor named in exclude (docs/roadmap/archive/40 Task T3's failover — vendors
 // already tried for this request). Pass a nil/empty exclude for a fresh
 // request.
 func (m *Module) ResolvePayoutRoute(ctx context.Context, userID uuid.UUID, currency string, amount decimal.Decimal, exclude []string) (string, string, error) {

@@ -51,7 +51,7 @@ func TestWithHTTPMetrics_5xxObserved(t *testing.T) {
 func TestWithHTTPMetrics_UnmatchedRoute_NeverRawPath(t *testing.T) {
 	// A bare handler (no ServeMux dispatch) never populates r.Pattern —
 	// this must fall back to the literal "unmatched" label, never the raw
-	// URL path (docs/plan/43 anti-scope: no per-user/high-cardinality
+	// URL path (docs/roadmap/archive/43 anti-scope: no per-user/high-cardinality
 	// labels; an attacker-controlled path must never become a label value).
 	handler := WithHTTPMetrics()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
@@ -81,7 +81,7 @@ func TestWithHTTPMetrics_UninstrumentedPath_NoObservation(t *testing.T) {
 }
 
 // hijackableRecorder proves WithHTTPMetrics preserves http.Hijacker through
-// httpsnoop (docs/plan/43 K5) — a plain wrapper embedding http.ResponseWriter
+// httpsnoop (docs/roadmap/archive/43 K5) — a plain wrapper embedding http.ResponseWriter
 // as an interface field would silently fail the type assertion below even
 // though the underlying writer supports it.
 type hijackableRecorder struct {
@@ -93,7 +93,7 @@ func (h *hijackableRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 }
 
 // TestHTTPBuckets_HasExactTwoSecondBoundary is the regression test for a
-// bug caught cross-checking a docs/plan/43 Task T5 SLO recording rule's
+// bug caught cross-checking a docs/roadmap/archive/43 Task T5 SLO recording rule's
 // actual query output against Prometheus: the "vendor webhook latency" SLI
 // is defined as an event-count ratio against a literal `le="2"` histogram
 // bucket, but prometheus.DefBuckets only has 1 and 2.5 — no exact 2 — so

@@ -1,4 +1,4 @@
--- docs/plan/19 Task T3 (S8): daily interest accrual for savings-product
+-- docs/roadmap/archive/19 Task T3 (S8): daily interest accrual for savings-product
 -- accounts. MVP has no product table — ops registers which accounts earn
 -- interest explicitly via savings_config, never a magic pocket_code prefix.
 
@@ -21,7 +21,7 @@ CREATE INDEX idx_savings_config_enabled ON savings_config(enabled) WHERE enabled
 CREATE TRIGGER trg_savings_config_ua BEFORE UPDATE ON savings_config
     FOR EACH ROW EXECUTE FUNCTION fn_set_updated_at();
 
--- Interest expense account per currency (docs/plan/19 Task T3 step 2) —
+-- Interest expense account per currency (docs/roadmap/archive/19 Task T3 step 2) —
 -- allow_negative=true, same rationale as every other system expense/
 -- position account: the platform's interest liability before it's funded.
 INSERT INTO accounts (id, owner_type, type, currency, system_qualifier, created_by) VALUES

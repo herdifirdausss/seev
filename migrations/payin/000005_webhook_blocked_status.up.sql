@@ -1,4 +1,4 @@
--- docs/plan/37 Task T4: fraud screening moved pre-posting (before
+-- docs/roadmap/archive/37 Task T4: fraud screening moved pre-posting (before
 -- poster.Post) — a Block verdict marks the webhook event 'blocked' rather
 -- than reusing 'failed', so an operator reviewing payin_webhook_events can
 -- tell "fraud rejected this deposit" apart from "the ledger post itself

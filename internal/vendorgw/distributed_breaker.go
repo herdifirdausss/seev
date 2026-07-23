@@ -12,8 +12,8 @@ import (
 )
 
 // defaultRedisTimeout bounds every individual Redis round trip a
-// DistributedBreaker makes (docs/plan/45 K3: "Setiap operasi Redis
-// dibatasi timeout pendek") — short enough that a stalled Redis never
+// DistributedBreaker makes (docs/roadmap/archive/45 K3: "Every Redis operation is
+// bounded by a short timeout") — short enough that a stalled Redis never
 // meaningfully delays the payout/payin request path before falling back
 // to the local tracker.
 const defaultRedisTimeout = 150 * time.Millisecond
@@ -95,7 +95,7 @@ end
 return 1
 `)
 
-// DistributedBreaker is a Redis-backed circuit breaker (docs/plan/45 Task
+// DistributedBreaker is a Redis-backed circuit breaker (docs/roadmap/archive/45 Task
 // T2/K3) that converges state across every replica sharing the same Redis
 // key namespace, falling back to an embedded per-process HealthTracker
 // whenever Redis itself is unreachable or erroring. It implements Breaker,
@@ -113,11 +113,11 @@ return 1
 // per-call log noise.
 //
 // State accumulated locally during a Redis outage is NEVER merged back
-// into Redis once Redis recovers (docs/plan/45 K3) — Redis simply becomes
+// into Redis once Redis recovers (docs/roadmap/archive/45 K3) — Redis simply becomes
 // authoritative again from that point forward. This can very rarely let a
 // vendor that tripped the LOCAL fallback stay briefly available in Redis's
 // view (or vice versa) across an outage boundary; this is accepted because
-// the breaker is purely an availability optimization (docs/plan/40) — the
+// the breaker is purely an availability optimization (docs/roadmap/archive/40) — the
 // anti-double-payout guarantee never depends on breaker state agreeing
 // anywhere.
 type DistributedBreaker struct {
@@ -141,7 +141,7 @@ var _ Breaker = (*DistributedBreaker)(nil)
 // NewDistributedBreaker constructs a distributed breaker. namespace scopes
 // every Redis key (e.g. "payin", "payout") so two modules sharing one
 // Redis instance/DB never collide on a same-named vendor. probeTTL must
-// exceed the maximum configured vendor call timeout (docs/plan/45 K3) —
+// exceed the maximum configured vendor call timeout (docs/roadmap/archive/45 K3) —
 // callers are responsible for passing a value that does; this constructor
 // only applies a floor default, it cannot know the caller's actual vendor
 // timeout. Zero failureThreshold/cooldown/probeTTL/redisTimeout fall back

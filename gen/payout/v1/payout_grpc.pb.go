@@ -19,8 +19,11 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	PayoutService_CreatePayout_FullMethodName = "/seev.payout.v1.PayoutService/CreatePayout"
-	PayoutService_GetPayout_FullMethodName    = "/seev.payout.v1.PayoutService/GetPayout"
+	PayoutService_CreatePayout_FullMethodName         = "/seev.payout.v1.PayoutService/CreatePayout"
+	PayoutService_GetPayout_FullMethodName            = "/seev.payout.v1.PayoutService/GetPayout"
+	PayoutService_ListAssuranceRecords_FullMethodName = "/seev.payout.v1.PayoutService/ListAssuranceRecords"
+	PayoutService_GetIntakeControl_FullMethodName     = "/seev.payout.v1.PayoutService/GetIntakeControl"
+	PayoutService_ApplyIntakeControl_FullMethodName   = "/seev.payout.v1.PayoutService/ApplyIntakeControl"
 )
 
 // PayoutServiceClient is the client API for PayoutService service.
@@ -29,6 +32,9 @@ const (
 type PayoutServiceClient interface {
 	CreatePayout(ctx context.Context, in *CreatePayoutRequest, opts ...grpc.CallOption) (*CreatePayoutResponse, error)
 	GetPayout(ctx context.Context, in *GetPayoutRequest, opts ...grpc.CallOption) (*GetPayoutResponse, error)
+	ListAssuranceRecords(ctx context.Context, in *ListAssuranceRecordsRequest, opts ...grpc.CallOption) (*ListAssuranceRecordsResponse, error)
+	GetIntakeControl(ctx context.Context, in *GetIntakeControlRequest, opts ...grpc.CallOption) (*GetIntakeControlResponse, error)
+	ApplyIntakeControl(ctx context.Context, in *ApplyIntakeControlRequest, opts ...grpc.CallOption) (*ApplyIntakeControlResponse, error)
 }
 
 type payoutServiceClient struct {
@@ -59,12 +65,45 @@ func (c *payoutServiceClient) GetPayout(ctx context.Context, in *GetPayoutReques
 	return out, nil
 }
 
+func (c *payoutServiceClient) ListAssuranceRecords(ctx context.Context, in *ListAssuranceRecordsRequest, opts ...grpc.CallOption) (*ListAssuranceRecordsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListAssuranceRecordsResponse)
+	err := c.cc.Invoke(ctx, PayoutService_ListAssuranceRecords_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *payoutServiceClient) GetIntakeControl(ctx context.Context, in *GetIntakeControlRequest, opts ...grpc.CallOption) (*GetIntakeControlResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetIntakeControlResponse)
+	err := c.cc.Invoke(ctx, PayoutService_GetIntakeControl_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *payoutServiceClient) ApplyIntakeControl(ctx context.Context, in *ApplyIntakeControlRequest, opts ...grpc.CallOption) (*ApplyIntakeControlResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ApplyIntakeControlResponse)
+	err := c.cc.Invoke(ctx, PayoutService_ApplyIntakeControl_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // PayoutServiceServer is the server API for PayoutService service.
 // All implementations must embed UnimplementedPayoutServiceServer
 // for forward compatibility.
 type PayoutServiceServer interface {
 	CreatePayout(context.Context, *CreatePayoutRequest) (*CreatePayoutResponse, error)
 	GetPayout(context.Context, *GetPayoutRequest) (*GetPayoutResponse, error)
+	ListAssuranceRecords(context.Context, *ListAssuranceRecordsRequest) (*ListAssuranceRecordsResponse, error)
+	GetIntakeControl(context.Context, *GetIntakeControlRequest) (*GetIntakeControlResponse, error)
+	ApplyIntakeControl(context.Context, *ApplyIntakeControlRequest) (*ApplyIntakeControlResponse, error)
 	mustEmbedUnimplementedPayoutServiceServer()
 }
 
@@ -80,6 +119,15 @@ func (UnimplementedPayoutServiceServer) CreatePayout(context.Context, *CreatePay
 }
 func (UnimplementedPayoutServiceServer) GetPayout(context.Context, *GetPayoutRequest) (*GetPayoutResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetPayout not implemented")
+}
+func (UnimplementedPayoutServiceServer) ListAssuranceRecords(context.Context, *ListAssuranceRecordsRequest) (*ListAssuranceRecordsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListAssuranceRecords not implemented")
+}
+func (UnimplementedPayoutServiceServer) GetIntakeControl(context.Context, *GetIntakeControlRequest) (*GetIntakeControlResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetIntakeControl not implemented")
+}
+func (UnimplementedPayoutServiceServer) ApplyIntakeControl(context.Context, *ApplyIntakeControlRequest) (*ApplyIntakeControlResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ApplyIntakeControl not implemented")
 }
 func (UnimplementedPayoutServiceServer) mustEmbedUnimplementedPayoutServiceServer() {}
 func (UnimplementedPayoutServiceServer) testEmbeddedByValue()                       {}
@@ -138,6 +186,60 @@ func _PayoutService_GetPayout_Handler(srv interface{}, ctx context.Context, dec 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PayoutService_ListAssuranceRecords_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListAssuranceRecordsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PayoutServiceServer).ListAssuranceRecords(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PayoutService_ListAssuranceRecords_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PayoutServiceServer).ListAssuranceRecords(ctx, req.(*ListAssuranceRecordsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PayoutService_GetIntakeControl_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetIntakeControlRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PayoutServiceServer).GetIntakeControl(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PayoutService_GetIntakeControl_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PayoutServiceServer).GetIntakeControl(ctx, req.(*GetIntakeControlRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PayoutService_ApplyIntakeControl_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ApplyIntakeControlRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PayoutServiceServer).ApplyIntakeControl(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PayoutService_ApplyIntakeControl_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PayoutServiceServer).ApplyIntakeControl(ctx, req.(*ApplyIntakeControlRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // PayoutService_ServiceDesc is the grpc.ServiceDesc for PayoutService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -152,6 +254,18 @@ var PayoutService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetPayout",
 			Handler:    _PayoutService_GetPayout_Handler,
+		},
+		{
+			MethodName: "ListAssuranceRecords",
+			Handler:    _PayoutService_ListAssuranceRecords_Handler,
+		},
+		{
+			MethodName: "GetIntakeControl",
+			Handler:    _PayoutService_GetIntakeControl_Handler,
+		},
+		{
+			MethodName: "ApplyIntakeControl",
+			Handler:    _PayoutService_ApplyIntakeControl_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

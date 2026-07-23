@@ -1,0 +1,16 @@
+{
+  "uid": "seev-product-assurance",
+  "title": "Seev / Product Assurance",
+  "tags": ["seev", "assurance", "money"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "1m",
+  "time": {"from": "now-6h", "to": "now"},
+  "panels": [
+    {"id": 1, "type": "timeseries", "title": "Run duration", "gridPos": {"x": 0, "y": 0, "w": 12, "h": 8}, "datasource": {"type": "prometheus", "uid": "seev-prometheus"}, "targets": [{"expr": "rate(assurance_run_duration_seconds_sum[5m]) / clamp_min(rate(assurance_run_duration_seconds_count[5m]), 1e-9)", "refId": "A"}]},
+    {"id": 2, "type": "timeseries", "title": "Open findings", "gridPos": {"x": 12, "y": 0, "w": 12, "h": 8}, "datasource": {"type": "prometheus", "uid": "seev-prometheus"}, "targets": [{"expr": "assurance_findings", "refId": "A", "legendFormat": "{{severity}} / {{rule}}"}]},
+    {"id": 3, "type": "timeseries", "title": "Money at risk (minor units)", "gridPos": {"x": 0, "y": 8, "w": 12, "h": 8}, "datasource": {"type": "prometheus", "uid": "seev-prometheus"}, "targets": [{"expr": "assurance_money_at_risk_minor", "refId": "A", "legendFormat": "{{currency}}"}]},
+    {"id": 4, "type": "timeseries", "title": "Alert deliveries", "gridPos": {"x": 12, "y": 8, "w": 12, "h": 8}, "datasource": {"type": "prometheus", "uid": "seev-prometheus"}, "targets": [{"expr": "rate(assurance_alert_deliveries_total[5m])", "refId": "A", "legendFormat": "{{result}} / {{severity}}"}]}
+  ]
+}

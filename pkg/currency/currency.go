@@ -1,7 +1,7 @@
 // Package currency is the runtime registry of supported currencies and
-// their minor-unit exponent (docs/plan/18 Task T1, decision S2). Bootstraps
+// their minor-unit exponent (docs/roadmap/archive/18 Task T1, decision S2). Bootstraps
 // with IDR only (this platform's original single-currency assumption,
-// docs/plan/01 decision D12) so callers work correctly before Load is ever
+// docs/roadmap/archive/01 decision D12) so callers work correctly before Load is ever
 // called; internal/ledger.NewModule calls Load once at startup with the
 // contents of the `currencies` table.
 package currency
@@ -56,7 +56,7 @@ func MinorUnit(code string) (int16, bool) {
 // representation for DISPLAY/reporting only (e.g. 150000 IDR minor -> 150000
 // major since MinorUnit=0; 150000 USD minor -> 1500.00 major since
 // MinorUnit=2) — never used in the posting pipeline, which stays
-// minor-unit-integer throughout (docs/plan/18 T1 header: the wire/DB
+// minor-unit-integer throughout (docs/roadmap/archive/18 T1 header: the wire/DB
 // contract does not change). An unregistered code is treated as
 // MinorUnit=0 (no conversion) rather than panicking — display code must
 // degrade gracefully, not crash a report over one bad currency code.

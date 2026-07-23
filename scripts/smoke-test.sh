@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # End-to-end smoke test against a real, live server (docker-compose
 # Postgres/Redis/RabbitMQ + a freshly built binary) — the same manual curl
-# walkthrough every doc's "Verifikasi akhir" section has asked for since
-# docs/plan/12, now checked in once instead of hand-typed from scratch each
+# walkthrough every doc's "Final verification" section has asked for since
+# docs/roadmap/archive/12, now checked in once instead of hand-typed from scratch each
 # time a feature needs re-verifying.
 #
 # Requires: Docker running, this repo checked out, go toolchain available,
@@ -34,11 +34,15 @@ source "$ROOT_DIR/scripts/lib.sh"
 
 trap cleanup EXIT
 
-# docs/plan/44 K6: same env var name lib.sh's start_*_service functions
+# docs/roadmap/archive/44 K6: same env var name lib.sh's start_*_service functions
 # export to the service processes — a CI-generated VENDOR_MOCKVENDOR_SECRET
 # must sign AND verify with the identical value, not silently diverge
 # because this script's own webhook-signing copy had a different name.
 MOCKVENDOR_SECRET="${VENDOR_MOCKVENDOR_SECRET:-script-test-mockvendor-secret-at-least-32-chars-long}"
+# Keep business identities stable for easy inspection, but make every
+# idempotency/event key unique per invocation so a reused development volume
+# cannot turn a valid replay into a false smoke failure.
+SMOKE_RUN_ID="${SMOKE_RUN_ID:-$(uuidgen | tr '[:upper:]' '[:lower:]')}"
 
 # json_field extracts "key":"value" (string fields only) from a JSON blob
 # read on stdin — good enough for this script's flat response shapes,
@@ -75,33 +79,33 @@ smoke_ledger() {
 	local code
 	code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$APP_PORT/api/v1/ledger/transactions" \
 		-H "Authorization: Bearer $token" -H "Content-Type: application/json" \
-		-d "{\"idempotency_key\":\"smoke-transfer-1\",\"type\":\"transfer_p2p\",\"amount\":\"100000\",\"target_user_id\":\"$recipient\"}")
+		-d "{\"idempotency_key\":\"smoke-transfer-$SMOKE_RUN_ID\",\"type\":\"transfer_p2p\",\"amount\":\"100000\",\"target_user_id\":\"$recipient\"}")
 	[ "${code:0:1}" = "2" ] && ok "transfer_p2p posted (code=$code)" || fail "transfer_p2p got $code, expected 2xx"
 
 	log "withdraw_initiate (hold) then withdraw_settle..."
-	local hold_key="smoke-withdraw-settle-hold"
-	curl -s -o /dev/null -X POST "http://localhost:$LEDGER_INTERNAL_PORT/api/v1/ledger/transactions" \
+	local hold_key="smoke-withdraw-settle-hold-$SMOKE_RUN_ID"
+	curl_internal -s -o /dev/null -X POST "http://localhost:$LEDGER_INTERNAL_PORT/api/v1/ledger/transactions" \
 		-H "Authorization: Bearer $token" -H "Content-Type: application/json" \
 		-d "{\"idempotency_key\":\"$hold_key\",\"type\":\"withdraw_initiate\",\"amount\":\"50000\"}"
 	local hold_tx_id
 	hold_tx_id="$(psql_exec "$LEDGER_DB_NAME" -c "SELECT id FROM ledger_transactions WHERE idempotency_key = '$hold_key';")"
-	code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$LEDGER_INTERNAL_PORT/api/v1/ledger/transactions" \
+	code=$(curl_internal -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$LEDGER_INTERNAL_PORT/api/v1/ledger/transactions" \
 		-H "Authorization: Bearer $token" -H "Content-Type: application/json" \
-		-d "{\"idempotency_key\":\"smoke-withdraw-settle-settle\",\"type\":\"withdraw_settle\",\"amount\":\"50000\",\"reference_id\":\"$hold_tx_id\",\"metadata\":{\"gateway\":\"bca\"}}")
+		-d "{\"idempotency_key\":\"smoke-withdraw-settle-settle-$SMOKE_RUN_ID\",\"type\":\"withdraw_settle\",\"amount\":\"50000\",\"reference_id\":\"$hold_tx_id\",\"metadata\":{\"gateway\":\"bca\"}}")
 	[ "${code:0:1}" = "2" ] && ok "withdraw_settle posted (code=$code)" || fail "withdraw_settle got $code, expected 2xx"
 
 	log "withdraw_initiate (hold) then withdraw_cancel — money must return..."
 	local cash_before_cancel
 	cash_before_cancel="$(account_balance "$sender_cash")"
-	local hold_key2="smoke-withdraw-cancel-hold"
-	curl -s -o /dev/null -X POST "http://localhost:$LEDGER_INTERNAL_PORT/api/v1/ledger/transactions" \
+	local hold_key2="smoke-withdraw-cancel-hold-$SMOKE_RUN_ID"
+	curl_internal -s -o /dev/null -X POST "http://localhost:$LEDGER_INTERNAL_PORT/api/v1/ledger/transactions" \
 		-H "Authorization: Bearer $token" -H "Content-Type: application/json" \
 		-d "{\"idempotency_key\":\"$hold_key2\",\"type\":\"withdraw_initiate\",\"amount\":\"30000\"}"
 	local hold_tx_id2
 	hold_tx_id2="$(psql_exec "$LEDGER_DB_NAME" -c "SELECT id FROM ledger_transactions WHERE idempotency_key = '$hold_key2';")"
-	code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$LEDGER_INTERNAL_PORT/api/v1/ledger/transactions" \
+	code=$(curl_internal -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$LEDGER_INTERNAL_PORT/api/v1/ledger/transactions" \
 		-H "Authorization: Bearer $token" -H "Content-Type: application/json" \
-		-d "{\"idempotency_key\":\"smoke-withdraw-cancel-cancel\",\"type\":\"withdraw_cancel\",\"amount\":\"30000\",\"reference_id\":\"$hold_tx_id2\"}")
+		-d "{\"idempotency_key\":\"smoke-withdraw-cancel-cancel-$SMOKE_RUN_ID\",\"type\":\"withdraw_cancel\",\"amount\":\"30000\",\"reference_id\":\"$hold_tx_id2\"}")
 	[ "${code:0:1}" = "2" ] && ok "withdraw_cancel posted (code=$code)" || fail "withdraw_cancel got $code, expected 2xx"
 	local cash_after_cancel
 	cash_after_cancel="$(account_balance "$sender_cash")"
@@ -122,7 +126,7 @@ smoke_payin() {
 	balance_before="$(account_balance "$cash")"
 
 	local body
-	body="{\"event_id\":\"smoke-evt-1\",\"external_ref\":\"smoke-ref-1\",\"user_id\":\"$user_id\",\"amount\":\"75000\",\"currency\":\"IDR\",\"occurred_at\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"type\":\"payment.settled\"}"
+	body="{\"event_id\":\"smoke-evt-$SMOKE_RUN_ID\",\"external_ref\":\"smoke-ref-$SMOKE_RUN_ID\",\"user_id\":\"$user_id\",\"amount\":\"75000\",\"currency\":\"IDR\",\"occurred_at\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"type\":\"payment.settled\"}"
 	local sig
 	sig="$(printf '%s' "$body" | openssl dgst -sha256 -hmac "$MOCKVENDOR_SECRET" -r | awk '{print $1}')"
 
@@ -174,7 +178,7 @@ smoke_payout() {
 	local id1
 	id1="$(echo "$create1" | json_field id)"
 	[ -n "$id1" ] || fail "instant-settle create response unexpected: $create1"
-	# docs/plan/45 Task T1: the create response itself only reports
+	# docs/roadmap/archive/45 Task T1: the create response itself only reports
 	# 'submitted' (hold+enqueue) — the vendor result always comes from a
 	# separate, asynchronous relay dispatch pass now, even in what used to
 	# be called "instant-settle" mode.
@@ -203,15 +207,15 @@ smoke_payout() {
 
 	log "GET /admin/payout/requests?status=vendor_pending (admin)..."
 	local list_resp
-	list_resp="$(curl -s "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/requests?status=vendor_pending" -H "Authorization: Bearer $admin_token")"
+	list_resp="$(curl_internal -s "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/requests?status=vendor_pending" -H "Authorization: Bearer $admin_token")"
 	echo "$list_resp" | grep -q "$id2" && ok "admin list includes the vendor_pending payout" || fail "admin list did not include $id2: $list_resp"
 
 	log "GET /admin/payout/requests as a non-admin — must 403..."
-	code=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/requests" -H "Authorization: Bearer $token")
+	code=$(curl_internal -s -o /dev/null -w '%{http_code}' "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/requests" -H "Authorization: Bearer $token")
 	[ "$code" = "403" ] && ok "non-admin admin-list rejected with 403 (code=$code)" || fail "non-admin admin-list got $code, expected 403"
 
 	log "POST /admin/payout/requests/{id}/cancel (admin) — money must return..."
-	code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/requests/$id2/cancel" \
+	code=$(curl_internal -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/requests/$id2/cancel" \
 		-H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" -d '{"reason":"smoke test manual cancel"}')
 	[ "$code" = "200" ] && ok "admin cancel succeeded (code=$code)" || fail "admin cancel got $code, expected 200"
 

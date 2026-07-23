@@ -1,6 +1,6 @@
 //go:build integration
 
-// Proves docs/plan/39 Task T5: ApplyKycTier upserts policy_limits from the
+// Proves docs/roadmap/archive/39 Task T5: ApplyKycTier upserts policy_limits from the
 // policy_tier_limits template, in-place on upgrade, idempotently, and the
 // policy engine actually enforces the new cap — against a real Postgres,
 // same throwaway-container pattern as server_integration_test.go's
@@ -45,7 +45,7 @@ func setupKycTierTestServer(t *testing.T) (ledgerv1.LedgerServiceClient, *databa
 	t.Helper()
 	ctx := context.Background()
 	const dbName, dbUser, dbPassword = "seev_ledger_test", "test", "secret"
-	container, err := postgres.Run(ctx, "postgres:16-alpine",
+	container, err := postgres.Run(ctx, "postgres:16.14-alpine",
 		postgres.WithDatabase(dbName), postgres.WithUsername(dbUser), postgres.WithPassword(dbPassword),
 		postgres.BasicWaitStrategies())
 	require.NoError(t, err)
@@ -168,4 +168,21 @@ func TestApplyKycTier_Idempotent_ApplyingTwiceIsOneResult(t *testing.T) {
 
 	assert.Equal(t, 3, policyLimitsRowCount(t, db, userID), "re-applying the same level must not create duplicate rows")
 	assert.Equal(t, int64(1_000_000), policyLimitMaxPerTx(t, db, userID, "transfer_p2p"))
+}
+
+func TestApplyKycTier_L0HardControlBlocksPositiveAmount(t *testing.T) {
+	client, db := setupKycTierTestServer(t)
+	ctx := context.Background()
+	userID := uuid.New()
+
+	_, err := client.ApplyKycTier(ctx, &ledgerv1.ApplyKycTierRequest{UserId: userID.String(), KycLevel: 0})
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), policyLimitMaxPerTx(t, db, userID, "transfer_p2p"))
+	assert.Equal(t, 3, policyLimitsRowCount(t, db, userID))
+
+	engine := policy.New(policy.NewRepository(db), cache.NewMemoryCounter(), time.UTC, slog.Default())
+	allowed, rule, _, err := engine.Check(ctx, userID, "transfer_p2p", decimal.NewFromInt(1))
+	require.NoError(t, err)
+	assert.False(t, allowed, "L0's zero max_per_tx must reject any positive amount")
+	assert.Equal(t, "max_per_tx", rule)
 }

@@ -1,0 +1,14 @@
+{
+  "uid": "seev-mtls-security",
+  "title": "Seev / mTLS Security",
+  "tags": ["seev", "security", "mtls"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "1m",
+  "time": {"from": "now-6h", "to": "now"},
+  "panels": [
+    {"id": 1, "type": "timeseries", "title": "Cert expiry (days remaining)", "gridPos": {"x": 0, "y": 0, "w": 12, "h": 8}, "datasource": {"type": "prometheus", "uid": "seev-prometheus"}, "targets": [{"expr": "(tlsx_cert_expiry_seconds - time()) / 86400", "refId": "A", "legendFormat": "{{identity}}"}]},
+    {"id": 2, "type": "timeseries", "title": "mTLS handshake failures", "gridPos": {"x": 12, "y": 0, "w": 12, "h": 8}, "datasource": {"type": "prometheus", "uid": "seev-prometheus"}, "targets": [{"expr": "rate(tlsx_handshake_failures_total[5m])", "refId": "A", "legendFormat": "{{reason}} / {{identity}}"}]}
+  ]
+}

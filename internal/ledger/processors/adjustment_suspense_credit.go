@@ -16,7 +16,7 @@ import (
 // =============================================================================
 // 23. AdjustmentSuspenseCredit — system.adjustment → system.suspense[gateway]
 //
-// Reconciliation resolution (docs/plan/16 Task T2, decision K5): posted ONLY
+// Reconciliation resolution (docs/roadmap/archive/16 Task T2, decision K5): posted ONLY
 // through the maker-checker flow (internal/ledger/service/adjustments), same
 // as AdjustmentCredit/Debit — never reachable via direct POST. Used when a
 // gateway's settlement report shows money the ledger has no record of
@@ -29,13 +29,13 @@ import (
 //           "authorized_by" - employee ID (the approver, injected by
 //                              adjustments.Service.Approve)
 //           "reason"        - free text, expected to reference recon_items.id
-//           "currency"      - optional, defaults to "IDR" (docs/plan/18 Task
+//           "currency"      - optional, defaults to "IDR" (docs/roadmap/archive/18 Task
 //                              T2). This processor has no user-facing account
 //                              to derive currency from (both legs are system
 //                              accounts), so it is the one place in the
 //                              codebase where an IDR default is still allowed
 //                              — every recon batch is currently IDR-only
-//                              (docs/plan/16 Task T2); a multi-currency recon
+//                              (docs/roadmap/archive/16 Task T2); a multi-currency recon
 //                              caller must pass "currency" explicitly.
 // =============================================================================
 

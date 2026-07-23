@@ -1,5 +1,5 @@
 // Package policy implements per-user/per-type transaction limits and
-// velocity checks (docs/plan/17 Task T1, decision K-S S1) — evaluated in
+// velocity checks (docs/roadmap/archive/17 Task T1, decision K-S S1) — evaluated in
 // the ledger's HTTP transport layer BEFORE a transaction is posted. The
 // ledger module itself never imports this package and has no awareness of
 // it (see internal/ledger/processors/processors.go's own comment: "Limits
@@ -24,11 +24,11 @@ import (
 // defaultLimitCacheTTL bounds how stale an in-process cached limit row can
 // be — a limit change made via the admin endpoint takes effect within this
 // window on every process replica, no pub/sub invalidation needed
-// (docs/plan/17 Task T1 step 4). Overridable via WithCacheTTL, primarily so
+// (docs/roadmap/archive/17 Task T1 step 4). Overridable via WithCacheTTL, primarily so
 // integration tests can prove cache-expiry behavior without a 60s+ sleep.
 const defaultLimitCacheTTL = 60 * time.Second
 
-// defaultAlertThrottle bounds how often a fail-open alert fires (docs/plan/25
+// defaultAlertThrottle bounds how often a fail-open alert fires (docs/roadmap/archive/25
 // Task T5) — a Redis/DB outage causes EVERY Check call to fail open for as
 // long as the outage lasts, so without throttling a busy period would fire
 // one alert per request (an alert storm indistinguishable from a DoS on the
@@ -49,7 +49,7 @@ type Engine struct {
 	cacheMu sync.RWMutex
 	cache   map[string]cachedLimit
 
-	// alertFn fires a fail-open alert (docs/plan/25 Task T5) — nil means
+	// alertFn fires a fail-open alert (docs/roadmap/archive/25 Task T5) — nil means
 	// no alerting configured (byte-identical to before this feature
 	// existed: fail-open still happens, only the log line, no alert).
 	alertFn       alerting.AlertFunc
@@ -77,7 +77,7 @@ func WithCacheTTL(d time.Duration) Option {
 	return func(e *Engine) { e.cacheTTL = d }
 }
 
-// WithAlertFunc wires a fail-open alert sink (docs/plan/25 Task T5) —
+// WithAlertFunc wires a fail-open alert sink (docs/roadmap/archive/25 Task T5) —
 // every fail-open branch in Check fires this, severity="warning", throttled
 // to defaultAlertThrottle (overridable via WithAlertThrottle). nil (the
 // default) disables alerting entirely — fail-open behavior itself is
@@ -94,7 +94,7 @@ func WithAlertThrottle(d time.Duration) Option {
 }
 
 // New constructs a policy Engine. counter selects Redis or in-memory
-// (docs/plan/12 Task T1 fallback pattern) at the caller's discretion — this
+// (docs/roadmap/archive/12 Task T1 fallback pattern) at the caller's discretion — this
 // package has no opinion on which. loc anchors daily/monthly window
 // boundaries (must match the timezone snapshots/statements use — Asia/
 // Jakarta in this deployment) so "today" means the same calendar day
@@ -158,7 +158,7 @@ func (e *Engine) fireFailOpenAlert(reason string) {
 // Check FAILS OPEN on infrastructure errors (repository or counter
 // unreachable) — logs and allows the request rather than returning an
 // error that would 500 every posting of that type. Same convention as this
-// codebase's rate limiter (docs/plan/12 Task T1): velocity limits are a
+// codebase's rate limiter (docs/roadmap/archive/12 Task T1): velocity limits are a
 // coarse business control, not a money-safety invariant (that remains the
 // ledger's own job) — a Redis/DB blip must not become a denial-of-service
 // for legitimate traffic. The returned err is therefore always nil in
@@ -190,7 +190,7 @@ func (e *Engine) Check(ctx context.Context, userID uuid.UUID, txType string, amo
 	now := time.Now().In(e.loc)
 
 	if limit.MaxDailyAmount != nil {
-		cur, err := e.counter.Get(ctx, dailyAmountKey(userID, txType, now))
+		cur, err := e.counter.Get(ctx, DailyAmountKey(userID, txType, now))
 		if err != nil {
 			e.logger.Warn("policy: read daily amount counter failed, failing open", slog.Any("error", err), slog.String("user_id", userID.String()), slog.String("type", txType))
 			e.fireFailOpenAlert("read daily amount counter failed: " + err.Error())
@@ -201,7 +201,7 @@ func (e *Engine) Check(ctx context.Context, userID uuid.UUID, txType string, amo
 		}
 	}
 	if limit.MaxDailyCount != nil {
-		cur, err := e.counter.Get(ctx, dailyCountKey(userID, txType, now))
+		cur, err := e.counter.Get(ctx, DailyCountKey(userID, txType, now))
 		if err != nil {
 			e.logger.Warn("policy: read daily count counter failed, failing open", slog.Any("error", err), slog.String("user_id", userID.String()), slog.String("type", txType))
 			e.fireFailOpenAlert("read daily count counter failed: " + err.Error())
@@ -212,7 +212,7 @@ func (e *Engine) Check(ctx context.Context, userID uuid.UUID, txType string, amo
 		}
 	}
 	if limit.MaxMonthlyAmount != nil {
-		cur, err := e.counter.Get(ctx, monthlyAmountKey(userID, txType, now))
+		cur, err := e.counter.Get(ctx, MonthlyAmountKey(userID, txType, now))
 		if err != nil {
 			e.logger.Warn("policy: read monthly amount counter failed, failing open", slog.Any("error", err), slog.String("user_id", userID.String()), slog.String("type", txType))
 			e.fireFailOpenAlert("read monthly amount counter failed: " + err.Error())
@@ -236,13 +236,13 @@ func (e *Engine) Record(ctx context.Context, userID uuid.UUID, txType string, am
 	now := time.Now().In(e.loc)
 	amt := amount.IntPart()
 
-	if _, err := e.counter.IncrBy(ctx, dailyAmountKey(userID, txType, now), amt, 48*time.Hour); err != nil {
+	if _, err := e.counter.IncrBy(ctx, DailyAmountKey(userID, txType, now), amt, 48*time.Hour); err != nil {
 		e.logger.Error("policy: record daily amount failed", slog.Any("error", err), slog.String("user_id", userID.String()), slog.String("type", txType))
 	}
-	if _, err := e.counter.IncrBy(ctx, dailyCountKey(userID, txType, now), 1, 48*time.Hour); err != nil {
+	if _, err := e.counter.IncrBy(ctx, DailyCountKey(userID, txType, now), 1, 48*time.Hour); err != nil {
 		e.logger.Error("policy: record daily count failed", slog.Any("error", err), slog.String("user_id", userID.String()), slog.String("type", txType))
 	}
-	if _, err := e.counter.IncrBy(ctx, monthlyAmountKey(userID, txType, now), amt, 35*24*time.Hour); err != nil {
+	if _, err := e.counter.IncrBy(ctx, MonthlyAmountKey(userID, txType, now), amt, 35*24*time.Hour); err != nil {
 		e.logger.Error("policy: record monthly amount failed", slog.Any("error", err), slog.String("user_id", userID.String()), slog.String("type", txType))
 	}
 }
@@ -271,12 +271,18 @@ func (e *Engine) getLimit(ctx context.Context, userID uuid.UUID, txType string) 
 	return limit, found, nil
 }
 
-func dailyAmountKey(userID uuid.UUID, txType string, t time.Time) string {
+// DailyAmountKey/DailyCountKey/MonthlyAmountKey are exported (docs/roadmap/active/50
+// T5) so cmd/drreseed can reconstruct these exact Redis keys from
+// restored PostgreSQL data after a disaster-recovery restore — a
+// hand-copied re-derivation of this format in a second package would
+// silently drift from this one and break enforcement without either side
+// ever failing loudly.
+func DailyAmountKey(userID uuid.UUID, txType string, t time.Time) string {
 	return fmt.Sprintf("pol:%s:%s:d:%s:amt", userID, txType, t.Format("2006-01-02"))
 }
-func dailyCountKey(userID uuid.UUID, txType string, t time.Time) string {
+func DailyCountKey(userID uuid.UUID, txType string, t time.Time) string {
 	return fmt.Sprintf("pol:%s:%s:d:%s:cnt", userID, txType, t.Format("2006-01-02"))
 }
-func monthlyAmountKey(userID uuid.UUID, txType string, t time.Time) string {
+func MonthlyAmountKey(userID uuid.UUID, txType string, t time.Time) string {
 	return fmt.Sprintf("pol:%s:%s:m:%s:amt", userID, txType, t.Format("2006-01"))
 }

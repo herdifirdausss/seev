@@ -1,4 +1,4 @@
-# docs/plan/43 K1/K9 — single-binary Loki, filesystem storage, 48h
+# docs/roadmap/archive/43 K1/K9 — single-binary Loki, filesystem storage, 48h
 # retention. Labels are kept low-cardinality (compose_service, environment,
 # level only — see Alloy config for what actually gets attached).
 auth_enabled: false
@@ -34,7 +34,7 @@ limits_config:
   reject_old_samples_max_age: 168h
   ingestion_rate_mb: 8
   ingestion_burst_size_mb: 16
-  # docs/plan/43 Task T6 — Loki 3.x auto-detects a `service_name` label
+  # docs/roadmap/archive/43 Task T6 — Loki 3.x auto-detects a `service_name` label
   # from a fixed list of candidate keys, defaulting to "unknown_service"
   # when none match (found live: every stream from this stack carried
   # service_name="unknown_service", a fourth label the K9 label-set

@@ -1,4 +1,4 @@
--- Outbox exponential backoff (docs/plan/12 Task T2).
+-- Outbox exponential backoff (docs/roadmap/archive/12 Task T2).
 -- next_attempt_at gates ClaimFailedForRetry: NULL means "eligible
 -- immediately" (a failed event that has never had a backoff computed for
 -- it yet, or has been reaped and is ready to retry right away).

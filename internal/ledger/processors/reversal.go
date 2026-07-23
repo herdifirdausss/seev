@@ -45,7 +45,7 @@ func (p *Reversal) ResolveAccounts(ctx context.Context, cmd Command) (ResolvedAc
 	if err != nil {
 		return ResolvedAccounts{}, "", fmt.Errorf("reversal: currency: %w", err)
 	}
-	// Source/Destination left uuid.Nil (decision K2, docs/plan/13): a
+	// Source/Destination left uuid.Nil (decision K2, docs/roadmap/archive/13): a
 	// reversal can touch more than two accounts (e.g. reversing a
 	// transaction with a fee leg), so there is no single semantic
 	// source->destination pair to report — ledger_transactions.source/
@@ -58,7 +58,7 @@ func (p *Reversal) Validate(ctx context.Context, tx *sql.Tx, cmd ResolvedCommand
 	if err != nil {
 		return fmt.Errorf("reversal: get original header: %w", err)
 	}
-	// [docs/plan/14 Task T2] Reversing a reversal would double-credit the
+	// [docs/roadmap/archive/14 Task T2] Reversing a reversal would double-credit the
 	// original's counterparty — not a supported correction path (a mistaken
 	// reversal is fixed by posting the ORIGINAL transaction's type again,
 	// not by reversing the reversal).
@@ -73,7 +73,7 @@ func (p *Reversal) Validate(ctx context.Context, tx *sql.Tx, cmd ResolvedCommand
 	}
 	// This is a fast-fail convenience check against an unlocked read — the
 	// actual race-proof guard is the CloseOriginal UPDATE the service layer
-	// runs after Validate succeeds (docs/plan/14 Task T2, decision K3).
+	// runs after Validate succeeds (docs/roadmap/archive/14 Task T2, decision K3).
 	return nil
 }
 
@@ -96,7 +96,7 @@ func (p *Reversal) BuildEntries(ctx context.Context, tx *sql.Tx, cmd ResolvedCom
 	}
 	// Marking the original 'reversed' is now the service layer's job (step
 	// 4b, CloseOriginal) — it runs before BuildEntries and is the atomic
-	// guard against double-reversal (docs/plan/14 Task T2). Nothing to do
+	// guard against double-reversal (docs/roadmap/archive/14 Task T2). Nothing to do
 	// here anymore.
 	reversed := make([]model.EntryInstruction, len(origEntries))
 	for i, e := range origEntries {
@@ -112,7 +112,7 @@ func (p *Reversal) BuildEntries(ctx context.Context, tx *sql.Tx, cmd ResolvedCom
 	return reversed, nil
 }
 
-// OutboxEvents emits two events (docs/plan/14 Task T3): a normal
+// OutboxEvents emits two events (docs/roadmap/archive/14 Task T3): a normal
 // ledger.transaction.posted.v1 for the reversal transaction itself (it IS a
 // posted transaction, just of type "reversal"), plus a
 // ledger.transaction.reversed.v1 routed against the ORIGINAL transaction's

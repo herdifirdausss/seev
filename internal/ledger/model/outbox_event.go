@@ -24,7 +24,7 @@ type OutboxEventRecord struct {
 	RetryCount    int
 }
 
-// DeadOutboxEvent is one 'dead' outbox_events row, listing-only (docs/plan/25
+// DeadOutboxEvent is one 'dead' outbox_events row, listing-only (docs/roadmap/archive/25
 // Task T5) — deliberately excludes Payload: an operator deciding whether to
 // replay needs id/type/retry_count/last_error/created_at, not the full
 // event body, and a "dead" list is exactly the rows most likely to be large

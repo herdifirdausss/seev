@@ -1,0 +1,5 @@
+# Synthetic JWT fixtures from the original public history. They contain no
+# usable secret and exist only to verify log redaction.
+0134bb4906ae783bd646293af6056d6133475a28:pkg/logger/masking_test.go:jwt:100
+0134bb4906ae783bd646293af6056d6133475a28:pkg/logger/masking_test.go:jwt:240
+0134bb4906ae783bd646293af6056d6133475a28:pkg/logger/masking_test.go:jwt:471

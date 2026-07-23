@@ -52,9 +52,9 @@ func (PositiveAmountValidator) Validate(_ context.Context, _ *sql.Tx,
 }
 
 // IntegralAmountValidator ensures Amount has no fractional part — the
-// ledger is minor-unit-only (docs/plan/01 decision D2). This is a
+// ledger is minor-unit-only (docs/roadmap/archive/01 decision D2). This is a
 // second line of defense behind transport's decimalFromString rejecting
-// fractional input (docs/plan/10 Task T4): every processor validates it
+// fractional input (docs/roadmap/archive/10 Task T4): every processor validates it
 // too, so a caller that reaches Handle() directly (a future in-process
 // module, not just HTTP) can't slip a fractional amount past the
 // repository layer, where account_balance_repository.UpdateBalances would

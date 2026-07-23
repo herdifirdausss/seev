@@ -1,8 +1,8 @@
-// Package vendorgw is the vendor-adapter contract (docs/plan/22 Task T1,
+// Package vendorgw is the vendor-adapter contract (docs/roadmap/archive/22 Task T1,
 // decision K-T6): a normalized event/verifier shape that lets the payin
 // module talk to any payment vendor without ever seeing that vendor's raw
 // wire format. It is deliberately a library, not a service — internal/payin
-// and internal/payout are its only intended callers (docs/plan/21 topology
+// and internal/payout are its only intended callers (docs/roadmap/archive/21 topology
 // map). It must never import internal/ledger or internal/payin: an adapter
 // that could reach into either would defeat the point of the seam.
 package vendorgw
@@ -30,7 +30,7 @@ type PayinEvent struct {
 
 // ErrInvalidSignature is returned by PayinVerifier.VerifyAndParse when a
 // delivery's signature doesn't match. Callers map this to HTTP 401 with no
-// side effect (docs/plan/22 Task T2 step 2) — never persisted, never
+// side effect (docs/roadmap/archive/22 Task T2 step 2) — never persisted, never
 // retried automatically (a bad signature won't become valid on redelivery).
 var ErrInvalidSignature = errors.New("vendorgw: invalid signature")
 
@@ -49,7 +49,7 @@ var ErrUnknownPayinVendor = errors.New("vendorgw: unknown payin vendor")
 // encoders). Decode only AFTER the signature has verified against rawBody.
 //
 // Returns (nil, nil) when the signature is valid but the event isn't one
-// payin cares about (docs/plan/22 scope: settled events only) — the caller
+// payin cares about (docs/roadmap/archive/22 scope: settled events only) — the caller
 // treats this as "acknowledged, ignored" (HTTP 200), not an error.
 type PayinVerifier interface {
 	// Vendor returns this verifier's registry name — must be stable and

@@ -24,9 +24,12 @@ type authHandlers interface {
 type kycHandlers interface {
 	SubmitKYCHandler() http.HandlerFunc
 	KYCStatusHandler() http.HandlerFunc
+	UploadKYCDocumentHandler() http.HandlerFunc
 	AdminListKYCHandler() http.HandlerFunc
 	AdminApproveKYCHandler() http.HandlerFunc
 	AdminRejectKYCHandler() http.HandlerFunc
+	AdminDowngradeKYCHandler() http.HandlerFunc
+	AdminDownloadKYCDocumentHandler() http.HandlerFunc
 }
 
 func publicRouter(cfg *config.Config, handlers authHandlers, redisCache *cache.Cache, log *slog.Logger) http.Handler {
@@ -34,10 +37,10 @@ func publicRouter(cfg *config.Config, handlers authHandlers, redisCache *cache.C
 	apiRoot := http.NewServeMux()
 	api := http.NewServeMux()
 
-	limiterConfig := cache.RateConfig{Requests: 10, Per: time.Minute, Burst: 10}
+	limiterConfig := cache.RateConfig{Requests: cfg.App.RateLimitRequests, Per: cfg.App.RateLimitPer, Burst: cfg.App.RateLimitBurst}
 	var limiter cache.Limiter
 	if redisCache != nil {
-		// docs/plan/45 Task T3/K4: fails over to an in-memory limiter at
+		// docs/roadmap/archive/45 Task T3/K4: fails over to an in-memory limiter at
 		// runtime if Redis becomes unreachable, recovering automatically.
 		limiter = cache.NewFailoverLimiter(redisCache.Redis(), limiterConfig, log)
 	} else {
@@ -72,6 +75,7 @@ func publicRouter(cfg *config.Config, handlers authHandlers, redisCache *cache.C
 	if kyc, ok := handlers.(kycHandlers); ok {
 		api.Handle("POST /users/me/kyc", authed(kyc.SubmitKYCHandler()))
 		api.Handle("GET /users/me/kyc", authed(kyc.KYCStatusHandler()))
+		api.Handle("POST /users/me/kyc/documents", authed(kyc.UploadKYCDocumentHandler()))
 	}
 	apiRoot.Handle("/api/v1/", http.StripPrefix("/api/v1", api))
 	apiRoot.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) { http.NotFound(w, r) })
@@ -87,10 +91,12 @@ func internalRouter(args ...any) http.Handler {
 		cfg, cfgOK := args[0].(*config.Config)
 		handlers, handlersOK := args[1].(kycHandlers)
 		if cfgOK && handlersOK {
-			authedAdmin := middleware.Chain(middleware.WithAuth(cfg.JWT.Secret, cfg.JWT.Issuer), middleware.WithRole("admin"), middleware.RequireJSON())
+			authedAdmin := middleware.Chain(middleware.WithAuth(cfg.JWT.Secret, cfg.JWT.Issuer), middleware.WithRole("admin", "admin_maker", "admin_checker"), middleware.RequireJSON())
 			mux.Handle("GET /api/v1/admin/kyc/submissions", authedAdmin(handlers.AdminListKYCHandler()))
 			mux.Handle("POST /api/v1/admin/kyc/submissions/{id}/approve", authedAdmin(handlers.AdminApproveKYCHandler()))
 			mux.Handle("POST /api/v1/admin/kyc/submissions/{id}/reject", authedAdmin(handlers.AdminRejectKYCHandler()))
+			mux.Handle("POST /api/v1/admin/kyc/users/{id}/downgrade", authedAdmin(handlers.AdminDowngradeKYCHandler()))
+			mux.Handle("GET /api/v1/admin/kyc/documents/{id}", authedAdmin(handlers.AdminDownloadKYCDocumentHandler()))
 		}
 	}
 	return mux
@@ -103,9 +109,12 @@ func health(w http.ResponseWriter, _ *http.Request) {
 
 func authCORS(cfg *config.Config) middleware.CORSConfig {
 	cors := middleware.DefaultCORSConfig()
-	if cfg.IsProduction() {
+	switch {
+	case cfg.IsProduction():
 		cors.AllowedOrigins = []string{cfg.App.BaseURL}
 		cors.AllowCredentials = true
+	case len(cfg.App.AllowedOrigins) > 0:
+		cors.AllowedOrigins = cfg.App.AllowedOrigins
 	}
 	return cors
 }

@@ -70,11 +70,11 @@ type dispatcher interface {
 	// 'failed' for an immediate retry.
 	ReapStuckCommands(ctx context.Context, olderThan time.Duration) (int, error)
 	// CountCommandsByStatuses feeds the payout_vendor_commands gauge
-	// (docs/plan/45 K6).
+	// (docs/roadmap/archive/45 K6).
 	CountCommandsByStatuses(ctx context.Context, statuses []string) (map[string]int, error)
 }
 
-// VendorRelay runs docs/plan/45 Task T1's durable vendor-dispatch outbox
+// VendorRelay runs docs/roadmap/archive/45 Task T1's durable vendor-dispatch outbox
 // relay: it polls payout_vendor_commands for 'pending' rows and 'failed'
 // rows whose backoff has elapsed, dispatches each to its vendor via
 // payout.Module (the only place provider.Submit is ever called from), and
@@ -141,7 +141,7 @@ func (r *VendorRelay) loop(ctx context.Context, interval time.Duration, dispatch
 			// per-call timeout is applied here (that would abort a
 			// legitimately slow-but-successful vendor round trip); the
 			// vendor provider is expected to enforce its own timeout.
-			// Per-outcome attempt counting (docs/plan/45 K6's
+			// Per-outcome attempt counting (docs/roadmap/archive/45 K6's
 			// payout_vendor_command_attempts_total{outcome}) happens inside
 			// payout.Module.dispatchOne, which is the only place that
 			// actually knows the outcome — this loop only knows how many
@@ -181,7 +181,7 @@ func (r *VendorRelay) reapLoop(ctx context.Context) {
 const dispatchGaugeRefreshInterval = 15 * time.Second
 
 // commandStatuses is every payout_vendor_commands.status value the gauge
-// reports on (docs/plan/45 K6) — a status with zero rows is still reported
+// reports on (docs/roadmap/archive/45 K6) — a status with zero rows is still reported
 // as 0, never silently absent.
 var commandStatuses = []string{"pending", "processing", "failed", "completed", "dead"}
 

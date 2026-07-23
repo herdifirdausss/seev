@@ -17,8 +17,8 @@ const (
 	maxDepthStr = "[MAX_DEPTH]"
 )
 
-// sensitiveKeys adalah kunci JSON/form yang harus di-redact.
-// Semua entry lowercase, tanpa separator.
+// sensitiveKeys contains JSON/form keys that must be redacted.
+// All entries are lowercase and contain no separators.
 var sensitiveKeys = []string{
 	"password",
 	"passwd",
@@ -34,7 +34,7 @@ var sensitiveKeys = []string{
 	"credential",
 	"privatekey",
 	"clientsecret",
-	// docs/plan/43 Task T6 / PROJECT_GUIDE.md: "do not expose ... full idempotency
+	// docs/roadmap/archive/43 Task T6 / docs/development/project-guide.md: "do not expose ... full idempotency
 	// keys in public logs" — Contains-based matching also catches
 	// idempotency_key/idempotency_scope. "amount" is deliberately NOT
 	// added here (see TestIsSensitiveKey's own "amount"->false case,
@@ -65,9 +65,9 @@ var sensitiveValuePatterns = []*regexp.Regexp{
 	regexp.MustCompile(`eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+`), // JWT (3-part)
 }
 
-// normalizeKey menghapus semua separator dan mengubah ke lowercase
-// sehingga "user_password", "user-password", "UserPassword" semuanya
-// menjadi "userpassword" sebelum dibandingkan.
+// normalizeKey removes all separators and lowercases the key, so
+// "user_password", "user-password", and "UserPassword" all become
+// "userpassword" before comparison.
 func normalizeKey(key string) string {
 	k := strings.ToLower(key)
 	k = strings.ReplaceAll(k, "-", "")
@@ -76,12 +76,12 @@ func normalizeKey(key string) string {
 	return k
 }
 
-// isSensitiveKey mengembalikan true jika key mengandung salah satu
-// kata sensitif setelah dinormalisasi.
+// isSensitiveKey returns true when the normalized key contains one of the
+// sensitive terms.
 //
-// FIX: versi lama menggunakan HasPrefix/HasSuffix dengan "_" setelah
-// strip, sehingga kondisi tersebut tidak pernah terpenuhi.
-// Sekarang menggunakan strings.Contains yang benar.
+// FIX: the previous version used HasPrefix/HasSuffix with "_" after
+// stripping separators, so the condition could never match.
+// Use strings.Contains instead.
 func isSensitiveKey(key string) bool {
 	k := normalizeKey(key)
 	for _, s := range sensitiveKeys {
@@ -92,8 +92,8 @@ func isSensitiveKey(key string) bool {
 	return false
 }
 
-// isSensitiveValue mengembalikan true jika nilai string cocok dengan
-// salah satu pola credential yang dikenali.
+// isSensitiveValue returns true when a string matches a known credential
+// pattern.
 func isSensitiveValue(v string) bool {
 	for _, r := range sensitiveValuePatterns {
 		if r.MatchString(v) {
@@ -103,11 +103,11 @@ func isSensitiveValue(v string) bool {
 	return false
 }
 
-// maskRecursive menelusuri payload secara rekursif dan meredact nilai
-// yang sensitif baik berdasarkan key maupun value-nya.
+// maskRecursive walks the payload recursively and redacts sensitive values
+// based on either their key or their value.
 //
-// FIX: early-return pada tipe primitif selain string menghindari
-// alokasi tidak perlu; hanya map/slice yang dialokasi ulang.
+// FIX: returning early for primitive types other than strings avoids
+// unnecessary allocations; only maps and slices are copied.
 func maskRecursive(data any, depth int) any {
 	if depth > maxDepth {
 		return maxDepthStr
@@ -139,18 +139,18 @@ func maskRecursive(data any, depth int) any {
 		return val
 
 	default:
-		// int, float, bool, nil, json.Number — kembalikan apa adanya tanpa alokasi
+		// int, float, bool, nil, json.Number — return unchanged without allocation
 		return val
 	}
 }
 
-// maskPayload adalah entry point publik untuk masking payload JSON.
+// maskPayload is the public entry point for masking JSON payloads.
 func maskPayload(v any) any {
 	return maskRecursive(v, 0)
 }
 
-// parseMediaType mem-parse Content-Type header dan mengembalikan
-// media type tanpa parameter (mis. "application/json").
+// parseMediaType parses a Content-Type header and returns the media type
+// without parameters (for example, "application/json").
 func parseMediaType(ct string) string {
 	if ct == "" {
 		return ""
@@ -162,56 +162,78 @@ func parseMediaType(ct string) string {
 	return mt
 }
 
-// readBody membaca body request hingga max byte, lalu me-restore body
-// agar bisa dibaca ulang oleh handler downstream.
+// maxBodyRestoreBytes bounds how much of a request body this middleware
+// will ever buffer into memory before restoring r.Body — a generous
+// GLOBAL safety net, never the real per-route limit (docs/roadmap/archive/49 TM-12).
+// Must stay >= the largest legitimate body any WithLogger-wrapped route
+// accepts, or that route's own real size limit (e.g. a handler's
+// http.MaxBytesReader) would appear to reject an upload that was actually
+// within ITS limit, because this middleware corrupted it first. Currently
+// the largest known case is the ledger reconciliation CSV upload's own
+// 10MiB cap (internal/ledger/transport/http.go maxReconCSVUploadBytes).
+const maxBodyRestoreBytes = 10 << 20 // 10MiB
+
+// readBody reads up to maxBodyRestoreBytes of the request body and
+// restores r.Body with the FULL bytes read — a downstream handler must
+// see exactly what the client sent. It returns a SEPARATE copy truncated
+// to max bytes for the caller to log; that limit governs log-line size
+// only and must never be the one used to reconstruct r.Body (docs/roadmap/archive/49
+// TM-12 — the previous version conflated the two, so any request body
+// over the 16KiB log-line size was silently truncated before the real
+// handler ever saw it, corrupting HMAC-signed payloads and multipart
+// uploads well within their own documented, larger limits).
 //
-// FIX: jika Content-Encoding adalah gzip, body di-restore dengan bytes
-// yang sudah didekompresi (bukan bytes terkompresi), dan LimitReader
-// diterapkan pada dua level untuk mencegah gzip-bomb.
+// FIX: when Content-Encoding is gzip, restore the body with decompressed
+// bytes rather than compressed bytes, and apply LimitReader at both levels
+// to prevent gzip bombs.
 func readBody(r *http.Request, max int64) ([]byte, error) {
 	if r.Body == nil {
 		return nil, nil
 	}
 
-	raw, err := io.ReadAll(io.LimitReader(r.Body, max+1))
+	raw, err := io.ReadAll(io.LimitReader(r.Body, maxBodyRestoreBytes+1))
 	if err != nil {
 		r.Body = io.NopCloser(bytes.NewReader(nil))
 		return nil, err
 	}
 
-	// Potong tepat di batas max agar tidak bocor lebih dari yang diminta
-	if int64(len(raw)) > max {
-		raw = raw[:max]
-	}
-
 	if !strings.EqualFold(r.Header.Get("Content-Encoding"), "gzip") {
 		r.Body = io.NopCloser(bytes.NewReader(raw))
-		return raw, nil
+		return truncateForLog(raw, max), nil
 	}
 
-	// Dekompresi gzip
+	// Decompress gzip content.
 	gr, err := gzip.NewReader(bytes.NewReader(raw))
 	if err != nil {
-		// Gagal buka gzip — kembalikan raw agar body tetap terbaca
+		// Failed to open gzip — return the raw body so it remains readable.
 		r.Body = io.NopCloser(bytes.NewReader(raw))
 		return nil, err
 	}
 	defer gr.Close()
 
-	decompressed, err := io.ReadAll(io.LimitReader(gr, max))
+	decompressed, err := io.ReadAll(io.LimitReader(gr, maxBodyRestoreBytes))
 	if err != nil {
 		r.Body = io.NopCloser(bytes.NewReader(raw))
 		return nil, err
 	}
 
-	// FIX: restore dengan bytes dekompresi agar handler downstream
-	// menerima payload yang sudah siap pakai
+	// FIX: restore decompressed bytes so downstream handlers receive the
+	// ready-to-use payload.
 	r.Body = io.NopCloser(bytes.NewReader(decompressed))
-	return decompressed, nil
+	return truncateForLog(decompressed, max), nil
 }
 
-// decodeJSON mem-parse JSON menggunakan json.Number agar presisi
-// angka besar (int64/float64) tidak hilang saat di-marshal kembali.
+// truncateForLog caps body at max bytes for LOG-LINE purposes only —
+// never used to decide what a downstream handler receives (see readBody).
+func truncateForLog(body []byte, max int64) []byte {
+	if int64(len(body)) > max {
+		return body[:max]
+	}
+	return body
+}
+
+// decodeJSON parses JSON using json.Number so large integer/float precision
+// is not lost when the value is marshaled again.
 func decodeJSON(body []byte) (any, error) {
 	dec := json.NewDecoder(bytes.NewReader(body))
 	dec.UseNumber()
@@ -222,9 +244,9 @@ func decodeJSON(body []byte) (any, error) {
 	return payload, nil
 }
 
-// ReadAndMaskRequestBody membaca body request, mem-parse jika JSON,
-// lalu meredact semua field sensitif. Body di-restore agar bisa
-// dibaca kembali oleh handler downstream.
+// ReadAndMaskRequestBody reads the request body, parses JSON when present,
+// and redacts all sensitive fields. The body is restored so downstream
+// handlers can read it again.
 func ReadAndMaskRequestBody(r *http.Request, max int64) any {
 	body, err := readBody(r, max)
 	if err != nil || len(body) == 0 {
@@ -248,8 +270,8 @@ func ReadAndMaskRequestBody(r *http.Request, max int64) any {
 	return maskPayload(payload)
 }
 
-// MaskResponseBody mem-parse body response JSON dan meredact field
-// sensitif. Untuk non-JSON, mengembalikan metadata ringkas.
+// MaskResponseBody parses a JSON response body and redacts sensitive fields.
+// For non-JSON responses, it returns compact metadata.
 func MaskResponseBody(body []byte, contentType string) any {
 	mt := parseMediaType(contentType)
 
@@ -269,12 +291,12 @@ func MaskResponseBody(body []byte, contentType string) any {
 	return maskPayload(payload)
 }
 
-// SanitizeHeaders mengembalikan copy header yang sudah disanitasi:
-// header yang diblokir diganti "[REDACTED]", dan nilai header lain
-// dicek terhadap sensitive value pattern.
+// SanitizeHeaders returns a sanitized copy of the headers: blocked headers
+// are replaced with "[REDACTED]", and other values are checked against
+// sensitive-value patterns.
 //
-// FIX: tambahkan pengecekan isSensitiveValue agar header seperti
-// X-Custom-Token: Bearer abc123 juga ikut di-redact.
+// FIX: check isSensitiveValue so headers such as
+// X-Custom-Token: Bearer abc123 are redacted as well.
 func SanitizeHeaders(headers http.Header) map[string]string {
 	out := make(map[string]string, len(headers))
 

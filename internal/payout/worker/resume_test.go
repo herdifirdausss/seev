@@ -34,7 +34,7 @@ func (f *fakeResumer) CountStuck(context.Context, time.Duration) (map[string]int
 	return f.counts, f.countErr
 }
 
-// TestResumeJob_RefreshesStuckGaugePerTick proves docs/plan/43 K5's
+// TestResumeJob_RefreshesStuckGaugePerTick proves docs/roadmap/archive/43 K5's
 // "one grouped-count query per tick" contract at the job level: every
 // status CountStuck returns is set on the gauge after a run, backlog sizes
 // well above ResumeStuck's own 100-row batch cap included (the gauge must
@@ -57,8 +57,8 @@ func TestResumeJob_RefreshesStuckGaugePerTick(t *testing.T) {
 
 // TestResumeJob_StuckGauge_ZeroResetsPreviousBacklog proves a status that
 // drains to zero is reported as 0 on the next tick, not left stale at its
-// last nonzero value (docs/plan/43 K5: "mengisi 0 untuk status yang tidak
-// kembali" applies at the repository layer; this proves the gauge itself
+// last nonzero value (docs/roadmap/archive/43 K5: "write 0 for a status that does not
+// return" applies at the repository layer; this proves the gauge itself
 // tracks the drain down to zero once the repository reports it).
 func TestResumeJob_StuckGauge_ZeroResetsPreviousBacklog(t *testing.T) {
 	r := &fakeResumer{counts: map[string]int{"submitted": 40}}

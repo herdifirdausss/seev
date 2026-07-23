@@ -2,7 +2,7 @@ package worker
 
 // Package-level metrics, registered once regardless of how many times
 // NewOutboxRelay/NewVerifier are constructed (mirrors service/handle's
-// approach — see docs/plan/06 Task 1c.1/1c.2).
+// approach — see docs/roadmap/archive/06 Task 1c.1/1c.2).
 
 import (
 	"github.com/prometheus/client_golang/prometheus"
@@ -55,6 +55,6 @@ var (
 	snapshotMismatchesTotal = promauto.NewCounter(prometheus.CounterOpts{
 		Namespace: "ledger",
 		Name:      "balance_snapshot_mismatches_total",
-		Help:      "Total snapshot-vs-current-balance mismatches found by the daily snapshot job (docs/plan/15 Task T1).",
+		Help:      "Total snapshot-vs-current-balance mismatches found by the daily snapshot job (docs/roadmap/archive/15 Task T1).",
 	})
 )

@@ -12,7 +12,7 @@ import (
 )
 
 // payoutDestination is mockvendor's made-up payout destination shape.
-// MockMode selects test behavior (docs/plan/23 Task T2) — a real vendor's
+// MockMode selects test behavior (docs/roadmap/archive/23 Task T2) — a real vendor's
 // destination would never carry this field; it exists purely so a single
 // PayoutProvider instance can exercise every scenario a test needs without
 // being reconstructed per scenario.
@@ -31,7 +31,7 @@ const (
 
 // PayoutProvider implements vendorgw.PayoutProvider for mockvendor.
 //
-// Idempotency (docs/plan/23 Task T2 DoD: "Submit idempoten") is a property
+// Idempotency (docs/roadmap/archive/23 Task T2 DoD: "Submit idempoten") is a property
 // of EVERY mode, not a separate mode of its own — Submit caches its result
 // by idempotencyKey and returns the cached result on any later call with
 // the same key, regardless of mock_mode. The doc's "duplicate-safe" is
@@ -41,7 +41,7 @@ type PayoutProvider struct {
 	name string
 	mu   sync.Mutex
 	// forceFail, when true, makes every Submit return an INFRA error
-	// regardless of mock_mode (docs/plan/40 Task T4) — mock_mode alone can
+	// regardless of mock_mode (docs/roadmap/archive/40 Task T4) — mock_mode alone can
 	// only simulate a single request's behavior, never "this vendor is
 	// down for ALL traffic". This must be a transport-style error (not a
 	// business rejection): only that classification trips the circuit
@@ -52,7 +52,7 @@ type PayoutProvider struct {
 }
 
 // NewPayoutProvider constructs a provider registered under name
-// (docs/plan/40 Task T4 — parameterized so a second mock vendor can be
+// (docs/roadmap/archive/40 Task T4 — parameterized so a second mock vendor can be
 // registered for failover demos). Existing callers pass VendorName to get
 // byte-identical behavior to before this parameter existed.
 func NewPayoutProvider(name string) *PayoutProvider {
@@ -61,7 +61,7 @@ func NewPayoutProvider(name string) *PayoutProvider {
 
 func (p *PayoutProvider) Vendor() string { return p.name }
 
-// SetForceFail flips the vendor-level force-fail switch (docs/plan/40 Task
+// SetForceFail flips the vendor-level force-fail switch (docs/roadmap/archive/40 Task
 // T4) — test-only, not part of vendorgw.PayoutProvider. Every Submit while
 // true returns an INFRA error (never cached, same rationale as
 // ModeTimeout — a genuinely down vendor can't remember what it never
@@ -131,8 +131,8 @@ func (p *PayoutProvider) Query(_ context.Context, idempotencyKey string) (vendor
 // CompletePending simulates the vendor eventually finishing a Pending
 // payout (what a real async vendor's own backend does out of band) — test
 // code calls this to move a "async" mode submission to its final state,
-// then either delivers it via the webhook receiver (docs/plan/22) or lets
-// the resume job's Query pick it up (docs/plan/23 Task T3).
+// then either delivers it via the webhook receiver (docs/roadmap/archive/22) or lets
+// the resume job's Query pick it up (docs/roadmap/archive/23 Task T3).
 func (p *PayoutProvider) CompletePending(idempotencyKey string, status vendorgw.PayoutStatus, reason string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()

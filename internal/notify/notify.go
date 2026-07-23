@@ -1,8 +1,8 @@
 // Package notify is the public facade for the in-app notification inbox
-// (docs/plan/25 Task T4) — the first RabbitMQ CONSUMER in this codebase
+// (docs/roadmap/archive/25 Task T4) — the first RabbitMQ CONSUMER in this codebase
 // (every other module only publishes to the outbox). External code may
 // only import this package; internal/notify/repository and
-// internal/notify/model are private to the module (docs/plan/01 Module
+// internal/notify/model are private to the module (docs/roadmap/archive/01 Module
 // Boundaries, enforced by boundary_test.go). The ONLY internal/ledger
 // subpackage this module imports is internal/ledger/events — the
 // versioned outbox payload contract any consumer may decode.
@@ -34,7 +34,7 @@ const queueName = "ledger.events.notifications"
 const consumerTag = "notify-consumer"
 
 // notifiableTypes are the ledger transaction_type values that produce a
-// user-facing notification (docs/plan/25 Task T4 step 3). Every other
+// user-facing notification (docs/roadmap/archive/25 Task T4 step 3). Every other
 // TransactionPosted event is filtered out silently — acked, no row
 // written.
 var notifiableTypes = map[string]bool{
@@ -72,7 +72,7 @@ func NewModule(db database.DatabaseSQL, broker Broker, logger *slog.Logger) *Mod
 }
 
 // Start declares the queue topology, then launches the consumer in its own
-// goroutine (docs/plan/25 Task T4 step 3). Returns an error only if
+// goroutine (docs/roadmap/archive/25 Task T4 step 3). Returns an error only if
 // topology declaration itself fails; the consumer goroutine's own errors
 // are logged, not returned (it self-heals via messaging.RabbitMQ.Consume's
 // built-in reconnect/backoff loop).
@@ -157,12 +157,12 @@ type recipient struct {
 }
 
 // recipientsFor maps one TransactionPosted event to its notification
-// recipient(s) (docs/plan/25 Task T4 step 3): money_in/withdraw_settle/
+// recipient(s) (docs/roadmap/archive/25 Task T4 step 3): money_in/withdraw_settle/
 // withdraw_cancel notify the single UserID; transfer_p2p notifies BOTH
-// parties with distinct sender/receiver copy ("terkirim"/"diterima"). An
+// parties with distinct sender/receiver copies ("sent"/"received"). An
 // event with the relevant *UserID field unset produces zero recipients for
 // that side — nothing to notify, not an error (defensive: every current
-// processor for these four types always sets UserID, docs/plan/25 T4's own
+// processor for these four types always sets UserID, docs/roadmap/archive/25 T4's own
 // enrichment step, but this must not panic if a future processor forgets).
 func recipientsFor(ev events.TransactionPosted) []recipient {
 	var out []recipient
@@ -171,39 +171,39 @@ func recipientsFor(ev events.TransactionPosted) []recipient {
 		if ev.UserID != nil {
 			out = append(out, recipient{
 				userID: *ev.UserID,
-				title:  "Transfer terkirim",
-				body:   fmt.Sprintf("Transfer %s %s berhasil terkirim.", ev.Currency, ev.Amount),
+				title:  "Transfer sent",
+				body:   fmt.Sprintf("Your %s %s transfer was sent successfully.", ev.Currency, ev.Amount),
 			})
 		}
 		if ev.TargetUserID != nil {
 			out = append(out, recipient{
 				userID: *ev.TargetUserID,
-				title:  "Transfer diterima",
-				body:   fmt.Sprintf("Anda menerima transfer %s %s.", ev.Currency, ev.Amount),
+				title:  "Transfer received",
+				body:   fmt.Sprintf("You received a %s %s transfer.", ev.Currency, ev.Amount),
 			})
 		}
 	case "money_in":
 		if ev.UserID != nil {
 			out = append(out, recipient{
 				userID: *ev.UserID,
-				title:  "Dana masuk",
-				body:   fmt.Sprintf("Top-up %s %s berhasil, saldo Anda bertambah.", ev.Currency, ev.Amount),
+				title:  "Funds received",
+				body:   fmt.Sprintf("Your %s %s top-up was successful and your balance increased.", ev.Currency, ev.Amount),
 			})
 		}
 	case "withdraw_settle":
 		if ev.UserID != nil {
 			out = append(out, recipient{
 				userID: *ev.UserID,
-				title:  "Withdraw berhasil",
-				body:   fmt.Sprintf("Penarikan %s %s berhasil diproses.", ev.Currency, ev.Amount),
+				title:  "Withdrawal successful",
+				body:   fmt.Sprintf("Your %s %s withdrawal was processed successfully.", ev.Currency, ev.Amount),
 			})
 		}
 	case "withdraw_cancel":
 		if ev.UserID != nil {
 			out = append(out, recipient{
 				userID: *ev.UserID,
-				title:  "Withdraw dibatalkan",
-				body:   fmt.Sprintf("Penarikan %s %s dibatalkan, dana dikembalikan.", ev.Currency, ev.Amount),
+				title:  "Withdrawal canceled",
+				body:   fmt.Sprintf("Your %s %s withdrawal was canceled and the funds were returned.", ev.Currency, ev.Amount),
 			})
 		}
 	}

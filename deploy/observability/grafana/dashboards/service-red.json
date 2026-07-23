@@ -1,7 +1,7 @@
 {
   "uid": "seev-service-red",
   "title": "Seev / Service RED",
-  "description": "Per-service HTTP+gRPC RED metrics, Go runtime, and correlated logs (docs/plan/43 K7). Select a service with the job variable.",
+  "description": "Per-service HTTP+gRPC RED metrics, Go runtime, and correlated logs (docs/roadmap/archive/43 K7). Select a service with the job variable.",
   "tags": [
     "seev",
     "observability"
@@ -471,7 +471,7 @@
         "type": "loki",
         "uid": "seev-loki"
       },
-      "description": "Loki logs for the selected service \u2014 request_id/trace_id are structured JSON fields (docs/plan/43 K9), click a trace_id derived field to jump to Tempo.",
+      "description": "Loki logs for the selected service \u2014 request_id/trace_id are structured JSON fields (docs/roadmap/archive/43 K9), click a trace_id derived field to jump to Tempo.",
       "targets": [
         {
           "datasource": {

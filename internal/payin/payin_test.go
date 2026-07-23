@@ -29,7 +29,7 @@ import (
 
 // fakeFraudGRPCClient is a minimal fraudv1.FraudServiceClient double for
 // wrapping in a real *fraudcheck.Client — mirrors
-// internal/ledger/transport/http_test.go's own double (docs/plan/37 Task T4).
+// internal/ledger/transport/http_test.go's own double (docs/roadmap/archive/37 Task T4).
 type fakeFraudGRPCClient struct {
 	response *fraudv1.ScreenResponse
 	err      error
@@ -248,7 +248,7 @@ func TestHandleWebhook_BusinessFailure_MarkedFailed_NotRetryable(t *testing.T) {
 	repo.EXPECT().MarkFailed(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
 
 	// Construct a business error via the root-facade re-export
-	// (ledgererr.LedgerError, docs/plan/22 Task T2) — payin must never import
+	// (ledgererr.LedgerError, docs/roadmap/archive/22 Task T2) — payin must never import
 	// internal/ledger/apperror directly (boundary rule 1).
 	bizErr := &ledgererr.LedgerError{Code: "ACCOUNT_SUSPENDED", Message: "account suspended"}
 	poster := stubPoster{fn: func(_ context.Context, _ ledgerclient.Command) error {
@@ -300,7 +300,7 @@ func TestReplayEvent_FailedEvent_RetriesPost(t *testing.T) {
 }
 
 // TestHandleWebhook_FraudBlock_MarkedBlocked_PostNotCalled_Acked200 proves
-// docs/plan/37 Task T4: a Block verdict marks the event 'blocked' (distinct
+// docs/roadmap/archive/37 Task T4: a Block verdict marks the event 'blocked' (distinct
 // from 'failed'), poster.Post is NEVER called (no double-posting risk), and
 // the webhook receiver still acks 200 (business decision, non-retriable —
 // the vendor already delivered the money).
@@ -336,7 +336,7 @@ func TestHandleWebhook_FraudBlock_MarkedBlocked_PostNotCalled_Acked200(t *testin
 }
 
 // TestHandleWebhook_FraudInfraError_FailsOpen_StillPosts proves the
-// fail-open half of docs/plan/37 Task T4: a fraud-service/network error
+// fail-open half of docs/roadmap/archive/37 Task T4: a fraud-service/network error
 // must NOT strand a real deposit — posting proceeds as if unscreened.
 func TestHandleWebhook_FraudInfraError_FailsOpen_StillPosts(t *testing.T) {
 	ctrl := gomock.NewController(t)
@@ -368,7 +368,7 @@ func TestHandleWebhook_FraudInfraError_FailsOpen_StillPosts(t *testing.T) {
 }
 
 // TestHandleWebhook_FraudDependencyUnavailable_FailsClosed_NotBusinessFailure
-// proves docs/plan/45 Task T3/K4: fraud-service reachable but explicitly
+// proves docs/roadmap/archive/45 Task T3/K4: fraud-service reachable but explicitly
 // signaling its velocity dependency is down must fail CLOSED — poster.Post
 // is NEVER called, unlike the fail-open infra-error case above — and,
 // critically, this must NOT be classified as a businessError (unlike the
@@ -409,7 +409,7 @@ func TestHandleWebhook_FraudDependencyUnavailable_FailsClosed_NotBusinessFailure
 }
 
 // TestReplayEvent_BlockedEvent_ReScreens proves admin replay of a
-// previously-blocked event RE-SCREENS (deliberate, docs/plan/37 Task T4) —
+// previously-blocked event RE-SCREENS (deliberate, docs/roadmap/archive/37 Task T4) —
 // it does not just retry the old verdict. Here the underlying condition has
 // cleared (fraud now allows it), so the replay posts successfully.
 func TestReplayEvent_BlockedEvent_ReScreens(t *testing.T) {

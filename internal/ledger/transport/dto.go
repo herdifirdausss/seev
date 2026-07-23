@@ -49,7 +49,7 @@ type postTransactionRequest struct {
 	IdempotencyKey string `json:"idempotency_key"`
 	// IdempotencyScope is only honored on the internal router — the public
 	// router always forces scope = the caller's own userID (see
-	// handler.postTransaction, docs/plan/10 Task T2).
+	// handler.postTransaction, docs/roadmap/archive/10 Task T2).
 	IdempotencyScope string         `json:"idempotency_scope,omitempty"`
 	Type             string         `json:"type"`
 	Amount           string         `json:"amount"`
@@ -57,7 +57,7 @@ type postTransactionRequest struct {
 	PocketCode       string         `json:"pocket_code,omitempty"`
 	ReferenceID      string         `json:"reference_id,omitempty"`
 	Metadata         map[string]any `json:"metadata,omitempty"`
-	// QuoteID (docs/plan/38 Task T4) is a typed field, deliberately NOT part
+	// QuoteID (docs/roadmap/archive/38 Task T4) is a typed field, deliberately NOT part
 	// of Metadata — buildMetadata strips unknown metadata keys on the
 	// public router (gotcha #5 master doc 36), so a quote_id smuggled into
 	// Metadata would silently vanish before ever reaching execTransfer.
@@ -74,7 +74,7 @@ type createPocketRequest struct {
 	PocketCode string `json:"pocket_code"`
 }
 
-// ─── Admin: outbox dead-letter replay (docs/plan/12 Task T3) ──────────────────
+// ─── Admin: outbox dead-letter replay (docs/roadmap/archive/12 Task T3) ──────────────────
 
 type replayDeadEventResponse struct {
 	Replayed bool `json:"replayed"`
@@ -91,7 +91,7 @@ type replayAllDeadResponse struct {
 	ReplayedCount int `json:"replayed_count"`
 }
 
-// ─── Admin: outbox dead-letter list (docs/plan/25 Task T5) ────────────────────
+// ─── Admin: outbox dead-letter list (docs/roadmap/archive/25 Task T5) ────────────────────
 
 type deadOutboxEventResponse struct {
 	ID         uuid.UUID `json:"id"`
@@ -111,7 +111,7 @@ type listDeadOutboxEventsResponse struct {
 	Events []deadOutboxEventResponse `json:"events"`
 }
 
-// ─── Admin: recon batch list (docs/plan/25 Task T5) ───────────────────────────
+// ─── Admin: recon batch list (docs/roadmap/archive/25 Task T5) ───────────────────────────
 // Reuses reconBatchResponse (defined above alongside reconBatchReportResponse)
 // — same shape, no need for a second near-identical DTO.
 
@@ -150,7 +150,7 @@ type balanceResponse struct {
 	Status    string    `json:"status"`
 	Type      string    `json:"type"`
 	// AsOf is set only when the request specified ?as_of=YYYY-MM-DD
-	// (docs/plan/15 Task T1) — its absence means Balance is the CURRENT
+	// (docs/roadmap/archive/15 Task T1) — its absence means Balance is the CURRENT
 	// balance, not a historical one.
 	AsOf string `json:"as_of,omitempty"`
 }
@@ -209,7 +209,7 @@ type listEntriesResponse struct {
 
 // statementEntryResponse mirrors entryResponse plus TransactionType — a
 // statement line needs to say WHAT kind of transaction moved the money
-// (docs/plan/15 Task T2), which the plain entry-listing API doesn't.
+// (docs/roadmap/archive/15 Task T2), which the plain entry-listing API doesn't.
 type statementEntryResponse struct {
 	EntryID         uuid.UUID `json:"entry_id"`
 	TxID            uuid.UUID `json:"tx_id"`
@@ -253,9 +253,9 @@ func toStatementResponse(s model.Statement) statementResponse {
 }
 
 // errNonIntegralAmount is returned when a request supplies a fractional
-// amount. The ledger is minor-unit-only (docs/plan/01 decision D2, e.g. IDR
+// amount. The ledger is minor-unit-only (docs/roadmap/archive/01 decision D2, e.g. IDR
 // has 0 minor-unit digits) — accepting "100.75" and silently truncating it
-// downstream would create or destroy money (docs/plan/10 Task T4).
+// downstream would create or destroy money (docs/roadmap/archive/10 Task T4).
 var errNonIntegralAmount = errors.New("amount must be an integer (minor units, no fractional part)")
 
 // decimalFromString parses a required positive-amount field from a request
@@ -271,7 +271,7 @@ func decimalFromString(s string) (decimal.Decimal, error) {
 	return amt, nil
 }
 
-// ─── Fee quotes (docs/plan/38 Task T3) ──────────────────────────────────────
+// ─── Fee quotes (docs/roadmap/archive/38 Task T3) ──────────────────────────────────────
 
 type quoteRequest struct {
 	TransactionType string `json:"transaction_type"`
@@ -281,7 +281,7 @@ type quoteRequest struct {
 }
 
 // quoteResponse's Amount/FeeAmount/TotalDebit are decimal strings — same
-// convention as every other money field in this API (docs/plan/10).
+// convention as every other money field in this API (docs/roadmap/archive/10).
 type quoteResponse struct {
 	QuoteID    uuid.UUID `json:"quote_id"`
 	Amount     string    `json:"amount"`
@@ -300,7 +300,7 @@ func toQuoteResponse(q feepolicy.Quote) quoteResponse {
 	}
 }
 
-// ─── Maker-checker adjustments (docs/plan/16 Task T1) ──────────────────────
+// ─── Maker-checker adjustments (docs/roadmap/archive/16 Task T1) ──────────────────────
 
 type createAdjustmentRequest struct {
 	Type     string         `json:"type"`
@@ -355,7 +355,7 @@ type listAdjustmentsResponse struct {
 	Adjustments []adjustmentResponse `json:"adjustments"`
 }
 
-// ─── External reconciliation (docs/plan/16 Task T2) ────────────────────────
+// ─── External reconciliation (docs/roadmap/archive/16 Task T2) ────────────────────────
 
 type createReconBatchResponse struct {
 	ID uuid.UUID `json:"id"`
@@ -431,7 +431,7 @@ type resolveReconItemResponse struct {
 	AdjustmentID uuid.UUID `json:"adjustment_id"`
 }
 
-// ─── Scheduled transactions (docs/plan/19 Task T1) ─────────────────────────
+// ─── Scheduled transactions (docs/roadmap/archive/19 Task T1) ─────────────────────────
 
 type createScheduleRequest struct {
 	Type         string         `json:"type"`
@@ -499,7 +499,7 @@ type runSchedulesResponse struct {
 	Failed   int `json:"failed"`
 }
 
-// ─── Batch disbursement (docs/plan/19 Task T2) ─────────────────────────────
+// ─── Batch disbursement (docs/roadmap/archive/19 Task T2) ─────────────────────────────
 
 type createDisbursementBatchResponse struct {
 	ID uuid.UUID `json:"id"`
@@ -572,7 +572,7 @@ func toRunDisbursementResponse(r model.DisbursementRunResult) runDisbursementRes
 	return runDisbursementResponse{Processed: r.Processed, Posted: r.Posted, Failed: r.Failed, Done: r.Done}
 }
 
-// ─── Interest accrual (docs/plan/19 Task T3) ───────────────────────────────
+// ─── Interest accrual (docs/roadmap/archive/19 Task T3) ───────────────────────────────
 
 type setSavingsConfigRequest struct {
 	AnnualRateBps int  `json:"annual_rate_bps"`
@@ -602,9 +602,9 @@ type listSavingsConfigsResponse struct {
 	Configs []savingsConfigResponse `json:"configs"`
 }
 
-// ─── AML/fraud screening (docs/plan/20 Task T1) ────────────────────────────
+// ─── AML/fraud screening (docs/roadmap/archive/20 Task T1) ────────────────────────────
 
-// ─── Regulatory reporting (docs/plan/20 Task T2) ───────────────────────────
+// ─── Regulatory reporting (docs/roadmap/archive/20 Task T2) ───────────────────────────
 
 type dailyPositionResponse struct {
 	AsOfDate     string `json:"as_of_date"`

@@ -41,6 +41,12 @@ func Created(w http.ResponseWriter, data any) {
 	JSON(w, http.StatusCreated, Envelope{Success: true, Data: data})
 }
 
+// Accepted is used when work was durably queued and will complete
+// asynchronously (for example KYC policy application after a ledger outage).
+func Accepted(w http.ResponseWriter, data any) {
+	JSON(w, http.StatusAccepted, Envelope{Success: true, Data: data})
+}
+
 func NoContent(w http.ResponseWriter) {
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -81,7 +87,7 @@ func TooManyRequests(w http.ResponseWriter) {
 
 // ServiceUnavailable is a 503 with a caller-chosen machine-readable code —
 // used for degraded-dependency signals (e.g. DEPENDENCY_UNAVAILABLE,
-// docs/plan/45 Task T3/K4; VENDOR_UNAVAILABLE, docs/plan/40) that are
+// docs/roadmap/archive/45 Task T3/K4; VENDOR_UNAVAILABLE, docs/roadmap/archive/40) that are
 // transient and worth a client retry, distinct from InternalServerError's
 // generic unexpected-failure shape.
 func ServiceUnavailable(w http.ResponseWriter, code, message string) {

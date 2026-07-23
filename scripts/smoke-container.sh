@@ -5,13 +5,13 @@
 # signed mockvendor webhook → poll until settled → assert balance via
 # `docker exec psql`. This is the CONTAINER counterpart to
 # scripts/smoke-test.sh (which builds and runs six binaries on the HOST
-# against Compose Postgres/Redis/RabbitMQ only) — docs/plan/44 Task T1/K4.
+# against Compose Postgres/Redis/RabbitMQ only) — docs/roadmap/archive/44 Task T1/K4.
 #
 # Deliberately standalone: does NOT source scripts/lib.sh and does not
 # start/stop host binaries. lib.sh's lifecycle (build_server, start_services,
 # gen_token, psql_exec against $DB_USER) is for the HOST-BINARY gate; mixing
 # the two process models in one script has bitten this repo before (see
-# PROJECT_GUIDE.md's "one debug script, not repeated source scripts/lib.sh"
+# docs/development/project-guide.md's "one debug script, not repeated source scripts/lib.sh"
 # gotcha) — this script's container lifecycle is self-contained instead.
 #
 # Usage:
@@ -45,11 +45,11 @@ ARTIFACT_DIR="${SEEV_SMOKE_ARTIFACT_DIR:-$ROOT_DIR/.smoke-container-artifacts}"
 HEALTH_DEADLINE_SECS="${SEEV_SMOKE_HEALTH_DEADLINE:-180}"
 SETTLE_DEADLINE_SECS="${SEEV_SMOKE_SETTLE_DEADLINE:-30}"
 
-# Expected app-profile services (3 infra + 6 app = 9) — K4 step 4 requires
+# Expected app-profile services (3 infra + 8 app = 11) — K4 step 4 requires
 # asserting this EXACT set, not just "however many containers the project
 # happens to report" (a stale container from an unrelated profile must not
-# silently count as one of the nine).
-EXPECTED_SERVICES=(postgres redis rabbitmq ledger-service auth-service payin-service payout-service fraud-service gateway-service)
+# silently count as one of the eleven).
+EXPECTED_SERVICES=(postgres redis rabbitmq ledger-service auth-service payin-service payout-service fraud-service admin-bff-service assurance-service gateway-service)
 
 # Per-run credentials (K6) — generated fresh, never committed, never logged
 # raw. docker compose picks these up as env overrides for the `app` profile
@@ -108,6 +108,20 @@ save_diagnostics() {
 log "resetting: docker compose --profile app down -v --remove-orphans"
 docker compose --profile app down -v --remove-orphans >/dev/null 2>&1 || true
 
+# The Postgres container mounts two local backup secret files. A fresh CI
+# runner does not have them yet, so create them before Compose validates its
+# mounts. The target is idempotent, writes only gitignored files, and never
+# prints their values.
+log "generating local backup secrets..."
+make backup-secret >/dev/null
+
+# docs/roadmap/archive/49 K3: every app-profile container now mounts ./deploy/certs
+# read-only (x-cert-volume in docker-compose.yml) — `make certs` writes the
+# CA + per-service leaves there before compose ever starts a container.
+# Idempotent, so re-running this script never thrashes still-fresh certs.
+log "generating mTLS certificates (docs/roadmap/archive/49 K3)..."
+make certs >/dev/null
+
 if [ "${SEEV_SMOKE_NO_BUILD:-0}" = "1" ]; then
 	log "starting profile 'app' with pre-loaded images (--no-build)..."
 	SEEV_IMAGE_TAG="${SEEV_IMAGE_TAG:-ci}" docker compose --profile app up --no-build -d
@@ -145,18 +159,18 @@ fi
 # what `docker compose ps` currently shows running. `docker compose ps`
 # (with or without --profile) lists every container in the whole PROJECT
 # regardless of profile — confirmed empirically: on a machine that also has
-# the `observability` profile containers up (docs/plan/43), `ps --services
+# the `observability` profile containers up (docs/roadmap/archive/43), `ps --services
 # --status running` returned alloy/grafana/loki/prometheus/tempo alongside
-# the 9 app-profile services, which would have made this assertion falsely
+# the 11 app-profile services, which would have made this assertion falsely
 # fail. `config --services` is the STATIC definition instead — immune to
 # whatever else happens to be running in the same Compose project — and is
-# exactly what "the app profile defines precisely these nine services"
+# exactly what "the app profile defines precisely these eleven services"
 # means; each service's own runtime health was already verified above,
 # individually, by name.
 defined_services="$(docker compose --profile app config --services | sort)"
 expected_sorted="$(printf '%s\n' "${EXPECTED_SERVICES[@]}" | sort)"
 if [ "$defined_services" = "$expected_sorted" ]; then
-	ok "'app' profile defines exactly the expected nine services"
+	ok "'app' profile defines exactly the expected eleven services"
 else
 	fail "'app' profile service set does not match expected: got [$defined_services] want [$expected_sorted]"
 fi

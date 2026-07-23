@@ -26,6 +26,7 @@ const (
 	LedgerService_ProvisionUser_FullMethodName                  = "/seev.ledger.v1.LedgerService/ProvisionUser"
 	LedgerService_ConsumeFeeQuote_FullMethodName                = "/seev.ledger.v1.LedgerService/ConsumeFeeQuote"
 	LedgerService_ApplyKycTier_FullMethodName                   = "/seev.ledger.v1.LedgerService/ApplyKycTier"
+	LedgerService_BatchGetAssuranceTransactions_FullMethodName  = "/seev.ledger.v1.LedgerService/BatchGetAssuranceTransactions"
 )
 
 // LedgerServiceClient is the client API for LedgerService service.
@@ -38,10 +39,11 @@ type LedgerServiceClient interface {
 	ResolveFee(ctx context.Context, in *ResolveFeeRequest, opts ...grpc.CallOption) (*ResolveFeeResponse, error)
 	ProvisionUser(ctx context.Context, in *ProvisionUserRequest, opts ...grpc.CallOption) (*ProvisionUserResponse, error)
 	// ConsumeFeeQuote atomically, single-use consumes a fee quote created via
-	// POST /fees/quote (docs/plan/38 Task T5) — additive; ResolveFee remains
+	// POST /fees/quote (docs/roadmap/archive/38 Task T5) — additive; ResolveFee remains
 	// the no-quote fallback for every existing caller.
 	ConsumeFeeQuote(ctx context.Context, in *ConsumeFeeQuoteRequest, opts ...grpc.CallOption) (*ConsumeFeeQuoteResponse, error)
 	ApplyKycTier(ctx context.Context, in *ApplyKycTierRequest, opts ...grpc.CallOption) (*ApplyKycTierResponse, error)
+	BatchGetAssuranceTransactions(ctx context.Context, in *BatchGetAssuranceTransactionsRequest, opts ...grpc.CallOption) (*BatchGetAssuranceTransactionsResponse, error)
 }
 
 type ledgerServiceClient struct {
@@ -122,6 +124,16 @@ func (c *ledgerServiceClient) ApplyKycTier(ctx context.Context, in *ApplyKycTier
 	return out, nil
 }
 
+func (c *ledgerServiceClient) BatchGetAssuranceTransactions(ctx context.Context, in *BatchGetAssuranceTransactionsRequest, opts ...grpc.CallOption) (*BatchGetAssuranceTransactionsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(BatchGetAssuranceTransactionsResponse)
+	err := c.cc.Invoke(ctx, LedgerService_BatchGetAssuranceTransactions_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // LedgerServiceServer is the server API for LedgerService service.
 // All implementations must embed UnimplementedLedgerServiceServer
 // for forward compatibility.
@@ -132,10 +144,11 @@ type LedgerServiceServer interface {
 	ResolveFee(context.Context, *ResolveFeeRequest) (*ResolveFeeResponse, error)
 	ProvisionUser(context.Context, *ProvisionUserRequest) (*ProvisionUserResponse, error)
 	// ConsumeFeeQuote atomically, single-use consumes a fee quote created via
-	// POST /fees/quote (docs/plan/38 Task T5) — additive; ResolveFee remains
+	// POST /fees/quote (docs/roadmap/archive/38 Task T5) — additive; ResolveFee remains
 	// the no-quote fallback for every existing caller.
 	ConsumeFeeQuote(context.Context, *ConsumeFeeQuoteRequest) (*ConsumeFeeQuoteResponse, error)
 	ApplyKycTier(context.Context, *ApplyKycTierRequest) (*ApplyKycTierResponse, error)
+	BatchGetAssuranceTransactions(context.Context, *BatchGetAssuranceTransactionsRequest) (*BatchGetAssuranceTransactionsResponse, error)
 	mustEmbedUnimplementedLedgerServiceServer()
 }
 
@@ -166,6 +179,9 @@ func (UnimplementedLedgerServiceServer) ConsumeFeeQuote(context.Context, *Consum
 }
 func (UnimplementedLedgerServiceServer) ApplyKycTier(context.Context, *ApplyKycTierRequest) (*ApplyKycTierResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ApplyKycTier not implemented")
+}
+func (UnimplementedLedgerServiceServer) BatchGetAssuranceTransactions(context.Context, *BatchGetAssuranceTransactionsRequest) (*BatchGetAssuranceTransactionsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method BatchGetAssuranceTransactions not implemented")
 }
 func (UnimplementedLedgerServiceServer) mustEmbedUnimplementedLedgerServiceServer() {}
 func (UnimplementedLedgerServiceServer) testEmbeddedByValue()                       {}
@@ -314,6 +330,24 @@ func _LedgerService_ApplyKycTier_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _LedgerService_BatchGetAssuranceTransactions_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BatchGetAssuranceTransactionsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(LedgerServiceServer).BatchGetAssuranceTransactions(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: LedgerService_BatchGetAssuranceTransactions_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(LedgerServiceServer).BatchGetAssuranceTransactions(ctx, req.(*BatchGetAssuranceTransactionsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // LedgerService_ServiceDesc is the grpc.ServiceDesc for LedgerService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -348,6 +382,10 @@ var LedgerService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ApplyKycTier",
 			Handler:    _LedgerService_ApplyKycTier_Handler,
+		},
+		{
+			MethodName: "BatchGetAssuranceTransactions",
+			Handler:    _LedgerService_BatchGetAssuranceTransactions_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

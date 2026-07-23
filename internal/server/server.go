@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -28,7 +29,7 @@ func New(cfg config.AppConfig, handler http.Handler) *Server {
 
 // NewWithAddr is like New but binds to an explicit address instead of
 // deriving one from cfg.Port — used for the internal-only listener
-// (docs/plan/10 Task T1), which binds to 127.0.0.1 by default rather than
+// (docs/roadmap/archive/10 Task T1), which binds to 127.0.0.1 by default rather than
 // all interfaces.
 func NewWithAddr(cfg config.AppConfig, addr string, handler http.Handler) *Server {
 	return &Server{
@@ -43,6 +44,18 @@ func NewWithAddr(cfg config.AppConfig, addr string, handler http.Handler) *Serve
 			MaxHeaderBytes:    1 << 20,
 		},
 	}
+}
+
+// NewWithAddrTLS is like NewWithAddr but serves mutual TLS using tlsConfig
+// (docs/roadmap/archive/49 K6) — used for the internal-only listener once its peers
+// are required to present a client certificate. listenAndServe below calls
+// ListenAndServeTLS("", "") when this is set; empty cert/key file
+// arguments are correct because tlsConfig.GetCertificate (built via
+// pkg/tlsx) already supplies the certificate.
+func NewWithAddrTLS(cfg config.AppConfig, addr string, handler http.Handler, tlsConfig *tls.Config) *Server {
+	s := NewWithAddr(cfg, addr, handler)
+	s.httpServer.TLSConfig = tlsConfig
+	return s
 }
 
 // startWithSignals is the testable inner implementation; callers can inject signals.
@@ -81,8 +94,14 @@ func (s *Server) StartWithSignals(cleanup func(), sigs ...os.Signal) error {
 func (s *Server) listenAndServe() <-chan error {
 	errCh := make(chan error, 1)
 	go func() {
-		slog.Info("server: listening", "addr", s.httpServer.Addr, "env", s.cfg.Env)
-		if err := s.httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		slog.Info("server: listening", "addr", s.httpServer.Addr, "env", s.cfg.Env, "tls", s.httpServer.TLSConfig != nil)
+		var err error
+		if s.httpServer.TLSConfig != nil {
+			err = s.httpServer.ListenAndServeTLS("", "")
+		} else {
+			err = s.httpServer.ListenAndServe()
+		}
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- fmt.Errorf("server: listen and serve: %w", err)
 		}
 	}()
@@ -106,7 +125,7 @@ func (s *Server) shutdown() error {
 // SIGTERM is received (or one of them fails to start). On shutdown, every
 // server is gracefully drained before cleanup runs exactly once — this is
 // what wires the public and internal ledger listeners together
-// (docs/plan/10 Task T1; see cmd/gateway/main.go).
+// (docs/roadmap/archive/10 Task T1; see cmd/gateway/main.go).
 func StartMulti(cleanup func(), servers ...*Server) error {
 	return StartMultiWithSignals(cleanup, []os.Signal{syscall.SIGINT, syscall.SIGTERM}, servers...)
 }

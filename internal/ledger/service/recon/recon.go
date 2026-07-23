@@ -1,9 +1,9 @@
-// Package recon implements external settlement reconciliation (docs/plan/16
+// Package recon implements external settlement reconciliation (docs/roadmap/archive/16
 // Task T2, decision K5): import a gateway's settlement report, match it
 // set-based against the internal ledger, and — for anything that doesn't
 // match — let an ops identity request a correction that only moves money
 // once a SECOND identity approves it (reusing the maker-checker governance
-// from internal/ledger/service/adjustments, docs/plan/16 Task T1).
+// from internal/ledger/service/adjustments, docs/roadmap/archive/16 Task T1).
 package recon
 
 import (
@@ -23,7 +23,7 @@ import (
 	"github.com/herdifirdausss/seev/pkg/generalutil"
 )
 
-// maxImportRows caps a single CSV import (docs/plan/16 Task T2 step 3) — a
+// maxImportRows caps a single CSV import (docs/roadmap/archive/16 Task T2 step 3) — a
 // larger settlement file must be split by the caller, never silently
 // processed partially.
 const maxImportRows = 50_000
@@ -36,16 +36,16 @@ type DatabaseSQL interface {
 
 // AdjustmentCreator is the subset of adjustments.Service this package
 // needs — creating a pending adjustment when a discrepancy is resolved.
-// Create() never moves money by itself (docs/plan/16 Task T1) — that only
+// Create() never moves money by itself (docs/roadmap/archive/16 Task T1) — that only
 // happens once a second identity calls Approve, which is exactly the
-// property K5 step 5 requires ("uang tidak bergerak tanpa approve manusia
+// property K5 step 5 requires ("funds must not move without human approval
 // kedua").
 type AdjustmentCreator interface {
 	Create(ctx context.Context, requestedBy, adjType string, amount decimal.Decimal, targetUserID uuid.UUID, metadata map[string]any, reason string) (uuid.UUID, error)
 }
 
 // ImportRow is model.ReconImportRow's alias in this package — parsing/
-// streaming lives in the transport handler (docs/plan/16 Task T2 step 3);
+// streaming lives in the transport handler (docs/roadmap/archive/16 Task T2 step 3);
 // this package only validates and persists already-parsed rows.
 type ImportRow = model.ReconImportRow
 
@@ -60,7 +60,7 @@ func New(db DatabaseSQL, repo repository.ReconRepository, adj AdjustmentCreator)
 }
 
 // ImportBatch validates, persists, and matches one settlement report in a
-// single DB transaction (docs/plan/16 Task T2 steps 3-4): create the batch
+// single DB transaction (docs/roadmap/archive/16 Task T2 steps 3-4): create the batch
 // header, bulk-insert every row as 'missing_internal', run the set-based
 // matcher to promote matches/mismatches and discover internal-only
 // transactions, then mark the batch completed.
@@ -137,7 +137,7 @@ const (
 )
 
 // GetBatchReport returns the batch header, a count per match_status, and a
-// page of items — optionally filtered to one match_status (docs/plan/16
+// page of items — optionally filtered to one match_status (docs/roadmap/archive/16
 // Task T2 step 5).
 func (s *Service) GetBatchReport(ctx context.Context, batchID uuid.UUID, matchStatus string, limit, offset int) (model.ReconBatchReport, error) {
 	batch, err := s.repo.GetBatch(ctx, batchID)
@@ -161,7 +161,7 @@ func (s *Service) GetBatchReport(ctx context.Context, batchID uuid.UUID, matchSt
 	return model.ReconBatchReport{Batch: batch, Counts: counts, Items: items}, nil
 }
 
-// ListBatches returns batches newest first, paginated (docs/plan/25 Task
+// ListBatches returns batches newest first, paginated (docs/roadmap/archive/25 Task
 // T5) — lets an operator find a batch's id without SQL before drilling
 // into GetBatchReport.
 func (s *Service) ListBatches(ctx context.Context, limit, offset int) ([]model.ReconBatch, error) {
@@ -176,7 +176,7 @@ func (s *Service) ListBatches(ctx context.Context, limit, offset int) ([]model.R
 
 // resolvableAdjustmentTypes are the only pending-adjustment types a recon
 // resolution may request — both target a gateway's suspense account, never
-// a user (docs/plan/16 Task T2, decision K5).
+// a user (docs/roadmap/archive/16 Task T2, decision K5).
 var resolvableAdjustmentTypes = map[string]bool{
 	"adjustment_suspense_credit": true,
 	"adjustment_suspense_debit":  true,
@@ -184,7 +184,7 @@ var resolvableAdjustmentTypes = map[string]bool{
 
 // ResolveItem requests a correction for a non-matched recon item — it does
 // NOT move any money itself, only creates a pending adjustment (K5 step 5:
-// "uang tidak bergerak tanpa approve manusia kedua"). adjType must be
+// from a second human"). adjType must be
 // adjustment_suspense_credit or adjustment_suspense_debit — the caller (ops,
 // after investigating the discrepancy) decides direction and amount; this
 // package does not infer one from match_status, since that inference is

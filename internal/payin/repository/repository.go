@@ -20,20 +20,20 @@ import (
 // ErrNotFound is returned by Get when no row exists for the given id.
 var ErrNotFound = errors.New("payin: webhook event not found")
 
-// Repository persists payin webhook events (docs/plan/22 Task T2).
+// Repository persists payin webhook events (docs/roadmap/archive/22 Task T2).
 type Repository interface {
 	// GetOrInsert inserts a new 'received' row for
 	// (ev.Vendor, ev.VendorEventID), or — if a row already exists for that
 	// pair — returns the EXISTING row unchanged, ev is discarded. This is
 	// the sole dedup mechanism (backed by the UNIQUE constraint, never a
 	// read-then-write race): callers branch on the returned row's Status,
-	// not on whether this call happened to insert or not (docs/plan/22
+	// not on whether this call happened to insert or not (docs/roadmap/archive/22
 	// Task T2 step 3 — the flow is identical either way).
 	GetOrInsert(ctx context.Context, ev model.WebhookEvent) (model.WebhookEvent, error)
 
 	MarkPosted(ctx context.Context, id uuid.UUID) error
 	MarkFailed(ctx context.Context, id uuid.UUID, reason string) error
-	// MarkBlocked records a fraud Block verdict (docs/plan/37 Task T4) —
+	// MarkBlocked records a fraud Block verdict (docs/roadmap/archive/37 Task T4) —
 	// distinct from MarkFailed so an operator can tell "fraud rejected this
 	// deposit" apart from "the ledger post itself failed" at a glance.
 	MarkBlocked(ctx context.Context, id uuid.UUID, reason string) error
@@ -44,7 +44,7 @@ type Repository interface {
 	// and/or status (both empty = no filter). Paginated.
 	List(ctx context.Context, vendor, status string, limit, offset int) ([]model.WebhookEvent, error)
 
-	// ─── Topup intents (docs/plan/25 Task T3) ──────────────────────────
+	// ─── Topup intents (docs/roadmap/archive/25 Task T3) ──────────────────────────
 
 	InsertTopupIntent(ctx context.Context, intent model.TopupIntent) error
 	GetTopupIntent(ctx context.Context, id uuid.UUID) (model.TopupIntent, error)

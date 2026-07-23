@@ -21,7 +21,7 @@ import (
 var ErrNotFound = errors.New("payout: request not found")
 
 // Repository persists payout requests and their vendor-call audit trail
-// (docs/plan/23 Task T1). Every state transition is an atomic conditional
+// (docs/roadmap/archive/23 Task T1). Every state transition is an atomic conditional
 // UPDATE (WHERE status = $from) — the sole concurrency-safety mechanism at
 // this layer (a false return, nil error means "lost the race or already
 // there", not a failure). The actual money-movement race protection is the
@@ -54,7 +54,7 @@ type Repository interface {
 	// (e.g. admin-triggered re-Submit of a stuck request).
 	TransitionBackToSubmitted(ctx context.Context, id uuid.UUID) (bool, error)
 	// TransitionToRejected records reason and moves created->rejected
-	// (docs/plan/38 Task T5) — reached ONLY when a fee quote consumption
+	// (docs/roadmap/archive/38 Task T5) — reached ONLY when a fee quote consumption
 	// fails (expired/mismatch) at Create, before any hold was posted.
 	TransitionToRejected(ctx context.Context, id uuid.UUID, reason string) (bool, error)
 
@@ -62,11 +62,11 @@ type Repository interface {
 	// failures that leave status unchanged so the resume job retries.
 	SetError(ctx context.Context, id uuid.UUID, reason string) error
 	// SetQuotedFee records the fee LOCKED IN by a consumed quote
-	// (docs/plan/38 Task T5) — settle uses these stored values instead of
+	// (docs/roadmap/archive/38 Task T5) — settle uses these stored values instead of
 	// re-resolving fee_rules. Does not change status.
 	SetQuotedFee(ctx context.Context, id, quoteID uuid.UUID, feeAmount decimal.Decimal, feeGateway string) error
 	// SetVendor updates which vendor a request is currently routed to
-	// (docs/plan/40 Task T3's failover — a rejected vendor's replacement is
+	// (docs/roadmap/archive/40 Task T3's failover — a rejected vendor's replacement is
 	// persisted here so the audit trail, admin UI, and any later resume
 	// pass all see the CURRENT vendor). Does not change status.
 	SetVendor(ctx context.Context, id uuid.UUID, vendor string) error
@@ -76,17 +76,17 @@ type Repository interface {
 	// and/or vendor (both empty = no filter).
 	List(ctx context.Context, status, vendor string, limit, offset int) ([]model.PayoutRequest, error)
 	// ListStuck returns requests in `status` whose updated_at is older
-	// than olderThan — feeds the resume/polling job (docs/plan/23 Task T3).
+	// than olderThan — feeds the resume/polling job (docs/roadmap/archive/23 Task T3).
 	ListStuck(ctx context.Context, status string, olderThan time.Time, limit int) ([]model.PayoutRequest, error)
 	// CountStuck is ListStuck's unbounded sibling: ONE grouped-count query
 	// across every status in statuses, whole backlog (no LIMIT) — feeds the
-	// payout_stuck_requests gauge (docs/plan/43 K5). Deliberately separate
+	// payout_stuck_requests gauge (docs/roadmap/archive/43 K5). Deliberately separate
 	// from ListStuck: that method caps at 100 rows per resume pass, which
 	// would silently under-report the gauge once the real backlog exceeds
 	// that cap. The returned map omits any status with zero rows; the
 	// caller fills 0 for those.
 	//
-	// Filters on created_at, NOT updated_at (docs/plan/43 T5 regression —
+	// Filters on created_at, NOT updated_at (docs/roadmap/archive/43 T5 regression —
 	// an earlier draft copied ListStuck's updated_at filter here and the
 	// gauge stayed at 0 through an entire live-fire test: the resume job's
 	// OWN retry attempt touches updated_at every cron tick, so a request
@@ -101,7 +101,7 @@ type Repository interface {
 
 	InsertVendorCall(ctx context.Context, call model.PayoutVendorCall) error
 	// ListVendorCalls returns every vendor call ever recorded for a
-	// request, oldest first — mayFailover (docs/plan/40 Task T3) reads
+	// request, oldest first — mayFailover (docs/roadmap/archive/40 Task T3) reads
 	// this to decide whether any call has ever landed accepted/uncertain.
 	ListVendorCalls(ctx context.Context, payoutRequestID uuid.UUID) ([]model.PayoutVendorCall, error)
 }

@@ -23,7 +23,28 @@ PAYIN_DB_NAME="${PAYIN_DB_NAME:-seev_payin}"
 PAYOUT_DB_NAME="${PAYOUT_DB_NAME:-seev_payout}"
 FRAUD_DB_NAME="${FRAUD_DB_NAME:-seev_fraud}"
 GATEWAY_DB_NAME="${GATEWAY_DB_NAME:-seev_gateway}"
+ADMINBFF_DB_NAME="${ADMINBFF_DB_NAME:-seev_adminbff}"
+ASSURANCE_DB_NAME="${ASSURANCE_DB_NAME:-seev_assurance}"
 JWT_SECRET="${JWT_SECRET:-change-me-to-a-random-32-plus-character-secret}"
+# docs/roadmap/archive/49 TM-07: every service now REFUSES to boot with an empty
+# JWT_ISSUER (internal/config validate()) — issuer validation used to be
+# silently skippable by leaving this unset.
+JWT_ISSUER="${JWT_ISSUER:-seev}"
+# docs/roadmap/archive/49 K5: every gRPC server now REFUSES to boot with an empty
+# token (pkg/grpcx.NewServer fails fast — the old no-op-when-empty
+# behavior that silently accepted every call is gone), so this can no
+# longer default to empty the way it used to across this whole harness.
+INTERNAL_GRPC_TOKEN="${INTERNAL_GRPC_TOKEN:-change-me-to-a-random-32-plus-character-token}"
+# docs/roadmap/archive/49 TM-11: the per-IP(+path) rate limiter now actually enforces
+# (previously bypassed by keying on the ephemeral source port) — this
+# harness legitimately fires many requests per minute from ONE machine
+# across many scenarios/scripts sharing that one IP, which production's
+# 10-per-minute default was never sized for. Individual scenarios that
+# specifically test rate-limiter enforcement (e.g. chaos scenario 9) export
+# a much lower override around just their own server startup.
+RATE_LIMIT_REQUESTS="${RATE_LIMIT_REQUESTS:-500}"
+RATE_LIMIT_PER="${RATE_LIMIT_PER:-1m}"
+RATE_LIMIT_BURST="${RATE_LIMIT_BURST:-500}"
 APP_PORT="${APP_PORT:-18080}"
 INTERNAL_PORT="${INTERNAL_PORT:-18081}"
 LEDGER_GRPC_PORT="${LEDGER_GRPC_PORT:-19091}"
@@ -35,7 +56,7 @@ PAYIN_GRPC_PORT="${PAYIN_GRPC_PORT:-19092}"
 PAYIN_ADMIN_PORT="${PAYIN_ADMIN_PORT:-18092}"
 PAYOUT_GRPC_PORT="${PAYOUT_GRPC_PORT:-19093}"
 PAYOUT_ADMIN_PORT="${PAYOUT_ADMIN_PORT:-18093}"
-# docs/plan/45 Task T4: a second payout-service instance sharing the same
+# docs/roadmap/archive/45 Task T4: a second payout-service instance sharing the same
 # Postgres/Redis as the primary (started via start_payout_service_replica,
 # below) — used only by chaos-test.sh's distributed-breaker scenario to
 # prove breaker state converges across two real replicas. Never started by
@@ -44,9 +65,11 @@ PAYOUT2_GRPC_PORT="${PAYOUT2_GRPC_PORT:-19193}"
 PAYOUT2_ADMIN_PORT="${PAYOUT2_ADMIN_PORT:-18193}"
 FRAUD_GRPC_PORT="${FRAUD_GRPC_PORT:-19094}"
 FRAUD_ADMIN_PORT="${FRAUD_ADMIN_PORT:-18094}"
+ADMINBFF_PORT="${ADMINBFF_PORT:-18095}"
+ASSURANCE_PORT="${ASSURANCE_PORT:-18096}"
 REDIS_HOST_PORT="${REDIS_HOST_PORT:-6380}"
 
-# docs/plan/44 K7: SEEV_WORK_DIR lets a caller (T4's scheduled workflow, one
+# docs/roadmap/archive/44 K7: SEEV_WORK_DIR lets a caller (T4's scheduled workflow, one
 # job running business-e2e then chaos-all in sequence) pin two EXACT
 # directories under $RUNNER_TEMP instead of two unrelated mktemp paths — so
 # a failure-only artifact upload step can name them directly. Local/default
@@ -82,19 +105,30 @@ AUTH_BIN="$WORK_DIR/auth-service"
 PAYIN_BIN="$WORK_DIR/payin-service"
 PAYOUT_BIN="$WORK_DIR/payout-service"
 FRAUD_BIN="$WORK_DIR/fraud-service"
+ADMINBFF_BIN="$WORK_DIR/admin-bff-service"
+ASSURANCE_BIN="$WORK_DIR/assurance-service"
 GENTOKEN_BIN="$WORK_DIR/gentoken"
+CERTGEN_BIN="$WORK_DIR/certgen"
+# docs/roadmap/archive/49 K3: every service loads its own identity + the shared CA
+# from one directory (cmd/certgen's output layout) — generated fresh into
+# this run's own WORK_DIR, never committed, never reused across runs.
+CERT_DIR="$WORK_DIR/certs"
 GATEWAY_LOG="$WORK_DIR/gateway.log"
 LEDGER_LOG="$WORK_DIR/ledger-service.log"
 AUTH_LOG="$WORK_DIR/auth-service.log"
 PAYIN_LOG="$WORK_DIR/payin-service.log"
 PAYOUT_LOG="$WORK_DIR/payout-service.log"
 FRAUD_LOG="$WORK_DIR/fraud-service.log"
+ADMINBFF_LOG="$WORK_DIR/admin-bff-service.log"
+ASSURANCE_LOG="$WORK_DIR/assurance-service.log"
 GATEWAY_PID_FILE="$WORK_DIR/gateway.pid"
 LEDGER_PID_FILE="$WORK_DIR/ledger-service.pid"
 AUTH_PID_FILE="$WORK_DIR/auth-service.pid"
 PAYIN_PID_FILE="$WORK_DIR/payin-service.pid"
 PAYOUT_PID_FILE="$WORK_DIR/payout-service.pid"
 FRAUD_PID_FILE="$WORK_DIR/fraud-service.pid"
+ADMINBFF_PID_FILE="$WORK_DIR/admin-bff-service.pid"
+ASSURANCE_PID_FILE="$WORK_DIR/assurance-service.pid"
 PAYOUT2_LOG="$WORK_DIR/payout-service-2.log"
 PAYOUT2_PID_FILE="$WORK_DIR/payout-service-2.pid"
 
@@ -145,6 +179,30 @@ wait_for_container_healthy() {
 	return 1
 }
 
+# Docker keeps a container's last healthy status briefly while an asynchronous
+# `docker restart` is still waiting to stop it. A caller that only waits for
+# `healthy` can therefore start the next service against a database that is
+# already on its way down. Require an observable unhealthy/restarting state
+# before waiting for the real post-restart healthy state.
+wait_for_container_restart() {
+	local container=$1 tries=60 transitioned=0
+	while [ "$tries" -gt 0 ]; do
+		local status
+		status="$(docker inspect "$container" --format '{{.State.Health.Status}}' 2>/dev/null || echo "missing")"
+		if [ "$status" != "healthy" ]; then
+			transitioned=1
+			break
+		fi
+		sleep 0.2
+		tries=$((tries - 1))
+	done
+	if [ "$transitioned" -ne 1 ]; then
+		fail "$container restart did not leave the healthy state"
+		return 1
+	fi
+	wait_for_container_healthy "$container"
+}
+
 ensure_deps_up() {
 	log "ensuring postgres/redis/rabbitmq are up..."
 	docker compose up -d postgres redis rabbitmq >/dev/null 2>&1
@@ -160,7 +218,7 @@ ensure_deps_up() {
 # existing Docker volumes, where entrypoint init scripts no longer run.
 ensure_service_dbs() {
 	local service database role exists
-	for service in ledger auth payin payout fraud gateway; do
+	for service in ledger auth payin payout fraud gateway adminbff assurance; do
 		database="seev_${service}"
 		role="${service}_app"
 		exists="$(docker exec -i "$POSTGRES_CONTAINER" psql -U "$DB_USER" -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname = '$database'")"
@@ -201,6 +259,12 @@ apply_migrations() {
 	for f in migrations/gateway/*.up.sql; do
 		docker exec -i "$POSTGRES_CONTAINER" psql -U "$DB_USER" -d "$GATEWAY_DB_NAME" -v ON_ERROR_STOP=0 <"$f" >/dev/null 2>&1 || true
 	done
+	for f in migrations/adminbff/*.up.sql; do
+		docker exec -i "$POSTGRES_CONTAINER" psql -U "$DB_USER" -d "$ADMINBFF_DB_NAME" -v ON_ERROR_STOP=0 <"$f" >/dev/null 2>&1 || true
+	done
+	for f in migrations/assurance/*.up.sql; do
+		docker exec -i "$POSTGRES_CONTAINER" psql -U "$DB_USER" -d "$ASSURANCE_DB_NAME" -v ON_ERROR_STOP=0 <"$f" >/dev/null 2>&1 || true
+	done
 	local service_dir
 	for service_dir in migrations/*; do
 		[ -d "$service_dir" ] || continue
@@ -210,6 +274,8 @@ apply_migrations() {
 		[ "$service_dir" = "migrations/payout" ] && continue
 		[ "$service_dir" = "migrations/fraud" ] && continue
 		[ "$service_dir" = "migrations/gateway" ] && continue
+		[ "$service_dir" = "migrations/adminbff" ] && continue
+		[ "$service_dir" = "migrations/assurance" ] && continue
 		for f in "$service_dir"/*.up.sql; do
 			[ -f "$f" ] || continue
 			docker exec -i "$POSTGRES_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=0 <"$f" >/dev/null 2>&1 || true
@@ -222,10 +288,12 @@ apply_migrations() {
 	ensure_app_role "$PAYOUT_DB_NAME" payout_app payout_app
 	ensure_app_role "$FRAUD_DB_NAME" fraud_app fraud_app
 	ensure_app_role "$GATEWAY_DB_NAME" gateway_app gateway_app
+	ensure_app_role "$ADMINBFF_DB_NAME" adminbff_app adminbff_app
+	ensure_app_role "$ASSURANCE_DB_NAME" assurance_app assurance_app
 }
 
 # ensure_app_role provisions the restricted login role the server actually
-# connects as (docs/plan/16 Task T3) — the docker-compose postgres-init
+# connects as (docs/roadmap/archive/16 Task T3) — the docker-compose postgres-init
 # script only runs on a container's FIRST boot, which a script reusing an
 # existing volume can't assume, so this is the idempotent belt-and-suspenders
 # version run every time.
@@ -246,14 +314,32 @@ ensure_app_role() {
 # ─── Server lifecycle ───────────────────────────────────────────────────────
 
 build_server() {
-	log "building gateway + ledger-service + auth-service + payin-service + payout-service + fraud-service + gentoken binaries..."
+	log "building gateway + ledger-service + auth-service + payin-service + payout-service + fraud-service + admin-bff-service + assurance-service + gentoken + certgen binaries..."
 	go build -o "$GATEWAY_BIN" ./cmd/gateway
 	go build -o "$LEDGER_BIN" ./cmd/ledger-service
 	go build -o "$AUTH_BIN" ./cmd/auth-service
 	go build -o "$PAYIN_BIN" ./cmd/payin-service
 	go build -o "$PAYOUT_BIN" ./cmd/payout-service
 	go build -o "$FRAUD_BIN" ./cmd/fraud-service
+	go build -o "$ADMINBFF_BIN" ./cmd/admin-bff-service
+	go build -o "$ASSURANCE_BIN" ./cmd/assurance-service
 	go build -o "$GENTOKEN_BIN" ./cmd/gentoken
+	go build -o "$CERTGEN_BIN" ./cmd/certgen
+	generate_certs
+}
+
+# generate_certs (docs/roadmap/archive/49 K3) issues a fresh CA plus one leaf per
+# known identity into $CERT_DIR, once per run — every start_*_service
+# function below points TLS_CERT_DIR at this same directory. Idempotent
+# within a run (certgen's own --force-less issue skips a still-fresh
+# leaf), but $CERT_DIR itself lives under $WORK_DIR so a genuinely fresh
+# CA is generated every run, never reused stale across runs.
+generate_certs() {
+	log "generating mTLS certificates (docs/roadmap/archive/49 K3) into $CERT_DIR..."
+	"$CERTGEN_BIN" init-ca --out "$CERT_DIR"
+	for service in gateway auth ledger payin payout fraud admin-bff assurance dev-operator prometheus backup-agent; do
+		"$CERTGEN_BIN" issue --service "$service" --out "$CERT_DIR"
+	done
 }
 
 start_fraud_service() {
@@ -276,6 +362,12 @@ start_fraud_service() {
 		export RABBITMQ_PASSWORD=seev
 		export RABBITMQ_EXCHANGE=ledger.events
 		export JWT_SECRET=$JWT_SECRET
+		export JWT_ISSUER=$JWT_ISSUER
+		export RATE_LIMIT_REQUESTS=$RATE_LIMIT_REQUESTS
+		export RATE_LIMIT_PER=$RATE_LIMIT_PER
+		export RATE_LIMIT_BURST=$RATE_LIMIT_BURST
+		export TLS_CERT_DIR=$CERT_DIR
+		export INTERNAL_GRPC_TOKEN=$INTERNAL_GRPC_TOKEN
 		export SCREENING_MODE="${SCREENING_MODE:-off}"
 		export SCREENING_AMOUNT_THRESHOLD="${SCREENING_AMOUNT_THRESHOLD:-0}"
 		export SCREENING_VELOCITY_MAX_PER_HOUR="${SCREENING_VELOCITY_MAX_PER_HOUR:-0}"
@@ -283,7 +375,7 @@ start_fraud_service() {
 		nohup "$FRAUD_BIN" >>"$FRAUD_LOG" 2>&1 &
 		echo $! >"$FRAUD_PID_FILE"
 	)
-	wait_for_service_up fraud-service "http://localhost:$FRAUD_ADMIN_PORT/health" "$FRAUD_PID_FILE" "$FRAUD_LOG"
+	wait_for_service_up fraud-service "https://localhost:$FRAUD_ADMIN_PORT/health" "$FRAUD_PID_FILE" "$FRAUD_LOG"
 }
 
 start_payout_service() {
@@ -304,15 +396,21 @@ start_payout_service() {
 		export LEDGER_GRPC_ADDR=localhost:$LEDGER_GRPC_PORT
 		export FRAUD_GRPC_ADDR=localhost:$FRAUD_GRPC_PORT
 		export JWT_SECRET=$JWT_SECRET
+		export JWT_ISSUER=$JWT_ISSUER
+		export RATE_LIMIT_REQUESTS=$RATE_LIMIT_REQUESTS
+		export RATE_LIMIT_PER=$RATE_LIMIT_PER
+		export RATE_LIMIT_BURST=$RATE_LIMIT_BURST
+		export TLS_CERT_DIR=$CERT_DIR
+		export INTERNAL_GRPC_TOKEN=$INTERNAL_GRPC_TOKEN
 		export VENDOR_MOCKVENDOR_ENABLED=true
 		export VENDOR_MOCKVENDOR_SECRET="${VENDOR_MOCKVENDOR_SECRET:-script-test-mockvendor-secret-at-least-32-chars-long}"
-		# mockvendor2 registered alongside mockvendor (docs/plan/40 Task T4) —
+		# mockvendor2 registered alongside mockvendor (docs/roadmap/archive/40 Task T4) —
 		# purely additive: only reachable once a routing rule actually points
 		# at it (seeded by chaos-test.sh's vendor-failover scenario), every
 		# other flow is unaffected.
 		export MOCKVENDOR2_ENABLED=true
 		export MOCKVENDOR2_SECRET="${MOCKVENDOR2_SECRET:-script-test-mockvendor2-secret-at-least-32-chars-long}"
-		# docs/plan/45 Task T2/K3: off by default (matches production
+		# docs/roadmap/archive/45 Task T2/K3: off by default (matches production
 		# BREAKER_DISTRIBUTED default false) — a scenario opts in by
 		# exporting BREAKER_DISTRIBUTED=true before calling this.
 		export BREAKER_DISTRIBUTED="${BREAKER_DISTRIBUTED:-false}"
@@ -320,12 +418,12 @@ start_payout_service() {
 		nohup "$PAYOUT_BIN" >>"$PAYOUT_LOG" 2>&1 &
 		echo $! >"$PAYOUT_PID_FILE"
 	)
-	wait_for_service_up payout-service "http://localhost:$PAYOUT_ADMIN_PORT/health" "$PAYOUT_PID_FILE" "$PAYOUT_LOG"
+	wait_for_service_up payout-service "https://localhost:$PAYOUT_ADMIN_PORT/health" "$PAYOUT_PID_FILE" "$PAYOUT_LOG"
 }
 
 # start_payout_service_replica starts a SECOND payout-service process (same
 # binary, same Postgres DB and Redis instance as the primary) on the
-# PAYOUT2_* ports — docs/plan/45 Task T4's distributed-breaker-across-
+# PAYOUT2_* ports — docs/roadmap/archive/45 Task T4's distributed-breaker-across-
 # replicas scenario needs two real processes sharing one breaker backend,
 # not two separately-provisioned stacks. Never called by start_services;
 # only chaos-test.sh's own scenario reaches for this directly, and must
@@ -348,6 +446,12 @@ start_payout_service_replica() {
 		export LEDGER_GRPC_ADDR=localhost:$LEDGER_GRPC_PORT
 		export FRAUD_GRPC_ADDR=localhost:$FRAUD_GRPC_PORT
 		export JWT_SECRET=$JWT_SECRET
+		export JWT_ISSUER=$JWT_ISSUER
+		export RATE_LIMIT_REQUESTS=$RATE_LIMIT_REQUESTS
+		export RATE_LIMIT_PER=$RATE_LIMIT_PER
+		export RATE_LIMIT_BURST=$RATE_LIMIT_BURST
+		export TLS_CERT_DIR=$CERT_DIR
+		export INTERNAL_GRPC_TOKEN=$INTERNAL_GRPC_TOKEN
 		export VENDOR_MOCKVENDOR_ENABLED=true
 		export VENDOR_MOCKVENDOR_SECRET="${VENDOR_MOCKVENDOR_SECRET:-script-test-mockvendor-secret-at-least-32-chars-long}"
 		export MOCKVENDOR2_ENABLED=true
@@ -357,7 +461,7 @@ start_payout_service_replica() {
 		nohup "$PAYOUT_BIN" >>"$PAYOUT2_LOG" 2>&1 &
 		echo $! >"$PAYOUT2_PID_FILE"
 	)
-	wait_for_service_up payout-service-2 "http://localhost:$PAYOUT2_ADMIN_PORT/health" "$PAYOUT2_PID_FILE" "$PAYOUT2_LOG"
+	wait_for_service_up payout-service-2 "https://localhost:$PAYOUT2_ADMIN_PORT/health" "$PAYOUT2_PID_FILE" "$PAYOUT2_LOG"
 }
 
 kill_payout_replica_hard() {
@@ -395,6 +499,12 @@ start_payin_service() {
 		export LEDGER_GRPC_ADDR=localhost:$LEDGER_GRPC_PORT
 		export FRAUD_GRPC_ADDR=localhost:$FRAUD_GRPC_PORT
 		export JWT_SECRET=$JWT_SECRET
+		export JWT_ISSUER=$JWT_ISSUER
+		export RATE_LIMIT_REQUESTS=$RATE_LIMIT_REQUESTS
+		export RATE_LIMIT_PER=$RATE_LIMIT_PER
+		export RATE_LIMIT_BURST=$RATE_LIMIT_BURST
+		export TLS_CERT_DIR=$CERT_DIR
+		export INTERNAL_GRPC_TOKEN=$INTERNAL_GRPC_TOKEN
 		export VENDOR_MOCKVENDOR_ENABLED=true
 		export VENDOR_MOCKVENDOR_SECRET="${VENDOR_MOCKVENDOR_SECRET:-script-test-mockvendor-secret-at-least-32-chars-long}"
 		export MOCKVENDOR2_ENABLED=true
@@ -403,18 +513,18 @@ start_payin_service() {
 		nohup "$PAYIN_BIN" >>"$PAYIN_LOG" 2>&1 &
 		echo $! >"$PAYIN_PID_FILE"
 	)
-	wait_for_service_up payin-service "http://localhost:$PAYIN_ADMIN_PORT/health" "$PAYIN_PID_FILE" "$PAYIN_LOG"
+	wait_for_service_up payin-service "https://localhost:$PAYIN_ADMIN_PORT/health" "$PAYIN_PID_FILE" "$PAYIN_LOG"
 }
 
 # gen_token mints a JWT via cmd/gentoken (see that package's own doc comment)
 # — the single canonical implementation, no more hand-rolled heredocs.
-# gentoken defaults kyc_level to 1 (docs/plan/39 Task T6, gotcha #9) so
+# gentoken defaults kyc_level to 1 (docs/roadmap/archive/39 Task T6, gotcha #9) so
 # every existing gen_token call site in smoke-test.sh/chaos-test.sh keeps
 # posting to gated routes without any change — pass an explicit ttl+level
 # ("1h" "0") only if a script specifically wants to exercise the KYC gate
 # itself.
 gen_token() {
-	JWT_SECRET="$JWT_SECRET" "$GENTOKEN_BIN" "$@"
+	JWT_SECRET="$JWT_SECRET" JWT_ISSUER="$JWT_ISSUER" "$GENTOKEN_BIN" "$@"
 }
 
 start_ledger_service() {
@@ -438,11 +548,17 @@ start_ledger_service() {
 		export RABBITMQ_EXCHANGE=ledger.events
 		export FRAUD_GRPC_ADDR=localhost:$FRAUD_GRPC_PORT
 		export JWT_SECRET=$JWT_SECRET
+		export JWT_ISSUER=$JWT_ISSUER
+		export RATE_LIMIT_REQUESTS=$RATE_LIMIT_REQUESTS
+		export RATE_LIMIT_PER=$RATE_LIMIT_PER
+		export RATE_LIMIT_BURST=$RATE_LIMIT_BURST
+		export TLS_CERT_DIR=$CERT_DIR
+		export INTERNAL_GRPC_TOKEN=$INTERNAL_GRPC_TOKEN
 		export LOG_FORMAT=json
 		nohup "$LEDGER_BIN" >>"$LEDGER_LOG" 2>&1 &
 		echo $! >"$LEDGER_PID_FILE"
 	)
-	wait_for_service_up ledger-service "http://localhost:$LEDGER_APP_PORT/health" "$LEDGER_PID_FILE" "$LEDGER_LOG"
+	wait_for_service_up ledger-service "https://localhost:$LEDGER_APP_PORT/health" "$LEDGER_PID_FILE" "$LEDGER_LOG"
 }
 
 start_gateway() {
@@ -452,7 +568,7 @@ start_gateway() {
 		export INTERNAL_APP_PORT=$INTERNAL_PORT
 		export POSTGRES_HOST=localhost
 		export POSTGRES_PORT=$DB_HOST_PORT
-		# docs/plan/16 Task T3: the running app connects as the restricted
+		# docs/roadmap/archive/16 Task T3: the running app connects as the restricted
 		# app_service role, never the schema owner ($DB_USER, used only for
 		# migrations/assertions in this script) — same split as production.
 		export POSTGRES_USER=gateway_app
@@ -466,8 +582,14 @@ start_gateway() {
 		export RABBITMQ_PASSWORD=seev
 		export RABBITMQ_EXCHANGE=ledger.events
 		export JWT_SECRET=$JWT_SECRET
+		export JWT_ISSUER=$JWT_ISSUER
+		export RATE_LIMIT_REQUESTS=$RATE_LIMIT_REQUESTS
+		export RATE_LIMIT_PER=$RATE_LIMIT_PER
+		export RATE_LIMIT_BURST=$RATE_LIMIT_BURST
+		export TLS_CERT_DIR=$CERT_DIR
+		export INTERNAL_GRPC_TOKEN=$INTERNAL_GRPC_TOKEN
 		export LEDGER_GRPC_ADDR=localhost:$LEDGER_GRPC_PORT
-		export LEDGER_USER_API_URL=http://localhost:$LEDGER_APP_PORT
+		export LEDGER_USER_API_URL=https://localhost:$LEDGER_APP_PORT
 		export PAYIN_GRPC_ADDR=localhost:$PAYIN_GRPC_PORT
 		export PAYOUT_GRPC_ADDR=localhost:$PAYOUT_GRPC_PORT
 		export LOG_FORMAT=json
@@ -497,12 +619,19 @@ start_auth_service() {
 		export REDIS_ENABLED="${REDIS_ENABLED:-true}"
 		export REDIS_ADDR=localhost:$REDIS_HOST_PORT
 		export LEDGER_GRPC_ADDR=localhost:$LEDGER_GRPC_PORT
+		export FRAUD_GRPC_ADDR=localhost:$FRAUD_GRPC_PORT
 		export JWT_SECRET=$JWT_SECRET
+		export JWT_ISSUER=$JWT_ISSUER
+		export RATE_LIMIT_REQUESTS=$RATE_LIMIT_REQUESTS
+		export RATE_LIMIT_PER=$RATE_LIMIT_PER
+		export RATE_LIMIT_BURST=$RATE_LIMIT_BURST
+		export TLS_CERT_DIR=$CERT_DIR
+		export INTERNAL_GRPC_TOKEN=$INTERNAL_GRPC_TOKEN
 		export LOG_FORMAT=json
 		nohup "$AUTH_BIN" >>"$AUTH_LOG" 2>&1 &
 		echo $! >"$AUTH_PID_FILE"
 	)
-	wait_for_service_up auth-service "http://localhost:$AUTH_INTERNAL_PORT/health" "$AUTH_PID_FILE" "$AUTH_LOG"
+	wait_for_service_up auth-service "https://localhost:$AUTH_INTERNAL_PORT/health" "$AUTH_PID_FILE" "$AUTH_LOG"
 }
 
 start_services() {
@@ -512,13 +641,113 @@ start_services() {
 	start_payin_service
 	start_payout_service
 	start_gateway
+	start_assurance_service
+}
+
+start_assurance_service() {
+	log "starting assurance-service (http $ASSURANCE_PORT)..."
+	(
+		export APP_NAME=assurance-service
+		export APP_PORT=$ASSURANCE_PORT
+		export POSTGRES_HOST=localhost
+		export POSTGRES_PORT=$DB_HOST_PORT
+		export POSTGRES_USER=assurance_app
+		export POSTGRES_PASSWORD=assurance_app
+		export POSTGRES_DB=$ASSURANCE_DB_NAME
+		export POSTGRES_SSL_MODE=disable
+		export PAYIN_GRPC_ADDR=localhost:$PAYIN_GRPC_PORT
+		export PAYOUT_GRPC_ADDR=localhost:$PAYOUT_GRPC_PORT
+		export LEDGER_GRPC_ADDR=localhost:$LEDGER_GRPC_PORT
+		export INTERNAL_GRPC_TOKEN=$INTERNAL_GRPC_TOKEN
+		export TLS_CERT_DIR=$CERT_DIR
+		export JWT_SECRET=$JWT_SECRET
+		export JWT_ISSUER=$JWT_ISSUER
+		export RATE_LIMIT_REQUESTS=$RATE_LIMIT_REQUESTS
+		export RATE_LIMIT_PER=$RATE_LIMIT_PER
+		export RATE_LIMIT_BURST=$RATE_LIMIT_BURST
+		export ASSURANCE_INTERVAL="${ASSURANCE_INTERVAL:-60s}"
+		export ASSURANCE_CONSISTENCY_DELAY="${ASSURANCE_CONSISTENCY_DELAY:-2m}"
+		export LOG_FORMAT=json
+		nohup "$ASSURANCE_BIN" >>"$ASSURANCE_LOG" 2>&1 &
+		echo $! >"$ASSURANCE_PID_FILE"
+	)
+	wait_for_service_up assurance-service "https://localhost:$ASSURANCE_PORT/health" "$ASSURANCE_PID_FILE" "$ASSURANCE_LOG"
+}
+
+start_adminbff_service() {
+	log "starting admin-bff-service (http $ADMINBFF_PORT)..."
+	(
+		export APP_NAME=admin-bff-service
+		export APP_PORT=$ADMINBFF_PORT
+		export POSTGRES_HOST=localhost
+		export POSTGRES_PORT=$DB_HOST_PORT
+		export POSTGRES_USER=adminbff_app
+		export POSTGRES_PASSWORD=adminbff_app
+		export POSTGRES_DB=$ADMINBFF_DB_NAME
+		export POSTGRES_SSL_MODE=disable
+		export JWT_SECRET=$JWT_SECRET
+		export JWT_ISSUER=$JWT_ISSUER
+		export RATE_LIMIT_REQUESTS=$RATE_LIMIT_REQUESTS
+		export RATE_LIMIT_PER=$RATE_LIMIT_PER
+		export RATE_LIMIT_BURST=$RATE_LIMIT_BURST
+		export TLS_CERT_DIR=$CERT_DIR
+		# AUTH_SERVICE_URL targets auth's PUBLIC login endpoint and stays
+		# plain (docs/roadmap/archive/49 anti-scope edge exception); every other
+		# downstream target here is genuinely internal and flips to https.
+		export AUTH_SERVICE_URL="${AUTH_SERVICE_URL:-http://localhost:$AUTH_APP_PORT}"
+		export AUTH_ADMIN_SERVICE_URL="${AUTH_ADMIN_SERVICE_URL:-https://localhost:$AUTH_INTERNAL_PORT}"
+		export LEDGER_SERVICE_URL="${LEDGER_SERVICE_URL:-https://localhost:$LEDGER_INTERNAL_PORT}"
+		export PAYIN_SERVICE_URL="${PAYIN_SERVICE_URL:-https://localhost:$PAYIN_ADMIN_PORT}"
+		export PAYOUT_SERVICE_URL="${PAYOUT_SERVICE_URL:-https://localhost:$PAYOUT_ADMIN_PORT}"
+		export FRAUD_SERVICE_URL="${FRAUD_SERVICE_URL:-https://localhost:$FRAUD_ADMIN_PORT}"
+		export GATEWAY_SERVICE_URL="${GATEWAY_SERVICE_URL:-https://localhost:$INTERNAL_PORT}"
+		export ADMIN_BFF_SECURE_COOKIE="${ADMIN_BFF_SECURE_COOKIE:-false}"
+		export LOG_FORMAT=json
+		nohup "$ADMINBFF_BIN" >>"$ADMINBFF_LOG" 2>&1 &
+		echo $! >"$ADMINBFF_PID_FILE"
+	)
+	wait_for_service_up admin-bff-service "https://localhost:$ADMINBFF_PORT/health" "$ADMINBFF_PID_FILE" "$ADMINBFF_LOG"
+}
+
+# docs/roadmap/archive/49 K6: every internal/admin listener now requires mTLS, so any
+# curl targeting one must present the dev-operator client identity — the
+# same identity a real operator's manual curl/browser session would use.
+# A drop-in wrapper rather than touching every call site's URL string:
+# rewrites http:// to https:// anywhere in the arguments before delegating
+# to real curl, so callers only need their `curl` renamed to
+# `curl_internal`, nothing else. Public endpoints (gateway/auth's edge)
+# must never be routed through this — they stay on plain curl.
+#
+# -k/--insecure is required, not optional: this repo's certs carry ONLY a
+# URI SAN (spiffe://seev/<service>, docs/roadmap/archive/49 K3/K4), never a DNS SAN —
+# pkg/tlsx's Go clients handle that via a custom VerifyConnection hook
+# (InsecureSkipVerify + manual chain verification + URI SAN check), but
+# curl exposes no equivalent "verify the chain, skip hostname matching"
+# knob — only all-or-nothing. --cacert/--cert/--key above still present a
+# real client identity and the SERVER still enforces its allowlist; this
+# harness simply doesn't verify the server's identity back, which is an
+# acceptable, deliberately scoped gap for local dev/test tooling — never
+# how two Go services actually talk to each other in this repo.
+curl_internal() {
+	local args=() arg
+	for arg in "$@"; do
+		case "$arg" in
+		http://*) args+=("https://${arg#http://}") ;;
+		*) args+=("$arg") ;;
+		esac
+	done
+	curl -k --cacert "$CERT_DIR/ca.pem" --cert "$CERT_DIR/dev-operator.pem" --key "$CERT_DIR/dev-operator-key.pem" "${args[@]}"
 }
 
 wait_for_service_up() {
 	local name=$1 url=$2 pid_file=$3 log_file=$4
 	local tries=30
+	local check=curl
+	case "$url" in
+	https://*) check=curl_internal ;;
+	esac
 	while [ "$tries" -gt 0 ]; do
-		if curl -s -o /dev/null "$url"; then
+		if "$check" -s -o /dev/null "$url"; then
 			log "$name is up (pid $(cat "$pid_file" 2>/dev/null))"
 			return 0
 		fi
@@ -550,7 +779,7 @@ start_server() { start_services; }
 # wait_for_service_up would sometimes report a stale survivor as "up" — the
 # same false-positive-health-check failure mode as the stop_server_gracefully
 # bug above, just from a different mechanism. Real bug found reproducing
-# docs/plan/34 T2 scenario 5/6/7 failures that only appeared inside `all`,
+# docs/roadmap/archive/34 T2 scenario 5/6/7 failures that only appeared inside `all`,
 # never in isolation.
 wait_for_pid_gone() {
 	local pid=$1 tries=100
@@ -589,7 +818,7 @@ stop_gateway_only() {
 # the other five processes, which then squat on the next scenario's ports
 # and get silently misreported as "up" by wait_for_service_up (a stale
 # survivor answering the same health-check URL). Real bug found running
-# `chaos-test.sh all` end to end for docs/plan/34 T2: five scenarios called
+# `chaos-test.sh all` end to end for docs/roadmap/archive/34 T2: five scenarios called
 # this expecting a full stop and got only gateway killed.
 stop_server_gracefully() { stop_services; }
 
@@ -629,6 +858,20 @@ stop_services() {
 		kill -TERM "$fraud_pid" 2>/dev/null || true
 		wait_for_pid_gone "$fraud_pid"
 		rm -f "$FRAUD_PID_FILE"
+	fi
+	if [ -f "$ADMINBFF_PID_FILE" ]; then
+		local adminbff_pid
+		adminbff_pid="$(cat "$ADMINBFF_PID_FILE")"
+		kill -TERM "$adminbff_pid" 2>/dev/null || true
+		wait_for_pid_gone "$adminbff_pid"
+		rm -f "$ADMINBFF_PID_FILE"
+	fi
+	if [ -f "$ASSURANCE_PID_FILE" ]; then
+		local assurance_pid
+		assurance_pid="$(cat "$ASSURANCE_PID_FILE")"
+		kill -TERM "$assurance_pid" 2>/dev/null || true
+		wait_for_pid_gone "$assurance_pid"
+		rm -f "$ASSURANCE_PID_FILE"
 	fi
 }
 
@@ -682,6 +925,16 @@ kill_fraud_hard() {
 	fi
 }
 
+kill_assurance_hard() {
+	if [ -f "$ASSURANCE_PID_FILE" ]; then
+		local pid
+		pid="$(cat "$ASSURANCE_PID_FILE")"
+		log "kill -9 assurance-service pid $pid"
+		kill -9 "$pid" 2>/dev/null || true
+		rm -f "$ASSURANCE_PID_FILE"
+	fi
+}
+
 # ─── Test data helpers ───────────────────────────────────────────────────────
 
 provision_user() {
@@ -720,16 +973,27 @@ provision_hold_account() {
 # money_in credits whoever's JWT `sub` claim is on the request, NOT any
 # target_user_id in the body (internal/ledger/processors/money_in.go) — so
 # this mints a token for user_id itself, not the caller/service identity.
-# Idempotency key is stable per user_id, so re-running against an
-# already-funded account (same Postgres volume) is a safe idempotent no-op.
+# Repeated runs against a reused development volume top up only the delta to
+# the requested target. The delta uses its own idempotency key, so the helper
+# remains safe if a process is interrupted after the ledger post.
 fund_user() {
 	local user_id=$1
 	local amount=${2:-1000000}
+	local cash current delta
+	cash="$(cash_account_id "$user_id")"
+	current="$(account_balance "$cash")"
+	if ! [[ "$current" =~ ^[0-9]+$ ]]; then
+		current=0
+	fi
+	delta=$((amount - current))
+	if [ "$delta" -le 0 ]; then
+		return 0
+	fi
 	local fund_token
 	fund_token="$(gen_token "$user_id")"
-	curl -s -o /dev/null -X POST "http://localhost:$LEDGER_INTERNAL_PORT/api/v1/ledger/transactions" \
+	curl_internal -s -o /dev/null -X POST "http://localhost:$LEDGER_INTERNAL_PORT/api/v1/ledger/transactions" \
 		-H "Authorization: Bearer $fund_token" -H "Content-Type: application/json" \
-		-d "{\"idempotency_key\":\"fund-$user_id\",\"type\":\"money_in\",\"amount\":\"$amount\",\"metadata\":{\"gateway\":\"bca\"}}"
+		-d "{\"idempotency_key\":\"fund-$user_id-$delta\",\"type\":\"money_in\",\"amount\":\"$delta\",\"metadata\":{\"gateway\":\"bca\"}}"
 }
 
 cash_account_id() {
@@ -750,7 +1014,7 @@ json_field() {
 }
 
 # wait_for_payout_status polls payout_requests.status until it matches want
-# or tries (default 40, 2s apart = 80s) are exhausted (docs/plan/45 Task T1,
+# or tries (default 40, 2s apart = 80s) are exhausted (docs/roadmap/archive/45 Task T1,
 # K1's own admitted API-behavior change): POST /api/v1/payout now returns
 # right after hold+enqueue — the vendor result (settled/vendor_pending/
 # cancelled/failed) is always driven asynchronously by the relay's own
@@ -773,7 +1037,7 @@ wait_for_payout_status() {
 
 # wait_for_vendor_call polls payout_vendor_calls until at least one row with
 # the given outcome ('accepted'|'rejected'|'uncertain') has been recorded
-# for id, or tries (default 40, 1s apart) are exhausted. docs/plan/45 Task
+# for id, or tries (default 40, 1s apart) are exhausted. docs/roadmap/archive/45 Task
 # T1: dispatch is now async (the relay's own ~1s poll interval), so a test
 # that needs to prove "the vendor was genuinely called and returned X"
 # before taking its next step (e.g. rewriting a mock destination to let a
@@ -794,7 +1058,7 @@ wait_for_vendor_call() {
 
 # wait_for_vendor_command_status polls the LIVE (pending/processing/failed)
 # payout_vendor_commands row for a request until its status matches want, or
-# tries (default 40, 1s apart) are exhausted. docs/plan/45 Task T1: used
+# tries (default 40, 1s apart) are exhausted. docs/roadmap/archive/45 Task T1: used
 # when a test needs to know a command has fully finished a dispatch attempt
 # (i.e. FailCommand/CompleteCommand has actually committed) before mutating
 # state the relay itself also touches — waiting on payout_vendor_calls alone
@@ -813,7 +1077,7 @@ wait_for_vendor_command_status() {
 	return 1
 }
 
-# ─── KYC dance helpers (docs/plan/39 Task T6, gotcha #9 master) ─────────────
+# ─── KYC dance helpers (docs/roadmap/archive/39 Task T6, gotcha #9 master) ─────────────
 #
 # Every script that transacts as a REAL registered user (not a gen_token
 # fixture — see gen_token's own doc comment for why gentoken users don't
@@ -825,7 +1089,7 @@ wait_for_vendor_command_status() {
 # (auth_port's public listener) — the mock provider auto-approves L1 when no
 # mock_mode is given — then refreshes to obtain a NEW token pair carrying
 # the updated kyc_level claim (the claim only refreshes on login/refresh,
-# docs/plan/39 Task T4, so the caller's OLD access token stays stuck at
+# docs/roadmap/archive/39 Task T4, so the caller's OLD access token stays stuck at
 # whatever level it was minted with). Echoes the RAW refresh response JSON
 # to stdout — refresh tokens rotate (single-use), so the caller MUST
 # extract and keep the NEW refresh_token too (json_field refresh_token), or
@@ -841,7 +1105,7 @@ kyc_approve_l1() {
 }
 
 # kyc_submit_l2_and_admin_approve submits L2 (the mock provider ALWAYS
-# refers L2 to manual review, regardless of mock_mode — docs/plan/39's own
+# refers L2 to manual review, regardless of mock_mode — docs/roadmap/archive/39's own
 # locked decision), approves it with an admin token against auth's INTERNAL
 # listener (auth_internal_port), then refreshes. Echoes the RAW refresh
 # response JSON to stdout — same rotating-refresh-token caveat as
@@ -853,7 +1117,7 @@ kyc_submit_l2_and_admin_approve() {
 		-H "Authorization: Bearer $access_token" -H "Content-Type: application/json" \
 		-d '{"level_requested":2}')"
 	submission_id="$(echo "$submit_resp" | json_field id)"
-	curl -s -o /dev/null -X POST "http://localhost:$auth_internal_port/api/v1/admin/kyc/submissions/$submission_id/approve" \
+	curl_internal -s -o /dev/null -X POST "http://localhost:$auth_internal_port/api/v1/admin/kyc/submissions/$submission_id/approve" \
 		-H "Authorization: Bearer $admin_token" -H "Content-Type: application/json"
 	curl -s -X POST "http://localhost:$auth_port/api/v1/auth/refresh" \
 		-H "Content-Type: application/json" -d "{\"refresh_token\":\"$refresh_token\"}"
@@ -900,7 +1164,7 @@ await_log_line() {
 
 # assert_metric_value curls a /metrics endpoint and asserts a Prometheus
 # gauge/counter's CURRENT value for a line matching every given "label=value"
-# substring (docs/plan/45 Task T4 — cache_redis_backend_active,
+# substring (docs/roadmap/archive/45 Task T4 — cache_redis_backend_active,
 # vendorgw_breaker_backend). Label order in the exposition text is never
 # assumed (client_golang doesn't guarantee it), so each label is checked as
 # an independent substring on the already-narrowed-down line rather than a
@@ -910,7 +1174,11 @@ assert_metric_value() {
 	local url=$1 metric=$2 expected=$3 desc=$4
 	shift 4
 	local matches="" label value
-	matches="$(curl -s "$url" | grep "^${metric}{")"
+	local fetch=curl
+	case "$url" in
+	https://*) fetch=curl_internal ;;
+	esac
+	matches="$("$fetch" -s "$url" | grep "^${metric}{")"
 	for label in "$@"; do
 		matches="$(printf '%s\n' "$matches" | grep -F -- "$label")"
 	done

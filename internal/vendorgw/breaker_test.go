@@ -72,7 +72,7 @@ func TestHealthTracker_HalfOpenProbe_FailureReopensImmediately(t *testing.T) {
 }
 
 // TestHealthTracker_HalfOpenSingleProbe_RaceSafe is the DoD's "half-open
-// probe single-flight (dua goroutine -> satu probe)" requirement — run
+// probe single-flight (two goroutines -> one probe)" requirement — run
 // with -race. Many goroutines call Allow concurrently right as the
 // cooldown elapses; exactly one must observe true.
 func TestHealthTracker_HalfOpenSingleProbe_RaceSafe(t *testing.T) {
@@ -100,7 +100,7 @@ func TestHealthTracker_HalfOpenSingleProbe_RaceSafe(t *testing.T) {
 // TestHealthTracker_RecordSuccess_NeverTrips proves the breaker-side half
 // of gotcha #13 (business rejections must not trip the breaker): the
 // CALLER decides whether a business rejection maps to RecordSuccess (it
-// must, per docs/plan/40 Task T1 Langkah #3) — from the tracker's own
+// must, per docs/roadmap/archive/40 Task T1 Step #3) — from the tracker's own
 // point of view, repeated RecordSuccess calls (however many "business
 // rejections" they represent) must never open the circuit.
 func TestHealthTracker_RecordSuccess_NeverTrips(t *testing.T) {

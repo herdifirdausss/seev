@@ -88,7 +88,7 @@ func TestRequireJSON_RejectsWrongContentType(t *testing.T) {
 
 func TestRequireJSON_AllowsMultipartFormData(t *testing.T) {
 	// File uploads (e.g. POST /admin/recon/batches's CSV import,
-	// docs/plan/16 Task T2) are the one legitimate non-JSON body.
+	// docs/roadmap/archive/16 Task T2) are the one legitimate non-JSON body.
 	for _, method := range []string{http.MethodPost, http.MethodPut, http.MethodPatch} {
 		t.Run(method, func(t *testing.T) {
 			handler := RequireJSON()(okHandler())

@@ -1,10 +1,10 @@
 //go:build integration
 
 // Package payout_test drives internal/payout.Module.Create end to end
-// against a real ledger.Module and real Postgres (docs/plan/23 Task T3's
-// required test: "saldo user turun saat hold, dana pindah benar saat
-// settle, kembali utuh saat cancel/failed; fn_verify_ledger_balance bersih
-// di semua jalur") — proves the whole vertical: hold -> vendor submission
+// against a real ledger.Module and real Postgres (docs/roadmap/archive/23 Task T3's
+// required test: "the user balance decreases on hold, funds move correctly on
+// settle, and are fully returned on cancel/failed; fn_verify_ledger_balance is
+// clean on every path") — proves the whole vertical: hold -> vendor submission
 // -> terminal state -> balance change, not just each piece in isolation.
 package payout_test
 
@@ -47,7 +47,7 @@ func setupPayoutTestDB(t *testing.T) *database.DBSQL {
 	const dbName, dbUser, dbPassword = "seev_test", "test", "secret"
 
 	container, err := postgres.Run(ctx,
-		"postgres:16-alpine",
+		"postgres:16.14-alpine",
 		postgres.WithDatabase(dbName),
 		postgres.WithUsername(dbUser),
 		postgres.WithPassword(dbPassword),
@@ -176,7 +176,7 @@ func mockDestination(mode string) []byte {
 }
 
 // TestPayout_Create_InstantSettle_EndToEnd proves the synchronous path
-// (docs/plan/23 Task T3's "instant-settle" mode): Create alone drives
+// (docs/roadmap/archive/23 Task T3's "instant-settle" mode): Create alone drives
 // created -> held -> submitted -> settled, the hold amount actually leaves
 // the user's cash balance, and the ledger stays balanced throughout.
 func TestPayout_Create_InstantSettle_EndToEnd(t *testing.T) {
@@ -190,7 +190,7 @@ func TestPayout_Create_InstantSettle_EndToEnd(t *testing.T) {
 	id, err := payoutModule.Create(ctx, userID, decimal.NewFromInt(100_000), mockDestination(""), "test", "")
 	require.NoError(t, err)
 
-	// docs/plan/45 Task T1: Create returns after hold+enqueue — the vendor
+	// docs/roadmap/archive/45 Task T1: Create returns after hold+enqueue — the vendor
 	// result now always comes from a separate relay dispatch pass, even in
 	// "instant-settle" mode.
 	req, err := payoutModule.Get(ctx, id)
@@ -216,7 +216,7 @@ func TestPayout_Create_InstantSettle_EndToEnd(t *testing.T) {
 }
 
 // TestPayout_Create_Async_ResumeJobSettles proves the async path
-// (docs/plan/23 Task T3's "async" mode + step 3's resume/polling job):
+// (docs/roadmap/archive/23 Task T3's "async" mode + step 3's resume/polling job):
 // Create leaves the request vendor_pending because the vendor hasn't
 // resolved it yet; once the vendor (simulated via CompletePending)
 // eventually settles it out of band, ResumeStuck's Query-based polling
@@ -289,7 +289,7 @@ func TestPayout_Create_VendorFails_MoneyReturnedToCash(t *testing.T) {
 	assertLedgerBalanced(t, db)
 }
 
-// TestPayout_Create_WithWithdrawFee_SettleChargesFee proves docs/plan/25
+// TestPayout_Create_WithWithdrawFee_SettleChargesFee proves docs/roadmap/archive/25
 // Task T2's withdraw fee: with fee rules installed, an instant-settle
 // payout debits the FULL amount from hold, credits settlement amount−fee,
 // and credits fee[platform] the fee — the platform actually earns revenue.
@@ -374,7 +374,7 @@ func feeAccountID(t *testing.T, db *database.DBSQL, qualifier string) uuid.UUID 
 
 // setFeeRuleFlat updates a fee_rules row's flat_minor_units in place —
 // simulates an admin re-pricing AFTER a quote already locked in the old
-// fee (docs/plan/38 Task T5's own KEY requirement).
+// fee (docs/roadmap/archive/38 Task T5's own KEY requirement).
 func setFeeRuleFlat(t *testing.T, db *database.DBSQL, userID uuid.UUID, txType string, flat int64) {
 	t.Helper()
 	_, err := db.ExecContext(context.Background(),
@@ -383,7 +383,7 @@ func setFeeRuleFlat(t *testing.T, db *database.DBSQL, userID uuid.UUID, txType s
 }
 
 // TestPayout_QuoteHonoredAtSettle_EvenIfFeeRuleChangesBeforeSettle is
-// docs/plan/38 Task T5's KEY test: the fee actually charged at settle must
+// docs/roadmap/archive/38 Task T5's KEY test: the fee actually charged at settle must
 // equal the fee LOCKED IN at Create (via the quote), never a fresh
 // fee_rules lookup, even when an admin re-prices in between.
 func TestPayout_QuoteHonoredAtSettle_EvenIfFeeRuleChangesBeforeSettle(t *testing.T) {
@@ -474,7 +474,7 @@ func TestPayout_ResumeJobSettle_UsesStoredFee(t *testing.T) {
 }
 
 // TestPayout_QuoteExpired_Returns422_NoHold_LedgerUntouched_RowRejected
-// proves docs/plan/38 Task T5's anti-burn ordering: a quote that's already
+// proves docs/roadmap/archive/38 Task T5's anti-burn ordering: a quote that's already
 // expired by the time Create runs must reject BEFORE any hold is posted —
 // no money moves, the ledger is untouched, and the row lands in the
 // terminal 'rejected' status (never 'created' forever, never 'held').
@@ -508,7 +508,7 @@ func TestPayout_QuoteExpired_Returns422_NoHold_LedgerUntouched_RowRejected(t *te
 }
 
 // TestPayout_ResumeStuck_SubmittedWithNoCommand_RecoversAndSettles proves
-// docs/plan/45 Task T1/K1's genuine crash-gap recovery: a 'submitted'
+// docs/roadmap/archive/45 Task T1/K1's genuine crash-gap recovery: a 'submitted'
 // request whose command row is missing entirely (EnqueueInitialSubmit's own
 // atomicity already rules this out in normal operation — this simulates a
 // manual/corrupted-data recovery scenario, the belt-and-braces case the

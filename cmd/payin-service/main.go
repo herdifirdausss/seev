@@ -27,6 +27,7 @@ import (
 	"github.com/herdifirdausss/seev/pkg/grpcx"
 	"github.com/herdifirdausss/seev/pkg/ledgerclient"
 	"github.com/herdifirdausss/seev/pkg/logger"
+	"github.com/herdifirdausss/seev/pkg/tlsx"
 	"github.com/herdifirdausss/seev/pkg/tracing"
 )
 
@@ -51,8 +52,17 @@ func probeHealth(getenv func(string) string) error {
 	if port == "" {
 		port = "8092"
 	}
-	client := &http.Client{Timeout: 3 * time.Second}
-	res, err := client.Get("http://127.0.0.1:" + port + "/health")
+	certDir := getenv("TLS_CERT_DIR")
+	if certDir == "" {
+		certDir = "deploy/certs"
+	}
+	certSrc, err := tlsx.LoadFromDir(certDir, "dev-operator", slog.Default())
+	if err != nil {
+		return fmt.Errorf("load healthcheck TLS identity: %w", err)
+	}
+	defer certSrc.Stop()
+	client := tlsx.HTTPClient(certSrc, tlsx.IdentityPayin, 3*time.Second)
+	res, err := client.Get("https://127.0.0.1:" + port + "/health")
 	if err != nil {
 		return err
 	}
@@ -75,6 +85,13 @@ func run(parent context.Context) error {
 		cfg.GRPCPort = "9092"
 	}
 	log := logger.New(cfg.Logger.Pkg())
+	// docs/roadmap/archive/49 K3/K5: load this process's own identity + the shared CA
+	// before anything else.
+	certSrc, err := tlsx.LoadFromDir(cfg.TLSCertDir, "payin", log)
+	if err != nil {
+		return fmt.Errorf("load TLS certificates: %w", err)
+	}
+	defer certSrc.Stop()
 	ctx, cancel := signal.NotifyContext(parent, syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 	shutdownTracing, err := tracing.Setup(ctx, tracing.Config{
@@ -92,7 +109,7 @@ func run(parent context.Context) error {
 		return fmt.Errorf("connect postgres: %w", err)
 	}
 	// Redis is entirely optional for payin-service today — its only
-	// consumer is an opt-in distributed breaker (docs/plan/45 Task T2,
+	// consumer is an opt-in distributed breaker (docs/roadmap/archive/45 Task T2,
 	// BREAKER_DISTRIBUTED, default false). Same nil-means-disabled
 	// convention as payout/ledger-service's own Redis wiring; DB 0 is safe
 	// to share with payout's own breaker keys since every key is namespaced
@@ -111,7 +128,7 @@ func run(parent context.Context) error {
 		}
 		redisClient = redisCache.Redis()
 	}
-	ledgerConn, err := grpcx.Dial(ctx, cfg.LedgerGRPCAddr, cfg.InternalGRPCToken)
+	ledgerConn, err := grpcx.Dial(ctx, cfg.LedgerGRPCAddr, cfg.InternalGRPCToken, tlsx.ClientConfig(certSrc, tlsx.IdentityLedger))
 	if err != nil {
 		if redisCache != nil {
 			_ = redisCache.Close()
@@ -134,12 +151,12 @@ func run(parent context.Context) error {
 		log.Info("vendorgw: distributed breaker enabled", "namespace", "payin")
 	}
 
-	// fraud client screens deposits pre-posting (docs/plan/37 Task T4).
+	// fraud client screens deposits pre-posting (docs/roadmap/archive/37 Task T4).
 	// FRAUD_GRPC_ADDR unset (dev/test defaults) => nil client => no screening.
 	var fraudClient *fraudcheck.Client
 	var fraudConn *grpc.ClientConn
 	if cfg.FraudGRPCAddr != "" {
-		fraudConn, err = grpcx.DialLazy(ctx, cfg.FraudGRPCAddr, cfg.InternalGRPCToken)
+		fraudConn, err = grpcx.DialLazy(ctx, cfg.FraudGRPCAddr, cfg.InternalGRPCToken, tlsx.ClientConfig(certSrc, tlsx.IdentityFraud))
 		if err != nil {
 			_ = ledgerConn.Close()
 			if redisCache != nil {
@@ -153,7 +170,21 @@ func run(parent context.Context) error {
 	}
 
 	module := payin.NewModule(db, ledgerclient.New(ledgerConn), registry, cfg.Vendor.TopupIntentTTL, log, fraudClient, breaker)
-	grpcServer := grpcx.NewServer(log, cfg.InternalGRPCToken)
+	// docs/roadmap/archive/49 K4: gateway calls payin's gRPC surface for user-facing
+	// topup flows; assurance-service (TM-09 — added after K4 was written,
+	// see docs/security/threat-model.md §4) reads it for cross-service
+	// correlation. Verified live: no other caller exists.
+	grpcServer, err := grpcx.NewServer(log, cfg.InternalGRPCToken, tlsx.ServerConfig(certSrc, []string{
+		tlsx.IdentityGateway, tlsx.IdentityAssurance,
+	}))
+	if err != nil {
+		_ = ledgerConn.Close()
+		if redisCache != nil {
+			_ = redisCache.Close()
+		}
+		_ = db.Close()
+		return fmt.Errorf("create grpc server: %w", err)
+	}
 	module.RegisterGRPC(grpcServer)
 	grpcListener, err := net.Listen("tcp", ":"+cfg.GRPCPort)
 	if err != nil {
@@ -164,7 +195,10 @@ func run(parent context.Context) error {
 		_ = db.Close()
 		return fmt.Errorf("listen grpc: %w", err)
 	}
-	httpServer := &http.Server{Addr: ":" + cfg.App.Port, Handler: adminRouter(cfg, module, log), ReadTimeout: cfg.App.ReadTimeout, WriteTimeout: cfg.App.WriteTimeout, IdleTimeout: cfg.App.IdleTimeout, ReadHeaderTimeout: 5 * time.Second, MaxHeaderBytes: 1 << 20}
+	// docs/roadmap/archive/49 K6: payin's admin listener is internal-only mTLS.
+	httpServer := &http.Server{Addr: ":" + cfg.App.Port, Handler: adminRouter(cfg, module, log), ReadTimeout: cfg.App.ReadTimeout, WriteTimeout: cfg.App.WriteTimeout, IdleTimeout: cfg.App.IdleTimeout, ReadHeaderTimeout: 5 * time.Second, MaxHeaderBytes: 1 << 20, TLSConfig: tlsx.ServerConfig(certSrc, []string{
+		tlsx.IdentityDevOperator, tlsx.IdentityPrometheus, tlsx.IdentityAdminBFF,
+	})}
 	errCh := make(chan error, 2)
 	go serveGRPC(grpcServer, grpcListener, errCh)
 	go serveHTTP(httpServer, errCh)
@@ -199,7 +233,13 @@ func run(parent context.Context) error {
 }
 
 func serveHTTP(server *http.Server, errCh chan<- error) {
-	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+	var err error
+	if server.TLSConfig != nil {
+		err = server.ListenAndServeTLS("", "")
+	} else {
+		err = server.ListenAndServe()
+	}
+	if err != nil && !errors.Is(err, http.ErrServerClosed) {
 		errCh <- err
 	}
 }

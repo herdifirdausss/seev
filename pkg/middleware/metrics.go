@@ -10,7 +10,7 @@ import (
 )
 
 // httpBuckets is prometheus.DefBuckets with one bucket boundary inserted at
-// exactly 2s — docs/plan/43 K6's "vendor webhook latency" SLI is defined as
+// exactly 2s — docs/roadmap/archive/43 K6's "vendor webhook latency" SLI is defined as
 // an event-count ratio against a literal `le="2"` bucket
 // (`total - bucket(le="2")`), not a histogram_quantile estimate. DefBuckets
 // alone has 1 and 2.5 but no exact 2 — the T5 recording rule for that SLI
@@ -20,7 +20,7 @@ import (
 var httpBuckets = []float64{.005, .01, .025, .05, .1, .25, .5, 1, 2, 2.5, 5, 10}
 
 // httpRequestDuration is package-level, registered once regardless of how
-// many times WithHTTPMetrics is installed (docs/plan/43 K5) — no `service`
+// many times WithHTTPMetrics is installed (docs/roadmap/archive/43 K5) — no `service`
 // label: the Prometheus scrape config's own `job` label already identifies
 // which service a series came from.
 var httpRequestDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
@@ -30,12 +30,12 @@ var httpRequestDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
 }, []string{"method", "route", "status_code"})
 
 // WithHTTPMetrics records one http_server_request_duration_seconds
-// observation per request (docs/plan/43 K5) — install right after
+// observation per request (docs/roadmap/archive/43 K5) — install right after
 // WithTracing (and WithRoutePattern, see route.go), before WithLogger,
 // matching the mandated chain order. Uses httpsnoop.CaptureMetrics rather
 // than a bare ResponseWriter wrapper so a handler further down the chain
 // that needs http.Flusher/Hijacker/Pusher/io.ReaderFrom (SSE, websocket
-// upgrade, proxying) keeps working — see docs/plan/43 K5's own note on
+// upgrade, proxying) keeps working — see docs/roadmap/archive/43 K5's own note on
 // this. The route comes from RouteFromCtx, not r.Pattern — see
 // WithTracing's own doc comment for why reading r.Pattern after dispatch is
 // unreliable once WithLogger's r.WithContext(...) sits in between.

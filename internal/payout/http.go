@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 
+	"github.com/herdifirdausss/seev/internal/payout/model"
 	"github.com/herdifirdausss/seev/internal/payout/repository"
 	"github.com/herdifirdausss/seev/internal/vendorgw"
 	"github.com/herdifirdausss/seev/pkg/middleware"
@@ -30,12 +31,12 @@ func currentUserID(r *http.Request) (uuid.UUID, bool) {
 
 func isAdmin(r *http.Request) bool {
 	claims := middleware.GetClaims(r.Context())
-	return claims != nil && claims.Role == "admin"
+	return claims != nil && (claims.Role == "admin" || claims.Role == "admin_maker" || claims.Role == "admin_checker")
 }
 
 // errNonIntegralAmount and decimalFromString mirror
 // internal/ledger/transport's own (unexported, cross-module-inaccessible)
-// helpers of the same name — the ledger is minor-unit-only (docs/plan/01
+// helpers of the same name — the ledger is minor-unit-only (docs/roadmap/archive/01
 // decision D2), so a fractional amount here would create/destroy money
 // once posted as withdraw_initiate downstream.
 var errNonIntegralAmount = errors.New("amount must be an integer (minor units, no fractional part)")
@@ -76,7 +77,7 @@ type createPayoutRequest struct {
 	Destination json.RawMessage `json:"destination"`
 }
 
-// CreateHandler serves POST /api/v1/payout (docs/plan/23 Task T5) — creates
+// CreateHandler serves POST /api/v1/payout (docs/roadmap/archive/23 Task T5) — creates
 // a payout request for the authenticated user and drives it through
 // hold -> vendor submission synchronously. A Pending or even a Failed
 // vendor outcome still returns 201: the request itself was created and is
@@ -132,7 +133,7 @@ func (m *Module) CreateHandler() http.HandlerFunc {
 	}
 }
 
-// GetHandler serves GET /api/v1/payout/{id} (docs/plan/23 Task T5).
+// GetHandler serves GET /api/v1/payout/{id} (docs/roadmap/archive/23 Task T5).
 // Ownership is a direct comparison against payout_requests.user_id — no
 // CanAccessAccount-style indirection needed the way ledger's
 // account-ownership model requires, since this table already carries
@@ -170,7 +171,7 @@ func (m *Module) GetHandler() http.HandlerFunc {
 
 // AdminRouter returns the payout module's admin HTTP surface, already at
 // its final paths (/admin/payout/...) — mount directly, no prefix
-// stripping needed (docs/plan/23 Task T5, same mounting pattern as
+// stripping needed (docs/roadmap/archive/23 Task T5, same mounting pattern as
 // internal/payin.Module.AdminRouter). Internal-router only; every handler
 // is also admin-gated inside itself, defense in depth, same pattern as
 // every other /admin/* surface in this codebase.
@@ -186,14 +187,152 @@ func (m *Module) AdminRouter() http.Handler {
 	mux.HandleFunc("PUT /admin/payout/vendor-gateways/{vendor}", m.putVendorGatewayHandler)
 	mux.HandleFunc("POST /admin/payout/vendors/{vendor}/force-fail", m.vendorForceFailHandler)
 	mux.HandleFunc("GET /admin/payout/vendors/health", m.vendorHealthHandler)
+	mux.HandleFunc("GET /admin/payout/vendor-commands/dead", m.listDeadCommandsHandler)
+	mux.HandleFunc("POST /admin/payout/vendor-commands/dead/{id}/replay", m.replayDeadCommandHandler)
+	mux.HandleFunc("POST /admin/payout/vendor-commands/dead/replay-all", m.replayAllDeadCommandsHandler)
+	mux.HandleFunc("POST /admin/payout/intake/pause", m.directPauseHandler)
 	return mux
+}
+
+type intakePauseRequest struct {
+	CommandID        string `json:"command_id"`
+	ExpectedRevision int64  `json:"expected_revision"`
+	Reason           string `json:"reason"`
+}
+
+func (m *Module) directPauseHandler(w http.ResponseWriter, r *http.Request) {
+	claims := middleware.GetClaims(r.Context())
+	if claims == nil || claims.Role != "admin" {
+		response.Forbidden(w, "direct pause requires admin role")
+		return
+	}
+	var request intakePauseRequest
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil || request.Reason == "" {
+		response.BadRequest(w, "command_id and reason are required")
+		return
+	}
+	commandID, err := uuid.Parse(request.CommandID)
+	if err != nil {
+		response.BadRequest(w, "command_id must be a UUID")
+		return
+	}
+	actor := claims.UserID
+	if actor == "" {
+		actor = claims.Email
+	}
+	result, err := m.ApplyIntakeControl(r.Context(), commandID, "pause", request.ExpectedRevision, actor, request.Reason)
+	if err != nil {
+		if errors.Is(err, ErrIntakeRevisionMismatch) {
+			response.Conflict(w, "intake revision mismatch")
+			return
+		}
+		response.InternalServerError(w, err)
+		return
+	}
+	response.OK(w, result)
+}
+
+type deadCommandResponse struct {
+	ID              uuid.UUID `json:"id"`
+	PayoutRequestID uuid.UUID `json:"payout_request_id"`
+	Vendor          string    `json:"vendor"`
+	Attempt         int       `json:"attempt"`
+	Status          string    `json:"status"`
+	RetryCount      int       `json:"retry_count"`
+	MaxRetries      int       `json:"max_retries"`
+	LastError       string    `json:"last_error,omitempty"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
+}
+
+func toDeadCommandResponse(c model.PayoutVendorCommand) deadCommandResponse {
+	return deadCommandResponse{ID: c.ID, PayoutRequestID: c.PayoutRequestID, Vendor: c.Vendor,
+		Attempt: c.Attempt, Status: c.Status, RetryCount: c.RetryCount, MaxRetries: c.MaxRetries,
+		LastError: c.LastError, CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt}
+}
+
+func (m *Module) listDeadCommandsHandler(w http.ResponseWriter, r *http.Request) {
+	if !isAdmin(r) {
+		response.Forbidden(w, "admin privileges required")
+		return
+	}
+	limit, offset := 50, 0
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		if value, err := strconv.Atoi(raw); err != nil || value <= 0 {
+			response.BadRequest(w, "limit must be positive")
+			return
+		} else {
+			limit = value
+		}
+	}
+	if raw := r.URL.Query().Get("offset"); raw != "" {
+		if value, err := strconv.Atoi(raw); err != nil || value < 0 {
+			response.BadRequest(w, "offset must be non-negative")
+			return
+		} else {
+			offset = value
+		}
+	}
+	commands, err := m.commandRepo.ListDeadCommands(r.Context(), limit, offset)
+	if err != nil {
+		response.InternalServerError(w, err)
+		return
+	}
+	out := make([]deadCommandResponse, len(commands))
+	for i, command := range commands {
+		out[i] = toDeadCommandResponse(command)
+	}
+	response.OK(w, map[string]any{"commands": out})
+}
+
+func (m *Module) replayDeadCommandHandler(w http.ResponseWriter, r *http.Request) {
+	if !isAdmin(r) {
+		response.Forbidden(w, "admin privileges required")
+		return
+	}
+	id, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		response.BadRequest(w, "invalid vendor command id")
+		return
+	}
+	if err := m.commandRepo.ReplayDeadCommand(r.Context(), id); err != nil {
+		if errors.Is(err, repository.ErrCommandNotFound) {
+			response.NotFound(w, "dead vendor command not found")
+		} else {
+			response.InternalServerError(w, err)
+		}
+		return
+	}
+	response.OK(w, map[string]any{"replayed": true, "id": id})
+}
+
+func (m *Module) replayAllDeadCommandsHandler(w http.ResponseWriter, r *http.Request) {
+	if !isAdmin(r) {
+		response.Forbidden(w, "admin privileges required")
+		return
+	}
+	olderThan := time.Now()
+	if raw := r.URL.Query().Get("older_than"); raw != "" {
+		parsed, err := time.Parse(time.RFC3339, raw)
+		if err != nil {
+			response.BadRequest(w, "older_than must be RFC3339")
+			return
+		}
+		olderThan = parsed
+	}
+	count, err := m.commandRepo.ReplayAllDeadCommands(r.Context(), olderThan)
+	if err != nil {
+		response.InternalServerError(w, err)
+		return
+	}
+	response.OK(w, map[string]any{"replayed": count})
 }
 
 type vendorHealthResponse struct {
 	Vendors []vendorgw.VendorHealth `json:"vendors"`
 }
 
-// vendorHealthHandler serves GET /admin/payout/vendors/health (docs/plan/40
+// vendorHealthHandler serves GET /admin/payout/vendors/health (docs/roadmap/archive/40
 // Task T5 — see internal/payin/http.go's own vendorHealthHandler doc
 // comment for why this is namespaced under /admin/payout/ rather than the
 // doc's shorthand "/admin/vendors/health"). nil breaker reports an empty
@@ -211,7 +350,7 @@ func (m *Module) vendorHealthHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // forceFailSwitch is implemented by mockvendor.PayoutProvider only
-// (docs/plan/40 Task T4) — a narrow, package-local interface so this
+// (docs/roadmap/archive/40 Task T4) — a narrow, package-local interface so this
 // production module never imports the test-only mockvendor package
 // directly; any registered vendor that doesn't support it simply reports
 // itself as unsupported below.
@@ -222,7 +361,7 @@ type vendorForceFailRequest struct {
 }
 
 // vendorForceFailHandler serves POST /admin/payout/vendors/{vendor}/force-fail
-// (docs/plan/40 Task T4) — test-only chaos tooling: flips a registered
+// (docs/roadmap/archive/40 Task T4) — test-only chaos tooling: flips a registered
 // vendor's force-fail switch so every Submit against it returns a genuine
 // transport-style error regardless of destination content, tripping the
 // circuit breaker from realistic end-to-end traffic instead of reaching

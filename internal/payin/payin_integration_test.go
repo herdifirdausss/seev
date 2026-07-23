@@ -1,7 +1,7 @@
 //go:build integration
 
 // Package payin_test drives internal/payin.Module.HandleWebhook end to end
-// against a real ledger.Module and real Postgres (docs/plan/22 Task T2) —
+// against a real ledger.Module and real Postgres (docs/roadmap/archive/22 Task T2) —
 // proves the whole vertical: signature verification -> dedup -> money_in
 // posting -> balance change -> recon-ready metadata, not just each piece in
 // isolation.
@@ -45,7 +45,7 @@ func setupPayinTestDB(t *testing.T) *database.DBSQL {
 	const dbName, dbUser, dbPassword = "seev_test", "test", "secret"
 
 	container, err := postgres.Run(ctx,
-		"postgres:16-alpine",
+		"postgres:16.14-alpine",
 		postgres.WithDatabase(dbName),
 		postgres.WithUsername(dbUser),
 		postgres.WithPassword(dbPassword),
@@ -199,7 +199,7 @@ func TestPayin_HandleWebhook_EndToEnd_PostsMoneyInAndUpdatesBalance(t *testing.T
 }
 
 // TestPayin_HandleWebhook_ConcurrentDuplicateDelivery_ExactlyOneMoneyIn
-// proves the dedup guarantee under a real race (docs/plan/22 Task T2 DoD):
+// proves the dedup guarantee under a real race (docs/roadmap/archive/22 Task T2 DoD):
 // the same webhook delivered by N concurrent goroutines results in exactly
 // one money_in posting and one balance increase, not N.
 func TestPayin_HandleWebhook_ConcurrentDuplicateDelivery_ExactlyOneMoneyIn(t *testing.T) {
@@ -272,7 +272,7 @@ func TestPayin_HandleWebhook_BadSignature_NoRowWritten_BalanceUnchanged(t *testi
 }
 
 // TestPayin_ReplayEvent_FailedEvent_PostsSuccessfully_ThenRejectsDoublePost
-// is docs/plan/22 Task T4's required integration test: a 'failed' webhook
+// is docs/roadmap/archive/22 Task T4's required integration test: a 'failed' webhook
 // event can be replayed and money moves exactly once — a second replay of
 // the same now-posted event is rejected outright, never a second money_in.
 //
@@ -283,7 +283,7 @@ func TestPayin_HandleWebhook_BadSignature_NoRowWritten_BalanceUnchanged(t *testi
 // constraint (amount > 0) already rejects a bad amount at the very first
 // INSERT — before any Go-level Validate() runs at all — and every OTHER
 // realistic failure mode (missing/suspended account) is a STRUCTURAL
-// failure (rolls back, never commits 'failed') per docs/plan/14's
+// failure (rolls back, never commits 'failed') per docs/roadmap/archive/14's
 // validateAccounts design, not a business one. Both were verified
 // empirically while writing this test. In practice, then, a 'failed'
 // payin_webhook_events row today mainly arises from a hook/processor this
@@ -325,7 +325,7 @@ func TestPayin_ReplayEvent_FailedEvent_PostsSuccessfully_ThenRejectsDoublePost(t
 }
 
 // TestPayin_Topup_FullJourney_CreateWebhookSettleIdempotent proves the
-// complete docs/plan/25 Task T3 vertical end to end against a real
+// complete docs/roadmap/archive/25 Task T3 vertical end to end against a real
 // Postgres + real ledger: create intent -> signed webhook carrying the
 // intent's Reference in external_ref (with a DELIBERATELY DIFFERENT
 // payload user_id, proving the vendor genuinely never needs to know the

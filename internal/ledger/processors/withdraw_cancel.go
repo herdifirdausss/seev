@@ -15,7 +15,7 @@ import (
 // 6. WithdrawCancel — user.hold → user.cash (disbursement failed)
 //
 // ReferenceID (required) must point at the withdraw_initiate this cancels
-// (docs/plan/14 Task T2) — full amount only, no partial cancel in MVP.
+// (docs/roadmap/archive/14 Task T2) — full amount only, no partial cancel in MVP.
 // =============================================================================
 
 type WithdrawCancel struct {
@@ -66,7 +66,7 @@ func (p *WithdrawCancel) OutboxEvents(cmd ResolvedCommand, txID uuid.UUID, entri
 }
 func (p *WithdrawCancel) AfterCommit(_ context.Context, _ Command) error { return nil }
 
-// ValidateCommand requires ReferenceID (docs/plan/14 Task T2) — the
+// ValidateCommand requires ReferenceID (docs/roadmap/archive/14 Task T2) — the
 // withdraw_initiate this cancel is closing.
 func (p *WithdrawCancel) ValidateCommand(_ context.Context, cmd Command) error {
 	return requireReferenceID(cmd, "withdraw_cancel")

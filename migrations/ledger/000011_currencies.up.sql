@@ -1,4 +1,4 @@
--- docs/plan/18 Task T1 (S2): currency registry — single source of truth for
+-- docs/roadmap/archive/18 Task T1 (S2): currency registry — single source of truth for
 -- which currencies the platform supports and their minor-unit exponent.
 -- No FK from accounts.currency/ledger_transactions.currency to this table
 -- (those stay plain CHAR(3) with no FK, consistent with owner_id having no

@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// ─── NewV7 (docs/plan/11 Task T4) ───────────────────────────────────────────────
+// ─── NewV7 (docs/roadmap/archive/11 Task T4) ───────────────────────────────────────────────
 
 func TestNewV7_ReturnsValidVersion7UUID(t *testing.T) {
 	id := NewV7()
@@ -27,7 +27,7 @@ func TestNewV7_Unique(t *testing.T) {
 func TestNewV7_MonotonicallyIncreasing(t *testing.T) {
 	// v7's time-ordered prefix means sequentially generated IDs sort in
 	// generation order — the entire point of using v7 for insert-heavy
-	// tables (docs/plan/11 Task T4: keeps the btree insert-clustered).
+	// tables (docs/roadmap/archive/11 Task T4: keeps the btree insert-clustered).
 	prev := NewV7()
 	for i := 0; i < 100; i++ {
 		next := NewV7()

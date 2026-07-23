@@ -1,9 +1,9 @@
-// Package payin is the public facade for the payin module (docs/plan/22
+// Package payin is the public facade for the payin module (docs/roadmap/archive/22
 // Task T2, decision K-T2) — verifies vendor webhook deliveries, dedups
 // them, and posts them as money_in to the ledger. This is the ONLY package
 // other code may import from internal/payin — importing
 // internal/payin/repository or internal/payin/model directly from outside
-// this module is a boundary violation (docs/plan/01-target-architecture.md,
+// this module is a boundary violation (docs/roadmap/archive/01-target-architecture.md,
 // enforced by boundary_test.go).
 package payin
 
@@ -45,12 +45,12 @@ const (
 // Poster is the subset of ledger.Module's behavior payin needs — a local
 // structural interface rather than a dependency on the concrete
 // *ledger.Module type, so unit tests can inject a mock without touching
-// Postgres, and so a future HTTP-client shim (docs/plan/24, extraction)
+// Postgres, and so a future HTTP-client shim (docs/roadmap/archive/24, extraction)
 // satisfies this same interface with zero payin-side code changes.
 type Poster interface {
 	Post(ctx context.Context, cmd ledgerclient.Command) error
 	// GetUserCurrency resolves the currency CreateTopupIntent records on a
-	// new payin_topup_intents row (docs/plan/25 Task T3).
+	// new payin_topup_intents row (docs/roadmap/archive/25 Task T3).
 	GetUserCurrency(ctx context.Context, userID uuid.UUID, pocketCode string) (string, error)
 }
 
@@ -61,18 +61,19 @@ func (m *Module) RegisterGRPC(server *grpc.Server) {
 
 // Module is the public facade for the payin module.
 type Module struct {
+	db       database.DatabaseSQL
 	repo     repository.Repository
 	routing  repository.RoutingRepository
 	poster   Poster
 	registry *vendorgw.Registry
 	logger   *slog.Logger
 	// topupTTL is how long a topup intent stays 'pending' before being
-	// treated as expired (docs/plan/25 Task T3). <=0 falls back to 24h.
+	// treated as expired (docs/roadmap/archive/25 Task T3). <=0 falls back to 24h.
 	topupTTL time.Duration
-	// fraudClient screens deposits before posting (docs/plan/37 Task T4).
+	// fraudClient screens deposits before posting (docs/roadmap/archive/37 Task T4).
 	// nil is a valid, fully-supported configuration — no screening runs.
 	fraudClient *fraudcheck.Client
-	// breaker tracks per-vendor circuit health (docs/plan/40 Task T1) — nil
+	// breaker tracks per-vendor circuit health (docs/roadmap/archive/40 Task T1) — nil
 	// is a valid, fully-supported configuration (byte-identical to before
 	// this feature existed: every registered vendor is always "allowed").
 	breaker vendorgw.Breaker
@@ -86,6 +87,7 @@ func NewModule(db database.DatabaseSQL, poster Poster, registry *vendorgw.Regist
 		logger = slog.Default()
 	}
 	return &Module{
+		db:          db,
 		repo:        repository.NewRepository(db),
 		routing:     repository.NewRoutingRepository(db),
 		poster:      poster,
@@ -97,10 +99,10 @@ func NewModule(db database.DatabaseSQL, poster Poster, registry *vendorgw.Regist
 	}
 }
 
-// HandleWebhook processes one webhook delivery end to end (docs/plan/22
+// HandleWebhook processes one webhook delivery end to end (docs/roadmap/archive/22
 // Task T2 step 3): verify -> dedup -> post to ledger -> record outcome.
 //
-// Return value contract for the HTTP layer (docs/plan/22 Task T3):
+// Return value contract for the HTTP layer (docs/roadmap/archive/22 Task T3):
 //   - ErrUnknownVendor: no verifier registered for this vendor -> 404.
 //   - errors.Is(err, vendorgw.ErrInvalidSignature): bad signature,
 //     NOTHING was written -> 401.
@@ -109,7 +111,7 @@ func NewModule(db database.DatabaseSQL, poster Poster, registry *vendorgw.Regist
 //   - errors.As(err, *ledgererr.LedgerError): business failure (e.g. account
 //     suspended) — WON'T heal on redelivery, but the event is durably
 //     recorded 'failed' for admin replay -> caller still returns 200 so
-//     the vendor stops retrying (docs/plan/22 Task T2 step 3.5 note).
+//     the vendor stops retrying (docs/roadmap/archive/22 Task T2 step 3.5 note).
 //   - any other error: infra failure, event left 'received' -> 503 so the
 //     vendor redelivers.
 func (m *Module) HandleWebhook(ctx context.Context, vendor string, headers http.Header, rawBody []byte) error {
@@ -139,7 +141,7 @@ func (m *Module) HandleWebhookResult(ctx context.Context, vendor string, headers
 	}
 	if !found {
 		// A registered verifier with no gateway mapping is a config bug
-		// (docs/plan/22 Task T2 step 4 requires every registered vendor to
+		// (docs/roadmap/archive/22 Task T2 step 4 requires every registered vendor to
 		// have one) — fail loudly rather than posting with a gateway that
 		// isn't in constant.ValidGateways and would fail downstream anyway
 		// with a much more confusing error.
@@ -147,7 +149,7 @@ func (m *Module) HandleWebhookResult(ctx context.Context, vendor string, headers
 	}
 	gateway := mapping.Gateway
 
-	// Topup intent resolution (docs/plan/25 Task T3): the reference travels
+	// Topup intent resolution (docs/roadmap/archive/25 Task T3): the reference travels
 	// in the existing ExternalRef field, so a vendor never needs to learn
 	// the internal user_id. Resolved BEFORE persisting the event so the
 	// stored row itself carries the correct user_id either way. No intent
@@ -230,7 +232,7 @@ func (m *Module) postAndFinalize(ctx context.Context, ev model.WebhookEvent, gat
 		verdict, ferr := m.fraudClient.Check(ctx, "topup", "money_in", ev.UserID, ev.Amount, ev.Currency)
 		if ferr != nil {
 			if errors.Is(ferr, fraudcheck.ErrDependencyUnavailable) {
-				// docs/plan/45 Task T3/K4: fraud-service is reachable but
+				// docs/roadmap/archive/45 Task T3/K4: fraud-service is reachable but
 				// its velocity dependency is down — fail CLOSED, unlike a
 				// generic infra error below (fail open). NOT a
 				// businessError: the identical redelivery succeeds once
@@ -282,7 +284,7 @@ func (m *Module) postAndFinalize(ctx context.Context, ev model.WebhookEvent, gat
 				slog.Any("error", markErr), slog.String("event_id", ev.ID.String()))
 		}
 		// Best-effort: settle the topup intent this event's reference
-		// points at, if any (docs/plan/25 Task T3 step 4). A conditional
+		// points at, if any (docs/roadmap/archive/25 Task T3 step 4). A conditional
 		// UPDATE, safe no-op if ExternalRef isn't a topup reference at
 		// all, or the intent is already settled — called from both
 		// HandleWebhook (fresh delivery) and ReplayEvent (admin retry)
@@ -314,7 +316,7 @@ func (m *Module) postAndFinalize(ctx context.Context, ev model.WebhookEvent, gat
 }
 
 // businessError marks an error as "won't heal on redelivery" for the HTTP
-// layer (docs/plan/22 Task T3) without leaking the underlying
+// layer (docs/roadmap/archive/22 Task T3) without leaking the underlying
 // *ledgererr.LedgerError type — that's payin's own classification, made once,
 // not re-derived at the transport layer.
 type businessError struct{ err error }
@@ -324,14 +326,14 @@ func (e *businessError) Unwrap() error { return e.err }
 
 // IsBusinessFailure reports whether err (as returned by HandleWebhook or
 // ReplayEvent) is a business failure that won't heal on retry — the HTTP
-// layer uses this to decide 200-vs-503 (docs/plan/22 Task T2 step 3.5).
+// layer uses this to decide 200-vs-503 (docs/roadmap/archive/22 Task T2 step 3.5).
 func IsBusinessFailure(err error) bool {
 	var be *businessError
 	return errors.As(err, &be)
 }
 
 // isBusinessFailure classifies a raw ledger.Post error — mirrors
-// internal/ledger/service/schedule's own isBusinessFailure (docs/plan/19
+// internal/ledger/service/schedule's own isBusinessFailure (docs/roadmap/archive/19
 // Task T1 pattern): apperror.LedgerError (here, its re-export
 // ledgererr.LedgerError) means the transaction committed with status='failed'
 // (audit trail exists, won't change on retry); anything else is
@@ -342,7 +344,7 @@ func isBusinessFailure(err error) bool {
 }
 
 // ReplayEvent re-runs the post step for a received/failed event
-// (docs/plan/22 Task T4) — idempotent via the same ledger idempotency key
+// (docs/roadmap/archive/22 Task T4) — idempotent via the same ledger idempotency key
 // HandleWebhook uses, so replaying an already-posted event is rejected
 // outright (ErrAlreadyPosted) rather than relying on that idempotency as
 // the only guard.
@@ -364,7 +366,7 @@ func (m *Module) ReplayEvent(ctx context.Context, id uuid.UUID) error {
 	return m.postAndFinalize(ctx, ev, mapping.Gateway)
 }
 
-// ListEvents returns webhook events, newest first (docs/plan/22 Task T4
+// ListEvents returns webhook events, newest first (docs/roadmap/archive/22 Task T4
 // admin read endpoint). vendor/status empty = no filter on that dimension.
 func (m *Module) ListEvents(ctx context.Context, vendor, status string, limit, offset int) ([]WebhookEvent, error) {
 	return m.repo.List(ctx, vendor, status, limit, offset)

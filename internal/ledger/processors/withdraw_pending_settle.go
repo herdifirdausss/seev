@@ -16,7 +16,7 @@ import (
 //
 // Metadata: "gateway" (required) — same rail as the original withdraw_initiate.
 // ReferenceID (required) must point at the withdraw_pending this settles
-// (docs/plan/14 Task T2) — full amount only, no partial settle in MVP.
+// (docs/roadmap/archive/14 Task T2) — full amount only, no partial settle in MVP.
 // =============================================================================
 
 type WithdrawPendingSettle struct {
@@ -71,7 +71,7 @@ func (p *WithdrawPendingSettle) OutboxEvents(cmd ResolvedCommand, txID uuid.UUID
 }
 func (p *WithdrawPendingSettle) AfterCommit(_ context.Context, _ Command) error { return nil }
 
-// ValidateCommand requires ReferenceID (docs/plan/14 Task T2) — the
+// ValidateCommand requires ReferenceID (docs/roadmap/archive/14 Task T2) — the
 // withdraw_pending this settle is closing.
 func (p *WithdrawPendingSettle) ValidateCommand(_ context.Context, cmd Command) error {
 	return requireReferenceID(cmd, "withdraw_pending_settle")

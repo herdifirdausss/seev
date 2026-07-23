@@ -20,8 +20,8 @@ import (
 )
 
 // payoutScope is the fixed idempotency scope for every ledger command this
-// module posts (docs/plan/23 Task T3 step 1) — not per-vendor, unlike
-// payin's "payin:<vendor>" (docs/plan/22 Task T2): a payout request's ID is
+// module posts (docs/roadmap/archive/23 Task T3 step 1) — not per-vendor, unlike
+// payin's "payin:<vendor>" (docs/roadmap/archive/22 Task T2): a payout request's ID is
 // already globally unique and embedded in every key below, so a shared
 // scope adds no collision risk and keeps the three keys for one request
 // trivially greppable together.
@@ -31,7 +31,7 @@ func holdIdempotencyKey(id uuid.UUID) string   { return "payout:" + id.String() 
 func settleIdempotencyKey(id uuid.UUID) string { return "payout:" + id.String() + ":settle" }
 func cancelIdempotencyKey(id uuid.UUID) string { return "payout:" + id.String() + ":cancel" }
 
-// Create starts a new payout request (docs/plan/23 Task T3 step 1):
+// Create starts a new payout request (docs/roadmap/archive/23 Task T3 step 1):
 // created -> held (blocking withdraw_initiate) -> submitted -> vendor
 // Submit. The request ID is returned even if hold or the initial submit
 // attempt fails partway — HandleWebhook/the resume job (Task T3 step 3)
@@ -39,6 +39,9 @@ func cancelIdempotencyKey(id uuid.UUID) string { return "payout:" + id.String() 
 // ID as every subsequent ledger idempotency key; nothing here is a "start
 // over from scratch" operation.
 func (m *Module) Create(ctx context.Context, userID uuid.UUID, amount decimal.Decimal, destination []byte, createdBy, quoteID string) (uuid.UUID, error) {
+	if err := m.ensureIntakeOpen(ctx); err != nil {
+		return uuid.Nil, err
+	}
 	currency, err := m.poster.GetUserCurrency(ctx, userID, "")
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("payout: resolve user currency: %w", err)
@@ -48,7 +51,7 @@ func (m *Module) Create(ctx context.Context, userID uuid.UUID, amount decimal.De
 		verdict, ferr := m.fraudClient.Check(ctx, "payout", "withdraw_initiate", userID, amount, currency)
 		if ferr != nil {
 			if errors.Is(ferr, fraudcheck.ErrDependencyUnavailable) {
-				// docs/plan/45 Task T3/K4: fraud-service is reachable but its
+				// docs/roadmap/archive/45 Task T3/K4: fraud-service is reachable but its
 				// velocity dependency is down — fail CLOSED, unlike a
 				// generic infra error below (fail open). No row inserted,
 				// no hold posted.
@@ -81,12 +84,12 @@ func (m *Module) Create(ctx context.Context, userID uuid.UUID, amount decimal.De
 		return uuid.Nil, fmt.Errorf("payout: insert request: %w", err)
 	}
 
-	// Fee quote consumption (docs/plan/38 Task T5) — ANTI-BURN ordering:
+	// Fee quote consumption (docs/roadmap/archive/38 Task T5) — ANTI-BURN ordering:
 	// AFTER the row exists but BEFORE any hold is posted, so a rejected
 	// quote (expired/mismatch) never touches money — worst case cost is
 	// one re-quote, never a stranded hold. txType "withdraw_settle"/gateway
 	// "" matches settle()'s own ResolveFee call below exactly (the platform
-	// fee doesn't vary by bank rail, docs/plan/25 Task T2).
+	// fee doesn't vary by bank rail, docs/roadmap/archive/25 Task T2).
 	if quoteID != "" {
 		parsedQuoteID, perr := uuid.Parse(quoteID)
 		if perr != nil {
@@ -133,7 +136,7 @@ func (m *Module) Create(ctx context.Context, userID uuid.UUID, amount decimal.De
 
 // hold posts withdraw_initiate and records hold_tx_id + created->held.
 // Safe to call again for the same request (crash-mid-flight resume,
-// docs/plan/23 Task T6) — ledger.Post's own idempotency key is the money-
+// docs/roadmap/archive/23 Task T6) — ledger.Post's own idempotency key is the money-
 // safety guarantee; TransitionToHeld's conditional UPDATE just means a
 // second call here is a harmless no-op once the first has landed.
 func (m *Module) hold(ctx context.Context, req model.PayoutRequest) error {
@@ -157,7 +160,7 @@ func (m *Module) hold(ctx context.Context, req model.PayoutRequest) error {
 
 // classifySubmitOutcome maps one Submit round-trip to the outcome
 // classification the anti-double-payout failover rule (mayFailover) reads
-// from payout_vendor_calls (docs/plan/40 Task T3). callErr non-nil is a
+// from payout_vendor_calls (docs/roadmap/archive/40 Task T3). callErr non-nil is a
 // transport/infra failure (timeout, 5xx, unknown) — the vendor may or may
 // not have received the request, so it's "uncertain", never "rejected"
 // (gotcha #13 master: only a definitive SYNCHRONOUS business rejection,
@@ -184,7 +187,7 @@ func classifyQueryOutcome(callErr error) string {
 	return model.VendorCallAccepted
 }
 
-// mayFailover implements docs/plan/40's locked anti-double-payout rule
+// mayFailover implements docs/roadmap/archive/40's locked anti-double-payout rule
 // EXACTLY: switching this request to a different vendor is safe ONLY while
 // none of its vendor calls has EVER landed accepted or uncertain — once
 // one has, the request is PINNED to that vendor forever (recovery =
@@ -200,7 +203,7 @@ func mayFailover(calls []model.PayoutVendorCall) bool {
 }
 
 // enqueueSubmit moves held/vendor_pending -> submitted and durably enqueues
-// the first vendor dispatch command, atomically (docs/plan/45 Task T1/K1)
+// the first vendor dispatch command, atomically (docs/roadmap/archive/45 Task T1/K1)
 // — relay.go's dispatchOne is the ONLY place that ever calls
 // provider.Submit from here on; this call just makes the work durable and
 // returns immediately. won=false (the transition's own guard didn't match)
@@ -220,7 +223,7 @@ func (m *Module) enqueueSubmit(ctx context.Context, id uuid.UUID, vendor string)
 
 // ensureSubmitCommand is the resume job's idempotent recovery for a
 // 'held'/'submitted' request that currently has no live command
-// (docs/plan/45 Task T1/K1) — safe to call speculatively; EnsureSubmitCommand
+// (docs/roadmap/archive/45 Task T1/K1) — safe to call speculatively; EnsureSubmitCommand
 // itself no-ops under multi-replica races via a conflicting insert.
 func (m *Module) ensureSubmitCommand(ctx context.Context, id uuid.UUID, vendor string) error {
 	if _, err := m.commandRepo.EnsureSubmitCommand(ctx, id, vendor); err != nil {
@@ -229,7 +232,7 @@ func (m *Module) ensureSubmitCommand(ctx context.Context, id uuid.UUID, vendor s
 	return nil
 }
 
-// settle posts withdraw_settle (docs/plan/23 Task T4) and moves the
+// settle posts withdraw_settle (docs/roadmap/archive/23 Task T4) and moves the
 // request to 'settled'. NEVER builds its own double-settle protection —
 // the ledger's closed_by_tx_id guard (K3) is the sole source of truth;
 // losing that race (ledgererr.ErrAlreadyClosed) is reconciled, not treated as
@@ -248,9 +251,9 @@ func (m *Module) settle(ctx context.Context, id uuid.UUID, gateway string) error
 	// Withdraw fee is priced and charged HERE, on settle, never on hold —
 	// see Poster.ResolveFee's own doc comment for why. Gateway key "" for
 	// the fee lookup: the platform fee doesn't vary by bank rail, only by
-	// transaction type/currency (docs/plan/25 Task T2).
+	// transaction type/currency (docs/roadmap/archive/25 Task T2).
 	//
-	// docs/plan/38 Task T5: a request created WITH a fee quote already has
+	// docs/roadmap/archive/38 Task T5: a request created WITH a fee quote already has
 	// its fee LOCKED IN at Create time (req.FeeQuoteID != nil) — settle
 	// uses that stored value verbatim and skips ResolveFee entirely, no
 	// matter how much later settle runs (the resume job may fire hours
@@ -299,7 +302,7 @@ func (m *Module) settle(ctx context.Context, id uuid.UUID, gateway string) error
 	return nil
 }
 
-// cancel posts withdraw_cancel (docs/plan/23 Task T4) and moves the
+// cancel posts withdraw_cancel (docs/roadmap/archive/23 Task T4) and moves the
 // request to 'cancelled'. Same K3-guard-only philosophy as settle.
 func (m *Module) cancel(ctx context.Context, id uuid.UUID, gateway, reason string) error {
 	req, err := m.repo.Get(ctx, id)
@@ -341,7 +344,7 @@ func (m *Module) cancel(ctx context.Context, id uuid.UUID, gateway, reason strin
 	return nil
 }
 
-// reconcileAfterLostRace handles ledgererr.ErrAlreadyClosed (docs/plan/23
+// reconcileAfterLostRace handles ledgererr.ErrAlreadyClosed (docs/roadmap/archive/23
 // Task T4): this call's own settle/cancel attempt lost the ledger's K3
 // race to a DIFFERENT lifecycle-closing command (a concurrent settle vs.
 // cancel, or a redelivered callback arriving after an admin cancel already
@@ -379,13 +382,13 @@ func (m *Module) recordVendorCall(ctx context.Context, requestID uuid.UUID, summ
 }
 
 // ResumeStuck re-drives requests that crashed or stalled mid-flight
-// (docs/plan/23 Task T3 step 3 — "jawaban crash-mid-flight: state machine +
+// (docs/roadmap/archive/23 Task T3 step 3 — "jawaban crash-mid-flight: state machine +
 // job resume, bukan saga framework"), covering EVERY non-terminal status a
 // crash can leave a request in, not just 'submitted'/'vendor_pending' — a
 // crash right after 'created' (before hold() ever ran) or right after
 // 'held' (money already parked in the hold account, but before
 // TransitionToSubmitted) would otherwise leave a request permanently
-// orphaned with no resume path (docs/plan/23 Task T6's own chaos scenario
+// orphaned with no resume path (docs/roadmap/archive/23 Task T6's own chaos scenario
 // is what surfaced this: those are two of the four required kill points):
 //
 //   - 'created': hold() retried from scratch (idempotent — deterministic
@@ -449,7 +452,7 @@ func (m *Module) ResumeStuck(ctx context.Context, olderThan time.Duration) (resu
 		return resumed, failed, fmt.Errorf("payout: resume: list stuck submitted: %w", err)
 	}
 	for _, req := range submittedStuck {
-		// docs/plan/45 Task T1/K2: resume's job here is only to ensure a
+		// docs/roadmap/archive/45 Task T1/K2: resume's job here is only to ensure a
 		// command exists at all, live OR dead-and-operator-visible — a live
 		// command is already being retried on its own backoff by the
 		// relay, and a dead one is a deliberate stop for a human, neither
@@ -504,14 +507,14 @@ func (m *Module) ResumeStuck(ctx context.Context, olderThan time.Duration) (resu
 	return resumed, failed, nil
 }
 
-// stuckStatuses is every status the resume job re-drives (docs/plan/23
+// stuckStatuses is every status the resume job re-drives (docs/roadmap/archive/23
 // Task T3) — the exhaustive set CountStuck reports on for the
-// payout_stuck_requests gauge (docs/plan/43 K5).
+// payout_stuck_requests gauge (docs/roadmap/archive/43 K5).
 var stuckStatuses = []string{model.StatusCreated, model.StatusHeld, model.StatusSubmitted, model.StatusVendorPending}
 
 // CountStuck reports the FULL backlog per status (no 100-row cap, unlike
 // ResumeStuck's per-pass ListStuck calls) — feeds the payout_stuck_requests
-// gauge (docs/plan/43 K5). Every status in stuckStatuses is present in the
+// gauge (docs/roadmap/archive/43 K5). Every status in stuckStatuses is present in the
 // result, 0 when the repository reported none, so the gauge always reflects
 // the true state instead of silently going stale for an empty status.
 func (m *Module) CountStuck(ctx context.Context, olderThan time.Duration) (map[string]int, error) {
@@ -563,7 +566,7 @@ func (m *Module) pollVendorPending(ctx context.Context, req model.PayoutRequest)
 	}
 }
 
-// AdminCancel cancels a stuck request via an admin action (docs/plan/23
+// AdminCancel cancels a stuck request via an admin action (docs/roadmap/archive/23
 // Task T5) — returns the held amount to the user's cash account through
 // the same withdraw_cancel path submit() itself uses when a vendor
 // synchronously rejects a payout. Only requests already in a
@@ -586,10 +589,10 @@ func (m *Module) AdminCancel(ctx context.Context, id uuid.UUID, reason string) e
 	return m.cancel(ctx, id, gateway, reason)
 }
 
-// AdminRetry re-submits a request stuck in 'submitted' (docs/plan/23 Task
+// AdminRetry re-submits a request stuck in 'submitted' (docs/roadmap/archive/23 Task
 // T5), exposed as a manual action for an operator who doesn't want to
 // wait. Unlike the automatic resume job (which deliberately leaves a
-// dead-lettered command alone for the operator to see, docs/plan/45 Task
+// dead-lettered command alone for the operator to see, docs/roadmap/archive/45 Task
 // T1/K2), THIS is the operator's own decision to act: if no live command
 // exists — whether because none was ever created or because the previous
 // one dead-lettered after exhausting its retry budget — a fresh command
@@ -616,7 +619,7 @@ func (m *Module) Get(ctx context.Context, id uuid.UUID) (PayoutRequest, error) {
 	return m.repo.Get(ctx, id)
 }
 
-// List returns payout requests newest first (docs/plan/23 Task T5 admin
+// List returns payout requests newest first (docs/roadmap/archive/23 Task T5 admin
 // endpoint). status/vendor empty = no filter.
 func (m *Module) List(ctx context.Context, status, vendor string, limit, offset int) ([]PayoutRequest, error) {
 	return m.repo.List(ctx, status, vendor, limit, offset)

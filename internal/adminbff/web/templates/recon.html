@@ -1,0 +1,9 @@
+{{define "content"}}<h1>Reconciliation</h1>
+<article><h2>Import statement CSV</h2>
+<form method="post" action="/api/v1/admin/recon/batches" enctype="multipart/form-data" hx-encoding="multipart/form-data">
+  <input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><label>Gateway <input name="gateway" required></label>
+  <label>Report date <input type="date" name="report_date" required></label><label>CSV <input type="file" name="file" accept=".csv" required></label>
+  <button type="submit">Import batch</button>
+</form></article>
+<article><h2>Batch report</h2><div hx-get="/api/v1/admin/recon/batches" hx-trigger="load, every 30s">Loading batches…</div></article>
+{{end}}

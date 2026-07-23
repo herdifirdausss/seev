@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Full business journey acceptance test (docs/plan/25 Task T6) — the
+# Full business journey acceptance test (docs/roadmap/archive/25 Task T6) — the
 # operational definition of "the MVP can be run from end user through daily
 # ops and produces revenue": two real users register and log in with real
 # JWTs (not gentoken), one tops up via a signed vendor webhook, transfers to
@@ -36,17 +36,17 @@ INTERNAL_PORT="${INTERNAL_PORT:-18101}"
 # start_server only explicitly exports the connection/infra env vars, but a
 # bash subshell always inherits everything already exported in its parent.
 export AUTH_BOOTSTRAP_ADMIN_EMAIL="business-e2e-admin@example.com"
-# docs/plan/44 K6: env-overridable so a CI run's generated per-job value is
+# docs/roadmap/archive/44 K6: env-overridable so a CI run's generated per-job value is
 # actually used, instead of every run silently clobbering it with this
 # fixed local dev default.
 export AUTH_BOOTSTRAP_ADMIN_PASSWORD="${AUTH_BOOTSTRAP_ADMIN_PASSWORD:-BootstrapAdmin!2026}"
 export TOPUP_INTENT_TTL=1h
 export DEFAULT_CURRENCY=IDR
-# Production default is 60s (docs/plan/17 Task T1) — kyc_journey (docs/plan/39
+# Production default is 60s (docs/roadmap/archive/17 Task T1) — kyc_journey (docs/roadmap/archive/39
 # Task T6) proves a KYC tier upgrade's new policy_limits cap applies without
 # waiting out that window.
 export POLICY_CACHE_TTL=2s
-# Production default is 5 (docs/plan/40 Task T1) — quote_journey's failover
+# Production default is 5 (docs/roadmap/archive/40 Task T1) — quote_journey's failover
 # drill needs the circuit to trip on the FIRST force-fail-induced Submit
 # failure, same rationale as chaos-test.sh scenario 8.
 export BREAKER_FAILURE_THRESHOLD=1
@@ -56,7 +56,7 @@ source "$ROOT_DIR/scripts/lib.sh"
 
 trap cleanup EXIT
 
-# docs/plan/44 K6: same env var name lib.sh's start_*_service functions
+# docs/roadmap/archive/44 K6: same env var name lib.sh's start_*_service functions
 # export to the service processes — a CI-generated VENDOR_MOCKVENDOR_SECRET
 # must sign AND verify with the identical value, not silently diverge
 # because this script's own webhook-signing copy had a different name.
@@ -135,7 +135,7 @@ onboard() {
 	[ -n "$cash_a" ] && ok "user A's ledger cash account was auto-provisioned on register" \
 		|| fail "user A has no cash account — provisioning on register did not happen"
 
-	# Seed DB-backed fee rules through the operator API (docs/plan/33 T4).
+	# Seed DB-backed fee rules through the operator API (docs/roadmap/archive/33 T4).
 	# A receives a per-user override (500) while the global default is 1000.
 	# Rule ids for A's transfer override and the withdraw fee are captured
 	# as globals (TRANSFER_FEE_RULE_ID/WITHDRAW_FEE_RULE_ID) — section 6's
@@ -144,12 +144,30 @@ onboard() {
 	local admin_token fee_url code resp
 	admin_token="$(gen_token "$(uuidgen | tr '[:upper:]' '[:lower:]')" admin)"
 	fee_url="http://localhost:$LEDGER_INTERNAL_PORT/api/v1/admin/ledger/fee-rules"
-	code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$fee_url" -H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" -d '{"tx_type":"transfer_p2p","currency":"IDR","flat_minor_units":1000,"fee_gateway":"platform"}')
-	[ "$code" = "201" ] && ok "seeded global transfer fee via admin API" || fail "global fee seed got HTTP $code"
-	resp="$(curl -s -X POST "$fee_url" -H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" -d "{\"tx_type\":\"transfer_p2p\",\"currency\":\"IDR\",\"user_id\":\"$USER_A\",\"flat_minor_units\":500,\"fee_gateway\":\"platform\"}")"
+	# The ledger DB is intentionally reusable between local runs. A global rule
+	# is unique by (tx_type,gateway,currency,NULL user), so update an existing
+	# seed instead of turning a harmless rerun into HTTP 500.
+	local global_transfer_id global_withdraw_id
+	global_transfer_id="$(psql_exec "$LEDGER_DB_NAME" -c "SELECT id FROM fee_rules WHERE tx_type = 'transfer_p2p' AND currency = 'IDR' AND user_id IS NULL ORDER BY updated_at DESC LIMIT 1;")"
+	if [ -n "$global_transfer_id" ]; then
+		code=$(curl_internal -s -o /dev/null -w '%{http_code}' -X PUT "$fee_url/$global_transfer_id" -H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" -d '{"tx_type":"transfer_p2p","currency":"IDR","flat_minor_units":1000,"fee_gateway":"platform"}')
+	else
+		code=$(curl_internal -s -o /dev/null -w '%{http_code}' -X POST "$fee_url" -H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" -d '{"tx_type":"transfer_p2p","currency":"IDR","flat_minor_units":1000,"fee_gateway":"platform"}')
+	fi
+	if [ "$code" = "200" ] || [ "$code" = "201" ]; then
+		ok "seeded global transfer fee via admin API"
+	else
+		fail "global fee seed got HTTP $code"
+	fi
+	resp="$(curl_internal -s -X POST "$fee_url" -H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" -d "{\"tx_type\":\"transfer_p2p\",\"currency\":\"IDR\",\"user_id\":\"$USER_A\",\"flat_minor_units\":500,\"fee_gateway\":\"platform\"}")"
 	TRANSFER_FEE_RULE_ID="$(echo "$resp" | json_field id)"
 	[ -n "$TRANSFER_FEE_RULE_ID" ] && ok "seeded per-user transfer override via admin API ($TRANSFER_FEE_RULE_ID)" || fail "per-user fee seed failed: $resp"
-	resp="$(curl -s -X POST "$fee_url" -H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" -d '{"tx_type":"withdraw_settle","currency":"IDR","flat_minor_units":2000,"fee_gateway":"platform"}')"
+	global_withdraw_id="$(psql_exec "$LEDGER_DB_NAME" -c "SELECT id FROM fee_rules WHERE tx_type = 'withdraw_settle' AND currency = 'IDR' AND user_id IS NULL ORDER BY updated_at DESC LIMIT 1;")"
+	if [ -n "$global_withdraw_id" ]; then
+		resp="$(curl_internal -s -X PUT "$fee_url/$global_withdraw_id" -H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" -d '{"tx_type":"withdraw_settle","currency":"IDR","flat_minor_units":2000,"fee_gateway":"platform"}')"
+	else
+		resp="$(curl_internal -s -X POST "$fee_url" -H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" -d '{"tx_type":"withdraw_settle","currency":"IDR","flat_minor_units":2000,"fee_gateway":"platform"}')"
+	fi
 	WITHDRAW_FEE_RULE_ID="$(echo "$resp" | json_field id)"
 	[ -n "$WITHDRAW_FEE_RULE_ID" ] && ok "seeded withdraw fee via admin API ($WITHDRAW_FEE_RULE_ID)" || fail "withdraw fee seed failed: $resp"
 }
@@ -161,9 +179,9 @@ topup() {
 	local admin_token route_json route_id
 	admin_token="$(gen_token "$(uuidgen | tr '[:upper:]' '[:lower:]')" admin)"
 	psql_exec "$PAYIN_DB_NAME" -c "DELETE FROM payin_routing_rules WHERE priority = 10;" >/dev/null
-	curl -s -o /dev/null -X PUT "http://localhost:$PAYIN_ADMIN_PORT/admin/payin/vendor-gateways/mockvendor" \
+	curl_internal -s -o /dev/null -X PUT "http://localhost:$PAYIN_ADMIN_PORT/admin/payin/vendor-gateways/mockvendor" \
 		-H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" -d '{"gateway":"bca"}'
-	route_json="$(curl -s -X POST "http://localhost:$PAYIN_ADMIN_PORT/admin/payin/routing-rules" \
+	route_json="$(curl_internal -s -X POST "http://localhost:$PAYIN_ADMIN_PORT/admin/payin/routing-rules" \
 		-H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" \
 		-d '{"flow":"topup","priority":10,"enabled":true,"currency":"IDR","vendor":"mockvendor"}')"
 	route_id="$(echo "$route_json" | json_field id)"
@@ -201,9 +219,9 @@ topup() {
 
 	log "disable every matching route via admin API — create must return 422 NO_ROUTE..."
 	local disabled_payload='{"flow":"topup","priority":10,"enabled":false,"currency":"IDR","vendor":"mockvendor"}'
-	curl -s -o /dev/null -X PUT "http://localhost:$PAYIN_ADMIN_PORT/admin/payin/routing-rules/$route_id" \
+	curl_internal -s -o /dev/null -X PUT "http://localhost:$PAYIN_ADMIN_PORT/admin/payin/routing-rules/$route_id" \
 		-H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" -d "$disabled_payload"
-	curl -s -o /dev/null -X PUT "http://localhost:$PAYIN_ADMIN_PORT/admin/payin/routing-rules/00000000-0000-7000-8000-000000000029" \
+	curl_internal -s -o /dev/null -X PUT "http://localhost:$PAYIN_ADMIN_PORT/admin/payin/routing-rules/00000000-0000-7000-8000-000000000029" \
 		-H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" \
 		-d '{"flow":"topup","priority":1000,"enabled":false,"vendor":"mockvendor"}'
 	local no_route
@@ -211,14 +229,14 @@ topup() {
 		-H "Authorization: Bearer $TOKEN_A" -H "Content-Type: application/json" -d '{"amount":"1000"}')"
 	echo "$no_route" | grep -q '"code":"NO_ROUTE"' && [ "$(echo "$no_route" | tail -1)" = "422" ] \
 		&& ok "disabled rules return 422 NO_ROUTE" || fail "expected 422 NO_ROUTE, got: $no_route"
-	curl -s -o /dev/null -X PUT "http://localhost:$PAYIN_ADMIN_PORT/admin/payin/routing-rules/$route_id" \
+	curl_internal -s -o /dev/null -X PUT "http://localhost:$PAYIN_ADMIN_PORT/admin/payin/routing-rules/$route_id" \
 		-H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" \
 		-d '{"flow":"topup","priority":10,"enabled":true,"currency":"IDR","vendor":"mockvendor"}'
 
-	await_notification "$TOKEN_A" "Dana masuk" || true
+	await_notification "$TOKEN_A" "Funds received" || true
 }
 
-# ─── Section 3: KYC gate + tier journey (docs/plan/39) ───────────────────────
+# ─── Section 3: KYC gate + tier journey (docs/roadmap/archive/39) ───────────────────────
 
 kyc_journey() {
 	log "=== 3. KYC journey: gate blocks L0, L1 unlocks small transfers, L2 unlocks large ones ==="
@@ -349,8 +367,8 @@ transfer() {
 	[ "$((fee_after - fee_before))" = "500" ] && ok "fee[platform] increased by exactly A's 500 per-user fee" \
 		|| fail "fee[platform] changed by $((fee_after - fee_before)), expected 500"
 
-	await_notification "$TOKEN_A" "Transfer terkirim" || true
-	await_notification "$TOKEN_B" "Transfer diterima" || true
+	await_notification "$TOKEN_A" "Transfer sent" || true
+	await_notification "$TOKEN_B" "Transfer received" || true
 }
 
 # ─── Section 5: fee-charging withdraw (settled) + fee-free cancel ────────────
@@ -360,8 +378,8 @@ withdraw() {
 	local admin_token route_json route_id
 	admin_token="$(gen_token "$(uuidgen | tr '[:upper:]' '[:lower:]')" admin)"
 	psql_exec "$PAYOUT_DB_NAME" -c "DELETE FROM payout_routing_rules WHERE priority = 10;" >/dev/null
-	curl -s -o /dev/null -X PUT "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendor-gateways/mockvendor" -H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" -d '{"gateway":"bca"}'
-	route_json="$(curl -s -X POST "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/routing-rules" -H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" -d '{"flow":"payout","priority":10,"enabled":true,"currency":"IDR","vendor":"mockvendor"}')"
+	curl_internal -s -o /dev/null -X PUT "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendor-gateways/mockvendor" -H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" -d '{"gateway":"bca"}'
+	route_json="$(curl_internal -s -X POST "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/routing-rules" -H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" -d '{"flow":"payout","priority":10,"enabled":true,"currency":"IDR","vendor":"mockvendor"}')"
 	route_id="$(echo "$route_json" | json_field id)"
 	[ -n "$route_id" ] && ok "admin created payout DB routing rule ($route_id)" || fail "payout routing rule creation failed: $route_json"
 
@@ -378,7 +396,7 @@ withdraw() {
 	local payout_id
 	payout_id="$(echo "$create" | json_field id)"
 	[ -n "$payout_id" ] || fail "withdraw create response unexpected: $create"
-	# docs/plan/45 Task T1: the create response itself only reports
+	# docs/roadmap/archive/45 Task T1: the create response itself only reports
 	# 'submitted' (hold+enqueue) — the vendor result always comes from a
 	# separate, asynchronous relay dispatch pass now, even in what used to
 	# be called "instant-settle" mode.
@@ -394,7 +412,7 @@ withdraw() {
 	[ "$((fee_after - fee_before))" = "2000" ] && ok "fee[platform] increased by exactly the 2000 withdraw fee" \
 		|| fail "fee[platform] changed by $((fee_after - fee_before)), expected 2000"
 
-	await_notification "$TOKEN_A" "Withdraw berhasil" || true
+	await_notification "$TOKEN_A" "Withdrawal successful" || true
 
 	log "a SEPARATE async withdraw, then admin-cancelled — must refund in full and charge NO fee..."
 	local fee_before_cancel balance_before_cancel
@@ -412,7 +430,7 @@ withdraw() {
 	ok "async withdraw dispatched and left vendor_pending ($payout_id2)"
 
 	local code
-	code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/requests/$payout_id2/cancel" \
+	code=$(curl_internal -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/requests/$payout_id2/cancel" \
 		-H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" -d '{"reason":"business-e2e cancel"}')
 	[ "$code" = "200" ] && ok "admin cancel succeeded (code=$code)" || fail "admin cancel got $code, expected 200"
 
@@ -424,10 +442,10 @@ withdraw() {
 	[ "$fee_after_cancel" = "$fee_before_cancel" ] && ok "cancelled withdraw charged NO fee (fee[platform] unchanged)" \
 		|| fail "fee[platform] changed on a cancelled withdraw: before=$fee_before_cancel after=$fee_after_cancel"
 
-	await_notification "$TOKEN_A" "Withdraw dibatalkan" || true
+	await_notification "$TOKEN_A" "Withdrawal canceled" || true
 }
 
-# ─── Section 6: fee quote journey (docs/plan/38) ─────────────────────────────
+# ─── Section 6: fee quote journey (docs/roadmap/archive/38) ─────────────────────────────
 
 quote_journey() {
 	log "=== 6. Fee quote journey: honored exactly, tamper detection, single-use, payout quote ==="
@@ -447,7 +465,7 @@ quote_journey() {
 
 	log "admin re-prices A's transfer_p2p override to 9000 AFTER the quote was created..."
 	local code
-	code=$(curl -s -o /dev/null -w '%{http_code}' -X PUT "http://localhost:$LEDGER_INTERNAL_PORT/api/v1/admin/ledger/fee-rules/$TRANSFER_FEE_RULE_ID" \
+	code=$(curl_internal -s -o /dev/null -w '%{http_code}' -X PUT "http://localhost:$LEDGER_INTERNAL_PORT/api/v1/admin/ledger/fee-rules/$TRANSFER_FEE_RULE_ID" \
 		-H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" \
 		-d "{\"tx_type\":\"transfer_p2p\",\"currency\":\"IDR\",\"user_id\":\"$USER_A\",\"flat_minor_units\":9000,\"fee_gateway\":\"platform\"}")
 	[ "$code" = "200" ] && ok "fee_rules re-priced to 9000 via admin API" || fail "fee rule update got $code, expected 200"
@@ -520,7 +538,7 @@ quote_journey() {
 	[ -n "$payout_quote_id" ] && [ "$payout_fee_amount" = "2000" ] && ok "payout quote created (id=$payout_quote_id fee=$payout_fee_amount)" \
 		|| fail "payout quote creation unexpected: $payout_quote_resp"
 
-	code=$(curl -s -o /dev/null -w '%{http_code}' -X PUT "http://localhost:$LEDGER_INTERNAL_PORT/api/v1/admin/ledger/fee-rules/$WITHDRAW_FEE_RULE_ID" \
+	code=$(curl_internal -s -o /dev/null -w '%{http_code}' -X PUT "http://localhost:$LEDGER_INTERNAL_PORT/api/v1/admin/ledger/fee-rules/$WITHDRAW_FEE_RULE_ID" \
 		-H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" \
 		-d '{"tx_type":"withdraw_settle","currency":"IDR","flat_minor_units":8000,"fee_gateway":"platform"}')
 	[ "$code" = "200" ] && ok "withdraw_settle re-priced to 8000 via admin API" || fail "fee rule update got $code, expected 200"
@@ -541,7 +559,7 @@ quote_journey() {
 	[ "$((fee_after_payout - fee_before_payout))" = "2000" ] && ok "fee[platform] increased by EXACTLY the quoted 2000, not the changed 8000 rule" \
 		|| fail "fee[platform] changed by $((fee_after_payout - fee_before_payout)), expected 2000 (payout quote honored despite mid-flight rule change)"
 
-	log "payout ber-quote + drill failover (docs/plan/40): force-fail mockvendor -> quote-backed payout routes to mockvendor2..."
+	log "payout ber-quote + drill failover (docs/roadmap/archive/40): force-fail mockvendor -> quote-backed payout routes to mockvendor2..."
 	local failover_quote_resp failover_quote_id failover_fee_amount
 	failover_quote_resp="$(curl -s -X POST "http://localhost:$APP_PORT/api/v1/ledger/fees/quote" \
 		-H "Authorization: Bearer $TOKEN_A" -H "Content-Type: application/json" \
@@ -553,20 +571,20 @@ quote_journey() {
 
 	# mockvendor2 seeded as a FALLBACK behind mockvendor's existing priority-10
 	# rule (from section 5) — priority 11 is a LARGER number, tried SECOND,
-	# since docs/plan/40 Task T2's ResolveCandidates orders priority ASC
-	# (smallest number wins first; see PROJECT_GUIDE.md's debugging notes).
-	curl -s -o /dev/null -X PUT "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendor-gateways/mockvendor2" \
+	# since docs/roadmap/archive/40 Task T2's ResolveCandidates orders priority ASC
+	# (smallest number wins first; see docs/development/project-guide.md's debugging notes).
+	curl_internal -s -o /dev/null -X PUT "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendor-gateways/mockvendor2" \
 		-H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" -d '{"gateway":"gopay"}'
 	psql_exec "$PAYOUT_DB_NAME" -c "DELETE FROM payout_routing_rules WHERE priority = 11;" >/dev/null
 	local mv2_route_json mv2_route_id
-	mv2_route_json="$(curl -s -X POST "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/routing-rules" \
+	mv2_route_json="$(curl_internal -s -X POST "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/routing-rules" \
 		-H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" \
 		-d '{"flow":"payout","priority":11,"enabled":true,"vendor":"mockvendor2"}')"
 	mv2_route_id="$(echo "$mv2_route_json" | json_field id)"
 	[ -n "$mv2_route_id" ] && ok "admin seeded mockvendor2 as fallback routing rule ($mv2_route_id)" \
 		|| fail "mockvendor2 routing rule creation failed: $mv2_route_json"
 
-	curl -s -o /dev/null -X POST "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendors/mockvendor/force-fail" \
+	curl_internal -s -o /dev/null -X POST "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendors/mockvendor/force-fail" \
 		-H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" -d '{"fail":true}'
 
 	log "tripping mockvendor's circuit with a small probe payout (no quote — stays pinned/uncertain by the anti-double-payout rule, by design)..."
@@ -576,7 +594,7 @@ quote_journey() {
 		-d '{"amount":"1000","destination":{"bank_code":"014","account_no":"9"}}')"
 	probe_id="$(echo "$probe_resp" | json_field id)"
 	[ -n "$probe_id" ] && ok "probe payout created ($probe_id)" || fail "probe payout create failed: $probe_resp"
-	# docs/plan/45 Task T1: dispatch (and therefore the breaker's
+	# docs/roadmap/archive/45 Task T1: dispatch (and therefore the breaker's
 	# RecordFailure that trips the circuit) is async now — wait for the
 	# durable evidence before reading vendor/status/health state.
 	wait_for_vendor_call "$probe_id" "uncertain" 15
@@ -587,7 +605,7 @@ quote_journey() {
 		|| fail "probe payout unexpected vendor='$probe_vendor' status='$probe_status'"
 
 	local health_resp
-	health_resp="$(curl -s "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendors/health" -H "Authorization: Bearer $admin_token")"
+	health_resp="$(curl_internal -s "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendors/health" -H "Authorization: Bearer $admin_token")"
 	echo "$health_resp" | grep -q '"vendor":"mockvendor","state":"open"' \
 		&& ok "admin vendor health confirms mockvendor's circuit is open" \
 		|| fail "admin vendor health did not report mockvendor open: $health_resp"
@@ -616,7 +634,7 @@ quote_journey() {
 		|| fail "fee[platform] changed by $((failover_after_fee - failover_before_fee)), expected $failover_fee_amount"
 
 	log "recovering mockvendor..."
-	curl -s -o /dev/null -X POST "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendors/mockvendor/force-fail" \
+	curl_internal -s -o /dev/null -X POST "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendors/mockvendor/force-fail" \
 		-H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" -d '{"fail":false}'
 }
 
@@ -636,13 +654,13 @@ ops() {
 	local from to code
 	from="$(date -u +%Y-%m-%d)"
 	to="$(date -u +%Y-%m-%d)"
-	code=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:$LEDGER_INTERNAL_PORT/api/v1/ledger/admin/reports/position?from=$from&to=$to" \
+	code=$(curl_internal -s -o /dev/null -w '%{http_code}' "http://localhost:$LEDGER_INTERNAL_PORT/api/v1/ledger/admin/reports/position?from=$from&to=$to" \
 		-H "Authorization: Bearer $admin_token")
 	[ "$code" = "200" ] && ok "admin daily position report reachable (code=$code)" || fail "admin position report got $code, expected 200"
 
 	log "GET /admin/outbox/dead — must be empty after a clean happy-path run..."
 	local dead_resp
-	dead_resp="$(curl -s "http://localhost:$LEDGER_INTERNAL_PORT/api/v1/ledger/admin/outbox/dead" -H "Authorization: Bearer $admin_token")"
+	dead_resp="$(curl_internal -s "http://localhost:$LEDGER_INTERNAL_PORT/api/v1/ledger/admin/outbox/dead" -H "Authorization: Bearer $admin_token")"
 	if echo "$dead_resp" | grep -q '"events":\[\]' || echo "$dead_resp" | grep -q '"events":null'; then
 		ok "outbox dead-letter list is empty"
 	else
@@ -650,42 +668,42 @@ ops() {
 	fi
 
 	log "GET /admin/recon/batches — operator tooling reachable without SQL..."
-	code=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:$LEDGER_INTERNAL_PORT/api/v1/ledger/admin/recon/batches" \
+	code=$(curl_internal -s -o /dev/null -w '%{http_code}' "http://localhost:$LEDGER_INTERNAL_PORT/api/v1/ledger/admin/recon/batches" \
 		-H "Authorization: Bearer $admin_token")
 	[ "$code" = "200" ] && ok "admin recon batch list reachable (code=$code)" || fail "admin recon batch list got $code, expected 200"
 
 	log "GET /admin/recon/batches as a non-admin — must 403..."
-	code=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:$LEDGER_INTERNAL_PORT/api/v1/ledger/admin/recon/batches" \
+	code=$(curl_internal -s -o /dev/null -w '%{http_code}' "http://localhost:$LEDGER_INTERNAL_PORT/api/v1/ledger/admin/recon/batches" \
 		-H "Authorization: Bearer $TOKEN_A")
 	[ "$code" = "403" ] && ok "non-admin rejected from recon batch list (code=$code)" || fail "non-admin got $code, expected 403"
 
 	log "GET /admin/ledger/fee-rules — operator sees the pricing seeded in section 1 without SQL..."
 	local fee_rules_resp
-	fee_rules_resp="$(curl -s "http://localhost:$LEDGER_INTERNAL_PORT/api/v1/admin/ledger/fee-rules" -H "Authorization: Bearer $admin_token")"
+	fee_rules_resp="$(curl_internal -s "http://localhost:$LEDGER_INTERNAL_PORT/api/v1/admin/ledger/fee-rules" -H "Authorization: Bearer $admin_token")"
 	echo "$fee_rules_resp" | grep -q '"tx_type":"transfer_p2p"' \
 		&& ok "fee-rules admin surface shows the configured transfer_p2p pricing" \
 		|| fail "fee-rules admin surface missing expected rules: $fee_rules_resp"
 
 	log "GET /admin/fraud/events (fraud-service) — operator tooling reachable without SQL..."
-	code=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:$FRAUD_ADMIN_PORT/api/v1/admin/fraud/events" \
+	code=$(curl_internal -s -o /dev/null -w '%{http_code}' "http://localhost:$FRAUD_ADMIN_PORT/api/v1/admin/fraud/events" \
 		-H "Authorization: Bearer $admin_token")
 	[ "$code" = "200" ] && ok "admin fraud events list reachable (code=$code)" || fail "admin fraud events list got $code, expected 200"
 
 	log "GET /admin/kyc/submissions?status=pending (auth-service internal) — operator tooling reachable without SQL..."
-	code=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:$AUTH_INTERNAL_PORT/api/v1/admin/kyc/submissions?status=pending" \
+	code=$(curl_internal -s -o /dev/null -w '%{http_code}' "http://localhost:$AUTH_INTERNAL_PORT/api/v1/admin/kyc/submissions?status=pending" \
 		-H "Authorization: Bearer $admin_token")
 	[ "$code" = "200" ] && ok "admin KYC pending list reachable (code=$code)" || fail "admin KYC pending list got $code, expected 200"
 
-	log "GET /admin/vendors/health (docs/plan/40 Task T5) on payin + payout — operator sees vendor state without SQL/log-diving..."
-	code=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:$PAYIN_ADMIN_PORT/admin/payin/vendors/health" \
+	log "GET /admin/vendors/health (docs/roadmap/archive/40 Task T5) on payin + payout — operator sees vendor state without SQL/log-diving..."
+	code=$(curl_internal -s -o /dev/null -w '%{http_code}' "http://localhost:$PAYIN_ADMIN_PORT/admin/payin/vendors/health" \
 		-H "Authorization: Bearer $admin_token")
 	[ "$code" = "200" ] && ok "admin payin vendor health reachable (code=$code)" || fail "admin payin vendor health got $code, expected 200"
-	code=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendors/health" \
+	code=$(curl_internal -s -o /dev/null -w '%{http_code}' "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendors/health" \
 		-H "Authorization: Bearer $admin_token")
 	[ "$code" = "200" ] && ok "admin payout vendor health reachable (code=$code)" || fail "admin payout vendor health got $code, expected 200"
 }
 
-# ─── Section 8: request tracing end-to-end (docs/plan/36 Task T6) ───────────
+# ─── Section 8: request tracing end-to-end (docs/roadmap/archive/36 Task T6) ───────────
 
 trace_check() {
 	log "=== 8. Request tracing end-to-end: one request_id, gateway to storage ==="

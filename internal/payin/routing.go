@@ -9,7 +9,7 @@ import (
 
 // ResolveTopupRoute picks the first candidate vendor (in routing-rule
 // priority order) that is both registered and not circuit-broken
-// (docs/plan/40 Task T2) — mirrors internal/payout's ResolvePayoutRoute.
+// (docs/roadmap/archive/40 Task T2) — mirrors internal/payout's ResolvePayoutRoute.
 func (m *Module) ResolveTopupRoute(ctx context.Context, userID uuid.UUID, currency string, amount decimal.Decimal) (string, string, error) {
 	candidates, err := m.routing.ResolveCandidates(ctx, "topup", userID, currency, amount.IntPart())
 	if err != nil {

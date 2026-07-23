@@ -1,4 +1,4 @@
--- docs/plan/40 Task T3: classify every payout_vendor_calls row into
+-- docs/roadmap/archive/40 Task T3: classify every payout_vendor_calls row into
 -- accepted|rejected|uncertain — the SOLE source of truth the anti-double-
 -- payout failover rule (mayFailover) reads. Failover to a different vendor
 -- is allowed ONLY while no row for a request has ever landed

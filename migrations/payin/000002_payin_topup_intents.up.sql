@@ -1,4 +1,4 @@
--- docs/plan/25 Task T3: payin topup intents — lets a user initiate a
+-- docs/roadmap/archive/25 Task T3: payin topup intents — lets a user initiate a
 -- top-up (POST /api/v1/topup) and get a `reference` to quote at the
 -- vendor, without the vendor ever needing to know the internal user_id
 -- (it travels back in the existing payin_webhook_events.external_ref

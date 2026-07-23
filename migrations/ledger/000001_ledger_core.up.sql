@@ -1,12 +1,13 @@
 -- ============================================================================
--- SEEV LEDGER — skema kanonik v1
--- Bentuk mengikuti kode Go (internal/ledger). Lihat docs/plan/04.
+-- SEEV LEDGER — canonical schema v1
+-- Follows the Go code shape (internal/ledger). See docs/roadmap/archive/04.
 -- ============================================================================
 
 -- ── ACCOUNTS ────────────────────────────────────────────────────────────────
--- owner_id tanpa FK: user dikelola modul auth (belum ada); integritas di app.
--- system_qualifier: shard key akun sistem (settlement per gateway, fee per
--- gateway, escrow per currency, chargeback per card network). NULL utk akun user.
+-- owner_id has no FK: users are managed by the auth module (not yet present);
+-- integrity is enforced by the application.
+-- system_qualifier: system-account shard key (settlement per gateway, fee per
+-- gateway, escrow per currency, chargeback per card network). NULL for user accounts.
 CREATE TABLE accounts (
     id               UUID        PRIMARY KEY,
     owner_id         UUID        NULL,
@@ -24,21 +25,21 @@ CREATE TABLE accounts (
     created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
 
-    -- akun sistem tidak punya owner; akun non-sistem tidak punya qualifier
+    -- system accounts have no owner; non-system accounts have no qualifier
     CONSTRAINT chk_system_shape CHECK (
         (owner_type = 'system' AND owner_id IS NULL)
         OR (owner_type <> 'system' AND system_qualifier IS NULL)
     )
 );
 
--- satu akun per (owner, type, currency, pocket)
+-- one account per (owner, type, currency, pocket)
 CREATE UNIQUE INDEX uq_accounts_owner_pocket
     ON accounts(owner_type, owner_id, type, currency, pocket_code)
     WHERE pocket_code IS NOT NULL;
 CREATE UNIQUE INDEX uq_accounts_owner
     ON accounts(owner_type, owner_id, type, currency)
     WHERE pocket_code IS NULL AND owner_id IS NOT NULL;
--- satu akun sistem per (type, currency, qualifier)
+-- one system account per (type, currency, qualifier)
 CREATE UNIQUE INDEX uq_accounts_system
     ON accounts(type, currency, COALESCE(system_qualifier, ''))
     WHERE owner_type = 'system';
@@ -46,9 +47,10 @@ CREATE UNIQUE INDEX uq_accounts_system
 CREATE INDEX idx_accounts_owner  ON accounts(owner_id) WHERE owner_id IS NOT NULL;
 CREATE INDEX idx_accounts_status ON accounts(status)   WHERE status <> 'active';
 
--- ── ACCOUNT BALANCES (projection; kebenaran = ledger_entries) ───────────────
--- allow_negative: true HANYA untuk akun sistem yang secara desain "berhutang"
--- ke dunia luar (settlement, adjustment, chargeback) — lihat 000002 seed data.
+-- ── ACCOUNT BALANCES (projection; source of truth = ledger_entries) ────────
+-- allow_negative: true ONLY for system accounts that are designed to be
+-- "in debt" to the outside world (settlement, adjustment, chargeback) — see
+-- the 000002 seed data.
 CREATE TABLE account_balances (
     account_id     UUID        PRIMARY KEY REFERENCES accounts(id),
     balance        BIGINT      NOT NULL DEFAULT 0,
@@ -59,14 +61,14 @@ CREATE TABLE account_balances (
 );
 
 -- ── LEDGER TRANSACTIONS (header) ─────────────────────────────────────────────
--- source_account_id/destination_account_id adalah kolom INFORMATIF, bukan
--- sumber kebenaran (itu tetap ledger_entries + balance_after). Sejak
--- docs/plan/14 Task T1 (2026-07-11) diisi eksplisit dari
+-- source_account_id/destination_account_id are INFORMATIVE columns, not the
+-- source of truth (that remains ledger_entries + balance_after). Since
+-- docs/roadmap/archive/14 Task T1 (2026-07-11) is populated explicitly from
 -- TxProcessor.ResolveAccounts's ResolvedAccounts.Source/Destination — NULL
--- untuk processor yang gerakan dananya bukan satu pasang source->destination
--- (mis. Reversal multi-akun). Baris yang ditulis SEBELUM cutoff ini (oleh
--- kode lama yang mengisi dari AccountIDs[0..1] posisional) tidak di-backfill
--- — nilainya tetap seperti apa adanya, hanya baris baru yang semantik.
+-- for processors whose movement is not one source->destination pair (for
+-- example, multi-account reversals). Rows written BEFORE this cutoff (by old
+-- code that populated positional AccountIDs[0..1]) are not backfilled — their
+-- values remain as-is; only new rows are semantic.
 CREATE TABLE ledger_transactions (
     id                     UUID        PRIMARY KEY,
     idempotency_key        TEXT        NOT NULL,
@@ -82,7 +84,7 @@ CREATE TABLE ledger_transactions (
     updated_at             TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- [D4] NULL scope harus tetap unik → COALESCE, bukan UNIQUE constraint biasa
+-- [D4] NULL scope must remain unique → COALESCE, not a regular UNIQUE constraint
 CREATE UNIQUE INDEX uq_ltx_idempotency
     ON ledger_transactions(idempotency_key, COALESCE(idempotency_scope, ''));
 
@@ -93,14 +95,14 @@ CREATE INDEX idx_ltx_dest ON ledger_transactions(destination_account_id, created
 CREATE INDEX idx_ltx_status_pending ON ledger_transactions(created_at)
     WHERE status = 'pending';
 
--- ── LEDGER ENTRIES (append-only, sumber kebenaran) ───────────────────────────
--- [D6] balance_after = saldo FINAL akun setelah seluruh transaksi (semua entry
--- akun yang sama dalam satu tx menulis nilai final yang sama). Jangan tambah
--- constraint per-entry balance math.
--- Catatan: TIDAK ada CHECK (balance_after >= 0) di sini — akun sistem dengan
--- allow_negative=true (settlement, adjustment, chargeback) boleh punya
--- balance_after negatif. Guard overdraft untuk akun biasa ada di
--- account_balances.chk_balance_floor + validasi InsufficientBalance di service.
+-- ── LEDGER ENTRIES (append-only, source of truth) ────────────────────────────
+-- [D6] balance_after = the account's FINAL balance after the entire
+-- transaction (all entries for the same account in one transaction write the
+-- same final value). Do not add a per-entry balance-math constraint.
+-- Note: there is NO CHECK (balance_after >= 0) here — system accounts with
+-- allow_negative=true (settlement, adjustment, chargeback) may have a negative
+-- balance_after. The ordinary-account overdraft guard is in
+-- account_balances.chk_balance_floor + the service's InsufficientBalance validation.
 CREATE TABLE ledger_entries (
     id             UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
     transaction_id UUID        NOT NULL REFERENCES ledger_transactions(id),
@@ -116,7 +118,7 @@ CREATE TABLE ledger_entries (
 
 CREATE INDEX idx_entries_account ON ledger_entries(account_id, created_at DESC);
 CREATE INDEX idx_entries_tx      ON ledger_entries(transaction_id);
--- covering index untuk fn_verify_ledger_balance
+-- covering index for fn_verify_ledger_balance
 CREATE INDEX idx_entries_verify  ON ledger_entries(created_at, transaction_id)
     INCLUDE (direction, amount);
 
@@ -131,8 +133,8 @@ CREATE TRIGGER trg_entries_immutable
     FOR EACH ROW EXECUTE FUNCTION fn_prevent_entry_mutation();
 
 -- ── OUTBOX EVENTS ────────────────────────────────────────────────────────────
--- Kode hanya meng-insert (id, aggregate_type, aggregate_id, event_type,
--- payload, created_at) — kolom lain WAJIB punya DEFAULT.
+-- The code only inserts (id, aggregate_type, aggregate_id, event_type,
+-- payload, created_at) — every other column MUST have a DEFAULT.
 CREATE TABLE outbox_events (
     id                UUID        PRIMARY KEY,
     aggregate_type    TEXT        NOT NULL,
@@ -162,7 +164,7 @@ CREATE INDEX idx_outbox_dead       ON outbox_events(created_at DESC)
     WHERE status = 'dead';
 CREATE INDEX idx_outbox_aggregate  ON outbox_events(aggregate_id, aggregate_type);
 
--- auto dead-letter: failed + retry habis → dead
+-- auto dead-letter: failed + retries exhausted → dead
 CREATE OR REPLACE FUNCTION fn_outbox_check_dead_letter() RETURNS TRIGGER AS $$
 BEGIN
     IF NEW.status = 'failed' AND NEW.retry_count >= NEW.max_retries THEN
@@ -187,8 +189,8 @@ CREATE TRIGGER trg_ltx_ua BEFORE UPDATE ON ledger_transactions
 CREATE TRIGGER trg_balances_ua BEFORE UPDATE ON account_balances
     FOR EACH ROW EXECUTE FUNCTION fn_set_updated_at();
 
--- ── FUNGSI VERIFIKASI (dipakai job harian, 06-phase-1-workers) ───────────────
--- Transaksi posted yang debit ≠ credit dalam window waktu. Output HARUS kosong.
+-- ── VERIFICATION FUNCTIONS (used by the daily job, 06-phase-1-workers) ──────
+-- Posted transactions whose debits ≠ credits in the time window. Output MUST be empty.
 CREATE OR REPLACE FUNCTION fn_verify_ledger_balance(
     p_from TIMESTAMPTZ DEFAULT now() - INTERVAL '1 day',
     p_to   TIMESTAMPTZ DEFAULT now()
@@ -209,7 +211,7 @@ LANGUAGE sql STABLE AS $$
            COALESCE(SUM(amount) FILTER (WHERE direction = 'credit'), 0);
 $$;
 
--- Saldo tersimpan vs saldo hasil hitung ulang dari entries (per akun).
+-- Stored balance versus the balance recomputed from entries (per account).
 CREATE OR REPLACE FUNCTION fn_verify_account_balance(p_account_id UUID)
 RETURNS TABLE (account_id UUID, stored_balance BIGINT, computed_balance BIGINT,
                diff BIGINT, is_consistent BOOLEAN)
@@ -231,7 +233,7 @@ LANGUAGE sql STABLE AS $$
     GROUP BY ab.account_id, ab.balance;
 $$;
 
--- View audit semua akun yang bergerak 24 jam terakhir
+-- Audit view of all accounts that moved in the last 24 hours.
 CREATE VIEW v_account_balance_audit AS
 SELECT a.id AS account_id, a.owner_type, a.type, a.currency,
        ab.balance AS stored_balance,
@@ -246,5 +248,5 @@ LEFT JOIN ledger_entries le ON le.account_id = a.id
 WHERE ab.updated_at > now() - INTERVAL '1 day'
 GROUP BY a.id, a.owner_type, a.type, a.currency, ab.balance, ab.updated_at;
 
--- ── HARDENING MINIMAL (RLS penuh ditunda ke Phase 2, keputusan D11) ─────────
+-- ── MINIMAL HARDENING (full RLS deferred to Phase 2, decision D11) ─────────
 REVOKE CREATE ON SCHEMA public FROM PUBLIC;

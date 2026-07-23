@@ -37,7 +37,7 @@ func TestWithdrawSettleResolveAccounts_NoFee(t *testing.T) {
 	assert.Len(t, resolved.Ordered, 2, "no fee metadata must resolve exactly 2 legs (hold, settlement)")
 }
 
-// TestWithdrawSettleResolveAccounts_WithFee proves docs/plan/25 Task T2's
+// TestWithdrawSettleResolveAccounts_WithFee proves docs/roadmap/archive/25 Task T2's
 // withdraw fee resolves a 3rd fee[gateway] leg — mirrors money_in's own
 // TestMoneyInResolveAccounts_WithFee.
 func TestWithdrawSettleResolveAccounts_WithFee(t *testing.T) {
@@ -88,7 +88,7 @@ func TestWithdrawSettleBuildEntries_NoFee(t *testing.T) {
 }
 
 // TestWithdrawSettleBuildEntries_WithFee proves deduct-from-amount
-// semantics (docs/plan/25 Task T2): settlement receives amount−fee, the
+// semantics (docs/roadmap/archive/25 Task T2): settlement receives amount−fee, the
 // fee account receives fee, hold is still debited the FULL amount — the
 // user's withdrawal itself is unchanged, only what arrives at the bank
 // rail is reduced.

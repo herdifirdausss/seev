@@ -23,6 +23,7 @@ import (
 	"github.com/herdifirdausss/seev/pkg/grpcx"
 	"github.com/herdifirdausss/seev/pkg/logger"
 	"github.com/herdifirdausss/seev/pkg/messaging"
+	"github.com/herdifirdausss/seev/pkg/tlsx"
 	"github.com/herdifirdausss/seev/pkg/tracing"
 )
 
@@ -47,7 +48,16 @@ func probeHealth(getenv func(string) string) error {
 	if port == "" {
 		port = "8094"
 	}
-	response, err := (&http.Client{Timeout: 3 * time.Second}).Get("http://127.0.0.1:" + port + "/health")
+	certDir := getenv("TLS_CERT_DIR")
+	if certDir == "" {
+		certDir = "deploy/certs"
+	}
+	certSrc, err := tlsx.LoadFromDir(certDir, "dev-operator", slog.Default())
+	if err != nil {
+		return fmt.Errorf("load healthcheck TLS identity: %w", err)
+	}
+	defer certSrc.Stop()
+	response, err := tlsx.HTTPClient(certSrc, tlsx.IdentityFraud, 3*time.Second).Get("https://127.0.0.1:" + port + "/health")
 	if err != nil {
 		return err
 	}
@@ -70,6 +80,14 @@ func run(parent context.Context) error {
 		cfg.GRPCPort = "9094"
 	}
 	log := logger.New(cfg.Logger.Pkg())
+	// docs/roadmap/archive/49 K3/K5: load this process's own identity + the shared CA
+	// before anything else — a service must never boot believing it's
+	// running mTLS when its certificates are missing or invalid.
+	certSrc, err := tlsx.LoadFromDir(cfg.TLSCertDir, "fraud", log)
+	if err != nil {
+		return fmt.Errorf("load TLS certificates: %w", err)
+	}
+	defer certSrc.Stop()
 	ctx, cancel := signal.NotifyContext(parent, syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 	shutdownTracing, err := tracing.Setup(ctx, tracing.Config{
@@ -89,7 +107,7 @@ func run(parent context.Context) error {
 	}
 	cfg.Redis.Enabled = true
 	cfg.Redis.DB = 1
-	// docs/plan/45 Task T3/K4: fraud-service may now START without Redis
+	// docs/roadmap/archive/45 Task T3/K4: fraud-service may now START without Redis
 	// being reachable — NewClientWithoutPing never fails at construction,
 	// unlike cache.New's eager Ping. FailClosedVelocityStore's own
 	// background probe (started inside its constructor) is what actually
@@ -118,7 +136,19 @@ func run(parent context.Context) error {
 		return err
 	}
 
-	grpcServer := grpcx.NewServer(log, cfg.InternalGRPCToken)
+	// docs/roadmap/archive/49 K4: fraud's gRPC listener only accepts the three
+	// services that legitimately call it.
+	grpcServer, err := grpcx.NewServer(log, cfg.InternalGRPCToken, tlsx.ServerConfig(certSrc, []string{
+		tlsx.IdentityLedger, tlsx.IdentityPayin, tlsx.IdentityPayout,
+	}))
+	if err != nil {
+		module.Stop()
+		store.Stop()
+		_ = broker.Close()
+		_ = redisClient.Close()
+		_ = db.Close()
+		return fmt.Errorf("create grpc server: %w", err)
+	}
 	module.RegisterGRPC(grpcServer)
 	listener, err := net.Listen("tcp", ":"+cfg.GRPCPort)
 	if err != nil {
@@ -129,11 +159,15 @@ func run(parent context.Context) error {
 		_ = db.Close()
 		return err
 	}
+	// docs/roadmap/archive/49 K6: fraud's admin listener is internal-only mTLS.
 	httpServer := &http.Server{
 		Addr: ":" + cfg.App.Port, Handler: adminRouter(cfg, module, log),
 		ReadTimeout: cfg.App.ReadTimeout, WriteTimeout: cfg.App.WriteTimeout,
 		IdleTimeout: cfg.App.IdleTimeout, ReadHeaderTimeout: 5 * time.Second,
 		MaxHeaderBytes: 1 << 20,
+		TLSConfig: tlsx.ServerConfig(certSrc, []string{
+			tlsx.IdentityDevOperator, tlsx.IdentityPrometheus, tlsx.IdentityAdminBFF,
+		}),
 	}
 	errCh := make(chan error, 2)
 	go serveGRPC(grpcServer, listener, errCh)
@@ -161,7 +195,13 @@ func run(parent context.Context) error {
 }
 
 func serveHTTP(server *http.Server, errorsOut chan<- error) {
-	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+	var err error
+	if server.TLSConfig != nil {
+		err = server.ListenAndServeTLS("", "")
+	} else {
+		err = server.ListenAndServe()
+	}
+	if err != nil && !errors.Is(err, http.ErrServerClosed) {
 		errorsOut <- err
 	}
 }

@@ -9,7 +9,7 @@ import (
 )
 
 // writeError maps a service/repository error to the appropriate HTTP
-// response, per the table in docs/plan/05 Task 1b.4. Internal error detail
+// response, per the table in docs/roadmap/archive/05 Task 1b.4. Internal error detail
 // never reaches the client body — only apperror.* is client-safe.
 func writeError(w http.ResponseWriter, err error) {
 	switch {

@@ -1,4 +1,4 @@
-// docs/plan/43 Task T1 (discovery/source skeleton) + Task T6 (K9: JSON
+// docs/roadmap/archive/43-a1-observability.md Task T1 (discovery/source skeleton) + Task T6 (K9: JSON
 // parsing, level label, structured metadata, redaction). Positions persist
 // under --storage.path=/var/lib/alloy/data (the seev_alloy_data named
 // volume) — loki.source.docker tracks per-container read offsets there
@@ -45,7 +45,7 @@ loki.process "app_logs" {
 		}
 	}
 
-	// level becomes a REAL Loki stream label (docs/plan/43 K9) — bounded
+	// level becomes a REAL Loki stream label (docs/roadmap/archive/43-a1-observability.md K9) — bounded
 	// cardinality (DEBUG/INFO/WARN/ERROR, 4 values across 6 services), the
 	// one field worth indexing as a label for fast severity filtering.
 	// Everything else extracted above stays out of the label set on
@@ -64,8 +64,8 @@ loki.process "app_logs" {
 	// `| request_id="..."` same as a label, searchable and shown in the
 	// log detail view, but does NOT fragment the stream the way a label
 	// would. This is what makes "one request_id finds logs across every
-	// service" possible without an unbounded label set (docs/plan/43 K9,
-	// T6 Test wajib).
+	// service" possible without an unbounded label set (docs/roadmap/archive/43-a1-observability.md K9,
+	// T6 Required test).
 	stage.structured_metadata {
 		values = {
 			request_id = "",
@@ -74,7 +74,7 @@ loki.process "app_logs" {
 		}
 	}
 
-	// Defense-in-depth redaction (docs/plan/43 K9/T6) — pkg/logger's
+	// Defense-in-depth redaction (docs/roadmap/archive/43-a1-observability.md K9/T6) — pkg/logger's
 	// application-level masking (masking.go: sensitiveKeys/
 	// sensitiveValuePatterns) is the PRIMARY control and already strips
 	// Authorization/password/secret/token/idempotency_key etc. before a

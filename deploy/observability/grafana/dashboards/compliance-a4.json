@@ -1,0 +1,16 @@
+{
+  "uid": "seev-compliance-a4",
+  "title": "Seev / Compliance A4",
+  "description": "KYC retry, sanctions and fraud screening audit health (docs/roadmap/archive/46).",
+  "tags": ["seev", "compliance"],
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": {"from": "now-6h", "to": "now"},
+  "panels": [
+    {"id": 1, "type": "timeseries", "title": "KYC retry attempts", "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0}, "targets": [{"expr": "rate(auth_kyc_apply_attempts_total[5m])", "refId": "A"}]},
+    {"id": 2, "type": "stat", "title": "KYC dead intents", "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}, "targets": [{"expr": "increase(auth_kyc_apply_dead_total[6h])", "refId": "A"}]},
+    {"id": 3, "type": "timeseries", "title": "Screening spill depth", "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8}, "targets": [{"expr": "fraud_screening_event_spill_depth", "refId": "A"}]},
+    {"id": 4, "type": "stat", "title": "Screening events lost", "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8}, "targets": [{"expr": "increase(fraud_screening_events_lost_total[6h])", "refId": "A"}]}
+  ]
+}

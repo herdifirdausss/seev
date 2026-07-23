@@ -38,7 +38,7 @@ func requireKYC(min int) middleware.Middleware {
 // transactions, ...) — unlike requireKYC above, it must itself distinguish
 // which request to gate: only POST against /transactions* (the only
 // sub-path that moves money). GET and POST /fees/quote stay reachable at
-// L0 (docs/plan/39 Task T4 — a quote never moves money).
+// L0 (docs/roadmap/archive/39 Task T4 — a quote never moves money).
 func requireKYCForLedgerPostings(min int) middleware.Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -60,9 +60,9 @@ func requireKYCForLedgerPostings(min int) middleware.Middleware {
 // chains. Uses Go 1.22 enhanced net/http patterns — no third-party router
 // required. See NewInternalRouter for the network-isolated counterpart that
 // serves system-transaction types, /metrics, and admin tooling
-// (docs/plan/10 Task T1).
+// (docs/roadmap/archive/10 Task T1).
 func NewRouter(cfg *config.Config, deps *Dependencies, logger *slog.Logger) http.Handler {
-	limiter := buildRateLimiter(deps, logger)
+	limiter := buildRateLimiter(cfg, deps, logger)
 	root := http.NewServeMux()
 	apiRoot := http.NewServeMux()
 
@@ -82,7 +82,7 @@ func NewRouter(cfg *config.Config, deps *Dependencies, logger *slog.Logger) http
 		middleware.WithTimeout(30*time.Second),
 	)
 
-	// ─── Vendor webhooks (docs/plan/22 Task T3, decision K-T1) ───────────────
+	// ─── Vendor webhooks (docs/roadmap/archive/22 Task T3, decision K-T1) ───────────────
 	// Deliberately its OWN chain, not `global`: no CORS (a payment vendor's
 	// server-to-server POST is never a browser request — a CORS preflight
 	// would only reject it), no JWT/RequireJSON (the vendor authenticates
@@ -120,7 +120,7 @@ func NewRouter(cfg *config.Config, deps *Dependencies, logger *slog.Logger) http
 		root.Handle("/api/v1/ledger/", global(authed(requireKYCForLedgerPostings(1)(deps.LedgerProxy))))
 	}
 
-	// Payout module — user-facing create/get (docs/plan/23 Task T5).
+	// Payout module — user-facing create/get (docs/roadmap/archive/23 Task T5).
 	// Registered directly at their literal final paths (not nested behind
 	// a StripPrefix sub-router) since there are only two routes and one of
 	// them is the bare "/payout" path itself — nesting a nil-vs-set
@@ -131,14 +131,14 @@ func NewRouter(cfg *config.Config, deps *Dependencies, logger *slog.Logger) http
 		apiMux.Handle("GET /payout/{id}", authed(getPayoutHandler(deps.Payout)))
 	}
 
-	// Payin topup intents — user-facing create/get (docs/plan/25 Task T3),
+	// Payin topup intents — user-facing create/get (docs/roadmap/archive/25 Task T3),
 	// same direct-registration pattern as Payout above.
 	if deps.Payin != nil {
 		apiMux.Handle("POST /topup", authed(requireKYC(1)(createTopupIntentHandler(deps.Payin))))
 		apiMux.Handle("GET /topup/{id}", authed(getTopupIntentHandler(deps.Payin)))
 	}
 
-	// Notify — in-app notification inbox (docs/plan/25 Task T4), same
+	// Notify — in-app notification inbox (docs/roadmap/archive/25 Task T4), same
 	// direct-registration pattern as Payout/Payin above.
 	if deps.Notify != nil {
 		apiMux.Handle("GET /notifications", authed(deps.Notify.ListHandler()))
@@ -165,13 +165,13 @@ func NewRouter(cfg *config.Config, deps *Dependencies, logger *slog.Logger) http
 // never safe for direct end-user use), /metrics, and admin outbox tooling.
 // Auth is still required; there is no rate limiting here because the caller
 // is assumed to be a trusted internal service, not a public client
-// (docs/plan/10 Task T1).
+// (docs/roadmap/archive/10 Task T1).
 func NewInternalRouter(cfg *config.Config, deps *Dependencies, logger *slog.Logger) http.Handler {
 	root := http.NewServeMux()
 	apiRoot := http.NewServeMux()
 
 	// NOTE: /metrics now lives ONLY on the internal listener — it is never
-	// reachable from the public-facing port (docs/plan/10 Task T6).
+	// reachable from the public-facing port (docs/roadmap/archive/10 Task T6).
 	root.Handle("GET /metrics", promhttp.Handler())
 
 	global := middleware.Chain(
@@ -197,14 +197,14 @@ func NewInternalRouter(cfg *config.Config, deps *Dependencies, logger *slog.Logg
 }
 
 // buildRateLimiter returns a Redis-backed limiter that fails over to an
-// in-memory fallback at RUNTIME if Redis becomes unreachable (docs/plan/45
+// in-memory fallback at RUNTIME if Redis becomes unreachable (docs/roadmap/archive/45
 // Task T3/K4), recovering automatically once Redis is healthy again for
 // two consecutive background probes — or a plain in-memory limiter with no
 // failover machinery at all when Redis is disabled/unavailable at startup
-// (docs/plan/12 Task T1's original behavior, unchanged for that case: there
+// (docs/roadmap/archive/12 Task T1's original behavior, unchanged for that case: there
 // is nothing to fail over TO).
-func buildRateLimiter(deps *Dependencies, logger *slog.Logger) cache.Limiter {
-	rateCfg := cache.RateConfig{Requests: 10, Per: 1 * time.Minute, Burst: 10}
+func buildRateLimiter(cfg *config.Config, deps *Dependencies, logger *slog.Logger) cache.Limiter {
+	rateCfg := cache.RateConfig{Requests: cfg.App.RateLimitRequests, Per: cfg.App.RateLimitPer, Burst: cfg.App.RateLimitBurst}
 	if deps.Cache != nil {
 		return cache.NewFailoverLimiter(deps.Cache.Redis(), rateCfg, logger)
 	}
@@ -213,9 +213,12 @@ func buildRateLimiter(deps *Dependencies, logger *slog.Logger) cache.Limiter {
 
 func corsConfig(cfg *config.Config) middleware.CORSConfig {
 	corsCfg := middleware.DefaultCORSConfig()
-	if cfg.IsProduction() {
+	switch {
+	case cfg.IsProduction():
 		corsCfg.AllowedOrigins = []string{cfg.App.BaseURL}
 		corsCfg.AllowCredentials = true
+	case len(cfg.App.AllowedOrigins) > 0:
+		corsCfg.AllowedOrigins = cfg.App.AllowedOrigins
 	}
 	return corsCfg
 }

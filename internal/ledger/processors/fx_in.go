@@ -14,7 +14,7 @@ import (
 )
 
 // =============================================================================
-// FxIn — fx_conversion[pair][ccy2] -> user.cash[ccy2] (docs/plan/18 Task T3)
+// FxIn — fx_conversion[pair][ccy2] -> user.cash[ccy2] (docs/roadmap/archive/18 Task T3)
 //
 // FxOut's mirror — completes the conversion by crediting the user's
 // TARGET-currency cash from the platform's FX position account. A SEPARATE
@@ -29,7 +29,7 @@ import (
 // order flow. If THIS leg fails for another reason (e.g. the destination
 // cash account is suspended) after FxOut already posted, the pair's
 // position becomes visibly open (a non-zero fx_conversion balance) — see
-// docs/runbooks/fx-position.md for the human decision procedure (retry this
+// docs/operations/runbooks/fx-position.md for the human decision procedure (retry this
 // leg, or reverse FxOut).
 //
 // Metadata: identical contract to FxOut (quote_id, rate, pair — all

@@ -14,7 +14,7 @@ import (
 )
 
 // ReportingRepository reads the three regulatory-reporting views
-// (docs/plan/20 Task T2, migrations/000018) — read-only, no writes anywhere
+// (docs/roadmap/archive/20 Task T2, migrations/000018) — read-only, no writes anywhere
 // in this file. Queries run through the normal app_service pooled
 // connection (the views themselves are the access-control boundary for
 // external app_readonly tools, not this repository — see the migration's

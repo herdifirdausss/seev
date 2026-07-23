@@ -1,6 +1,6 @@
 //go:build integration
 
-// Proves the payin webhook route (docs/plan/22 Task T3) end to end through
+// Proves the payin webhook route (docs/roadmap/archive/22 Task T3) end to end through
 // the REAL public router — not just internal/payin.Module in isolation
 // (that's covered by internal/payin's own integration tests) — specifically
 // the HTTP-layer concerns: bypasses JWT/CORS, enforces the body cap, and
@@ -52,7 +52,7 @@ func setupWebhookTestDB(t *testing.T) *database.DBSQL {
 	const dbName, dbUser, dbPassword = "seev_test", "test", "secret"
 
 	container, err := postgres.Run(ctx,
-		"postgres:16-alpine",
+		"postgres:16.14-alpine",
 		postgres.WithDatabase(dbName),
 		postgres.WithUsername(dbUser),
 		postgres.WithPassword(dbPassword),
@@ -107,6 +107,23 @@ func webhookTestBalance(t *testing.T, db *database.DBSQL, accountID uuid.UUID) d
 
 const webhookTestMockSecret = "webhook-test-secret"
 
+func webhookTestConfig() *config.Config {
+	return &config.Config{
+		App: config.AppConfig{
+			Env:               "development",
+			BaseURL:           "http://localhost:8080",
+			RateLimitRequests: 10,
+			RateLimitPer:      time.Minute,
+			RateLimitBurst:    10,
+		},
+		JWT: config.JWTConfig{
+			Secret:       "supersecretkeythatisatleast32chars!",
+			Issuer:       "seev-integration",
+			AccessExpiry: 15 * time.Minute,
+		},
+	}
+}
+
 func newWebhookTestRouter(t *testing.T, db *database.DBSQL) http.Handler {
 	t.Helper()
 	ledgerClient := testutil.NewLedgerHarness(db)
@@ -122,12 +139,8 @@ func newWebhookTestRouter(t *testing.T, db *database.DBSQL) http.Handler {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close(); grpcServer.Stop(); _ = listener.Close() })
 
-	cfg := &config.Config{
-		App: config.AppConfig{Env: "development", BaseURL: "http://localhost:8080"},
-		JWT: config.JWTConfig{Secret: "supersecretkeythatisatleast32chars!", AccessExpiry: 15 * time.Minute},
-	}
 	deps := &Dependencies{DB: db, Payin: payinv1.NewPayinServiceClient(conn)}
-	return NewRouter(cfg, deps, slog.Default())
+	return NewRouter(webhookTestConfig(), deps, slog.Default())
 }
 
 func settledBody(eventID string, userID uuid.UUID, amount int64) []byte {
@@ -195,16 +208,12 @@ func TestWebhookRoute_BadSignature_401_NoBalanceChange(t *testing.T) {
 // handler's own cap logic is correct independent of that middleware issue.
 
 // TestWebhookRoute_NoVendorConfigured_404 proves the DoD default-safe
-// behavior (docs/plan/22 Task T3): with deps.Payin nil (no vendor ever
+// behavior (docs/roadmap/archive/22 Task T3): with deps.Payin nil (no vendor ever
 // wired), every /webhooks/* request 404s — byte-identical to before this
 // feature existed.
 func TestWebhookRoute_NoVendorConfigured_404(t *testing.T) {
-	cfg := &config.Config{
-		App: config.AppConfig{Env: "development", BaseURL: "http://localhost:8080"},
-		JWT: config.JWTConfig{Secret: "supersecretkeythatisatleast32chars!", AccessExpiry: 15 * time.Minute},
-	}
 	deps := &Dependencies{} // Payin left nil
-	router := NewRouter(cfg, deps, slog.Default())
+	router := NewRouter(webhookTestConfig(), deps, slog.Default())
 
 	req := httptest.NewRequest(http.MethodPost, "/webhooks/mockvendor", strings.NewReader(`{}`))
 	w := httptest.NewRecorder()
@@ -214,7 +223,7 @@ func TestWebhookRoute_NoVendorConfigured_404(t *testing.T) {
 }
 
 // TestWebhookRoute_DoesNotSetCORSHeaders proves the webhook route was
-// mounted OUTSIDE the CORS-bearing `global` chain (docs/plan/22 Task T3
+// mounted OUTSIDE the CORS-bearing `global` chain (docs/roadmap/archive/22 Task T3
 // DoD) — a request carrying an Origin header must NOT get an
 // Access-Control-Allow-Origin response header the way a normal /api/v1/...
 // route would.

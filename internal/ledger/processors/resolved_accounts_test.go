@@ -12,7 +12,7 @@ import (
 	"github.com/herdifirdausss/seev/internal/ledger/constant"
 )
 
-// This file locks the Source/Destination contract (docs/plan/14 Task T1,
+// This file locks the Source/Destination contract (docs/roadmap/archive/14 Task T1,
 // decision K2) for every registered processor: Source is always the account
 // debited, Destination the account credited, matching each processor's own
 // BuildEntries (AccountIDs[0]=Debit, AccountIDs[1]=Credit). One test per
@@ -438,7 +438,7 @@ func TestResolvedAccounts_InterestAccrue(t *testing.T) {
 
 func TestResolvedAccounts_Reversal_SourceDestinationAlwaysNil(t *testing.T) {
 	// Reversal can touch more than two accounts (e.g. reversing a
-	// transaction with a fee leg) — decision K2, docs/plan/13: no single
+	// transaction with a fee leg) — decision K2, docs/roadmap/archive/13: no single
 	// semantic source->destination pair, so both stay uuid.Nil even though
 	// Ordered is populated and non-empty.
 	txRepo, ctrl := newMockTransactionRepo(t)

@@ -27,6 +27,7 @@ import (
 	"github.com/herdifirdausss/seev/pkg/grpcx"
 	"github.com/herdifirdausss/seev/pkg/ledgerclient"
 	"github.com/herdifirdausss/seev/pkg/logger"
+	"github.com/herdifirdausss/seev/pkg/tlsx"
 	"github.com/herdifirdausss/seev/pkg/tracing"
 )
 
@@ -50,8 +51,17 @@ func probeHealth(getenv func(string) string) error {
 	if port == "" {
 		port = "8093"
 	}
-	client := &http.Client{Timeout: 3 * time.Second}
-	res, err := client.Get("http://127.0.0.1:" + port + "/health")
+	certDir := getenv("TLS_CERT_DIR")
+	if certDir == "" {
+		certDir = "deploy/certs"
+	}
+	certSrc, err := tlsx.LoadFromDir(certDir, "dev-operator", slog.Default())
+	if err != nil {
+		return fmt.Errorf("load healthcheck TLS identity: %w", err)
+	}
+	defer certSrc.Stop()
+	client := tlsx.HTTPClient(certSrc, tlsx.IdentityPayout, 3*time.Second)
+	res, err := client.Get("https://127.0.0.1:" + port + "/health")
 	if err != nil {
 		return err
 	}
@@ -74,6 +84,16 @@ func run(parent context.Context) error {
 		cfg.GRPCPort = "9093"
 	}
 	log := logger.New(cfg.Logger.Pkg())
+	// docs/roadmap/archive/49 K3/K5: load this process's own identity + the shared
+	// CA before anything else. A second payout-service replica (docs/
+	// plan/45 T4's start_payout_service_replica) is the SAME workload
+	// identity, not a distinct one — SPIFFE-style identity is per-service,
+	// not per-instance, so it loads this exact same "payout" cert too.
+	certSrc, err := tlsx.LoadFromDir(cfg.TLSCertDir, "payout", log)
+	if err != nil {
+		return fmt.Errorf("load TLS certificates: %w", err)
+	}
+	defer certSrc.Stop()
 	ctx, cancel := signal.NotifyContext(parent, syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 	shutdownTracing, err := tracing.Setup(ctx, tracing.Config{
@@ -101,7 +121,7 @@ func run(parent context.Context) error {
 		}
 		redisClient = redisCache.Redis()
 	}
-	ledgerConn, err := grpcx.Dial(ctx, cfg.LedgerGRPCAddr, cfg.InternalGRPCToken)
+	ledgerConn, err := grpcx.Dial(ctx, cfg.LedgerGRPCAddr, cfg.InternalGRPCToken, tlsx.ClientConfig(certSrc, tlsx.IdentityLedger))
 	if err != nil {
 		if redisCache != nil {
 			_ = redisCache.Close()
@@ -124,12 +144,12 @@ func run(parent context.Context) error {
 		log.Info("vendorgw: distributed breaker enabled", "namespace", "payout")
 	}
 
-	// fraud client screens payouts pre-hold (docs/plan/37 Task T5).
+	// fraud client screens payouts pre-hold (docs/roadmap/archive/37 Task T5).
 	// FRAUD_GRPC_ADDR unset (dev/test defaults) => nil client => no screening.
 	var fraudClient *fraudcheck.Client
 	var fraudConn *grpc.ClientConn
 	if cfg.FraudGRPCAddr != "" {
-		fraudConn, err = grpcx.DialLazy(ctx, cfg.FraudGRPCAddr, cfg.InternalGRPCToken)
+		fraudConn, err = grpcx.DialLazy(ctx, cfg.FraudGRPCAddr, cfg.InternalGRPCToken, tlsx.ClientConfig(certSrc, tlsx.IdentityFraud))
 		if err != nil {
 			_ = ledgerConn.Close()
 			if redisCache != nil {
@@ -144,7 +164,21 @@ func run(parent context.Context) error {
 
 	module := payout.NewModule(db, ledgerclient.New(ledgerConn), registry, redisClient, log, fraudClient, breaker)
 	module.StartWorkers(ctx)
-	grpcServer := grpcx.NewServer(log, cfg.InternalGRPCToken)
+	// docs/roadmap/archive/49 K4: gateway calls payout's gRPC surface for user-facing
+	// payout flows; assurance-service (TM-09) reads it for cross-service
+	// correlation.
+	grpcServer, err := grpcx.NewServer(log, cfg.InternalGRPCToken, tlsx.ServerConfig(certSrc, []string{
+		tlsx.IdentityGateway, tlsx.IdentityAssurance,
+	}))
+	if err != nil {
+		module.StopWorkers()
+		_ = ledgerConn.Close()
+		if redisCache != nil {
+			_ = redisCache.Close()
+		}
+		_ = db.Close()
+		return fmt.Errorf("create grpc server: %w", err)
+	}
 	module.RegisterGRPC(grpcServer)
 	listener, err := net.Listen("tcp", ":"+cfg.GRPCPort)
 	if err != nil {
@@ -156,7 +190,11 @@ func run(parent context.Context) error {
 		_ = db.Close()
 		return err
 	}
-	httpServer := &http.Server{Addr: ":" + cfg.App.Port, Handler: adminRouter(cfg, module, log), ReadTimeout: cfg.App.ReadTimeout, WriteTimeout: cfg.App.WriteTimeout, IdleTimeout: cfg.App.IdleTimeout, ReadHeaderTimeout: 5 * time.Second, MaxHeaderBytes: 1 << 20}
+	// docs/roadmap/archive/49 K6: payout's admin listener is internal-only mTLS —
+	// both replicas (docs/roadmap/archive/45 T4) share the same "payout" identity.
+	httpServer := &http.Server{Addr: ":" + cfg.App.Port, Handler: adminRouter(cfg, module, log), ReadTimeout: cfg.App.ReadTimeout, WriteTimeout: cfg.App.WriteTimeout, IdleTimeout: cfg.App.IdleTimeout, ReadHeaderTimeout: 5 * time.Second, MaxHeaderBytes: 1 << 20, TLSConfig: tlsx.ServerConfig(certSrc, []string{
+		tlsx.IdentityDevOperator, tlsx.IdentityPrometheus, tlsx.IdentityAdminBFF,
+	})}
 	errCh := make(chan error, 2)
 	go serveGRPC(grpcServer, listener, errCh)
 	go serveHTTP(httpServer, errCh)
@@ -183,7 +221,13 @@ func run(parent context.Context) error {
 	return serveErr
 }
 func serveHTTP(s *http.Server, ch chan<- error) {
-	if err := s.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+	var err error
+	if s.TLSConfig != nil {
+		err = s.ListenAndServeTLS("", "")
+	} else {
+		err = s.ListenAndServe()
+	}
+	if err != nil && !errors.Is(err, http.ErrServerClosed) {
 		ch <- err
 	}
 }

@@ -1,7 +1,7 @@
 {
   "uid": "seev-slo-alerts",
   "title": "Seev / SLO & Alerts",
-  "description": "30-day SLI, error budget, multi-window burn rate, and current alert state for the three SLOs defined in docs/plan/43 K6 (posting availability, webhook latency, notification success). Populated once Task T5's recording rules exist.",
+  "description": "30-day SLI, error budget, multi-window burn rate, and current alert state for the three SLOs defined in docs/roadmap/archive/43 K6 (posting availability, webhook latency, notification success). Populated once Task T5's recording rules exist.",
   "tags": [
     "seev",
     "observability",
@@ -43,7 +43,7 @@
         "w": 12,
         "h": 8
       },
-      "description": "Recording rule naming locked for docs/plan/43 Task T5 (not yet implemented as of T4 \u2014 these panels legitimately show 'No data' until T5's prometheus/rules/slo.yml exists): slo:sli_ratio:rate<window>{slo=\"posting_availability|webhook_latency|notification_success\"}, slo:burnrate:rate<window>{slo=...}, slo:error_budget_remaining{slo=...}, slo:eligible_events:rate1h{slo=...}. Windows: 5m/30m/1h/6h/3d/30d per K6 burn-rate pairs.",
+      "description": "Recording rule naming locked for docs/roadmap/archive/43 Task T5 (not yet implemented as of T4 \u2014 these panels legitimately show 'No data' until T5's prometheus/rules/slo.yml exists): slo:sli_ratio:rate<window>{slo=\"posting_availability|webhook_latency|notification_success\"}, slo:burnrate:rate<window>{slo=...}, slo:error_budget_remaining{slo=...}, slo:eligible_events:rate1h{slo=...}. Windows: 5m/30m/1h/6h/3d/30d per K6 burn-rate pairs.",
       "fieldConfig": {
         "defaults": {
           "unit": "percentunit"
@@ -76,7 +76,7 @@
         "w": 12,
         "h": 8
       },
-      "description": "Recording rule naming locked for docs/plan/43 Task T5 (not yet implemented as of T4 \u2014 these panels legitimately show 'No data' until T5's prometheus/rules/slo.yml exists): slo:sli_ratio:rate<window>{slo=\"posting_availability|webhook_latency|notification_success\"}, slo:burnrate:rate<window>{slo=...}, slo:error_budget_remaining{slo=...}, slo:eligible_events:rate1h{slo=...}. Windows: 5m/30m/1h/6h/3d/30d per K6 burn-rate pairs.",
+      "description": "Recording rule naming locked for docs/roadmap/archive/43 Task T5 (not yet implemented as of T4 \u2014 these panels legitimately show 'No data' until T5's prometheus/rules/slo.yml exists): slo:sli_ratio:rate<window>{slo=\"posting_availability|webhook_latency|notification_success\"}, slo:burnrate:rate<window>{slo=...}, slo:error_budget_remaining{slo=...}, slo:eligible_events:rate1h{slo=...}. Windows: 5m/30m/1h/6h/3d/30d per K6 burn-rate pairs.",
       "fieldConfig": {
         "defaults": {
           "unit": "percentunit"
@@ -122,7 +122,7 @@
         "w": 12,
         "h": 8
       },
-      "description": "Recording rule naming locked for docs/plan/43 Task T5 (not yet implemented as of T4 \u2014 these panels legitimately show 'No data' until T5's prometheus/rules/slo.yml exists): slo:sli_ratio:rate<window>{slo=\"posting_availability|webhook_latency|notification_success\"}, slo:burnrate:rate<window>{slo=...}, slo:error_budget_remaining{slo=...}, slo:eligible_events:rate1h{slo=...}. Windows: 5m/30m/1h/6h/3d/30d per K6 burn-rate pairs.",
+      "description": "Recording rule naming locked for docs/roadmap/archive/43 Task T5 (not yet implemented as of T4 \u2014 these panels legitimately show 'No data' until T5's prometheus/rules/slo.yml exists): slo:sli_ratio:rate<window>{slo=\"posting_availability|webhook_latency|notification_success\"}, slo:burnrate:rate<window>{slo=...}, slo:error_budget_remaining{slo=...}, slo:eligible_events:rate1h{slo=...}. Windows: 5m/30m/1h/6h/3d/30d per K6 burn-rate pairs.",
       "fieldConfig": {
         "defaults": {
           "unit": "short"
@@ -164,7 +164,7 @@
         "w": 12,
         "h": 8
       },
-      "description": "Recording rule naming locked for docs/plan/43 Task T5 (not yet implemented as of T4 \u2014 these panels legitimately show 'No data' until T5's prometheus/rules/slo.yml exists): slo:sli_ratio:rate<window>{slo=\"posting_availability|webhook_latency|notification_success\"}, slo:burnrate:rate<window>{slo=...}, slo:error_budget_remaining{slo=...}, slo:eligible_events:rate1h{slo=...}. Windows: 5m/30m/1h/6h/3d/30d per K6 burn-rate pairs.",
+      "description": "Recording rule naming locked for docs/roadmap/archive/43 Task T5 (not yet implemented as of T4 \u2014 these panels legitimately show 'No data' until T5's prometheus/rules/slo.yml exists): slo:sli_ratio:rate<window>{slo=\"posting_availability|webhook_latency|notification_success\"}, slo:burnrate:rate<window>{slo=...}, slo:error_budget_remaining{slo=...}, slo:eligible_events:rate1h{slo=...}. Windows: 5m/30m/1h/6h/3d/30d per K6 burn-rate pairs.",
       "fieldConfig": {
         "defaults": {
           "unit": "short"
@@ -206,7 +206,7 @@
         "w": 12,
         "h": 8
       },
-      "description": "Recording rule naming locked for docs/plan/43 Task T5 (not yet implemented as of T4 \u2014 these panels legitimately show 'No data' until T5's prometheus/rules/slo.yml exists): slo:sli_ratio:rate<window>{slo=\"posting_availability|webhook_latency|notification_success\"}, slo:burnrate:rate<window>{slo=...}, slo:error_budget_remaining{slo=...}, slo:eligible_events:rate1h{slo=...}. Windows: 5m/30m/1h/6h/3d/30d per K6 burn-rate pairs.",
+      "description": "Recording rule naming locked for docs/roadmap/archive/43 Task T5 (not yet implemented as of T4 \u2014 these panels legitimately show 'No data' until T5's prometheus/rules/slo.yml exists): slo:sli_ratio:rate<window>{slo=\"posting_availability|webhook_latency|notification_success\"}, slo:burnrate:rate<window>{slo=...}, slo:error_budget_remaining{slo=...}, slo:eligible_events:rate1h{slo=...}. Windows: 5m/30m/1h/6h/3d/30d per K6 burn-rate pairs.",
       "fieldConfig": {
         "defaults": {
           "unit": "short"
@@ -252,7 +252,7 @@
         "w": 24,
         "h": 8
       },
-      "description": "Recording rule naming locked for docs/plan/43 Task T5 (not yet implemented as of T4 \u2014 these panels legitimately show 'No data' until T5's prometheus/rules/slo.yml exists): slo:sli_ratio:rate<window>{slo=\"posting_availability|webhook_latency|notification_success\"}, slo:burnrate:rate<window>{slo=...}, slo:error_budget_remaining{slo=...}, slo:eligible_events:rate1h{slo=...}. Windows: 5m/30m/1h/6h/3d/30d per K6 burn-rate pairs. Minimum gates per K6: 20/1h, 50/6h, 100/3d for the corresponding burn-rate alert to be trusted.",
+      "description": "Recording rule naming locked for docs/roadmap/archive/43 Task T5 (not yet implemented as of T4 \u2014 these panels legitimately show 'No data' until T5's prometheus/rules/slo.yml exists): slo:sli_ratio:rate<window>{slo=\"posting_availability|webhook_latency|notification_success\"}, slo:burnrate:rate<window>{slo=...}, slo:error_budget_remaining{slo=...}, slo:eligible_events:rate1h{slo=...}. Windows: 5m/30m/1h/6h/3d/30d per K6 burn-rate pairs. Minimum gates per K6: 20/1h, 50/6h, 100/3d for the corresponding burn-rate alert to be trusted.",
       "fieldConfig": {
         "defaults": {
           "unit": "short"

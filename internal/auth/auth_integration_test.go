@@ -1,7 +1,7 @@
 //go:build integration
 
 // Package auth_test drives internal/auth.Module end to end against a real
-// ledger.Module and real Postgres (docs/plan/25 Task T1) — proves the whole
+// ledger.Module and real Postgres (docs/roadmap/archive/25 Task T1) — proves the whole
 // vertical: register -> credentials persisted -> ledger accounts
 // provisioned -> issued JWT passes the EXISTING middleware -> login/refresh
 // rotation against real rows.
@@ -44,7 +44,7 @@ func setupAuthTestDB(t *testing.T) *database.DBSQL {
 	const dbName, dbUser, dbPassword = "seev_test", "test", "secret"
 
 	container, err := postgres.Run(ctx,
-		"postgres:16-alpine",
+		"postgres:16.14-alpine",
 		postgres.WithDatabase(dbName),
 		postgres.WithUsername(dbUser),
 		postgres.WithPassword(dbPassword),

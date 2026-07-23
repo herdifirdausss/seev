@@ -18,11 +18,14 @@ import (
 // Re-exported so callers never need to import internal/payin/model.
 type TopupIntent = model.TopupIntent
 
-// CreateTopupIntent starts a user-initiated top-up (docs/plan/25 Task T3):
+// CreateTopupIntent starts a user-initiated top-up (docs/roadmap/archive/25 Task T3):
 // the returned Reference is what the user quotes at the vendor — the
 // vendor never learns the internal user_id, only this opaque reference,
 // which travels back in the settling webhook's existing ExternalRef field.
 func (m *Module) CreateTopupIntent(ctx context.Context, userID uuid.UUID, amount decimal.Decimal) (TopupIntent, error) {
+	if err := m.ensureIntakeOpen(ctx); err != nil {
+		return TopupIntent{}, err
+	}
 	currency, err := m.poster.GetUserCurrency(ctx, userID, "")
 	if err != nil {
 		return TopupIntent{}, fmt.Errorf("payin: resolve user currency: %w", err)
@@ -55,7 +58,7 @@ func (m *Module) CreateTopupIntent(ctx context.Context, userID uuid.UUID, amount
 }
 
 // GetTopupIntent returns one topup intent by id, lazily flipping a stale
-// 'pending' row to 'expired' first (docs/plan/25 Task T3 step 5 — no
+// 'pending' row to 'expired' first (docs/roadmap/archive/25 Task T3 step 5 — no
 // background job, expiry is discovered opportunistically on read).
 func (m *Module) GetTopupIntent(ctx context.Context, id uuid.UUID) (TopupIntent, error) {
 	intent, err := m.repo.GetTopupIntent(ctx, id)

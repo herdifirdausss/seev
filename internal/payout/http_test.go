@@ -216,7 +216,7 @@ func TestAdminRouter_Retry_Success(t *testing.T) {
 	id := uuid.New()
 	req := sampleRequest(id, model.StatusSubmitted)
 
-	// docs/plan/45 Task T1: AdminRetry only ensures a command exists — it
+	// docs/roadmap/archive/45 Task T1: AdminRetry only ensures a command exists — it
 	// never calls the vendor itself; the relay dispatches whatever it
 	// enqueues.
 	repo.EXPECT().Get(gomock.Any(), id).Return(req, nil)
@@ -286,7 +286,7 @@ func TestCreateHandler_Success_201(t *testing.T) {
 	userID := uuid.New()
 	holdTxID := uuid.New()
 
-	// docs/plan/45 Task T1: Create returns after hold+enqueue, without ever
+	// docs/roadmap/archive/45 Task T1: Create returns after hold+enqueue, without ever
 	// calling the vendor — dispatch is the relay's job alone.
 	heldReq := sampleRequest(uuid.Nil, model.StatusSubmitted)
 	heldReq.UserID = userID
@@ -347,7 +347,7 @@ func TestGetHandler_NotFound_404(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, w.Code)
 }
 
-// TestGetHandler_OwnershipMismatch_404 is docs/plan/23 Task T5's required
+// TestGetHandler_OwnershipMismatch_404 is docs/roadmap/archive/23 Task T5's required
 // ownership test: user A must not be able to see user B's payout request —
 // reported as 404 (not 403), same "don't confirm existence to a non-owner"
 // reasoning as ledger's own CanAccessAccount-based handlers.
@@ -383,7 +383,7 @@ func TestGetHandler_Success_200(t *testing.T) {
 	assert.Contains(t, w.Body.String(), "settled")
 }
 
-// ─── Admin: vendor force-fail (docs/plan/40 Task T4) ────────────────────
+// ─── Admin: vendor force-fail (docs/roadmap/archive/40 Task T4) ────────────────────
 
 func TestAdminRouter_ForceFail_NonAdmin_403(t *testing.T) {
 	ctrl := gomock.NewController(t)
@@ -444,7 +444,7 @@ func TestAdminRouter_ForceFail_Success_TripsSubsequentSubmit(t *testing.T) {
 	assert.NoError(t, err, "flipping the switch back off must restore normal behavior")
 }
 
-// ─── Admin: vendor health (docs/plan/40 Task T5) ────────────────────────
+// ─── Admin: vendor health (docs/roadmap/archive/40 Task T5) ────────────────────────
 
 func TestAdminRouter_VendorHealth_NonAdmin_403(t *testing.T) {
 	ctrl := gomock.NewController(t)
@@ -467,7 +467,7 @@ func TestAdminRouter_VendorHealth_NilBreaker_EmptyList(t *testing.T) {
 	assert.Contains(t, w.Body.String(), `"vendors":[]`)
 }
 
-// TestAdminRouter_VendorHealth_ReportsAllThreeStates is docs/plan/40 Task
+// TestAdminRouter_VendorHealth_ReportsAllThreeStates is docs/roadmap/archive/40 Task
 // T5's own required test: a tracker seeded with closed, open, AND
 // half-open vendors must report each state accurately in one snapshot.
 func TestAdminRouter_VendorHealth_ReportsAllThreeStates(t *testing.T) {

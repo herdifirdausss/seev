@@ -1,4 +1,4 @@
--- Daily balance snapshots (docs/plan/15 Task T1, decision K6).
+-- Daily balance snapshots (docs/roadmap/archive/15 Task T1, decision K6).
 --
 -- Unlike ledger_entries, this table is NOT append-only-with-trigger — the
 -- daily job may DELETE+re-INSERT a date's rows to correct a bad snapshot

@@ -3,6 +3,7 @@ package grpcserver
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
@@ -47,11 +48,14 @@ func (s *Server) CreatePayout(ctx context.Context, request *payoutv1.CreatePayou
 	}
 	id, callErr := s.service.Create(ctx, userID, amount, request.GetDestination(), request.GetCreatedBy(), request.GetQuoteId())
 	if callErr != nil {
+		if strings.Contains(callErr.Error(), "intake paused") {
+			return nil, status.Error(codes.FailedPrecondition, "INTAKE_PAUSED")
+		}
 		if errors.Is(callErr, s.noRoute) {
 			return nil, status.Error(codes.FailedPrecondition, "no payout route available")
 		}
 		if errors.Is(callErr, s.noVendorAvailable) {
-			// docs/plan/40 Task T2 — distinct gRPC code from "no route"
+			// docs/roadmap/archive/40 Task T2 — distinct gRPC code from "no route"
 			// (FailedPrecondition/422): every candidate vendor is
 			// registered but circuit-broken, a TRANSIENT condition the
 			// caller should retry, not a config problem.
@@ -61,7 +65,7 @@ func (s *Server) CreatePayout(ctx context.Context, request *payoutv1.CreatePayou
 			return nil, status.Error(codes.FailedPrecondition, callErr.Error())
 		}
 		if errors.Is(callErr, s.screeningDependencyUnavailable) {
-			// docs/plan/45 Task T3/K4 — codes.Unavailable like
+			// docs/roadmap/archive/45 Task T3/K4 — codes.Unavailable like
 			// noVendorAvailable above (both transient, retry-worthy), but a
 			// DIFFERENT message so the gateway can tell them apart.
 			return nil, status.Error(codes.Unavailable, "screening dependency unavailable")
@@ -99,6 +103,43 @@ func (s *Server) GetPayout(ctx context.Context, request *payoutv1.GetPayoutReque
 		return nil, status.Error(codes.NotFound, "payout request not found")
 	}
 	return &payoutv1.GetPayoutResponse{Payout: payoutToProto(value)}, nil
+}
+
+func (s *Server) ListAssuranceRecords(ctx context.Context, request *payoutv1.ListAssuranceRecordsRequest) (*payoutv1.ListAssuranceRecordsResponse, error) {
+	reader, ok := s.service.(interface {
+		ListAssuranceRecords(context.Context, *payoutv1.ListAssuranceRecordsRequest) (*payoutv1.ListAssuranceRecordsResponse, error)
+	})
+	if !ok {
+		return nil, status.Error(codes.Unimplemented, "payout assurance projection unavailable")
+	}
+	return reader.ListAssuranceRecords(ctx, request)
+}
+
+func (s *Server) GetIntakeControl(ctx context.Context, request *payoutv1.GetIntakeControlRequest) (*payoutv1.GetIntakeControlResponse, error) {
+	reader, ok := s.service.(interface {
+		GetIntakeControlRPC(context.Context) (*payoutv1.GetIntakeControlResponse, error)
+	})
+	if !ok {
+		return nil, status.Error(codes.Unimplemented, "payout intake control unavailable")
+	}
+	return reader.GetIntakeControlRPC(ctx)
+}
+
+func (s *Server) ApplyIntakeControl(ctx context.Context, request *payoutv1.ApplyIntakeControlRequest) (*payoutv1.ApplyIntakeControlResponse, error) {
+	reader, ok := s.service.(interface {
+		ApplyIntakeControlRPC(context.Context, *payoutv1.ApplyIntakeControlRequest) (*payoutv1.ApplyIntakeControlResponse, error)
+	})
+	if !ok {
+		return nil, status.Error(codes.Unimplemented, "payout intake control unavailable")
+	}
+	response, err := reader.ApplyIntakeControlRPC(ctx, request)
+	if err != nil {
+		if strings.Contains(err.Error(), "revision mismatch") {
+			return nil, status.Error(codes.Aborted, "intake revision mismatch")
+		}
+		return nil, status.Error(codes.InvalidArgument, "invalid intake command")
+	}
+	return response, nil
 }
 
 func parseUserAndAmount(rawUserID, rawAmount string) (uuid.UUID, decimal.Decimal, error) {

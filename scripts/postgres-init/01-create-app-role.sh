@@ -1,7 +1,7 @@
 #!/bin/sh
 # Runs once, at first container boot, as the postgres image's bootstrap
 # superuser (POSTGRES_USER — the schema-owner identity, see docker-compose.yml
-# and docs/plan/16 Task T3). Creates the LOGIN role the application actually
+# and docs/roadmap/archive/16 Task T3). Creates the LOGIN role the application actually
 # connects as (APP_DB_USER/APP_DB_PASSWORD) — group-role membership in
 # app_service is granted separately, AFTER migration 000009 creates that
 # role (see `make grant-app-role` in the Makefile). A role with no group

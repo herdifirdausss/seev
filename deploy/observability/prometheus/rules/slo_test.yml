@@ -1,4 +1,4 @@
-# docs/plan/43 Task T5 — promtool unit tests for slo.yml's recording rules.
+# docs/roadmap/archive/43 Task T5 — promtool unit tests for slo.yml's recording rules.
 # Grafana owns alert *evaluation* (K8: no native Prometheus `alert:` rules
 # exist in slo.yml, only `record:` rules), so these tests validate the
 # recording-rule math the Grafana burn-rate alerts are built directly on top
@@ -44,7 +44,7 @@ tests:
             value: 0
 
   # ── 2. business rejections must NOT burn the posting_availability budget ─
-  # (docs/plan/43 T5 fix: apperror.IsBusinessRejection classifies these as
+  # (docs/roadmap/archive/43 T5 fix: apperror.IsBusinessRejection classifies these as
   # status="rejected", excluded from BOTH eligible and good — see slo.yml's
   # own comment). Heavy rejected traffic alongside light-but-100%-posted
   # traffic must still show ratio=1 / burnrate=0, proving 4xx-equivalent
@@ -145,7 +145,7 @@ tests:
             value: 79.99999999999993
 
   # ── 6. low-traffic window must fall below the K7 minimum-event gate ──────
-  # (docs/plan/43 T5 regression: an earlier draft used
+  # (docs/roadmap/archive/43 T5 regression: an earlier draft used
   # clamp_min(eligible,1) in the ratio denominator, which turned a true
   # zero-traffic window into a fabricated ratio=0 / ~100x burn rate instead
   # of NaN/no-data — caught live against the real stack, see service.go's
@@ -158,7 +158,7 @@ tests:
         values: "0 0 0 0 0 0 0 0 0 0 1"
     promql_expr_test:
       # Before the single event lands: truly zero eligible traffic -> ratio
-      # is NaN (no data), NOT a fabricated bad reading (docs/plan/43 T5
+      # is NaN (no data), NOT a fabricated bad reading (docs/roadmap/archive/43 T5
       # clamp_min regression, see slo.yml's own comment) — a NaN sample
       # produces exp_samples: [] here since PromQL comparisons/equality
       # against NaN never match.
@@ -211,8 +211,8 @@ tests:
             value: 0
 
   # ── 8. fraud-service-down fail-open must NOT burn the posting SLO ────────
-  # (docs/plan/43 K7 / T5 "Test wajib": fraud down -> all three screening
-  # call sites fail OPEN (PROJECT_GUIDE.md runbook), so ledger.Handle keeps
+  # (docs/roadmap/archive/43 K7 / T5 "Required test": fraud down -> all three screening
+  # call sites fail OPEN (docs/development/project-guide.md runbook), so ledger.Handle keeps
   # posting normally — screening being skipped never surfaces as a
   # ledger_transactions_total status change at all. This case proves that:
   # 100% posted traffic with zero screening-related errors recorded means

@@ -27,7 +27,7 @@ func newMockTx(t *testing.T) (*sql.Tx, sqlmock.Sqlmock) {
 	return tx, mock
 }
 
-// ─── UpdateBalances non-integral guard (docs/plan/10 Task T4) ─────────────────
+// ─── UpdateBalances non-integral guard (docs/roadmap/archive/10 Task T4) ─────────────────
 
 func TestUpdateBalances_NonIntegralBalance_RejectedBeforeAnyQuery(t *testing.T) {
 	tx, mock := newMockTx(t)

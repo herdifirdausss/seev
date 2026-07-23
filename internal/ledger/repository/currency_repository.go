@@ -12,7 +12,7 @@ import (
 
 // CurrencyRepository is a small, standalone repository (deliberately not
 // folded into AccountRepository, already large) that reads the `currencies`
-// table (docs/plan/18 Task T1) for internal/ledger.NewModule's startup
+// table (docs/roadmap/archive/18 Task T1) for internal/ledger.NewModule's startup
 // currency.Load call.
 type CurrencyRepository interface {
 	// ListEnabled returns every currency with enabled=true.

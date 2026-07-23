@@ -2,7 +2,7 @@ package ledger
 
 // Package-level metrics: registered exactly once at package init regardless
 // of how many times New() constructs a Service, so no explicit Registerer
-// needs to be threaded through the constructor (docs/plan/05 Task 1b.6).
+// needs to be threaded through the constructor (docs/roadmap/archive/05 Task 1b.6).
 
 import (
 	"github.com/prometheus/client_golang/prometheus"

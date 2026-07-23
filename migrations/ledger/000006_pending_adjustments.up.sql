@@ -1,4 +1,4 @@
--- Maker-checker for manual balance adjustments (docs/plan/16 Task T1,
+-- Maker-checker for manual balance adjustments (docs/roadmap/archive/16 Task T1,
 -- decision K8). No single identity can move money via adjustment_credit/
 -- adjustment_debit alone — see the revoked direct access in transport.
 --
