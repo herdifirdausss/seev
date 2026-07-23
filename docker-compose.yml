@@ -82,7 +82,22 @@ services:
       # network/SSH/TLS-remote protocol on pgBackRest's side.
       - seev_backup_socket:/var/run/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_MIGRATE_USER:-seev} -d ${POSTGRES_DB:-seev}"]
+      # -h 127.0.0.1, not the default Unix socket (docs/roadmap/active/50 T6 fix): the
+      # official postgres image's entrypoint runs every
+      # /docker-entrypoint-initdb.d/*.sh script (including 04-backup-role.sh,
+      # which iterates all 8 databases and can take several seconds)
+      # against a TEMPORARY server started with listen_addresses='' —
+      # Unix-socket only, deliberately unreachable from outside the
+      # container. A bare `pg_isready` (no -h) also defaults to that same
+      # Unix socket, so it happily reports "healthy" against the temp
+      # server mid-init-script — well before the real, TCP-listening
+      # final server has even started. Found live: `docker compose ps`
+      # showed postgres "healthy" while app services were already
+      # crash-looping on the SAME container with "connection refused" on
+      # its own network address, because it wasn't listening on TCP yet.
+      # The temp server never binds TCP, so a TCP-targeted check can only
+      # succeed once the real server does.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U ${POSTGRES_MIGRATE_USER:-seev} -d ${POSTGRES_DB:-seev}"]
       interval: 5s
       timeout: 5s
       retries: 10
