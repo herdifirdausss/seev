@@ -16,6 +16,7 @@
 /gentoken
 /gateway
 /payout-service
+/drverify
 
 # Test binary, built with `go test -c`
 *.test

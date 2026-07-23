@@ -1171,7 +1171,240 @@ authoritative databases instead of relying on manual spot checks.
 
 ### Result
 
-_Pending implementation._
+**1. `cmd/drverify` + `internal/drverify`.** Offline, read-only, one-shot
+verifier taking eight explicit DSNs (`LEDGER_DSN`, `AUTH_DSN`, `PAYIN_DSN`,
+`PAYOUT_DSN`, `FRAUD_DSN`, `GATEWAY_DSN`, `ADMINBFF_DSN`, `ASSURANCE_DSN`)
+and printing one JSON `Report` to stdout, exiting non-zero whenever the
+gate does not pass. Every query runs inside a genuine
+`sql.TxOptions{ReadOnly: true}` transaction (Postgres itself rejects any
+write attempted inside it — proven directly, Result 5 below) with `SET
+LOCAL statement_timeout`/`lock_timeout` applied first, and the whole run
+is bounded by `DRVERIFY_MAX_CONCURRENCY` (default 4) via
+`golang.org/x/sync/errgroup`.
+
+**2. Three-tier classification (K9), separate from assurance's own
+scale.** `Severity` is `fatal`/`recoverable`/`informational` —
+deliberately not internal/assurance/rules's medium/high/critical, which
+answers a different question ("how urgent for a human") than drverify's
+("can traffic safely resume"). `classify.go` maps every
+`internal/assurance/rules.Finding` rule code drverify reuses onto this
+scale by rule-code family (critical rules → fatal, "stale but retryable"
+high rules → recoverable, request-id-hygiene medium rules →
+informational), documented inline with the reasoning per family — see
+`TestClassifyAssuranceFinding`, which fails loudly if a future rule code
+is ever added to `internal/assurance/rules` without an explicit mapping
+decision here (falls through to `UNCLASSIFIED_ASSURANCE_FINDING` rather
+than silently disappearing).
+
+**3. Reuses `internal/assurance/rules`'s DTOs and invariant functions
+directly** (K9's explicit allowance to share assurance DTOs without
+importing service internals) — `EvaluatePayin`/`EvaluatePayout` are the
+exact same tested functions `internal/assurance`'s live gRPC-based
+correlation runs, now fed from raw SQL instead of RPC responses.
+`internal/drverify/ledgerproof.go`'s two lookup functions
+(`ledgerProofByCorrelation`/`ledgerProofByID`) are a byte-for-byte port of
+`internal/ledger/assurance.go`'s `assuranceLookup`/`bookedFee` — same
+WHERE clauses, same `closed_by_tx_id` reverse lookup for
+`OriginalReferenceID`, same fee aggregate — read directly from that
+handler's source rather than reverse-engineered from its wire contract,
+specifically so the two never silently drift.
+
+**4. Ten check categories from T4's Work item 2, mapped to seven actual
+functions** — vendor-command and fee correctness are deliberately folded
+into the payout check rather than run as separate passes:
+`EvaluatePayout`'s PO04/PO05/PO06 already classify every vendor-command
+state from the exact same rows a standalone vendor-command pass would
+re-query, and PO07 already validates fee-quote/booked-fee consistency
+from the exact same `fee_quotes` row a standalone fee-correctness re-
+resolution would need — re-deriving either from a second query would be
+redundant, not a different invariant. (A structural
+`fee_rules`-vs-transaction re-resolution was considered and rejected: a
+posted transaction's fee was locked in by `fee_quotes` at posting time
+and must stay honored even if `fee_rules` changes later — re-resolving
+current rules against old transactions would be checking the wrong
+thing, exactly why `fee_quotes` exists per its own migration comment.)
+
+- `checkInventory` — per-service connectivity + `schema_migrations_<service>`
+  dirty flag (K8, fatal). Gates every later check for that service: a
+  service that fails inventory is never also queried for ledger/payin/
+  payout state.
+- `checkLedgerBalance` — wraps `fn_verify_ledger_balance('-infinity',
+  'infinity')`, the exact function `docs/runbooks/dr-restore-drill.md`'s
+  manual gate already calls, over full history rather than a bounded
+  window.
+- `checkProjection` — an **unwindowed** equivalent of
+  `v_account_balance_audit` (that view only covers accounts touched in
+  the last 24h — a live-monitoring scope choice, wrong for a one-shot
+  drill check against an account's entire history).
+- `checkPayin` / `checkPayout` — full-table, keyset-paginated
+  (`DRVERIFY_PAGE_SIZE`, default 500 — K9 "bounded batches") correlation
+  against ledger proofs, fee quotes, and vendor call/command history.
+- `checkUserReferences` — collects every distinct `owner_id`/`user_id`
+  across ledger/payin/payout/fee_rules/fee_quotes and checks each exists
+  in `seev_auth.auth_users` — K9's "impossible owner reference", a check
+  that did not exist anywhere in this repo before (confirmed live: there
+  is no cross-database FK, by design — `migrations/ledger/000001`'s own
+  comment says users are "managed by the auth module ... integrity is
+  enforced by the application," which until now meant nowhere).
+- `checkAssuranceCursor` — compares `assurance_cursors`' own
+  `(source, updated_at)` bookmark against the maximum effective
+  timestamp actually present in that source's restored database right
+  now; a cursor ahead of its source means the two databases were not
+  restored to the same consistent point (K9's "a cluster replay
+  timestamp ... outside the selected recovery target").
+
+**5. Recoverable in-flight state is surfaced via `Summary` counts, never
+as a `Finding`** (required test: "a valid in-flight payout is reported
+as recoverable rather than corrupted"). `EvaluatePayout`/`EvaluatePayin`
+only emit a `Finding` when something is structurally wrong — a genuinely
+valid in-flight payout (a live hold, a processing vendor command, no
+lifecycle violation) produces zero findings, exactly as it does in the
+live assurance service. Visibility for "N payins pending", "N payouts
+in-flight", "N dead vendor commands" comes from `checkPayin`/`checkPayout`
+appending `Summary{Service, Metric, Count, Owner}` entries instead —
+satisfying K9's "must be listed with counts and recovery owner, not
+treated as clean or silently ignored" without conflating "nothing is
+wrong here" with "something is wrong."
+
+**6. `Report.finalize()` — deterministic ordering, `Passed()`, and the
+projection-only-mismatch signal (Work item 5).** Findings sort by
+(code, service, resource_id), Summaries by (service, metric), Errors
+alphabetically — proven by `TestReportFinalizeDeterministicOrdering`
+(marshals two independently-built, identical reports and asserts
+byte-identical JSON) and live (five consecutive real runs against an
+identical fixture, byte-identical `findings`/`errors` every time, Result
+8 below). `Passed()` is `false` whenever `FatalCount > 0` **or**
+`len(Errors) > 0` — a check that could not even run fails the gate
+exactly like a fatal finding would, never silently treated as "no
+findings, must be fine." `ProjectionOnlyMismatch` is `true` only when
+`LEDGER_PROJECTION_INCONSISTENT` findings exist and
+`LEDGER_UNBALANCED_TRANSACTION` do not — drverify itself never invokes
+`scripts/rebuild-projection.sh` (it stays read-only per K9); this field
+is the signal an operator or a future `scripts/dr-drill.sh` acts on,
+proven both by unit test (`TestReportProjectionOnlyMismatch`, all four
+combinations) and live (Result 8, an isolated corrupted-balance-only
+fixture flips it `true`, an isolated unbalanced-transaction fixture
+correctly leaves it `false` even though it also produces a
+`LEDGER_PROJECTION_INCONSISTENT` finding as a side effect).
+
+**7. Three real bugs found live, all fixed:**
+
+1. **Empty-string UUID cursor parameter.** `fetchPayinRows`/
+   `fetchPayoutRows`'s keyset pagination started `cursorID` at `""` for
+   the first page — Postgres's own parameter type-checking rejects an
+   empty string bound to a `uuid`-typed placeholder *before evaluating
+   any row*, so the very first query of every run failed outright
+   (`invalid input syntax for type uuid: ""`). Fixed by starting from the
+   nil UUID literal instead, which sorts before every real id with the
+   same effect.
+2. **Unsynchronized concurrent map writes — a real crash, not a
+   hypothetical.** The inventory-check phase originally wrote
+   `results[service] = ...` directly from inside each of up to 8
+   concurrent goroutines into one shared `map[string]bool` — a data race
+   that crashed the process outright (`fatal error: concurrent map
+   writes`) on some runs and not others, reproduced live across repeated
+   identical invocations. Fixed by collecting through a channel (matching
+   `connectAll`'s own already-correct pattern) and merging into the map
+   single-threaded afterward. Verified clean under `go test -race` and
+   five consecutive `go build -race` binary runs with no data race
+   reported.
+3. **Nested queries on one `*sql.Tx` while its own outer `*sql.Rows` was
+   still open.** `scanLedgerProofs`'s original version ran the booked-fee
+   aggregate and the `closed_by_tx_id` reverse lookup *inside* the outer
+   `rows.Next()` loop, on the same transaction — a `*sql.Tx` is bound to
+   one connection, and Postgres's wire protocol cannot interleave a
+   second query into an unfinished result stream from the first. This
+   reproduced as a consistent (not transient — every one of several
+   dozen identical runs against the same live fixture failed identically
+   until fixed) `driver: bad connection` error the moment any payin/
+   payout record actually correlated to a real ledger transaction. Fixed
+   by fully draining and closing the outer rows into a plain Go slice
+   first (`scanLedgerTransactions`), then running the nested per-
+   transaction queries against the now-idle transaction
+   (`enrichLedgerProofs`).
+
+**8. Live verification — isolated `seev-plan50-t4-test` Compose project
+(postgres only, all 8 databases + real migrations via the same
+first-boot bootstrap T0-T3 already established), never the real dev
+stack.** Ran the built `drverify` binary (not just unit tests) against
+real, hand-seeded fixtures on real migrated schema:
+
+- **Clean baseline** (freshly migrated, no test data): `exit 0`, zero
+  findings, zero errors.
+- **`MIGRATION_DIRTY`**: flipped `schema_migrations_ledger.dirty` — fatal
+  finding fired, and critically, ledger/payin/payout/user-reference
+  checks were all correctly *skipped* for that run (the inventory gate
+  working as designed) rather than erroring against a dirty-but-
+  structurally-fine schema.
+- **`LEDGER_UNBALANCED_TRANSACTION` + `LEDGER_PROJECTION_INCONSISTENT`
+  together**: a raw one-sided ledger entry insert produced both findings
+  simultaneously (a one-sided entry breaks both invariants at once) —
+  `projection_only_mismatch` correctly stayed `false`, proving Work item
+  5's "never rebuild through an unbalanced ledger" guard holds even when
+  a projection finding is also present.
+- **`LEDGER_PROJECTION_INCONSISTENT` alone**: on a fresh fixture, directly
+  corrupting only `account_balances.balance` (no unbalanced transaction)
+  produced exactly that one finding with `projection_only_mismatch:
+  true` — the case where re-running the rebuild script is actually the
+  right next step.
+- **`OWNER_REFERENCE_INVALID`**: an account with `owner_id` pointing at a
+  UUID absent from `seev_auth.auth_users` — fired with the referencing
+  service correctly attributed.
+- **`PAYIN_LEDGER_PROOF_INVALID` (PA01) appearing, then correctly
+  disappearing**: inserted a `posted` webhook event with no matching
+  ledger transaction — fatal finding fired. Then inserted the matching
+  `money_in` ledger transaction (same type/gateway/external_ref/amount/
+  currency) — the finding vanished on the next run, proving the
+  correlation match logic itself, not just its absence on empty data.
+  `PAYIN_CORRELATION_GAP` (PA-CORR, informational — no `request_id` set)
+  correctly persisted throughout, since that condition was never
+  addressed by either fixture.
+- **`PAYOUT_LIFECYCLE_INVALID` (PO01) + `in_flight_requests` summary
+  together**: a `submitted` payout with a `hold_tx_id` pointing at a
+  nonexistent ledger transaction produced both the fatal finding (hold
+  missing) *and* a `Summary{Metric: "in_flight_requests", Count: 1}` —
+  proving a record can be simultaneously "something about it is
+  structurally wrong" (finding) and "it is also a normal in-flight saga"
+  (summary) without those two signals being confused for each other.
+- **No write is possible through verifier DSNs** — proven twice: live via
+  `psql` (`BEGIN READ ONLY; INSERT ...` → `ERROR: cannot execute INSERT
+  in a read-only transaction`) against the real fixture database, and via
+  `TestNoWriteIsPossible` (Result 9) using the exact same
+  `sql.TxOptions{ReadOnly: true}` mechanism `db.go`'s `readOnlyQuery`
+  uses, independent of drverify's own code so a future regression that
+  silently stopped setting `ReadOnly: true` would still be caught.
+- **Deterministic output**: five consecutive runs against an identical
+  fixture (after the bugs above were fixed) produced byte-identical
+  `findings`/`errors` every time.
+
+Torn down completely afterward (`docker compose down -v` under the
+isolated project name); confirmed via `docker ps -a`/`docker volume ls`
+filtered to that project name returning nothing.
+
+**9. `internal/drverify/runner_integration_test.go` (`-tags=integration`,
+testcontainers, no Docker Compose needed) — CI-runnable versions of the
+required tests that don't depend on hand-seeded live fixtures:**
+`TestRunCleanClusterPasses` (provisions all eight real databases inside
+one testcontainers Postgres, applies every service's real migrations via
+`internal/testutil.ApplyMigration`, asserts a freshly-migrated cluster
+passes with zero findings), `TestRunDetectsDirtyMigration` (same setup,
+flips one dirty flag, asserts the gate fails with `MIGRATION_DIRTY`), and
+`TestNoWriteIsPossible`. All three pass under `go test -race`, confirming
+bug 2 above stays fixed. `internal/drverify/types_test.go` and
+`classify_test.go` (no database needed) cover `Report`'s determinism/
+severity-counting/`ProjectionOnlyMismatch` logic and every
+`internal/assurance/rules` rule code's classification mapping including
+an explicit "unknown rule code" case.
+
+**Explicitly NOT built this task — later Track A7 work, not oversights:**
+`cmd/drverify` is never invoked automatically by anything yet —
+`scripts/dr-drill.sh` (T6) is what will call it as part of the full
+drill sequence and act on `ProjectionOnlyMismatch`/`Passed()`. The
+"optional clean assurance backfill against the isolated restored
+services" (Work item 6) is deferred to T6 as well, since it depends on
+T5's Redis/RabbitMQ reseed existing first — assurance's own correlation
+RPCs assume live, healthy downstream services, which an isolated restore
+target does not yet have until T5 lands.
 
 ### T5 — Ephemeral-state reseed and security fence (K10–K11)
 
