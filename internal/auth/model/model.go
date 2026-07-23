@@ -46,6 +46,15 @@ type KYCSubmission struct {
 	DecidedAt      *time.Time
 }
 
+// KYCRescreenSubject is the minimal, non-credential projection used by the
+// periodic sanctions re-screen job. It is derived from an already-approved
+// KYC submission; raw payloads never leave the auth repository boundary.
+type KYCRescreenSubject struct {
+	UserID    uuid.UUID
+	Name      string
+	BirthDate string
+}
+
 // KYCApplyRetry is the durable intent to re-apply ledger policy limits for a
 // pending KYC approval.  It intentionally contains no ledger credentials or
 // payload data; the submission is re-read by auth when the intent is claimed.

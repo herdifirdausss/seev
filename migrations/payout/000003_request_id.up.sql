@@ -1,4 +1,4 @@
--- docs/plan/36 Task T5: persist the originating HTTP/gRPC request_id on
+-- docs/roadmap/archive/36 Task T5: persist the originating HTTP/gRPC request_id on
 -- payout_requests for end-to-end tracing. Also fixes a pre-existing naming
 -- collision: payout_vendor_calls.request_id is actually the payout_requests
 -- UUID (a foreign key), NOT a trace id — rename it before introducing a

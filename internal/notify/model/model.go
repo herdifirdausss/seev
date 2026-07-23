@@ -6,7 +6,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// Notification is one row of notif_notifications (docs/plan/25 Task T4) —
+// Notification is one row of notif_notifications (docs/roadmap/archive/25 Task T4) —
 // one user's copy of a ledger TransactionPosted event. A two-party
 // transaction (transfer_p2p) produces two independent rows, one per
 // (EventID, UserID) — UNIQUE(event_id, user_id) is the at-least-once

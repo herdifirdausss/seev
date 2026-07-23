@@ -8,7 +8,7 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// ReconBatch is one imported settlement report (docs/plan/16 Task T2,
+// ReconBatch is one imported settlement report (docs/roadmap/archive/16 Task T2,
 // decision K5) — one CSV file for one gateway's one report_date.
 type ReconBatch struct {
 	ID             uuid.UUID
@@ -48,7 +48,7 @@ type ReconBatchReport struct {
 
 // ReconImportRow is one parsed CSV line from a settlement report — parsing
 // lives in the transport layer (streaming encoding/csv), validation and
-// persistence in service/recon (docs/plan/16 Task T2 step 3).
+// persistence in service/recon (docs/roadmap/archive/16 Task T2 step 3).
 type ReconImportRow struct {
 	ExternalRef string
 	Amount      decimal.Decimal

@@ -1,4 +1,4 @@
-# docs/plan/50 T3 (K7): dedicated, minimal Compose definition for isolated
+# docs/roadmap/active/50 T3 (K7): dedicated, minimal Compose definition for isolated
 # PITR/latest restore drills — deliberately NOT the main docker-compose.yml's
 # `postgres` service, which runs with `archive_mode=on` pointed at the
 # shared backup repository. A restored/promoted drill instance must never
@@ -31,6 +31,16 @@ services:
       - drill_postgres_data:/var/lib/postgresql/data
       - ${BACKUP_REPO_PATH:-./deploy/backup/repo}:/backup-repo:ro
       - ./deploy/backup/pgbackrest.conf:/etc/pgbackrest/pgbackrest.conf:ro
+    # docs/roadmap/active/50 T6: an ephemeral, loopback-only host port (Docker
+    # picks whatever is free — `docker port <container> 5432/tcp` discovers
+    # it, same pattern scripts/lib.sh's detect_db_port already uses for the
+    # main dev stack) so cmd/drverify/cmd/drreseed, both plain host Go
+    # binaries, can open a real TCP DSN against the restored cluster.
+    # scripts/restore-cluster.sh itself only ever talks to this container
+    # over the Compose network by service name, so this is additive and
+    # does not change anything already verified in T3/T4/T5.
+    ports:
+      - "127.0.0.1::5432"
     healthcheck:
       # Only proves the postmaster is accepting connections — NOT that
       # recovery has reached its target/promoted. scripts/restore-cluster.sh

@@ -53,7 +53,7 @@ func newFeeAdminRouter(t *testing.T) (http.Handler, sqlmock.Sqlmock) {
 	return middleware.WithAuth(testSecret, "")(NewInternalRouterWithFeePolicy(svc, policy)), dbMock
 }
 
-// ─── Fee quotes (docs/plan/38 Task T3) ──────────────────────────────────────
+// ─── Fee quotes (docs/roadmap/archive/38 Task T3) ──────────────────────────────────────
 
 type quoteMockService struct{ *MockService }
 
@@ -127,7 +127,7 @@ func TestCreateQuote_NoToken_401(t *testing.T) {
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
 }
 
-// TestCreateQuote_MoneyIn_Quotable proves docs/plan/38 Task T3 step 2:
+// TestCreateQuote_MoneyIn_Quotable proves docs/roadmap/archive/38 Task T3 step 2:
 // money_in is quotable even though it can never be POSTed directly through
 // this same public router (not in publicUserTypes) — a quote never moves
 // money, so this doesn't reopen that hole.
@@ -201,14 +201,14 @@ func TestFeeRulesCreateListUpdateDisable(t *testing.T) {
 // newTestHandler wraps the PUBLIC ledger router with the same WithAuth
 // middleware the composition root applies in production, so tests exercise
 // the real JWT parsing + claims-in-context path rather than a fake. Only
-// publicUserTypes are postable through it (docs/plan/10 Task T1) — tests
+// publicUserTypes are postable through it (docs/roadmap/archive/10 Task T1) — tests
 // exercising system transaction types (money_in, adjustment_*, etc.) must
 // use newInternalTestHandler instead.
 func newTestHandler(t *testing.T) (http.Handler, *MockService, *gomock.Controller) {
 	t.Helper()
 	ctrl := gomock.NewController(t)
 	svc := NewMockService(ctrl)
-	// The public router resolves currency for fee pricing (docs/plan/18 Task
+	// The public router resolves currency for fee pricing (docs/roadmap/archive/18 Task
 	// T2) before every post — a default IDR stub keeps every existing test
 	// that doesn't care about currency from having to set this up itself.
 	svc.EXPECT().GetUserCurrency(gomock.Any(), gomock.Any(), gomock.Any()).Return("IDR", nil).AnyTimes()
@@ -218,7 +218,7 @@ func newTestHandler(t *testing.T) (http.Handler, *MockService, *gomock.Controlle
 
 // newInternalTestHandler wraps the INTERNAL ledger router — every
 // registered transaction type is postable, matching the router mounted on
-// the internal-only listener in production (docs/plan/10 Task T1).
+// the internal-only listener in production (docs/roadmap/archive/10 Task T1).
 func newInternalTestHandler(t *testing.T) (http.Handler, *MockService, *gomock.Controller) {
 	t.Helper()
 	ctrl := gomock.NewController(t)
@@ -258,7 +258,7 @@ func TestPostTransaction_NoToken_Unauthorized(t *testing.T) {
 }
 
 // TestPostTransaction_KYCLevelZero_Forbidden proves the transport layer's
-// defense-in-depth KYC check (docs/plan/39 Task T4 step 4) — even though
+// defense-in-depth KYC check (docs/roadmap/archive/39 Task T4 step 4) — even though
 // the gateway already gates POST /api/v1/ledger/transactions*, the public
 // ledger router re-checks kyc_level itself, since it's reachable directly
 // by any caller that talks gRPC/HTTP straight to ledger-service.
@@ -312,7 +312,7 @@ func TestPostTransaction_Success(t *testing.T) {
 }
 
 // TestPostTransaction_QuoteID_PassedThroughAsTypedField_NotMetadata proves
-// docs/plan/38 Task T4: quote_id flows to processors.Command.QuoteID (a
+// docs/roadmap/archive/38 Task T4: quote_id flows to processors.Command.QuoteID (a
 // typed field), and — because it's set — buildMetadata must NOT also stamp
 // a server-resolved fee_amount/fee_gateway (that's execTransfer's job now,
 // from the quote itself).
@@ -338,7 +338,7 @@ func TestPostTransaction_QuoteID_PassedThroughAsTypedField_NotMetadata(t *testin
 
 // TestPostTransaction_QuoteExpired_Maps422 and
 // TestPostTransaction_QuoteMismatch_Maps422 prove the HTTP-layer error
-// mapping added in writeError (docs/plan/38 Task T4) — schema_contract-level
+// mapping added in writeError (docs/roadmap/archive/38 Task T4) — schema_contract-level
 // tests (internal/ledger/execquote_integration_test.go) prove execTransfer's
 // OWN behavior against a real Postgres; these prove the transport layer
 // correctly turns that sentinel into 422 with the right body.
@@ -372,7 +372,7 @@ func TestPostTransaction_QuoteMismatch_Maps422(t *testing.T) {
 
 func TestPostTransaction_SystemType_RejectedOnPublicRouter(t *testing.T) {
 	// money_in moves funds from a system settlement account — must never be
-	// directly reachable by an end user (docs/plan/10 Task T1).
+	// directly reachable by an end user (docs/roadmap/archive/10 Task T1).
 	h, _, ctrl := newTestHandler(t)
 	defer ctrl.Finish()
 	userID := uuid.New()
@@ -421,7 +421,7 @@ func TestPostTransaction_InvalidAmount_Rejected(t *testing.T) {
 }
 
 func TestPostTransaction_FractionalAmount_Rejected(t *testing.T) {
-	// docs/plan/10 Task T4: the ledger is minor-unit-only — a fractional
+	// docs/roadmap/archive/10 Task T4: the ledger is minor-unit-only — a fractional
 	// amount must never reach the posting pipeline, where it would
 	// otherwise be silently truncated.
 	h, _, ctrl := newInternalTestHandler(t)
@@ -436,7 +436,7 @@ func TestPostTransaction_FractionalAmount_Rejected(t *testing.T) {
 
 func TestPostTransaction_AdminOnlyType_RejectedForUser(t *testing.T) {
 	// adjustment_credit stays admin-gated even on the internal router —
-	// defense in depth for compliance/correction actions (docs/plan/10 T1).
+	// defense in depth for compliance/correction actions (docs/roadmap/archive/10 T1).
 	h, _, ctrl := newInternalTestHandler(t)
 	defer ctrl.Finish()
 	userID := uuid.New()
@@ -454,7 +454,7 @@ func TestPostTransaction_AdminOnlyType_AllowedForAdmin(t *testing.T) {
 	svc.EXPECT().Post(gomock.Any(), gomock.Any()).Return(nil)
 
 	// chargeback, not adjustment_credit/debit — those are blocked from
-	// direct POST entirely as of docs/plan/16 Task T1, admin or not (see
+	// direct POST entirely as of docs/roadmap/archive/16 Task T1, admin or not (see
 	// TestPostTransaction_AdjustmentType_BlockedEvenForAdmin below).
 	body := `{"idempotency_key":"abc12345","type":"chargeback","amount":"1000"}`
 	w := doReq(t, h, http.MethodPost, "/transactions", tokenFor(t, userID.String(), "admin"), body)
@@ -475,7 +475,7 @@ func TestPostTransaction_AdjustmentType_BlockedEvenForAdmin(t *testing.T) {
 
 // TestPostTransaction_SuspenseAdjustmentType_BlockedEvenForAdmin is
 // TestPostTransaction_AdjustmentType_BlockedEvenForAdmin's mirror for the
-// reconciliation adjustment types (docs/plan/16 Task T2) — same block,
+// reconciliation adjustment types (docs/roadmap/archive/16 Task T2) — same block,
 // reachable only via POST /admin/recon/items/{id}/resolve.
 func TestPostTransaction_SuspenseAdjustmentType_BlockedEvenForAdmin(t *testing.T) {
 	h, _, ctrl := newInternalTestHandler(t)
@@ -500,7 +500,7 @@ func TestPostTransaction_InsufficientFunds_MapsTo422(t *testing.T) {
 	assert.Equal(t, http.StatusUnprocessableEntity, w.Code)
 }
 
-// ─── Idempotency scope (docs/plan/10 Task T2) ──────────────────────────────────
+// ─── Idempotency scope (docs/roadmap/archive/10 Task T2) ──────────────────────────────────
 
 func TestPostTransaction_IdempotencyScope_DefaultsToCallerUserID(t *testing.T) {
 	h, svc, ctrl := newTestHandler(t)
@@ -556,7 +556,7 @@ func TestPostTransaction_IdempotencyScope_ExplicitOnInternalRouter(t *testing.T)
 	assert.Equal(t, http.StatusCreated, w.Code)
 }
 
-// ─── Metadata allowlist + fee policy (docs/plan/10 Task T3) ────────────────────
+// ─── Metadata allowlist + fee policy (docs/roadmap/archive/10 Task T3) ────────────────────
 
 func TestPostTransaction_PublicRouter_ClientFeeMetadata_StrippedAndIgnored(t *testing.T) {
 	h, svc, ctrl := newTestHandler(t)
@@ -580,7 +580,7 @@ func TestPostTransaction_PublicRouter_ClientFeeMetadata_StrippedAndIgnored(t *te
 }
 
 // TestPostTransaction_NewRouterWithOptions_RealFeePolicy_ChargesFee proves
-// the wiring docs/plan/25 Task T2 adds — a router built with a real,
+// the wiring docs/roadmap/archive/25 Task T2 adds — a router built with a real,
 // non-default feePolicy (the shape internal/ledger.Module.SetFeeRules
 // installs) actually resolves and attaches a fee leg to transfer_p2p,
 // unlike NewRouter/NewRouterWithPolicy's default (no fee).
@@ -671,7 +671,7 @@ func TestPostTransaction_PublicRouter_UnknownMetadataKey_Dropped(t *testing.T) {
 }
 
 // TestPostTransaction_PublicRouter_RequestIDInjectedFromCtx proves
-// docs/plan/36 Task T5: buildMetadata stamps metadata["request_id"] from
+// docs/roadmap/archive/36 Task T5: buildMetadata stamps metadata["request_id"] from
 // the request's ctx (populated by middleware.WithRequestID) after the
 // allowlist strip, so a posted transaction carries the end-to-end trace id
 // regardless of what the client's own JSON body said.
@@ -709,7 +709,7 @@ func TestPostTransaction_PublicRouter_RequestIDInjectedFromCtx(t *testing.T) {
 // fakeFraudGRPCClient is a minimal fraudv1.FraudServiceClient double for
 // wrapping in a real *fraudcheck.Client — proves the transport layer's own
 // wiring (block → 422, infra error → fail-open) without needing a running
-// fraud-service (docs/plan/37 Task T3).
+// fraud-service (docs/roadmap/archive/37 Task T3).
 type fakeFraudGRPCClient struct {
 	response *fraudv1.ScreenResponse
 	err      error
@@ -720,7 +720,7 @@ func (f *fakeFraudGRPCClient) Screen(_ context.Context, _ *fraudv1.ScreenRequest
 }
 
 // TestPostTransaction_PublicRouter_FraudBlock_Rejects422NoPosting proves
-// docs/plan/37 Task T3: a Block verdict rejects the transaction with 422
+// docs/roadmap/archive/37 Task T3: a Block verdict rejects the transaction with 422
 // SCREENING_BLOCKED — the same HTTP contract as the old in-transaction
 // hook — and svc.Post is NEVER called, so no ledger_transactions row (even
 // a 'failed' one) is ever created for a blocked attempt.
@@ -765,7 +765,7 @@ func TestPostTransaction_PublicRouter_FraudInfraError_FailsOpen(t *testing.T) {
 }
 
 // TestPostTransaction_PublicRouter_FraudDependencyUnavailable_FailsClosed503
-// proves docs/plan/45 Task T3/K4: fraud-service reachable but explicitly
+// proves docs/roadmap/archive/45 Task T3/K4: fraud-service reachable but explicitly
 // signaling its velocity dependency is down (codes.FailedPrecondition +
 // "DEPENDENCY_UNAVAILABLE") must fail CLOSED — 503, svc.Post NEVER
 // called — unlike the generic infra-error fail-open case above.
@@ -1028,7 +1028,7 @@ func TestCreatePocket_MissingCode_Rejected(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
 
-// ─── Admin: outbox dead-letter replay (docs/plan/12 Task T3) ──────────────────
+// ─── Admin: outbox dead-letter replay (docs/roadmap/archive/12 Task T3) ──────────────────
 
 func TestReplayDeadEvent_NotOnPublicRouter(t *testing.T) {
 	h, _, ctrl := newTestHandler(t)
@@ -1123,7 +1123,7 @@ func TestReplayAllDeadEvents_InvalidOlderThan_Rejected(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
 
-// ─── Admin: outbox dead-letter list (docs/plan/25 Task T5) ────────────────────
+// ─── Admin: outbox dead-letter list (docs/roadmap/archive/25 Task T5) ────────────────────
 
 func TestListDeadEvents_NotOnPublicRouter(t *testing.T) {
 	h, _, ctrl := newTestHandler(t)
@@ -1181,7 +1181,7 @@ func TestListDeadEvents_InvalidOffset_Rejected(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
 
-// ─── Admin: recon batch list (docs/plan/25 Task T5) ────────────────────────────
+// ─── Admin: recon batch list (docs/roadmap/archive/25 Task T5) ────────────────────────────
 
 func TestListReconBatches_NotOnPublicRouter(t *testing.T) {
 	h, _, ctrl := newTestHandler(t)
@@ -1262,7 +1262,7 @@ func TestCursor_InvalidRejected(t *testing.T) {
 	assert.Error(t, err)
 }
 
-// ─── docs/plan/15 Task T2: GET /accounts/{id}/statement ────────────────────
+// ─── docs/roadmap/archive/15 Task T2: GET /accounts/{id}/statement ────────────────────
 
 func TestGetStatement_NotOwned_Returns404(t *testing.T) {
 	h, svc, ctrl := newTestHandler(t)

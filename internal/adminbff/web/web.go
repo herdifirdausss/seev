@@ -8,7 +8,7 @@ import (
 )
 
 // Assets are embedded so the console has no CDN or Node runtime dependency.
-// Versions and SHA-256 values are recorded in docs/plan/47-a5-admin-console.md.
+// Versions and SHA-256 values are recorded in docs/roadmap/archive/47-a5-admin-console.md.
 //
 //go:embed assets/*
 var Assets embed.FS

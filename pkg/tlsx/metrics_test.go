@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// TestCertExpirySeconds_SetOnReload proves docs/plan/49 K10: loading a
+// TestCertExpirySeconds_SetOnReload proves docs/roadmap/archive/49 K10: loading a
 // CertSource publishes its leaf's NotAfter as an absolute unix timestamp
 // under its own identity label, and a subsequent rotation overwrites
 // (never accumulates onto) that same label.
@@ -49,7 +49,7 @@ func TestCertExpirySeconds_SetOnReload(t *testing.T) {
 // TestHandshakeFailuresTotal_UntrustedCA proves a chain-verification
 // failure is counted with reason=untrusted_ca and identity=unknown — the
 // peer's claimed identity is never trusted as a label value here, since
-// the chain never verified (docs/plan/49 K10, TM-13 context).
+// the chain never verified (docs/roadmap/archive/49 K10, TM-13 context).
 func TestHandshakeFailuresTotal_UntrustedCA(t *testing.T) {
 	trustedDir := t.TempDir()
 	trustedCA := newTestCA(t)

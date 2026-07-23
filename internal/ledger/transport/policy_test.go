@@ -42,7 +42,7 @@ func newTestHandlerWithPolicy(t *testing.T, policy PolicyChecker) (http.Handler,
 	svc := NewMockService(ctrl)
 	// See newTestHandler's comment in http_test.go — NewRouterWithPolicy
 	// always builds the public router, which resolves currency for fee
-	// pricing (docs/plan/18 Task T2) before every post.
+	// pricing (docs/roadmap/archive/18 Task T2) before every post.
 	svc.EXPECT().GetUserCurrency(gomock.Any(), gomock.Any(), gomock.Any()).Return("IDR", nil).AnyTimes()
 	h := middleware.WithAuth(testSecret, "")(NewRouterWithPolicy(svc, policy))
 	return h, svc, ctrl

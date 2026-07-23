@@ -35,7 +35,7 @@ const (
 // settlement/fee system accounts seeded in
 // migrations/000002_seed_system_accounts.up.sql — a gateway not listed here
 // has no corresponding system account and every posting attempt using it
-// would fail downstream anyway; validating here (docs/plan/10 Task T3)
+// would fail downstream anyway; validating here (docs/roadmap/archive/10 Task T3)
 // just gives a clear 400 instead of a confusing lookup error.
 var ValidGateways = map[string]bool{
 	"bca":      true,

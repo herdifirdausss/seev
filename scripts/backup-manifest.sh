@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Writes a machine-readable manifest next to the most recent successful
-# pgBackRest backup (docs/plan/50 K6) — invoked by `make backup-full`/
+# pgBackRest backup (docs/roadmap/active/50 K6) — invoked by `make backup-full`/
 # `backup-diff` after pgbackrest itself reports success, never before.
 # Contains no secrets or row data: backup identity/size/checksum status,
 # PostgreSQL system identifier/timeline/LSN range, restorable time window,

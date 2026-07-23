@@ -68,7 +68,7 @@ func TestVerifier_CheckProjectionAudit_FindsInconsistency(t *testing.T) {
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
-// ─── Alert hook (docs/plan/12 Task T4) ─────────────────────────────────────────
+// ─── Alert hook (docs/roadmap/archive/12 Task T4) ─────────────────────────────────────────
 
 func TestVerifier_CheckTrialBalance_AlertFnCalledOncePerDiscrepancy(t *testing.T) {
 	db, mock := newVerifierTestDB(t)

@@ -1,9 +1,9 @@
-{{define "content"}}<h1>Ringkasan operasi</h1>
-<p>Sesi aktif sebagai <strong>{{.Role}}</strong>. Semua aksi perubahan melewati CSRF dan audit BFF.</p>
+{{define "content"}}<h1>Operations summary</h1>
+<p>Active session as <strong>{{.Role}}</strong>. All mutations pass through CSRF protection and BFF audit logging.</p>
 <div class="grid">
-  <article><h2>Maker-checker</h2><p>Kelola adjustment yang membutuhkan dua identitas.</p><a href="/api/v1/admin/maker">Buka antrean</a></article>
-  <article><h2>Payout stuck</h2><p>Review request, vendor health, dan dead command.</p><a href="/api/v1/admin/payout">Buka payout</a></article>
-  <article><h2>Reconciliation</h2><p>Import batch dan tindak lanjuti item mismatch.</p><a href="/api/v1/admin/recon">Buka recon</a></article>
+  <article><h2>Maker-checker</h2><p>Manage adjustments that require two identities.</p><a href="/api/v1/admin/maker">Open queue</a></article>
+  <article><h2>Stuck payouts</h2><p>Review requests, vendor health, and dead commands.</p><a href="/api/v1/admin/payout">Open payouts</a></article>
+  <article><h2>Reconciliation</h2><p>Import batches and follow up on mismatched items.</p><a href="/api/v1/admin/recon">Open reconciliation</a></article>
 </div>
-<section><h2>Downstream health</h2><p hx-get="/api/v1/admin/payout/vendors/health" hx-trigger="load, every 30s" hx-target="this">Memuat status vendor…</p></section>
+<section><h2>Downstream health</h2><p hx-get="/api/v1/admin/payout/vendors/health" hx-trigger="load, every 30s" hx-target="this">Loading vendor status…</p></section>
 {{end}}

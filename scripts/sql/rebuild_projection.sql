@@ -1,5 +1,5 @@
 -- Rebuild account_balances.balance from ledger_entries — the single source
--- of truth (docs/plan/17 Task T2, docs/plan/01 decision: entries are the
+-- of truth (docs/roadmap/archive/17 Task T2, docs/roadmap/archive/01 decision: entries are the
 -- ledger, account_balances is a cache of them).
 --
 -- Deliberately UPDATE, never TRUNCATE + re-insert: allow_negative is NOT

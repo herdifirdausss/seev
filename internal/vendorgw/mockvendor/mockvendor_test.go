@@ -90,7 +90,7 @@ func TestVerifyAndParse_NonSettledType_ReturnsNilNil(t *testing.T) {
 }
 
 // TestVerifyAndParse_SignatureIsOverRawBytes_NotReMarshaledJSON proves the
-// DoD requirement (docs/plan/22 Task T1): reordering the JSON object's keys
+// DoD requirement (docs/roadmap/archive/22 Task T1): reordering the JSON object's keys
 // changes the raw bytes (and therefore what a naive "decode then
 // re-marshal then check" implementation would sign), but the signature
 // here is computed and verified against the ORIGINAL bytes the "vendor"
@@ -151,7 +151,7 @@ func TestVendor_ReturnsRegistryName(t *testing.T) {
 }
 
 // TestVerifyAndParse_SecondNamedInstance_TagsEventWithOwnNameAndSecret is
-// docs/plan/40 Task T4's required test: a second named Verifier instance
+// docs/roadmap/archive/40 Task T4's required test: a second named Verifier instance
 // (e.g. "mockvendor2", registered alongside "mockvendor" in the same
 // Registry) must be fully isolated — its own secret verifies its own
 // signatures, the OTHER instance's secret must NOT verify them, and the

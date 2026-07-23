@@ -9,7 +9,7 @@ type routeCtxKey struct{}
 
 // WithRoutePattern looks up mux's own matched pattern for r via a pure
 // mux.Handler(r) call — BEFORE any dispatch happens — and stores it in
-// context for WithTracing/WithHTTPMetrics to read (docs/plan/43 K4/K5).
+// context for WithTracing/WithHTTPMetrics to read (docs/roadmap/archive/43 K4/K5).
 //
 // This exists because reading r.Pattern AFTER calling next.ServeHTTP is
 // NOT reliable once any middleware between the reader and the actual
@@ -20,7 +20,7 @@ type routeCtxKey struct{}
 // the chain retains. A middleware relying on "call next, then read
 // r.Pattern" silently sees a stale/empty value the moment any context copy
 // happens in between — caught only by tracing a real request through Tempo
-// during docs/plan/43 Task T3 verification (payin-service's admin router
+// during docs/roadmap/archive/43 Task T3 verification (payin-service's admin router
 // reported route="unmatched" for a real, matched "/admin/payin/" request).
 // mux.Handler(r) sidesteps this entirely: it's a pure lookup with no
 // dependency on pointer identity or how many context-wrapping hops happen

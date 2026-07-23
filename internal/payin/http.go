@@ -17,7 +17,7 @@ import (
 
 // AdminRouter returns the payin module's admin HTTP surface, already at
 // its final paths (/admin/payin/...) — mount directly, no prefix
-// stripping needed (docs/plan/22 Task T4, same mounting pattern as
+// stripping needed (docs/roadmap/archive/22 Task T4, same mounting pattern as
 // internal/policy.Handler.Mux). Internal-router only; every handler is
 // also admin-gated inside itself, defense in depth, same pattern as every
 // other /admin/* surface in this codebase.
@@ -77,7 +77,7 @@ type vendorHealthResponse struct {
 	Vendors []vendorgw.VendorHealth `json:"vendors"`
 }
 
-// vendorHealthHandler serves GET /admin/payin/vendors/health (docs/plan/40
+// vendorHealthHandler serves GET /admin/payin/vendors/health (docs/roadmap/archive/40
 // Task T5 — the doc's own shorthand path "/admin/vendors/health" isn't
 // reachable through this service's admin router, which only ever mounts
 // the "/admin/payin/" subtree, see cmd/payin-service/router.go; every
@@ -85,7 +85,7 @@ type vendorHealthResponse struct {
 // stays consistent with that convention instead). nil breaker (no
 // BREAKER_* config wired, or every vendor still closed) reports an empty
 // list — same "byte-identical when the feature is off" contract as the
-// rest of docs/plan/40.
+// rest of docs/roadmap/archive/40.
 func (m *Module) vendorHealthHandler(w http.ResponseWriter, r *http.Request) {
 	if !isAdmin(r) {
 		response.Forbidden(w, "admin privileges required")

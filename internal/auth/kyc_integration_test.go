@@ -1,9 +1,9 @@
 //go:build integration
 
-// Proves docs/plan/39 Task T3's full KYC vertical against a real ledger and
+// Proves docs/roadmap/archive/39 Task T3's full KYC vertical against a real ledger and
 // real Postgres, not mocks — including the exact gap a mock-only suite
 // cannot catch: that ApproveKYCSubmission's applyTier callback is actually
-// wired to a working ledger.Module.ApplyKycTier (docs/plan/39 Task T5),
+// wired to a working ledger.Module.ApplyKycTier (docs/roadmap/archive/39 Task T5),
 // which upserts REAL policy_limits rows. Reuses setupAuthTestDB from
 // auth_integration_test.go (same package, same throwaway-container
 // convention).
@@ -50,7 +50,7 @@ func policyLimitMaxPerTxIT(t *testing.T, db *database.DBSQL, userID, txType stri
 // user's kyc_level advances to 1 in seev_auth, AND the real ledger's
 // policy_limits table gets the L1 template's caps for that specific user —
 // the exact wiring that stayed broken (Unimplemented gRPC method) until
-// docs/plan/39 Task T5 was completed.
+// docs/roadmap/archive/39 Task T5 was completed.
 func TestAuth_KYC_L0ToL1_AutoApprove_AppliesRealLedgerTier(t *testing.T) {
 	db := setupAuthTestDB(t)
 	m, _ := newAuthModuleWithMockKYC(db)

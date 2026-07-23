@@ -1,5 +1,5 @@
 // Package schedule executes recurring/deferred user transactions
-// (docs/plan/19 Task T1, decision S3): a scheduled row is nothing but a
+// (docs/roadmap/archive/19 Task T1, decision S3): a scheduled row is nothing but a
 // stored processors.Command plus a due-date rule. RunDue is called once a
 // day by internal/ledger/worker/schedule_runner.go and posts every row
 // that's due through the SAME posting pipeline every other transaction
@@ -41,8 +41,8 @@ type Poster interface {
 }
 
 // allowedTypes are the ONLY transaction types schedulable for MVP
-// (docs/plan/19 Task T1 step 2) — purely user-initiated movements.
-// money_in/money_out terjadwal tidak masuk akal tanpa gateway event;
+// (docs/roadmap/archive/19 Task T1 step 2) — purely user-initiated movements.
+// scheduled money_in/money_out makes no sense without a gateway event;
 // adjustment_* stay maker-checker only, never schedulable.
 var allowedTypes = map[string]bool{
 	"transfer_p2p":    true,
@@ -180,7 +180,7 @@ func (s *Service) transition(ctx context.Context, id, userID uuid.UUID, fn func(
 // RunDue posts every schedule due to run on asOf — called once daily by
 // worker/schedule_runner.go. Returns how many posted successfully vs failed
 // (business failures AND infra failures both count toward failed; only the
-// business ones are recorded on the row, docs/plan/19 Task T1 step 3).
+// business ones are recorded on the row, docs/roadmap/archive/19 Task T1 step 3).
 func (s *Service) RunDue(ctx context.Context, asOf time.Time) (executed, failed int, err error) {
 	due, err := s.repo.ListDue(ctx, asOf)
 	if err != nil {
@@ -225,7 +225,7 @@ func (s *Service) RunDue(ctx context.Context, asOf time.Time) (executed, failed 
 			// ErrAlreadyPosted means a prior run already posted this exact
 			// (id, asOf) key and crashed before this row's last_run_date was
 			// updated — treated as success, which is what makes the whole
-			// job idempotent across crash/restart (docs/plan/19 Task T1
+			// job idempotent across crash/restart (docs/roadmap/archive/19 Task T1
 			// step 3, the "crash window" test).
 			if markErr := s.markSuccess(ctx, row.ID, asOf, terminal); markErr != nil {
 				s.logger.Error("schedule: posted but failed to mark success", slog.String("id", row.ID.String()), slog.Any("error", markErr))
@@ -240,7 +240,7 @@ func (s *Service) RunDue(ctx context.Context, asOf time.Time) (executed, failed 
 			// Infra failure (DB blip, etc.) — deliberately leave the row
 			// untouched so the NEXT run (same day after a crash, or the
 			// next scheduled occurrence) reconsiders it as due, per
-			// docs/plan/19 Task T1 step 3 ("Gagal infra → jangan sentuh baris").
+			// docs/roadmap/archive/19 Task T1 step 3 ("infrastructure failure → do not touch the row").
 			s.logger.Error("schedule: infra error running due schedule, leaving row untouched for retry",
 				slog.String("id", row.ID.String()), slog.Any("error", postErr))
 			failed++
@@ -279,7 +279,7 @@ func isBusinessFailure(err error) bool {
 }
 
 // scheduleIdempotencyKey is deterministic per (schedule, run date) — the
-// core mechanism that makes crash/retry at any point safe (docs/plan/19
+// core mechanism that makes crash/retry at any point safe (docs/roadmap/archive/19
 // Task T1's locked pattern): "has this run" is answered by the ledger, not
 // by application state.
 func scheduleIdempotencyKey(id uuid.UUID, asOf time.Time) string {

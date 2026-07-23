@@ -14,7 +14,7 @@ import (
 )
 
 // EnsureBootstrapAdmin idempotently creates the first admin account from
-// env config (docs/plan/25 T1 step 6) — called once at startup by the
+// env config (docs/roadmap/archive/25 T1 step 6) — called once at startup by the
 // composition root. Chosen over a seed migration so no password hash is
 // ever committed to VCS. No-op when the email already exists.
 func (m *Module) EnsureBootstrapAdmin(ctx context.Context, email, password string) error {

@@ -14,7 +14,7 @@ const maxRequestIDLen = 64
 // isValidRequestID restricts inbound ids to a safe charset/length — this is a
 // public edge, an unsanitized client-supplied id would otherwise flow
 // unescaped into every downstream log line (log poisoning) and storage
-// column (docs/plan/36 Task T1).
+// column (docs/roadmap/archive/36 Task T1).
 func isValidRequestID(id string) bool {
 	if id == "" || len(id) > maxRequestIDLen {
 		return false

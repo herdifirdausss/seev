@@ -16,7 +16,7 @@ import (
 )
 
 // SavingsRepository persists which accounts earn interest and at what
-// rate (docs/plan/19 Task T3).
+// rate (docs/roadmap/archive/19 Task T3).
 type SavingsRepository interface {
 	// Upsert inserts or updates one account's config — ops re-registering
 	// an already-configured account changes its rate/enabled in place.

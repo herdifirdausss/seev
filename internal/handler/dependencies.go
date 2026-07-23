@@ -14,7 +14,7 @@ import (
 
 // Dependencies groups all handler dependencies as interfaces.
 // This allows any field to be replaced with a mock during unit tests.
-// Cache may be nil when REDIS_ENABLED=false (docs/plan/12 Task T1) —
+// Cache may be nil when REDIS_ENABLED=false (docs/roadmap/archive/12 Task T1) —
 // every consumer must nil-check it rather than assume it's always
 // populated; see CacheOrNil for safely constructing this field.
 type Dependencies struct {
@@ -25,20 +25,20 @@ type Dependencies struct {
 	LedgerProxy *httputil.ReverseProxy
 	// LedgerReady is the gRPC health probe used by monolith readiness.
 	LedgerReady func(context.Context) error
-	// Payin handles vendor webhook deliveries (docs/plan/22 Task T2) —
+	// Payin handles vendor webhook deliveries (docs/roadmap/archive/22 Task T2) —
 	// nil-checked at both mount sites: the public listener's
 	// /webhooks/{vendor} receiver and the internal listener's
 	// /admin/payin/ admin surface. Nil (no vendor configured) means every
 	// /webhooks/* request 404s, byte-identical to before this feature
 	// existed.
 	Payin payinv1.PayinServiceClient
-	// Payout orchestrates user withdrawals (docs/plan/23 Task T5) —
+	// Payout orchestrates user withdrawals (docs/roadmap/archive/23 Task T5) —
 	// nil-checked at both mount sites: the public listener's
 	// POST/GET /api/v1/payout endpoints and the internal listener's
 	// /admin/payout/ admin surface. Nil (no vendor configured) means every
 	// payout route 404s, byte-identical to before this feature existed.
 	Payout payoutv1.PayoutServiceClient
-	// Notify serves the in-app notification inbox (docs/plan/25 Task T4) —
+	// Notify serves the in-app notification inbox (docs/roadmap/archive/25 Task T4) —
 	// GET/POST /api/v1/notifications on the public listener. Its consumer
 	// goroutine (Start/Stop) is driven directly from cmd/gateway/main.go
 	// alongside the other background workers, not through this struct.

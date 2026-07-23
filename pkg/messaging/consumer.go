@@ -38,7 +38,7 @@ import (
 // Consume starts a self-healing consumer for the queue specified in opts.
 // It blocks until ctx is cancelled or the broker is closed.
 //
-// Recovery behaviour:
+// Recovery behavior:
 //
 //	delivery channel closed   → restart consumeOnce with backoff
 //	broker disconnected       → reconnectLoop re-establishes conn; consumer
@@ -216,7 +216,7 @@ func (r *RabbitMQ) handleDelivery(
 	// via correlationIDFromContext) before invoking the handler, so a
 	// consumer's own logs/outbound calls/persisted rows can trace back to
 	// the HTTP/gRPC request that originally triggered the publish
-	// (docs/plan/36 Task T4) — the publishing ctx is long gone by the time
+	// (docs/roadmap/archive/36 Task T4) — the publishing ctx is long gone by the time
 	// this delivery is processed, so CorrelationId is the only carrier.
 	if d.CorrelationId != "" {
 		handlerCtx = context.WithValue(handlerCtx, middleware.RequestIDKey, d.CorrelationId)

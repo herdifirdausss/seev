@@ -77,7 +77,7 @@ func TestPositiveAmountValidator_Error(t *testing.T) {
 	assert.Error(t, err)
 }
 
-// ─── IntegralAmountValidator (docs/plan/10 Task T4) ────────────────────────────
+// ─── IntegralAmountValidator (docs/roadmap/archive/10 Task T4) ────────────────────────────
 
 func TestIntegralAmountValidator_IntegerAmount_OK(t *testing.T) {
 	v := IntegralAmountValidator{}

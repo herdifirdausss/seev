@@ -19,6 +19,8 @@ import (
 	fraudv1 "github.com/herdifirdausss/seev/gen/fraud/v1"
 	"github.com/herdifirdausss/seev/internal/auth"
 	"github.com/herdifirdausss/seev/internal/config"
+	"github.com/herdifirdausss/seev/internal/kycvendor"
+	"github.com/herdifirdausss/seev/internal/kycvendor/httpkyc"
 	"github.com/herdifirdausss/seev/internal/kycvendor/mockkyc"
 	"github.com/herdifirdausss/seev/pkg/cache"
 	"github.com/herdifirdausss/seev/pkg/database"
@@ -47,7 +49,7 @@ func main() {
 }
 
 // probeHealth dials the INTERNAL :8083 listener, which is mTLS since
-// docs/plan/49 K6 flips it — auth's PUBLIC :8082 has no separate
+// docs/roadmap/archive/49 K6 flips it — auth's PUBLIC :8082 has no separate
 // healthcheck path and stays plain (anti-scope: edge-public exception).
 func probeHealth(getenv func(string) string) error {
 	port := getenv("INTERNAL_APP_PORT")
@@ -87,7 +89,7 @@ func run(parent context.Context) error {
 		cfg.App.InternalPort = "8083"
 	}
 	log := logger.New(cfg.Logger.Pkg())
-	// docs/plan/49 K3/K5: load this process's own identity + the shared CA
+	// docs/roadmap/archive/49 K3/K5: load this process's own identity + the shared CA
 	// before anything else.
 	certSrc, err := tlsx.LoadFromDir(cfg.TLSCertDir, "auth", log)
 	if err != nil {
@@ -136,13 +138,41 @@ func run(parent context.Context) error {
 		fraudConn = conn
 		closeFraud = fraudConn.Close
 	}
+	kycProvider := kycvendor.Provider(mockkyc.New())
+	if cfg.Auth.KYCProviderURL != "" {
+		configuredProvider, providerErr := httpkyc.New(cfg.Auth.KYCProviderURL, cfg.Auth.KYCProviderToken, cfg.Auth.KYCProviderName, nil)
+		if providerErr != nil {
+			closeAuthDependencies(log, ledgerConn.Close, closeFraud, redisCache, db, shutdownTracing)
+			return fmt.Errorf("configure kyc provider: %w", providerErr)
+		}
+		kycProvider = configuredProvider
+	}
 	module := auth.NewModule(db, ledgerclient.New(ledgerConn), auth.Config{
 		JWTSecret: cfg.JWT.Secret, JWTIssuer: cfg.JWT.Issuer,
 		AccessExpiry: cfg.JWT.AccessExpiry, RefreshExpiry: cfg.JWT.RefreshExpiry,
 		DefaultCurrency: cfg.Auth.DefaultCurrency,
-	}, log, mockkyc.New())
+	}, log, kycProvider)
+	var startRescreen func() error
+	var stopRescreen func()
 	if fraudConn != nil {
-		module.SetSanctionsChecker(fraudcheck.New(fraudv1.NewFraudServiceClient(fraudConn), "auth"))
+		sanctionsChecker := fraudcheck.New(fraudv1.NewFraudServiceClient(fraudConn), "auth")
+		module.SetSanctionsChecker(sanctionsChecker)
+		interval := 24 * time.Hour
+		if raw := os.Getenv("KYC_RESCREEN_INTERVAL"); raw != "" {
+			parsed, parseErr := time.ParseDuration(raw)
+			if parseErr != nil {
+				closeAuthDependencies(log, ledgerConn.Close, closeFraud, redisCache, db, shutdownTracing)
+				return fmt.Errorf("invalid KYC_RESCREEN_INTERVAL %q: %w", raw, parseErr)
+			}
+			if parsed <= 0 {
+				closeAuthDependencies(log, ledgerConn.Close, closeFraud, redisCache, db, shutdownTracing)
+				return fmt.Errorf("invalid KYC_RESCREEN_INTERVAL %q: must be positive", raw)
+			}
+			interval = parsed
+		}
+		rescreenJob := module.NewKYCRescreenJob(redisClientClient(redisCache), sanctionsChecker, interval, log)
+		startRescreen = func() error { return rescreenJob.Start(ctx) }
+		stopRescreen = rescreenJob.Stop
 	}
 	if kek := os.Getenv("KYC_DOC_KEK"); kek != "" {
 		module.SetDocumentKEK([]byte(kek))
@@ -164,8 +194,15 @@ func run(parent context.Context) error {
 		closeAuthDependencies(log, ledgerConn.Close, closeFraud, redisCache, db, shutdownTracing)
 		return fmt.Errorf("start kyc apply retry worker: %w", err)
 	}
+	if startRescreen != nil {
+		if err := startRescreen(); err != nil {
+			retryJob.Stop()
+			closeAuthDependencies(log, ledgerConn.Close, closeFraud, redisCache, db, shutdownTracing)
+			return fmt.Errorf("start kyc sanctions rescreen worker: %w", err)
+		}
+	}
 
-	// docs/plan/49 K6: auth's public :8082 stays plain (anti-scope edge
+	// docs/roadmap/archive/49 K6: auth's public :8082 stays plain (anti-scope edge
 	// exception); only the internal :8083 listener flips to mTLS.
 	publicServer := newHTTPServer(cfg.App, ":"+cfg.App.Port, publicRouter(cfg, module, redisCache, log), nil)
 	internalServer := newHTTPServer(cfg.App, cfg.App.InternalBindAddr+":"+cfg.App.InternalPort, internalRouter(cfg, module), tlsx.ServerConfig(certSrc, []string{
@@ -185,6 +222,9 @@ func run(parent context.Context) error {
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), cfg.App.ShutdownTimeout)
 	defer shutdownCancel()
 	retryJob.Stop()
+	if stopRescreen != nil {
+		stopRescreen()
+	}
 	if err := publicServer.Shutdown(shutdownCtx); err != nil && serveErr == nil {
 		serveErr = err
 	}

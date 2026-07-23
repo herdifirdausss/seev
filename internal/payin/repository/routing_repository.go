@@ -15,7 +15,7 @@ import (
 type RoutingRepository interface {
 	// ResolveCandidates returns EVERY enabled rule matching flow/userID/
 	// currency/amount, ordered user-specific-first then by priority
-	// (docs/plan/40 Task T2 — replaces the old single-winner Resolve so a
+	// (docs/roadmap/archive/40 Task T2 — replaces the old single-winner Resolve so a
 	// caller can skip a candidate whose circuit is open/unregistered and
 	// fall through to the next). Empty slice = no rule matched at all.
 	ResolveCandidates(ctx context.Context, flow string, userID uuid.UUID, currency string, amount int64) ([]model.RoutingCandidate, error)

@@ -52,7 +52,7 @@ func (s *RedisVelocityStore) Record(ctx context.Context, eventID, counterKey str
 // ─── FailClosedVelocityStore ────────────────────────────────────────────────
 
 // FailClosedVelocityStore wraps RedisVelocityStore with a background
-// Redis-health probe (docs/plan/45 Task T3/K4) — unlike
+// Redis-health probe (docs/roadmap/archive/45 Task T3/K4) — unlike
 // pkg/cache.FailoverLimiter/FailoverCounter, there is NO memory fallback
 // here: a memory approximation of fraud velocity could silently weaken
 // screening thresholds, so while Redis is unhealthy every call fails
@@ -74,7 +74,7 @@ func (s *RedisVelocityStore) Record(ctx context.Context, eventID, counterKey str
 // classified DEPENDENCY_UNAVAILABLE response to reach the caller before
 // ITS deadline also expires — that raw context.DeadlineExceeded doesn't
 // match ErrDependencyUnavailable, so the caller falls through to fraud's
-// fail-OPEN branch instead of fail-closed (found live by docs/plan/49 T6's
+// fail-OPEN branch instead of fail-closed (found live by docs/roadmap/archive/49 T6's
 // isolated GATE 3 run — chaos scenario 9 flagged this).  150ms leaves
 // generous room for the rest of that 500ms round trip even in the worst
 // case, while remaining far above any latency a genuinely healthy
@@ -87,7 +87,7 @@ type FailClosedVelocityStore struct {
 }
 
 // NewFailClosedVelocityStore constructs a store whose background probe
-// starts immediately (docs/plan/45 K4: fraud-service may start without
+// starts immediately (docs/roadmap/archive/45 K4: fraud-service may start without
 // Redis and keeps probing). Call Stop on shutdown.
 func NewFailClosedVelocityStore(client *redis.Client, logger *slog.Logger) *FailClosedVelocityStore {
 	return &FailClosedVelocityStore{

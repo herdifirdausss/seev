@@ -27,12 +27,12 @@ import (
 )
 
 // TestFailover_ConcurrentDispatch_RaceRelayReplicasVsFailover is
-// docs/plan/40 Task T3's required race scenario (d), re-verified under
-// docs/plan/45 Task T1's outbox architecture: N concurrent relay-replica
+// docs/roadmap/archive/40 Task T3's required race scenario (d), re-verified under
+// docs/roadmap/archive/45 Task T1's outbox architecture: N concurrent relay-replica
 // dispatch passes racing the SAME live command must never produce a
 // double payout. Unlike the pre-outbox synchronous submit() (which had to
 // defend against N truly concurrent in-process callers), the partial
-// unique index (idx_payout_vendor_commands_one_live, docs/plan/45 T0)
+// unique index (idx_payout_vendor_commands_one_live, docs/roadmap/archive/45 T0)
 // structurally guarantees at most ONE command is ever live per request —
 // FOR UPDATE SKIP LOCKED then guarantees at most one of N concurrent
 // DispatchPendingCommands callers ever claims and dispatches it. This test
@@ -132,7 +132,7 @@ func TestFailover_ConcurrentDispatch_RaceRelayReplicasVsFailover(t *testing.T) {
 
 // dispatchConcurrently fires n concurrent DispatchPendingCommands(ctx, 1)
 // calls at m — with at most one live command ever present for a given
-// request (idx_payout_vendor_commands_one_live, docs/plan/45 T0), FOR
+// request (idx_payout_vendor_commands_one_live, docs/roadmap/archive/45 T0), FOR
 // UPDATE SKIP LOCKED guarantees at most one of these n callers actually
 // claims and dispatches it; the rest simply claim nothing.
 func dispatchConcurrently(ctx context.Context, m *Module, n int) {

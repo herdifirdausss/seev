@@ -12,12 +12,12 @@ import (
 	"github.com/herdifirdausss/seev/internal/ledger/repository"
 )
 
-// DefaultQuoteTTL is used when the caller passes ttl <= 0 (docs/plan/38
+// DefaultQuoteTTL is used when the caller passes ttl <= 0 (docs/roadmap/archive/38
 // Task T2) — overridden by FEE_QUOTE_TTL, wired in internal/config.
 const DefaultQuoteTTL = 10 * time.Minute
 
 // ErrQuoteExpired covers not-found, already-consumed, AND expired — these
-// are deliberately not distinguished to the client (docs/plan/38 Task T2):
+// are deliberately not distinguished to the client (docs/roadmap/archive/38 Task T2):
 // none of the three is actionable differently than "request a new quote".
 var ErrQuoteExpired = errors.New("fee quote not found, expired, or already consumed")
 
@@ -25,8 +25,8 @@ var ErrQuoteExpired = errors.New("fee quote not found, expired, or already consu
 // but the transaction attempting to consume it doesn't match what was
 // quoted (transaction_type, currency, or exact amount differs) — the
 // caller tampered with (or simply changed) the request between quoting and
-// posting. Deliberately does NOT burn the quote (docs/plan/38 Task T4 test
-// requirement: "quote tidak berubah status" on mismatch) — a client bug or
+// posting. Deliberately does NOT burn the quote (docs/roadmap/archive/38 Task T4 test
+// requirement: "the quote status must not change" on mismatch) — a client bug or
 // legitimate amount change shouldn't force a needless re-quote.
 var ErrQuoteMismatch = errors.New("fee quote does not match this request")
 
@@ -69,7 +69,7 @@ func (p *Policy) GetQuote(ctx context.Context, quoteID, userID uuid.UUID) (Quote
 }
 
 // ConsumeQuote is the single-use, atomic, exact-match consumption path
-// (docs/plan/38 Task T2/T4). ref is persisted as consumed_by_ref
+// (docs/roadmap/archive/38 Task T2/T4). ref is persisted as consumed_by_ref
 // ('tx:<uuid>' | 'payout:<uuid>') for audit — which entity spent this
 // quote. exec is *sql.Tx (to run INSIDE the posting transaction — a
 // rollback un-consumes automatically) or the plain pool via
@@ -99,7 +99,7 @@ func (p *Policy) ConsumeQuote(ctx context.Context, exec repository.QueryRower, q
 }
 
 // ConsumeQuoteStandalone is ConsumeQuote for a caller with no active
-// transaction of its own to run inside (docs/plan/38 Task T5: payout's
+// transaction of its own to run inside (docs/roadmap/archive/38 Task T5: payout's
 // consumption is a short, separate gRPC-triggered operation — the
 // payout_requests row is ITS OWN commitment, not something that shares a
 // tx with the ledger side at all).

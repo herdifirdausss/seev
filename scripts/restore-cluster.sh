@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# docs/plan/50 T3 (K7, K8, K12): isolated, fail-closed cluster restore for
+# docs/roadmap/active/50 T3 (K7, K8, K12): isolated, fail-closed cluster restore for
 # a PITR or latest disaster-recovery drill. Restores into this script's
 # own dedicated seev-a7-drill Compose project
 # (deploy/backup/restore-compose.yml) — never the real dev stack's

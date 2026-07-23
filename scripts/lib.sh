@@ -26,16 +26,16 @@ GATEWAY_DB_NAME="${GATEWAY_DB_NAME:-seev_gateway}"
 ADMINBFF_DB_NAME="${ADMINBFF_DB_NAME:-seev_adminbff}"
 ASSURANCE_DB_NAME="${ASSURANCE_DB_NAME:-seev_assurance}"
 JWT_SECRET="${JWT_SECRET:-change-me-to-a-random-32-plus-character-secret}"
-# docs/plan/49 TM-07: every service now REFUSES to boot with an empty
+# docs/roadmap/archive/49 TM-07: every service now REFUSES to boot with an empty
 # JWT_ISSUER (internal/config validate()) — issuer validation used to be
 # silently skippable by leaving this unset.
 JWT_ISSUER="${JWT_ISSUER:-seev}"
-# docs/plan/49 K5: every gRPC server now REFUSES to boot with an empty
+# docs/roadmap/archive/49 K5: every gRPC server now REFUSES to boot with an empty
 # token (pkg/grpcx.NewServer fails fast — the old no-op-when-empty
 # behavior that silently accepted every call is gone), so this can no
 # longer default to empty the way it used to across this whole harness.
 INTERNAL_GRPC_TOKEN="${INTERNAL_GRPC_TOKEN:-change-me-to-a-random-32-plus-character-token}"
-# docs/plan/49 TM-11: the per-IP(+path) rate limiter now actually enforces
+# docs/roadmap/archive/49 TM-11: the per-IP(+path) rate limiter now actually enforces
 # (previously bypassed by keying on the ephemeral source port) — this
 # harness legitimately fires many requests per minute from ONE machine
 # across many scenarios/scripts sharing that one IP, which production's
@@ -56,7 +56,7 @@ PAYIN_GRPC_PORT="${PAYIN_GRPC_PORT:-19092}"
 PAYIN_ADMIN_PORT="${PAYIN_ADMIN_PORT:-18092}"
 PAYOUT_GRPC_PORT="${PAYOUT_GRPC_PORT:-19093}"
 PAYOUT_ADMIN_PORT="${PAYOUT_ADMIN_PORT:-18093}"
-# docs/plan/45 Task T4: a second payout-service instance sharing the same
+# docs/roadmap/archive/45 Task T4: a second payout-service instance sharing the same
 # Postgres/Redis as the primary (started via start_payout_service_replica,
 # below) — used only by chaos-test.sh's distributed-breaker scenario to
 # prove breaker state converges across two real replicas. Never started by
@@ -69,7 +69,7 @@ ADMINBFF_PORT="${ADMINBFF_PORT:-18095}"
 ASSURANCE_PORT="${ASSURANCE_PORT:-18096}"
 REDIS_HOST_PORT="${REDIS_HOST_PORT:-6380}"
 
-# docs/plan/44 K7: SEEV_WORK_DIR lets a caller (T4's scheduled workflow, one
+# docs/roadmap/archive/44 K7: SEEV_WORK_DIR lets a caller (T4's scheduled workflow, one
 # job running business-e2e then chaos-all in sequence) pin two EXACT
 # directories under $RUNNER_TEMP instead of two unrelated mktemp paths — so
 # a failure-only artifact upload step can name them directly. Local/default
@@ -109,7 +109,7 @@ ADMINBFF_BIN="$WORK_DIR/admin-bff-service"
 ASSURANCE_BIN="$WORK_DIR/assurance-service"
 GENTOKEN_BIN="$WORK_DIR/gentoken"
 CERTGEN_BIN="$WORK_DIR/certgen"
-# docs/plan/49 K3: every service loads its own identity + the shared CA
+# docs/roadmap/archive/49 K3: every service loads its own identity + the shared CA
 # from one directory (cmd/certgen's output layout) — generated fresh into
 # this run's own WORK_DIR, never committed, never reused across runs.
 CERT_DIR="$WORK_DIR/certs"
@@ -177,6 +177,30 @@ wait_for_container_healthy() {
 	done
 	fail "$container did not become healthy in time"
 	return 1
+}
+
+# Docker keeps a container's last healthy status briefly while an asynchronous
+# `docker restart` is still waiting to stop it. A caller that only waits for
+# `healthy` can therefore start the next service against a database that is
+# already on its way down. Require an observable unhealthy/restarting state
+# before waiting for the real post-restart healthy state.
+wait_for_container_restart() {
+	local container=$1 tries=60 transitioned=0
+	while [ "$tries" -gt 0 ]; do
+		local status
+		status="$(docker inspect "$container" --format '{{.State.Health.Status}}' 2>/dev/null || echo "missing")"
+		if [ "$status" != "healthy" ]; then
+			transitioned=1
+			break
+		fi
+		sleep 0.2
+		tries=$((tries - 1))
+	done
+	if [ "$transitioned" -ne 1 ]; then
+		fail "$container restart did not leave the healthy state"
+		return 1
+	fi
+	wait_for_container_healthy "$container"
 }
 
 ensure_deps_up() {
@@ -269,7 +293,7 @@ apply_migrations() {
 }
 
 # ensure_app_role provisions the restricted login role the server actually
-# connects as (docs/plan/16 Task T3) — the docker-compose postgres-init
+# connects as (docs/roadmap/archive/16 Task T3) — the docker-compose postgres-init
 # script only runs on a container's FIRST boot, which a script reusing an
 # existing volume can't assume, so this is the idempotent belt-and-suspenders
 # version run every time.
@@ -304,14 +328,14 @@ build_server() {
 	generate_certs
 }
 
-# generate_certs (docs/plan/49 K3) issues a fresh CA plus one leaf per
+# generate_certs (docs/roadmap/archive/49 K3) issues a fresh CA plus one leaf per
 # known identity into $CERT_DIR, once per run — every start_*_service
 # function below points TLS_CERT_DIR at this same directory. Idempotent
 # within a run (certgen's own --force-less issue skips a still-fresh
 # leaf), but $CERT_DIR itself lives under $WORK_DIR so a genuinely fresh
 # CA is generated every run, never reused stale across runs.
 generate_certs() {
-	log "generating mTLS certificates (docs/plan/49 K3) into $CERT_DIR..."
+	log "generating mTLS certificates (docs/roadmap/archive/49 K3) into $CERT_DIR..."
 	"$CERTGEN_BIN" init-ca --out "$CERT_DIR"
 	for service in gateway auth ledger payin payout fraud admin-bff assurance dev-operator prometheus backup-agent; do
 		"$CERTGEN_BIN" issue --service "$service" --out "$CERT_DIR"
@@ -380,13 +404,13 @@ start_payout_service() {
 		export INTERNAL_GRPC_TOKEN=$INTERNAL_GRPC_TOKEN
 		export VENDOR_MOCKVENDOR_ENABLED=true
 		export VENDOR_MOCKVENDOR_SECRET="${VENDOR_MOCKVENDOR_SECRET:-script-test-mockvendor-secret-at-least-32-chars-long}"
-		# mockvendor2 registered alongside mockvendor (docs/plan/40 Task T4) —
+		# mockvendor2 registered alongside mockvendor (docs/roadmap/archive/40 Task T4) —
 		# purely additive: only reachable once a routing rule actually points
 		# at it (seeded by chaos-test.sh's vendor-failover scenario), every
 		# other flow is unaffected.
 		export MOCKVENDOR2_ENABLED=true
 		export MOCKVENDOR2_SECRET="${MOCKVENDOR2_SECRET:-script-test-mockvendor2-secret-at-least-32-chars-long}"
-		# docs/plan/45 Task T2/K3: off by default (matches production
+		# docs/roadmap/archive/45 Task T2/K3: off by default (matches production
 		# BREAKER_DISTRIBUTED default false) — a scenario opts in by
 		# exporting BREAKER_DISTRIBUTED=true before calling this.
 		export BREAKER_DISTRIBUTED="${BREAKER_DISTRIBUTED:-false}"
@@ -399,7 +423,7 @@ start_payout_service() {
 
 # start_payout_service_replica starts a SECOND payout-service process (same
 # binary, same Postgres DB and Redis instance as the primary) on the
-# PAYOUT2_* ports — docs/plan/45 Task T4's distributed-breaker-across-
+# PAYOUT2_* ports — docs/roadmap/archive/45 Task T4's distributed-breaker-across-
 # replicas scenario needs two real processes sharing one breaker backend,
 # not two separately-provisioned stacks. Never called by start_services;
 # only chaos-test.sh's own scenario reaches for this directly, and must
@@ -494,7 +518,7 @@ start_payin_service() {
 
 # gen_token mints a JWT via cmd/gentoken (see that package's own doc comment)
 # — the single canonical implementation, no more hand-rolled heredocs.
-# gentoken defaults kyc_level to 1 (docs/plan/39 Task T6, gotcha #9) so
+# gentoken defaults kyc_level to 1 (docs/roadmap/archive/39 Task T6, gotcha #9) so
 # every existing gen_token call site in smoke-test.sh/chaos-test.sh keeps
 # posting to gated routes without any change — pass an explicit ttl+level
 # ("1h" "0") only if a script specifically wants to exercise the KYC gate
@@ -544,7 +568,7 @@ start_gateway() {
 		export INTERNAL_APP_PORT=$INTERNAL_PORT
 		export POSTGRES_HOST=localhost
 		export POSTGRES_PORT=$DB_HOST_PORT
-		# docs/plan/16 Task T3: the running app connects as the restricted
+		# docs/roadmap/archive/16 Task T3: the running app connects as the restricted
 		# app_service role, never the schema owner ($DB_USER, used only for
 		# migrations/assertions in this script) — same split as production.
 		export POSTGRES_USER=gateway_app
@@ -595,6 +619,7 @@ start_auth_service() {
 		export REDIS_ENABLED="${REDIS_ENABLED:-true}"
 		export REDIS_ADDR=localhost:$REDIS_HOST_PORT
 		export LEDGER_GRPC_ADDR=localhost:$LEDGER_GRPC_PORT
+		export FRAUD_GRPC_ADDR=localhost:$FRAUD_GRPC_PORT
 		export JWT_SECRET=$JWT_SECRET
 		export JWT_ISSUER=$JWT_ISSUER
 		export RATE_LIMIT_REQUESTS=$RATE_LIMIT_REQUESTS
@@ -667,7 +692,7 @@ start_adminbff_service() {
 		export RATE_LIMIT_BURST=$RATE_LIMIT_BURST
 		export TLS_CERT_DIR=$CERT_DIR
 		# AUTH_SERVICE_URL targets auth's PUBLIC login endpoint and stays
-		# plain (docs/plan/49 anti-scope edge exception); every other
+		# plain (docs/roadmap/archive/49 anti-scope edge exception); every other
 		# downstream target here is genuinely internal and flips to https.
 		export AUTH_SERVICE_URL="${AUTH_SERVICE_URL:-http://localhost:$AUTH_APP_PORT}"
 		export AUTH_ADMIN_SERVICE_URL="${AUTH_ADMIN_SERVICE_URL:-https://localhost:$AUTH_INTERNAL_PORT}"
@@ -684,7 +709,7 @@ start_adminbff_service() {
 	wait_for_service_up admin-bff-service "https://localhost:$ADMINBFF_PORT/health" "$ADMINBFF_PID_FILE" "$ADMINBFF_LOG"
 }
 
-# docs/plan/49 K6: every internal/admin listener now requires mTLS, so any
+# docs/roadmap/archive/49 K6: every internal/admin listener now requires mTLS, so any
 # curl targeting one must present the dev-operator client identity — the
 # same identity a real operator's manual curl/browser session would use.
 # A drop-in wrapper rather than touching every call site's URL string:
@@ -694,7 +719,7 @@ start_adminbff_service() {
 # must never be routed through this — they stay on plain curl.
 #
 # -k/--insecure is required, not optional: this repo's certs carry ONLY a
-# URI SAN (spiffe://seev/<service>, docs/plan/49 K3/K4), never a DNS SAN —
+# URI SAN (spiffe://seev/<service>, docs/roadmap/archive/49 K3/K4), never a DNS SAN —
 # pkg/tlsx's Go clients handle that via a custom VerifyConnection hook
 # (InsecureSkipVerify + manual chain verification + URI SAN check), but
 # curl exposes no equivalent "verify the chain, skip hostname matching"
@@ -754,7 +779,7 @@ start_server() { start_services; }
 # wait_for_service_up would sometimes report a stale survivor as "up" — the
 # same false-positive-health-check failure mode as the stop_server_gracefully
 # bug above, just from a different mechanism. Real bug found reproducing
-# docs/plan/34 T2 scenario 5/6/7 failures that only appeared inside `all`,
+# docs/roadmap/archive/34 T2 scenario 5/6/7 failures that only appeared inside `all`,
 # never in isolation.
 wait_for_pid_gone() {
 	local pid=$1 tries=100
@@ -793,7 +818,7 @@ stop_gateway_only() {
 # the other five processes, which then squat on the next scenario's ports
 # and get silently misreported as "up" by wait_for_service_up (a stale
 # survivor answering the same health-check URL). Real bug found running
-# `chaos-test.sh all` end to end for docs/plan/34 T2: five scenarios called
+# `chaos-test.sh all` end to end for docs/roadmap/archive/34 T2: five scenarios called
 # this expecting a full stop and got only gateway killed.
 stop_server_gracefully() { stop_services; }
 
@@ -989,7 +1014,7 @@ json_field() {
 }
 
 # wait_for_payout_status polls payout_requests.status until it matches want
-# or tries (default 40, 2s apart = 80s) are exhausted (docs/plan/45 Task T1,
+# or tries (default 40, 2s apart = 80s) are exhausted (docs/roadmap/archive/45 Task T1,
 # K1's own admitted API-behavior change): POST /api/v1/payout now returns
 # right after hold+enqueue — the vendor result (settled/vendor_pending/
 # cancelled/failed) is always driven asynchronously by the relay's own
@@ -1012,7 +1037,7 @@ wait_for_payout_status() {
 
 # wait_for_vendor_call polls payout_vendor_calls until at least one row with
 # the given outcome ('accepted'|'rejected'|'uncertain') has been recorded
-# for id, or tries (default 40, 1s apart) are exhausted. docs/plan/45 Task
+# for id, or tries (default 40, 1s apart) are exhausted. docs/roadmap/archive/45 Task
 # T1: dispatch is now async (the relay's own ~1s poll interval), so a test
 # that needs to prove "the vendor was genuinely called and returned X"
 # before taking its next step (e.g. rewriting a mock destination to let a
@@ -1033,7 +1058,7 @@ wait_for_vendor_call() {
 
 # wait_for_vendor_command_status polls the LIVE (pending/processing/failed)
 # payout_vendor_commands row for a request until its status matches want, or
-# tries (default 40, 1s apart) are exhausted. docs/plan/45 Task T1: used
+# tries (default 40, 1s apart) are exhausted. docs/roadmap/archive/45 Task T1: used
 # when a test needs to know a command has fully finished a dispatch attempt
 # (i.e. FailCommand/CompleteCommand has actually committed) before mutating
 # state the relay itself also touches — waiting on payout_vendor_calls alone
@@ -1052,7 +1077,7 @@ wait_for_vendor_command_status() {
 	return 1
 }
 
-# ─── KYC dance helpers (docs/plan/39 Task T6, gotcha #9 master) ─────────────
+# ─── KYC dance helpers (docs/roadmap/archive/39 Task T6, gotcha #9 master) ─────────────
 #
 # Every script that transacts as a REAL registered user (not a gen_token
 # fixture — see gen_token's own doc comment for why gentoken users don't
@@ -1064,7 +1089,7 @@ wait_for_vendor_command_status() {
 # (auth_port's public listener) — the mock provider auto-approves L1 when no
 # mock_mode is given — then refreshes to obtain a NEW token pair carrying
 # the updated kyc_level claim (the claim only refreshes on login/refresh,
-# docs/plan/39 Task T4, so the caller's OLD access token stays stuck at
+# docs/roadmap/archive/39 Task T4, so the caller's OLD access token stays stuck at
 # whatever level it was minted with). Echoes the RAW refresh response JSON
 # to stdout — refresh tokens rotate (single-use), so the caller MUST
 # extract and keep the NEW refresh_token too (json_field refresh_token), or
@@ -1080,7 +1105,7 @@ kyc_approve_l1() {
 }
 
 # kyc_submit_l2_and_admin_approve submits L2 (the mock provider ALWAYS
-# refers L2 to manual review, regardless of mock_mode — docs/plan/39's own
+# refers L2 to manual review, regardless of mock_mode — docs/roadmap/archive/39's own
 # locked decision), approves it with an admin token against auth's INTERNAL
 # listener (auth_internal_port), then refreshes. Echoes the RAW refresh
 # response JSON to stdout — same rotating-refresh-token caveat as
@@ -1139,7 +1164,7 @@ await_log_line() {
 
 # assert_metric_value curls a /metrics endpoint and asserts a Prometheus
 # gauge/counter's CURRENT value for a line matching every given "label=value"
-# substring (docs/plan/45 Task T4 — cache_redis_backend_active,
+# substring (docs/roadmap/archive/45 Task T4 — cache_redis_backend_active,
 # vendorgw_breaker_backend). Label order in the exposition text is never
 # assumed (client_golang doesn't guarantee it), so each label is checked as
 # an independent substring on the already-narrowed-down line rather than a

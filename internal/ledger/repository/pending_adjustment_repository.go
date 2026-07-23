@@ -16,7 +16,7 @@ import (
 )
 
 // PendingAdjustmentRepository persists the maker-checker workflow for manual
-// balance adjustments (docs/plan/16 Task T1, decision K8). Write methods
+// balance adjustments (docs/roadmap/archive/16 Task T1, decision K8). Write methods
 // take a *sql.Tx — the caller (internal/ledger/service/adjustments) owns
 // transaction boundaries, same pattern as every other repository in this
 // module.
@@ -29,7 +29,7 @@ type PendingAdjustmentRepository interface {
 	// MarkApproved atomically transitions status pending->approved — a
 	// single conditional UPDATE (WHERE status='pending') that only succeeds
 	// once, no matter how many concurrent approvers race for the same
-	// pending adjustment (docs/plan/14 Task T2, decision K3 — same
+	// pending adjustment (docs/roadmap/archive/14 Task T2, decision K3 — same
 	// mechanism as TransactionRepository.CloseOriginal). Returns rows
 	// affected: 1 on success, 0 if already decided by someone else.
 	MarkApproved(ctx context.Context, tx *sql.Tx, id uuid.UUID, approvedBy string) (int64, error)
@@ -42,7 +42,7 @@ type PendingAdjustmentRepository interface {
 
 	// MarkFailed transitions approved->failed when Post() itself errors —
 	// NOT back to pending; a failed post needs a human decision to retry
-	// (a brand new Create), not an automatic re-attempt (docs/plan/16 Task T1).
+	// (a brand new Create), not an automatic re-attempt (docs/roadmap/archive/16 Task T1).
 	MarkFailed(ctx context.Context, tx *sql.Tx, id uuid.UUID, errMsg string) error
 
 	// List returns pending_adjustments rows filtered by status (empty =

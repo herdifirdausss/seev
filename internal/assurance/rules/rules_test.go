@@ -37,8 +37,21 @@ func TestEvaluatePayin(t *testing.T) {
 	}
 }
 
+// TestEvaluatePayinVendorGatewayMapping is docs/roadmap/active/50 T6's regression for a
+// real, non-identity payin_vendor_gateways mapping (e.g. the system's own
+// default seed, "mockvendor" -> "bca") — record.Vendor stays the raw
+// vendor id while the ledger proof's own Gateway is the resolved
+// settlement name, and matchingMoneyIn must correlate them anyway.
+func TestEvaluatePayinVendorGatewayMapping(t *testing.T) {
+	record := PayinRecord{ID: "event-1", RecordType: "webhook_event", Status: "posted", UserID: "user-1", AmountMinor: 1000, Currency: "IDR", Vendor: "mockvendor", ExternalRef: "ext-1", RequestIDPresent: true, Ledger: []LedgerProof{postedLedger("tx-1", "bca", "ext-1", 1000)}}
+	require.Empty(t, EvaluatePayin(record))
+}
+
 func TestEvaluatePayinSettledCorrelation(t *testing.T) {
-	event := PayinRecord{ID: "event-1", RecordType: "webhook_event", Status: "posted", UserID: "user-1", AmountMinor: 1000, Currency: "IDR", Reference: "ref-1"}
+	// A webhook_event's own Reference is always blank in real data
+	// (payin_webhook_events has no "reference" column) — ExternalRef is
+	// the field that must match the intent's own Reference.
+	event := PayinRecord{ID: "event-1", RecordType: "webhook_event", Status: "posted", UserID: "user-1", AmountMinor: 1000, Currency: "IDR", ExternalRef: "ref-1"}
 	intent := PayinRecord{ID: "intent-1", RecordType: "intent", Status: "settled", UserID: "user-1", AmountMinor: 1000, Currency: "IDR", Reference: "ref-1", SettledEventID: event.ID, SettledWebhook: &event, RequestIDPresent: true}
 	require.Empty(t, EvaluatePayin(intent))
 	event.AmountMinor = 999

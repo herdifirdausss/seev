@@ -12,7 +12,7 @@ import (
 )
 
 // Agent owns the pgBackRest invocation logic shared by both the
-// scheduled cron jobs and the `status` CLI subcommand (docs/plan/50 T2
+// scheduled cron jobs and the `status` CLI subcommand (docs/roadmap/active/50 T2
 // Work item 1: "fixed, non-user-controlled pgBackRest commands"). No
 // caller ever supplies its own argument list — every command below is a
 // closed, hardcoded set matching the manual Makefile targets exactly.

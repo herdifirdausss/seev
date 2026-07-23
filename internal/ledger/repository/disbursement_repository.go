@@ -17,11 +17,11 @@ import (
 )
 
 // DisbursementRepository persists batch disbursement manifests
-// (docs/plan/19 Task T2). Write methods take a *sql.Tx — the caller
+// (docs/roadmap/archive/19 Task T2). Write methods take a *sql.Tx — the caller
 // (internal/ledger/service/disbursement) owns transaction boundaries.
 type DisbursementRepository interface {
 	// CreateBatchWithItems inserts the batch header and every item in ONE
-	// transaction (docs/plan/19 Task T2 step 2) — a partially-imported
+	// transaction (docs/roadmap/archive/19 Task T2 step 2) — a partially-imported
 	// batch must never exist.
 	CreateBatchWithItems(ctx context.Context, tx *sql.Tx, batch model.DisbursementBatch, items []model.DisbursementItem) error
 
@@ -32,7 +32,7 @@ type DisbursementRepository interface {
 	// once every item has left 'pending' (or, when retryFailed, 'failed' too).
 	UpdateBatchStatus(ctx context.Context, tx *sql.Tx, batchID uuid.UUID, status string) error
 
-	// GetCounts returns a count of items per status for a batch (docs/plan/19
+	// GetCounts returns a count of items per status for a batch (docs/roadmap/archive/19
 	// Task T2 step 5, report summary).
 	GetCounts(ctx context.Context, batchID uuid.UUID) (map[string]int, error)
 
@@ -42,14 +42,14 @@ type DisbursementRepository interface {
 
 	// ListItemsToProcess selects up to limit items still needing a Post
 	// attempt — 'pending' always, plus 'failed' when includeFailed is true
-	// (the ?retry_failed=true flag, docs/plan/19 Task T2 step 4) — ordered
+	// (the ?retry_failed=true flag, docs/roadmap/archive/19 Task T2 step 4) — ordered
 	// by item_no for deterministic, resumable progress across calls.
 	ListItemsToProcess(ctx context.Context, batchID uuid.UUID, includeFailed bool, limit int) ([]model.DisbursementItem, error)
 
 	// MarkItemPosted and MarkItemFailed record one item's outcome after a
 	// Post attempt — each item's own small transaction (not the whole
 	// batch's), so a crash mid-run only loses the in-flight item's own
-	// write, never rolls back items already recorded (docs/plan/19 Task T2
+	// write, never rolls back items already recorded (docs/roadmap/archive/19 Task T2
 	// step 6, the resumable-by-design N-per-call model).
 	MarkItemPosted(ctx context.Context, tx *sql.Tx, itemID, txID uuid.UUID) error
 	MarkItemFailed(ctx context.Context, tx *sql.Tx, itemID uuid.UUID, errMsg string) error

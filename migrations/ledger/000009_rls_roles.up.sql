@@ -1,4 +1,4 @@
--- docs/plan/16 Task T3 (K9): RLS + minimal grants as defense-in-depth.
+-- docs/roadmap/archive/16 Task T3 (K9): RLS + minimal grants as defense-in-depth.
 -- Ports docs/design/legacy-schemas/ledgernew.sql:648-760 to the canonical
 -- schema + every table added since (outbox_events, pending_adjustments,
 -- recon_batches, recon_items, account_balance_snapshots).
@@ -49,7 +49,7 @@ GRANT SELECT ON
 TO app_readonly;
 
 -- ── ENABLE + FORCE RLS on every table (K9: value is grant-minimal + FORCE,
--- not per-tenant policy — see decision rationale in docs/plan/13 K9).
+-- not per-tenant policy — see decision rationale in docs/roadmap/archive/13 K9).
 ALTER TABLE accounts                    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE account_balances            ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ledger_transactions         ENABLE ROW LEVEL SECURITY;

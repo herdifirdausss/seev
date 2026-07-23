@@ -1,6 +1,6 @@
 //go:build integration
 
-// Package config_test proves docs/plan/49 K7's two boot paths end to end
+// Package config_test proves docs/roadmap/archive/49 K7's two boot paths end to end
 // against a REAL dev-mode Vault container (not just the mocked-HTTP unit
 // tests in vault_test.go): a service boots normally with VAULT_ADDR/
 // VAULT_TOKEN unset (today's env-only behavior, byte for byte), and a
@@ -39,7 +39,7 @@ func writeVaultSecret(t *testing.T, addr, token, service string, kv map[string]s
 	require.Equal(t, http.StatusOK, resp.StatusCode, "vault secret write must succeed")
 }
 
-// setupVaultTestContainer starts a real dev-mode Vault (docs/plan/49 K7)
+// setupVaultTestContainer starts a real dev-mode Vault (docs/roadmap/archive/49 K7)
 // with a fixed root token — dev mode auto-unseals and auto-mounts the
 // secret/ KV v2 engine, verified live before this test was written.
 func setupVaultTestContainer(t *testing.T) (addr, token string) {
@@ -76,6 +76,7 @@ func TestLoad_WithoutVaultConfigured_BehavesIdenticalToEnvOnly(t *testing.T) {
 	t.Setenv("VAULT_TOKEN", "")
 	t.Setenv("APP_NAME", "ledger-service")
 	t.Setenv("JWT_SECRET", "env-only-secret-at-least-32-characters-long")
+	t.Setenv("JWT_ISSUER", "seev-integration")
 	t.Setenv("POSTGRES_USER", "u")
 	t.Setenv("POSTGRES_PASSWORD", "env-postgres-password")
 	t.Setenv("POSTGRES_DB", "d")
@@ -105,6 +106,7 @@ func TestLoad_WithVaultSeeded_VaultValueWinsOverEnv(t *testing.T) {
 	t.Setenv("VAULT_TOKEN", token)
 	t.Setenv("APP_NAME", "ledger-service")
 	t.Setenv("JWT_SECRET", "env-fallback-secret-should-not-win-here-xx")
+	t.Setenv("JWT_ISSUER", "seev-integration")
 	t.Setenv("POSTGRES_USER", "u")
 	t.Setenv("POSTGRES_PASSWORD", "env-postgres-password")
 	t.Setenv("POSTGRES_DB", "d")

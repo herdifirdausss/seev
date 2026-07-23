@@ -21,7 +21,7 @@ func WithRateLimit(
 			if err != nil {
 				// Fail-open: a rate limiter error lets the request through
 				// rather than blocking it. This is a deliberate, retained
-				// decision (docs/plan/12 Task T1) — rate limiting exists to
+				// decision (docs/roadmap/archive/12 Task T1) — rate limiting exists to
 				// defend against DoS/abuse, it is not a financial control,
 				// so letting traffic through on error cannot cause money
 				// loss (unlike a fail-open on a balance lock or idempotency
@@ -54,7 +54,7 @@ func RateLimitByIP(r *http.Request) string {
 }
 
 // rateLimitIP strips the ephemeral client port from r.RemoteAddr so that a
-// client's rate-limit bucket survives across new TCP connections (docs/plan/49
+// client's rate-limit bucket survives across new TCP connections (docs/roadmap/archive/49
 // TM-11). Deliberately does NOT trust X-Forwarded-For/X-Real-Ip the way the
 // logger's realIP helper does: those headers are client-suppliable, and
 // honoring them here would let an attacker rotate the rate-limit key on every
@@ -72,7 +72,7 @@ func rateLimitIP(r *http.Request) string {
 // back to RateLimitByIP if the request somehow has no user id in context
 // (e.g. called before WithAuth ran) — still rate-limited, just not per-user
 // for that one request, rather than colliding every such request onto a
-// single "rl:user:" bucket. docs/plan/12 Task T6: the previous version used
+// single "rl:user:" bucket. docs/roadmap/archive/12 Task T6: the previous version used
 // r.Context().Value("user_id").(string) — a context key comparison is by
 // both type AND value, so a plain string "user_id" never matches the typed
 // contextKey("user_id") WithAuth actually stores under (UserIDKey). That
@@ -93,7 +93,7 @@ func RateLimitByIPAndPath(r *http.Request) string {
 // RateLimitByVendor keys by the {vendor} path value, not the caller's IP —
 // a payment vendor can deliver webhooks from many source IPs, so per-IP
 // keying would under-limit a single noisy/misbehaving vendor while
-// over-limiting nothing in particular (docs/plan/22 Task T3).
+// over-limiting nothing in particular (docs/roadmap/archive/22 Task T3).
 func RateLimitByVendor(r *http.Request) string {
 	return "rl:webhook:" + r.PathValue("vendor")
 }

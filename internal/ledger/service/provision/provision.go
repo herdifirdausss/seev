@@ -1,5 +1,5 @@
 // Package provision creates the standard set of accounts a user needs before
-// any ledger transaction can reference them (docs/plan/05 Task 1b.2).
+// any ledger transaction can reference them (docs/roadmap/archive/05 Task 1b.2).
 package provision
 
 import (

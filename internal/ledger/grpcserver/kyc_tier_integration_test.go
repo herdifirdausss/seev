@@ -1,6 +1,6 @@
 //go:build integration
 
-// Proves docs/plan/39 Task T5: ApplyKycTier upserts policy_limits from the
+// Proves docs/roadmap/archive/39 Task T5: ApplyKycTier upserts policy_limits from the
 // policy_tier_limits template, in-place on upgrade, idempotently, and the
 // policy engine actually enforces the new cap — against a real Postgres,
 // same throwaway-container pattern as server_integration_test.go's
@@ -45,7 +45,7 @@ func setupKycTierTestServer(t *testing.T) (ledgerv1.LedgerServiceClient, *databa
 	t.Helper()
 	ctx := context.Background()
 	const dbName, dbUser, dbPassword = "seev_ledger_test", "test", "secret"
-	container, err := postgres.Run(ctx, "postgres:16-alpine",
+	container, err := postgres.Run(ctx, "postgres:16.14-alpine",
 		postgres.WithDatabase(dbName), postgres.WithUsername(dbUser), postgres.WithPassword(dbPassword),
 		postgres.BasicWaitStrategies())
 	require.NoError(t, err)

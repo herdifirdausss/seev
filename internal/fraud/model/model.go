@@ -10,7 +10,7 @@ import (
 
 // ErrDependencyUnavailable is returned by VelocityAnomalyRule.Screen (and
 // therefore Module.Screen) when the velocity store's Redis dependency is
-// currently unavailable (docs/plan/45 Task T3/K4) — deliberately NOT a
+// currently unavailable (docs/roadmap/archive/45 Task T3/K4) — deliberately NOT a
 // generic error: it lives here (internal/fraud/model), not in
 // internal/fraud itself, specifically so internal/fraud/grpcserver can
 // check errors.Is against it without importing internal/fraud (which
@@ -27,11 +27,11 @@ type ScreenInput struct {
 	UserID   uuid.UUID
 	Amount   decimal.Decimal
 	Currency string
-	// RequestID is the originating HTTP/gRPC request_id (docs/plan/36),
+	// RequestID is the originating HTTP/gRPC request_id (docs/roadmap/archive/36),
 	// carried through purely for trace/audit correlation in ScreeningEvent.
 	RequestID string
 	// Flow identifies the calling surface: "p2p_transfer" | "topup" | "payout"
-	// (docs/plan/37) — informational only, rules do not branch on it.
+	// (docs/roadmap/archive/37) — informational only, rules do not branch on it.
 	Flow        string
 	SubjectName string
 	BirthDate   string

@@ -122,7 +122,7 @@ func TestAuthServiceInternalRouter(t *testing.T) {
 	assert.Equal(t, http.StatusOK, recorder.Code)
 }
 
-// ─── CORS config (docs/plan/49 TM-06) ──────────────────────────────────────────
+// ─── CORS config (docs/roadmap/archive/49 TM-06) ──────────────────────────────────────────
 
 func TestAuthCORS_Development_NoOriginsConfigured(t *testing.T) {
 	cfg := authRouterTestConfig()

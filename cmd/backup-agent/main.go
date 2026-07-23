@@ -1,4 +1,4 @@
-// backup-agent is docs/plan/50 T2's operational agent: it owns the
+// backup-agent is docs/roadmap/active/50 T2's operational agent: it owns the
 // weekly-full/daily-differential pgBackRest schedule and exposes
 // mTLS-protected /health, /ready, /metrics on an internal-only listener
 // (K13). It is not a domain service — no public listener, no gRPC.

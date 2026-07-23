@@ -1,7 +1,7 @@
 //go:build integration
 
 // White-box (package payout, not payout_test) so these tests can call
-// settle/cancel/hold directly — docs/plan/23 Task T4's own core point is
+// settle/cancel/hold directly — docs/roadmap/archive/23 Task T4's own core point is
 // racing THOSE internal methods against each other and against the
 // ledger's K3 guard, not going through the public Create() vertical (that
 // vertical is already covered by payout_integration_test.go).
@@ -49,7 +49,7 @@ func setupRaceTestDB(t *testing.T) *database.DBSQL {
 	const dbName, dbUser, dbPassword = "seev_test", "test", "secret"
 
 	container, err := postgres.Run(ctx,
-		"postgres:16-alpine",
+		"postgres:16.14-alpine",
 		postgres.WithDatabase(dbName),
 		postgres.WithUsername(dbUser),
 		postgres.WithPassword(dbPassword),
@@ -102,7 +102,7 @@ func raceAssertLedgerBalanced(t *testing.T, db *database.DBSQL) {
 // settle()/cancel() from the SAME starting status submit() itself always
 // reaches before ever calling settle/cancel in the real Create() flow —
 // TransitionToSettled/TransitionToCancelled's predecessor set is
-// ('submitted', 'vendor_pending') only (docs/plan/23 Task T1's TOCTOU
+// ('submitted', 'vendor_pending') only (docs/roadmap/archive/23 Task T1's TOCTOU
 // fix), so racing from 'held' directly would be racing a state Create()
 // never actually calls settle/cancel from.
 func setupHeldRequest(t *testing.T, db *database.DBSQL, m *Module, ledgerModule *testutil.LedgerHarness, amount int64) (model.PayoutRequest, uuid.UUID) {
@@ -156,7 +156,7 @@ func newRaceModule(db *database.DBSQL) (*Module, *testutil.LedgerHarness) {
 	return m, ledgerModule
 }
 
-// TestDoubleCallback_ConcurrentSettle_ExactlyOnePosted is docs/plan/23 Task
+// TestDoubleCallback_ConcurrentSettle_ExactlyOnePosted is docs/roadmap/archive/23 Task
 // T4's "double-callback" required test: two concurrent settle() calls for
 // the SAME held request (as if two redelivered vendor callbacks, or a
 // callback racing the resume job, both decided the payout settled) must
@@ -204,7 +204,7 @@ func TestDoubleCallback_ConcurrentSettle_ExactlyOnePosted(t *testing.T) {
 }
 
 // TestSettleAfterCancel_LedgerRejectsViaK3_ReconciledNoMoneyMoved is
-// docs/plan/23 Task T4's other required test — this one exercises K3
+// docs/roadmap/archive/23 Task T4's other required test — this one exercises K3
 // directly: cancel closes hold_tx_id first, then a late settle attempt
 // (a DIFFERENT idempotency key targeting the SAME hold_tx_id) must be
 // rejected by the ledger's atomic closed_by_tx_id guard
@@ -237,7 +237,7 @@ func TestSettleAfterCancel_LedgerRejectsViaK3_ReconciledNoMoneyMoved(t *testing.
 	assert.True(t, raceGetBalance(t, db, cash).Equal(decimal.NewFromInt(200_000)), "no money may move on the rejected late settle")
 
 	// The idempotency-gate step inserts a header row for audit purposes
-	// even on a rejected attempt (PROJECT_GUIDE.md's execTransfer ordering rule:
+	// even on a rejected attempt (docs/development/project-guide.md's execTransfer ordering rule:
 	// failed validations must stay auditable, not silently vanish) — so a
 	// row existing is expected; what must NEVER happen is that row reaching
 	// 'posted' status, which is what would mean money actually moved.

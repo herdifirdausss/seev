@@ -30,7 +30,6 @@ func TestCertSource_LoadsIdentityFromLeaf(t *testing.T) {
 		t.Fatalf("GetCertificate() = %v, %v", cert, err)
 	}
 }
-
 func TestCertSource_RejectsCertWithoutURISAN(t *testing.T) {
 	dir := t.TempDir()
 	ca := newTestCA(t)
@@ -58,7 +57,7 @@ func TestCertSource_HotReloadsOnFileChange(t *testing.T) {
 	ca.issue(t, dir, "ledger", IdentityLedger, time.Hour)
 
 	// Fast poll interval so the test doesn't wait on the production
-	// default (docs/plan/45's own precedent for testing poll-based
+	// default (docs/roadmap/archive/45's own precedent for testing poll-based
 	// reload: parameterize interval, never mutate it post-construction).
 	src, err := newCertSource(filepath.Join(dir, "ledger.pem"), filepath.Join(dir, "ledger-key.pem"), filepath.Join(dir, "ca.pem"), nil, 20*time.Millisecond)
 	if err != nil {
@@ -71,7 +70,7 @@ func TestCertSource_HotReloadsOnFileChange(t *testing.T) {
 	}
 
 	// Reissue as a DIFFERENT identity in place — proves the process
-	// picks up a rotated cert without restart (docs/plan/49 K2/K9).
+	// picks up a rotated cert without restart (docs/roadmap/archive/49 K2/K9).
 	// Sleep past a filesystem mtime granularity floor before rewriting so
 	// the poll loop's mtime-comparison actually observes a change.
 	time.Sleep(1100 * time.Millisecond)
@@ -110,4 +109,3 @@ func TestCertSource_KeepsPreviousCertOnReloadFailure(t *testing.T) {
 		t.Fatalf("Identity() = %q after a failed reload, want unchanged %q", got, IdentityLedger)
 	}
 }
-

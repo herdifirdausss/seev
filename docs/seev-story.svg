@@ -1,0 +1,169 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="2200" viewBox="0 0 1400 2200" role="img" aria-labelledby="title description">
+  <title id="title">Seev in one simple picture</title>
+  <desc id="description">A five-part pretend-coin story. Seev is computer instructions for a practice wallet. Mia adds ten coins after Seev makes a plan, checks the sender, matches the plan, and writes the result once. A three-coin transfer splits into two coins for Noah and one fee coin. A withdrawal first holds two coins, then finishes, returns them, or waits for proof. The three promises are that a ticket is not money, one request happens once, and uncertainty waits for proof. Seev is open source under Apache-2.0 but does not yet claim to be production-ready.</desc>
+
+  <defs>
+    <style>
+      .page { fill: #f7f3e9; }
+      .panel { fill: #ffffff; stroke: #203047; stroke-width: 4; }
+      .blue { fill: #dceeff; stroke: #2368a2; stroke-width: 4; }
+      .green { fill: #dcf5e6; stroke: #287a4b; stroke-width: 4; }
+      .yellow { fill: #fff1b8; stroke: #9a6b00; stroke-width: 4; }
+      .red { fill: #ffe1de; stroke: #a83b32; stroke-width: 4; }
+      .ink { fill: #172234; font-family: Arial, Helvetica, sans-serif; }
+      .title { font-size: 64px; font-weight: 700; }
+      .subtitle { font-size: 30px; }
+      .heading { font-size: 39px; font-weight: 700; }
+      .label { font-size: 29px; font-weight: 700; }
+      .body { font-size: 27px; }
+      .small { font-size: 22px; }
+      .center { text-anchor: middle; }
+      .number { fill: #ffffff; font-size: 29px; font-weight: 700; text-anchor: middle; dominant-baseline: middle; }
+      .arrow { stroke: #203047; stroke-width: 6; fill: none; marker-end: url(#arrowhead); }
+    </style>
+    <marker id="arrowhead" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M0,0 L12,6 L0,12 z" fill="#203047"/>
+    </marker>
+  </defs>
+
+  <rect class="page" width="1400" height="2200"/>
+  <text class="ink title center" x="700" y="82">SEEV IN ONE SIMPLE PICTURE</text>
+  <text class="ink subtitle center" x="700" y="130">A pretend wallet story to look at and read together</text>
+
+  <!-- Panel 1 -->
+  <g aria-label="Part one: what Seev is">
+    <rect class="panel" x="60" y="170" width="1280" height="250" rx="30"/>
+    <circle cx="120" cy="225" r="31" fill="#2368a2"/>
+    <text class="ink number" x="120" y="226">1</text>
+    <text class="ink heading" x="175" y="240">Computer recipes for a pretend wallet</text>
+
+    <rect class="blue" x="115" y="285" width="225" height="95" rx="15"/>
+    <line x1="227" y1="285" x2="227" y2="380" stroke="#2368a2" stroke-width="4"/>
+    <line x1="142" y1="320" x2="202" y2="320" stroke="#2368a2" stroke-width="4"/>
+    <line x1="252" y1="320" x2="312" y2="320" stroke="#2368a2" stroke-width="4"/>
+    <line x1="142" y1="347" x2="202" y2="347" stroke="#2368a2" stroke-width="4"/>
+    <line x1="252" y1="347" x2="312" y2="347" stroke="#2368a2" stroke-width="4"/>
+
+    <text class="ink body" x="395" y="295">Different helpers check identity, money in, and money out.</text>
+    <text class="ink body" x="395" y="337">The big money book records every real balance change.</text>
+    <text class="ink body" x="395" y="379">Seev is not a phone app, a bank, or real money.</text>
+  </g>
+
+  <!-- Panel 2 -->
+  <g aria-label="Part two: Mia adds ten pretend coins">
+    <rect class="panel" x="60" y="455" width="1280" height="365" rx="30"/>
+    <circle cx="120" cy="510" r="31" fill="#9a6b00"/>
+    <text class="ink number" x="120" y="511">2</text>
+    <text class="ink heading" x="175" y="525">Mia adds 10 pretend coins</text>
+
+    <rect class="yellow" x="95" y="590" width="235" height="115" rx="20"/>
+    <text class="ink label center" x="212" y="632">1. Make a ticket</text>
+    <text class="ink small center" x="212" y="670">a plan, not coins</text>
+
+    <rect class="blue" x="405" y="590" width="235" height="115" rx="20"/>
+    <text class="ink label center" x="522" y="632">2. Check sender</text>
+    <text class="ink small center" x="522" y="670">real company?</text>
+
+    <rect class="blue" x="715" y="590" width="235" height="115" rx="20"/>
+    <text class="ink label center" x="832" y="632">3. Match ticket</text>
+    <text class="ink small center" x="832" y="670">same plan?</text>
+
+    <rect class="green" x="1025" y="590" width="265" height="115" rx="20"/>
+    <text class="ink label center" x="1157" y="632">4. Big book: +10</text>
+    <text class="ink small center" x="1157" y="670">write once</text>
+
+    <path class="arrow" d="M340 647 L393 647"/>
+    <path class="arrow" d="M650 647 L703 647"/>
+    <path class="arrow" d="M960 647 L1013 647"/>
+
+    <text class="ink body center" x="700" y="765">Why? The payment company must not choose who receives the coins.</text>
+  </g>
+
+  <!-- Panel 3 -->
+  <g aria-label="Part three: Mia sends three pretend coins and the amount splits">
+    <rect class="panel" x="60" y="855" width="1280" height="380" rx="30"/>
+    <circle cx="120" cy="910" r="31" fill="#287a4b"/>
+    <text class="ink number" x="120" y="911">3</text>
+    <text class="ink heading" x="175" y="925">Mia sends 3 coins; the amount splits</text>
+
+    <rect class="red" x="110" y="1000" width="245" height="115" rx="20"/>
+    <text class="ink label center" x="232" y="1043">Mia sends 3</text>
+    <text class="ink small center" x="232" y="1080">10 becomes 7</text>
+
+    <circle class="blue" cx="575" cy="1057" r="67"/>
+    <text class="ink label center" x="575" y="1050">Split</text>
+    <text class="ink small center" x="575" y="1083">save together</text>
+
+    <rect class="green" x="810" y="970" width="350" height="100" rx="20"/>
+    <text class="ink label" x="845" y="1012">Noah receives 2</text>
+    <text class="ink small" x="845" y="1045">his wallet gets the coins</text>
+
+    <rect class="yellow" x="810" y="1090" width="350" height="82" rx="20"/>
+    <text class="ink label" x="845" y="1140">Fee box receives 1</text>
+
+    <path class="arrow" d="M365 1057 L495 1057"/>
+    <path class="arrow" d="M642 1030 L795 1018"/>
+    <path class="arrow" d="M642 1080 L795 1128"/>
+
+    <text class="ink body center" x="700" y="1205">Both destinations are saved—or none are saved.</text>
+  </g>
+
+  <!-- Panel 4 -->
+  <g aria-label="Part four: Mia takes two pretend coins out using a hold">
+    <rect class="panel" x="60" y="1270" width="1280" height="455" rx="30"/>
+    <circle cx="120" cy="1325" r="31" fill="#a83b32"/>
+    <text class="ink number" x="120" y="1326">4</text>
+    <text class="ink heading" x="175" y="1340">Mia takes 2 coins out</text>
+
+    <rect class="yellow" x="105" y="1430" width="250" height="115" rx="20"/>
+    <text class="ink label center" x="230" y="1472">Hold 2 coins</text>
+    <text class="ink small center" x="230" y="1510">cannot spend again</text>
+
+    <circle class="blue" cx="555" cy="1487" r="78"/>
+    <text class="ink label center" x="555" y="1478">Clear</text>
+    <text class="ink label center" x="555" y="1512">answer?</text>
+    <path class="arrow" d="M365 1487 L465 1487"/>
+
+    <path class="arrow" d="M625 1455 L760 1398"/>
+    <path class="arrow" d="M640 1487 L760 1487"/>
+    <path class="arrow" d="M625 1520 L760 1590"/>
+
+    <rect class="green" x="780" y="1365" width="455" height="105" rx="20"/>
+    <text class="ink label" x="815" y="1405">YES: finish once</text>
+    <text class="ink small" x="815" y="1440">1 bank path + 1 fee; Mia has 5</text>
+
+    <rect class="red" x="780" y="1485" width="455" height="90" rx="20"/>
+    <text class="ink label" x="815" y="1525">NO: return both coins</text>
+    <text class="ink small" x="815" y="1558">Mia still has 7; no fee</text>
+
+    <rect class="yellow" x="780" y="1590" width="455" height="95" rx="20"/>
+    <text class="ink label" x="815" y="1630">NOT SURE: keep waiting</text>
+    <text class="ink small" x="815" y="1663">do not guess or pay twice</text>
+  </g>
+
+  <!-- Panel 5 -->
+  <g aria-label="Part five: the three promises and repository contents">
+    <rect class="panel" x="60" y="1760" width="1280" height="340" rx="30"/>
+    <circle cx="120" cy="1815" r="31" fill="#2368a2"/>
+    <text class="ink number" x="120" y="1816">5</text>
+    <text class="ink heading" x="175" y="1830">Remember only three promises</text>
+
+    <rect class="yellow" x="105" y="1890" width="365" height="105" rx="20"/>
+    <text class="ink label center" x="287" y="1933">A ticket is not money</text>
+    <text class="ink small center" x="287" y="1968">It is only a plan</text>
+
+    <rect class="green" x="517" y="1890" width="365" height="105" rx="20"/>
+    <text class="ink label center" x="699" y="1933">One request happens once</text>
+    <text class="ink small center" x="699" y="1968">Repeats do not add more</text>
+
+    <rect class="blue" x="930" y="1890" width="365" height="105" rx="20"/>
+    <text class="ink label center" x="1112" y="1933">Not sure? Wait for proof</text>
+    <text class="ink small center" x="1112" y="1968">Never guess with money</text>
+
+    <text class="ink body center" x="700" y="2055">Repository = computer recipes + filing-cabinet plans + safety rehearsals</text>
+  </g>
+
+  <text class="ink small center" x="700" y="2145">Toy coins only. Detailed guides are a lookup library, not a required reading list.</text>
+  <text class="ink small center" x="700" y="2180">Open source · Apache-2.0 · still under development · see LICENSE</text>
+</svg>

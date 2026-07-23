@@ -22,7 +22,7 @@ func TestWithSecurityHeaders(t *testing.T) {
 	assert.NotEmpty(t, w.Header().Get("Permissions-Policy"))
 }
 
-// ─── HSTS trust-proxy (docs/plan/10 Task T6) ───────────────────────────────────
+// ─── HSTS trust-proxy (docs/roadmap/archive/10 Task T6) ───────────────────────────────────
 
 func TestWithSecurityHeaders_HSTS_PlainHTTP_NoTrustProxy_NotSet(t *testing.T) {
 	handler := WithSecurityHeaders(DefaultSecurityHeadersConfig())(okHandler())

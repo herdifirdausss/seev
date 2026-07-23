@@ -288,7 +288,7 @@ func TestSubmitKYC_L1AutoApprove(t *testing.T) {
 }
 
 // TestSubmitKYC_RejectVerdict_MarksRejectedNoLevelChange proves the
-// provider's plain `reject` verdict (docs/plan/39 Task T3's "Test wajib"
+// provider's plain `reject` verdict (docs/roadmap/archive/39 Task T3's "Required test"
 // reject scenario) marks the submission rejected with the provider's
 // reason, never touches ApplyKycTier, and leaves the user's level
 // unchanged.

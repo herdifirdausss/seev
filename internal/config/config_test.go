@@ -97,8 +97,8 @@ func TestLoadFromEnv_Defaults(t *testing.T) {
 	assert.Equal(t, 3*time.Second, cfg.Assurance.RPCTimeout)
 	assert.Equal(t, 2, cfg.Assurance.Concurrency)
 
-	assert.Equal(t, "", cfg.Worker.AlertWebhookURL, "no external alert by default (docs/plan/12 Task T4)")
-	assert.Equal(t, "", cfg.Tracing.OTLPEndpoint, "no tracer provider installed by default (docs/plan/12 Task T5)")
+	assert.Equal(t, "", cfg.Worker.AlertWebhookURL, "no external alert by default (docs/roadmap/archive/12 Task T4)")
+	assert.Equal(t, "", cfg.Tracing.OTLPEndpoint, "no tracer provider installed by default (docs/roadmap/archive/12 Task T5)")
 }
 
 func TestLoadFromEnvMode_AuthServiceDoesNotRequireRabbitMQ(t *testing.T) {
@@ -265,7 +265,7 @@ func TestLoadFromEnv_JWTSecretTooShort(t *testing.T) {
 }
 
 func TestLoadFromEnv_MissingJWTIssuer(t *testing.T) {
-	// docs/plan/49 TM-07: JWT_ISSUER is now mandatory in every environment,
+	// docs/roadmap/archive/49 TM-07: JWT_ISSUER is now mandatory in every environment,
 	// not just a production warning — an empty issuer must fail boot.
 	_, err := loadFromEnv(validEnv(map[string]string{
 		"JWT_ISSUER": "",
@@ -317,7 +317,7 @@ func TestPostgresConfig_DSN(t *testing.T) {
 	assert.True(t, strings.Contains(dsn, "sslmode=require"))
 }
 
-// ─── Session timeout DSN options (docs/plan/11 Task T5) ────────────────────────
+// ─── Session timeout DSN options (docs/roadmap/archive/11 Task T5) ────────────────────────
 
 func TestPostgresConfig_DSN_NoTimeoutsConfigured_NoOptionsParam(t *testing.T) {
 	p := PostgresConfig{Host: "localhost", Port: "5432", User: "admin", Password: "secret", DB: "mydb", SSLMode: "disable"}
@@ -366,7 +366,7 @@ func TestConfig_IsProduction(t *testing.T) {
 	}
 }
 
-// ─── Config.Warnings (docs/plan/10 Task T1) ─────────────────────────────────────
+// ─── Config.Warnings (docs/roadmap/archive/10 Task T1) ─────────────────────────────────────
 
 func TestConfig_Warnings_Development_NoWarnings(t *testing.T) {
 	cfg := &Config{App: AppConfig{Env: "development", InternalBindAddr: "0.0.0.0"}}

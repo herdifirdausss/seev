@@ -13,10 +13,10 @@ import (
 
 // maxWebhookBodyBytes caps a single webhook delivery — vendor payment
 // webhooks are small JSON payloads; this bounds worst-case memory per
-// request on a small box (docs/plan/22 Task T3).
+// request on a small box (docs/roadmap/archive/22 Task T3).
 const maxWebhookBodyBytes = 64 << 10 // 64KiB
 
-// webhookHandler serves POST /webhooks/{vendor} (docs/plan/22 Task T3,
+// webhookHandler serves POST /webhooks/{vendor} (docs/roadmap/archive/22 Task T3,
 // decision K-T1) — deliberately mounted OUTSIDE the JWT/CORS/RequireJSON
 // chain: a payment vendor authenticates itself via a per-vendor signature
 // (internal/vendorgw), verified inside deps.Payin.HandleWebhook, never via
@@ -26,7 +26,7 @@ func webhookHandler(deps *Dependencies, logger *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if deps.Payin == nil {
 			// No vendor configured at all (default) — byte-identical to
-			// before this feature existed (docs/plan/22 Task T3 DoD).
+			// before this feature existed (docs/roadmap/archive/22 Task T3 DoD).
 			http.NotFound(w, r)
 			return
 		}
@@ -60,7 +60,7 @@ func webhookHandler(deps *Dependencies, logger *slog.Logger) http.HandlerFunc {
 		case status.Code(err) == codes.Unauthenticated:
 			w.WriteHeader(http.StatusUnauthorized)
 		case status.Code(err) == codes.Unavailable && status.Convert(err).Message() == "screening dependency unavailable":
-			// docs/plan/45 Task T3/K4 — fraud-service is reachable but its
+			// docs/roadmap/archive/45 Task T3/K4 — fraud-service is reachable but its
 			// velocity dependency is down. Same 503-so-the-vendor-retries
 			// response as the generic infra case below (this handler's own
 			// minimal-body convention deliberately doesn't distinguish
@@ -71,7 +71,7 @@ func webhookHandler(deps *Dependencies, logger *slog.Logger) http.HandlerFunc {
 			w.WriteHeader(http.StatusServiceUnavailable)
 		default:
 			// Infra failure — the event is still 'received'; the vendor's
-			// own retry machinery is the queue (docs/plan/22 Task T2 step
+			// own retry machinery is the queue (docs/roadmap/archive/22 Task T2 step
 			// 2), so it should redeliver.
 			logger.Error("payin webhook: infra failure", slog.String("vendor", vendor), slog.Any("error", err))
 			w.WriteHeader(http.StatusServiceUnavailable)

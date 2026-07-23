@@ -53,10 +53,10 @@ func main() {
 }
 
 // probeHealth dials the PUBLIC :8090 listener, which is also mTLS since
-// docs/plan/49 K6 flips it (gateway's proxy is its only legitimate machine
+// docs/roadmap/archive/49 K6 flips it (gateway's proxy is its only legitimate machine
 // caller) — presents the "dev-operator" identity, the same one a real
 // operator's manual healthcheck/curl session uses, loaded fresh from the
-// same mounted cert directory the service itself uses (docs/plan/49 K3:
+// same mounted cert directory the service itself uses (docs/roadmap/archive/49 K3:
 // certgen writes every identity into one shared directory).
 func probeHealth(getenv func(string) string) error {
 	port := getenv("APP_PORT")
@@ -101,7 +101,7 @@ func run(parent context.Context) error {
 	for _, warning := range cfg.Warnings() {
 		log.Warn("config: " + warning)
 	}
-	// docs/plan/49 K3/K5: load this process's own identity + the shared CA
+	// docs/roadmap/archive/49 K3/K5: load this process's own identity + the shared CA
 	// before anything else — a service must never boot believing it's
 	// running mTLS when its certificates are missing or invalid.
 	certSrc, err := tlsx.LoadFromDir(cfg.TLSCertDir, "ledger", log)
@@ -152,7 +152,7 @@ func run(parent context.Context) error {
 	}
 	var counter cache.Counter = cache.NewMemoryCounter()
 	if redisClient != nil {
-		// docs/plan/45 Task T3/K4: fails over to an in-memory counter at
+		// docs/roadmap/archive/45 Task T3/K4: fails over to an in-memory counter at
 		// runtime if Redis becomes unreachable, recovering automatically —
 		// a strictly stronger degradation than the prior fail-open-with-no-
 		// enforcement gap, never a substitute for real cross-replica
@@ -169,7 +169,7 @@ func run(parent context.Context) error {
 	policyRepo := policy.NewRepository(db)
 	policyEngine := policy.New(policyRepo, counter, policyLoc, log, policyOpts...)
 	policyHandler := policy.NewHandler(policyRepo)
-	// Screening moved out of the posting transaction (docs/plan/37) — the
+	// Screening moved out of the posting transaction (docs/roadmap/archive/37) — the
 	// fraud client is passed into the PUBLIC router (transport.NewRouterWithFraud
 	// inside ledger.NewModule below), called BEFORE any DB work, not into
 	// the posting pipeline itself.
@@ -195,7 +195,7 @@ func run(parent context.Context) error {
 	}
 	module.StartWorkers(ctx)
 
-	// docs/plan/49 K4: ledger's gRPC listener accepts the four services
+	// docs/roadmap/archive/49 K4: ledger's gRPC listener accepts the four services
 	// that legitimately call it (assurance added post-doc-49-write —
 	// docs/security/threat-model.md TM-09).
 	grpcServer, err := grpcx.NewServer(log, cfg.InternalGRPCToken, tlsx.ServerConfig(certSrc, []string{
@@ -212,7 +212,7 @@ func run(parent context.Context) error {
 		return fmt.Errorf("listen grpc: %w", err)
 	}
 
-	// docs/plan/49 K6: both HTTP listeners require mTLS now. :8090 is the
+	// docs/roadmap/archive/49 K6: both HTTP listeners require mTLS now. :8090 is the
 	// user-facing API that only gateway's proxy legitimately calls
 	// (plus dev-operator for manual/harness use); :8091 is the genuinely
 	// internal/admin surface, reachable by dev-operator, Prometheus (for

@@ -8,7 +8,7 @@ import (
 
 // LoggerWithSpan returns base enriched with trace_id/span_id fields when
 // span carries a valid, sampled SpanContext — used by both HTTP and gRPC
-// server middleware to correlate logs with traces (docs/plan/43 K4/K9). When
+// server middleware to correlate logs with traces (docs/roadmap/archive/43 K4/K9). When
 // tracing is off (no TracerProvider installed, or this request wasn't
 // sampled) span.SpanContext() is invalid and base is returned unchanged: no
 // empty/zero trace_id ever leaks into a log line.

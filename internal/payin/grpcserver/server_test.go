@@ -95,7 +95,7 @@ func TestHandleWebhook_AllOutcomes(t *testing.T) {
 }
 
 // TestHandleWebhook_ScreeningDependencyUnavailable_MapsToUnavailable
-// proves docs/plan/45 Task T3/K4: the service returning the configured
+// proves docs/roadmap/archive/45 Task T3/K4: the service returning the configured
 // screeningDependencyUnavailable sentinel maps to codes.Unavailable with a
 // message distinguishable from noVendorAvailable's own codes.Unavailable
 // use elsewhere in this contract.

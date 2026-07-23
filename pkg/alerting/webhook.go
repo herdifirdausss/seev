@@ -1,7 +1,7 @@
 // Package alerting provides a minimal, generic outbound alert mechanism —
 // currently just a webhook poster. Deliberately not ledger-specific: any
 // component that needs to fire an external alert can use AlertFunc
-// (docs/plan/12 Task T4).
+// (docs/roadmap/archive/12 Task T4).
 package alerting
 
 import (

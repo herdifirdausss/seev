@@ -41,7 +41,7 @@ func TestNewLedgerProxy_ForwardsClientSuppliedRequestID(t *testing.T) {
 	assert.Equal(t, "client-supplied-id", gotHeader)
 }
 
-// TestNewLedgerProxy_ForwardsGeneratedRequestID proves docs/plan/36 Task T2:
+// TestNewLedgerProxy_ForwardsGeneratedRequestID proves docs/roadmap/archive/36 Task T2:
 // a gateway-generated id (only present in ctx, not on the inbound request's
 // own header) still reaches the backend through the proxy's Director wrap.
 func TestNewLedgerProxy_ForwardsGeneratedRequestID(t *testing.T) {

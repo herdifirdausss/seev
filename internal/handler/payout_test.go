@@ -89,7 +89,7 @@ func TestPayoutGatewayNoRoute(t *testing.T) {
 	assert.Contains(t, w.Body.String(), `"code":"NO_ROUTE"`)
 }
 
-// TestPayoutGatewayScreeningBlocked proves docs/plan/37 Task T5: a
+// TestPayoutGatewayScreeningBlocked proves docs/roadmap/archive/37 Task T5: a
 // FailedPrecondition gRPC error whose message carries payout's own
 // ErrScreeningBlocked sentinel maps to 422 SCREENING_BLOCKED — the same
 // HTTP contract shape as the ledger's own SCREENING_BLOCKED (Task T3).

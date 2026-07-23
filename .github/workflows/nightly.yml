@@ -1,6 +1,6 @@
 name: Scheduled Full-Stack
 
-# docs/plan/44 K7: the file name stays "nightly.yml" (easy to find/grep for)
+# docs/roadmap/archive/44 K7: the file name stays "nightly.yml" (easy to find/grep for)
 # but the AUTOMATIC schedule is weekly, not nightly — K1's cost budget
 # forbids a daily 90-minute gate on a private repo. `workflow_dispatch`
 # lets an operator run any subset on demand; the schedule always runs the
@@ -69,7 +69,7 @@ jobs:
             echo "CHAOS_WORK_DIR=$RUNNER_TEMP/seev-chaos"
           } >> "$GITHUB_ENV"
 
-      # docs/plan/44 K6: generated fresh per run, masked BEFORE landing in
+      # docs/roadmap/archive/44 K6: generated fresh per run, masked BEFORE landing in
       # $GITHUB_ENV so no step output/log can ever print the raw value.
       - name: Generate per-run credentials
         run: |

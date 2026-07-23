@@ -173,6 +173,21 @@ func (mr *MockKYCRepositoryMockRecorder) GetLatestKYCSubmission(ctx, userID any)
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetLatestKYCSubmission", reflect.TypeOf((*MockKYCRepository)(nil).GetLatestKYCSubmission), ctx, userID)
 }
 
+// ListKYCRescreenSubjects mocks base method.
+func (m *MockKYCRepository) ListKYCRescreenSubjects(ctx context.Context, limit int) ([]model.KYCRescreenSubject, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListKYCRescreenSubjects", ctx, limit)
+	ret0, _ := ret[0].([]model.KYCRescreenSubject)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListKYCRescreenSubjects indicates an expected call of ListKYCRescreenSubjects.
+func (mr *MockKYCRepositoryMockRecorder) ListKYCRescreenSubjects(ctx, limit any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListKYCRescreenSubjects", reflect.TypeOf((*MockKYCRepository)(nil).ListKYCRescreenSubjects), ctx, limit)
+}
+
 // ListKYCSubmissions mocks base method.
 func (m *MockKYCRepository) ListKYCSubmissions(ctx context.Context, status string) ([]model.KYCSubmission, error) {
 	m.ctrl.T.Helper()

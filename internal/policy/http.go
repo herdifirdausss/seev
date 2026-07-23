@@ -12,7 +12,7 @@ import (
 )
 
 // Handler serves the admin CRUD endpoints for policy_limits. Mounted ONLY
-// on the internal-only listener by the composition root (docs/plan/10 Task
+// on the internal-only listener by the composition root (docs/roadmap/archive/10 Task
 // T1 pattern) — admin-gated inside each handler too, defense in depth, same
 // pattern as internal/ledger/transport's admin endpoints.
 type Handler struct {
@@ -80,7 +80,7 @@ func toLimitResponse(l Limit) limitResponse {
 // parseOptionalMinorUnits parses an optional integer minor-unit amount
 // field — empty string = nil (unbounded), matching decimalFromString's
 // integral-amount rule used throughout the ledger's own transport
-// (docs/plan/10 Task T4) without importing that package.
+// (docs/roadmap/archive/10 Task T4) without importing that package.
 func parseOptionalMinorUnits(s string) (*int64, error) {
 	if s == "" {
 		return nil, nil

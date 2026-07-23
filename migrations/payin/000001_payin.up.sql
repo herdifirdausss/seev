@@ -1,6 +1,6 @@
--- docs/plan/22 Task T2: payin webhook events — one row per vendor webhook
+-- docs/roadmap/archive/22 Task T2: payin webhook events — one row per vendor webhook
 -- delivery, deduped by (vendor, vendor_event_id) and mapped to a ledger
--- money_in posting. Settled-webhook-only (docs/plan/22 scope; no payment
+-- money_in posting. Settled-webhook-only (docs/roadmap/archive/22 scope; no payment
 -- intents table yet).
 CREATE TABLE payin_webhook_events (
     id              UUID        PRIMARY KEY,
@@ -24,7 +24,7 @@ CREATE INDEX idx_payin_webhook_events_status ON payin_webhook_events(status, cre
 CREATE INDEX idx_payin_webhook_events_vendor ON payin_webhook_events(vendor, created_at DESC);
 
 -- app_service: SELECT+INSERT+UPDATE — UPDATE needed for the
--- received -> posted|failed status transition (docs/plan/22 Task T2 step
+-- received -> posted|failed status transition (docs/roadmap/archive/22 Task T2 step
 -- 1). Never DELETE — every delivery, including ignored/failed ones, stays
 -- as a forensic/replay record, same immutable-except-status-column
 -- philosophy as ledger_transactions itself.

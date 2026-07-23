@@ -1,6 +1,6 @@
 #!/bin/sh
 # Wraps the official postgres entrypoint so the pgBackRest repository
-# passphrase (docs/plan/50 K3) reaches every pgbackrest invocation this
+# passphrase (docs/roadmap/active/50 K3) reaches every pgbackrest invocation this
 # container makes on its own — most importantly archive_command, which
 # PostgreSQL's server process runs as a direct child, inheriting whatever
 # environment this wrapper set up before exec'ing into the real entrypoint.

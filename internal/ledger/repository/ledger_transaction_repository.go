@@ -29,8 +29,8 @@ type InsertTransactionParams struct {
 	SourceAccountID      *uuid.UUID
 	DestinationAccountID *uuid.UUID
 
-	// ExternalRef/Gateway (docs/plan/16 Task T2, K5) and RequestID
-	// (docs/plan/36 Task T5) are purely informative correlation columns —
+	// ExternalRef/Gateway (docs/roadmap/archive/16 Task T2, K5) and RequestID
+	// (docs/roadmap/archive/36 Task T5) are purely informative correlation columns —
 	// absent for the large majority of transaction types that never carry
 	// this metadata (transfer_p2p, adjustment_*, etc.).
 	ExternalRef *string
@@ -96,14 +96,14 @@ type TransactionRepository interface {
 
 	// GetByIdempotencyKey looks up the posted transaction for a known,
 	// deterministic idempotency key — used by the maker-checker adjustment
-	// flow (docs/plan/16 Task T1) to recover the transaction id after
+	// flow (docs/roadmap/archive/16 Task T1) to recover the transaction id after
 	// Post() succeeds (Post itself only returns error, not the id it
 	// created). Read-only, outside any posting transaction.
 	GetByIdempotencyKey(ctx context.Context, key string, scope *string) (model.LedgerTransaction, error)
 
 	// GetHeader returns type/status/amount/closed_by_tx_id for a
 	// transaction, read within the caller's posting transaction — used by
-	// lifecycle processors (docs/plan/14 Task T2) to validate an original
+	// lifecycle processors (docs/roadmap/archive/14 Task T2) to validate an original
 	// transaction (right type, posted, not already closed, matching amount)
 	// before attempting to close it. This is a fast-fail convenience check;
 	// CloseOriginal's atomic UPDATE is the actual race-proof guard.
@@ -117,7 +117,7 @@ type TransactionRepository interface {
 	// given reason ('reversed'|'settled'|'cancelled'|'released'|'refunded')
 	// — a single UPDATE guarded by `WHERE closed_by_tx_id IS NULL` that only
 	// succeeds once, no matter how many concurrent closers race for the same
-	// original (docs/plan/14 Task T2, decision K3). reason='reversed' also
+	// original (docs/roadmap/archive/14 Task T2, decision K3). reason='reversed' also
 	// sets status='reversed' in the same statement, preserving the existing
 	// GetStatus contract. Returns rows affected: 1 on success, 0 if
 	// originalID was already closed — callers must treat 0 as a business
@@ -390,7 +390,7 @@ func scanTransaction(row *sql.Row) (model.LedgerTransaction, error) {
 	t.ErrorMessage = errorMessage.String
 	t.ExternalRef = externalRef.String
 	t.Gateway = gateway.String
-	// [docs/plan/12 Task T6] uuid.Parse with error handling, not
+	// [docs/roadmap/archive/12 Task T6] uuid.Parse with error handling, not
 	// uuid.MustParse — a single malformed stored UUID (data corruption,
 	// manual DB intervention gone wrong) must return an error to the
 	// caller, not panic the whole process over one bad row.

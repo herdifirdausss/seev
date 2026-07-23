@@ -11,7 +11,7 @@ import (
 // under the exact cron specs StartScheduler registers: full backups only
 // land on Sunday, differentials only on Monday-Saturday, both at 02:10
 // Asia/Jakarta — never the reverse, and never in another timezone's
-// 02:10 (docs/plan/50 T2 "schedule/timezone boundaries" required test).
+// 02:10 (docs/roadmap/active/50 T2 "schedule/timezone boundaries" required test).
 func TestCronSpecScheduleAndTimezone(t *testing.T) {
 	loc, err := time.LoadLocation("Asia/Jakarta")
 	if err != nil {

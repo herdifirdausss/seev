@@ -29,7 +29,7 @@ func New(cfg config.AppConfig, handler http.Handler) *Server {
 
 // NewWithAddr is like New but binds to an explicit address instead of
 // deriving one from cfg.Port — used for the internal-only listener
-// (docs/plan/10 Task T1), which binds to 127.0.0.1 by default rather than
+// (docs/roadmap/archive/10 Task T1), which binds to 127.0.0.1 by default rather than
 // all interfaces.
 func NewWithAddr(cfg config.AppConfig, addr string, handler http.Handler) *Server {
 	return &Server{
@@ -47,7 +47,7 @@ func NewWithAddr(cfg config.AppConfig, addr string, handler http.Handler) *Serve
 }
 
 // NewWithAddrTLS is like NewWithAddr but serves mutual TLS using tlsConfig
-// (docs/plan/49 K6) — used for the internal-only listener once its peers
+// (docs/roadmap/archive/49 K6) — used for the internal-only listener once its peers
 // are required to present a client certificate. listenAndServe below calls
 // ListenAndServeTLS("", "") when this is set; empty cert/key file
 // arguments are correct because tlsConfig.GetCertificate (built via
@@ -125,7 +125,7 @@ func (s *Server) shutdown() error {
 // SIGTERM is received (or one of them fails to start). On shutdown, every
 // server is gracefully drained before cleanup runs exactly once — this is
 // what wires the public and internal ledger listeners together
-// (docs/plan/10 Task T1; see cmd/gateway/main.go).
+// (docs/roadmap/archive/10 Task T1; see cmd/gateway/main.go).
 func StartMulti(cleanup func(), servers ...*Server) error {
 	return StartMultiWithSignals(cleanup, []os.Signal{syscall.SIGINT, syscall.SIGTERM}, servers...)
 }

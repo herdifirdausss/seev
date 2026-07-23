@@ -167,4 +167,4 @@ func htmlHeader(w http.ResponseWriter) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 }
 
-var loginTemplate = template.Must(template.New("login").Parse(`<!doctype html><html lang="id"><head><meta charset="utf-8"><title>Admin login</title></head><body><main><h1>Admin console</h1><form method="post" action="/login"><label>Email <input type="email" name="email" required></label><label>Password <input type="password" name="password" required></label><button type="submit">Masuk</button></form></main></body></html>`))
+var loginTemplate = template.Must(template.New("login").Parse(`<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Admin login</title></head><body><main><h1>Admin console</h1><form method="post" action="/login"><label>Email <input type="email" name="email" required></label><label>Password <input type="password" name="password" required></label><button type="submit">Log in</button></form></main></body></html>`))

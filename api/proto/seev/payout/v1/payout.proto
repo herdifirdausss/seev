@@ -17,7 +17,7 @@ message CreatePayoutRequest {
   string amount = 2;
   bytes destination = 3;
   string created_by = 4;
-  // quote_id (docs/plan/38 Task T5), when set, consumes a fee quote
+  // quote_id (docs/roadmap/archive/38 Task T5), when set, consumes a fee quote
   // BEFORE the hold is posted (anti-burn ordering) — the fee it locks in
   // is honored at settle time regardless of any later fee_rules change.
   string quote_id = 5;

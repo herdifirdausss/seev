@@ -39,7 +39,7 @@ type LedgerServiceClient interface {
 	ResolveFee(ctx context.Context, in *ResolveFeeRequest, opts ...grpc.CallOption) (*ResolveFeeResponse, error)
 	ProvisionUser(ctx context.Context, in *ProvisionUserRequest, opts ...grpc.CallOption) (*ProvisionUserResponse, error)
 	// ConsumeFeeQuote atomically, single-use consumes a fee quote created via
-	// POST /fees/quote (docs/plan/38 Task T5) — additive; ResolveFee remains
+	// POST /fees/quote (docs/roadmap/archive/38 Task T5) — additive; ResolveFee remains
 	// the no-quote fallback for every existing caller.
 	ConsumeFeeQuote(ctx context.Context, in *ConsumeFeeQuoteRequest, opts ...grpc.CallOption) (*ConsumeFeeQuoteResponse, error)
 	ApplyKycTier(ctx context.Context, in *ApplyKycTierRequest, opts ...grpc.CallOption) (*ApplyKycTierResponse, error)
@@ -144,7 +144,7 @@ type LedgerServiceServer interface {
 	ResolveFee(context.Context, *ResolveFeeRequest) (*ResolveFeeResponse, error)
 	ProvisionUser(context.Context, *ProvisionUserRequest) (*ProvisionUserResponse, error)
 	// ConsumeFeeQuote atomically, single-use consumes a fee quote created via
-	// POST /fees/quote (docs/plan/38 Task T5) — additive; ResolveFee remains
+	// POST /fees/quote (docs/roadmap/archive/38 Task T5) — additive; ResolveFee remains
 	// the no-quote fallback for every existing caller.
 	ConsumeFeeQuote(context.Context, *ConsumeFeeQuoteRequest) (*ConsumeFeeQuoteResponse, error)
 	ApplyKycTier(context.Context, *ApplyKycTierRequest) (*ApplyKycTierResponse, error)

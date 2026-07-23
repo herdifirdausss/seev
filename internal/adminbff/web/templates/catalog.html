@@ -1,12 +1,12 @@
-{{define "content"}}<h1>Kontrol dan review</h1>
-<p>Panel read-only atau CRUD tipis ini meneruskan kontrak service pemilik data.</p>
+{{define "content"}}<h1>Control and review</h1>
+<p>This read-only or thin CRUD panel forwards the owning service's contract.</p>
 <div class="grid">
-  <article><h2>Fee rules</h2><div hx-get="/api/v1/admin/ledger/fee-rules" hx-trigger="load">Memuat fee rules…</div></article>
-  <article><h2>Payin routing</h2><div hx-get="/api/v1/admin/payin/routing-rules" hx-trigger="load">Memuat routing payin…</div></article>
-  <article><h2>Payout routing</h2><div hx-get="/api/v1/admin/payout/routing-rules" hx-trigger="load">Memuat routing payout…</div></article>
-  <article><h2>Vendor gateways</h2><div hx-get="/api/v1/admin/payout/vendors/health" hx-trigger="load, every 30s">Memuat kesehatan vendor…</div></article>
-  <article><h2>KYC review</h2><div hx-get="/api/v1/admin/kyc/submissions" hx-trigger="load, every 30s">Memuat submission KYC…</div></article>
-  <article><h2>Fraud events</h2><div hx-get="/api/v1/admin/fraud/events" hx-trigger="load, every 30s">Memuat events fraud…</div></article>
-  <article><h2>Audit log</h2><div hx-get="/api/v1/admin/audit?limit=25" hx-trigger="load, every 30s">Memuat audit…</div></article>
+  <article><h2>Fee rules</h2><div hx-get="/api/v1/admin/ledger/fee-rules" hx-trigger="load">Loading fee rules…</div></article>
+  <article><h2>Pay-in routing</h2><div hx-get="/api/v1/admin/payin/routing-rules" hx-trigger="load">Loading pay-in routing…</div></article>
+  <article><h2>Payout routing</h2><div hx-get="/api/v1/admin/payout/routing-rules" hx-trigger="load">Loading payout routing…</div></article>
+  <article><h2>Vendor gateways</h2><div hx-get="/api/v1/admin/payout/vendors/health" hx-trigger="load, every 30s">Loading vendor health…</div></article>
+  <article><h2>KYC review</h2><div hx-get="/api/v1/admin/kyc/submissions" hx-trigger="load, every 30s">Loading KYC submissions…</div></article>
+  <article><h2>Fraud events</h2><div hx-get="/api/v1/admin/fraud/events" hx-trigger="load, every 30s">Loading fraud events…</div></article>
+  <article><h2>Audit log</h2><div hx-get="/api/v1/admin/audit?limit=25" hx-trigger="load, every 30s">Loading audit log…</div></article>
 </div>
 {{end}}

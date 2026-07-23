@@ -13,7 +13,7 @@ import (
 )
 
 // KycTierRepository applies a policy_tier_limits template to one user's
-// policy_limits rows (docs/plan/39 Task T5) — invoked when auth-service
+// policy_limits rows (docs/roadmap/archive/39 Task T5) — invoked when auth-service
 // approves a KYC tier upgrade via the gRPC ApplyKycTier RPC. Self-contained
 // (owns its own transaction) rather than taking a caller-supplied *sql.Tx,
 // same convention as internal/ledger/feepolicy's CreateQuote/ConsumeQuote:

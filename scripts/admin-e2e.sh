@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Repeatable admin-console journey (docs/plan/47 T6). This intentionally uses
+# Repeatable admin-console journey (docs/roadmap/archive/47 T6). This intentionally uses
 # lib.sh once and starts the BFF separately from the user-money gateway path.
 set -euo pipefail
 
@@ -25,9 +25,14 @@ start_services
 start_adminbff_service
 
 log "login through admin BFF"
-login_page="$(curl_internal -fsS -c "$COOKIE_JAR" -b "$COOKIE_JAR" -L -X POST "http://localhost:$ADMINBFF_PORT/login" \
+# Keep the 303 boundary explicit.  Forcing POST while following the redirect
+# makes curl replay POST against /api/v1/admin/, where CSRF is correctly
+# required, unlike a browser's GET after a form redirect.
+curl_internal -fsS -c "$COOKIE_JAR" -b "$COOKIE_JAR" -X POST "http://localhost:$ADMINBFF_PORT/login" \
 	-H 'Content-Type: application/x-www-form-urlencoded' \
-	--data-urlencode "email=$ADMIN_EMAIL" --data-urlencode "password=$ADMIN_PASSWORD")"
+	--data-urlencode "email=$ADMIN_EMAIL" --data-urlencode "password=$ADMIN_PASSWORD" \
+	-o "$WORK_DIR/login.response" -D "$WORK_DIR/login.headers"
+login_page="$(curl_internal -fsS -b "$COOKIE_JAR" "http://localhost:$ADMINBFF_PORT/api/v1/admin/")"
 csrf="$(printf '%s' "$login_page" | sed -n 's/.*name="csrf_token" value="\([^"]*\)".*/\1/p' | head -1)"
 [ -n "$csrf" ] && ok "admin session established and CSRF token rendered" || fail "admin login did not render a CSRF token"
 

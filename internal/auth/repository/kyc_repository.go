@@ -24,6 +24,7 @@ type KYCRepository interface {
 	GetLatestKYCSubmission(ctx context.Context, userID uuid.UUID) (model.KYCSubmission, error)
 	GetKYCSubmission(ctx context.Context, id uuid.UUID) (model.KYCSubmission, error)
 	ListKYCSubmissions(ctx context.Context, status string) ([]model.KYCSubmission, error)
+	ListKYCRescreenSubjects(ctx context.Context, limit int) ([]model.KYCRescreenSubject, error)
 	// ApproveKYCSubmission runs applyTier while the pending row is locked and
 	// commits the auth level/submission decision only after it succeeds.
 	ApproveKYCSubmission(ctx context.Context, id uuid.UUID, decidedBy, providerRef, reason string, applyTier func(context.Context, uuid.UUID, int) error) error
@@ -127,6 +128,40 @@ func (r *kycRepo) ListKYCSubmissions(ctx context.Context, status string) ([]mode
 		return nil, fmt.Errorf("auth: iterate kyc submissions: %w", err)
 	}
 	return out, nil
+}
+
+// ListKYCRescreenSubjects returns the latest approved subject projection per
+// user. Only the fields required by the sanctions rule are selected; the
+// original KYC payload remains inside auth-service.
+func (r *kycRepo) ListKYCRescreenSubjects(ctx context.Context, limit int) ([]model.KYCRescreenSubject, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT DISTINCT ON (user_id) user_id,
+		       COALESCE(NULLIF(payload->>'name', ''), NULLIF(payload->>'full_name', '')),
+		       COALESCE(payload->>'birth_date', '')
+		FROM kyc_submissions
+		WHERE status = 'approved'
+		  AND COALESCE(NULLIF(payload->>'name', ''), NULLIF(payload->>'full_name', '')) IS NOT NULL
+		ORDER BY user_id, decided_at DESC NULLS LAST, created_at DESC, id DESC
+		LIMIT $1`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("auth: list kyc rescreen subjects: %w", err)
+	}
+	defer rows.Close()
+	var subjects []model.KYCRescreenSubject
+	for rows.Next() {
+		var subject model.KYCRescreenSubject
+		if err := rows.Scan(&subject.UserID, &subject.Name, &subject.BirthDate); err != nil {
+			return nil, fmt.Errorf("auth: scan kyc rescreen subject: %w", err)
+		}
+		subjects = append(subjects, subject)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("auth: iterate kyc rescreen subjects: %w", err)
+	}
+	return subjects, nil
 }
 
 func (r *kycRepo) ApproveKYCSubmission(ctx context.Context, id uuid.UUID, decidedBy, providerRef, reason string, applyTier func(context.Context, uuid.UUID, int) error) error {

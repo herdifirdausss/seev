@@ -27,11 +27,11 @@ type ScreenRequest struct {
 	UserId   string                 `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
 	Amount   string                 `protobuf:"bytes,3,opt,name=amount,proto3" json:"amount,omitempty"`
 	Currency string                 `protobuf:"bytes,4,opt,name=currency,proto3" json:"currency,omitempty"`
-	// request_id is the originating HTTP/gRPC request_id (docs/plan/36),
+	// request_id is the originating HTTP/gRPC request_id (docs/roadmap/archive/36),
 	// propagated here purely for audit/trace correlation in screening_events.
 	RequestId string `protobuf:"bytes,5,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
 	// flow identifies the calling surface: "p2p_transfer" | "topup" | "payout"
-	// (docs/plan/37) — informational only, rules do not branch on it.
+	// (docs/roadmap/archive/37) — informational only, rules do not branch on it.
 	Flow string `protobuf:"bytes,6,opt,name=flow,proto3" json:"flow,omitempty"`
 	// Optional KYC subject attributes used only by the sanctions rule.
 	SubjectName   string `protobuf:"bytes,7,opt,name=subject_name,json=subjectName,proto3" json:"subject_name,omitempty"`

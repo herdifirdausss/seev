@@ -1,4 +1,4 @@
-# docs/plan/43 K1/K2 — Tempo replaces Jaeger as the local trace backend.
+# docs/roadmap/archive/43 K1/K2 — Tempo replaces Jaeger as the local trace backend.
 # OTLP gRPC receiver is the only ingest path; host stays on 127.0.0.1:4317
 # (same port the old Jaeger container used), so OTEL_EXPORTER_OTLP_ENDPOINT
 # does not change for any service.

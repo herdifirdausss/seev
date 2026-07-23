@@ -1,11 +1,11 @@
--- docs/plan/25 Task T4: in-app notification inbox — the first RabbitMQ
+-- docs/roadmap/archive/25 Task T4: in-app notification inbox — the first RabbitMQ
 -- consumer in this codebase. internal/notify subscribes to
 -- events.TypeTransactionPosted (declared queue ledger.events.notifications)
 -- and writes one row per (event_id, user_id) so a two-party transaction
 -- (transfer_p2p) produces two independent, independently-readable rows.
 --
 -- UNIQUE(event_id, user_id) is the at-least-once dedup guard: RabbitMQ
--- delivery is at-least-once (docs/events.md), so the consumer's INSERT is
+-- delivery is at-least-once (docs/reference/events.md), so the consumer's INSERT is
 -- always `... ON CONFLICT (event_id, user_id) DO NOTHING` — redelivery of
 -- the same outbox event never produces a second row for the same user.
 CREATE TABLE notif_notifications (

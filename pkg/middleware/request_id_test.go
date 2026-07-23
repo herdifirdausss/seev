@@ -41,7 +41,7 @@ func TestWithRequestID_RespectsExistingHeader(t *testing.T) {
 	assert.Equal(t, "upstream-id-123", w.Header().Get("X-Request-Id"))
 }
 
-// GeneratedIDPropagatesToDownstreamHeader is the docs/plan/36 T1 regression:
+// GeneratedIDPropagatesToDownstreamHeader is the docs/roadmap/archive/36 T1 regression:
 // a generated (not client-supplied) id must land on r.Header too, so a
 // reverse proxy forwarding the request carries it downstream — previously it
 // was only echoed on the response.

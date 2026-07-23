@@ -19,7 +19,7 @@ import (
 // maxEntriesBatch caps a single InsertEntries call — a real posting never
 // produces more than a handful of entries (2-3 typical, more for a
 // multi-leg reversal), so this is a safety ceiling, not a normal operating
-// limit (docs/plan/11 Task T2, mirrors outbox_event_repository.go's
+// limit (docs/roadmap/archive/11 Task T2, mirrors outbox_event_repository.go's
 // maxOutboxBatch).
 const maxEntriesBatch = 50
 
@@ -47,7 +47,7 @@ type EntryRepository interface {
 	// ListByAccountRange returns entries for accountID within [from, to]
 	// (Asia/Jakarta calendar days, both inclusive), oldest first — a
 	// statement reads top-to-bottom chronologically, unlike ListByAccount's
-	// newest-first pagination (docs/plan/15 Task T2). Joined with the
+	// newest-first pagination (docs/roadmap/archive/15 Task T2). Joined with the
 	// owning transaction's type. Callers pass limit = maxRows+1 to detect
 	// "too many rows in range" without a separate COUNT query.
 	ListByAccountRange(
@@ -70,7 +70,7 @@ func NewEntryRepository(db database.DatabaseSQL) EntryRepository {
 }
 
 // InsertEntries batches every entry of a posting into a single multi-row
-// INSERT (docs/plan/11 Task T2) — the previous per-entry loop meant N
+// INSERT (docs/roadmap/archive/11 Task T2) — the previous per-entry loop meant N
 // round trips while still holding the row locks taken earlier in the same
 // transaction (LockBalances' FOR UPDATE on user accounts), needlessly
 // extending how long concurrent postings on the same account had to wait.
@@ -99,7 +99,7 @@ func (r *entryRepo) InsertEntries(
 		b := i*cols + 1
 		parts = append(parts, fmt.Sprintf("($%d,$%d,$%d,$%d,$%d,$%d,$%d,now())", b, b+1, b+2, b+3, b+4, b+5, b+6))
 		args = append(args,
-			// Time-ordered v7, not v4 (docs/plan/11 Task T4) — keeps
+			// Time-ordered v7, not v4 (docs/roadmap/archive/11 Task T4) — keeps
 			// ledger_entries' primary-key btree insert-clustered.
 			generalutil.NewV7(), txID, e.AccountID, string(e.Direction),
 			e.Amount, newBalances[e.AccountID], generalutil.NullString(e.Note),

@@ -13,13 +13,13 @@ import (
 )
 
 // defaultPollInterval bounds how stale a hot-reloaded cert can be after
-// cmd/certgen rewrites it on disk (docs/plan/49 K2/K9 — rotation is
+// cmd/certgen rewrites it on disk (docs/roadmap/archive/49 K2/K9 — rotation is
 // "regenerate + hot-reload", not a process restart).
 const defaultPollInterval = 5 * time.Second
 
 // CertSource loads one service's own leaf certificate/key and the CA pool
 // used to verify peers, and keeps both fresh by polling file mtimes —
-// deliberately not fsnotify (docs/plan/49 K2: no new dependency for this).
+// deliberately not fsnotify (docs/roadmap/archive/49 K2: no new dependency for this).
 // A single CertSource is shared by every tls.Config a process builds
 // (pkg/grpcx AND every internal HTTP server/client), so a rotation is
 // picked up everywhere in the process at once.
@@ -47,7 +47,7 @@ func NewCertSource(certFile, keyFile, caFile string, logger *slog.Logger) (*Cert
 }
 
 // LoadFromDir applies this repo's one directory convention (cmd/certgen's
-// output layout, docs/plan/49 K3): <dir>/<service>.pem,
+// output layout, docs/roadmap/archive/49 K3): <dir>/<service>.pem,
 // <dir>/<service>-key.pem, and a CA shared by every service at
 // <dir>/ca.pem. Every process loads exactly its own identity this way —
 // there is deliberately no per-file env var, so compose/scripts/lib.sh
@@ -121,7 +121,7 @@ func (s *CertSource) GetClientCertificate(*tls.CertificateRequestInfo) (*tls.Cer
 }
 
 // CAPool returns the current CA pool used to verify peers — also
-// hot-reloaded, so a CA rotation (docs/plan/49 T6 drill) doesn't need a
+// hot-reloaded, so a CA rotation (docs/roadmap/archive/49 T6 drill) doesn't need a
 // tls.Config rebuild either, only a fresh handshake.
 func (s *CertSource) CAPool() *x509.CertPool {
 	s.mu.RLock()
@@ -214,7 +214,7 @@ func (s *CertSource) reload() error {
 	s.caPool = pool
 	s.identity = id
 	s.certMod, s.keyMod, s.caMod = certMod, keyMod, caMod
-	// docs/plan/49 K10: reported on every successful reload, including the
+	// docs/roadmap/archive/49 K10: reported on every successful reload, including the
 	// initial load — a rotated-in leaf's new expiry must overwrite the
 	// previous value under the same identity label, never accumulate.
 	certExpirySeconds.WithLabelValues(id).Set(float64(leaf.NotAfter.Unix()))
@@ -224,7 +224,7 @@ func (s *CertSource) reload() error {
 // identityOf extracts the single SPIFFE-style URI SAN a cmd/certgen leaf
 // carries. A cert with zero or more than one URI SAN is rejected outright
 // — this repo's identity model is exactly one identity per certificate,
-// never a set (docs/plan/49 K3/K4).
+// never a set (docs/roadmap/archive/49 K3/K4).
 func identityOf(cert *x509.Certificate) (string, error) {
 	if len(cert.URIs) != 1 {
 		return "", fmt.Errorf("expected exactly 1 URI SAN, got %d", len(cert.URIs))

@@ -38,7 +38,7 @@ type OutboxRepository interface {
 
 	// MarkFailed marks a publish attempt as failed, increments retry_count,
 	// and schedules next_attempt_at using exponential backoff with jitter
-	// (docs/plan/12 Task T2: base 30s, factor 2, cap 15m — see the SQL in
+	// (docs/roadmap/archive/12 Task T2: base 30s, factor 2, cap 15m — see the SQL in
 	// the implementation for the exact formula). The DB trigger
 	// auto-converts to 'dead' once retry_count reaches max_retries.
 	MarkFailed(ctx context.Context, id uuid.UUID, errMsg string) error
@@ -55,7 +55,7 @@ type OutboxRepository interface {
 	// CountByStatuses returns the number of events in each requested status,
 	// in a single query — used for periodic gauge refresh (e.g. "pending",
 	// "dead" together) so the two-gauge refresh in outbox_relay.go's
-	// gaugeLoop is one round trip instead of two (docs/plan/11 Task T6). A
+	// gaugeLoop is one round trip instead of two (docs/roadmap/archive/11 Task T6). A
 	// status with zero matching rows is simply absent from the returned
 	// map — callers must treat a missing key as 0, not as an error.
 	CountByStatuses(ctx context.Context, statuses []string) (map[string]int, error)
@@ -63,7 +63,7 @@ type OutboxRepository interface {
 	// ReplayDead resets one 'dead' event back to 'failed' with a clean
 	// retry budget (retry_count=0, next_attempt_at=now()) so the relay's
 	// normal ClaimFailedForRetry picks it up on the next tick
-	// (docs/plan/12 Task T3). Returns apperror.ErrTransactionNotFound-style
+	// (docs/roadmap/archive/12 Task T3). Returns apperror.ErrTransactionNotFound-style
 	// "not found" behavior via a zero rows-affected check — see
 	// implementation — if id doesn't exist or isn't currently 'dead'.
 	ReplayDead(ctx context.Context, id uuid.UUID) error
@@ -73,7 +73,7 @@ type OutboxRepository interface {
 	// storm from suddenly flooding the broker. Returns the number replayed.
 	ReplayAllDead(ctx context.Context, olderThan time.Time) (int, error)
 
-	// ListDead returns 'dead' events oldest first (docs/plan/25 Task T5) —
+	// ListDead returns 'dead' events oldest first (docs/roadmap/archive/25 Task T5) —
 	// oldest first, not newest, because the oldest dead events are the ones
 	// that have been silently unpublished the longest and are the most
 	// urgent for an operator to triage/replay.
@@ -134,7 +134,7 @@ func (r *outboxRepo) InsertEvents(
 		}
 		b := i*5 + 1
 		parts = append(parts, fmt.Sprintf("($%d,$%d,$%d,$%d,$%d,now())", b, b+1, b+2, b+3, b+4))
-		// Time-ordered v7, not v4 (docs/plan/11 Task T4) — keeps
+		// Time-ordered v7, not v4 (docs/roadmap/archive/11 Task T4) — keeps
 		// outbox_events' primary-key btree insert-clustered, and as a
 		// side benefit gives ClaimPending a natural id-based tiebreaker
 		// consistent with created_at ordering.
@@ -173,7 +173,7 @@ func (r *outboxRepo) ClaimPending(ctx context.Context, limit int) ([]model.Outbo
 }
 
 func (r *outboxRepo) ClaimFailedForRetry(ctx context.Context, limit int) ([]model.OutboxEventRecord, error) {
-	// [docs/plan/12 Task T2] next_attempt_at gates eligibility now, not
+	// [docs/roadmap/archive/12 Task T2] next_attempt_at gates eligibility now, not
 	// last_attempted_at — an event with a future next_attempt_at (backoff
 	// still pending) is skipped even though RetryInterval's ticker fires
 	// every 30s regardless; the query is what enforces the actual wait.
@@ -216,14 +216,14 @@ func (r *outboxRepo) MarkFailed(ctx context.Context, id uuid.UUID, errMsg string
 	// status stays 'failed' unless the trigger promotes it to 'dead' once
 	// retry_count reaches max_retries (trg_outbox_dead_letter).
 	//
-	// [docs/plan/12 Task T2] next_attempt_at = now() + exponential backoff
+	// [docs/roadmap/archive/12 Task T2] next_attempt_at = now() + exponential backoff
 	// with jitter, computed from the NEW retry_count (retry_count+1, since
 	// SET expressions see the pre-update row — "retry_count" here still
 	// reads the old value): base 30s, factor 2, cap 15m (900s), plus up to
 	// 50% jitter on top so many events failing at once (e.g. a broker
 	// outage) don't all retry in lockstep and hammer it the instant it
 	// recovers. LEAST caps the exponential term before adding jitter, per
-	// the formula in docs/plan/12: delay = min(cap, base*2^retryCount) +
+	// the formula in docs/roadmap/archive/12: delay = min(cap, base*2^retryCount) +
 	// jitter(0, delay/2).
 	_, err := r.db.ExecContext(ctx, `
 		UPDATE outbox_events
@@ -242,7 +242,7 @@ func (r *outboxRepo) MarkFailed(ctx context.Context, id uuid.UUID, errMsg string
 }
 
 func (r *outboxRepo) ReapStuck(ctx context.Context, olderThan time.Duration) (int, error) {
-	// [docs/plan/12 Task T2] retry_count is deliberately NOT incremented
+	// [docs/roadmap/archive/12 Task T2] retry_count is deliberately NOT incremented
 	// here. ReapStuck only detects "a worker crashed/died between claiming
 	// this event and marking a result" — it says nothing about whether the
 	// publish itself was ever actually attempted against the broker. Only
@@ -326,7 +326,7 @@ func (r *outboxRepo) CountByStatuses(ctx context.Context, statuses []string) (ma
 
 // maxReplayAllBatch caps ReplayAllDead per call — an admin operation should
 // never be able to flood the broker with an unbounded burst of replays in
-// one request (docs/plan/12 Task T3). Call again to replay more.
+// one request (docs/roadmap/archive/12 Task T3). Call again to replay more.
 const maxReplayAllBatch = 100
 
 func (r *outboxRepo) ReplayDead(ctx context.Context, id uuid.UUID) error {

@@ -31,7 +31,7 @@ import (
 func TestPostMoneyInEndToEndOverGRPC(t *testing.T) {
 	ctx := context.Background()
 	const dbName, dbUser, dbPassword = "seev_ledger_test", "test", "secret"
-	container, err := postgres.Run(ctx, "postgres:16-alpine",
+	container, err := postgres.Run(ctx, "postgres:16.14-alpine",
 		postgres.WithDatabase(dbName), postgres.WithUsername(dbUser), postgres.WithPassword(dbPassword),
 		postgres.BasicWaitStrategies())
 	require.NoError(t, err)
@@ -86,7 +86,7 @@ func TestPostMoneyInEndToEndOverGRPC(t *testing.T) {
 	require.Equal(t, "posted", tx.Status)
 	require.Equal(t, "100000", tx.Amount)
 
-	// docs/plan/33 T2: one global rule and one per-user override must price
+	// docs/roadmap/archive/33 T2: one global rule and one per-user override must price
 	// two otherwise-identical transfers differently and land as distinct
 	// fee entries in the real ledger.
 	userB := uuid.New()

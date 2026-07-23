@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Full business journey acceptance test (docs/plan/25 Task T6) — the
+# Full business journey acceptance test (docs/roadmap/archive/25 Task T6) — the
 # operational definition of "the MVP can be run from end user through daily
 # ops and produces revenue": two real users register and log in with real
 # JWTs (not gentoken), one tops up via a signed vendor webhook, transfers to
@@ -36,17 +36,17 @@ INTERNAL_PORT="${INTERNAL_PORT:-18101}"
 # start_server only explicitly exports the connection/infra env vars, but a
 # bash subshell always inherits everything already exported in its parent.
 export AUTH_BOOTSTRAP_ADMIN_EMAIL="business-e2e-admin@example.com"
-# docs/plan/44 K6: env-overridable so a CI run's generated per-job value is
+# docs/roadmap/archive/44 K6: env-overridable so a CI run's generated per-job value is
 # actually used, instead of every run silently clobbering it with this
 # fixed local dev default.
 export AUTH_BOOTSTRAP_ADMIN_PASSWORD="${AUTH_BOOTSTRAP_ADMIN_PASSWORD:-BootstrapAdmin!2026}"
 export TOPUP_INTENT_TTL=1h
 export DEFAULT_CURRENCY=IDR
-# Production default is 60s (docs/plan/17 Task T1) — kyc_journey (docs/plan/39
+# Production default is 60s (docs/roadmap/archive/17 Task T1) — kyc_journey (docs/roadmap/archive/39
 # Task T6) proves a KYC tier upgrade's new policy_limits cap applies without
 # waiting out that window.
 export POLICY_CACHE_TTL=2s
-# Production default is 5 (docs/plan/40 Task T1) — quote_journey's failover
+# Production default is 5 (docs/roadmap/archive/40 Task T1) — quote_journey's failover
 # drill needs the circuit to trip on the FIRST force-fail-induced Submit
 # failure, same rationale as chaos-test.sh scenario 8.
 export BREAKER_FAILURE_THRESHOLD=1
@@ -56,7 +56,7 @@ source "$ROOT_DIR/scripts/lib.sh"
 
 trap cleanup EXIT
 
-# docs/plan/44 K6: same env var name lib.sh's start_*_service functions
+# docs/roadmap/archive/44 K6: same env var name lib.sh's start_*_service functions
 # export to the service processes — a CI-generated VENDOR_MOCKVENDOR_SECRET
 # must sign AND verify with the identical value, not silently diverge
 # because this script's own webhook-signing copy had a different name.
@@ -135,7 +135,7 @@ onboard() {
 	[ -n "$cash_a" ] && ok "user A's ledger cash account was auto-provisioned on register" \
 		|| fail "user A has no cash account — provisioning on register did not happen"
 
-	# Seed DB-backed fee rules through the operator API (docs/plan/33 T4).
+	# Seed DB-backed fee rules through the operator API (docs/roadmap/archive/33 T4).
 	# A receives a per-user override (500) while the global default is 1000.
 	# Rule ids for A's transfer override and the withdraw fee are captured
 	# as globals (TRANSFER_FEE_RULE_ID/WITHDRAW_FEE_RULE_ID) — section 6's
@@ -233,10 +233,10 @@ topup() {
 		-H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" \
 		-d '{"flow":"topup","priority":10,"enabled":true,"currency":"IDR","vendor":"mockvendor"}'
 
-	await_notification "$TOKEN_A" "Dana masuk" || true
+	await_notification "$TOKEN_A" "Funds received" || true
 }
 
-# ─── Section 3: KYC gate + tier journey (docs/plan/39) ───────────────────────
+# ─── Section 3: KYC gate + tier journey (docs/roadmap/archive/39) ───────────────────────
 
 kyc_journey() {
 	log "=== 3. KYC journey: gate blocks L0, L1 unlocks small transfers, L2 unlocks large ones ==="
@@ -367,8 +367,8 @@ transfer() {
 	[ "$((fee_after - fee_before))" = "500" ] && ok "fee[platform] increased by exactly A's 500 per-user fee" \
 		|| fail "fee[platform] changed by $((fee_after - fee_before)), expected 500"
 
-	await_notification "$TOKEN_A" "Transfer terkirim" || true
-	await_notification "$TOKEN_B" "Transfer diterima" || true
+	await_notification "$TOKEN_A" "Transfer sent" || true
+	await_notification "$TOKEN_B" "Transfer received" || true
 }
 
 # ─── Section 5: fee-charging withdraw (settled) + fee-free cancel ────────────
@@ -396,7 +396,7 @@ withdraw() {
 	local payout_id
 	payout_id="$(echo "$create" | json_field id)"
 	[ -n "$payout_id" ] || fail "withdraw create response unexpected: $create"
-	# docs/plan/45 Task T1: the create response itself only reports
+	# docs/roadmap/archive/45 Task T1: the create response itself only reports
 	# 'submitted' (hold+enqueue) — the vendor result always comes from a
 	# separate, asynchronous relay dispatch pass now, even in what used to
 	# be called "instant-settle" mode.
@@ -412,7 +412,7 @@ withdraw() {
 	[ "$((fee_after - fee_before))" = "2000" ] && ok "fee[platform] increased by exactly the 2000 withdraw fee" \
 		|| fail "fee[platform] changed by $((fee_after - fee_before)), expected 2000"
 
-	await_notification "$TOKEN_A" "Withdraw berhasil" || true
+	await_notification "$TOKEN_A" "Withdrawal successful" || true
 
 	log "a SEPARATE async withdraw, then admin-cancelled — must refund in full and charge NO fee..."
 	local fee_before_cancel balance_before_cancel
@@ -442,10 +442,10 @@ withdraw() {
 	[ "$fee_after_cancel" = "$fee_before_cancel" ] && ok "cancelled withdraw charged NO fee (fee[platform] unchanged)" \
 		|| fail "fee[platform] changed on a cancelled withdraw: before=$fee_before_cancel after=$fee_after_cancel"
 
-	await_notification "$TOKEN_A" "Withdraw dibatalkan" || true
+	await_notification "$TOKEN_A" "Withdrawal canceled" || true
 }
 
-# ─── Section 6: fee quote journey (docs/plan/38) ─────────────────────────────
+# ─── Section 6: fee quote journey (docs/roadmap/archive/38) ─────────────────────────────
 
 quote_journey() {
 	log "=== 6. Fee quote journey: honored exactly, tamper detection, single-use, payout quote ==="
@@ -559,7 +559,7 @@ quote_journey() {
 	[ "$((fee_after_payout - fee_before_payout))" = "2000" ] && ok "fee[platform] increased by EXACTLY the quoted 2000, not the changed 8000 rule" \
 		|| fail "fee[platform] changed by $((fee_after_payout - fee_before_payout)), expected 2000 (payout quote honored despite mid-flight rule change)"
 
-	log "payout ber-quote + drill failover (docs/plan/40): force-fail mockvendor -> quote-backed payout routes to mockvendor2..."
+	log "payout ber-quote + drill failover (docs/roadmap/archive/40): force-fail mockvendor -> quote-backed payout routes to mockvendor2..."
 	local failover_quote_resp failover_quote_id failover_fee_amount
 	failover_quote_resp="$(curl -s -X POST "http://localhost:$APP_PORT/api/v1/ledger/fees/quote" \
 		-H "Authorization: Bearer $TOKEN_A" -H "Content-Type: application/json" \
@@ -571,8 +571,8 @@ quote_journey() {
 
 	# mockvendor2 seeded as a FALLBACK behind mockvendor's existing priority-10
 	# rule (from section 5) — priority 11 is a LARGER number, tried SECOND,
-	# since docs/plan/40 Task T2's ResolveCandidates orders priority ASC
-	# (smallest number wins first; see PROJECT_GUIDE.md's debugging notes).
+	# since docs/roadmap/archive/40 Task T2's ResolveCandidates orders priority ASC
+	# (smallest number wins first; see docs/development/project-guide.md's debugging notes).
 	curl_internal -s -o /dev/null -X PUT "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendor-gateways/mockvendor2" \
 		-H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" -d '{"gateway":"gopay"}'
 	psql_exec "$PAYOUT_DB_NAME" -c "DELETE FROM payout_routing_rules WHERE priority = 11;" >/dev/null
@@ -594,7 +594,7 @@ quote_journey() {
 		-d '{"amount":"1000","destination":{"bank_code":"014","account_no":"9"}}')"
 	probe_id="$(echo "$probe_resp" | json_field id)"
 	[ -n "$probe_id" ] && ok "probe payout created ($probe_id)" || fail "probe payout create failed: $probe_resp"
-	# docs/plan/45 Task T1: dispatch (and therefore the breaker's
+	# docs/roadmap/archive/45 Task T1: dispatch (and therefore the breaker's
 	# RecordFailure that trips the circuit) is async now — wait for the
 	# durable evidence before reading vendor/status/health state.
 	wait_for_vendor_call "$probe_id" "uncertain" 15
@@ -694,7 +694,7 @@ ops() {
 		-H "Authorization: Bearer $admin_token")
 	[ "$code" = "200" ] && ok "admin KYC pending list reachable (code=$code)" || fail "admin KYC pending list got $code, expected 200"
 
-	log "GET /admin/vendors/health (docs/plan/40 Task T5) on payin + payout — operator sees vendor state without SQL/log-diving..."
+	log "GET /admin/vendors/health (docs/roadmap/archive/40 Task T5) on payin + payout — operator sees vendor state without SQL/log-diving..."
 	code=$(curl_internal -s -o /dev/null -w '%{http_code}' "http://localhost:$PAYIN_ADMIN_PORT/admin/payin/vendors/health" \
 		-H "Authorization: Bearer $admin_token")
 	[ "$code" = "200" ] && ok "admin payin vendor health reachable (code=$code)" || fail "admin payin vendor health got $code, expected 200"
@@ -703,7 +703,7 @@ ops() {
 	[ "$code" = "200" ] && ok "admin payout vendor health reachable (code=$code)" || fail "admin payout vendor health got $code, expected 200"
 }
 
-# ─── Section 8: request tracing end-to-end (docs/plan/36 Task T6) ───────────
+# ─── Section 8: request tracing end-to-end (docs/roadmap/archive/36 Task T6) ───────────
 
 trace_check() {
 	log "=== 8. Request tracing end-to-end: one request_id, gateway to storage ==="

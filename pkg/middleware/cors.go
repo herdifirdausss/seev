@@ -9,7 +9,7 @@ import (
 
 // ─── CORS ─────────────────────────────────────────────────────────────────────
 
-// CORSConfig configures CORS behaviour.
+// CORSConfig configures CORS behavior.
 type CORSConfig struct {
 	AllowedOrigins   []string
 	AllowedMethods   []string
@@ -20,7 +20,7 @@ type CORSConfig struct {
 }
 
 // DefaultCORSConfig returns an API-only config: no origin is allowed by
-// default (docs/plan/49 TM-06 — a wildcard here previously let any origin
+// default (docs/roadmap/archive/49 TM-06 — a wildcard here previously let any origin
 // call the API programmatically once a token was obtained through another
 // channel). Callers that need browser access must set AllowedOrigins
 // explicitly.

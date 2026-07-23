@@ -1,9 +1,9 @@
--- docs/plan/20 Task T2 (S7): regulatory/compliance reporting foundation —
+-- docs/roadmap/archive/20 Task T2 (S7): regulatory/compliance reporting foundation —
 -- three read-only aggregate views. Views are the query CONTRACT (reviewed
 -- here, not re-derived ad-hoc in Go code) over snapshots (H3) + recon (H2).
 --
 -- security_invoker is left at its default (false) — DELIBERATE decision
--- (docs/plan/20 Task T2 step 1): app_readonly already has direct SELECT
+-- (docs/roadmap/archive/20 Task T2 step 1): app_readonly already has direct SELECT
 -- grants (migrations/000009) on every table these views read (accounts,
 -- account_balance_snapshots, ledger_transactions, recon_batches,
 -- recon_items), so view-owner semantics don't grant app_readonly anything
@@ -32,7 +32,7 @@ GROUP BY s.as_of_date, a.currency, a.type, a.owner_type;
 
 -- v_report_daily_mutation: posted transaction volume per day per type per
 -- currency — WIB (Asia/Jakarta) calendar day, explicit timezone conversion
--- (docs/plan/16 Task T2's ::date vs ::timestamptz::date lesson: a bare
+-- (docs/roadmap/archive/16 Task T2's ::date vs ::timestamptz::date lesson: a bare
 -- `created_at::date` truncates in the SESSION's timezone, which is not
 -- guaranteed to be Asia/Jakarta — the AT TIME ZONE conversion below is
 -- unambiguous regardless of the querying session's timezone setting).

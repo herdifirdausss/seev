@@ -1,7 +1,7 @@
 // Package worker runs the ledger module's background jobs: the outbox relay
 // (reliable event delivery to the broker) and the integrity verifier
-// (docs/plan/06-phase-1-workers.md). Both run as goroutines inside the
-// ledger-service process for MVP (decision D9, docs/plan/01) rather than as a
+// (docs/roadmap/archive/06-phase-1-workers.md). Both run as goroutines inside the
+// ledger-service process for MVP (decision D9, docs/roadmap/archive/01) rather than as a
 // separate binary.
 package worker
 
@@ -24,7 +24,7 @@ const (
 	defaultBatchSize      = 100
 
 	// dbCallTimeout bounds every individual repository call made from the
-	// relay's long-lived worker goroutines (docs/plan/11 Task T5). Without
+	// relay's long-lived worker goroutines (docs/roadmap/archive/11 Task T5). Without
 	// this, a single stuck query on one call would block that goroutine —
 	// and therefore that entire loop (poll, retry, reap, or gauge) —
 	// forever, since the parent ctx passed to Start has no deadline of its
@@ -145,7 +145,7 @@ func (r *OutboxRelay) publishOne(ctx context.Context, e model.OutboxEventRecord)
 	// the time this event is claimed and published). Restore it from the
 	// persisted payload instead, so the AMQP CorrelationId a consumer sees
 	// still traces back to the request that caused the posting
-	// (docs/plan/36 Task T4).
+	// (docs/roadmap/archive/36 Task T4).
 	if requestID, ok := e.Payload["request_id"].(string); ok && requestID != "" {
 		ctx = messaging.WithCorrelationID(ctx, requestID)
 	}
@@ -230,7 +230,7 @@ func (r *OutboxRelay) gaugeLoop(ctx context.Context) {
 }
 
 // refreshGauges updates outboxPendingGauge/outboxDeadGauge from a single
-// query (docs/plan/11 Task T6) instead of two sequential round trips.
+// query (docs/roadmap/archive/11 Task T6) instead of two sequential round trips.
 // Split out from gaugeLoop so it's callable directly in tests without
 // waiting on gaugeRefreshInterval's ticker.
 func (r *OutboxRelay) refreshGauges(ctx context.Context) {

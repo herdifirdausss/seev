@@ -24,7 +24,7 @@ import (
 type fakePublisher struct {
 	mu             sync.Mutex
 	published      []messaging.PublishOptions
-	correlationIDs []string // messaging.CorrelationIDFromContext(ctx) at call time, docs/plan/36 Task T4
+	correlationIDs []string // messaging.CorrelationIDFromContext(ctx) at call time, docs/roadmap/archive/36 Task T4
 	failNext       int      // number of upcoming calls to fail
 	err            error
 }
@@ -98,7 +98,7 @@ func TestOutboxRelay_PublishesClaimedEvents(t *testing.T) {
 	assert.Equal(t, event.ID.String(), pub.published[0].MessageID)
 }
 
-// TestOutboxRelay_RestoresRequestIDFromPayload proves docs/plan/36 Task T4:
+// TestOutboxRelay_RestoresRequestIDFromPayload proves docs/roadmap/archive/36 Task T4:
 // the relay's own ctx (its background loop context) never carries the
 // originating request_id, so publishOne must restore it from the payload
 // field the posting transaction persisted, and hand it to the publisher as
@@ -265,7 +265,7 @@ func TestOutboxRelayConfig_Defaults(t *testing.T) {
 	require.Equal(t, defaultBatchSize, cfg.BatchSize)
 }
 
-// ─── refreshGauges (docs/plan/11 Task T6) ──────────────────────────────────────
+// ─── refreshGauges (docs/roadmap/archive/11 Task T6) ──────────────────────────────────────
 
 func TestRefreshGauges_SingleQuery_SetsBothGauges(t *testing.T) {
 	repo, ctrl := newMockOutboxRepo(t)

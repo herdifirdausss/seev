@@ -48,11 +48,11 @@ type Service struct {
 	logger      *slog.Logger
 	// maxAmountPerTx is a global safety ceiling (minor units), independent
 	// of any per-type/per-processor business limit — a guard against
-	// bugs/abuse, not a business rule (docs/plan/10 Task T5). Zero/negative
+	// bugs/abuse, not a business rule (docs/roadmap/archive/10 Task T5). Zero/negative
 	// disables the check entirely (treated as "no cap configured").
 	maxAmountPerTx decimal.Decimal
 	// feePolicy consumes a fee quote atomically inside execTransfer's own
-	// tx when cmd.QuoteID is set (docs/plan/38 Task T4). nil is a valid,
+	// tx when cmd.QuoteID is set (docs/roadmap/archive/38 Task T4). nil is a valid,
 	// fully-supported configuration — a QuoteID on a Command would then
 	// simply be ignored (no caller in this codebase does that: transport
 	// only sets QuoteID after this Service was constructed with a real
@@ -61,7 +61,7 @@ type Service struct {
 }
 
 // New constructs the posting service. AML/fraud screening no longer runs
-// here (docs/plan/37): it moved to the transport layer, BEFORE this
+// here (docs/roadmap/archive/37): it moved to the transport layer, BEFORE this
 // service's Handle is ever called, so no network round-trip happens while
 // any row lock is held inside WithTx below — see
 // internal/ledger/transport/http.go and pkg/fraudcheck.
@@ -78,7 +78,7 @@ func New(db DatabaseSQL, txRepo repository.TransactionRepository,
 
 // lifecycleCloseReason maps a transaction type to the closed_reason it
 // writes onto its ReferenceID target when it posts successfully
-// (docs/plan/14 Task T2). Types absent from this map don't close anything —
+// (docs/roadmap/archive/14 Task T2). Types absent from this map don't close anything —
 // most transaction types (money_in, transfer_p2p, adjustment_*, etc.) have
 // no "original" to close. Kept here rather than on TxProcessor itself: it's
 // purely a database bookkeeping concern, not business logic a processor
@@ -98,7 +98,7 @@ var lifecycleCloseReason = map[string]string{
 // =============================================================================
 
 func (s *Service) Handle(ctx context.Context, cmd processors.Command) (err error) {
-	// Metrics + tracing (docs/plan/05 Task 1b.6). Attributes deliberately
+	// Metrics + tracing (docs/roadmap/archive/05 Task 1b.6). Attributes deliberately
 	// exclude idempotency key and amount — those must never land in a
 	// publicly-exported span.
 	ctx, span := tracer.Start(ctx, "ledger.Handle", trace.WithAttributes(
@@ -109,7 +109,7 @@ func (s *Service) Handle(ctx context.Context, cmd processors.Command) (err error
 	defer func() {
 		status := "posted"
 		if err != nil {
-			// [docs/plan/43 Task T5] "rejected" (business/input outcome, e.g.
+			// [docs/roadmap/archive/43 Task T5] "rejected" (business/input outcome, e.g.
 			// insufficient funds, closed account) is distinguished from
 			// "error" (genuine infra/programming failure) so the
 			// posting_availability SLO's bad-event count doesn't include
@@ -133,15 +133,15 @@ func (s *Service) Handle(ctx context.Context, cmd processors.Command) (err error
 		return apperror.ErrEmptyIdempotencyKey
 	}
 
-	// Amounts are minor-unit integers (decision D2, docs/plan/01) — reject
+	// Amounts are minor-unit integers (decision D2, docs/roadmap/archive/01) — reject
 	// fractional amounts before any DB work, not just at the entry-building stage.
 	if !cmd.Amount.IsInteger() {
 		return fmt.Errorf("%w: amount must be an integer (minor units), got %s", apperror.ErrValidation, cmd.Amount)
 	}
 
-	// Global safety ceiling (docs/plan/10 Task T5) — checked before any DB
+	// Global safety ceiling (docs/roadmap/archive/10 Task T5) — checked before any DB
 	// work, same as the integer check above. This is NOT a business limit
-	// (per-user/per-type limits belong in docs/plan/08 S1's policy layer);
+	// (per-user/per-type limits belong in docs/roadmap/archive/08 S1's policy layer);
 	// it exists purely so a bug or abuse attempt can't post an
 	// astronomically large amount. maxAmountPerTx <= 0 means unconfigured
 	// (no cap).
@@ -149,7 +149,7 @@ func (s *Service) Handle(ctx context.Context, cmd processors.Command) (err error
 		return fmt.Errorf("%w: amount %s exceeds maximum %s", apperror.ErrAmountTooLarge, cmd.Amount, s.maxAmountPerTx)
 	}
 
-	// [docs/plan/43 Task T6] PROJECT_GUIDE.md: "do not expose raw amounts or full
+	// [docs/roadmap/archive/43 Task T6] docs/development/project-guide.md: "do not expose raw amounts or full
 	// idempotency keys in public logs" — amount dropped entirely (no safe
 	// partial form for a monetary value), idempotency key truncated to a
 	// short, non-replayable prefix that still lets support/debugging
@@ -167,7 +167,7 @@ func (s *Service) Handle(ctx context.Context, cmd processors.Command) (err error
 		return err
 	}
 
-	// Fee quote PEEK (docs/plan/38 Task T4, discovered while implementing
+	// Fee quote PEEK (docs/roadmap/archive/38 Task T4, discovered while implementing
 	// this task — not in the original design sketch): a processor's
 	// ResolveAccounts (called below, BEFORE any DB transaction opens)
 	// decides whether to include the fee[gateway] system account in
@@ -205,7 +205,7 @@ func (s *Service) Handle(ctx context.Context, cmd processors.Command) (err error
 		return fmt.Errorf("resolve accounts: %w", err)
 	}
 
-	// [docs/plan/14 Task T1] Source/Destination are explicit now (not
+	// [docs/roadmap/archive/14 Task T1] Source/Destination are explicit now (not
 	// inferred from position) but MUST still point at accounts the
 	// processor actually resolved — a Source/Destination outside Ordered
 	// would silently write a wrong/unrelated account into
@@ -302,7 +302,7 @@ func (s *Service) execTransfer(ctx context.Context, cmd processors.ResolvedComma
 	dbErr := s.db.WithTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted},
 		func(tx *sql.Tx) error {
 			businessErr = nil
-			// Time-ordered v7, not v4 (docs/plan/11 Task T4) — keeps
+			// Time-ordered v7, not v4 (docs/roadmap/archive/11 Task T4) — keeps
 			// ledger_transactions' primary-key btree insert-clustered
 			// instead of scattering writes across random pages.
 			txID := generalutil.NewV7()
@@ -314,8 +314,8 @@ func (s *Service) execTransfer(ctx context.Context, cmd processors.ResolvedComma
 				return fmt.Errorf("savepoint: %w", err)
 			}
 
-			// external_ref/gateway (docs/plan/16 Task T2, K5) and request_id
-			// (docs/plan/36 Task T5) are purely informative correlation
+			// external_ref/gateway (docs/roadmap/archive/16 Task T2, K5) and request_id
+			// (docs/roadmap/archive/36 Task T5) are purely informative correlation
 			// columns — same status as source/destination_account_id above.
 			// Absent for the large majority of transaction types that never
 			// carry these metadata keys (transfer_p2p, adjustment_*, etc.),
@@ -350,7 +350,7 @@ func (s *Service) execTransfer(ctx context.Context, cmd processors.ResolvedComma
 			}
 			_, _ = tx.ExecContext(ctx, `RELEASE SAVEPOINT sp_idem`)
 
-			// ── 1b. FEE QUOTE CONSUMPTION (docs/plan/38 Task T4) ──────────────
+			// ── 1b. FEE QUOTE CONSUMPTION (docs/roadmap/archive/38 Task T4) ──────────────
 			// SEGERA after the idempotency gate and BEFORE LockBalances (step
 			// 2) — fail fast without ever holding a balance lock. Unlike a
 			// processor business-validation failure (step 4, which commits
@@ -389,7 +389,7 @@ func (s *Service) execTransfer(ctx context.Context, cmd processors.ResolvedComma
 			}
 
 			// ── 2. SPLIT ACCOUNTS & LOCK ONLY USER ONES ───────────────────────
-			// [docs/plan/11 Task T1] account_balances.allow_negative is true
+			// [docs/roadmap/archive/11 Task T1] account_balances.allow_negative is true
 			// ONLY for system accounts (settlement/adjustment/chargeback —
 			// see migrations/000001). Those never need a FOR UPDATE lock:
 			// they have no overdraft floor to protect, so their balance is
@@ -408,7 +408,7 @@ func (s *Service) execTransfer(ctx context.Context, cmd processors.ResolvedComma
 			// field for arithmetic (only SufficientFundsValidator inspects
 			// Balance, and it only ever targets AccountIDs[0], which for
 			// every registered processor is a user account — see
-			// docs/plan/11-phase2b-efficiency-locking.md Task T1 for the
+			// docs/roadmap/archive/11-phase2b-efficiency-locking.md Task T1 for the
 			// audit that established this).
 			flags, err := s.balanceRepo.GetAccountFlags(ctx, tx, cmd.AccountIDs)
 			if err != nil {
@@ -464,7 +464,7 @@ func (s *Service) execTransfer(ctx context.Context, cmd processors.ResolvedComma
 			}
 
 			// ── 4b. CLOSE ORIGINAL (lifecycle guard) ─────────────────────────
-			// [docs/plan/14 Task T2, decision K3] Reversal/settle/cancel/
+			// [docs/roadmap/archive/14 Task T2, decision K3] Reversal/settle/cancel/
 			// release/refund each "close" a prior transaction. This single
 			// conditional UPDATE (WHERE closed_by_tx_id IS NULL) is the
 			// race-proof guard against two concurrent closers of the same
@@ -566,7 +566,7 @@ func (s *Service) execTransfer(ctx context.Context, cmd processors.ResolvedComma
 }
 
 // truncatedIdemKey returns a short, non-replayable prefix of an
-// idempotency key for log correlation (docs/plan/43 Task T6) — never the
+// idempotency key for log correlation (docs/roadmap/archive/43 Task T6) — never the
 // full value. Every valid key is already >=8 chars (transport rejects
 // shorter ones), so a 6-char prefix always leaves at least 2 characters
 // unrevealed.
@@ -639,7 +639,7 @@ func applyEntries(balances map[uuid.UUID]model.AccountBalance, entries []model.E
 }
 
 // =============================================================================
-// splitEntriesByAccount / computeSystemDeltas (docs/plan/11 Task T1)
+// splitEntriesByAccount / computeSystemDeltas (docs/roadmap/archive/11 Task T1)
 // =============================================================================
 
 // splitEntriesByAccount partitions entries into the ones touching a system

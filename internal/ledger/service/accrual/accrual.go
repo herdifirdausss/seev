@@ -1,6 +1,6 @@
 // Package accrual computes and posts daily interest for savings-product
-// accounts (docs/plan/19 Task T3, decision S8). The amount basis is always
-// a SNAPSHOT balance (account_balance_snapshots, docs/plan/15 Task T1),
+// accounts (docs/roadmap/archive/19 Task T3, decision S8). The amount basis is always
+// a SNAPSHOT balance (account_balance_snapshots, docs/roadmap/archive/15 Task T1),
 // never a live balance — RunDue is the only place this computation
 // happens; the interest_accrue processor it posts through never
 // recomputes or re-checks the amount, just posts the two entries.
@@ -41,7 +41,7 @@ type BalanceReader interface {
 	BalanceAsOf(ctx context.Context, accountID uuid.UUID, date time.Time) (decimal.Decimal, error)
 }
 
-// bpsDenominator / daysPerYear implement docs/plan/19 Task T3's locked
+// bpsDenominator / daysPerYear implement docs/roadmap/archive/19 Task T3's locked
 // formula: floor(balance * annual_rate_bps / 10000 / 365).
 const (
 	bpsDenominator = 10000
@@ -87,11 +87,11 @@ func (s *Service) ListConfigs(ctx context.Context) ([]model.SavingsConfig, error
 }
 
 // RunDue computes and posts interest for every enabled savings account,
-// using the closing balance snapshot for asOf as the basis (docs/plan/19
+// using the closing balance snapshot for asOf as the basis (docs/roadmap/archive/19
 // Task T3 step 3) — NEVER the account's current live balance. Returns how
 // many accounts were accrued vs skipped (zero-interest accounts, and any
 // lookup/post error, both count as skipped — an error on one account must
-// never block the rest, docs/plan/19's core resilience posture).
+// never block the rest, docs/roadmap/archive/19's core resilience posture).
 func (s *Service) RunDue(ctx context.Context, asOf time.Time) (accrued, skipped int) {
 	configs, err := s.repo.ListEnabled(ctx)
 	if err != nil {
@@ -110,8 +110,8 @@ func (s *Service) RunDue(ctx context.Context, asOf time.Time) (accrued, skipped 
 		if !interest.IsPositive() {
 			// Not an error — a zero/negative balance, or a balance too
 			// small for this rate to round up to at least 1 minor unit,
-			// simply has nothing to accrue today (docs/plan/19 Task T3
-			// step 3: "hasil 0 -> tidak posting").
+			// simply has nothing to accrue today (docs/roadmap/archive/19 Task T3
+			// step 3: "zero result -> do not post").
 			skipped++
 			continue
 		}
@@ -131,7 +131,7 @@ func (s *Service) RunDue(ctx context.Context, asOf time.Time) (accrued, skipped 
 		if postErr == nil || errors.Is(postErr, apperror.ErrAlreadyPosted) {
 			// ErrAlreadyPosted means a prior run already posted this exact
 			// (account, date) key and the job is being retried after a
-			// crash/restart — idempotent by design (docs/plan/19 Task T3
+			// crash/restart — idempotent by design (docs/roadmap/archive/19 Task T3
 			// step 4), no special handling needed since this row carries no
 			// "last run" state of its own to update.
 			accrued++
@@ -143,7 +143,7 @@ func (s *Service) RunDue(ctx context.Context, asOf time.Time) (accrued, skipped 
 	return accrued, skipped
 }
 
-// DailyInterest implements the locked formula (docs/plan/19 Task T3 step
+// DailyInterest implements the locked formula (docs/roadmap/archive/19 Task T3 step
 // 3): floor(balance * annual_rate_bps / 10000 / 365). A non-positive
 // balance always yields zero — interest never accrues on a negative or
 // empty balance.

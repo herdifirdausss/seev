@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// vaultTestServer mocks Vault's KV v2 read endpoint (docs/plan/49 K7),
+// vaultTestServer mocks Vault's KV v2 read endpoint (docs/roadmap/archive/49 K7),
 // shaped exactly as verified live against a real dev-mode Vault container:
 // GET /v1/secret/data/{service} with X-Vault-Token, nesting the actual
 // key/value map under data.data.

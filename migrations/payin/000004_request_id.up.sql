@@ -1,4 +1,4 @@
--- docs/plan/36 Task T5: persist the originating HTTP/gRPC request_id for
+-- docs/roadmap/archive/36 Task T5: persist the originating HTTP/gRPC request_id for
 -- end-to-end tracing — nullable, since a vendor-initiated webhook delivery
 -- carries whatever request_id the gateway generated for that inbound call,
 -- while historical rows predate this column entirely.

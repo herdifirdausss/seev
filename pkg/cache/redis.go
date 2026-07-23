@@ -57,7 +57,7 @@ func NewFromClient(client *redis.Client) *Cache {
 }
 
 // NewClientWithoutPing builds a *redis.Client from cfg WITHOUT verifying
-// connectivity first (docs/plan/45 Task T3/K4) — for a caller that must be
+// connectivity first (docs/roadmap/archive/45 Task T3/K4) — for a caller that must be
 // able to START even if Redis isn't reachable YET (fraud-service's
 // FailClosedVelocityStore keeps probing in the background and starts
 // serving amount-threshold screening immediately regardless). go-redis

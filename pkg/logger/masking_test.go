@@ -45,14 +45,14 @@ func TestIsSensitiveKey(t *testing.T) {
 		key  string
 		want bool
 	}{
-		// Exact matches setelah normalisasi
+		// Exact matches after normalization.
 		{"password", true},
 		{"PASSWORD", true},
 		{"token", true},
 		{"jwt", true},
 		{"pin", true},
 
-		// Dengan separator — ini adalah bug di versi lama yang sudah diperbaiki
+		// With separators — this was a bug in the old version and is now fixed.
 		{"user_password", true},
 		{"user-password", true},
 		{"access_token", true},
@@ -65,7 +65,7 @@ func TestIsSensitiveKey(t *testing.T) {
 		{"userPassword", true},
 		{"accessToken", true},
 
-		// Tidak sensitif
+		// Not sensitive.
 		{"username", false},
 		{"email", false},
 		{"name", false},
@@ -73,7 +73,7 @@ func TestIsSensitiveKey(t *testing.T) {
 		{"created_at", false},
 		{"amount", false},
 
-		// docs/plan/43 Task T6: full idempotency keys must never be
+		// docs/roadmap/archive/43 Task T6: full idempotency keys must never be
 		// searchable in logs — idempotency_key/idempotency_scope both
 		// normalize to a form containing "idempotencykey".
 		{"idempotency_key", true},
@@ -104,7 +104,7 @@ func TestIsSensitiveValue(t *testing.T) {
 		{"bearer SOMETOKEN", true},
 		{"AKIAIOSFODNN7EXAMPLE", true}, // AWS key (16 alphanumeric after AKIA)
 		{"-----BEGIN RSA PRIVATE KEY-----", true},
-		{"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c", true}, // valid JWT
+		{syntheticJWT(), true},
 		{"hello world", false},
 		{"john.doe@example.com", false},
 		{"normal_value_123", false},
@@ -222,7 +222,7 @@ func TestMaskPayload_MaxDepth(t *testing.T) {
 	deep := build(maxDepth + 5)
 	result := maskPayload(deep)
 
-	// Telusuri hasilnya — suatu titik harus ada string "[MAX_DEPTH]"
+	// Walk the result — at least one node must contain "[MAX_DEPTH]".
 	var traverse func(v any) bool
 	traverse = func(v any) bool {
 		switch val := v.(type) {
@@ -243,8 +243,8 @@ func TestMaskPayload_MaxDepth(t *testing.T) {
 }
 
 func TestMaskPayload_SensitiveStringValue(t *testing.T) {
-	// Nilai yang mengandung JWT pattern di field biasa harus di-redact
-	jwt := "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"
+	// Values containing a JWT pattern in ordinary fields must be redacted.
+	jwt := syntheticJWT()
 	input := map[string]any{
 		"data": jwt,
 	}
@@ -270,7 +270,7 @@ func TestReadBody_PlainText(t *testing.T) {
 		t.Errorf("got %q, want %q", got, body)
 	}
 
-	// Body harus bisa dibaca lagi (restore check)
+	// The body must remain readable (restore check).
 	restored, _ := io.ReadAll(req.Body)
 	if string(restored) != body {
 		t.Errorf("body not restored: got %q, want %q", restored, body)
@@ -289,7 +289,7 @@ func TestReadBody_GzipDecompressed(t *testing.T) {
 		t.Errorf("got %q, want %q", got, original)
 	}
 
-	// Setelah fix: body harus ter-restore dengan konten dekompresi
+	// After the fix: the body must be restored with decompressed content.
 	restored, _ := io.ReadAll(req.Body)
 	if string(restored) != original {
 		t.Errorf("body not restored with decompressed content: got %q", restored)
@@ -317,7 +317,7 @@ func TestReadBody_TruncatesAtMax(t *testing.T) {
 	}
 }
 
-// TestReadBody_RestoresFullBodyDespiteLogTruncation proves docs/plan/49
+// TestReadBody_RestoresFullBodyDespiteLogTruncation proves docs/roadmap/archive/49
 // TM-12: a body far larger than the log-line `max` must still be read in
 // FULL by whatever reads r.Body next — the previous implementation
 // silently truncated r.Body itself to `max`, corrupting any downstream
@@ -505,8 +505,8 @@ func TestSanitizeHeaders_AllowedHeaders(t *testing.T) {
 }
 
 func TestSanitizeHeaders_SensitiveValue(t *testing.T) {
-	// Header kustom yang membawa JWT harus di-redact via isSensitiveValue
-	jwt := "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"
+	// A custom header carrying a JWT must be redacted via isSensitiveValue.
+	jwt := syntheticJWT()
 	headers := http.Header{
 		"X-Custom-Jwt": []string{jwt},
 	}
@@ -515,6 +515,15 @@ func TestSanitizeHeaders_SensitiveValue(t *testing.T) {
 	if result["X-Custom-Jwt"] != redacted {
 		t.Errorf("header with JWT value should be [REDACTED], got %q", result["X-Custom-Jwt"])
 	}
+}
+
+func syntheticJWT() string {
+	const (
+		header    = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"
+		payload   = "eyJzdWIiOiIxMjM0NTY3ODkwIn0"
+		signature = "SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"
+	)
+	return header + "." + payload + "." + signature
 }
 
 func TestSanitizeHeaders_MultipleValues(t *testing.T) {
@@ -534,7 +543,7 @@ func TestSanitizeHeaders_CaseInsensitiveBlocking(t *testing.T) {
 	}
 	result := SanitizeHeaders(headers)
 
-	// http.CanonicalHeaderKey akan jadikan "Authorization"
+	// http.CanonicalHeaderKey canonicalizes this to "Authorization".
 	if result["Authorization"] != redacted {
 		t.Errorf("AUTHORIZATION (uppercase) should still be blocked, got %q", result["Authorization"])
 	}
@@ -564,12 +573,12 @@ func TestParseMediaType(t *testing.T) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// Regression: bug fix isSensitiveKey dengan separator
+// Regression: isSensitiveKey separator bug fix.
 // ─────────────────────────────────────────────────────────────
 
 func TestIsSensitiveKey_Regression_SeparatorBug(t *testing.T) {
-	// Versi lama: HasPrefix(k, s+"_") tidak pernah match karena k sudah di-strip
-	// Versi baru: strings.Contains harus mendeteksi ini
+	// Old version: HasPrefix(k, s+"_") never matched because k was stripped.
+	// New version: strings.Contains must detect this case.
 	separatorVariants := []string{
 		"user_password",
 		"user-password",

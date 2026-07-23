@@ -97,7 +97,7 @@ func toFloat64(v any) float64 {
 // ─── MemoryRateLimiter ─────────────────────────────────────────────────────
 
 // MemoryRateLimiter is an in-process token-bucket limiter for single-node
-// deployments that run without Redis (docs/plan/12 Task T1, REDIS_ENABLED=
+// deployments that run without Redis (docs/roadmap/archive/12 Task T1, REDIS_ENABLED=
 // false). It implements the exact same algorithm as rate_limiter.lua so
 // behavior is identical whichever backend is active — only the storage
 // differs. NOT safe across multiple process replicas: each instance has its

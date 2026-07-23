@@ -55,7 +55,7 @@ func (s *Server) CreatePayout(ctx context.Context, request *payoutv1.CreatePayou
 			return nil, status.Error(codes.FailedPrecondition, "no payout route available")
 		}
 		if errors.Is(callErr, s.noVendorAvailable) {
-			// docs/plan/40 Task T2 — distinct gRPC code from "no route"
+			// docs/roadmap/archive/40 Task T2 — distinct gRPC code from "no route"
 			// (FailedPrecondition/422): every candidate vendor is
 			// registered but circuit-broken, a TRANSIENT condition the
 			// caller should retry, not a config problem.
@@ -65,7 +65,7 @@ func (s *Server) CreatePayout(ctx context.Context, request *payoutv1.CreatePayou
 			return nil, status.Error(codes.FailedPrecondition, callErr.Error())
 		}
 		if errors.Is(callErr, s.screeningDependencyUnavailable) {
-			// docs/plan/45 Task T3/K4 — codes.Unavailable like
+			// docs/roadmap/archive/45 Task T3/K4 — codes.Unavailable like
 			// noVendorAvailable above (both transient, retry-worthy), but a
 			// DIFFERENT message so the gateway can tell them apart.
 			return nil, status.Error(codes.Unavailable, "screening dependency unavailable")

@@ -1,4 +1,4 @@
--- docs/plan/33 Task T1: database-driven fee rules. NULL user_id is the
+-- docs/roadmap/archive/33 Task T1: database-driven fee rules. NULL user_id is the
 -- default for every user; an empty gateway is the default for every route.
 CREATE TABLE fee_rules (
     id                  UUID        PRIMARY KEY,

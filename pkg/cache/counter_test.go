@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// ─── MemoryCounter (docs/plan/17 Task T1) ──────────────────────────────────
+// ─── MemoryCounter (docs/roadmap/archive/17 Task T1) ──────────────────────────────────
 
 func TestMemoryCounter_ImplementsInterface(t *testing.T) {
 	var _ Counter = (*MemoryCounter)(nil)

@@ -1,7 +1,7 @@
 // drreseed is docs/roadmap/active/50 T5's deterministic Redis reconstruction tool
 // (K10). Redis and RabbitMQ start with fresh, empty volumes on any
 // restore drill — they are not backed up, by design (see
-// docs/runbooks/dr-restore-drill.md's state-classification table). This
+// docs/operations/runbooks/dr-restore-drill.md's state-classification table). This
 // tool rebuilds exactly two things from the already-restored PostgreSQL
 // cluster: policy counters (daily/monthly spend limits) and fraud
 // velocity/dedup keys, both within their live active windows. It fails

@@ -20,7 +20,7 @@ import (
 // vendor command to exist in a specific status and finds none.
 var ErrCommandNotFound = errors.New("payout: vendor command not found")
 
-// VendorCommandRepository persists payout_vendor_commands (docs/plan/45
+// VendorCommandRepository persists payout_vendor_commands (docs/roadmap/archive/45
 // Task T0/K1) — a durable outbox of "dispatch this payout to this vendor"
 // work items the relay (Task T1) claims and executes, mirroring
 // internal/ledger/repository.OutboxRepository's claim/retry/reap/replay
@@ -30,7 +30,7 @@ var ErrCommandNotFound = errors.New("payout: vendor command not found")
 // outbox's surface, and vice versa.
 type VendorCommandRepository interface {
 	// EnqueueInitialSubmit is the ONLY entry point that moves a request from
-	// held/vendor_pending to submitted (docs/plan/45 K1) — it transitions
+	// held/vendor_pending to submitted (docs/roadmap/archive/45 K1) — it transitions
 	// the request AND inserts the first command (attempt 1) in one
 	// transaction, so a transition can never commit without its command and
 	// a command can never exist without its transition. Returns
@@ -49,7 +49,7 @@ type VendorCommandRepository interface {
 	CompleteAndEnqueueFailover(ctx context.Context, payoutRequestID, completingCommandID uuid.UUID, fromVendor, toVendor string, nextAttempt int) (bool, error)
 
 	// EnsureSubmitCommand is the resume job's idempotent recovery
-	// (docs/plan/45 K1): if payoutRequestID has no live command
+	// (docs/roadmap/archive/45 K1): if payoutRequestID has no live command
 	// (pending/processing/failed), insert one for vendor at the next
 	// attempt number. Safe under multi-replica concurrency — a concurrent
 	// insert conflicting on the one-live-command partial unique index (or,
@@ -86,7 +86,7 @@ type VendorCommandRepository interface {
 	// (worker crashed/died between claim and mark). retry_count is
 	// deliberately NOT incremented — a reap proves nothing about whether
 	// the vendor call itself was ever attempted, let alone completed
-	// (docs/plan/45 K2). Returns the number of commands reaped.
+	// (docs/roadmap/archive/45 K2). Returns the number of commands reaped.
 	ReapStuckCommands(ctx context.Context, olderThan time.Duration) (int, error)
 
 	// ReplayDeadCommand resets one 'dead' command back to 'failed' with a
@@ -104,7 +104,7 @@ type VendorCommandRepository interface {
 
 	// CountCommandsByStatuses returns the number of commands in each
 	// requested status in one query — feeds the payout_vendor_commands
-	// gauge (docs/plan/45 K6). A status with zero rows is absent from the
+	// gauge (docs/roadmap/archive/45 K6). A status with zero rows is absent from the
 	// map; callers must treat a missing key as 0.
 	CountCommandsByStatuses(ctx context.Context, statuses []string) (map[string]int, error)
 
@@ -114,7 +114,7 @@ type VendorCommandRepository interface {
 	GetLiveCommand(ctx context.Context, payoutRequestID uuid.UUID) (model.PayoutVendorCommand, bool, error)
 
 	// HasDeadCommand reports whether the MOST RECENT command for a request
-	// is 'dead' — docs/plan/45 Task T1's resume job uses this to distinguish
+	// is 'dead' — docs/roadmap/archive/45 Task T1's resume job uses this to distinguish
 	// "no live command and the last attempt dead-lettered" (must stay
 	// visible to the operator, never silently auto-revived by the automatic
 	// resume job) from every other no-live-command case (no command ever
@@ -126,7 +126,7 @@ type VendorCommandRepository interface {
 
 	// ListTriedVendors returns every distinct vendor a command has ever
 	// been enqueued for on this request, oldest attempt first — the
-	// failover exclusion list (docs/plan/45 Task T1). Attempts (and
+	// failover exclusion list (docs/roadmap/archive/45 Task T1). Attempts (and
 	// therefore "already tried" vendors) now span separate command rows
 	// across separate relay dispatches instead of one in-process loop's
 	// local slice, so this replaces that slice's role entirely.
@@ -141,7 +141,7 @@ func NewVendorCommandRepository(db database.DatabaseSQL) VendorCommandRepository
 	return &commandRepo{db: db}
 }
 
-// vendorCommandKey builds the internal dedup key (docs/plan/45 K1) —
+// vendorCommandKey builds the internal dedup key (docs/roadmap/archive/45 K1) —
 // "payout:<request_id>:submit:<attempt>". This is NOT the vendor-facing
 // idempotency key (that stays payout_request_id itself, unchanged across
 // retries) — it exists only so payout_vendor_commands.command_key can carry

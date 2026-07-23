@@ -10,10 +10,12 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
+	"github.com/shopspring/decimal"
 
 	"github.com/herdifirdausss/seev/internal/auth/model"
 	"github.com/herdifirdausss/seev/internal/auth/repository"
 	"github.com/herdifirdausss/seev/internal/auth/worker"
+	"github.com/herdifirdausss/seev/pkg/fraudcheck"
 	"github.com/herdifirdausss/seev/pkg/scheduler"
 )
 
@@ -79,4 +81,22 @@ func (m *Module) NewKYCApplyRetryJob(redisClient *redis.Client, logger *slog.Log
 		lock = scheduler.NewMemoryLock(2 * time.Minute)
 	}
 	return worker.NewRetryJob(m.kyc, m, lock, logger)
+}
+
+// NewKYCRescreenJob wires the periodic sanctions re-screen relay while
+// keeping repository and lock construction inside the auth facade.
+func (m *Module) NewKYCRescreenJob(redisClient *redis.Client, checker interface {
+	CheckWithSubject(context.Context, string, string, uuid.UUID, decimal.Decimal, string, string, string) (fraudcheck.Verdict, error)
+}, interval time.Duration, logger *slog.Logger) *worker.RescreenJob {
+	var lock scheduler.LockProvider
+	if redisClient != nil {
+		instanceID, err := os.Hostname()
+		if err != nil || instanceID == "" {
+			instanceID = uuid.NewString()
+		}
+		lock = scheduler.NewRedisLock(redisClient, instanceID)
+	} else {
+		lock = scheduler.NewMemoryLock(2 * time.Minute)
+	}
+	return worker.NewRescreenJob(m.kyc, checker, lock, m.cfg.DefaultCurrency, interval, logger)
 }

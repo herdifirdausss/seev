@@ -28,7 +28,7 @@ type CreatePayoutRequest struct {
 	Amount      string                 `protobuf:"bytes,2,opt,name=amount,proto3" json:"amount,omitempty"`
 	Destination []byte                 `protobuf:"bytes,3,opt,name=destination,proto3" json:"destination,omitempty"`
 	CreatedBy   string                 `protobuf:"bytes,4,opt,name=created_by,json=createdBy,proto3" json:"created_by,omitempty"`
-	// quote_id (docs/plan/38 Task T5), when set, consumes a fee quote
+	// quote_id (docs/roadmap/archive/38 Task T5), when set, consumes a fee quote
 	// BEFORE the hold is posted (anti-burn ordering) — the fee it locks in
 	// is honored at settle time regardless of any later fee_rules change.
 	QuoteId       string `protobuf:"bytes,5,opt,name=quote_id,json=quoteId,proto3" json:"quote_id,omitempty"`

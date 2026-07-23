@@ -27,10 +27,10 @@ type Command struct {
 	PocketCode       string
 	ReferenceID      uuid.UUID
 	Metadata         map[string]any
-	// QuoteID (docs/plan/38 Task T4), when non-empty, tells execTransfer to
+	// QuoteID (docs/roadmap/archive/38 Task T4), when non-empty, tells execTransfer to
 	// consume this fee quote atomically instead of resolving a fee at
 	// posting time. A typed field, not a Metadata key — Metadata is
-	// stripped/rebuilt on the public router (docs/plan/10 Task T3) before a
+	// stripped/rebuilt on the public router (docs/roadmap/archive/10 Task T3) before a
 	// command ever reaches here.
 	QuoteID string
 }
@@ -44,7 +44,7 @@ type ResolvedCommand struct {
 	Destination uuid.UUID // account credited; uuid.Nil if not a single source->destination pair
 }
 
-// ResolvedAccounts is returned by ResolveAccounts (docs/plan/14 Task T1,
+// ResolvedAccounts is returned by ResolveAccounts (docs/roadmap/archive/14 Task T1,
 // decision K2). Ordered is the account list BuildEntries continues to index
 // positionally ([0]=source, [1]=destination, [2..]=fee/extra legs — this
 // positional contract is unchanged and still load-bearing). Source and
@@ -151,7 +151,7 @@ func twoLeg(source, destination uuid.UUID, extra ...uuid.UUID) ResolvedAccounts 
 //
 // Not all system accounts are hot. Each type has a different shard key.
 // The shard key is the second argument of GetSystemAccountID(ctx, type,
-// qualifier, currency) — docs/plan/18 Task T2 added currency as a THIRD,
+// qualifier, currency) — docs/roadmap/archive/18 Task T2 added currency as a THIRD,
 // orthogonal dimension: a qualifier like "bca" now names a family of
 // accounts, one per currency (settlement[bca][IDR], settlement[bca][USD]),
 // never a single shared pool. Every ResolveAccounts implementation MUST
@@ -261,7 +261,7 @@ func requireGateway(cmd Command, processor string) (string, error) {
 
 // suspenseQualifier maps a gateway to its suspense system account's
 // system_qualifier — "suspense:<gateway>" per the seed data in
-// migrations/000008_recon.up.sql (docs/plan/16 Task T2, decision K5). Kept
+// migrations/000008_recon.up.sql (docs/roadmap/archive/16 Task T2, decision K5). Kept
 // distinct from the bare-gateway qualifier settlement/fee accounts use
 // (e.g. "bca") since AccountTypeSuspense is already a distinct `type`, but
 // the plan document specifies the prefixed qualifier explicitly.
@@ -289,7 +289,7 @@ func hasFee(cmd ResolvedCommand) (feeID uuid.UUID, fee decimal.Decimal, ok bool)
 // validateOriginalForClose is the shared pre-check used by every lifecycle
 // processor that closes a prior transaction (withdraw_settle, withdraw_cancel,
 // withdraw_pending_settle, withdraw_pending_cancel, escrow_release,
-// escrow_refund — docs/plan/14 Task T2). It reads the original's header
+// escrow_refund — docs/roadmap/archive/14 Task T2). It reads the original's header
 // within the SAME DB transaction and checks: type matches the required
 // predecessor, not already closed, status is 'posted', and the amount
 // matches exactly (full-amount only — no partial settle in MVP).
@@ -333,7 +333,7 @@ func validateOriginalForClose(
 }
 
 // requireReferenceID is the shared ValidateCommand pre-DB check for every
-// lifecycle processor that closes a prior transaction (docs/plan/14 Task T2)
+// lifecycle processor that closes a prior transaction (docs/roadmap/archive/14 Task T2)
 // — failing fast before any DB work if the caller forgot ReferenceID.
 func requireReferenceID(cmd Command, processorType string) error {
 	if cmd.ReferenceID == uuid.Nil {
@@ -343,7 +343,7 @@ func requireReferenceID(cmd Command, processorType string) error {
 }
 
 // buildEntrySummaries converts BuildEntries' output into the wire-format
-// entry list events.TransactionPosted carries (docs/plan/14 Task T3).
+// entry list events.TransactionPosted carries (docs/roadmap/archive/14 Task T3).
 func buildEntrySummaries(entries []model.EntryInstruction) []events.EntrySummary {
 	out := make([]events.EntrySummary, len(entries))
 	for i, e := range entries {
@@ -353,10 +353,10 @@ func buildEntrySummaries(entries []model.EntryInstruction) []events.EntrySummary
 }
 
 // newPostedEvent builds the single ledger.transaction.posted.v1 outbox event
-// every processor except Reversal emits (docs/plan/14 Task T3, decision K4).
+// every processor except Reversal emits (docs/roadmap/archive/14 Task T3, decision K4).
 // Source/Destination come from cmd.Source/cmd.Destination — uuid.Nil becomes
 // a nil pointer (omitted from the JSON payload), matching the processors
-// whose movement isn't a single source->destination pair (docs/plan/14 Task
+// whose movement isn't a single source->destination pair (docs/roadmap/archive/14 Task
 // T1, decision K2).
 func newPostedEvent(cmd ResolvedCommand, txID uuid.UUID, entries []model.EntryInstruction) model.OutboxEvent {
 	var source, dest *uuid.UUID
@@ -490,13 +490,13 @@ func NewDefaultRegistry(
 		NewAdjustmentDebit(accRepo),
 		NewAdjustmentSuspenseCredit(accRepo),
 		NewAdjustmentSuspenseDebit(accRepo),
-		// FX orchestration primitives (docs/plan/18 Task T3) — internal
+		// FX orchestration primitives (docs/roadmap/archive/18 Task T3) — internal
 		// router only, never added to publicUserTypes.
 		NewFxOut(accRepo),
 		NewFxIn(accRepo),
-		// Batch disbursement (docs/plan/19 Task T2) — internal router only.
+		// Batch disbursement (docs/roadmap/archive/19 Task T2) — internal router only.
 		NewDisbursement(accRepo),
-		// Interest accrual (docs/plan/19 Task T3) — internal router only.
+		// Interest accrual (docs/roadmap/archive/19 Task T3) — internal router only.
 		NewInterestAccrue(accRepo),
 		// Correction
 		NewReversal(txRepo, accRepo),

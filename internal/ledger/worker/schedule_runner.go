@@ -15,7 +15,7 @@ type scheduleRunner interface {
 	RunDue(ctx context.Context, asOf time.Time) (executed, failed int, err error)
 }
 
-// ScheduleRunnerJob runs docs/plan/19 Task T1's daily job: post every
+// ScheduleRunnerJob runs docs/roadmap/archive/19 Task T1's daily job: post every
 // scheduled_transactions row due today. Unlike SnapshotJob, there is no
 // day-by-day catch-up loop on Start — a missed calendar day for a
 // recurring (daily/monthly) schedule is not individually backfilled (the
@@ -51,7 +51,7 @@ func NewScheduleRunnerJob(runner scheduleRunner, lock scheduler.LockProvider, lo
 
 // Start registers the daily cron — 00:30 Asia/Jakarta, after the balance
 // snapshot job (00:15) so schedules that read balance state are never
-// racing an incomplete snapshot for the day that just closed (docs/plan/19
+// racing an incomplete snapshot for the day that just closed (docs/roadmap/archive/19
 // Task T1 step 4). Call Stop to shut down.
 func (j *ScheduleRunnerJob) Start(ctx context.Context) error {
 	return j.sched.Cron("schedule-runner", "30 0 * * *", j.runDaily)
@@ -64,7 +64,7 @@ func (j *ScheduleRunnerJob) Stop() {
 
 // RunNow executes RunDue for the given date immediately, outside the cron
 // schedule — backs the admin ops/testing endpoint
-// (POST /admin/schedules/run?date=, docs/plan/19 Task T1 step 5). NOT
+// (POST /admin/schedules/run?date=, docs/roadmap/archive/19 Task T1 step 5). NOT
 // guarded by the distributed lock the cron path uses: an operator
 // triggering this explicitly is trusted to not fire it concurrently from
 // multiple replicas, and Post()'s own idempotency key makes even that safe

@@ -1,4 +1,4 @@
--- docs/plan/18 Task T2 (S2): system account pool for USD, mirroring the IDR
+-- docs/roadmap/archive/18 Task T2 (S2): system account pool for USD, mirroring the IDR
 -- pool seeded in 000002/000008. A qualifier like "bca" now names a FAMILY of
 -- accounts, one per currency — GetSystemAccountID(type, qualifier, currency)
 -- picks the member. Add a new currency = INSERT a new pool here, not a

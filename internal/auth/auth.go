@@ -1,9 +1,9 @@
-// Package auth is the public facade for the auth module (docs/plan/25 Task
-// T1, shape locked by docs/plan/24's internal/auth outline and decision D12)
+// Package auth is the public facade for the auth module (docs/roadmap/archive/25 Task
+// T1, shape locked by docs/roadmap/archive/24's internal/auth outline and decision D12)
 // — identity, credentials, and token issuance for end users. This is the
 // ONLY package other code may import from internal/auth — importing
 // internal/auth/repository or internal/auth/model directly from outside
-// this module is a boundary violation (docs/plan/01-target-architecture.md,
+// this module is a boundary violation (docs/roadmap/archive/01-target-architecture.md,
 // enforced by boundary_test.go).
 //
 // JWTs issued here use the EXACT claims contract pkg/middleware already
@@ -53,7 +53,7 @@ const bcryptCost = 12
 type Provisioner interface {
 	ProvisionUser(ctx context.Context, userID uuid.UUID, currency string) error
 	// ApplyKycTier upserts a user's effective policy_limits from the ledger's
-	// policy_tier_limits template for kycLevel (docs/plan/39 Task T5) —
+	// policy_tier_limits template for kycLevel (docs/roadmap/archive/39 Task T5) —
 	// called synchronously inside ApproveKYCSubmission's transaction so a
 	// failure here rolls back the whole approval (gotcha #10 master:
 	// kyc_level must never advance ahead of its enforced limits).
@@ -208,7 +208,7 @@ func (m *Module) Login(ctx context.Context, email, password string) (User, Token
 // Refresh rotates a refresh token: the presented token is revoked and a new
 // pair is issued. Presenting a token that was ALREADY revoked is treated as
 // replay — every live token the user has is revoked and the caller gets 401
-// (docs/plan/25 T1 step 2).
+// (docs/roadmap/archive/25 T1 step 2).
 func (m *Module) Refresh(ctx context.Context, refreshToken string) (User, TokenPair, error) {
 	t, err := m.refreshTokens.GetRefreshTokenByHash(ctx, hashToken(refreshToken))
 	if err != nil {

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # End-to-end smoke test against a real, live server (docker-compose
 # Postgres/Redis/RabbitMQ + a freshly built binary) — the same manual curl
-# walkthrough every doc's "Verifikasi akhir" section has asked for since
-# docs/plan/12, now checked in once instead of hand-typed from scratch each
+# walkthrough every doc's "Final verification" section has asked for since
+# docs/roadmap/archive/12, now checked in once instead of hand-typed from scratch each
 # time a feature needs re-verifying.
 #
 # Requires: Docker running, this repo checked out, go toolchain available,
@@ -34,7 +34,7 @@ source "$ROOT_DIR/scripts/lib.sh"
 
 trap cleanup EXIT
 
-# docs/plan/44 K6: same env var name lib.sh's start_*_service functions
+# docs/roadmap/archive/44 K6: same env var name lib.sh's start_*_service functions
 # export to the service processes — a CI-generated VENDOR_MOCKVENDOR_SECRET
 # must sign AND verify with the identical value, not silently diverge
 # because this script's own webhook-signing copy had a different name.
@@ -178,7 +178,7 @@ smoke_payout() {
 	local id1
 	id1="$(echo "$create1" | json_field id)"
 	[ -n "$id1" ] || fail "instant-settle create response unexpected: $create1"
-	# docs/plan/45 Task T1: the create response itself only reports
+	# docs/roadmap/archive/45 Task T1: the create response itself only reports
 	# 'submitted' (hold+enqueue) — the vendor result always comes from a
 	# separate, asynchronous relay dispatch pass now, even in what used to
 	# be called "instant-settle" mode.

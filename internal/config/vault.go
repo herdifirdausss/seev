@@ -10,7 +10,7 @@ import (
 )
 
 // vaultGetenv wraps getenv with an overlay read from Vault's KV v2 engine
-// (docs/plan/49 K7): when VAULT_ADDR and VAULT_TOKEN are both set, Vault's
+// (docs/roadmap/archive/49 K7): when VAULT_ADDR and VAULT_TOKEN are both set, Vault's
 // value wins for any key present in secret/<APP_NAME>; every other key
 // falls through to getenv unchanged. Neither set — the default, and the
 // only path CI/nightly ever exercise — returns getenv completely
@@ -46,7 +46,7 @@ func vaultGetenv(getenv func(string) string) (func(string) string, error) {
 // vaultKVv2Response models Vault's KV v2 read envelope — GET
 // {addr}/v1/secret/data/{path} nests the actual key/value map under
 // data.data, distinct from KV v1's flatter data-only shape. Verified live
-// against a real dev-mode Vault container (docs/plan/49 K7) before
+// against a real dev-mode Vault container (docs/roadmap/archive/49 K7) before
 // writing this struct.
 type vaultKVv2Response struct {
 	Data struct {

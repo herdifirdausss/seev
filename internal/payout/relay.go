@@ -13,7 +13,7 @@ import (
 	"github.com/herdifirdausss/seev/internal/vendorgw"
 )
 
-// This file is the relay's domain logic (docs/plan/45 Task T1/K2) — the
+// This file is the relay's domain logic (docs/roadmap/archive/45 Task T1/K2) — the
 // ONLY place provider.Submit is ever called from. It lives inside the
 // payout package (not internal/payout/worker) because dispatching a
 // command needs settle/cancel/recordVendorCall/ResolvePayoutRoute, all
@@ -22,7 +22,7 @@ import (
 // split as internal/payout/worker.ResumeJob calling back through
 // ResumeStuck/CountStuck).
 //
-// Delivery is honestly at-least-once (docs/plan/45 K1) — a network timeout
+// Delivery is honestly at-least-once (docs/roadmap/archive/45 K1) — a network timeout
 // can never prove the vendor didn't receive the call, so a retried command
 // always reuses the SAME vendor-facing idempotency key
 // (payout_requests.id, unchanged across attempts) rather than claiming
@@ -68,7 +68,7 @@ func (m *Module) ReapStuckCommands(ctx context.Context, olderThan time.Duration)
 }
 
 // CountCommandsByStatuses feeds the payout_vendor_commands gauge
-// (docs/plan/45 K6).
+// (docs/roadmap/archive/45 K6).
 func (m *Module) CountCommandsByStatuses(ctx context.Context, statuses []string) (map[string]int, error) {
 	return m.commandRepo.CountCommandsByStatuses(ctx, statuses)
 }
@@ -120,7 +120,7 @@ func (m *Module) dispatchOne(ctx context.Context, cmd model.PayoutVendorCommand)
 	}
 	if recordErr != nil {
 		// The persisted call history is the safety boundary that prevents a
-		// later retry from paying through a second vendor (docs/plan/45
+		// later retry from paying through a second vendor (docs/roadmap/archive/45
 		// K2: "audit failure = fail-closed"). Leave the request pinned,
 		// retry this same command later — no terminal transition, no
 		// failover, until the audit write itself succeeds.

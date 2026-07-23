@@ -79,7 +79,7 @@ func TestCreatePayoutInsufficientFunds(t *testing.T) {
 }
 
 // TestCreatePayoutScreeningDependencyUnavailable_MapsToUnavailable proves
-// docs/plan/45 Task T3/K4: the service returning the configured
+// docs/roadmap/archive/45 Task T3/K4: the service returning the configured
 // screeningDependencyUnavailable sentinel maps to codes.Unavailable with a
 // message distinguishable from noVendorAvailable's own codes.Unavailable
 // use — the gateway sub-switches on this exact message.

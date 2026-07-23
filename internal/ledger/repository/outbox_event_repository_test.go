@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// ─── CountByStatuses (docs/plan/11 Task T6) ────────────────────────────────────
+// ─── CountByStatuses (docs/roadmap/archive/11 Task T6) ────────────────────────────────────
 
 func TestCountByStatuses_SingleQuery_ReturnsAllRequestedCounts(t *testing.T) {
 	db, mock := newMockDB(t)
@@ -61,7 +61,7 @@ func TestCountByStatuses_EmptyInput_NoQuery(t *testing.T) {
 	require.NoError(t, mock.ExpectationsWereMet(), "no SQL should be sent for empty statuses")
 }
 
-// ─── Outbox backoff (docs/plan/12 Task T2) ─────────────────────────────────────
+// ─── Outbox backoff (docs/roadmap/archive/12 Task T2) ─────────────────────────────────────
 //
 // sqlmock only matches the query text against a regex and returns a canned
 // result — it cannot execute Postgres's POWER()/random() to prove the

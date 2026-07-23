@@ -1,8 +1,8 @@
-# docs/plan/43 Task T5 — Grafana unified alerting, file-provisioned.
+# docs/roadmap/archive/43 Task T5 — Grafana unified alerting, file-provisioned.
 # Generated once by a scratch script for consistency across 3 SLOs x 3
 # burn-rate pairs (K7) plus 6 operational alerts (K8); edit by hand from
 # here on, this file is the source of truth. Every rule's `runbook`
-# annotation maps to the K8 table in docs/plan/43-a1-observability.md.
+# annotation maps to the K8 table in docs/roadmap/archive/43-a1-observability.md.
 apiVersion: 1
 groups:
 - orgId: 1
@@ -50,9 +50,9 @@ groups:
     for: 2m
     annotations:
       summary: "posting_availability is burning its error budget at over 14.4x the sustainable rate across\
-        \ both the 5m and 1h windows (multi-window multi-burn-rate alert, docs/plan/43 K7) \u2014 eligible-event\
+        \ both the 5m and 1h windows (multi-window multi-burn-rate alert, docs/roadmap/archive/43 K7) \u2014 eligible-event\
         \ volume also cleared the 20/1h minimum gate, so this is not a low-traffic false positive."
-      runbook: docs/runbooks/ledger-integrity-alert.md
+      runbook: docs/operations/runbooks/ledger-integrity-alert.md
     labels:
       severity: critical
       slo: posting_availability
@@ -97,9 +97,9 @@ groups:
     for: 2m
     annotations:
       summary: "posting_availability is burning its error budget at over 6x the sustainable rate across\
-        \ both the 30m and 6h windows (multi-window multi-burn-rate alert, docs/plan/43 K7) \u2014 eligible-event\
+        \ both the 30m and 6h windows (multi-window multi-burn-rate alert, docs/roadmap/archive/43 K7) \u2014 eligible-event\
         \ volume also cleared the 50/6h minimum gate, so this is not a low-traffic false positive."
-      runbook: docs/runbooks/ledger-integrity-alert.md
+      runbook: docs/operations/runbooks/ledger-integrity-alert.md
     labels:
       severity: critical
       slo: posting_availability
@@ -144,9 +144,9 @@ groups:
     for: 2m
     annotations:
       summary: "posting_availability is burning its error budget at over 1x the sustainable rate across\
-        \ both the 6h and 3d windows (multi-window multi-burn-rate alert, docs/plan/43 K7) \u2014 eligible-event\
+        \ both the 6h and 3d windows (multi-window multi-burn-rate alert, docs/roadmap/archive/43 K7) \u2014 eligible-event\
         \ volume also cleared the 100/3d minimum gate, so this is not a low-traffic false positive."
-      runbook: docs/runbooks/ledger-integrity-alert.md
+      runbook: docs/operations/runbooks/ledger-integrity-alert.md
     labels:
       severity: warning
       slo: posting_availability
@@ -191,9 +191,9 @@ groups:
     for: 2m
     annotations:
       summary: "webhook_latency is burning its error budget at over 14.4x the sustainable rate across\
-        \ both the 5m and 1h windows (multi-window multi-burn-rate alert, docs/plan/43 K7) \u2014 eligible-event\
+        \ both the 5m and 1h windows (multi-window multi-burn-rate alert, docs/roadmap/archive/43 K7) \u2014 eligible-event\
         \ volume also cleared the 20/1h minimum gate, so this is not a low-traffic false positive."
-      runbook: docs/runbooks/reconciliation.md
+      runbook: docs/operations/runbooks/reconciliation.md
     labels:
       severity: critical
       slo: webhook_latency
@@ -238,9 +238,9 @@ groups:
     for: 2m
     annotations:
       summary: "webhook_latency is burning its error budget at over 6x the sustainable rate across both\
-        \ the 30m and 6h windows (multi-window multi-burn-rate alert, docs/plan/43 K7) \u2014 eligible-event\
+        \ the 30m and 6h windows (multi-window multi-burn-rate alert, docs/roadmap/archive/43 K7) \u2014 eligible-event\
         \ volume also cleared the 50/6h minimum gate, so this is not a low-traffic false positive."
-      runbook: docs/runbooks/reconciliation.md
+      runbook: docs/operations/runbooks/reconciliation.md
     labels:
       severity: critical
       slo: webhook_latency
@@ -285,9 +285,9 @@ groups:
     for: 2m
     annotations:
       summary: "webhook_latency is burning its error budget at over 1x the sustainable rate across both\
-        \ the 6h and 3d windows (multi-window multi-burn-rate alert, docs/plan/43 K7) \u2014 eligible-event\
+        \ the 6h and 3d windows (multi-window multi-burn-rate alert, docs/roadmap/archive/43 K7) \u2014 eligible-event\
         \ volume also cleared the 100/3d minimum gate, so this is not a low-traffic false positive."
-      runbook: docs/runbooks/reconciliation.md
+      runbook: docs/operations/runbooks/reconciliation.md
     labels:
       severity: warning
       slo: webhook_latency
@@ -332,9 +332,9 @@ groups:
     for: 2m
     annotations:
       summary: "notification_success is burning its error budget at over 14.4x the sustainable rate across\
-        \ both the 5m and 1h windows (multi-window multi-burn-rate alert, docs/plan/43 K7) \u2014 eligible-event\
+        \ both the 5m and 1h windows (multi-window multi-burn-rate alert, docs/roadmap/archive/43 K7) \u2014 eligible-event\
         \ volume also cleared the 20/1h minimum gate, so this is not a low-traffic false positive."
-      runbook: docs/runbooks/reconciliation.md
+      runbook: docs/operations/runbooks/reconciliation.md
     labels:
       severity: critical
       slo: notification_success
@@ -379,9 +379,9 @@ groups:
     for: 2m
     annotations:
       summary: "notification_success is burning its error budget at over 6x the sustainable rate across\
-        \ both the 30m and 6h windows (multi-window multi-burn-rate alert, docs/plan/43 K7) \u2014 eligible-event\
+        \ both the 30m and 6h windows (multi-window multi-burn-rate alert, docs/roadmap/archive/43 K7) \u2014 eligible-event\
         \ volume also cleared the 50/6h minimum gate, so this is not a low-traffic false positive."
-      runbook: docs/runbooks/reconciliation.md
+      runbook: docs/operations/runbooks/reconciliation.md
     labels:
       severity: critical
       slo: notification_success
@@ -426,9 +426,9 @@ groups:
     for: 2m
     annotations:
       summary: "notification_success is burning its error budget at over 1x the sustainable rate across\
-        \ both the 6h and 3d windows (multi-window multi-burn-rate alert, docs/plan/43 K7) \u2014 eligible-event\
+        \ both the 6h and 3d windows (multi-window multi-burn-rate alert, docs/roadmap/archive/43 K7) \u2014 eligible-event\
         \ volume also cleared the 100/3d minimum gate, so this is not a low-traffic false positive."
-      runbook: docs/runbooks/reconciliation.md
+      runbook: docs/operations/runbooks/reconciliation.md
     labels:
       severity: warning
       slo: notification_success
@@ -477,7 +477,7 @@ groups:
     annotations:
       summary: The ledger verifier worker found at least one balance/entry integrity discrepancy in the
         last 15 minutes.
-      runbook: docs/runbooks/ledger-integrity-alert.md
+      runbook: docs/operations/runbooks/ledger-integrity-alert.md
     labels:
       severity: critical
       component: ledger_verifier
@@ -522,7 +522,7 @@ groups:
       summary: "ledger_outbox_pending has stayed above 50 for 5 minutes \u2014 the outbox relay worker\
         \ is falling behind or stalled; downstream consumers (notifications, fraud velocity) are seeing\
         \ delayed events."
-      runbook: docs/runbooks/ledger-integrity-alert.md
+      runbook: docs/operations/runbooks/ledger-integrity-alert.md
     labels:
       severity: warning
       component: ledger_outbox
@@ -566,7 +566,7 @@ groups:
     annotations:
       summary: "At least one outbox event has exhausted its retry budget and moved to status=dead \u2014\
         \ requires manual replay via POST /admin/outbox/dead/{id}/replay."
-      runbook: docs/runbooks/ledger-integrity-alert.md
+      runbook: docs/operations/runbooks/ledger-integrity-alert.md
     labels:
       severity: critical
       component: ledger_outbox
@@ -611,7 +611,7 @@ groups:
     annotations:
       summary: "Notification consumer handler p95 latency has exceeded 2s over the last 5 minutes \u2014\
         \ matches the webhook_latency SLO's own 2s threshold for consistency."
-      runbook: docs/runbooks/reconciliation.md
+      runbook: docs/operations/runbooks/reconciliation.md
     labels:
       severity: warning
       component: notify_consumer
@@ -656,7 +656,7 @@ groups:
       summary: "More than 5 payout requests have stayed in created/held/submitted/vendor_pending past\
         \ the resume job's staleness threshold for 5 minutes \u2014 money is parked in the hold account\
         \ (not lost) but not progressing."
-      runbook: docs/runbooks/reconciliation.md
+      runbook: docs/operations/runbooks/reconciliation.md
     labels:
       severity: warning
       component: payout_resume
@@ -700,7 +700,7 @@ groups:
     annotations:
       summary: "A vendor's circuit breaker has stayed OPEN for 5 minutes straight \u2014 payin/payout\
         \ traffic to that vendor is being failed over or rejected; check vendor health."
-      runbook: docs/runbooks/reconciliation.md
+      runbook: docs/operations/runbooks/reconciliation.md
     labels:
       severity: warning
       component: vendor_breaker

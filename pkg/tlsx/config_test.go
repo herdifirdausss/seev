@@ -119,7 +119,7 @@ func TestServerConfig_RejectsNonAllowlistedClientIdentity(t *testing.T) {
 	ledger, _, fraud, _ := setupHandshakeFixture(t)
 
 	// fraud is a real, CA-signed identity — just never granted access to
-	// this particular listener (docs/plan/49 K4: identity allowlist, not
+	// this particular listener (docs/roadmap/archive/49 K4: identity allowlist, not
 	// "any cert our CA signed").
 	serverCfg := ServerConfig(ledger, []string{IdentityGateway})
 	addr, result := listenTLS(t, serverCfg)
@@ -205,7 +205,7 @@ func TestClientConfig_RejectsCertFromUntrustedCA(t *testing.T) {
 	_ = result()
 }
 
-// TestServerConfig_HotRotatesCAWithoutRebuildingConfig proves the docs/plan/49
+// TestServerConfig_HotRotatesCAWithoutRebuildingConfig proves the docs/roadmap/archive/49
 // TM-13 fix, found live by the T6 rotation drill (scripts/rotation-drill.sh):
 // ServerConfig used to snapshot ClientCAs at construction time, so a CA
 // rotation was invisible to already-built listeners for the rest of the

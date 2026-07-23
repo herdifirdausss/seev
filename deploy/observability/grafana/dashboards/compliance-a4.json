@@ -1,7 +1,7 @@
 {
   "uid": "seev-compliance-a4",
   "title": "Seev / Compliance A4",
-  "description": "KYC retry, sanctions and fraud screening audit health (docs/plan/46).",
+  "description": "KYC retry, sanctions and fraud screening audit health (docs/roadmap/archive/46).",
   "tags": ["seev", "compliance"],
   "schemaVersion": 39,
   "version": 1,

@@ -90,7 +90,7 @@ func run(parent context.Context) error {
 		cfg.Postgres.MaxIdleConns = 5
 	}
 	log := logger.New(cfg.Logger.Pkg())
-	// docs/plan/49 K3/K5: load this process's own identity + the shared
+	// docs/roadmap/archive/49 K3/K5: load this process's own identity + the shared
 	// CA before anything else. assurance-service itself was added to the
 	// repo after doc 49's K3/K4/K6 were written — see docs/security/
 	// threat-model.md TM-09 — so it is treated exactly like every other
@@ -166,7 +166,7 @@ func run(parent context.Context) error {
 	mux.Handle("GET /metrics", promhttp.Handler())
 	authed := middleware.Chain(middleware.WithAuth(cfg.JWT.Secret, cfg.JWT.Issuer), middleware.RequireJSON())
 	mux.Handle("/admin/assurance/", authed(module.AdminRouter()))
-	// docs/plan/49 K6: assurance's admin listener is internal-only mTLS —
+	// docs/roadmap/archive/49 K6: assurance's admin listener is internal-only mTLS —
 	// no other service dials it over HTTP, only dev-operator/Prometheus.
 	server := &http.Server{Addr: ":" + cfg.App.Port, Handler: mux, ReadTimeout: cfg.App.ReadTimeout, WriteTimeout: cfg.App.WriteTimeout, IdleTimeout: cfg.App.IdleTimeout, ReadHeaderTimeout: 5 * time.Second, MaxHeaderBytes: 1 << 20, TLSConfig: tlsx.ServerConfig(certSrc, []string{
 		tlsx.IdentityDevOperator, tlsx.IdentityPrometheus,

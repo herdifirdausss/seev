@@ -9,7 +9,7 @@ import (
 
 // Status is the shape both the `status` CLI subcommand and the /ready
 // handler report — "compares current WAL position with archived WAL and
-// reports the oldest/latest restorable time" (docs/plan/50 T2 Work item 4).
+// reports the oldest/latest restorable time" (docs/roadmap/active/50 T2 Work item 4).
 type Status struct {
 	WALArchiveAgeSeconds   float64    `json:"wal_archive_age_seconds"`
 	LastArchivedWAL        string     `json:"last_archived_wal"`

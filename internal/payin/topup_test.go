@@ -140,7 +140,7 @@ func topupEvent(externalRef string, amount int64) *vendorgw.PayinEvent {
 }
 
 // TestHandleWebhook_ResolvesTopupIntentUser proves the core property
-// (docs/plan/25 Task T3): the vendor never learns the internal user_id —
+// (docs/roadmap/archive/25 Task T3): the vendor never learns the internal user_id —
 // the webhook payload's OWN user_id (payload.UserID, deliberately
 // different from the intent's) must be IGNORED in favor of the intent's
 // user_id when a matching pending intent is found by reference.

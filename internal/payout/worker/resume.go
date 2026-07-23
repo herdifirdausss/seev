@@ -1,6 +1,6 @@
 // Package worker holds internal/payout's background job(s). Not part of the
 // module's public facade — only internal/payout itself may import this
-// package (docs/plan/01-target-architecture.md, enforced by
+// package (docs/roadmap/archive/01-target-architecture.md, enforced by
 // boundary_test.go), mirroring internal/ledger/worker's boundary.
 package worker
 
@@ -17,14 +17,14 @@ import (
 // internal/ledger/worker.scheduleRunner.
 type resumer interface {
 	ResumeStuck(ctx context.Context, olderThan time.Duration) (resumed, failed int, err error)
-	// CountStuck reports the full per-status backlog (docs/plan/43 K5) —
+	// CountStuck reports the full per-status backlog (docs/roadmap/archive/43 K5) —
 	// separate from ResumeStuck's own 100-row-capped passes, so the
 	// payout_stuck_requests gauge reflects the true backlog even when a
 	// single resume tick can't drain all of it.
 	CountStuck(ctx context.Context, olderThan time.Duration) (map[string]int, error)
 }
 
-// ResumeJob runs docs/plan/23 Task T3 step 3's resume/polling job: unlike
+// ResumeJob runs docs/roadmap/archive/23 Task T3 step 3's resume/polling job: unlike
 // every other worker in this codebase (all daily cron jobs), a stuck payout
 // request needs to be re-driven on the order of minutes, not once a day —
 // money is parked in a hold account until the request reaches a terminal
@@ -78,7 +78,7 @@ func (j *ResumeJob) Stop() {
 }
 
 // RunNow executes one resume pass immediately, outside the cron schedule —
-// backs chaos tests (docs/plan/23 Task T6) and a future admin-triggered
+// backs chaos tests (docs/roadmap/archive/23 Task T6) and a future admin-triggered
 // endpoint. Not guarded by the distributed lock the cron path uses, same
 // rationale as ScheduleRunnerJob.RunNow: every downstream operation
 // (submit/settle/cancel) is idempotent by request ID, so redundant
@@ -101,7 +101,7 @@ func (j *ResumeJob) runOnce(ctx context.Context) error {
 }
 
 // refreshStuckGauge sets payout_stuck_requests from one grouped-count query
-// (docs/plan/43 K5) — a failure here is logged, not propagated: the gauge
+// (docs/roadmap/archive/43 K5) — a failure here is logged, not propagated: the gauge
 // going briefly stale must never fail the resume job's own cron result.
 func (j *ResumeJob) refreshStuckGauge(ctx context.Context) {
 	counts, err := j.resumer.CountStuck(ctx, j.olderThan)

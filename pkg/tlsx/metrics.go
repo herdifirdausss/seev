@@ -1,6 +1,6 @@
 package tlsx
 
-// docs/plan/49 K10 — package-level metrics, registered once regardless of
+// docs/roadmap/archive/49 K10 — package-level metrics, registered once regardless of
 // how many CertSources/tls.Configs a process builds.
 
 import (
@@ -22,7 +22,7 @@ var certExpirySeconds = promauto.NewGaugeVec(prometheus.GaugeOpts{
 
 // handshakeFailuresTotal counts server-side mTLS handshakes rejected by
 // ServerConfig's VerifyConnection — an untrusted/rotated-out CA
-// (docs/plan/49 TM-13) or a validly-signed peer identity outside the
+// (docs/roadmap/archive/49 TM-13) or a validly-signed peer identity outside the
 // allowlist (K4). Does NOT cover a connection presenting zero client
 // certificates: Go's tls package aborts that case before VerifyConnection
 // ever runs, and that failure mode belongs to connection-level metrics,

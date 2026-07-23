@@ -9,7 +9,7 @@ import (
 )
 
 // ─── correlationIDFromContext ─────────────────────────────────────────────────
-// docs/plan/36 Task T4: publish must set AMQP CorrelationId from whichever
+// docs/roadmap/archive/36 Task T4: publish must set AMQP CorrelationId from whichever
 // mechanism the caller used — an explicit WithCorrelationID always wins (a
 // caller correlating on something other than the HTTP/gRPC request_id), else
 // it falls back to middleware.RequestIDFromCtx so a caller that never called

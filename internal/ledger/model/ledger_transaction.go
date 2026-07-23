@@ -21,7 +21,7 @@ type LedgerTransaction struct {
 	DestinationAccountID uuid.UUID
 	ErrorMessage         string
 	// ExternalRef/Gateway correlate this transaction to a payment gateway's
-	// own settlement report (docs/plan/16 Task T2) — informative, like
+	// own settlement report (docs/roadmap/archive/16 Task T2) — informative, like
 	// Source/DestinationAccountID; empty for transaction types that never
 	// carry a "gateway"/"external_ref" metadata key.
 	ExternalRef string

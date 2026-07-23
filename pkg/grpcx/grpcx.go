@@ -29,15 +29,15 @@ import (
 const dialTimeout = 5 * time.Second
 
 // requestIDMetadataKey is the gRPC metadata key carrying the HTTP
-// X-Request-Id equivalent across service boundaries (docs/plan/36 Task T3).
+// X-Request-Id equivalent across service boundaries (docs/roadmap/archive/36 Task T3).
 const requestIDMetadataKey = "x-request-id"
 
 // NewServer creates a gRPC server with recovery, logging, tracing, mTLS,
-// and token auth. Owns the otelgrpc stats handler itself (docs/plan/43 K4)
+// and token auth. Owns the otelgrpc stats handler itself (docs/roadmap/archive/43 K4)
 // so callers never pass a competing one — grpc.StatsHandler set here
 // always wins.
 //
-// Both token and tlsConfig are REQUIRED (docs/plan/49 K5): a server used
+// Both token and tlsConfig are REQUIRED (docs/roadmap/archive/49 K5): a server used
 // to accept every call when INTERNAL_GRPC_TOKEN was empty
 // (authInterceptor no-op'd) and never verified peer identity at all.
 // Construction now fails loudly instead — mTLS (tlsConfig, built via
@@ -72,7 +72,7 @@ func NewServer(logger *slog.Logger, token string, tlsConfig *tls.Config, opts ..
 }
 
 // Dial connects to an internal gRPC service over mTLS and attaches token
-// auth. Both token and tlsConfig are REQUIRED (docs/plan/49 K5), matching
+// auth. Both token and tlsConfig are REQUIRED (docs/roadmap/archive/49 K5), matching
 // NewServer.
 func Dial(ctx context.Context, addr, token string, tlsConfig *tls.Config) (*grpc.ClientConn, error) {
 	return dial(ctx, addr, token, tlsConfig)
@@ -143,7 +143,7 @@ func recoveryInterceptor(logger *slog.Logger) grpc.UnaryServerInterceptor {
 // pkg/middleware.WithTracing/WithLogger for HTTP, stores a span- and
 // request_id-enriched logger in ctx so handler code calling
 // logger.FromContext(ctx) picks up trace_id/span_id/request_id without
-// doing anything itself (docs/plan/43 K4). otelgrpc's server stats handler
+// doing anything itself (docs/roadmap/archive/43 K4). otelgrpc's server stats handler
 // (wired in NewServer) has already attached the active span to ctx by the
 // time this interceptor runs — stats handlers apply at the transport level,
 // before any unary interceptor.
@@ -171,7 +171,7 @@ func loggingInterceptor(baseLogger *slog.Logger) grpc.UnaryServerInterceptor {
 // requestIDClientInterceptor (or a caller propagating it manually) into ctx
 // under middleware.RequestIDKey — the same key HTTP middleware uses, so
 // RequestIDFromCtx works identically on both transports. Runs BEFORE
-// loggingInterceptor so every gRPC log line carries the field (docs/plan/36
+// loggingInterceptor so every gRPC log line carries the field (docs/roadmap/archive/36
 // Task T3). A caller without an id (e.g. a background job with no request
 // context) gets one generated here rather than logging an empty string.
 func requestIDServerInterceptor() grpc.UnaryServerInterceptor {
@@ -208,7 +208,7 @@ func requestIDClientInterceptor() grpc.UnaryClientInterceptor {
 }
 
 // authInterceptor has no no-op path — NewServer refuses to construct a
-// server at all with an empty token (docs/plan/49 K5), so by the time this
+// server at all with an empty token (docs/roadmap/archive/49 K5), so by the time this
 // runs, token is guaranteed non-empty and every call is checked.
 func authInterceptor(token string) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {

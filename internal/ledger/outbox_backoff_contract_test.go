@@ -1,6 +1,6 @@
 //go:build integration
 
-// Proves the outbox backoff behavior from docs/plan/12 Task T2 against real
+// Proves the outbox backoff behavior from docs/roadmap/archive/12 Task T2 against real
 // Postgres — sqlmock can't execute POWER()/random() to verify the actual
 // computed delay, and can't prove ReapStuck genuinely leaves retry_count
 // untouched at the database level (only that the Go code sent a query
@@ -53,7 +53,7 @@ func getOutboxEvent(t *testing.T, db *database.DBSQL, id uuid.UUID) outboxEventR
 
 // TestSchemaContract_OutboxBackoff_MarkFailedSetsExponentialDelay proves
 // next_attempt_at is set to base*2^retryCount (+ jitter, cap 15m) after each
-// MarkFailed call, using base=30s per docs/plan/12 Task T2's formula.
+// MarkFailed call, using base=30s per docs/roadmap/archive/12 Task T2's formula.
 func TestSchemaContract_OutboxBackoff_MarkFailedSetsExponentialDelay(t *testing.T) {
 	db := setupSchemaTestDB(t)
 	outboxRepo := repository.NewOutboxRepository(db)
@@ -117,7 +117,7 @@ func TestSchemaContract_OutboxBackoff_MarkFailedDelay_RespectsCap(t *testing.T) 
 }
 
 // TestSchemaContract_OutboxBackoff_ReapStuck_DoesNotIncrementRetryCount is
-// the core proof for docs/plan/12 Task T2: an event reaped multiple times
+// the core proof for docs/roadmap/archive/12 Task T2: an event reaped multiple times
 // (simulating a broker outage spanning several StuckAfter windows) must
 // never have its retry_count touched by the reaper — only a genuine publish
 // attempt (MarkFailed) may increment it. Otherwise repeated reaping alone
@@ -202,7 +202,7 @@ func TestSchemaContract_OutboxBackoff_ClaimFailedForRetry_NullNextAttemptAt_Clai
 	require.Equal(t, id, claimed[0].ID)
 }
 
-// ─── Admin dead-letter replay (docs/plan/12 Task T3) ───────────────────────────
+// ─── Admin dead-letter replay (docs/roadmap/archive/12 Task T3) ───────────────────────────
 
 // TestSchemaContract_OutboxReplay_DeadEventBecomesFailedAndClaimable proves
 // the full lifecycle: a dead-lettered event, replayed by an admin, goes back
@@ -286,7 +286,7 @@ func TestSchemaContract_OutboxReplay_ReplayAllDead_RespectsOlderThanAndCap(t *te
 	require.Equal(t, "failed", getOutboxEvent(t, db, stillFailed).Status, "non-dead event must be untouched")
 }
 
-// TestSchemaContract_ListDead_ThenReplay_DisappearsFromList is docs/plan/25
+// TestSchemaContract_ListDead_ThenReplay_DisappearsFromList is docs/roadmap/archive/25
 // Task T5's required integration journey: a dead event shows up in
 // ListDead, and after ReplayDead resets it to 'failed' it no longer does —
 // proving the admin list endpoint and the replay endpoint agree on what

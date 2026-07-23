@@ -30,19 +30,19 @@ const (
 	defaultEntriesLimit = 50
 	maxEntriesLimit     = 200
 	// maxStatementDays caps a statement request's [from, to] span
-	// (docs/plan/15 Task T2, decision K7) — checked here (cheap, no DB
+	// (docs/roadmap/archive/15 Task T2, decision K7) — checked here (cheap, no DB
 	// touch) before calling the service, which separately enforces the
 	// row-count cap (needs actual query results).
 	maxStatementDays = 92
 )
 
 // adminOnlyTypes are transaction types that must never be triggered without
-// an admin JWT — compliance/correction actions (docs/plan/05 Task 1b.4).
+// an admin JWT — compliance/correction actions (docs/roadmap/archive/05 Task 1b.4).
 // Enforced on BOTH routers as defense in depth, even though the internal
-// router is already network-isolated (docs/plan/10 Task T1).
+// router is already network-isolated (docs/roadmap/archive/10 Task T1).
 //
 // adjustment_credit/adjustment_debit are deliberately ABSENT here — as of
-// docs/plan/16 Task T1, they aren't merely admin-gated, they are blocked
+// docs/roadmap/archive/16 Task T1, they aren't merely admin-gated, they are blocked
 // from direct POST entirely (see directPostBlockedTypes below) and only
 // reachable via the maker-checker /admin/adjustments flow.
 var adminOnlyTypes = map[string]bool{
@@ -57,7 +57,7 @@ var adminOnlyTypes = map[string]bool{
 // public-facing router (NewRouter). Everything else — money movement to/from
 // system accounts (money_in, refund, withdraw settlement, escrow release,
 // fee_collect) plus the adminOnlyTypes above — is only reachable via the
-// internal router (NewInternalRouter, docs/plan/10 Task T1). This closes the
+// internal router (NewInternalRouter, docs/roadmap/archive/10 Task T1). This closes the
 // hole where any authenticated user could credit their own cash from a
 // settlement account with no real deposit behind it.
 var publicUserTypes = map[string]bool{
@@ -77,7 +77,7 @@ func NewRouter(svc Service) http.Handler {
 	return NewRouterWithPolicy(svc, nil)
 }
 
-// NewRouterWithPolicy is NewRouter plus a policy engine (docs/plan/17 Task
+// NewRouterWithPolicy is NewRouter plus a policy engine (docs/roadmap/archive/17 Task
 // T1) — evaluated before every publicUserTypes posting. Pass nil for
 // policy to get NewRouter's behavior exactly (no limit checks at all).
 func NewRouterWithPolicy(svc Service, policy PolicyChecker) http.Handler {
@@ -91,11 +91,11 @@ func NewRouterWithOptions(svc Service, policy PolicyChecker, feePolicy *feepolic
 }
 
 // NewRouterWithFraud is NewRouterWithOptions plus a fraud screening client
-// (docs/plan/37): every public-router posting is screened BEFORE svc.Post
+// (docs/roadmap/archive/37): every public-router posting is screened BEFORE svc.Post
 // is called — before any DB transaction opens, unlike the old in-transaction
 // PrePostHook seam this replaces. A nil fraudClient disables screening
 // entirely (same "absent = no-op" convention as policy/feePolicy). A nil
-// logger falls back to slog.Default(). feeQuoteTTL (docs/plan/38 Task T3)
+// logger falls back to slog.Default(). feeQuoteTTL (docs/roadmap/archive/38 Task T3)
 // <=0 falls back to feepolicy.DefaultQuoteTTL.
 func NewRouterWithFraud(svc Service, policy PolicyChecker, feePolicy *feepolicy.Policy, fraudClient *fraudcheck.Client, logger *slog.Logger, feeQuoteTTL time.Duration) http.Handler {
 	if logger == nil {
@@ -133,7 +133,7 @@ func (h *handler) mux() http.Handler {
 	mux.HandleFunc("GET /accounts/{id}/statement", h.getStatement)
 	mux.HandleFunc("POST /accounts/pockets", h.createPocket)
 
-	// Fee quotes (docs/plan/38 Task T3) — PUBLIC router only: this is the
+	// Fee quotes (docs/roadmap/archive/38 Task T3) — PUBLIC router only: this is the
 	// "what will I pay" preview an end user requests before committing to a
 	// transaction. Reachable automatically as
 	// /api/v1/ledger/fees/quote via the existing gateway proxy, no gateway
@@ -142,7 +142,7 @@ func (h *handler) mux() http.Handler {
 		mux.HandleFunc("POST /fees/quote", h.createQuote)
 	}
 
-	// Scheduled transactions (docs/plan/19 Task T1) — on BOTH routers, a
+	// Scheduled transactions (docs/roadmap/archive/19 Task T1) — on BOTH routers, a
 	// user manages only their own schedules (ownership enforced in
 	// internal/ledger/service/schedule), same as listAccounts/getBalance above.
 	mux.HandleFunc("POST /schedules", h.createSchedule)
@@ -151,7 +151,7 @@ func (h *handler) mux() http.Handler {
 	mux.HandleFunc("POST /schedules/{id}/resume", h.resumeSchedule)
 	mux.HandleFunc("POST /schedules/{id}/cancel", h.cancelSchedule)
 
-	// Admin outbox dead-letter replay (docs/plan/12 Task T3) — internal
+	// Admin outbox dead-letter replay (docs/roadmap/archive/12 Task T3) — internal
 	// router ONLY (allowedTypes == nil is this package's existing signal
 	// for "this is the internal router", set by NewInternalRouter). Also
 	// admin-gated inside the handlers themselves — defense in depth, since
@@ -162,7 +162,7 @@ func (h *handler) mux() http.Handler {
 		mux.HandleFunc("POST /admin/outbox/dead/replay-all", h.replayAllDeadEvents)
 		mux.HandleFunc("GET /admin/outbox/dead", h.listDeadEvents)
 
-		// Maker-checker adjustment governance (docs/plan/16 Task T1) —
+		// Maker-checker adjustment governance (docs/roadmap/archive/16 Task T1) —
 		// internal router only, admin-gated inside each handler. This is
 		// the ONLY reachable path to adjustment_credit/adjustment_debit —
 		// see the directPostBlockedTypes check in postTransaction.
@@ -172,7 +172,7 @@ func (h *handler) mux() http.Handler {
 		mux.HandleFunc("GET /admin/adjustments", h.listAdjustments)
 		mux.HandleFunc("GET /admin/adjustments/{id}", h.getAdjustment)
 
-		// External reconciliation (docs/plan/16 Task T2) — internal router
+		// External reconciliation (docs/roadmap/archive/16 Task T2) — internal router
 		// only, admin-gated. Resolve creates a pending adjustment via the
 		// same maker-checker path above; it never moves money by itself.
 		mux.HandleFunc("POST /admin/recon/batches", h.createReconBatch)
@@ -180,24 +180,24 @@ func (h *handler) mux() http.Handler {
 		mux.HandleFunc("GET /admin/recon/batches/{id}", h.getReconBatch)
 		mux.HandleFunc("POST /admin/recon/items/{id}/resolve", h.resolveReconItem)
 
-		// Schedule runner ops/testing trigger (docs/plan/19 Task T1 step 5)
+		// Schedule runner ops/testing trigger (docs/roadmap/archive/19 Task T1 step 5)
 		// — internal router only, admin-gated.
 		mux.HandleFunc("POST /admin/schedules/run", h.runSchedulesNow)
 
-		// Batch disbursement (docs/plan/19 Task T2) — internal router only,
+		// Batch disbursement (docs/roadmap/archive/19 Task T2) — internal router only,
 		// admin-gated.
 		mux.HandleFunc("POST /admin/disbursements", h.createDisbursementBatch)
 		mux.HandleFunc("POST /admin/disbursements/{id}/run", h.runDisbursement)
 		mux.HandleFunc("GET /admin/disbursements/{id}", h.getDisbursementReport)
 
-		// Interest accrual (docs/plan/19 Task T3) — internal router only,
+		// Interest accrual (docs/roadmap/archive/19 Task T3) — internal router only,
 		// admin-gated.
 		mux.HandleFunc("PUT /admin/savings/{account_id}", h.setSavingsConfig)
 		mux.HandleFunc("GET /admin/savings", h.listSavingsConfigs)
 
 		mux.HandleFunc("GET /admin/reports/{kind}", h.getReport)
 
-		// Database-driven fee management (docs/plan/33 Task T3). Disable is
+		// Database-driven fee management (docs/roadmap/archive/33 Task T3). Disable is
 		// represented by enabled=false so pricing history remains auditable.
 		mux.HandleFunc("GET /admin/ledger/fee-rules", h.listFeeRules)
 		mux.HandleFunc("POST /admin/ledger/fee-rules", h.createFeeRule)
@@ -343,7 +343,7 @@ func (h *handler) updateFeeRule(w http.ResponseWriter, r *http.Request) {
 	response.OK(w, toFeeRuleResponse(rule))
 }
 
-// createQuote serves POST /fees/quote (docs/plan/38 Task T3, public router
+// createQuote serves POST /fees/quote (docs/roadmap/archive/38 Task T3, public router
 // only) — user_id always comes from the JWT, never the request body, same
 // principle as postTransaction's own userID handling. Topup (money_in) is
 // explicitly quotable even though it can't be POSTed directly here — a
@@ -403,7 +403,7 @@ func (h *handler) createQuote(w http.ResponseWriter, r *http.Request) {
 
 // directPostBlockedTypes are transaction types that must NEVER be posted
 // directly through POST /transactions, on either router — the ONLY path to
-// them is the maker-checker adjustment flow (docs/plan/16 Task T1, decision
+// them is the maker-checker adjustment flow (docs/roadmap/archive/16 Task T1, decision
 // K8). Distinct from adminOnlyTypes: those are gated by role, these are
 // gated out of existence on this endpoint entirely, admin or not.
 var directPostBlockedTypes = map[string]bool{
@@ -420,30 +420,30 @@ type handler struct {
 	// non-nil is an explicit allowlist (public router).
 	allowedTypes map[string]bool
 	// feePolicy computes server-side fees for the public router
-	// (docs/plan/10 Task T3) — see buildMetadata in metadata.go.
+	// (docs/roadmap/archive/10 Task T3) — see buildMetadata in metadata.go.
 	feePolicy *feepolicy.Policy
-	// policy evaluates per-user/per-type limits (docs/plan/17 Task T1)
+	// policy evaluates per-user/per-type limits (docs/roadmap/archive/17 Task T1)
 	// before postTransaction calls svc.Post. nil on the internal router —
 	// trusted internal callers (payment-gateway webhooks, ops tooling) are
 	// not subject to end-user velocity limits.
 	policy PolicyChecker
 	// fraudClient screens a candidate transaction BEFORE any DB work
-	// (docs/plan/37) — nil on the internal router (disbursement/adjustment/
+	// (docs/roadmap/archive/37) — nil on the internal router (disbursement/adjustment/
 	// system postings are not user-flow screening targets) and nil-safe on
 	// the public router too (screening simply skipped if never configured,
 	// same "absent = no-op" convention as feePolicy/policy above).
 	fraudClient *fraudcheck.Client
 	logger      *slog.Logger
 	// feeQuoteTTL is how long a quote created via POST /fees/quote
-	// (docs/plan/38 Task T3) stays consumable. <=0 falls back to
+	// (docs/roadmap/archive/38 Task T3) stays consumable. <=0 falls back to
 	// feepolicy.DefaultQuoteTTL.
 	feeQuoteTTL time.Duration
 }
 
 // PolicyChecker is satisfied structurally by internal/policy.Engine —
 // defined here, not imported from there, so the ledger module never
-// depends on internal/policy (docs/plan/17 Task T1, decision K-S S1:
-// "ledger module tidak tahu-menahu").
+// depends on internal/policy (docs/roadmap/archive/17 Task T1, decision K-S S1:
+// "the ledger module must not know about policy limits").
 type PolicyChecker interface {
 	// Check reports whether userID may post a txType transaction of the
 	// given amount. allowed=false means reject; rule names which limit
@@ -535,14 +535,14 @@ func (h *handler) postTransaction(w http.ResponseWriter, r *http.Request) {
 	// cannot spoof another user's scope or collide with their keys. The
 	// internal router (allowedTypes == nil, trusted caller) may pass an
 	// explicit scope — e.g. a payment-gateway webhook handler scoping by
-	// provider transaction id rather than by end-user (docs/plan/10 T2).
+	// provider transaction id rather than by end-user (docs/roadmap/archive/10 T2).
 	idemScope := userID.String()
 	if h.allowedTypes == nil && req.IdempotencyScope != "" {
 		idemScope = req.IdempotencyScope
 	}
 
 	// Metadata is never passed through verbatim on the public router — see
-	// buildMetadata (metadata.go, docs/plan/10 Task T3): gateway is
+	// buildMetadata (metadata.go, docs/roadmap/archive/10 Task T3): gateway is
 	// validated, fee_amount/fee_gateway are stripped and replaced with a
 	// server-computed fee, and only a small set of descriptive keys survive.
 	metadata, err := h.buildMetadata(r.Context(), userID, req, amount)
@@ -590,10 +590,10 @@ func (h *handler) postTransaction(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// AML/fraud screening (docs/plan/37) — runs on the PUBLIC router ONLY,
+	// AML/fraud screening (docs/roadmap/archive/37) — runs on the PUBLIC router ONLY,
 	// same layer as the policy check above, BEFORE svc.Post ever opens a DB
 	// transaction. This replaces the old in-transaction PrePostHook seam
-	// (docs/plan/20), which held a FOR UPDATE row lock for up to 500ms per
+	// (docs/roadmap/archive/20), which held a FOR UPDATE row lock for up to 500ms per
 	// posting waiting on this exact same network round-trip. h.allowedTypes
 	// is nil on the internal router (disbursement/adjustment/system
 	// postings) — screening is a user-flow control, not applied there.
@@ -605,7 +605,7 @@ func (h *handler) postTransaction(w http.ResponseWriter, r *http.Request) {
 		verdict, ferr := h.fraudClient.Check(r.Context(), "p2p_transfer", req.Type, userID, amount, screenCurrency)
 		if ferr != nil {
 			if errors.Is(ferr, fraudcheck.ErrDependencyUnavailable) {
-				// docs/plan/45 Task T3/K4: fraud-service is reachable but its
+				// docs/roadmap/archive/45 Task T3/K4: fraud-service is reachable but its
 				// velocity dependency is down — fail CLOSED, unlike every
 				// other Check error below (fail open). No posting has
 				// happened yet.
@@ -626,7 +626,7 @@ func (h *handler) postTransaction(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Record AFTER Post succeeds — a failed posting must never consume quota
-	// (docs/plan/17 Task T1 step 2).
+	// (docs/roadmap/archive/17 Task T1 step 2).
 	if h.policy != nil {
 		h.policy.Record(r.Context(), userID, req.Type, amount)
 	}
@@ -792,7 +792,7 @@ func (h *handler) listEntries(w http.ResponseWriter, r *http.Request) {
 }
 
 // getStatement handles GET /accounts/{id}/statement?from=&to=&format=
-// (docs/plan/15 Task T2). from/to are inclusive Asia/Jakarta calendar dates.
+// (docs/roadmap/archive/15 Task T2). from/to are inclusive Asia/Jakarta calendar dates.
 // format defaults to json; csv streams row-by-row rather than buffering the
 // whole (up to 5,000-row) body in memory.
 func (h *handler) getStatement(w http.ResponseWriter, r *http.Request) {
@@ -867,7 +867,7 @@ func (h *handler) getStatement(w http.ResponseWriter, r *http.Request) {
 }
 
 // writeStatementCSV streams the statement row by row — never buffers the
-// full (up to 5,000-row) body in memory (docs/plan/15 Task T2, decision K7,
+// full (up to 5,000-row) body in memory (docs/roadmap/archive/15 Task T2, decision K7,
 // box-size constraint). encoding/csv handles RFC 4180 escaping.
 func writeStatementCSV(w http.ResponseWriter, stmt model.Statement) {
 	w.Header().Set("Content-Type", "text/csv")
@@ -915,7 +915,7 @@ func (h *handler) createPocket(w http.ResponseWriter, r *http.Request) {
 	response.Created(w, toAccountResponse(acc))
 }
 
-// ─── Admin: outbox dead-letter replay (docs/plan/12 Task T3) ──────────────────
+// ─── Admin: outbox dead-letter replay (docs/roadmap/archive/12 Task T3) ──────────────────
 //
 // Both handlers are only ever registered on the internal router (see mux)
 // but are admin-gated here too as defense in depth — this is a sensitive,
@@ -970,7 +970,7 @@ func (h *handler) replayAllDeadEvents(w http.ResponseWriter, r *http.Request) {
 	response.OK(w, replayAllDeadResponse{ReplayedCount: n})
 }
 
-// listDeadEvents serves GET /admin/outbox/dead?limit=&offset= (docs/plan/25
+// listDeadEvents serves GET /admin/outbox/dead?limit=&offset= (docs/roadmap/archive/25
 // Task T5) — lets an operator see what needs replay without querying
 // Postgres directly.
 func (h *handler) listDeadEvents(w http.ResponseWriter, r *http.Request) {
@@ -1009,7 +1009,7 @@ func (h *handler) listDeadEvents(w http.ResponseWriter, r *http.Request) {
 	response.OK(w, listDeadOutboxEventsResponse{Events: out})
 }
 
-// ─── Maker-checker adjustments (docs/plan/16 Task T1) ──────────────────────
+// ─── Maker-checker adjustments (docs/roadmap/archive/16 Task T1) ──────────────────────
 // Internal router only, admin-gated in every handler — defense in depth on
 // top of network isolation, same pattern as the outbox replay endpoints
 // above. This is the ONLY reachable path to adjustment_credit/
@@ -1044,7 +1044,7 @@ func (h *handler) createAdjustment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// user_id is required for adjustment_credit/debit but absent for
-	// adjustment_suspense_credit/debit (docs/plan/16 Task T2), which target
+	// adjustment_suspense_credit/debit (docs/roadmap/archive/16 Task T2), which target
 	// a gateway's suspense account via req.Metadata["gateway"] instead —
 	// svc.CreateAdjustment enforces which one is actually required per type.
 	var targetUserID uuid.UUID
@@ -1163,14 +1163,14 @@ func (h *handler) listAdjustments(w http.ResponseWriter, r *http.Request) {
 	response.OK(w, listAdjustmentsResponse{Adjustments: out})
 }
 
-// ─── External reconciliation (docs/plan/16 Task T2) ────────────────────────
+// ─── External reconciliation (docs/roadmap/archive/16 Task T2) ────────────────────────
 // Internal router only, admin-gated in every handler — same defense-in-depth
 // pattern as the adjustment endpoints above. resolveReconItem creates a
 // pending adjustment via the maker-checker path; it never moves money by
 // itself (decision K5 step 5).
 
 // maxReconCSVUploadBytes caps the multipart request body — a 50,000-row CSV
-// (the service-layer row cap, docs/plan/16 Task T2 step 3) at a generous
+// (the service-layer row cap, docs/roadmap/archive/16 Task T2 step 3) at a generous
 // worst-case row width fits well under this; a request over the limit is
 // rejected outright rather than partially read.
 const maxReconCSVUploadBytes = 10 << 20 // 10MiB
@@ -1232,7 +1232,7 @@ func (h *handler) createReconBatch(w http.ResponseWriter, r *http.Request) {
 
 // parseReconCSV streams external_ref,amount,settled_at rows — header order
 // is flexible (matched by name), amount is validated integral minor-unit
-// (same rule as every other amount in this API, docs/plan/10 Task T4).
+// (same rule as every other amount in this API, docs/roadmap/archive/10 Task T4).
 func parseReconCSV(r io.Reader) ([]model.ReconImportRow, error) {
 	cr := csv.NewReader(r)
 	header, err := cr.Read()
@@ -1313,7 +1313,7 @@ func (h *handler) getReconBatch(w http.ResponseWriter, r *http.Request) {
 }
 
 // listReconBatches serves GET /admin/recon/batches?limit=&offset=
-// (docs/plan/25 Task T5) — lets an operator find a batch's id without SQL
+// (docs/roadmap/archive/25 Task T5) — lets an operator find a batch's id without SQL
 // before drilling into GET /admin/recon/batches/{id}.
 func (h *handler) listReconBatches(w http.ResponseWriter, r *http.Request) {
 	if !isAdmin(r) {
@@ -1396,7 +1396,7 @@ func (h *handler) resolveReconItem(w http.ResponseWriter, r *http.Request) {
 	response.Created(w, resolveReconItemResponse{AdjustmentID: adjustmentID})
 }
 
-// ─── Scheduled transactions (docs/plan/19 Task T1) ──────────────────────────
+// ─── Scheduled transactions (docs/roadmap/archive/19 Task T1) ──────────────────────────
 // createSchedule/listSchedules/pauseSchedule/resumeSchedule/cancelSchedule
 // are on the PUBLIC router — a user manages only their own schedules
 // (ownership enforced in internal/ledger/service/schedule, same
@@ -1528,7 +1528,7 @@ func (h *handler) cancelSchedule(w http.ResponseWriter, r *http.Request) {
 }
 
 // runSchedulesNow is an ops/testing trigger for the daily schedule runner
-// (docs/plan/19 Task T1 step 5) — internal router only, admin-gated. date
+// (docs/roadmap/archive/19 Task T1 step 5) — internal router only, admin-gated. date
 // defaults to today (Asia/Jakarta) if omitted.
 func (h *handler) runSchedulesNow(w http.ResponseWriter, r *http.Request) {
 	if !isAdmin(r) {
@@ -1553,7 +1553,7 @@ func (h *handler) runSchedulesNow(w http.ResponseWriter, r *http.Request) {
 	response.OK(w, runSchedulesResponse{Executed: executed, Failed: failed})
 }
 
-// ─── Batch disbursement (docs/plan/19 Task T2) ──────────────────────────────
+// ─── Batch disbursement (docs/roadmap/archive/19 Task T2) ──────────────────────────────
 // Internal router only, admin-gated in every handler — same defense-in-depth
 // pattern as recon/adjustments above. Import only persists items ('pending');
 // Run is the ONLY execution path, called repeatedly (by ops/a script) until
@@ -1704,7 +1704,7 @@ func (h *handler) getDisbursementReport(w http.ResponseWriter, r *http.Request) 
 	response.OK(w, toDisbursementBatchReportResponse(report))
 }
 
-// ─── Interest accrual (docs/plan/19 Task T3) ────────────────────────────────
+// ─── Interest accrual (docs/roadmap/archive/19 Task T3) ────────────────────────────────
 // Internal router only, admin-gated — same defense-in-depth pattern as
 // every other admin surface above.
 
@@ -1749,16 +1749,16 @@ func (h *handler) listSavingsConfigs(w http.ResponseWriter, r *http.Request) {
 	response.OK(w, listSavingsConfigsResponse{Configs: out})
 }
 
-// ─── AML/fraud screening (docs/plan/20 Task T1) ─────────────────────────────
+// ─── AML/fraud screening (docs/roadmap/archive/20 Task T1) ─────────────────────────────
 // Internal router only, admin-gated — same defense-in-depth pattern as
 // every other admin surface above. Read-only: this is compliance/ops
 // visibility into what the screening hooks found, never a write path.
 
-// ─── Regulatory reporting (docs/plan/20 Task T2) ────────────────────────────
+// ─── Regulatory reporting (docs/roadmap/archive/20 Task T2) ────────────────────────────
 // Internal router only, admin-gated. Purely read-only over the
 // migrations/000018 views — zero write path. format=csv streams row by row
 // (encoding/csv straight to the response), same pattern as
-// writeStatementCSV (docs/plan/15 Task T2) — never fully buffered.
+// writeStatementCSV (docs/roadmap/archive/15 Task T2) — never fully buffered.
 
 // maxReportDays caps a single report query's date range — same rationale as
 // maxStatementDays: bound the view scan and the CSV response size on a

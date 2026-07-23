@@ -1,4 +1,4 @@
-// Package mockvendor is a stand-in payment vendor (docs/plan/22 Task T1,
+// Package mockvendor is a stand-in payment vendor (docs/roadmap/archive/22 Task T1,
 // decision K-T6) — used until a real vendor account exists. Its webhook
 // shape and HMAC-SHA256 signature scheme are made up (not modeled on any
 // real vendor); the point is to exercise internal/vendorgw's contract and
@@ -26,7 +26,7 @@ import (
 const VendorName = "mockvendor"
 
 // settledEventType is the only webhookPayload.Type VerifyAndParse turns
-// into a PayinEvent (docs/plan/22 scope: settled-only) — anything else is
+// into a PayinEvent (docs/roadmap/archive/22 scope: settled-only) — anything else is
 // acknowledged but ignored.
 const settledEventType = "payment.settled"
 
@@ -39,7 +39,7 @@ type Verifier struct {
 	secret string
 }
 
-// New constructs a verifier registered under name (docs/plan/40 Task T4 —
+// New constructs a verifier registered under name (docs/roadmap/archive/40 Task T4 —
 // parameterized so a second mock vendor, e.g. "mockvendor2", can be
 // registered alongside the first with its own secret and fully isolated
 // signature verification). Existing callers pass VendorName to get

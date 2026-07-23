@@ -5,13 +5,13 @@
 # signed mockvendor webhook → poll until settled → assert balance via
 # `docker exec psql`. This is the CONTAINER counterpart to
 # scripts/smoke-test.sh (which builds and runs six binaries on the HOST
-# against Compose Postgres/Redis/RabbitMQ only) — docs/plan/44 Task T1/K4.
+# against Compose Postgres/Redis/RabbitMQ only) — docs/roadmap/archive/44 Task T1/K4.
 #
 # Deliberately standalone: does NOT source scripts/lib.sh and does not
 # start/stop host binaries. lib.sh's lifecycle (build_server, start_services,
 # gen_token, psql_exec against $DB_USER) is for the HOST-BINARY gate; mixing
 # the two process models in one script has bitten this repo before (see
-# PROJECT_GUIDE.md's "one debug script, not repeated source scripts/lib.sh"
+# docs/development/project-guide.md's "one debug script, not repeated source scripts/lib.sh"
 # gotcha) — this script's container lifecycle is self-contained instead.
 #
 # Usage:
@@ -89,15 +89,24 @@ trap cleanup EXIT
 # save_diagnostics (K4 step 7) — allowlisted only: compose ps, health
 # inspect, and container logs. Never binaries, .env, git metadata, or a
 # full environment dump (K6's artifact allowlist).
+#
+# `docker compose ps` (without -a) only lists RUNNING containers — found
+# live: a container that crashed and exited before this ran (e.g.
+# postgres exiting non-zero, which makes Compose's own dependency-wait
+# fail the whole `up`) was invisible to `ps -q`, so its cid came back
+# empty and its own crash log — the one artifact that would have
+# explained the failure — was silently never captured. `-a` includes
+# stopped containers too, so a container's exit doesn't erase the
+# evidence of why it exited.
 save_diagnostics() {
 	log "saving failure diagnostics to $ARTIFACT_DIR"
 	mkdir -p "$ARTIFACT_DIR"
-	docker compose --profile app ps >"$ARTIFACT_DIR/compose-ps.txt" 2>&1 || true
+	docker compose --profile app ps -a >"$ARTIFACT_DIR/compose-ps.txt" 2>&1 || true
 	for svc in "${EXPECTED_SERVICES[@]}"; do
 		local cid
-		cid="$(docker compose --profile app ps -q "$svc" 2>/dev/null || true)"
+		cid="$(docker compose --profile app ps -a -q "$svc" 2>/dev/null || true)"
 		if [ -n "$cid" ]; then
-			docker inspect "$cid" --format '{{json .State.Health}}' >"$ARTIFACT_DIR/health-$svc.json" 2>&1 || true
+			docker inspect "$cid" --format '{{json .State}}' >"$ARTIFACT_DIR/state-$svc.json" 2>&1 || true
 			docker logs "$cid" >"$ARTIFACT_DIR/logs-$svc.txt" 2>&1 || true
 		fi
 	done
@@ -108,11 +117,18 @@ save_diagnostics() {
 log "resetting: docker compose --profile app down -v --remove-orphans"
 docker compose --profile app down -v --remove-orphans >/dev/null 2>&1 || true
 
-# docs/plan/49 K3: every app-profile container now mounts ./deploy/certs
+# The Postgres container mounts two local backup secret files. A fresh CI
+# runner does not have them yet, so create them before Compose validates its
+# mounts. The target is idempotent, writes only gitignored files, and never
+# prints their values.
+log "generating local backup secrets..."
+make backup-secret >/dev/null
+
+# docs/roadmap/archive/49 K3: every app-profile container now mounts ./deploy/certs
 # read-only (x-cert-volume in docker-compose.yml) — `make certs` writes the
 # CA + per-service leaves there before compose ever starts a container.
 # Idempotent, so re-running this script never thrashes still-fresh certs.
-log "generating mTLS certificates (docs/plan/49 K3)..."
+log "generating mTLS certificates (docs/roadmap/archive/49 K3)..."
 make certs >/dev/null
 
 if [ "${SEEV_SMOKE_NO_BUILD:-0}" = "1" ]; then
@@ -152,7 +168,7 @@ fi
 # what `docker compose ps` currently shows running. `docker compose ps`
 # (with or without --profile) lists every container in the whole PROJECT
 # regardless of profile — confirmed empirically: on a machine that also has
-# the `observability` profile containers up (docs/plan/43), `ps --services
+# the `observability` profile containers up (docs/roadmap/archive/43), `ps --services
 # --status running` returned alloy/grafana/loki/prometheus/tempo alongside
 # the 11 app-profile services, which would have made this assertion falsely
 # fail. `config --services` is the STATIC definition instead — immune to

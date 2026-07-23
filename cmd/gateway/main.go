@@ -53,7 +53,7 @@ func main() {
 		log.Warn("config: " + w)
 	}
 
-	// ─── TLS identity (docs/plan/49 K3/K5) ─────────────────────────────────────
+	// ─── TLS identity (docs/roadmap/archive/49 K3/K5) ─────────────────────────────────────
 	certSrc, err := tlsx.LoadFromDir(cfg.TLSCertDir, "gateway", log)
 	if err != nil {
 		log.Error("failed to load TLS certificates", "error", err)
@@ -61,7 +61,7 @@ func main() {
 	}
 	defer certSrc.Stop()
 
-	// ─── Tracing (optional — docs/plan/12 Task T5) ─────────────────────────────
+	// ─── Tracing (optional — docs/roadmap/archive/12 Task T5) ─────────────────────────────
 	// A setup failure here is deliberately non-fatal: tracing is pure
 	// observability, never load-bearing for moving money, so a
 	// misconfigured OTEL_EXPORTER_OTLP_ENDPOINT must not take down the
@@ -85,7 +85,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	// ─── Redis (optional — docs/plan/12 Task T1) ───────────────────────────────
+	// ─── Redis (optional — docs/roadmap/archive/12 Task T1) ───────────────────────────────
 	// REDIS_ENABLED defaults to true (safe default for existing/multi-replica
 	// deployments). Operators of a single small instance can set it to false;
 	// rate limiting and the scheduler lock then fall back to in-memory
@@ -132,19 +132,19 @@ func main() {
 		os.Exit(1)
 	}
 
-	// ─── Payin module (docs/plan/22 Task T2/T3, decision K-T2/K-T6) ────────────
+	// ─── Payin module (docs/roadmap/archive/22 Task T2/T3, decision K-T2/K-T6) ────────────
 	// vendorRegistry starts empty and gains one entry per enabled vendor —
 	// zero vendors enabled (the default) means every /webhooks/{vendor}
 	// request 404s, byte-identical to before this feature existed. Adding a
 	// real vendor later is one more `if cfg.Vendor.X.Enabled { ... }` block
-	// here; internal/payin never changes (docs/plan/21 K-T6).
-	// ─── Payout module (docs/plan/23 Task T3/T5, decision K-T3/K-T6) ──────────
+	// here; internal/payin never changes (docs/roadmap/archive/21 K-T6).
+	// ─── Payout module (docs/roadmap/archive/23 Task T3/T5, decision K-T3/K-T6) ──────────
 	// Shares vendorRegistry with payin above — the same enabled vendor can
 	// (and for mockvendor, does) implement both PayinVerifier and
 	// PayoutProvider; the registry keeps the two lookups separate
 	// internally. StartWorkers launches the resume/polling job (Task T3
 	// step 3) that re-drives crashed/stalled requests.
-	// ─── Notify module (docs/plan/25 Task T4) ──────────────────────────────────
+	// ─── Notify module (docs/roadmap/archive/25 Task T4) ──────────────────────────────────
 	// The first RabbitMQ CONSUMER in this codebase — mq (messaging.Broker)
 	// satisfies notify.Broker directly (Consumer + TopologyManager), same
 	// "pass the concrete broker, narrowed by a local structural interface"
@@ -178,12 +178,12 @@ func main() {
 	// for direct end-user use; the internal router accepts everything
 	// (money_in, refund, withdraw settlement, escrow release, fee_collect,
 	// /metrics, admin tooling) and is bound to InternalBindAddr (127.0.0.1 by
-	// default) — never expose it to an untrusted network (docs/plan/10 T1).
+	// default) — never expose it to an untrusted network (docs/roadmap/archive/10 T1).
 	publicRouter := handler.NewRouter(cfg, deps, log)
 	internalRouter := handler.NewInternalRouter(cfg, deps, log)
 
 	// ─── Servers ──────────────────────────────────────────────────────────────
-	// Public listener stays plain HTTP (docs/plan/49 anti-scope: gateway
+	// Public listener stays plain HTTP (docs/roadmap/archive/49 anti-scope: gateway
 	// :8080 is one of the two deliberate edge-public exceptions). The
 	// internal listener requires mTLS (K6) — admin-bff, Prometheus, and
 	// dev-operator/harness are its only legitimate callers.

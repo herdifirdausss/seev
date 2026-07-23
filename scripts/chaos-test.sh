@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Chaos test suite for the seev ledger (docs/plan/12 Task T7).
+# Chaos test suite for the seev ledger (docs/roadmap/archive/12 Task T7).
 #
 # Empirical proof — not a design claim — that no money is lost when the
 # server process or a dependency dies mid-flight. Each scenario asserts
@@ -15,16 +15,16 @@
 #   ./scripts/chaos-test.sh 2        # broker (RabbitMQ) down
 #   ./scripts/chaos-test.sh 3        # Postgres restart mid-traffic
 #   ./scripts/chaos-test.sh 4        # Redis down
-#   ./scripts/chaos-test.sh 5        # payout crash-mid-flight (docs/plan/23 Task T6)
+#   ./scripts/chaos-test.sh 5        # payout crash-mid-flight (docs/roadmap/archive/23 Task T6)
 #   ./scripts/chaos-test.sh 6        # payin down -> webhook 503 -> redelivery heals
 #   ./scripts/chaos-test.sh 7        # fraud down fail-open + block-mode E2E
-#   ./scripts/chaos-test.sh 8        # vendor failover: force-fail -> failover/pin -> recovery (docs/plan/40 Task T6)
-#   ./scripts/chaos-test.sh 9        # Redis outage: selective hot-swap + fraud fail-closed (docs/plan/45 Task T4)
-#   ./scripts/chaos-test.sh 10       # distributed breaker across two payout replicas (docs/plan/45 Task T4)
-#   ./scripts/chaos-test.sh 11       # payout crash after command enqueue / after network timeout (docs/plan/45 Task T4)
-#   ./scripts/chaos-test.sh 12       # assurance restart catches backlog and resolves recovery (docs/plan/48)
-#   ./scripts/chaos-test.sh 13       # ledger outage preserves assurance cursor/finding (docs/plan/48)
-#   ./scripts/chaos-test.sh 14       # owner outage durable intake pause + maker/checker resume (docs/plan/48)
+#   ./scripts/chaos-test.sh 8        # vendor failover: force-fail -> failover/pin -> recovery (docs/roadmap/archive/40 Task T6)
+#   ./scripts/chaos-test.sh 9        # Redis outage: selective hot-swap + fraud fail-closed (docs/roadmap/archive/45 Task T4)
+#   ./scripts/chaos-test.sh 10       # distributed breaker across two payout replicas (docs/roadmap/archive/45 Task T4)
+#   ./scripts/chaos-test.sh 11       # payout crash after command enqueue / after network timeout (docs/roadmap/archive/45 Task T4)
+#   ./scripts/chaos-test.sh 12       # assurance restart catches backlog and resolves recovery (docs/roadmap/archive/48)
+#   ./scripts/chaos-test.sh 13       # ledger outage preserves assurance cursor/finding (docs/roadmap/archive/48)
+#   ./scripts/chaos-test.sh 14       # owner outage durable intake pause + maker/checker resume (docs/roadmap/archive/48)
 #   ./scripts/chaos-test.sh all      # run all fourteen in sequence
 #
 # Each scenario is independent and re-runs migrations against a throwaway
@@ -91,7 +91,7 @@ scenario_1() {
 	# silently overwrite their PID files with the new (already-dead) pids —
 	# every later stop/kill in this run would then target that dead pid while
 	# the real scenario-1-era process keeps running forever, invisible to the
-	# rest of the suite. Real bug found reproducing docs/plan/34 T2 scenario
+	# rest of the suite. Real bug found reproducing docs/roadmap/archive/34 T2 scenario
 	# 5/6/7 failures that only appeared inside `all`: the resume-job/webhook/
 	# fraud-hook checks in later scenarios were unknowingly talking to this
 	# orphaned scenario-1 ledger/payin/fraud-service the entire time.
@@ -158,7 +158,11 @@ scenario_2() {
 	docker start "$RABBITMQ_CONTAINER" >/dev/null
 	wait_for_container_healthy "$RABBITMQ_CONTAINER"
 
-	local tries=24 pending_or_failed
+	# RabbitMQ recovery can race the ledger relay's reconnect/backoff and the
+	# service restart churn in the preceding setup.  Wait four minutes for the
+	# durable outbox, rather than treating one still-retrying row as a product
+	# failure.
+	local tries=48 pending_or_failed
 	while [ "$tries" -gt 0 ]; do
 		pending_or_failed="$(psql_exec "$LEDGER_DB_NAME" -c "SELECT count(*) FROM outbox_events WHERE status IN ('pending','failed','processing');" | tr -d '[:space:]')"
 		[ "$pending_or_failed" = "0" ] && break
@@ -177,11 +181,11 @@ scenario_2() {
 
 	# The drained events include 10 transfer_p2p postings — once the relay
 	# has caught up, gateway's notify consumer must eventually see them too
-	# (docs/plan/34 Task T2: "restart -> relay drain -> notifikasi sampai").
+	# (docs/roadmap/archive/34 Task T2: "restart -> relay drain -> notifikasi sampai").
 	# This is the same outbox->RabbitMQ->consumer path as the happy-path
 	# business-e2e journey, just proven under a broker outage instead of a
 	# clean run.
-	await_notification "$token" "Transfer terkirim" || true
+	await_notification "$token" "Transfer sent" || true
 
 	assert_ledger_balanced
 	assert_no_inconsistent_projections
@@ -219,6 +223,11 @@ scenario_3() {
 		if [ "$i" -eq 10 ]; then
 			sleep 0.1
 			docker restart "$POSTGRES_CONTAINER" >/dev/null &
+			# The healthcheck can remain `healthy` for a short interval after
+			# an asynchronous restart is issued. Observe the transition before
+			# starting the next scenario (otherwise all-mode can race Postgres
+			# shutdown and make the following service fail to boot).
+			wait_for_container_restart "$POSTGRES_CONTAINER"
 		fi
 	done
 	wait
@@ -254,15 +263,15 @@ scenario_3() {
 
 scenario_4() {
 	log "=== Scenario 4: Redis down, then restarted with REDIS_ENABLED=false ==="
-	log "NOTE (docs/plan/12 Task T7, superseded in part by docs/plan/45 Task T3):"
+	log "NOTE (docs/roadmap/archive/12 Task T7, superseded in part by docs/roadmap/archive/45 Task T3):"
 	log "this scenario only proves the OPERATOR-DRIVEN mitigation path — restarting"
 	log "with REDIS_ENABLED=false to force the in-memory lock/limiter fallback."
 	log "The rate limiter and policy counter no longer NEED that restart: since"
-	log "docs/plan/45 T3, cache.FailoverLimiter/FailoverCounter hot-swap to memory"
+	log "docs/roadmap/archive/45 T3, cache.FailoverLimiter/FailoverCounter hot-swap to memory"
 	log "on Redis's first real-operation failure and recover automatically once"
 	log "Redis is healthy again, WITHOUT any restart — see scenario 9, which is the"
 	log "scenario that actually proves the hot-swap. Scheduler lock is unchanged by"
-	log "T3 (still skip-tick, by design — docs/plan/45 K4 explicitly keeps memory"
+	log "T3 (still skip-tick, by design — docs/roadmap/archive/45 K4 explicitly keeps memory"
 	log "fallback OUT of multi-replica scheduler locking)."
 	ensure_deps_up
 	build_server
@@ -290,10 +299,10 @@ scenario_4() {
 		fail "traffic rejected while Redis was down, got $code — rate limiter must fail open"
 	fi
 
-	log "restarting the server process with REDIS_ENABLED=false (the operator's actual mitigation for a known outage — picks up the in-memory lock/limiter fallback fresh; REDIS_ENABLED=true, the default, is a required-dependency fail-fast per docs/plan/12 T1 and would refuse to start against an unreachable Redis)..."
+	log "restarting the server process with REDIS_ENABLED=false (the operator's actual mitigation for a known outage — picks up the in-memory lock/limiter fallback fresh; REDIS_ENABLED=true, the default, is a required-dependency fail-fast per docs/roadmap/archive/12 T1 and would refuse to start against an unreachable Redis)..."
 	stop_server_gracefully
 	# fraud-service is excluded here: it CAN start with Redis down (since
-	# docs/plan/45 Task T3, cmd/fraud-service/main.go uses
+	# docs/roadmap/archive/45 Task T3, cmd/fraud-service/main.go uses
 	# cache.NewClientWithoutPing instead of an eager-ping constructor,
 	# specifically so fraud-service boots and runs fail-closed rather than
 	# refusing to start — see scenario 9), but this scenario simply doesn't
@@ -323,7 +332,7 @@ scenario_4() {
 	stop_server_gracefully
 }
 
-# ─── Scenario 5: payout crash mid-flight (docs/plan/23 Task T6) ─────────────
+# ─── Scenario 5: payout crash mid-flight (docs/roadmap/archive/23 Task T6) ─────────────
 #
 # Four kill points, one per non-terminal payout_requests status:
 #   - 'created' / 'held': reached by seeding the row directly via SQL rather
@@ -339,7 +348,7 @@ scenario_4() {
 #   - 'submitted': reached via a REAL POST /api/v1/payout with
 #     mock_mode=timeout — hold() succeeds, EnqueueInitialSubmit succeeds
 #     (status='submitted', a 'pending' command durably enqueued), then the
-#     relay's own async dispatch (docs/plan/45 Task T1 — provider.Submit is
+#     relay's own async dispatch (docs/roadmap/archive/45 Task T1 — provider.Submit is
 #     never called anywhere else) genuinely errors (infra failure), leaving
 #     the command 'failed'/backing-off exactly the way a real vendor timeout
 #     would. wait_for_vendor_call/wait_for_vendor_command_status prove the
@@ -373,7 +382,7 @@ backdate_payout() {
 }
 
 scenario_5() {
-	log "=== Scenario 5: payout crash-mid-flight (docs/plan/30 Task T6) ==="
+	log "=== Scenario 5: payout crash-mid-flight (docs/roadmap/archive/30 Task T6) ==="
 	ensure_deps_up
 	build_server
 	start_services
@@ -429,7 +438,7 @@ scenario_5() {
 		fail "kill point 3: create request did not return an id"
 	fi
 	wait_for_payout_status "$id_submitted" "submitted" 10
-	# docs/plan/45 Task T1: dispatch is async now (the relay's own ~1s poll
+	# docs/roadmap/archive/45 Task T1: dispatch is async now (the relay's own ~1s poll
 	# interval) — 'submitted' lands the instant Create enqueues, before the
 	# relay has necessarily even attempted the vendor call yet. Wait for the
 	# durable evidence that the vendor was ACTUALLY called and genuinely
@@ -464,7 +473,7 @@ scenario_5() {
 	# Simulate the external vendor having completed while payout-service was
 	# down: forced back to 'submitted' with no live command (the original
 	# command already completed toward vendor_pending, so it's neither live
-	# nor dead) — docs/plan/45 Task T1's resume job inserts a fresh command
+	# nor dead) — docs/roadmap/archive/45 Task T1's resume job inserts a fresh command
 	# for this genuine gap (HasDeadCommand is false — the most recent
 	# command 'completed', it didn't dead-letter), and the relay's own next
 	# dispatch pass reaches a terminal state idempotently.
@@ -479,7 +488,10 @@ scenario_5() {
 	psql_exec "$PAYOUT_DB_NAME" -c "INSERT INTO payout_requests (id,user_id,amount,currency,vendor,destination,status,hold_tx_id,created_by,created_at,updated_at) VALUES ('$id_ledger','$user_id',10000,'IDR','mockvendor','{\"bank_code\":\"014\",\"account_no\":\"1\"}'::jsonb,'held','$ledger_hold_tx','chaos_test',now(),now()-interval '2 minutes');" >/dev/null
 	kill_ledger_hard
 	log "waiting for payout resume to attempt settle while ledger is unavailable..."
-	sleep 65
+	# The payout resume scheduler is minute-granular and a -9 kill can leave its
+	# distributed lock leased for one scheduler timeout.  Two full ticks make
+	# this proof deterministic without changing the production cadence.
+	sleep 125
 	local during_ledger_down
 	during_ledger_down="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT status FROM payout_requests WHERE id='$id_ledger';")"
 	[ "$during_ledger_down" = "submitted" ] && ok "payout remained resumable while ledger was down" || fail "ledger-down payout status was '$during_ledger_down', expected submitted"
@@ -487,7 +499,7 @@ scenario_5() {
 	# Every resumable row may have recorded a fresh error timestamp while ledger
 	# was unavailable. Make all rows from this isolated run eligible immediately.
 	psql_exec "$PAYOUT_DB_NAME" -c "UPDATE payout_requests SET updated_at=now()-interval '2 minutes' WHERE user_id='$user_id' AND status IN ('created','held','submitted','vendor_pending');" >/dev/null
-	# docs/plan/45 Task T1: any command that failed while ledger was down
+	# docs/roadmap/archive/45 Task T1: any command that failed while ledger was down
 	# (e.g. kill point 2/3's dispatch reaching the vendor successfully but
 	# then failing to settle) is now backing off on its own exponential
 	# schedule (up to ~15m at higher retry counts) — reset it too, or the
@@ -496,7 +508,7 @@ scenario_5() {
 	psql_exec "$PAYOUT_DB_NAME" -c "UPDATE payout_vendor_commands SET next_attempt_at = now() WHERE payout_request_id IN (SELECT id FROM payout_requests WHERE user_id='$user_id' AND status IN ('created','held','submitted','vendor_pending'));" >/dev/null
 
 	log "waiting for the resume job's cron tick (every 1 minute) to pick up all four requests..."
-	sleep 65
+	sleep 125
 
 	log "asserting terminal states for created/held/submitted, and correct polling for vendor_pending..."
 	local final_created final_held final_submitted final_pending
@@ -586,7 +598,7 @@ scenario_6() {
 # ─── Scenario 7: fraud-service fail-open and block-mode E2E ─────────
 
 scenario_7() {
-	log "=== Scenario 7: fraud-service down fails open; block mode rejects pre-write — across all three flows (docs/plan/37 Task T6) ==="
+	log "=== Scenario 7: fraud-service down fails open; block mode rejects pre-write — across all three flows (docs/roadmap/archive/37 Task T6) ==="
 	export SCREENING_MODE=block
 	export SCREENING_AMOUNT_THRESHOLD=100
 	export SCREENING_VELOCITY_MAX_PER_HOUR=0
@@ -739,7 +751,7 @@ scenario_7() {
 	unset SCREENING_MODE SCREENING_AMOUNT_THRESHOLD SCREENING_VELOCITY_MAX_PER_HOUR
 }
 
-# ─── Scenario 8: vendor failover (docs/plan/40 Task T6) ─────────────────────
+# ─── Scenario 8: vendor failover (docs/roadmap/archive/40 Task T6) ─────────────────────
 #
 # Proves the anti-double-payout failover contract end to end against real
 # running services, not just orchestrate.go's own unit/integration tests:
@@ -747,7 +759,7 @@ scenario_7() {
 # NEXT new payout to the surviving vendor, (b) NEVER fail over an
 # already-in-flight payout whose Submit attempt landed 'uncertain' — it
 # stays pinned to the original vendor forever, and only the relay's own
-# retry (docs/plan/45 Task T1 — ClaimFailedCommandsForRetry, not the resume
+# retry (docs/roadmap/archive/45 Task T1 — ClaimFailedCommandsForRetry, not the resume
 # job, which no longer calls the vendor at all) against that SAME vendor can
 # ever settle it, and (c) never produce two settles for any payout
 # regardless of how many vendors were involved.
@@ -759,7 +771,7 @@ scenario_7() {
 # mockvendor2 is seeded at priority 1001 (mockvendor's own seed migration,
 # 000002_routing.up.sql, is priority 1000) — deliberately a HIGHER priority
 # number than mockvendor's, since ResolveCandidates orders ASC (smallest
-# number = tried first, docs/plan/40 Task T2); this makes mockvendor2 a true
+# number = tried first, docs/roadmap/archive/40 Task T2); this makes mockvendor2 a true
 # FALLBACK behind mockvendor, not a replacement for it. This differs from
 # the doc's own shorthand "priority 2" (which would have made mockvendor2
 # tried FIRST, backwards from the scenario's intent) for that reason.
@@ -805,7 +817,7 @@ scenario_8() {
 	id1="$(echo "$resp1" | json_field id)"
 	[ -n "$id1" ] && ok "payout #1 created ($id1)" || fail "payout #1 create did not return an id: $resp1"
 
-	# docs/plan/45 Task T1: dispatch is async now (the relay's own ~1s poll
+	# docs/roadmap/archive/45 Task T1: dispatch is async now (the relay's own ~1s poll
 	# interval) — Create returns the instant hold+enqueue lands, before the
 	# relay has necessarily attempted the vendor call yet. Wait for the
 	# durable evidence (the recorded 'uncertain' outcome) before reading
@@ -850,7 +862,7 @@ scenario_8() {
 	curl_internal -s -o /dev/null -X POST "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendors/mockvendor/force-fail" \
 		-H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" -d '{"fail":false}'
 	backdate_payout "$id1"
-	# docs/plan/45 Task T1: payout #1's retry is now the relay's own
+	# docs/roadmap/archive/45 Task T1: payout #1's retry is now the relay's own
 	# ClaimFailedCommandsForRetry poll (every 30s), not the resume job's
 	# submit-retry — resume no longer calls the vendor at all. The command's
 	# exponential backoff (FailCommand) can otherwise take up to ~90s
@@ -892,7 +904,7 @@ scenario_8() {
 
 # ─── Scenario 9: Redis outage — selective hot-swap + fraud fail-closed ─────
 #
-# docs/plan/45 Task T4, bullet 1. Proves the docs/plan/45 Task T3 design
+# docs/roadmap/archive/45 Task T4, bullet 1. Proves the docs/roadmap/archive/45 Task T3 design
 # (K4) against REAL running processes, not just pkg/cache's own unit tests:
 # the ledger rate limiter and policy velocity counter hot-swap from Redis to
 # an in-process memory fallback the INSTANT a real operation fails — no
@@ -917,12 +929,12 @@ scenario_8() {
 #     ONE flow in this scenario that's supposed to depend on Redis being
 #     reachable at all.
 scenario_9() {
-	log "=== Scenario 9: Redis outage — selective hot-swap (rate limiter/policy counter) + fraud fail-closed, recovery without restart (docs/plan/45 Task T3/T4) ==="
+	log "=== Scenario 9: Redis outage — selective hot-swap (rate limiter/policy counter) + fraud fail-closed, recovery without restart (docs/roadmap/archive/45 Task T3/T4) ==="
 	export SCREENING_MODE=block
 	export SCREENING_AMOUNT_THRESHOLD=100000000
 	export SCREENING_VELOCITY_MAX_PER_HOUR=1000
 	export POLICY_CACHE_TTL=2s
-	# docs/plan/49 TM-11: this scenario's own burst-of-11 test below
+	# docs/roadmap/archive/49 TM-11: this scenario's own burst-of-11 test below
 	# specifically needs the limiter to trip WITHIN 11 requests (a mix of
 	# some 2xx, some 429) to prove enforcement — lib.sh's default harness-
 	# wide override (500/min, sized so OTHER scenarios' legitimate traffic
@@ -1005,7 +1017,7 @@ scenario_9() {
 
 	log "-- Redis down: rate limiter must keep enforcing from memory (burst of 11 topup-intent creates) --"
 	# RateLimitByIPAndPath keys on the client IP with the ephemeral source
-	# port stripped (docs/plan/49 TM-11 — pkg/middleware/rate_limit.go)
+	# port stripped (docs/roadmap/archive/49 TM-11 — pkg/middleware/rate_limit.go)
 	# now, so 11 separate curl invocations would already land on the same
 	# bucket regardless. Still chaining them with --next inside ONE curl
 	# invocation over a single persistent HTTP/1.1 connection (same source
@@ -1066,7 +1078,7 @@ scenario_9() {
 	log "restarting redis (no service process restart)..."
 	docker start "$REDIS_CONTAINER" >/dev/null
 	wait_for_container_healthy "$REDIS_CONTAINER"
-	log "waiting for the background probe loop's 2-consecutive-success recovery (docs/plan/45 K4 hysteresis, ~10-15s)..."
+	log "waiting for the background probe loop's 2-consecutive-success recovery (docs/roadmap/archive/45 K4 hysteresis, ~10-15s)..."
 	sleep 20
 
 	log "-- Redis back: all three primitives recover to backend=redis WITHOUT any process restart --"
@@ -1102,16 +1114,16 @@ scenario_9() {
 
 # ─── Scenario 10: distributed breaker across two payout replicas ──────────
 #
-# docs/plan/45 Task T4, bullet 2. Two REAL payout-service processes (not two
+# docs/roadmap/archive/45 Task T4, bullet 2. Two REAL payout-service processes (not two
 # separately-provisioned stacks) sharing one Postgres DB and one Redis
-# instance, with BREAKER_DISTRIBUTED=true (docs/plan/45 Task T2).
+# instance, with BREAKER_DISTRIBUTED=true (docs/roadmap/archive/45 Task T2).
 #
 # mockvendor's force-fail flag is a PER-PROCESS in-memory switch on that
 # process's own vendorgw.Registry — it is NOT shared between replicas the
 # way the breaker's OWN state is. Force-failing only replica A's mockvendor
 # and then creating a payout is a genuine RACE: both replicas' relays poll
 # the SAME payout_vendor_commands table (FOR UPDATE SKIP LOCKED, by design,
-# docs/plan/45 K1/K2), so replica B can claim and dispatch the command
+# docs/roadmap/archive/45 K1/K2), so replica B can claim and dispatch the command
 # FIRST against ITS OWN, still-healthy mockvendor and settle it before
 # replica A ever gets a chance — reproduced empirically while writing this
 # scenario (payout settled in ~100ms via whichever replica won the claim,
@@ -1126,7 +1138,7 @@ scenario_9() {
 # their own embedded local HealthTracker fallback and keep answering
 # requests, never crash.
 scenario_10() {
-	log "=== Scenario 10: distributed breaker across two payout replicas (docs/plan/45 Task T2/T4) ==="
+	log "=== Scenario 10: distributed breaker across two payout replicas (docs/roadmap/archive/45 Task T2/T4) ==="
 	export BREAKER_DISTRIBUTED=true
 	export BREAKER_FAILURE_THRESHOLD=1
 	ensure_deps_up
@@ -1227,7 +1239,7 @@ scenario_10() {
 # ─── Scenario 11: payout crash after command enqueue / after network
 # timeout ─────────────────────────────────────────────────────────────────
 #
-# docs/plan/45 Task T4, bullet 3, as two distinct sub-cases matching the
+# docs/roadmap/archive/45 Task T4, bullet 3, as two distinct sub-cases matching the
 # doc's own wording exactly (each already-broader in scenario 5's own
 # kill-matrix, but here isolated and asserted more sharply):
 #
@@ -1244,10 +1256,10 @@ scenario_10() {
 #      at-least-once — the SAME durable command row eventually reaches
 #      'completed', no duplicate command is created for a request that
 #      never failed over; (2) exactly one ledger settle effect; (3) the
-#      vendor column never changes — pinned per docs/plan/40 the instant the
+#      vendor column never changes — pinned per docs/roadmap/archive/40 the instant the
 #      first call landed 'uncertain', regardless of the crash in between.
 scenario_11() {
-	log "=== Scenario 11: payout crash after command enqueue / after network timeout (docs/plan/45 Task T1/T4) ==="
+	log "=== Scenario 11: payout crash after command enqueue / after network timeout (docs/roadmap/archive/45 Task T1/T4) ==="
 	ensure_deps_up
 	build_server
 	start_services
@@ -1384,7 +1396,7 @@ wait_for_assurance_run_after() {
 }
 
 scenario_12() {
-	log "=== Scenario 12: assurance restart catches backlog and resolves recovered finding (docs/plan/48) ==="
+	log "=== Scenario 12: assurance restart catches backlog and resolves recovered finding (docs/roadmap/archive/48) ==="
 	ensure_deps_up
 	build_server
 	# Start domain owners first so the assurance process can be stopped and
@@ -1432,7 +1444,7 @@ scenario_12() {
 # ─── Scenario 13: ledger outage preserves assurance cursor/finding (Plan 48)
 
 scenario_13() {
-	log "=== Scenario 13: ledger unavailable preserves assurance cursor and avoids false resolve (docs/plan/48) ==="
+	log "=== Scenario 13: ledger unavailable preserves assurance cursor and avoids false resolve (docs/roadmap/archive/48) ==="
 	ensure_deps_up
 	build_server
 	start_ledger_service
@@ -1481,7 +1493,7 @@ scenario_13() {
 # ─── Scenario 14: durable pause, owner recovery, maker/checker resume ─────
 
 scenario_14() {
-	log "=== Scenario 14: owner outage during intake pause, durable retry, and two-person resume (docs/plan/48) ==="
+	log "=== Scenario 14: owner outage during intake pause, durable retry, and two-person resume (docs/roadmap/archive/48) ==="
 	ensure_deps_up
 	build_server
 	start_services
@@ -1505,9 +1517,20 @@ scenario_14() {
 	[ "$code" = "503" ] && ok "pause remained durable while payin owner was unavailable" \
 		|| fail "pause with payin owner unavailable returned HTTP $code (want 503)"
 	start_payin_service
-	response="$(curl_internal -fsS -X POST "http://localhost:$ASSURANCE_PORT/admin/assurance/intake/payin/pause" \
+	response="$(curl_internal -sS -X POST "http://localhost:$ASSURANCE_PORT/admin/assurance/intake/payin/pause" \
 		-H "Authorization: Bearer $maker_token" -H 'Content-Type: application/json' \
-		-d "{\"command_id\":\"$command_id\",\"expected_revision\":$payin_revision,\"reason\":\"chaos14 retry\"}")"
+		-d "{\"command_id\":\"$command_id\",\"expected_revision\":$payin_revision,\"reason\":\"chaos14 retry\"}" || true)"
+	# The owner HTTP health endpoint can be ready a fraction before its lazy
+	# gRPC dial has re-established. Retry the same UUID command (idempotent) so
+	# this chaos proof tests durable recovery rather than a startup race.
+	local pause_attempts=20
+	while ! echo "$response" | grep -q '"paused":true' && [ "$pause_attempts" -gt 0 ]; do
+		sleep 1
+		response="$(curl_internal -sS -X POST "http://localhost:$ASSURANCE_PORT/admin/assurance/intake/payin/pause" \
+			-H "Authorization: Bearer $maker_token" -H 'Content-Type: application/json' \
+			-d "{\"command_id\":\"$command_id\",\"expected_revision\":$payin_revision,\"reason\":\"chaos14 retry\"}" || true)"
+		pause_attempts=$((pause_attempts - 1))
+	done
 	if echo "$response" | grep -q '"paused":true'; then
 		ok "retrying the same pause command applied exactly once after owner recovery"
 	else

@@ -52,7 +52,7 @@ func TestRateLimit_Blocks(t *testing.T) {
 func TestRateLimit_FailOpen(t *testing.T) {
 	// Previously this test's AllowFn never returned an error, so it didn't
 	// actually exercise the fail-open branch despite its name — fixed to
-	// return an error, which is what fail-open (docs/plan/12 Task T1)
+	// return an error, which is what fail-open (docs/roadmap/archive/12 Task T1)
 	// actually needs to demonstrate: the request still succeeds.
 	l := &cache.MockLimiter{
 		AllowFn: func(ctx context.Context, key string) (bool, int64, error) {
@@ -91,7 +91,7 @@ func TestRateLimit_KeyFunctionUsed(t *testing.T) {
 	assert.True(t, called)
 }
 
-// ─── RateLimitByUser (docs/plan/12 Task T6) ────────────────────────────────────
+// ─── RateLimitByUser (docs/roadmap/archive/12 Task T6) ────────────────────────────────────
 
 func TestRateLimitByUser_UsesAuthenticatedUserID(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -112,7 +112,7 @@ func TestRateLimitByUser_NoUserInContext_FallsBackToIP(t *testing.T) {
 	})
 }
 
-// ─── RateLimitByIP / RateLimitByIPAndPath port stripping (docs/plan/49 TM-11) ──
+// ─── RateLimitByIP / RateLimitByIPAndPath port stripping (docs/roadmap/archive/49 TM-11) ──
 
 // TestRateLimitByIP_StripsEphemeralPort proves the TM-11 fix: a client that
 // opens a new TCP connection for every request (new ephemeral source port)

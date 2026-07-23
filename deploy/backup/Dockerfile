@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 #
-# Pinned PostgreSQL 16 + pgBackRest image for docs/plan/50 (Track A7).
+# Pinned PostgreSQL 16 + pgBackRest image for docs/roadmap/active/50 (Track A7).
 # Built once so the exact PostgreSQL and pgBackRest versions used for backup
 # and restore are explicit and reproducible, never resolved from a floating
 # tag at drill time (K2). The base image is pinned by full digest, not just
@@ -8,13 +8,13 @@
 # resolves against never silently drifts across rebuilds of this Dockerfile.
 #
 # pgBackRest is MIT-licensed (github.com/pgbackrest/pgbackrest/blob/main/LICENSE,
-# verified docs/plan/50 T1 execution). The exact resolved version is recorded
-# in docs/plan/50-a7-backup-pitr-disaster-recovery.md's T1 Result section —
+# verified docs/roadmap/active/50 T1 execution). The exact resolved version is recorded
+# in docs/roadmap/active/50-a7-backup-pitr-disaster-recovery.md's T1 Result section —
 # see that file, not this comment, as the pin loses meaning if the two drift.
 FROM postgres:16.14-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
 
 # Hard-pinned to the exact version resolved and recorded at T1 execution
-# time (see docs/plan/50 T1 Result) rather than a floating `apk add
+# time (see docs/roadmap/active/50 T1 Result) rather than a floating `apk add
 # pgbackrest` — a later Alpine repository update must not silently change
 # which pgBackRest release backs this repository's backups.
 #

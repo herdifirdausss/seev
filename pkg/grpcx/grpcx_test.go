@@ -87,7 +87,7 @@ func TestWrongTokenIsRejected(t *testing.T) {
 	require.Equal(t, codes.Unauthenticated, status.Code(err))
 }
 
-// TestNewServer_EmptyTokenFailsFast proves docs/plan/49 K5: a gRPC server
+// TestNewServer_EmptyTokenFailsFast proves docs/roadmap/archive/49 K5: a gRPC server
 // must never boot able to accept every call unauthenticated, which is what
 // happened before this task when INTERNAL_GRPC_TOKEN was empty.
 func TestNewServer_EmptyTokenFailsFast(t *testing.T) {
@@ -103,7 +103,7 @@ func TestNewServer_NilTLSConfigFailsFast(t *testing.T) {
 	require.Error(t, err)
 }
 
-// TestRequestIDPropagatesClientToServer proves docs/plan/36 Task T3: a
+// TestRequestIDPropagatesClientToServer proves docs/roadmap/archive/36 Task T3: a
 // request_id present on the client's ctx is injected as x-request-id
 // metadata by requestIDClientInterceptor and extracted back into the
 // server-side ctx by requestIDServerInterceptor under the same

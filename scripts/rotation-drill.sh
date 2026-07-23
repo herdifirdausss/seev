@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Certificate rotation drill (docs/plan/49 K9/T6).
+# Certificate rotation drill (docs/roadmap/archive/49 K9/T6).
 #
 # A standalone, on-demand proof — NOT a permanent chaos scenario, NOT part
 # of `make verify-full` — that cmd/certgen's `rotate` operation is:
 #
 #   1. zero-downtime: no process restart, no listener rebind, no dropped
-#      baseline connections. A poll-based reload (docs/plan/49 K2 —
+#      baseline connections. A poll-based reload (docs/roadmap/archive/49 K2 —
 #      deliberately no fsnotify dependency) can still have a bounded
 #      window right after rotation where a BRAND NEW client cert is
 #      transiently rejected until this server's own next poll tick — the
@@ -91,7 +91,7 @@ ROTATE_TS=$(date +%s.%N)
 
 # GRACE_SECONDS bounds how long a request MAY transiently fail after
 # rotation: pkg/tlsx polls for changes rather than reacting instantly
-# (docs/plan/49 K2 — deliberately no fsnotify dependency), so a brand new
+# (docs/roadmap/archive/49 K2 — deliberately no fsnotify dependency), so a brand new
 # client cert reissued by rotate can be rejected until this server's OWN
 # CertSource next polls and reloads its CAPool. "Zero-downtime" here means
 # no restart and no dropped EXISTING connection — not that literally zero

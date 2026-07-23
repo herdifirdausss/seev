@@ -124,7 +124,7 @@ func TestParseToken_WrongSecret(t *testing.T) {
 	assert.Contains(t, err.Error(), "signature")
 }
 
-// ─── ParseToken issuer (docs/plan/10 Task T6) ──────────────────────────────────
+// ─── ParseToken issuer (docs/roadmap/archive/10 Task T6) ──────────────────────────────────
 
 func TestParseToken_IssuerConfigured_WrongIssuer_Rejected(t *testing.T) {
 	claims := validClaims()

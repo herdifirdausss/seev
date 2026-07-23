@@ -7,7 +7,7 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// ReportDailyPosition is one row of v_report_daily_position (docs/plan/20
+// ReportDailyPosition is one row of v_report_daily_position (docs/roadmap/archive/20
 // Task T2) — fund position for one day/currency/account type/owner type.
 type ReportDailyPosition struct {
 	AsOfDate     time.Time

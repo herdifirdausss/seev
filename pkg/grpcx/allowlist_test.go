@@ -15,7 +15,7 @@ import (
 	"google.golang.org/grpc/test/bufconn"
 )
 
-// TestServerRejectsClientOutsideAllowlist proves docs/plan/49 K4 end-to-end
+// TestServerRejectsClientOutsideAllowlist proves docs/roadmap/archive/49 K4 end-to-end
 // through the real grpcx.NewServer/dial code path every cmd/*/main.go uses
 // (not just pkg/tlsx's own lower-level TLS test): a client certificate that
 // is validly signed by the trusted CA, but whose SPIFFE identity is NOT in

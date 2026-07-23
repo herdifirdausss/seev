@@ -14,13 +14,13 @@ import (
 )
 
 // dependencyUnavailableMessage is the exact gRPC status message
-// pkg/fraudcheck.Client checks for (docs/plan/45 Task T3/K4) to
+// pkg/fraudcheck.Client checks for (docs/roadmap/archive/45 Task T3/K4) to
 // distinguish "fraud-service is reachable but its velocity dependency is
 // down" from a genuine transport failure — codes.FailedPrecondition alone
 // isn't enough of a signal to rely on in isolation (some future addition to
 // this RPC could reuse the same code for an unrelated reason). This
 // literal is intentionally duplicated (not a shared import) in
-// pkg/fraudcheck: pkg/ must never import internal/ (PROJECT_GUIDE.md boundary
+// pkg/fraudcheck: pkg/ must never import internal/ (docs/development/project-guide.md boundary
 // rule), and this string is effectively part of the fraudv1 wire contract
 // between fraud-service and its callers, not an internal implementation
 // detail. Keep both copies in sync if this ever changes.

@@ -7,7 +7,7 @@ import (
 )
 
 // checkLedgerBalance wraps fn_verify_ledger_balance('-infinity','infinity')
-// — the exact function docs/runbooks/dr-restore-drill.md's manual gate
+// — the exact function docs/operations/runbooks/dr-restore-drill.md's manual gate
 // already calls, over the FULL history rather than a bounded window,
 // since a restore drill has no "already checked yesterday" assumption to
 // lean on. Any row returned means a transaction's debit and credit

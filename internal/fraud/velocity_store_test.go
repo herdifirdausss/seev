@@ -41,7 +41,7 @@ func TestFailClosedVelocityStore_HealthyRedis_WorksNormally(t *testing.T) {
 }
 
 // TestFailClosedVelocityStore_RedisDown_FailsClosed_NeverMemoryApproximation
-// proves docs/plan/45 K4's core safety property: while Redis is down,
+// proves docs/roadmap/archive/45 K4's core safety property: while Redis is down,
 // velocity operations return model.ErrDependencyUnavailable — never a
 // zero/default value, and never a memory-based approximation.
 func TestFailClosedVelocityStore_RedisDown_FailsClosed_NeverMemoryApproximation(t *testing.T) {
@@ -82,7 +82,7 @@ func TestFailClosedVelocityStore_RedisDown_SubsequentCallsFailFastWithoutRetryin
 // stop`'d Redis container can actually produce (no RST, no response,
 // unlike the fast connection-refused a locally-closed miniredis gives),
 // which is what let this exact bug pass unit tests while failing live
-// (docs/plan/49 T6, found by the isolated GATE 3 chaos scenario 9 run).
+// (docs/roadmap/archive/49 T6, found by the isolated GATE 3 chaos scenario 9 run).
 // It only ever returns by respecting ctx cancellation, exactly like a real
 // redis.Client call would.
 type hangingVelocityStore struct{}

@@ -22,7 +22,7 @@ import (
 var httpTracer = otel.Tracer("github.com/herdifirdausss/seev/pkg/middleware")
 
 // uninstrumentedPaths are never traced and never enter RED metrics
-// (docs/plan/43 K4/K5) — a Prometheus scrape every 15s per service would
+// (docs/roadmap/archive/43 K4/K5) — a Prometheus scrape every 15s per service would
 // otherwise dominate trace/metric volume for zero diagnostic value.
 var uninstrumentedPaths = map[string]bool{
 	"/health":  true,
@@ -31,7 +31,7 @@ var uninstrumentedPaths = map[string]bool{
 }
 
 // WithTracing starts one span per HTTP request and stores a span-enriched
-// logger in the request context (docs/plan/43 K4) — install right after
+// logger in the request context (docs/roadmap/archive/43 K4) — install right after
 // WithRoutePattern (see route.go) and WithRequestID, before
 // WithHTTPMetrics/WithLogger, so both this middleware's own request/
 // response log lines AND every handler that calls logger.FromContext(ctx)
@@ -93,7 +93,7 @@ var httpMethods = map[string]bool{
 // (e.g. "POST /webhooks/{vendor}") already have that method baked into
 // r.Pattern's own text — naively prepending r.Method again produced
 // "POST POST /webhooks/{vendor}" until this was caught by tracing a real
-// request through Tempo during docs/plan/43 Task T2 verification. A
+// request through Tempo during docs/roadmap/archive/43 Task T2 verification. A
 // method-less pattern (e.g. the catch-all "/") has no such prefix, so the
 // method still needs to be prepended for those.
 func routeAndSpanName(method, pattern string) (route, name string) {

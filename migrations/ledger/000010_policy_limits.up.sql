@@ -1,4 +1,4 @@
--- docs/plan/17 Task T1 (S1): per-user/per-type limits + velocity for
+-- docs/roadmap/archive/17 Task T1 (S1): per-user/per-type limits + velocity for
 -- internal/policy — evaluated in the ledger transport layer BEFORE
 -- ledger.Post, never inside the ledger module itself.
 --
@@ -32,7 +32,7 @@ CREATE TRIGGER trg_policy_limits_ua BEFORE UPDATE ON policy_limits
     FOR EACH ROW EXECUTE FUNCTION fn_set_updated_at();
 
 -- Every new table since migrations/000009 carries its own grant+RLS —
--- don't wait for a second collective RLS migration (docs/plan/16 Task T3
+-- don't wait for a second collective RLS migration (docs/roadmap/archive/16 Task T3
 -- established this pattern).
 GRANT SELECT, INSERT, UPDATE ON policy_limits TO app_service;
 GRANT SELECT ON policy_limits TO app_readonly;

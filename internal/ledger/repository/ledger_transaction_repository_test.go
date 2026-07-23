@@ -14,7 +14,7 @@ import (
 	"github.com/herdifirdausss/seev/internal/ledger/apperror"
 )
 
-// ─── GetByID: uuid.Parse not uuid.MustParse (docs/plan/12 Task T6) ────────────
+// ─── GetByID: uuid.Parse not uuid.MustParse (docs/roadmap/archive/12 Task T6) ────────────
 
 var txColumns = []string{
 	"id", "idempotency_key", "idempotency_scope", "type", "status", "amount", "currency",

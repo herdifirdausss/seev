@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// ─── InsertEntries batching (docs/plan/11 Task T2) ─────────────────────────────
+// ─── InsertEntries batching (docs/roadmap/archive/11 Task T2) ─────────────────────────────
 
 func TestInsertEntries_Empty_NoOp(t *testing.T) {
 	tx, mock := newMockTx(t)

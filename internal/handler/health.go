@@ -43,7 +43,7 @@ func Ready(deps *Dependencies) http.HandlerFunc {
 				components["redis"] = "ok"
 			}
 		} else {
-			// REDIS_ENABLED=false (docs/plan/12 Task T1) — not a degraded
+			// REDIS_ENABLED=false (docs/roadmap/archive/12 Task T1) — not a degraded
 			// state, rate limiting and scheduler lock are running in-memory.
 			components["redis"] = "disabled"
 		}

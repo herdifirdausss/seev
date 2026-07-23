@@ -1,5 +1,5 @@
 // Package adjustments implements maker-checker governance for manual
-// balance adjustments (docs/plan/16 Task T1, decision K8): no single
+// balance adjustments (docs/roadmap/archive/16 Task T1, decision K8): no single
 // identity can create AND authorize a money-moving adjustment. A request
 // (Create) sits in pending_adjustments until a DIFFERENT identity approves
 // it — only then does the underlying adjustment_credit/adjustment_debit
@@ -39,10 +39,10 @@ type Poster interface {
 }
 
 // allowedTypes are the ONLY transaction types a pending adjustment may
-// request — this is the entire reason this package exists (docs/plan/16
+// request — this is the entire reason this package exists (docs/roadmap/archive/16
 // Task T1): adjustment_credit/adjustment_debit are removed from direct
 // access on every router, reachable ONLY through this approved-by-a-second-
-// identity path. adjustment_suspense_credit/debit (docs/plan/16 Task T2,
+// identity path. adjustment_suspense_credit/debit (docs/roadmap/archive/16 Task T2,
 // decision K5) extend the same governance path to reconciliation
 // resolution — a discrepancy against a gateway's suspense account, not a
 // specific user's balance, so they take a gateway instead of a target user.
@@ -61,7 +61,7 @@ var suspenseTypes = map[string]bool{
 }
 
 // cmdPayload is the JSON shape stored in pending_adjustments.cmd_payload —
-// a deliberately narrow subset of processors.Command (docs/plan/16 Task T1
+// a deliberately narrow subset of processors.Command (docs/roadmap/archive/16 Task T1
 // step 3): only what an adjustment actually needs, validated at Create time
 // so a malformed request fails fast rather than at approve time.
 type cmdPayload struct {
@@ -132,7 +132,7 @@ func (s *Service) Create(ctx context.Context, requestedBy, adjType string, amoun
 
 // Approve authorizes and executes a pending adjustment. approverID must
 // differ from the original requester (checked here for a clear error, AND
-// enforced by a DB CHECK constraint as the backstop — docs/plan/16 Task T1).
+// enforced by a DB CHECK constraint as the backstop — docs/roadmap/archive/16 Task T1).
 // Returns the posted ledger_transactions id.
 //
 // The flow spans multiple DB transactions by necessity: the status
@@ -279,7 +279,7 @@ func (s *Service) markFailedTx(ctx context.Context, id uuid.UUID, errMsg string)
 // adjustmentIdempotencyKey is deterministic per pending adjustment — a
 // retried Approve call (after a crash, or an operator double-click) can
 // never double-post, because Handle()'s own idempotency gate treats the
-// second attempt as a replay (docs/plan/16 Task T1 step 2).
+// second attempt as a replay (docs/roadmap/archive/16 Task T1 step 2).
 func adjustmentIdempotencyKey(id uuid.UUID) string {
 	return "adj:" + id.String()
 }

@@ -30,7 +30,7 @@ func TestRedisHealthSwitcher_DegradesImmediatelyOnFailure(t *testing.T) {
 }
 
 // TestRedisHealthSwitcher_RecoversAfterTwoConsecutiveProbes proves
-// docs/plan/45 K4's anti-flapping hysteresis: a single successful probe is
+// docs/roadmap/archive/45 K4's anti-flapping hysteresis: a single successful probe is
 // not enough to recover — it takes two IN A ROW.
 func TestRedisHealthSwitcher_RecoversAfterTwoConsecutiveProbes(t *testing.T) {
 	healthy := make(chan struct{})
@@ -118,7 +118,7 @@ func TestFailoverLimiter_UsesRedisWhileHealthy(t *testing.T) {
 }
 
 // TestFailoverLimiter_RedisDown_FallsBackToMemory_NoErrorPropagates proves
-// docs/plan/45 K4: a Redis failure never surfaces as an error to the
+// docs/roadmap/archive/45 K4: a Redis failure never surfaces as an error to the
 // caller — it transparently serves from the memory fallback instead.
 func TestFailoverLimiter_RedisDown_FallsBackToMemory_NoErrorPropagates(t *testing.T) {
 	client, mr := newMiniredisClient(t)

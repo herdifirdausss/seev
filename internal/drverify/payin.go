@@ -26,7 +26,7 @@ type payinRow struct {
 // state across runs. Each round-trip fetches at most cfg.PageSize rows
 // (K9 "bounded batches"); the returned slice accumulates every page, since
 // correlating an intent against its settled webhook (possibly on a
-// different page) needs the full set in memory. docs/plan/50 §8
+// different page) needs the full set in memory. docs/roadmap/active/50 §8
 // explicitly disclaims any production-scale guarantee for this track —
 // this is the concrete place that trade-off is made.
 func fetchPayinRows(ctx context.Context, tx *sql.Tx, pageSize int) ([]payinRow, error) {
@@ -41,7 +41,7 @@ func fetchPayinRows(ctx context.Context, tx *sql.Tx, pageSize int) ([]payinRow, 
 			       COALESCE(i.settled_event_id::text, '') AS settled_event_id,
 			       (i.request_id IS NOT NULL AND i.request_id <> '') AS request_id_present,
 			       CASE WHEN e.id IS NULL THEN '' ELSE 'money_in' END AS ledger_type,
-			       COALESCE(e.vendor, '') AS ledger_gateway
+			       COALESCE(vg.gateway, e.vendor, '') AS ledger_gateway
 			FROM payin_topup_intents i
 			LEFT JOIN LATERAL (
 				SELECT e.*
@@ -52,11 +52,13 @@ func fetchPayinRows(ctx context.Context, tx *sql.Tx, pageSize int) ([]payinRow, 
 				ORDER BY (e.id = i.settled_event_id) DESC, e.updated_at DESC, e.id DESC
 				LIMIT 1
 			) e ON true
+			LEFT JOIN payin_vendor_gateways vg ON vg.vendor = e.vendor
 			UNION ALL
 			SELECT e.id, 'webhook_event', e.updated_at, e.created_at, e.status, e.user_id,
 			       e.amount, e.currency, e.vendor, '', e.external_ref, '',
-			       (e.request_id IS NOT NULL AND e.request_id <> ''), 'money_in', e.vendor
+			       (e.request_id IS NOT NULL AND e.request_id <> ''), 'money_in', COALESCE(vg.gateway, e.vendor, '')
 			FROM payin_webhook_events e
+			LEFT JOIN payin_vendor_gateways vg ON vg.vendor = e.vendor
 		) assurance
 		WHERE effective_updated_at <= now()
 		  AND (effective_updated_at, id) > ($1, $2)
@@ -141,7 +143,7 @@ func checkPayin(ctx context.Context, payinDB, ledgerDB *sql.DB, cfg Config, repo
 				Age: time.Since(r.createdAt), Ledger: proofs, ConsistencyDelay: 2 * time.Minute,
 			}
 			if linked, ok := byID[r.settledEventID]; ok {
-				record.SettledWebhook = &rules.PayinRecord{ID: linked.id, RecordType: linked.recordType, Status: linked.status, UserID: linked.userID, AmountMinor: linked.amountMinor, Currency: linked.currency, Reference: linked.reference}
+				record.SettledWebhook = &rules.PayinRecord{ID: linked.id, RecordType: linked.recordType, Status: linked.status, UserID: linked.userID, AmountMinor: linked.amountMinor, Currency: linked.currency, Reference: linked.reference, ExternalRef: linked.externalRef}
 			}
 			if r.recordType == "intent" && r.status == "pending" {
 				pendingCount++

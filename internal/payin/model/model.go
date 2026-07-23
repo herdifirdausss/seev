@@ -7,7 +7,7 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// WebhookEvent is one row of payin_webhook_events (docs/plan/22 Task T2) —
+// WebhookEvent is one row of payin_webhook_events (docs/roadmap/archive/22 Task T2) —
 // one vendor webhook delivery, deduped by (Vendor, VendorEventID).
 type WebhookEvent struct {
 	ID            uuid.UUID
@@ -20,21 +20,21 @@ type WebhookEvent struct {
 	Raw           []byte // raw webhook body, forensic/replay — never exposed in any reporting view
 	Status        string // received | posted | failed
 	ErrorMessage  string
-	// RequestID (docs/plan/36 Task T5) is the HTTP request_id of the gateway
+	// RequestID (docs/roadmap/archive/36 Task T5) is the HTTP request_id of the gateway
 	// call that received this webhook delivery — end-to-end trace anchor.
 	RequestID string
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
 
-// Topup intent status values (docs/plan/25 Task T3).
+// Topup intent status values (docs/roadmap/archive/25 Task T3).
 const (
 	TopupStatusPending = "pending"
 	TopupStatusSettled = "settled"
 	TopupStatusExpired = "expired"
 )
 
-// TopupIntent is one row of payin_topup_intents (docs/plan/25 Task T3) — a
+// TopupIntent is one row of payin_topup_intents (docs/roadmap/archive/25 Task T3) — a
 // user-initiated top-up request. Reference is what the user quotes at the
 // vendor, carried back in the settling webhook's existing ExternalRef
 // field (zero vendorgw/mockvendor schema change).
@@ -48,7 +48,7 @@ type TopupIntent struct {
 	Status         string // pending | settled | expired
 	SettledEventID *uuid.UUID
 	ExpiresAt      time.Time
-	// RequestID (docs/plan/36 Task T5) is the HTTP request_id of the call
+	// RequestID (docs/roadmap/archive/36 Task T5) is the HTTP request_id of the call
 	// that created this intent — end-to-end trace anchor.
 	RequestID string
 	CreatedAt time.Time
@@ -76,7 +76,7 @@ type VendorGateway struct {
 }
 
 // RoutingCandidate is one matching routing rule's vendor+gateway, part of
-// the ordered candidate list ResolveCandidates returns (docs/plan/40 Task
+// the ordered candidate list ResolveCandidates returns (docs/roadmap/archive/40 Task
 // T2) — replaces the old single-winner Resolve so the caller can skip a
 // candidate whose circuit is open and fall through to the next.
 type RoutingCandidate struct {

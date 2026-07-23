@@ -11,7 +11,7 @@ import (
 
 // VerificationRepository reads the ledger's own integrity-check functions
 // and views (fn_verify_ledger_balance, v_account_balance_audit) — read-only,
-// used only by worker.Verifier's scheduled checks (docs/plan/06 Task 1c.2).
+// used only by worker.Verifier's scheduled checks (docs/roadmap/archive/06 Task 1c.2).
 type VerificationRepository interface {
 	// TrialBalanceDiscrepancies proves sum(debit) == sum(credit) for every
 	// transaction posted in the last 2 hours — the window is computed

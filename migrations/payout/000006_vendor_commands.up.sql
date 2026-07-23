@@ -1,5 +1,5 @@
--- docs/plan/45 Task T0 (K1): durable outbox for vendor dispatch commands.
--- Today (docs/plan/40) provider.Submit is called inline in orchestrate.go's
+-- docs/roadmap/archive/45 Task T0 (K1): durable outbox for vendor dispatch commands.
+-- Today (docs/roadmap/archive/40) provider.Submit is called inline in orchestrate.go's
 -- submit(), outside any DB transaction — a crash between the ledger hold and
 -- the vendor call, or between the vendor call and recording its outcome,
 -- relies entirely on the resume job's next-tick retry loop, not a durable
@@ -9,7 +9,7 @@
 -- (internal/ledger/repository/outbox_event_repository.go).
 --
 -- A command is NOT the audit trail (that remains payout_vendor_calls,
--- docs/plan/40 Task T3, untouched) — it is the WORK ITEM that causes a
+-- docs/roadmap/archive/40 Task T3, untouched) — it is the WORK ITEM that causes a
 -- payout_vendor_calls row (and a breaker Record*, and a terminal-state
 -- transition) to eventually happen. Delivery is honestly at-least-once:
 -- a network timeout can never prove the vendor didn't receive the call, so
@@ -19,7 +19,7 @@ CREATE TABLE payout_vendor_commands (
     id                 UUID        PRIMARY KEY,
     -- Internal dedup key, format "payout:<request_id>:submit:<attempt>" —
     -- distinct from the vendor-facing idempotency key, which stays
-    -- payout_request_id itself (docs/plan/40) so retries of the SAME
+    -- payout_request_id itself (docs/roadmap/archive/40) so retries of the SAME
     -- command never create a second payout at the vendor.
     command_key        TEXT        NOT NULL UNIQUE,
     payout_request_id  UUID        NOT NULL REFERENCES payout_requests(id),

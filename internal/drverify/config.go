@@ -7,7 +7,7 @@ import (
 )
 
 // Services is the fixed, ordered list of the eight authoritative
-// databases (docs/plan/50 T0 Result) — matches
+// databases (docs/roadmap/active/50 T0 Result) — matches
 // scripts/backup-manifest.sh's/scripts/restore-cluster.sh's own list
 // exactly, including the "adminbff" (not "admin-bff") spelling.
 var Services = []string{"ledger", "auth", "payin", "payout", "fraud", "gateway", "adminbff", "assurance"}

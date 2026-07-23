@@ -1,6 +1,6 @@
 //go:build integration
 
-// Proves internal/ledger/feepolicy's CreateQuote/ConsumeQuote (docs/plan/38
+// Proves internal/ledger/feepolicy's CreateQuote/ConsumeQuote (docs/roadmap/archive/38
 // Task T2) against a real Postgres — the atomic UPDATE...WHERE that makes
 // consumption single-use and mismatch-safe is exactly the kind of behavior
 // sqlmock can't meaningfully verify under real concurrency.
@@ -43,7 +43,7 @@ func setupQuoteTestDB(t *testing.T) *database.DBSQL {
 	const dbName, dbUser, dbPassword = "seev_test", "test", "secret"
 
 	container, err := postgres.Run(ctx,
-		"postgres:16-alpine",
+		"postgres:16.14-alpine",
 		postgres.WithDatabase(dbName),
 		postgres.WithUsername(dbUser),
 		postgres.WithPassword(dbPassword),

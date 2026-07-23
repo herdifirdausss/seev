@@ -13,7 +13,7 @@ type SecurityHeadersConfig struct {
 	ContentSecurityPolicy string
 	// TrustProxyHeaders enables honoring X-Forwarded-Proto to detect HTTPS
 	// when the app itself only ever terminates plain HTTP behind a
-	// TLS-terminating reverse proxy (docs/plan/10 Task T6). Only enable this
+	// TLS-terminating reverse proxy (docs/roadmap/archive/10 Task T6). Only enable this
 	// when the proxy is guaranteed to overwrite/strip the header from
 	// client input — otherwise a client can spoof it. Default false: r.TLS
 	// != nil is the only signal trusted.

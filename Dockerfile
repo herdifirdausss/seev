@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-FROM golang:1.25-alpine AS builder
+FROM golang:1.25.12-alpine AS builder
 WORKDIR /src
 
 COPY go.mod go.sum ./
@@ -19,7 +19,7 @@ ARG SERVICE=gateway
 COPY --from=builder /out/${SERVICE} /app/service
 COPY --from=builder /src/migrations /app/migrations
 
-# docs/plan/44 K5 — CI's Bake build passes the commit SHA as REVISION so a
+# docs/roadmap/archive/44 K5 — CI's Bake build passes the commit SHA as REVISION so a
 # smoke-container run can assert every one of the eight loaded images was
 # actually built from the commit under test, not a stale cache hit or a
 # leftover local `:dev` tag from an earlier run.

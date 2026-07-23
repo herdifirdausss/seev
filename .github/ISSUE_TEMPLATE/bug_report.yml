@@ -1,0 +1,49 @@
+name: Bug report
+description: Something in the codebase doesn't behave as documented
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. If this is a
+        **security vulnerability**, please do not file it here — use the
+        private [Security Advisory](https://github.com/herdifirdausss/seev/security/advisories/new)
+        form instead (see [SECURITY.md](../../SECURITY.md)).
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug and the expected behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Exact commands/requests, ideally against a fresh `make docker-up && make migrate-up-all` stack.
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+    validations:
+      required: true
+  - type: input
+    id: service
+    attributes:
+      label: Affected service(s)
+      description: e.g. gateway, auth-service, ledger-service — see ONBOARDING.md's service map if unsure which one owns the behavior.
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs or output
+      render: shell
+    validations:
+      required: false
+  - type: input
+    id: version
+    attributes:
+      label: Commit SHA or branch
+    validations:
+      required: false

@@ -34,7 +34,7 @@ import (
 // [2] = fee[fee_gateway]  (only when fee_amount > 0)
 //
 // ReferenceID (required) must point at the escrow_hold this releases
-// (docs/plan/14 Task T2) — full amount only (the fee split above happens
+// (docs/roadmap/archive/14 Task T2) — full amount only (the fee split above happens
 // WITHIN that full amount, it isn't an additional partial release).
 // =============================================================================
 
@@ -107,7 +107,7 @@ func (p *EscrowRelease) OutboxEvents(cmd ResolvedCommand, txID uuid.UUID, entrie
 }
 func (p *EscrowRelease) AfterCommit(_ context.Context, _ Command) error { return nil }
 
-// ValidateCommand requires ReferenceID (docs/plan/14 Task T2) — the
+// ValidateCommand requires ReferenceID (docs/roadmap/archive/14 Task T2) — the
 // escrow_hold this release is closing.
 func (p *EscrowRelease) ValidateCommand(_ context.Context, cmd Command) error {
 	return requireReferenceID(cmd, "escrow_release")

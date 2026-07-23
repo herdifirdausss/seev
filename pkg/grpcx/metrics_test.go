@@ -25,7 +25,7 @@ func grpcObservationCount(t *testing.T, method, code string) float64 {
 	return float64(m.GetHistogram().GetSampleCount())
 }
 
-// TestLoggingInterceptor_ObservesSuccessAndCode proves docs/plan/43 K5's
+// TestLoggingInterceptor_ObservesSuccessAndCode proves docs/roadmap/archive/43 K5's
 // grpc_server_handling_seconds is recorded once per unary call, labeled by
 // the bounded {grpc_method, grpc_code} pair — not any per-caller value.
 func TestLoggingInterceptor_ObservesSuccessAndCode(t *testing.T) {
@@ -47,7 +47,7 @@ func TestLoggingInterceptor_ObservesSuccessAndCode(t *testing.T) {
 // chain — before loggingInterceptor — so a panic unwinds past
 // loggingInterceptor's own post-handler code entirely, the same way it
 // already skipped that interceptor's log line before this task; that gap
-// is not something docs/plan/43 K5 asks this task to close.)
+// is not something docs/roadmap/archive/43 K5 asks this task to close.)
 func TestLoggingInterceptor_ObservesNonOKCode(t *testing.T) {
 	const method = "/seev.ping.v1.PingService/Ping"
 	before := grpcObservationCount(t, method, "Unauthenticated")

@@ -1,4 +1,4 @@
--- docs/plan/29 Task T2: database-driven payin routing.
+-- docs/roadmap/archive/29 Task T2: database-driven payin routing.
 CREATE TABLE payin_vendor_gateways (
     vendor  TEXT PRIMARY KEY,
     gateway TEXT NOT NULL

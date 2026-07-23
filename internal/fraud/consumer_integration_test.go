@@ -24,7 +24,7 @@ import (
 
 func TestVelocityConsumerRealRabbitMQIncrementsPostedCounterOnce(t *testing.T) {
 	ctx := context.Background()
-	container, err := rmqcontainer.Run(ctx, "rabbitmq:3.13-management-alpine")
+	container, err := rmqcontainer.Run(ctx, "rabbitmq:4.3.3-management-alpine")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = container.Terminate(ctx) })
 	host, err := container.Host(ctx)

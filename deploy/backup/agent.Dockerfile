@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 #
-# docs/plan/50 T2 (K13): backup-agent needs BOTH a compiled Go binary and
+# docs/roadmap/active/50-a7-backup-pitr-disaster-recovery.md T2 (K13): backup-agent needs BOTH a compiled Go binary and
 # a local pgbackrest install with direct filesystem access to PGDATA — it
 # runs pgBackRest's "backup" command itself, sharing seev_postgres_data
 # (read-only) and the Postgres unix-socket directory with the postgres
@@ -8,7 +8,7 @@
 # deliberately never set in deploy/backup/pgbackrest.conf: from
 # pgBackRest's own point of view PGDATA and the control socket are just
 # local paths, so it never needs its own SSH/TLS remote-protocol mode —
-# that split-host complexity is real scope docs/plan/50 §8 explicitly
+# that split-host complexity is real scope docs/roadmap/active/50-a7-backup-pitr-disaster-recovery.md §8 explicitly
 # does not take on for this single-Compose-host lab environment.
 #
 # Builder stage matches the root Dockerfile's own Go build exactly
@@ -34,7 +34,7 @@ RUN mkdir -p /tmp/pgbackrest && chown postgres:postgres /tmp/pgbackrest && chmod
 
 COPY --from=builder /out/backup-agent /usr/local/bin/backup-agent
 
-# docs/plan/44 K5's REVISION build arg convention (root Dockerfile) —
+# docs/roadmap/archive/44-a2-ci-pipeline.md K5's REVISION build arg convention (root Dockerfile) —
 # baked in at build time so manifest.go can report which commit this
 # image was built from without needing a .git directory inside the
 # container (there isn't one).

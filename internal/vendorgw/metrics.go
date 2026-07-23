@@ -2,7 +2,7 @@ package vendorgw
 
 // Package-level metric, registered once regardless of how many
 // HealthTracker instances are constructed (mirrors internal/ledger/worker's
-// own approach, docs/plan/43 K5).
+// own approach, docs/roadmap/archive/43 K5).
 
 import (
 	"github.com/prometheus/client_golang/prometheus"
@@ -10,7 +10,7 @@ import (
 )
 
 // breakerState reports each vendor's current circuit state: 0 closed,
-// 1 half-open, 2 open (docs/plan/43 K5). The vendor label is always one of
+// 1 half-open, 2 open (docs/roadmap/archive/43 K5). The vendor label is always one of
 // HealthTracker's own map keys — populated only by Allow/RecordSuccess/
 // RecordFailure calls the payin/payout modules make with vendor names from
 // their OWN registries (internal/vendorgw.Registry), never raw request
@@ -33,7 +33,7 @@ func breakerStateValue(s HealthState) float64 {
 	}
 }
 
-// breakerBackend reports which backend a DistributedBreaker (docs/plan/45
+// breakerBackend reports which backend a DistributedBreaker (docs/roadmap/archive/45
 // Task T2/K3) is CURRENTLY serving calls from, per namespace ("payin" |
 // "payout" — a fixed, internal enum, never request input): 1 while Redis is
 // healthy, 0 while degraded to the local in-process fallback. Set only on
@@ -43,5 +43,5 @@ func breakerStateValue(s HealthState) float64 {
 var breakerBackend = promauto.NewGaugeVec(prometheus.GaugeOpts{
 	Namespace: "vendorgw",
 	Name:      "breaker_backend",
-	Help:      "Which backend the distributed breaker is currently using: 1=redis, 0=local (docs/plan/45 K6).",
+	Help:      "Which backend the distributed breaker is currently using: 1=redis, 0=local (docs/roadmap/archive/45 K6).",
 }, []string{"namespace", "backend"})

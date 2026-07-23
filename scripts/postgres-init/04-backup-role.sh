@@ -1,5 +1,5 @@
 #!/bin/sh
-# Provision the least-privilege seev_backup role (docs/plan/50 K5) on the
+# Provision the least-privilege seev_backup role (docs/roadmap/active/50 K5) on the
 # first boot of a fresh Postgres volume. This is idempotent by construction
 # (CREATE ROLE IF NOT EXISTS / GRANT is itself idempotent) so it is also the
 # body `make backup-role-bootstrap` runs against an EXISTING volume — this
@@ -15,7 +15,7 @@
 #   - SELECT on each database's own schema_migrations_<service> table ONLY.
 # It never gets access to a single domain table. Backup and status tooling
 # must use this identity for routine operation, never the application roles
-# or the schema-owner password (docs/plan/50 K5).
+# or the schema-owner password (docs/roadmap/active/50 K5).
 set -eu
 
 BACKUP_PASSWORD_FILE="${BACKUP_PASSWORD_FILE:-/run/secrets/seev_backup_password}"

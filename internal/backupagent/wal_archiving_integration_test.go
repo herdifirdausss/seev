@@ -1,6 +1,6 @@
 //go:build integration
 
-// docs/plan/50 T2 Work item 5: prove WAL continues archiving without ever
+// docs/roadmap/active/50 T2 Work item 5: prove WAL continues archiving without ever
 // waiting for archive_timeout — this test forces rotation explicitly via
 // pg_switch_wal() instead. It exercises plain PostgreSQL WAL archiving
 // mechanics (a trivial local-copy archive_command, not pgBackRest itself

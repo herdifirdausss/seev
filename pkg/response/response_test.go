@@ -226,7 +226,7 @@ func TestDecode_EncodeError(t *testing.T) {
 		Name string `json:"name"`
 	}
 
-	// invalid JSON supaya Decode mencoba menulis error response
+	// Invalid JSON forces Decode to try writing an error response.
 	body := `{"name":`
 	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")

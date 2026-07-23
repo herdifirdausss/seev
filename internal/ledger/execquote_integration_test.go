@@ -1,6 +1,6 @@
 //go:build integration
 
-// Proves docs/plan/38 Task T4: fee quote consumption inside execTransfer,
+// Proves docs/roadmap/archive/38 Task T4: fee quote consumption inside execTransfer,
 // against a real Postgres (same throwaway-container pattern as
 // schema_contract_test.go, whose helpers — setupSchemaTestDB, newService,
 // createUserCashAccount — this file reuses directly, same package).
@@ -158,7 +158,7 @@ func TestSchemaContract_ExecTransfer_QuoteMismatch_RollsBackAndQuoteStaysUsable(
 }
 
 // TestSchemaContract_ExecTransfer_ReplayAfterQuoteSuccess_IdempotentNoReconsumption
-// proves docs/plan/38 Task T4 step 5: the idempotency-key lookup runs BEFORE
+// proves docs/roadmap/archive/38 Task T4 step 5: the idempotency-key lookup runs BEFORE
 // quote consumption, so a replay of an already-posted request returns the
 // original success WITHOUT ever attempting to re-consume the (already
 // consumed) quote.
@@ -239,7 +239,7 @@ func TestSchemaContract_ExecTransfer_ConcurrentDifferentTransfersSameQuote_Exact
 }
 
 // TestSchemaContract_ExecTransfer_NoQuoteID_BehavesExactlyAsBefore proves
-// docs/plan/38 Task T4 step 4: an ordinary transfer without quote_id (and
+// docs/roadmap/archive/38 Task T4 step 4: an ordinary transfer without quote_id (and
 // without a manually-supplied fee_amount/fee_gateway — those are normally
 // injected by the transport layer's buildMetadata, out of scope for this
 // direct svc.Handle call) posts exactly as it did before this feature

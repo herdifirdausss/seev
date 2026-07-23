@@ -151,7 +151,7 @@ func TestAdminRouter_ReplayEvent_FailedEvent_Success(t *testing.T) {
 	assert.Equal(t, 1, postCalls)
 }
 
-// ─── Admin: vendor health (docs/plan/40 Task T5) ────────────────────────
+// ─── Admin: vendor health (docs/roadmap/archive/40 Task T5) ────────────────────────
 
 func TestAdminRouter_VendorHealth_NonAdmin_403(t *testing.T) {
 	m := &Module{}
@@ -170,7 +170,7 @@ func TestAdminRouter_VendorHealth_NilBreaker_EmptyList(t *testing.T) {
 	assert.Contains(t, w.Body.String(), `"vendors":[]`)
 }
 
-// TestAdminRouter_VendorHealth_ReportsAllThreeStates is docs/plan/40 Task
+// TestAdminRouter_VendorHealth_ReportsAllThreeStates is docs/roadmap/archive/40 Task
 // T5's own required test: a tracker seeded with closed, open, AND
 // half-open vendors must report each state accurately in one snapshot.
 func TestAdminRouter_VendorHealth_ReportsAllThreeStates(t *testing.T) {

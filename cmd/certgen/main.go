@@ -1,4 +1,4 @@
-// certgen is this repo's mini-CA (docs/plan/49 K3): it issues the CA and
+// certgen is this repo's mini-CA (docs/roadmap/archive/49 K3): it issues the CA and
 // per-service leaf certificates that pkg/tlsx loads for mutual TLS between
 // services. Identity is a SPIFFE-style URI SAN ("spiffe://seev/<service>"),
 // never a Common Name. This is a development/local tool, not a production
@@ -25,7 +25,7 @@ import (
 	"github.com/herdifirdausss/seev/pkg/tlsx"
 )
 
-// caTTL/leafTTL match docs/plan/49 K3 exactly: short leaf lifetime so
+// caTTL/leafTTL match docs/roadmap/archive/49 K3 exactly: short leaf lifetime so
 // rotation is a routine, well-exercised operation rather than a rare
 // break-glass procedure.
 const (
@@ -35,7 +35,7 @@ const (
 
 // knownServices maps certgen's --service flag values to the SPIFFE
 // identity pkg/tlsx expects — the closed set from pkg/tlsx.Identity*
-// constants (docs/plan/49 K3/K4). Adding a service here is the ONE place
+// constants (docs/roadmap/archive/49 K3/K4). Adding a service here is the ONE place
 // certgen needs to change; pkg/tlsx's allowlists are a separate, per-
 // listener decision (K4) that a new identity existing here does not by
 // itself grant any access to.
@@ -133,8 +133,9 @@ func cmdIssue(args []string) error {
 // cmdRotate is the T6 drill operation, not part of routine `make certs`:
 // it regenerates the CA itself and reissues every known-service leaf
 // against the new CA, so certificates signed by the OLD CA stop verifying
-// the moment pkg/tlsx's poll-reload picks up the new ca.pem (docs/plan/49
-// K9 — this is what "cert lama ditolak setelah rotate" actually means).
+// the moment pkg/tlsx's poll-reload picks up the new ca.pem (docs/roadmap/archive/49
+// K9 — this is what "old certificates are rejected after rotation" actually
+// means).
 func cmdRotate(args []string) error {
 	fs := flag.NewFlagSet("rotate", flag.ExitOnError)
 	out := fs.String("out", "deploy/certs", "output directory")
@@ -261,7 +262,20 @@ func issueLeaf(out, service, identity string, ca *x509.Certificate, caKey *ecdsa
 	if err != nil {
 		return fmt.Errorf("marshal %s key: %w", service, err)
 	}
-	if err := writePEM(filepath.Join(out, service+"-key.pem"), "EC PRIVATE KEY", keyDER, 0o600); err != nil {
+	// 0o644, not 0o600 (docs/roadmap/active/50 T6 fix, same root cause as
+	// backup-secret's own fix): deploy/certs is bind-mounted read-only
+	// into every app container (x-cert-volume), and this leaf key is
+	// exactly what that service's own process loads at boot
+	// (pkg/tlsx.CertSource) — running as a non-root, non-matching uid.
+	// docker compose (and a plain bind mount) preserves the host file's
+	// own owner/mode rather than normalizing it, so a 0600 key generated
+	// by one uid is unreadable to the container's uid on any host where
+	// they differ, which is every CI runner. Found live: "load TLS
+	// certificates: ... open /certs/ledger-key.pem: permission denied"
+	// crashed every app-profile service outright in CI. ca-key.pem stays
+	// 0o600 — it is never mounted into an application container's own
+	// read path (only certgen itself, run on the host, ever opens it).
+	if err := writePEM(filepath.Join(out, service+"-key.pem"), "EC PRIVATE KEY", keyDER, 0o644); err != nil {
 		return err
 	}
 	fmt.Printf("certgen: issued %s (%s), expires %s\n", service, identity, template.NotAfter.Format(time.RFC3339))
@@ -270,7 +284,7 @@ func issueLeaf(out, service, identity string, ca *x509.Certificate, caKey *ecdsa
 
 // leafFresh reports whether a service's existing leaf is both present and
 // not within its final quarter of validity — `make certs`'s idempotent
-// "regenerate bila absen/kedaluwarsa" behavior (docs/plan/49 K3), so a
+// "regenerate bila absen/kedaluwarsa" behavior (docs/roadmap/archive/49 K3), so a
 // routine `make certs` run never thrashes certs that are still good.
 func leafFresh(dir, service string) bool {
 	certPEM, err := os.ReadFile(filepath.Join(dir, service+".pem"))

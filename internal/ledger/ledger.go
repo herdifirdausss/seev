@@ -6,7 +6,7 @@
 // This is the ONLY package other modules or cmd/gateway may import from
 // internal/ledger — importing any subpackage (repository, processors,
 // service/*, transport) directly from outside the module is a boundary
-// violation (docs/plan/01-target-architecture.md).
+// violation (docs/roadmap/archive/01-target-architecture.md).
 package ledger
 
 import (
@@ -57,36 +57,36 @@ type (
 	Transaction = model.LedgerTransaction
 	Entry       = model.LedgerEntry
 	Statement   = model.Statement
-	// PendingAdjustment is a maker-checker adjustment request (docs/plan/16
+	// PendingAdjustment is a maker-checker adjustment request (docs/roadmap/archive/16
 	// Task T1).
 	PendingAdjustment = model.PendingAdjustment
-	// ReconBatchReport is an imported settlement batch's report (docs/plan/16
+	// ReconBatchReport is an imported settlement batch's report (docs/roadmap/archive/16
 	// Task T2).
 	ReconBatchReport = model.ReconBatchReport
 	ReconImportRow   = model.ReconImportRow
 	// ReconBatch is one imported settlement batch header, listing-only
-	// (docs/plan/25 Task T5).
+	// (docs/roadmap/archive/25 Task T5).
 	ReconBatch = model.ReconBatch
 	// DeadOutboxEvent is one dead-lettered outbox event, listing-only
-	// (docs/plan/25 Task T5).
+	// (docs/roadmap/archive/25 Task T5).
 	DeadOutboxEvent = model.DeadOutboxEvent
 	// ScheduledTransaction is a recurring/deferred user transaction
-	// (docs/plan/19 Task T1).
+	// (docs/roadmap/archive/19 Task T1).
 	ScheduledTransaction = model.ScheduledTransaction
 	// DisbursementImportRow/DisbursementBatchReport/DisbursementRunResult
-	// back batch disbursement (docs/plan/19 Task T2).
+	// back batch disbursement (docs/roadmap/archive/19 Task T2).
 	DisbursementImportRow   = model.DisbursementImportRow
 	DisbursementBatchReport = model.DisbursementBatchReport
 	DisbursementRunResult   = model.DisbursementRunResult
-	// SavingsConfig marks an account as interest-bearing (docs/plan/19 Task T3).
+	// SavingsConfig marks an account as interest-bearing (docs/roadmap/archive/19 Task T3).
 	SavingsConfig = model.SavingsConfig
 	// ReportDailyPosition/ReportDailyMutation/ReportReconSummary back the
-	// regulatory reporting endpoints (docs/plan/20 Task T2).
+	// regulatory reporting endpoints (docs/roadmap/archive/20 Task T2).
 	ReportDailyPosition = model.ReportDailyPosition
 	ReportDailyMutation = model.ReportDailyMutation
 	ReportReconSummary  = model.ReportReconSummary
 	// PolicyChecker is satisfied structurally by internal/policy.Engine
-	// (docs/plan/17 Task T1) — re-exported so callers can name the type
+	// (docs/roadmap/archive/17 Task T1) — re-exported so callers can name the type
 	// without importing internal/ledger/transport; they never need to
 	// import internal/policy either, since Go interface satisfaction is
 	// structural (pass the concrete *policy.Engine value straight to
@@ -94,12 +94,12 @@ type (
 	PolicyChecker = transport.PolicyChecker
 	// LedgerError is the structured error Post/Handle return for business
 	// validation failures (never for infra errors) — re-exported so a
-	// caller outside this module (e.g. internal/payin, docs/plan/22 Task
+	// caller outside this module (e.g. internal/payin, docs/roadmap/archive/22 Task
 	// T2) can classify "business failure, won't heal on retry" vs "infra
 	// error, retry/redeliver" via errors.As(err, &ledgerErr), the same
 	// pattern internal/ledger/service/schedule already uses internally.
 	LedgerError = apperror.LedgerError
-	// Quote is a fee quote row (docs/plan/38) — re-exported so a caller
+	// Quote is a fee quote row (docs/roadmap/archive/38) — re-exported so a caller
 	// outside this module (e.g. internal/testutil's LedgerHarness, used by
 	// internal/payout's own integration tests to create a quote to consume)
 	// can name CreateQuote's return type without importing the
@@ -109,8 +109,8 @@ type (
 
 // ErrAlreadyClosed is returned by Post when a lifecycle-closing command
 // (withdraw_settle, withdraw_cancel, reversal, ...) loses the atomic
-// closed_by_tx_id race (docs/plan/14 Task T2, decision K3) — re-exported so
-// a caller outside this module (e.g. internal/payout, docs/plan/23 Task T4)
+// closed_by_tx_id race (docs/roadmap/archive/14 Task T2, decision K3) — re-exported so
+// a caller outside this module (e.g. internal/payout, docs/roadmap/archive/23 Task T4)
 // can distinguish "someone else already closed this" (re-read state,
 // reconcile, not a real error) from every other business/infra failure via
 // errors.Is(err, ledger.ErrAlreadyClosed). Payout deliberately does NOT
@@ -118,7 +118,7 @@ type (
 // that the ledger's own guard (the sole source of truth) already fired.
 var ErrAlreadyClosed = apperror.ErrAlreadyClosed
 
-// ErrQuoteExpired/ErrQuoteMismatch (docs/plan/38 Task T5) are re-exported so
+// ErrQuoteExpired/ErrQuoteMismatch (docs/roadmap/archive/38 Task T5) are re-exported so
 // a caller outside this module (payout, via ConsumeFeeQuote below) can
 // classify a rejected quote consumption the same way any other business
 // error is classified — errors.Is(err, ledger.ErrQuoteExpired) — without
@@ -134,7 +134,7 @@ type WorkerConfig struct {
 	OutboxPollInterval time.Duration
 	OutboxBatchSize    int
 	// AlertWebhookURL, if non-empty, is POSTed to on every integrity
-	// discrepancy the verifier finds (docs/plan/12 Task T4). Empty = no
+	// discrepancy the verifier finds (docs/roadmap/archive/12 Task T4). Empty = no
 	// external alert, log+metric only (backward compatible default).
 	AlertWebhookURL string
 }
@@ -191,18 +191,18 @@ type Module struct {
 // lock (fine for a single-instance deployment, NOT safe for multi-replica).
 //
 // maxAmountPerTx is a global safety ceiling (minor units) applied to every
-// posted transaction — zero/negative disables it (docs/plan/10 Task T5).
+// posted transaction — zero/negative disables it (docs/roadmap/archive/10 Task T5).
 //
 // policyChecker, if non-nil, is evaluated before every posting on the
-// PUBLIC router only (docs/plan/17 Task T1) — the internal router never
+// PUBLIC router only (docs/roadmap/archive/17 Task T1) — the internal router never
 // applies it (trusted internal callers aren't subject to end-user velocity
 // limits). Pass nil to disable policy checks entirely — byte-identical
 // behavior to before this parameter existed.
 //
 // fraudClient, if non-nil, screens every PUBLIC-router posting BEFORE any
-// DB transaction opens (docs/plan/37) — nil disables screening entirely,
+// DB transaction opens (docs/roadmap/archive/37) — nil disables screening entirely,
 // same convention as policyChecker. This replaced the old in-transaction
-// PrePostHook seam (docs/plan/20): screening moved out of
+// PrePostHook seam (docs/roadmap/archive/20): screening moved out of
 // internal/ledger/service/handle entirely, into the transport layer, so no
 // network round-trip ever happens while a row lock is held.
 func NewModule(db database.DatabaseSQL, broker messaging.Broker, redisClient *redis.Client, workerCfg WorkerConfig, logger *slog.Logger, maxAmountPerTx decimal.Decimal, policyChecker PolicyChecker, fraudClient *fraudcheck.Client, feeQuoteTTL time.Duration) *Module {
@@ -305,7 +305,7 @@ func (m *Module) IsKnownTransactionType(txType string) bool {
 
 // Router returns the public-facing HTTP handler for the ledger module — only
 // transaction types safe for direct end-user use are postable through it
-// (docs/plan/10 Task T1). The caller mounts it under a path prefix and wraps
+// (docs/roadmap/archive/10 Task T1). The caller mounts it under a path prefix and wraps
 // it with auth/rate-limit middleware.
 func (m *Module) Router() http.Handler {
 	return m.router
@@ -317,7 +317,7 @@ func (m *Module) ResolveFee(ctx context.Context, userID uuid.UUID, txType, gatew
 	return m.feePolicy.Resolve(ctx, userID, txType, gateway, currency, amount)
 }
 
-// CreateQuote prices and persists a single-use fee quote (docs/plan/38 Task
+// CreateQuote prices and persists a single-use fee quote (docs/roadmap/archive/38 Task
 // T2/T3) — the same path POST /fees/quote calls. Exposed on the module
 // (rather than only reachable via HTTP) so internal/testutil's
 // LedgerHarness can create quotes for integration tests (e.g.
@@ -329,12 +329,12 @@ func (m *Module) CreateQuote(ctx context.Context, userID uuid.UUID, txType, gate
 }
 
 // ConsumeFeeQuote atomically, single-use consumes a fee quote created via
-// POST /fees/quote (docs/plan/38 Task T5) — a short, standalone operation
+// POST /fees/quote (docs/roadmap/archive/38 Task T5) — a short, standalone operation
 // (no ledger posting tx involved), exposed over gRPC so payout-service (a
 // separate process with no direct access to seev_ledger) can spend a quote
 // before it holds funds. Rejection surfaces as *apperror.LedgerError (via
 // apperror.ErrQuoteExpired/ErrQuoteMismatch — the same re-exported sentinels
-// execTransfer's own quote consumption uses, docs/plan/38 Task T4) rather
+// execTransfer's own quote consumption uses, docs/roadmap/archive/38 Task T4) rather
 // than the raw feepolicy sentinels, so every caller outside this module —
 // grpcserver's gRPC mapping AND internal/testutil's in-process harness — can
 // classify it through the ONE existing generic apperror.LedgerError path
@@ -355,7 +355,7 @@ func (m *Module) ConsumeFeeQuote(ctx context.Context, quoteID, userID uuid.UUID,
 }
 
 // ApplyKycTier upserts userID's effective policy_limits from the
-// policy_tier_limits template for kycLevel (docs/plan/39 Task T5) — called
+// policy_tier_limits template for kycLevel (docs/roadmap/archive/39 Task T5) — called
 // by auth-service's gRPC ApplyKycTier when a KYC submission is approved.
 // Idempotent (re-applying the same level is a no-op; upgrading/downgrading
 // overwrites in place). Returns apperror.ErrUnknownKycTier if kycLevel
@@ -369,13 +369,13 @@ func (m *Module) ApplyKycTier(ctx context.Context, userID uuid.UUID, kycLevel in
 // listener — every registered transaction type is postable through it,
 // including money movement to/from system accounts (money_in, refund,
 // withdraw settlement, escrow release, fee_collect). The caller MUST NOT
-// expose this to untrusted networks (docs/plan/10 Task T1).
+// expose this to untrusted networks (docs/roadmap/archive/10 Task T1).
 func (m *Module) InternalRouter() http.Handler {
 	return transport.NewInternalRouterWithFeePolicy(m, m.feePolicy)
 }
 
 // LoadCurrencies loads the `currencies` table into pkg/currency's runtime
-// registry (docs/plan/18 Task T1) — call once at startup, BEFORE serving
+// registry (docs/roadmap/archive/18 Task T1) — call once at startup, BEFORE serving
 // traffic, right after NewModule. Deliberately a separate call rather than
 // happening inside NewModule itself: NewModule has no context.Context or
 // error return, and every other startup dependency (Postgres, Redis,
@@ -475,7 +475,7 @@ func (m *Module) ListAccounts(ctx context.Context, userID uuid.UUID) ([]Account,
 }
 
 // GetUserCurrency resolves the currency of a user's cash (or, if pocketCode
-// is non-empty, pocket) account (docs/plan/18 Task T2) — used by the
+// is non-empty, pocket) account (docs/roadmap/archive/18 Task T2) — used by the
 // transport layer's fee policy to pick the right (type, gateway, currency)
 // rule before an amount is validated against a specific account.
 func (m *Module) GetUserCurrency(ctx context.Context, userID uuid.UUID, pocketCode string) (string, error) {
@@ -500,7 +500,7 @@ func (m *Module) GetBalance(ctx context.Context, accountID uuid.UUID) (Balance, 
 // GetBalanceAsOf returns accountID's balance at the end of a past calendar
 // day (Asia/Jakarta), computed from the nearest daily snapshot at or before
 // that date plus the net delta of entries since — two lightweight queries,
-// never a full replay of the account's history (docs/plan/15 Task T1).
+// never a full replay of the account's history (docs/roadmap/archive/15 Task T1).
 // Currency/status/type/allow_negative always reflect the CURRENT account
 // state — only Balance is historical.
 func (m *Module) GetBalanceAsOf(ctx context.Context, accountID uuid.UUID, asOf time.Time) (Balance, error) {
@@ -516,7 +516,7 @@ func (m *Module) GetBalanceAsOf(ctx context.Context, accountID uuid.UUID, asOf t
 	return current, nil
 }
 
-// maxStatementEntries caps a single statement response (docs/plan/15 Task
+// maxStatementEntries caps a single statement response (docs/roadmap/archive/15 Task
 // T2, decision K7) — a request whose period contains more entries than this
 // is rejected with apperror.ErrStatementRangeTooLarge rather than silently
 // truncated (a statement quietly missing entries is a financial bug, not a
@@ -525,7 +525,7 @@ const maxStatementEntries = 5000
 
 // Statement returns accountID's opening balance, closing balance, and every
 // ledger entry within [from, to] (Asia/Jakarta calendar days, both
-// inclusive) — docs/plan/15 Task T2. OpeningBalance comes from
+// inclusive) — docs/roadmap/archive/15 Task T2. OpeningBalance comes from
 // GetBalanceAsOf(from - 1 day), never a full replay of the account's entire
 // history.
 func (m *Module) Statement(ctx context.Context, accountID uuid.UUID, from, to time.Time) (Statement, error) {
@@ -566,7 +566,7 @@ func (m *Module) GetTransaction(ctx context.Context, txID uuid.UUID) (Transactio
 
 // GetTransactionByIdempotencyKey returns a transaction header by its
 // idempotency key + scope — the way an external orchestrator (e.g.
-// internal/payout, docs/plan/23 Task T3) recovers the tx ID Post() itself
+// internal/payout, docs/roadmap/archive/23 Task T3) recovers the tx ID Post() itself
 // doesn't return, so it can later pass that ID as ReferenceID to a
 // lifecycle-closing command (withdraw_settle/withdraw_cancel). scope=""
 // means no scope (NULL), matching Command.IdempotencyScope's own
@@ -600,7 +600,7 @@ func (m *Module) CanAccessAccount(ctx context.Context, accountID, userID uuid.UU
 // NOTE: this walks every account the transaction touched via GetAccountIDs
 // rather than trusting ledger_transactions.source/destination_account_id,
 // which are not reliably semantic for multi-account transactions (see
-// docs/plan/04 note on D1, and the Phase 2 fix tracked as Task H6).
+// docs/roadmap/archive/04 note on D1, and the Phase 2 fix tracked as Task H6).
 func (m *Module) CanAccessTransaction(ctx context.Context, txID, userID uuid.UUID) (bool, error) {
 	accountIDs, err := m.txRepo.GetAccountIDs(ctx, txID)
 	if err != nil {
@@ -620,7 +620,7 @@ func (m *Module) CanAccessTransaction(ctx context.Context, txID, userID uuid.UUI
 
 // ReplayDeadEvent resets one dead-lettered outbox event back to 'failed'
 // with a clean retry budget, so the relay's normal retry path picks it up
-// on the next tick (docs/plan/12 Task T3). Returns
+// on the next tick (docs/roadmap/archive/12 Task T3). Returns
 // apperror.ErrOutboxEventNotFound if id doesn't exist or isn't currently
 // 'dead'. Only reachable via the internal router, admin-gated.
 func (m *Module) ReplayDeadEvent(ctx context.Context, id uuid.UUID) error {
@@ -628,7 +628,7 @@ func (m *Module) ReplayDeadEvent(ctx context.Context, id uuid.UUID) error {
 }
 
 // ListDeadOutboxEvents returns dead-lettered outbox events oldest first,
-// paginated (docs/plan/25 Task T5) — lets an operator see what needs
+// paginated (docs/roadmap/archive/25 Task T5) — lets an operator see what needs
 // replay without querying Postgres directly.
 func (m *Module) ListDeadOutboxEvents(ctx context.Context, limit, offset int) ([]DeadOutboxEvent, error) {
 	if limit <= 0 {
@@ -649,7 +649,7 @@ func (m *Module) ReplayDeadEvents(ctx context.Context, olderThan time.Time) (int
 
 // CreateAdjustment requests a manual balance adjustment — it does NOT move
 // any money, only records the request for a second identity to approve
-// (docs/plan/16 Task T1, decision K8). adjType must be "adjustment_credit"
+// (docs/roadmap/archive/16 Task T1, decision K8). adjType must be "adjustment_credit"
 // or "adjustment_debit".
 func (m *Module) CreateAdjustment(ctx context.Context, requestedBy, adjType string, amount decimal.Decimal, targetUserID uuid.UUID, metadata map[string]any, reason string) (uuid.UUID, error) {
 	return m.adjustmentsSvc.Create(ctx, requestedBy, adjType, amount, targetUserID, metadata, reason)
@@ -679,7 +679,7 @@ func (m *Module) ListAdjustments(ctx context.Context, status string, limit int) 
 }
 
 // ImportReconBatch validates, persists, and matches one settlement report
-// against the internal ledger in a single DB transaction (docs/plan/16 Task
+// against the internal ledger in a single DB transaction (docs/roadmap/archive/16 Task
 // T2). Returns the created batch id.
 func (m *Module) ImportReconBatch(ctx context.Context, gateway string, reportDate time.Time, filename string, rows []ReconImportRow, createdBy string) (uuid.UUID, error) {
 	return m.reconSvc.ImportBatch(ctx, gateway, reportDate, filename, rows, createdBy)
@@ -692,7 +692,7 @@ func (m *Module) GetReconBatchReport(ctx context.Context, batchID uuid.UUID, mat
 }
 
 // ListReconBatches returns imported settlement batches newest first,
-// paginated (docs/plan/25 Task T5) — lets an operator find a batch's id
+// paginated (docs/roadmap/archive/25 Task T5) — lets an operator find a batch's id
 // without SQL before drilling into GetReconBatchReport.
 func (m *Module) ListReconBatches(ctx context.Context, limit, offset int) ([]ReconBatch, error) {
 	return m.reconSvc.ListBatches(ctx, limit, offset)
@@ -700,14 +700,14 @@ func (m *Module) ListReconBatches(ctx context.Context, limit, offset int) ([]Rec
 
 // ResolveReconItem requests a correction for a non-matched recon item — it
 // does NOT move any money, only creates a pending adjustment a second
-// identity must separately approve (docs/plan/16 Task T2, decision K5).
+// identity must separately approve (docs/roadmap/archive/16 Task T2, decision K5).
 // adjType must be "adjustment_suspense_credit" or "adjustment_suspense_debit".
 func (m *Module) ResolveReconItem(ctx context.Context, itemID uuid.UUID, requestedBy, adjType string, amount decimal.Decimal, reason string) (uuid.UUID, error) {
 	return m.reconSvc.ResolveItem(ctx, itemID, requestedBy, adjType, amount, reason)
 }
 
 // CreateSchedule stores a recurring/deferred user transaction request — it
-// does NOT post anything (docs/plan/19 Task T1); the daily schedule runner
+// does NOT post anything (docs/roadmap/archive/19 Task T1); the daily schedule runner
 // (or the admin RunSchedulesNow endpoint) executes it once due.
 func (m *Module) CreateSchedule(
 	ctx context.Context, userID uuid.UUID, txType string, amount decimal.Decimal,
@@ -738,13 +738,13 @@ func (m *Module) CancelSchedule(ctx context.Context, id, userID uuid.UUID) error
 
 // RunSchedulesNow executes the schedule runner for a given date immediately,
 // outside the cron schedule — internal-router-only, admin-gated ops/testing
-// endpoint (docs/plan/19 Task T1 step 5).
+// endpoint (docs/roadmap/archive/19 Task T1 step 5).
 func (m *Module) RunSchedulesNow(ctx context.Context, asOf time.Time) (executed, failed int, err error) {
 	return m.scheduleJob.RunNow(ctx, asOf)
 }
 
 // ImportDisbursementBatch validates and persists a new batch — it does NOT
-// post anything (docs/plan/19 Task T2); call RunDisbursement to start (or
+// post anything (docs/roadmap/archive/19 Task T2); call RunDisbursement to start (or
 // resume) processing.
 func (m *Module) ImportDisbursementBatch(ctx context.Context, filename string, rows []DisbursementImportRow, createdBy string) (uuid.UUID, error) {
 	return m.disbursementSvc.Import(ctx, filename, rows, createdBy)
@@ -753,7 +753,7 @@ func (m *Module) ImportDisbursementBatch(ctx context.Context, filename string, r
 // RunDisbursement processes up to 500 items still needing a Post attempt —
 // call repeatedly until Done is true. There is no separate "resume"
 // endpoint: calling this again after a partial run IS resuming, since an
-// already-'posted' item is never reselected (docs/plan/19 Task T2).
+// already-'posted' item is never reselected (docs/roadmap/archive/19 Task T2).
 func (m *Module) RunDisbursement(ctx context.Context, batchID uuid.UUID, retryFailed bool) (DisbursementRunResult, error) {
 	return m.disbursementSvc.Run(ctx, batchID, retryFailed)
 }
@@ -765,7 +765,7 @@ func (m *Module) GetDisbursementReport(ctx context.Context, batchID uuid.UUID, s
 }
 
 // SetSavingsConfig registers (or re-registers) an account as
-// interest-bearing (docs/plan/19 Task T3).
+// interest-bearing (docs/roadmap/archive/19 Task T3).
 func (m *Module) SetSavingsConfig(ctx context.Context, accountID uuid.UUID, annualRateBps int, enabled bool) error {
 	return m.accrualSvc.SetConfig(ctx, accountID, annualRateBps, enabled)
 }
@@ -776,7 +776,7 @@ func (m *Module) ListSavingsConfigs(ctx context.Context) ([]SavingsConfig, error
 }
 
 // GetDailyPositionReport/GetDailyMutationReport/GetReconSummaryReport read
-// the three regulatory-reporting views (docs/plan/20 Task T2,
+// the three regulatory-reporting views (docs/roadmap/archive/20 Task T2,
 // migrations/000018) — read-only, no new job/scheduler, pulled on demand.
 func (m *Module) GetDailyPositionReport(ctx context.Context, from, to time.Time) ([]ReportDailyPosition, error) {
 	return m.reportingRepo.DailyPosition(ctx, from, to)

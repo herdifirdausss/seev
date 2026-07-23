@@ -79,7 +79,7 @@ func (m *Module) handleDelivery(ctx context.Context, delivery amqp.Delivery) err
 		return fmt.Errorf("fraud: increment velocity: %w", err)
 	}
 	// request_id here is the CorrelationId the publisher stamped on this
-	// message (docs/plan/36 Task T4/T6) — logging it is what lets a trace
+	// message (docs/roadmap/archive/36 Task T4/T6) — logging it is what lets a trace
 	// span the async hop from "HTTP/gRPC request that posted the
 	// transaction" to "this velocity counter increment", the same way the
 	// synchronous screening call already does via pkg/fraudcheck.

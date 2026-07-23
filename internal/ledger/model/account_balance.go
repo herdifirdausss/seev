@@ -15,6 +15,6 @@ type AccountBalance struct {
 	// system accounts by design (settlement, adjustment, chargeback; see
 	// migrations/000001_ledger_core.up.sql). Determines whether an account
 	// is locked with FOR UPDATE (false) or updated via atomic delta-apply
-	// (true) — see docs/plan/11 Task T1.
+	// (true) — see docs/roadmap/archive/11 Task T1.
 	AllowNegative bool
 }

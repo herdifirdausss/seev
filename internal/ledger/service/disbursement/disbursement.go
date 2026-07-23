@@ -1,9 +1,9 @@
-// Package disbursement implements batch payouts (docs/plan/19 Task T2,
+// Package disbursement implements batch payouts (docs/roadmap/archive/19 Task T2,
 // decision S3 butir 2): one CSV manifest -> many `disbursement` postings,
 // executed in bounded N-item slices via repeated calls to Run rather than
 // synchronously in the import request (a 50,000-row Post loop would blow
 // past the internal router's request timeout) or via a new background
-// worker (docs/plan/13 K5 "jangan tambah worker" — this package adds none).
+// worker (docs/roadmap/archive/13 K5 "jangan tambah worker" — this package adds none).
 // Each item's idempotency key ("batch:<batch_id>:<item_no>") makes Run
 // naturally resumable: calling it again after a partial run, a crash, or
 // an operator's deliberate retry only ever processes items still
@@ -27,12 +27,12 @@ import (
 	"github.com/herdifirdausss/seev/pkg/generalutil"
 )
 
-// maxImportRows mirrors service/recon's own cap (docs/plan/16 Task T2) — a
+// maxImportRows mirrors service/recon's own cap (docs/roadmap/archive/16 Task T2) — a
 // batch larger than this must be split into multiple imports.
 const maxImportRows = 50_000
 
 // defaultMaxItemsPerRun bounds how many items a single Run call processes
-// (docs/plan/19 Task T2 step 6) — keeps each call comfortably inside the
+// (docs/roadmap/archive/19 Task T2 step 6) — keeps each call comfortably inside the
 // internal router's request timeout regardless of batch size; the caller
 // (ops tooling/script) calls Run repeatedly until Done is true.
 const defaultMaxItemsPerRun = 500
@@ -61,7 +61,7 @@ type Option func(*Service)
 // WithMaxItemsPerRun overrides defaultMaxItemsPerRun — production never
 // needs this; integration tests use it to prove pagination across
 // multiple Run calls without importing hundreds of rows (pola
-// policy.Engine's WithCacheTTL, docs/plan/17 Task T1).
+// policy.Engine's WithCacheTTL, docs/roadmap/archive/17 Task T1).
 func WithMaxItemsPerRun(n int) Option {
 	return func(s *Service) { s.maxItemsPerRun = n }
 }
@@ -117,7 +117,7 @@ func (s *Service) Import(ctx context.Context, filename string, rows []model.Disb
 
 // Run processes up to maxItemsPerRun items still needing a Post attempt.
 // Call repeatedly until Done is true. retryFailed additionally reprocesses
-// items already marked 'failed' (docs/plan/19 Task T2 step 4) — omit it to
+// items already marked 'failed' (docs/roadmap/archive/19 Task T2 step 4) — omit it to
 // only advance items that have never been attempted.
 func (s *Service) Run(ctx context.Context, batchID uuid.UUID, retryFailed bool) (model.DisbursementRunResult, error) {
 	batch, err := s.repo.GetBatch(ctx, batchID)
@@ -166,7 +166,7 @@ func (s *Service) Run(ctx context.Context, batchID uuid.UUID, retryFailed bool) 
 			// status as-is (still 'pending'/'failed') so the NEXT Run call
 			// reconsiders it; whatever Post did or didn't do, its own
 			// idempotency key makes reconsidering it safe either way
-			// (docs/plan/19 Task T2's core locked pattern).
+			// (docs/roadmap/archive/19 Task T2's core locked pattern).
 			result.Failed++
 			continue
 		}

@@ -3,11 +3,11 @@ BUILD_DIR := bin
 CMD_DIR   := ./cmd/gateway
 GOFLAGS   := -trimpath -ldflags="-s -w"
 
-.PHONY: build build-all run dev test lint tidy tools proto proto-lint proto-breaking docker-up docker-down smoke-container migrate-up migrate-up-all migrate-down grant-app-role verify-full chaos-debug observability-secret observability-up observability-down certs backup-secret backup-role-bootstrap backup-checksums-enable backup-stanza-init backup-full backup-diff backup-check backup-status backup-expire
+.PHONY: build build-all run dev test lint docs-check tidy tools proto proto-lint proto-breaking docker-up docker-down smoke-container migrate-up migrate-up-all migrate-down grant-app-role verify-full chaos-debug observability-secret observability-up observability-down certs backup-secret backup-role-bootstrap backup-checksums-enable backup-stanza-init backup-full backup-diff backup-check backup-status backup-expire
 
-BUF_VERSION                := v1.47.2
+BUF_VERSION                := v1.72.0
 PROTOC_GEN_GO_VERSION      := v1.36.11
-PROTOC_GEN_GO_GRPC_VERSION := v1.5.1
+PROTOC_GEN_GO_GRPC_VERSION := v1.6.2
 
 ## build: Compile the binary
 build:
@@ -47,6 +47,10 @@ test/cover:
 lint:
 	golangci-lint run ./...
 
+## docs-check: Validate required guides, local Markdown links, and heading anchors
+docs-check:
+	go run ./cmd/doccheck
+
 ## tidy: Tidy go.mod and go.sum
 tidy:
 	go mod tidy
@@ -82,11 +86,11 @@ docker-up:
 docker-down:
 	docker compose down
 
-## smoke-container: Full-container round-trip (docs/plan/44 K4) — real Docker images via `docker compose --profile app`, not host binaries
+## smoke-container: Full-container round-trip (docs/roadmap/archive/44 K4) — real Docker images via `docker compose --profile app`, not host binaries
 smoke-container:
 	./scripts/smoke-container.sh
 
-# This is what PROJECT_GUIDE.md's "Build and verification" section means by "the
+# This is what docs/development/project-guide.md's "Build and verification" section means by "the
 # full gate" — run this instead of chaining the steps by hand so a volume
 # reset is never skipped by mistake. Any ad-hoc debugging against the
 # shared dev stack (manual curl against a running service, a one-off
@@ -99,6 +103,7 @@ verify-full:
 	go vet ./...
 	go vet -tags=integration ./...
 	$(MAKE) lint
+	$(MAKE) docs-check
 	$(MAKE) test
 	docker compose down -v
 	./scripts/smoke-test.sh
@@ -115,7 +120,7 @@ chaos-debug:
 	KEEP_WORK_DIR=1 ./scripts/chaos-test.sh $(SCENARIO)
 
 # Migrations run as the schema OWNER (POSTGRES_MIGRATE_USER), never as the
-# app's restricted POSTGRES_USER (docs/plan/16 Task T3) — DDL and DML
+# app's restricted POSTGRES_USER (docs/roadmap/archive/16 Task T3) — DDL and DML
 # identities stay separate on purpose.
 # Port default (5433) matches docker-compose.yml's own default — see its
 # comment on the postgres service's `ports:` mapping.
@@ -143,11 +148,11 @@ migrate-up-all:
 migrate-down:
 	migrate -path migrations/$(SERVICE) -database "$(SERVICE_MIGRATE_DSN)" down 1
 
-## grant-app-role: Grant the app_service DB role to POSTGRES_USER (run once per environment, after the first migrate-up creates app_service — docs/plan/16 Task T3)
+## grant-app-role: Grant the app_service DB role to POSTGRES_USER (run once per environment, after the first migrate-up creates app_service — docs/roadmap/archive/16 Task T3)
 grant-app-role:
 	psql "$(SERVICE_OWNER_DSN)" -c "GRANT app_service TO $(POSTGRES_USER);"
 
-# docs/plan/43 K1: a strong Grafana admin password generated locally, mode
+# docs/roadmap/archive/43 K1: a strong Grafana admin password generated locally, mode
 # 0600, gitignored — never a default/committed credential. Idempotent: does
 # nothing if the secret already exists, so re-running is safe.
 ## observability-secret: Generate the local Grafana admin password (run once per machine)
@@ -161,7 +166,7 @@ observability-secret:
 		echo "deploy/observability/secrets/grafana_admin_password already exists, leaving it alone"; \
 	fi
 
-## observability-up: Start app + observability profiles (Prometheus/Grafana/Loki/Tempo/Alloy) — do NOT run alongside the testcontainers integration suite (PROJECT_GUIDE.md RAM budget)
+## observability-up: Start app + observability profiles (Prometheus/Grafana/Loki/Tempo/Alloy) — do NOT run alongside the testcontainers integration suite (docs/development/project-guide.md RAM budget)
 observability-up: observability-secret
 	OTEL_EXPORTER_OTLP_ENDPOINT=tempo:4317 docker compose --profile app --profile observability up --build -d
 
@@ -169,7 +174,7 @@ observability-up: observability-secret
 observability-down:
 	docker compose --profile app --profile observability down
 
-# docs/plan/49 K3: mTLS CA + one leaf cert per service identity, generated
+# docs/roadmap/archive/49 K3: mTLS CA + one leaf cert per service identity, generated
 # locally into ./deploy/certs (gitignored, mirrors the observability-secret
 # pattern above). `docker compose --profile app` paths that don't go through
 # scripts/lib.sh (manual dev, smoke-container.sh, nightly.yml) mount this
@@ -185,29 +190,45 @@ certs:
 		$(BUILD_DIR)/certgen issue --service $$service --out deploy/certs || exit $$?; \
 	done
 
-# docs/plan/50 K3/K5: two independent secrets — the pgBackRest repository
+# docs/roadmap/active/50 K3/K5: two independent secrets — the pgBackRest repository
 # encryption passphrase and the seev_backup role's own password — generated
-# locally, mode 0600, gitignored, mirrors the observability-secret pattern.
+# locally, gitignored, mirrors the observability-secret pattern.
 # Idempotent: does nothing to a secret that already exists.
+#
+# Mode 0644, not 0600: docker compose (non-swarm) mounts a file-based
+# secret as a bind mount that PRESERVES the host file's own owner/mode —
+# it does not normalize permissions the way Swarm secrets do. A 0600 file
+# is only readable by whichever host uid owns it; inside the container,
+# the entrypoint wrapper reads it as root (fine either way), but
+# /docker-entrypoint-initdb.d/04-backup-role.sh runs later as the
+# unprivileged "postgres" user, a DIFFERENT uid on any host where the
+# secret wasn't generated by that same uid — which is every CI runner.
+# Found live: `cat: can't open '/run/secrets/seev_backup_password':
+# Permission denied` crashed the postgres container outright in CI
+# (smoke-container job), silently masked on macOS/Docker Desktop's own
+# bind-mount implementation, which does not enforce this the same way.
+# These are local/CI-ephemeral dev secrets with no other host-side access
+# control depending on 0600 — world-readable-on-this-machine is an
+# acceptable trade for the container actually being able to start.
 ## backup-secret: Generate the pgBackRest repository passphrase and seev_backup role password (run once per machine)
 backup-secret:
 	@mkdir -p deploy/backup/secrets deploy/backup/repo
 	@if [ ! -f deploy/backup/secrets/pgbackrest_repo_passphrase ]; then \
 		openssl rand -base64 32 > deploy/backup/secrets/pgbackrest_repo_passphrase; \
-		chmod 600 deploy/backup/secrets/pgbackrest_repo_passphrase; \
+		chmod 644 deploy/backup/secrets/pgbackrest_repo_passphrase; \
 		echo "generated deploy/backup/secrets/pgbackrest_repo_passphrase"; \
 	else \
 		echo "deploy/backup/secrets/pgbackrest_repo_passphrase already exists, leaving it alone"; \
 	fi
 	@if [ ! -f deploy/backup/secrets/seev_backup_password ]; then \
 		openssl rand -base64 24 > deploy/backup/secrets/seev_backup_password; \
-		chmod 600 deploy/backup/secrets/seev_backup_password; \
+		chmod 644 deploy/backup/secrets/seev_backup_password; \
 		echo "generated deploy/backup/secrets/seev_backup_password"; \
 	else \
 		echo "deploy/backup/secrets/seev_backup_password already exists, leaving it alone"; \
 	fi
 
-# docs/plan/50 K5: 04-backup-role.sh only runs automatically via
+# docs/roadmap/active/50 K5: 04-backup-role.sh only runs automatically via
 # /docker-entrypoint-initdb.d on a FRESH volume's first boot. An existing
 # volume (like this repo's own dev seev_postgres_data, provisioned before
 # Track A7 existed) never re-runs first-boot scripts, so this target
@@ -217,7 +238,7 @@ backup-secret:
 backup-role-bootstrap:
 	docker compose exec postgres sh /docker-entrypoint-initdb.d/04-backup-role.sh
 
-# docs/plan/50 K2: --data-checksums (POSTGRES_INITDB_ARGS) only takes effect
+# docs/roadmap/active/50 K2: --data-checksums (POSTGRES_INITDB_ARGS) only takes effect
 # on a fresh initdb. An existing volume needs Postgres fully STOPPED and
 # pg_checksums run offline directly against the data directory — this
 # target does exactly that, then restarts and verifies. Never run this
@@ -231,7 +252,7 @@ backup-checksums-enable:
 		sh -c 'pg_checksums --enable --pgdata=/var/lib/postgresql/data && pg_checksums --check --pgdata=/var/lib/postgresql/data'
 	docker compose up -d postgres
 
-# docs/plan/50 K3: `docker compose exec` starts a fresh process attached to
+# docs/roadmap/active/50 K3: `docker compose exec` starts a fresh process attached to
 # the container, NOT a child of the entrypoint's own shell — it does not
 # inherit the PGBACKREST_REPO1_CIPHER_PASS the entrypoint exported for
 # archive_command's benefit (that export only reaches the postgres server

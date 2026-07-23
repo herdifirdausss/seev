@@ -16,6 +16,18 @@ import (
 // ListAssuranceRecords is an owner-side, read-only projection. It deliberately
 // selects only correlation fields; raw webhook JSON and vendor error bodies
 // remain inside payin-service.
+//
+// ledger_gateway is resolved through payin_vendor_gateways (docs/roadmap/active/50
+// T6 fix), not the raw vendor id: HandleWebhook posts money_in with the
+// MAPPED gateway (e.g. "bca") in metadata, which is what
+// internal/ledger/processors/money_in.go books into ledger_transactions.gateway
+// — but payin_webhook_events.vendor stores the raw internal vendor id
+// (e.g. "mockvendor"). Every vendor/gateway pair configured with a
+// distinct display name (the system's own default seed,
+// migrations/payin/000003_routing.up.sql, maps mockvendor -> bca) used to
+// make every correlation lookup below miss by construction — found live
+// by cmd/drverify against a real webhook-posted topup, not a hand-seeded
+// fixture.
 func (m *Module) ListAssuranceRecords(ctx context.Context, req *payinv1.ListAssuranceRecordsRequest) (*payinv1.ListAssuranceRecordsResponse, error) {
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "request is required")
@@ -64,7 +76,7 @@ func (m *Module) ListAssuranceRecords(ctx context.Context, req *payinv1.ListAssu
 			       COALESCE(i.request_id, '') AS request_id,
 			       (i.request_id IS NOT NULL AND i.request_id <> '') AS request_id_present,
 			       CASE WHEN e.id IS NULL THEN '' ELSE 'money_in' END AS ledger_type,
-			       COALESCE(e.vendor, '') AS ledger_gateway,
+			       COALESCE(vg.gateway, e.vendor, '') AS ledger_gateway,
 			       COALESCE(e.external_ref, '') AS ledger_external_ref,
 			       CASE WHEN e.id IS NULL THEN '' ELSE 'payin:' || e.vendor END AS ledger_idempotency_scope
 			FROM payin_topup_intents i
@@ -77,12 +89,14 @@ func (m *Module) ListAssuranceRecords(ctx context.Context, req *payinv1.ListAssu
 				ORDER BY (e.id = i.settled_event_id) DESC, e.updated_at DESC, e.id DESC
 				LIMIT 1
 			) e ON true
+			LEFT JOIN payin_vendor_gateways vg ON vg.vendor = e.vendor
 			UNION ALL
 			SELECT e.id, 'webhook_event', e.updated_at, e.created_at, e.status, e.user_id,
 			       e.amount, e.currency, e.vendor, '', e.external_ref, '',
 			       COALESCE(e.request_id, ''), (e.request_id IS NOT NULL AND e.request_id <> ''),
-			       'money_in', e.vendor, e.external_ref, 'payin:' || e.vendor
+			       'money_in', COALESCE(vg.gateway, e.vendor, ''), e.external_ref, 'payin:' || e.vendor
 			FROM payin_webhook_events e
+			LEFT JOIN payin_vendor_gateways vg ON vg.vendor = e.vendor
 		) assurance
 		WHERE effective_updated_at <= $1
 		  AND ($2::timestamptz IS NULL OR effective_updated_at > $2 OR (effective_updated_at = $2 AND id > $3))

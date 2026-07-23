@@ -52,7 +52,7 @@ func newMockOutboxRepo(t *testing.T) (*repository_mock.MockOutboxRepository, *go
 	return repository_mock.NewMockOutboxRepository(ctrl), ctrl
 }
 
-// ─── Approve: self-approval rejected (docs/plan/16 Task T1) ───────────────
+// ─── Approve: self-approval rejected (docs/roadmap/archive/16 Task T1) ───────────────
 
 func TestApprove_SelfApproval_Rejected(t *testing.T) {
 	adjRepo, ctrl := newMockAdjRepo(t)

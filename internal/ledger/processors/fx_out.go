@@ -14,7 +14,7 @@ import (
 )
 
 // =============================================================================
-// FxOut — user.cash[ccy1] -> fx_conversion[pair][ccy1] (docs/plan/18 Task T3)
+// FxOut — user.cash[ccy1] -> fx_conversion[pair][ccy1] (docs/roadmap/archive/18 Task T3)
 //
 // FX is NOT a ledger feature — a conversion is an orchestrator moving money
 // through two ordinary ledger transactions: FxOut takes the source-currency
@@ -27,7 +27,7 @@ import (
 // stays meaningful per-transaction. Nothing in the ledger enforces that a
 // FxOut/FxIn pair nets to zero across currencies — that "balance" is an FX
 // position, tracked by finance/ops via the fx_conversion account balances,
-// not by this package. See docs/runbooks/fx-position.md for the manual
+// not by this package. See docs/operations/runbooks/fx-position.md for the manual
 // procedure when a pair's legs diverge (one side posts, the other fails).
 //
 // Metadata (all required — ValidateCommand rejects without them):

@@ -202,7 +202,7 @@ func (m *Module) provePayin(ctx context.Context, records []*payinv1.AssuranceRec
 			if linkedErr != nil {
 				return linkedErr
 			}
-			value.SettledWebhook = &assurancerules.PayinRecord{ID: linked.GetId(), RecordType: linked.GetRecordType(), Status: linked.GetStatus(), UserID: linked.GetUserId(), AmountMinor: linkedAmount, Currency: linked.GetCurrency(), Reference: linked.GetReference()}
+			value.SettledWebhook = &assurancerules.PayinRecord{ID: linked.GetId(), RecordType: linked.GetRecordType(), Status: linked.GetStatus(), UserID: linked.GetUserId(), AmountMinor: linkedAmount, Currency: linked.GetCurrency(), Reference: linked.GetReference(), ExternalRef: linked.GetExternalRef()}
 		}
 		seen := map[string]bool{}
 		for _, finding := range assurancerules.EvaluatePayin(value) {

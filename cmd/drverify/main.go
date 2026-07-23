@@ -1,4 +1,4 @@
-// drverify is docs/plan/50 T4's offline, read-only cross-database
+// drverify is docs/roadmap/active/50 T4's offline, read-only cross-database
 // integrity verifier (K8-K9). It is an operational tool, not a deployed
 // service: it never writes to a restored database, and every connection
 // is a bounded, read-only, statement-timeout-limited transaction. Prints

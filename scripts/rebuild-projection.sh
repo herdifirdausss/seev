@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Point-in-time rebuild of account_balances from ledger_entries (docs/plan/17
+# Point-in-time rebuild of account_balances from ledger_entries (docs/roadmap/archive/17
 # Task T2, decision S9) — empirical proof that the balance projection can be
 # rebuilt 100% from the append-only ledger, for use after a restore or
 # whenever a projection inconsistency is suspected.
@@ -14,7 +14,7 @@
 #
 # Connects as the app's normal restricted role (POSTGRES_USER, app_service
 # member) — no elevated privilege needed: app_service already has
-# SELECT+INSERT+UPDATE on account_balances (docs/plan/16 Task T3) and the
+# SELECT+INSERT+UPDATE on account_balances (docs/roadmap/archive/16 Task T3) and the
 # rebuild only SELECTs ledger_entries + UPDATEs account_balances.
 #
 # Usage:
@@ -22,7 +22,7 @@
 #     ./scripts/rebuild-projection.sh
 #
 # With no POSTGRES_* env set, defaults to the local docker-compose dev stack
-# (container seev-postgres-1, role seev_app — docs/plan/16 Task T3).
+# (container seev-postgres-1, role seev_app — docs/roadmap/archive/16 Task T3).
 
 set -euo pipefail
 
@@ -109,7 +109,7 @@ ok "all $PRE_COUNT accounts consistent with ledger_entries after rebuild"
 
 UNBALANCED=$(run_psql -t -A -c "SELECT count(*) FROM fn_verify_ledger_balance('-infinity', 'infinity')")
 if [ "$UNBALANCED" != "0" ]; then
-	fail "fn_verify_ledger_balance() found $UNBALANCED unbalanced transaction(s) — this is a ledger integrity issue, not a projection issue; see docs/runbooks/ledger-integrity-alert.md"
+	fail "fn_verify_ledger_balance() found $UNBALANCED unbalanced transaction(s) — this is a ledger integrity issue, not a projection issue; see docs/operations/runbooks/ledger-integrity-alert.md"
 	exit 1
 fi
 ok "fn_verify_ledger_balance() found 0 unbalanced transactions"

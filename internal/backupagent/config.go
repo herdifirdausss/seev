@@ -1,4 +1,4 @@
-// Package backupagent implements docs/plan/50 T2's operational backup
+// Package backupagent implements docs/roadmap/active/50 T2's operational backup
 // agent (K4, K12, K13): it owns the weekly-full/daily-differential
 // pgBackRest schedule, exposes mTLS-protected health/readiness/metrics,
 // and generates the K6 recovery manifest — using the exact same
@@ -22,14 +22,14 @@ import (
 )
 
 // Services is the fixed, ordered list of the eight authoritative
-// databases (docs/plan/50 T0 Result) — matches
+// databases (docs/roadmap/active/50 T0 Result) — matches
 // scripts/backup-manifest.sh's own SERVICES list exactly, including the
 // "adminbff" (not "admin-bff") database-name spelling.
 var Services = []string{"ledger", "auth", "payin", "payout", "fraud", "gateway", "adminbff", "assurance"}
 
 // Config holds everything backup-agent needs, read once at startup.
 type Config struct {
-	// AppPort is the internal mTLS listener port — 8097 (docs/plan/50 T0
+	// AppPort is the internal mTLS listener port — 8097 (docs/roadmap/active/50 T0
 	// reservation), overridable for tests.
 	AppPort         string
 	ShutdownTimeout time.Duration
@@ -47,7 +47,7 @@ type Config struct {
 
 	// Postgres connection for the manifest's per-service migration-table
 	// reads and the WAL-age status query — always the least-privilege
-	// seev_backup role (docs/plan/50 K5), never the schema owner.
+	// seev_backup role (docs/roadmap/active/50 K5), never the schema owner.
 	PostgresHost     string
 	PostgresPort     string
 	BackupDBUser     string
@@ -58,7 +58,7 @@ type Config struct {
 	RPOBudget time.Duration
 
 	// Per-job timeouts (K13 "bounded execution time"). Generous for this
-	// lab-scale database — docs/plan/50 §8 explicitly disclaims any
+	// lab-scale database — docs/roadmap/active/50 §8 explicitly disclaims any
 	// production-scale claim; tune these before pointing this agent at a
 	// materially larger cluster.
 	FullBackupTimeout time.Duration
@@ -68,7 +68,7 @@ type Config struct {
 	// Sunday 02:10, daily diff Monday-Saturday 02:10, Asia/Jakarta) —
 	// overridable for an operator who needs a different window, and for
 	// verifying the scheduled path itself without waiting on wall-clock
-	// time (docs/plan/50 T2 Result).
+	// time (docs/roadmap/active/50 T2 Result).
 	FullCronSpec string
 	DiffCronSpec string
 }
@@ -86,7 +86,7 @@ type Config struct {
 // invocations inherit this whole process's environment (pgbackrest.go's
 // cmd.Environ()), a name like "PGBACKREST_CONFIG_PATH" collides with
 // pgBackRest's real config-path option and silently corrupts its config
-// resolution — found live in docs/plan/50 T2 execution (pgbackrest tried
+// resolution — found live in docs/roadmap/active/50 T2 execution (pgbackrest tried
 // to read "<config-path>/conf.d" as though the config *file* path were a
 // config *directory*).
 func Load() (Config, error) {

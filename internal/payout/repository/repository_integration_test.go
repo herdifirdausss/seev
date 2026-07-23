@@ -39,7 +39,7 @@ func setupTestDB(t *testing.T) *database.DBSQL {
 	const dbName, dbUser, dbPassword = "seev_test", "test", "secret"
 
 	container, err := postgres.Run(ctx,
-		"postgres:16-alpine",
+		"postgres:16.14-alpine",
 		postgres.WithDatabase(dbName),
 		postgres.WithUsername(dbUser),
 		postgres.WithPassword(dbPassword),
@@ -77,7 +77,7 @@ func newTestRequest() model.PayoutRequest {
 	}
 }
 
-// TestTransitionToHeld_ConcurrentCallers_ExactlyOneWins is docs/plan/23
+// TestTransitionToHeld_ConcurrentCallers_ExactlyOneWins is docs/roadmap/archive/23
 // Task T1's required race test: the atomic conditional UPDATE (WHERE
 // status = 'created') is the sole concurrency guard for this transition —
 // two goroutines racing to hold the SAME request must result in exactly

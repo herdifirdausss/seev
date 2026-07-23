@@ -2,7 +2,7 @@ package worker
 
 // Package-level metric, registered once regardless of how many times
 // NewResumeJob is constructed (mirrors internal/ledger/worker's own
-// approach, docs/plan/43 K5).
+// approach, docs/roadmap/archive/43 K5).
 
 import (
 	"github.com/prometheus/client_golang/prometheus"
@@ -16,10 +16,10 @@ import (
 var stuckRequests = promauto.NewGaugeVec(prometheus.GaugeOpts{
 	Namespace: "payout",
 	Name:      "stuck_requests",
-	Help:      "Payout requests older than the resume threshold, by status (docs/plan/43 K5).",
+	Help:      "Payout requests older than the resume threshold, by status (docs/roadmap/archive/43 K5).",
 }, []string{"status"})
 
-// vendorCommandsGauge is docs/plan/45 K6's payout_vendor_commands{status}
+// vendorCommandsGauge is docs/roadmap/archive/45 K6's payout_vendor_commands{status}
 // gauge — the current backlog per command status, refreshed every
 // dispatchGaugeRefreshInterval. status is one of commandStatuses
 // (vendor_relay.go) — a fixed, low-cardinality enum, never derived from
@@ -27,13 +27,13 @@ var stuckRequests = promauto.NewGaugeVec(prometheus.GaugeOpts{
 var vendorCommandsGauge = promauto.NewGaugeVec(prometheus.GaugeOpts{
 	Namespace: "payout",
 	Name:      "vendor_commands",
-	Help:      "Vendor dispatch commands by status (docs/plan/45 K6).",
+	Help:      "Vendor dispatch commands by status (docs/roadmap/archive/45 K6).",
 }, []string{"status"})
 
-// vendorCommandsReapedTotal is docs/plan/45 K6's
+// vendorCommandsReapedTotal is docs/roadmap/archive/45 K6's
 // payout_vendor_command_reaped_total counter.
 var vendorCommandsReapedTotal = promauto.NewCounter(prometheus.CounterOpts{
 	Namespace: "payout",
 	Name:      "vendor_command_reaped_total",
-	Help:      "Vendor dispatch commands reaped from an expired processing lease (docs/plan/45 K6).",
+	Help:      "Vendor dispatch commands reaped from an expired processing lease (docs/roadmap/archive/45 K6).",
 })

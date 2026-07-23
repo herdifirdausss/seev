@@ -6,7 +6,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// SavingsConfig marks an account as interest-bearing (docs/plan/19 Task
+// SavingsConfig marks an account as interest-bearing (docs/roadmap/archive/19 Task
 // T3) — ops registers accounts explicitly; there is no magic
 // pocket_code-prefix convention.
 type SavingsConfig struct {

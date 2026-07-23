@@ -84,7 +84,7 @@ func TestListHandler_Success_200_OwnRowsOnly(t *testing.T) {
 	repo := repository.NewMockRepository(ctrl)
 	userID := uuid.New()
 	repo.EXPECT().List(gomock.Any(), userID, 50, time.Time{}).Return([]model.Notification{
-		{ID: uuid.New(), UserID: userID, Type: "money_in", Title: "Dana masuk", Body: "Top-up berhasil", CreatedAt: time.Now()},
+		{ID: uuid.New(), UserID: userID, Type: "money_in", Title: "Funds received", Body: "Top-up successful", CreatedAt: time.Now()},
 	}, nil)
 
 	m := &Module{repo: repo, logger: discardLogger()}
@@ -92,7 +92,7 @@ func TestListHandler_Success_200_OwnRowsOnly(t *testing.T) {
 
 	w := doReq(t, router, http.MethodGet, "/notifications", tokenForUser(t, userID, "user"), "")
 	assert.Equal(t, http.StatusOK, w.Code)
-	assert.Contains(t, w.Body.String(), "Dana masuk")
+	assert.Contains(t, w.Body.String(), "Funds received")
 }
 
 func TestMarkReadHandler_NoToken_401(t *testing.T) {

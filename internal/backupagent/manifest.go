@@ -13,7 +13,7 @@ import (
 )
 
 // manifest mirrors scripts/backup-manifest.sh's JSON schema exactly
-// (docs/plan/50 K6) — the manual, host-side script and this automated,
+// (docs/roadmap/active/50 K6) — the manual, host-side script and this automated,
 // in-container path must produce interchangeable manifests, since T3's
 // restore preflight (K6) reads either one the same way.
 type manifest struct {

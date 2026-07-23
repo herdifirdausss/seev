@@ -93,7 +93,7 @@ func TestResolveTopupRoute_Matrix(t *testing.T) {
 }
 
 // TestResolveTopupRoute_BreakerOpen_SkipsToNextCandidate mirrors
-// internal/payout's own test (docs/plan/40 Task T2).
+// internal/payout's own test (docs/roadmap/archive/40 Task T2).
 func TestResolveTopupRoute_BreakerOpen_SkipsToNextCandidate(t *testing.T) {
 	rules := []model.RoutingRule{
 		{Flow: "topup", Priority: 1, Enabled: true, Vendor: "primary"},

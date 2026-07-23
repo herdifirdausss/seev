@@ -1,5 +1,5 @@
 {{define "layout"}}<!doctype html>
-<html lang="id">
+<html lang="en">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{.Title}} — Seev Admin</title>
@@ -9,12 +9,12 @@
 <body>
 <header class="container">
   <nav><ul><li><strong>Seev Admin</strong></li></ul><ul>
-    <li><a href="/api/v1/admin/">Ringkasan</a></li>
+    <li><a href="/api/v1/admin/">Summary</a></li>
     <li><a href="/api/v1/admin/maker">Maker-checker</a></li>
     <li><a href="/api/v1/admin/payout">Payout</a></li>
     <li><a href="/api/v1/admin/recon">Recon</a></li>
-    <li><a href="/api/v1/admin/catalog">Kontrol</a></li>
-    <li><form method="post" action="/logout"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><button type="submit" class="secondary">Keluar</button></form></li>
+    <li><a href="/api/v1/admin/catalog">Control</a></li>
+    <li><form method="post" action="/logout"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><button type="submit" class="secondary">Log out</button></form></li>
   </ul></nav>
 </header>
 <main class="container">{{template "content" .}}</main>

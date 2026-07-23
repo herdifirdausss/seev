@@ -1,7 +1,7 @@
 {
   "uid": "seev-money-flow",
   "title": "Seev / Money Flow",
-  "description": "Cross-service view of the money-moving pipeline: posting, outbox, integrity verifier, payout backlog, vendor health, and the RabbitMQ transport between them (docs/plan/43 K7).",
+  "description": "Cross-service view of the money-moving pipeline: posting, outbox, integrity verifier, payout backlog, vendor health, and the RabbitMQ transport between them (docs/roadmap/archive/43 K7).",
   "tags": [
     "seev",
     "observability",
@@ -318,7 +318,7 @@
         "w": 12,
         "h": 8
       },
-      "description": "docs/runbooks/ledger-integrity-alert.md \u2014 any nonzero value here means fn_verify_ledger_balance or the balance projection audit found a real inconsistency.",
+      "description": "docs/operations/runbooks/ledger-integrity-alert.md \u2014 any nonzero value here means fn_verify_ledger_balance or the balance projection audit found a real inconsistency.",
       "fieldConfig": {
         "defaults": {
           "unit": "short"
@@ -397,7 +397,7 @@
         "w": 12,
         "h": 8
       },
-      "description": "docs/runbooks/reconciliation.md \u2014 requests older than the resume threshold, grouped by status.",
+      "description": "docs/operations/runbooks/reconciliation.md \u2014 requests older than the resume threshold, grouped by status.",
       "fieldConfig": {
         "defaults": {
           "unit": "short"
@@ -430,7 +430,7 @@
         "w": 12,
         "h": 8
       },
-      "description": "0=closed 1=half_open 2=open. docs/runbooks/reconciliation.md",
+      "description": "0=closed 1=half_open 2=open. docs/operations/runbooks/reconciliation.md",
       "fieldConfig": {
         "defaults": {
           "unit": "short"

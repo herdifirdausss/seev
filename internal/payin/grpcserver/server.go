@@ -56,7 +56,7 @@ func (s *Server) HandleWebhook(ctx context.Context, request *payinv1.HandleWebho
 		case errors.Is(err, vendorgw.ErrInvalidSignature):
 			return nil, status.Error(codes.Unauthenticated, "invalid webhook signature")
 		case errors.Is(err, s.screeningDependencyUnavailable):
-			// docs/plan/45 Task T3/K4 — fraud-service is reachable but its
+			// docs/roadmap/archive/45 Task T3/K4 — fraud-service is reachable but its
 			// velocity dependency is down; distinct message from
 			// noVendorAvailable's own codes.Unavailable use elsewhere so
 			// the gateway can tell them apart.
@@ -86,7 +86,7 @@ func (s *Server) CreateTopupIntent(ctx context.Context, request *payinv1.CreateT
 			return nil, status.Error(codes.FailedPrecondition, "no topup route available")
 		}
 		if errors.Is(callErr, s.noVendorAvailable) {
-			// docs/plan/40 Task T2 — distinct gRPC code from "no route"
+			// docs/roadmap/archive/40 Task T2 — distinct gRPC code from "no route"
 			// (FailedPrecondition/422): every candidate vendor is
 			// registered but circuit-broken, a TRANSIENT condition the
 			// caller should retry, not a config problem.

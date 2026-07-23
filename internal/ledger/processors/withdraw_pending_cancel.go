@@ -15,7 +15,7 @@ import (
 // 8. WithdrawPendingCancel — user.pending → user.cash (manual confirm: rejected)
 //
 // ReferenceID (required) must point at the withdraw_pending this cancels
-// (docs/plan/14 Task T2) — full amount only, no partial cancel in MVP.
+// (docs/roadmap/archive/14 Task T2) — full amount only, no partial cancel in MVP.
 // =============================================================================
 
 type WithdrawPendingCancel struct {
@@ -66,7 +66,7 @@ func (p *WithdrawPendingCancel) OutboxEvents(cmd ResolvedCommand, txID uuid.UUID
 }
 func (p *WithdrawPendingCancel) AfterCommit(_ context.Context, _ Command) error { return nil }
 
-// ValidateCommand requires ReferenceID (docs/plan/14 Task T2) — the
+// ValidateCommand requires ReferenceID (docs/roadmap/archive/14 Task T2) — the
 // withdraw_pending this cancel is closing.
 func (p *WithdrawPendingCancel) ValidateCommand(_ context.Context, cmd Command) error {
 	return requireReferenceID(cmd, "withdraw_pending_cancel")

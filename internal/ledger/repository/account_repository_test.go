@@ -22,7 +22,7 @@ func newMockDB(t *testing.T) (*database.DBSQL, sqlmock.Sqlmock) {
 	return database.NewFromSQL(sqlDB, config.PostgresConfig{Host: "localhost"}.Pkg()), mock
 }
 
-// ─── Account resolution caching (docs/plan/11 Task T3) ─────────────────────────
+// ─── Account resolution caching (docs/roadmap/archive/11 Task T3) ─────────────────────────
 
 func TestGetSystemAccountID_SecondCall_HitsCacheNotDB(t *testing.T) {
 	db, mock := newMockDB(t)
@@ -70,7 +70,7 @@ func TestGetSystemAccountID_DifferentQualifier_MissesCache(t *testing.T) {
 }
 
 // TestGetSystemAccountID_DifferentCurrency_MissesCache is T2's own required
-// test (docs/plan/18): the SAME (type, qualifier) pair must resolve to a
+// test (docs/roadmap/archive/18): the SAME (type, qualifier) pair must resolve to a
 // DIFFERENT account, and hit the DB again, when currency differs — proving
 // the cache key doesn't collide across currencies for the same gateway.
 func TestGetSystemAccountID_DifferentCurrency_MissesCache(t *testing.T) {

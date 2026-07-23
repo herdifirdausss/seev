@@ -14,7 +14,7 @@ type accrualRunner interface {
 	RunDue(ctx context.Context, asOf time.Time) (accrued, skipped int)
 }
 
-// AccrualJob runs docs/plan/19 Task T3's daily job: compute and post
+// AccrualJob runs docs/roadmap/archive/19 Task T3's daily job: compute and post
 // interest for every enabled savings account, using yesterday's closing
 // balance SNAPSHOT as the basis (never a live balance).
 type AccrualJob struct {
@@ -42,7 +42,7 @@ func NewAccrualJob(runner accrualRunner, lock scheduler.LockProvider, logger *sl
 
 // Start registers the daily cron — 00:45 Asia/Jakarta, after the balance
 // snapshot job (00:15, the data dependency) and the schedule runner (00:30,
-// docs/plan/19 Task T3 step 4). Call Stop to shut down.
+// docs/roadmap/archive/19 Task T3 step 4). Call Stop to shut down.
 func (j *AccrualJob) Start(ctx context.Context) error {
 	return j.sched.Cron("interest-accrual", "45 0 * * *", j.runDaily)
 }

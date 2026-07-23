@@ -1,6 +1,6 @@
--- docs/plan/19 Task T2 (S3 butir 2): batch disbursement — one CSV manifest
+-- docs/roadmap/archive/19 Task T2 (S3 butir 2): batch disbursement — one CSV manifest
 -- posts many `disbursement` transactions with progress + resume, no new
--- worker (docs/plan/13 K5 "jangan tambah worker" — 08's own decision).
+-- worker (docs/roadmap/archive/13 K5 "jangan tambah worker" — 08's own decision).
 
 CREATE TABLE disbursement_batches (
     id              UUID        PRIMARY KEY,
@@ -30,7 +30,7 @@ CREATE TABLE disbursement_items (
 -- (WHERE batch_id = $1 AND status IN ('pending', ...)).
 CREATE INDEX idx_disbursement_items_batch_status ON disbursement_items(batch_id, status);
 
--- Disbursement source account (docs/plan/19 Task T2 step 3 decision:
+-- Disbursement source account (docs/roadmap/archive/19 Task T2 step 3 decision:
 -- default settlement[platform] per currency — platform funds disbursed to
 -- users, sharded like every other settlement account. allow_negative=true,
 -- same rationale as every settlement account (money owed to/from the

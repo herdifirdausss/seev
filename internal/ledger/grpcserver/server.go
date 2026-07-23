@@ -27,11 +27,11 @@ type Service interface {
 	GetUserCurrency(context.Context, uuid.UUID, string) (string, error)
 	ResolveFee(context.Context, uuid.UUID, string, string, string, decimal.Decimal) (decimal.Decimal, string, bool)
 	ProvisionUser(context.Context, uuid.UUID, string) ([]model.Account, error)
-	// ConsumeFeeQuote is docs/plan/38 Task T5's additive RPC backing —
+	// ConsumeFeeQuote is docs/roadmap/archive/38 Task T5's additive RPC backing —
 	// returns *apperror.LedgerError (Code "QUOTE_EXPIRED"/"QUOTE_MISMATCH")
 	// on rejection.
 	ConsumeFeeQuote(ctx context.Context, quoteID, userID uuid.UUID, txType, currency string, amount decimal.Decimal, ref string) (fee decimal.Decimal, feeGateway string, err error)
-	// ApplyKycTier is docs/plan/39 Task T5's additive RPC backing — returns
+	// ApplyKycTier is docs/roadmap/archive/39 Task T5's additive RPC backing — returns
 	// apperror.ErrUnknownKycTier for an unrecognized kyc_level.
 	ApplyKycTier(ctx context.Context, userID uuid.UUID, kycLevel int32) error
 }
@@ -66,7 +66,7 @@ func (s *Server) Post(ctx context.Context, req *ledgerv1.PostRequest) (*ledgerv1
 	}
 	// request_id sourced from the gRPC ctx (populated by pkg/grpcx's server
 	// interceptor from the x-request-id metadata the caller's client
-	// interceptor set, docs/plan/36 Task T3) — this is a freshly converted
+	// interceptor set, docs/roadmap/archive/36 Task T3) — this is a freshly converted
 	// map (AsMap above), not a reference the caller can observe, so setting
 	// it here can't leak into or mutate the caller's own request object.
 	if id := middleware.RequestIDFromCtx(ctx); id != "" {
@@ -119,14 +119,14 @@ func (s *Server) ResolveFee(ctx context.Context, req *ledgerv1.ResolveFeeRequest
 	return &ledgerv1.ResolveFeeResponse{Fee: fee.String(), FeeGateway: gateway, Ok: ok}, nil
 }
 
-// ConsumeFeeQuote serves the additive RPC backing docs/plan/38 Task T5.
+// ConsumeFeeQuote serves the additive RPC backing docs/roadmap/archive/38 Task T5.
 // Service.ConsumeFeeQuote already returns *apperror.LedgerError (Code
 // "QUOTE_EXPIRED"/"QUOTE_MISMATCH") on rejection — the EXISTING generic
 // mapError handles that exactly like any other business error, so
 // pkg/ledgererr.FromStatus decodes it on the caller side with zero new
 // ledgererr code (same free "gRPC parity" already established for
 // SCREENING_BLOCKED and reused by QUOTE_EXPIRED/QUOTE_MISMATCH at the HTTP
-// layer too, docs/plan/38 Task T4's own Hasil).
+// layer too, as documented in docs/roadmap/archive/38 Task T4's results).
 func (s *Server) ConsumeFeeQuote(ctx context.Context, req *ledgerv1.ConsumeFeeQuoteRequest) (*ledgerv1.ConsumeFeeQuoteResponse, error) {
 	amount, err := integralAmount(req.GetAmount())
 	if err != nil {
@@ -147,7 +147,7 @@ func (s *Server) ConsumeFeeQuote(ctx context.Context, req *ledgerv1.ConsumeFeeQu
 	return &ledgerv1.ConsumeFeeQuoteResponse{FeeAmount: fee.String(), FeeGateway: feeGateway}, nil
 }
 
-// ApplyKycTier serves the additive RPC backing docs/plan/39 Task T5. An
+// ApplyKycTier serves the additive RPC backing docs/roadmap/archive/39 Task T5. An
 // unrecognized kyc_level is a caller input error (InvalidArgument), handled
 // explicitly here rather than through the generic mapError (which reserves
 // FailedPrecondition for business-state failures, not bad input) — every

@@ -12,7 +12,7 @@ service LedgerService {
   rpc ResolveFee(ResolveFeeRequest) returns (ResolveFeeResponse);
   rpc ProvisionUser(ProvisionUserRequest) returns (ProvisionUserResponse);
   // ConsumeFeeQuote atomically, single-use consumes a fee quote created via
-  // POST /fees/quote (docs/plan/38 Task T5) — additive; ResolveFee remains
+  // POST /fees/quote (docs/roadmap/archive/38 Task T5) — additive; ResolveFee remains
   // the no-quote fallback for every existing caller.
   rpc ConsumeFeeQuote(ConsumeFeeQuoteRequest) returns (ConsumeFeeQuoteResponse);
   rpc ApplyKycTier(ApplyKycTierRequest) returns (ApplyKycTierResponse);

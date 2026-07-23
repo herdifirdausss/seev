@@ -1,6 +1,6 @@
 name: CI
 
-# docs/plan/44 K3: no workflow-level paths-ignore — the workflow ALWAYS
+# docs/roadmap/archive/44 K3: no workflow-level paths-ignore — the workflow ALWAYS
 # runs so a required check (`ci-gate`) never goes permanently pending; the
 # `changes` job below classifies docs-only vs runtime and the three heavy
 # jobs skip themselves via `needs.changes.outputs.runtime`.
@@ -18,14 +18,14 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # docs/plan/44 K2: pinned actionlint/ShellCheck release, verified at T0
+  # docs/roadmap/archive/44 K2: pinned actionlint/ShellCheck release, verified at T0
   # (MIT / GPL-3.0 respectively — see doc 44 T0 Hasil). Bump both here only
   # after re-verifying the new release + license per constraint #8.
   ACTIONLINT_VERSION: "1.7.12"
   SHELLCHECK_VERSION: "0.11.0"
 
 jobs:
-  # ─── changes: docs-only classifier (docs/plan/44 K3) ───────────────────────
+  # ─── changes: docs-only classifier (docs/roadmap/archive/44 K3) ───────────────────────
   # Deliberately uses ONLY actions/checkout (official) — no third-party
   # paths-filter action, per K2's allowed-owner list.
   changes:
@@ -72,6 +72,31 @@ jobs:
           else
             echo "runtime=false" >> "$GITHUB_OUTPUT"
           fi
+
+  docs-check:
+    name: docs-check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Read Go version from go.mod
+        id: goversion
+        run: echo "version=$(grep -E '^go ' go.mod | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ steps.goversion.outputs.version }}
+          cache: true
+
+      - name: Validate documentation links
+        run: make docs-check
 
   # ─── lint-and-test: actionlint, ShellCheck, SHA-pin policy, golangci-lint, unit ──
   lint-and-test:
@@ -168,8 +193,8 @@ jobs:
       - name: Integration tests
         run: go test -tags=integration -race ./...
 
-  # ─── smoke-container: full-container round-trip (docs/plan/44 K4/K5) ───────
-  # Six images built ONCE via a single Bake invocation (reads the build
+  # ─── smoke-container: full-container round-trip (docs/roadmap/archive/44 K4/K5) ───────
+  # Nine images built ONCE via a single Bake invocation (reads the build
   # config straight out of docker-compose.yml — no separate Bake file, K5),
   # cached via the GHA backend, loaded into the daemon; smoke-container.sh
   # then runs with --no-build against exactly those loaded images. No push,
@@ -192,7 +217,7 @@ jobs:
           persist-credentials: false
           fetch-depth: 1
 
-      # docs/plan/49 K3: smoke-container.sh now runs `make certs` (builds
+      # docs/roadmap/archive/49 K3: smoke-container.sh now runs `make certs` (builds
       # cmd/certgen with the host Go toolchain) before compose starts any
       # app-profile container, since every one of them mounts the mTLS
       # cert directory this step produces.
@@ -208,11 +233,12 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
 
-      - name: Build eight images (Bake, GHA cache, load into daemon)
+      - name: Build nine images (Bake, GHA cache, load into daemon)
         uses: docker/bake-action@d3418bd7d0e9324001bca92fa8ba175ea7e6dc9b # v7.3.0
         with:
           files: docker-compose.yml
           targets: |
+            postgres
             auth-service
             fraud-service
             gateway-service
@@ -261,11 +287,12 @@ jobs:
           path: .smoke-container-artifacts/
           retention-days: 7
           if-no-files-found: ignore
+          include-hidden-files: true
 
-  # ─── ci-gate: the ONE required check (docs/plan/44 K3) ─────────────────────
+  # ─── ci-gate: the ONE required check (docs/roadmap/archive/44 K3) ─────────────────────
   ci-gate:
     name: ci-gate
-    needs: [changes, lint-and-test, integration, smoke-container]
+    needs: [changes, docs-check, lint-and-test, integration, smoke-container]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -275,12 +302,18 @@ jobs:
         run: |
           set -euo pipefail
           echo "changes: ${{ needs.changes.result }} (runtime=${{ needs.changes.outputs.runtime }})"
+          echo "docs-check: ${{ needs.docs-check.result }}"
           echo "lint-and-test: ${{ needs.lint-and-test.result }}"
           echo "integration: ${{ needs.integration.result }}"
           echo "smoke-container: ${{ needs.smoke-container.result }}"
 
           if [ "${{ needs.changes.result }}" != "success" ]; then
             echo "::error::changes job did not succeed"
+            exit 1
+          fi
+
+          if [ "${{ needs.docs-check.result }}" != "success" ]; then
+            echo "::error::documentation validation did not succeed"
             exit 1
           fi
 

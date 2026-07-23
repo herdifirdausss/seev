@@ -16,7 +16,7 @@ const outboxLagThreshold = 5 * time.Minute
 // Verifier runs scheduled integrity checks against the ledger's own
 // verification functions (fn_verify_ledger_balance, v_account_balance_audit)
 // and the outbox queue. It never repairs anything automatically — it only
-// detects and logs/alerts (docs/plan/06 Task 1c.2).
+// detects and logs/alerts (docs/roadmap/archive/06 Task 1c.2).
 type Verifier struct {
 	verifyRepo repository.VerificationRepository
 	outboxRepo repository.OutboxRepository
@@ -24,7 +24,7 @@ type Verifier struct {
 	sched      *scheduler.Scheduler
 	loc        *time.Location
 	// alertFn is called alongside logger.Error for every discrepancy found
-	// by checkTrialBalance/checkProjectionAudit (docs/plan/12 Task T4). May
+	// by checkTrialBalance/checkProjectionAudit (docs/roadmap/archive/12 Task T4). May
 	// be nil — every call site nil-checks before invoking it, so an
 	// unconfigured ALERT_WEBHOOK_URL is a true no-op (backward compatible
 	// with pre-T4 behavior: log + metric only). A failed alert delivery is
@@ -36,7 +36,7 @@ type Verifier struct {
 // NewVerifier constructs a Verifier. lock should be scheduler.NewRedisLock in
 // production (so only one replica runs each check) or scheduler.NewMemoryLock
 // for a single-instance deployment. alertFn may be nil (no external alert,
-// log+metric only — see docs/plan/12 Task T4).
+// log+metric only — see docs/roadmap/archive/12 Task T4).
 func NewVerifier(verifyRepo repository.VerificationRepository, outboxRepo repository.OutboxRepository, lock scheduler.LockProvider, logger *slog.Logger, loc *time.Location, alertFn alerting.AlertFunc) *Verifier {
 	if logger == nil {
 		logger = slog.Default()
@@ -50,7 +50,7 @@ func NewVerifier(verifyRepo repository.VerificationRepository, outboxRepo reposi
 
 // alert fires v.alertFn if configured, logging (not propagating) any
 // delivery failure — a broken alert channel must never interrupt the
-// verifier's own checks (docs/plan/12 Task T4).
+// verifier's own checks (docs/roadmap/archive/12 Task T4).
 func (v *Verifier) alert(ctx context.Context, severity, message string) {
 	if v.alertFn == nil {
 		return

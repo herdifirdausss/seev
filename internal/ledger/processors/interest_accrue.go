@@ -15,13 +15,13 @@ import (
 
 // =============================================================================
 // InterestAccrue — system.interest_expense[currency] -> savings account
-// (docs/plan/19 Task T3)
+// (docs/roadmap/archive/19 Task T3)
 //
 // Daily interest credit for accounts registered in savings_config (there is
 // no product table — ops registers exactly which accounts earn interest;
 // no magic pocket_code prefix). The amount is computed by
 // internal/ledger/service/accrual BEFORE this processor ever runs, from a
-// SNAPSHOT balance (account_balance_snapshots, docs/plan/15 Task T1), never
+// SNAPSHOT balance (account_balance_snapshots, docs/roadmap/archive/15 Task T1), never
 // a live balance — this processor doesn't recompute or re-check anything,
 // it just posts the two entries.
 //
@@ -38,7 +38,7 @@ import (
 // orchestrator/job-triggered (internal/ledger/worker/accrual.go), never a
 // direct end-user or even ops HTTP action.
 //
-// Capitalization decision (docs/plan/19 Task T3 step 5): interest is
+// Capitalization decision (docs/roadmap/archive/19 Task T3 step 5): interest is
 // credited straight into the savings account's own balance every day
 // (simple daily interest; compounds naturally because tomorrow's snapshot
 // already includes today's credit) — there is NO separate "accrued

@@ -109,11 +109,11 @@ func (c *Client) ProvisionUser(ctx context.Context, userID uuid.UUID, currency s
 	return ledgererr.FromStatus(err)
 }
 
-// ConsumeFeeQuote is docs/plan/38 Task T5's additive RPC — a rejection
+// ConsumeFeeQuote is docs/roadmap/archive/38 Task T5's additive RPC — a rejection
 // (quote expired/mismatch) decodes generically into *ledgererr.LedgerError
 // with Code "QUOTE_EXPIRED"/"QUOTE_MISMATCH" via ledgererr.FromStatus (no
 // dedicated sentinel needed — same free gRPC-parity mechanism as
-// SCREENING_BLOCKED, docs/plan/38 Task T4's own Hasil explains why).
+// SCREENING_BLOCKED, as explained by docs/roadmap/archive/38 Task T4's results).
 func (c *Client) ConsumeFeeQuote(ctx context.Context, quoteID, userID uuid.UUID, txType, currency string, amount decimal.Decimal, consumedByRef string) (decimal.Decimal, string, error) {
 	response, err := c.client.ConsumeFeeQuote(ctx, &ledgerv1.ConsumeFeeQuoteRequest{
 		QuoteId: quoteID.String(), UserId: uuidString(userID), TransactionType: txType,
@@ -129,7 +129,7 @@ func (c *Client) ConsumeFeeQuote(ctx context.Context, quoteID, userID uuid.UUID,
 	return fee, response.GetFeeGateway(), nil
 }
 
-// ApplyKycTier is docs/plan/39 Task T5's additive RPC — upserts the
+// ApplyKycTier is docs/roadmap/archive/39 Task T5's additive RPC — upserts the
 // caller's effective policy_limits from the policy_tier_limits template for
 // kycLevel. An unrecognized kyc_level surfaces as a gRPC InvalidArgument
 // (not decoded into *ledgererr.LedgerError — that shape is reserved for

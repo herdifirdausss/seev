@@ -56,7 +56,7 @@ func GenerateToken(secret string, claims Claims) (string, error) {
 // ParseToken validates the signature and expiry, returning Claims on success.
 // expectedIssuer is checked against claims.Iss only when non-empty — this
 // keeps deployments that haven't configured JWT_ISSUER working exactly as
-// before (docs/plan/10 Task T6).
+// before (docs/roadmap/archive/10 Task T6).
 func ParseToken(secret, tokenString, expectedIssuer string) (*Claims, error) {
 	parts := strings.Split(tokenString, ".")
 	if len(parts) != 3 {
@@ -100,7 +100,7 @@ func ParseToken(secret, tokenString, expectedIssuer string) (*Claims, error) {
 
 // WithAuth validates a Bearer JWT and stores claims in ctx. issuer is passed
 // straight to ParseToken — empty means issuer validation is skipped
-// (backward compatible, docs/plan/10 Task T6).
+// (backward compatible, docs/roadmap/archive/10 Task T6).
 func WithAuth(secret, issuer string) Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

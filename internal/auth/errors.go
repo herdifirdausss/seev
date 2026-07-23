@@ -17,7 +17,7 @@ var ErrUserDisabled = errors.New("auth: account disabled")
 
 // ErrInvalidRefreshToken maps to 401 — unknown, expired, or revoked refresh
 // token. A REVOKED-token presentation additionally revokes the user's whole
-// chain before this is returned (replay containment, docs/plan/25 T1).
+// chain before this is returned (replay containment, docs/roadmap/archive/25 T1).
 var ErrInvalidRefreshToken = errors.New("auth: invalid refresh token")
 
 // ErrValidation maps to 400 — malformed input (bad email, short password).

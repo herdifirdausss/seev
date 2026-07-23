@@ -29,7 +29,7 @@ type Module struct {
 }
 
 // NewModule wires the admin BFF's downstream clients. certSrc is nil in
-// tests that talk to plain httptest.Server instances (docs/plan/49 K6) —
+// tests that talk to plain httptest.Server instances (docs/roadmap/archive/49 K6) —
 // every downstream target then gets client.DefaultHTTPClient() instead of
 // an mTLS transport, matching those tests' plain HTTP fixtures exactly.
 // In production certSrc is always set: auth's PUBLIC login endpoint stays
@@ -108,7 +108,7 @@ func (m *Module) AdminRouter() http.Handler {
 			http.NotFound(w, r)
 			return
 		}
-		_ = adminweb.Render(w, "dashboard", m.pageData(r, "Ringkasan operasi", "dashboard"))
+		_ = adminweb.Render(w, "dashboard", m.pageData(r, "Operations summary", "dashboard"))
 	})
 	return mux
 }

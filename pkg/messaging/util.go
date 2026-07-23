@@ -133,7 +133,7 @@ func CorrelationIDFromContext(ctx context.Context) string {
 // it falls back to middleware.RequestIDFromCtx so a caller that never
 // explicitly set a correlation id still gets one automatically — unifying
 // the two mechanisms rather than requiring every publish site to plumb both
-// (docs/plan/36 Task T4).
+// (docs/roadmap/archive/36 Task T4).
 func correlationIDFromContext(ctx context.Context) string {
 	if id := CorrelationIDFromContext(ctx); id != "" {
 		return id

@@ -30,7 +30,7 @@ func TestGracefulShutdown(t *testing.T) {
 	go func() {
 		errCh <- srv.StartWithSignals(func() {
 			close(cleanupCalled)
-		}, syscall.SIGUSR1) // inject custom signal untuk test
+		}, syscall.SIGUSR1) // inject a custom signal for the test
 	}()
 
 	time.Sleep(50 * time.Millisecond)
@@ -49,7 +49,7 @@ func TestGracefulShutdown(t *testing.T) {
 }
 
 // TestStartMulti_GracefulShutdown verifies two independent listeners (as
-// used for the public + internal ledger routers, docs/plan/10 Task T1) both
+// used for the public + internal ledger routers, docs/roadmap/archive/10 Task T1) both
 // drain cleanly and cleanup runs exactly once, on a single shared signal.
 func TestStartMulti_GracefulShutdown(t *testing.T) {
 	cfg := config.AppConfig{Port: "0", ShutdownTimeout: 5 * time.Second}

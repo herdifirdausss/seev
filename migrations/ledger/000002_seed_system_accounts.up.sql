@@ -1,4 +1,5 @@
--- Akun sistem awal. Tambah gateway/currency baru = INSERT baru di migrasi baru.
+-- Initial system accounts. Add a new gateway or currency with a new INSERT in
+-- a new migration.
 INSERT INTO accounts (id, owner_type, type, currency, system_qualifier, created_by) VALUES
 ('00000000-0000-0000-0000-000000000001','system','settlement','IDR','bca',      'migration'),
 ('00000000-0000-0000-0000-000000000002','system','settlement','IDR','gopay',    'migration'),
@@ -10,8 +11,8 @@ INSERT INTO accounts (id, owner_type, type, currency, system_qualifier, created_
 ('00000000-0000-0000-0000-000000000008','system','adjustment','IDR',NULL,       'migration'),
 ('00000000-0000-0000-0000-000000000009','system','confiscated','IDR',NULL,      'migration');
 
--- settlement, adjustment dan chargeback secara desain bisa "berhutang" ke
--- dunia luar (uang masuk dari bank/gateway/dispute sebelum tercatat sebagai
+-- settlement, adjustment, and chargeback can be "in debt" to the outside world
+-- by design (money arrives from a bank/gateway/dispute before it is recorded as
 -- aset ledger) — lihat account_balances.allow_negative di 000001.
 INSERT INTO account_balances (account_id, allow_negative)
 SELECT id, (type IN ('settlement','adjustment','chargeback'))

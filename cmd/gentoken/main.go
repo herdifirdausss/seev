@@ -7,7 +7,7 @@
 // Usage: JWT_SECRET=... JWT_ISSUER=... gentoken <user-id> [role] [ttl] [kyc_level]
 //
 //	role defaults to "user"; ttl defaults to "1h" (Go duration syntax);
-//	kyc_level defaults to 1 (docs/plan/39 Task T6, gotcha #9 master) — every
+//	kyc_level defaults to 1 (docs/roadmap/archive/39 Task T6, gotcha #9 master) — every
 //	script using gentoken posts real gated transactions (transfer/topup/
 //	payout), never exercises the KYC feature itself, so a minted token
 //	should be transaction-capable by default. Real end-to-end proof of the
@@ -36,7 +36,7 @@ func main() {
 	}
 	issuer := os.Getenv("JWT_ISSUER")
 	if issuer == "" {
-		// docs/plan/49 TM-07: JWT_ISSUER is now mandatory for every real
+		// docs/roadmap/archive/49 TM-07: JWT_ISSUER is now mandatory for every real
 		// service, so a token minted without one would fail issuer
 		// validation everywhere it's used.
 		fmt.Fprintln(os.Stderr, "gentoken: JWT_ISSUER must be set in the environment")

@@ -1,7 +1,7 @@
 //go:build integration
 
 // Package ledger_test proves the canonical migrations in migrations/ match
-// what the Go code in internal/ledger actually reads and writes (docs/plan/04
+// what the Go code in internal/ledger actually reads and writes (docs/roadmap/archive/04
 // Task 1a.5). It runs the real migrations against a throwaway Postgres
 // container, then drives Service.Handle end-to-end through real (non-mock)
 // repositories: money_in -> transfer_p2p -> money_out.
@@ -66,7 +66,7 @@ func setupSchemaTestDB(t *testing.T) *database.DBSQL {
 	const dbName, dbUser, dbPassword = "seev_test", "test", "secret"
 
 	container, err := postgres.Run(ctx,
-		"postgres:16-alpine",
+		"postgres:16.14-alpine",
 		postgres.WithDatabase(dbName),
 		postgres.WithUsername(dbUser),
 		postgres.WithPassword(dbPassword),
@@ -99,7 +99,7 @@ func setupSchemaTestDB(t *testing.T) *database.DBSQL {
 // appServiceTestDB bundles the two connections
 // TestSchemaContract_AppServiceRole_* needs: ownerDB (schema owner —
 // migrations already ran on this connection) and appDB (a fresh LOGIN role
-// granted ONLY app_service, docs/plan/16 Task T3) plus appReadonlyDB (a
+// granted ONLY app_service, docs/roadmap/archive/16 Task T3) plus appReadonlyDB (a
 // separate LOGIN role granted ONLY app_readonly, for the negative tests).
 type appServiceTestDB struct {
 	ownerDB       *database.DBSQL
@@ -107,7 +107,7 @@ type appServiceTestDB struct {
 	appReadonlyDB *database.DBSQL
 }
 
-// setupAppServiceTestDB is setupSchemaTestDB plus the docs/plan/16 Task T3
+// setupAppServiceTestDB is setupSchemaTestDB plus the docs/roadmap/archive/16 Task T3
 // role split: after migrations create the app_service/app_readonly DB
 // roles, it provisions two throwaway LOGIN roles (one per group role) and
 // returns connections through each — this is what actually proves the
@@ -121,7 +121,7 @@ func setupAppServiceTestDB(t *testing.T) appServiceTestDB {
 	const dbName, dbUser, dbPassword = "seev_test", "test", "secret"
 
 	container, err := postgres.Run(ctx,
-		"postgres:16-alpine",
+		"postgres:16.14-alpine",
 		postgres.WithDatabase(dbName),
 		postgres.WithUsername(dbUser),
 		postgres.WithPassword(dbPassword),
@@ -179,7 +179,7 @@ func setupAppServiceTestDB(t *testing.T) appServiceTestDB {
 
 // createUserCashAccount inserts a user 'cash' account + zero balance row
 // directly via SQL, bypassing ledger.Module.ProvisionUser (not implemented
-// until docs/plan/05) — acceptable for a schema contract test.
+// until docs/roadmap/archive/05) — acceptable for a schema contract test.
 func createUserCashAccount(t *testing.T, db *database.DBSQL, userID uuid.UUID) uuid.UUID {
 	t.Helper()
 	ctx := context.Background()
@@ -199,7 +199,7 @@ func createUserCashAccount(t *testing.T, db *database.DBSQL, userID uuid.UUID) u
 
 // seedCreditEntry directly inserts a fake posted transaction + a single
 // credit ledger_entries row at a controlled createdAt — used by the balance
-// snapshot tests (docs/plan/15 Task T1) to simulate ledger activity spread
+// snapshot tests (docs/roadmap/archive/15 Task T1) to simulate ledger activity spread
 // across specific calendar days/times, which the normal posting engine has
 // no way to backdate. Also updates account_balances.balance to
 // balanceAfter. Note: account_balances.updated_at ends up as the REAL
@@ -233,7 +233,7 @@ func seedCreditEntry(t *testing.T, db *database.DBSQL, accountID uuid.UUID, amou
 // newService wires the posting engine against real repositories (a real
 // tx.ExecContext-based markFailed can't run against the mockDB{} used by
 // internal/ledger/service/handle's own unit tests) — screening is no
-// longer part of this pipeline at all (docs/plan/37): it moved to the
+// longer part of this pipeline at all (docs/roadmap/archive/37): it moved to the
 // transport layer, tested separately (internal/ledger/transport,
 // pkg/fraudcheck).
 func newService(db *database.DBSQL) (*ledgerhandle.Service, repository.AccountRepository) {
@@ -247,7 +247,7 @@ func newService(db *database.DBSQL) (*ledgerhandle.Service, repository.AccountRe
 	return svc, accRepo
 }
 
-// newAdjustmentsService wires the maker-checker service (docs/plan/16 Task
+// newAdjustmentsService wires the maker-checker service (docs/roadmap/archive/16 Task
 // T1) against real repositories, reusing newService's posting engine as its
 // Poster.
 func newAdjustmentsService(db *database.DBSQL) (*adjustments.Service, repository.AccountRepository) {
@@ -258,7 +258,7 @@ func newAdjustmentsService(db *database.DBSQL) (*adjustments.Service, repository
 	return adjustments.New(db, adjRepo, txRepo, outboxRepo, handleSvc), accRepo
 }
 
-// newReconService wires the reconciliation service (docs/plan/16 Task T2)
+// newReconService wires the reconciliation service (docs/roadmap/archive/16 Task T2)
 // against real repositories, reusing a fresh adjustments.Service (itself
 // backed by newService's posting engine) as its AdjustmentCreator — this
 // makes ResolveItem in these tests go through the exact same maker-checker
@@ -269,7 +269,7 @@ func newReconService(db *database.DBSQL) (*recon.Service, *adjustments.Service, 
 	return recon.New(db, reconRepo, adjSvc), adjSvc, accRepo
 }
 
-// newScheduleService wires the scheduled-transaction service (docs/plan/19
+// newScheduleService wires the scheduled-transaction service (docs/roadmap/archive/19
 // Task T1) against real repositories, reusing newService's posting engine
 // as its Poster.
 func newScheduleService(db *database.DBSQL) (*schedule.Service, repository.ScheduledTransactionRepository) {
@@ -278,7 +278,7 @@ func newScheduleService(db *database.DBSQL) (*schedule.Service, repository.Sched
 	return schedule.New(db, scheduleRepo, handleSvc, slog.Default()), scheduleRepo
 }
 
-// newDisbursementService wires the batch disbursement service (docs/plan/19
+// newDisbursementService wires the batch disbursement service (docs/roadmap/archive/19
 // Task T2) against real repositories, reusing newService's posting engine
 // as its Poster. maxPerRun overrides the production default (500) so tests
 // can prove multi-call pagination without importing hundreds of rows.
@@ -289,7 +289,7 @@ func newDisbursementService(db *database.DBSQL, maxPerRun int) (*disbursement.Se
 	return disbursement.New(db, disbursementRepo, txRepo, handleSvc, disbursement.WithMaxItemsPerRun(maxPerRun)), disbursementRepo
 }
 
-// newAccrualService wires the interest accrual service (docs/plan/19 Task
+// newAccrualService wires the interest accrual service (docs/roadmap/archive/19 Task
 // T3) against real repositories, reusing newService's posting engine as
 // its Poster and a real SnapshotRepository as its (snapshot-only) balance
 // basis.
@@ -320,7 +320,7 @@ func countLedgerTransactions(t *testing.T, db *database.DBSQL, idempotencyKey st
 
 // getSourceDest reads back source_account_id/destination_account_id for the
 // transaction with the given idempotency key — used to prove they hold the
-// semantically correct account (docs/plan/14 Task T1), not just "some
+// semantically correct account (docs/roadmap/archive/14 Task T1), not just "some
 // non-NULL UUID".
 func getSourceDest(t *testing.T, db *database.DBSQL, idempotencyKey string) (source, dest uuid.UUID) {
 	t.Helper()
@@ -363,7 +363,7 @@ func TestSchemaContract_EndToEndFlow(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, getBalance(t, db, cashA).Equal(decimal.NewFromInt(100_000)))
 
-	// [docs/plan/14 Task T1] source/destination must be the semantically
+	// [docs/roadmap/archive/14 Task T1] source/destination must be the semantically
 	// correct accounts (settlement debited, user cash credited) — not just
 	// non-NULL.
 	bcaSettlement, err := accRepo.GetSystemAccountID(ctx, constant.AccountTypeSettlement, "bca", "IDR")
@@ -426,7 +426,7 @@ func TestSchemaContract_EndToEndFlow(t *testing.T) {
 }
 
 // TestSchemaContract_OutboxEventContract proves the versioned event contract
-// (docs/plan/14 Task T3) end-to-end: post a real money_in, read the RAW
+// (docs/roadmap/archive/14 Task T3) end-to-end: post a real money_in, read the RAW
 // payload back out of outbox_events, unmarshal it into events.TransactionPosted
 // (not a generic map), and check the fields match the actual posting —
 // proof the wire format is exactly what the events package claims, not just
@@ -506,7 +506,7 @@ func TestSchemaContract_Idempotency(t *testing.T) {
 }
 
 // TestSchemaContract_ReversalSourceDestAlwaysNull proves Reversal never
-// writes a source/destination account (decision K2, docs/plan/13/14 Task
+// writes a source/destination account (decision K2, docs/roadmap/archive/13/14 Task
 // T1): a reversal can touch more than the original's two legs (fee-bearing
 // transactions), so there's no single semantic source->destination pair.
 func TestSchemaContract_ReversalSourceDestAlwaysNull(t *testing.T) {
@@ -547,7 +547,7 @@ func TestSchemaContract_ReversalSourceDestAlwaysNull(t *testing.T) {
 }
 
 // TestSchemaContract_ConcurrentReversal_NoDoubleClose proves the fix for
-// finding N1 (docs/plan/13): under the OLD code (SELECT status, then a plain
+// finding N1 (docs/roadmap/archive/13): under the OLD code (SELECT status, then a plain
 // UPDATE with no WHERE guard), two concurrent reversal requests for the same
 // original transaction could both observe status='posted' and both post a
 // reversal, doubling the credit. With CloseOriginal's atomic conditional
@@ -621,7 +621,7 @@ func TestSchemaContract_ConcurrentReversal_NoDoubleClose(t *testing.T) {
 }
 
 // TestSchemaContract_LifecycleGuard_SettleAfterCancel_Rejected proves finding
-// N3 (docs/plan/13): once a withdraw_initiate has been cancelled,
+// N3 (docs/roadmap/archive/13): once a withdraw_initiate has been cancelled,
 // withdraw_settle against the same ReferenceID must be rejected — it can no
 // longer silently consume hold funds that (in a multi-withdrawal scenario)
 // would belong to a different, still-active withdrawal.
@@ -684,7 +684,7 @@ func TestSchemaContract_LifecycleGuard_SettleAfterCancel_Rejected(t *testing.T) 
 
 // TestSchemaContract_LifecycleGuard_AmountMismatch_Rejected proves settling
 // a withdraw_initiate with an amount different from the original is rejected
-// — MVP supports full-amount settle only (decision K3, docs/plan/13).
+// — MVP supports full-amount settle only (decision K3, docs/roadmap/archive/13).
 func TestSchemaContract_LifecycleGuard_AmountMismatch_Rejected(t *testing.T) {
 	db := setupSchemaTestDB(t)
 	svc, _ := newService(db)
@@ -727,7 +727,7 @@ func TestSchemaContract_LifecycleGuard_AmountMismatch_Rejected(t *testing.T) {
 
 // TestSchemaContract_LifecycleGuard_DoubleSettle_Rejected proves settling the
 // same withdraw_initiate twice is rejected — direct coverage of the
-// "initiate -> settle -> settle again" scenario named in docs/plan/13's N3.
+// "initiate -> settle -> settle again" scenario named in docs/roadmap/archive/13's N3.
 func TestSchemaContract_LifecycleGuard_DoubleSettle_Rejected(t *testing.T) {
 	db := setupSchemaTestDB(t)
 	svc, _ := newService(db)
@@ -785,7 +785,7 @@ func TestSchemaContract_LifecycleGuard_DoubleSettle_Rejected(t *testing.T) {
 }
 
 // provisionStandardAccounts creates the cash/hold/pending/frozen account set
-// a real user needs (docs/plan/05 Task 1b.2's provisioning service),
+// a real user needs (docs/roadmap/archive/05 Task 1b.2's provisioning service),
 // bypassing the ledger.Module facade — acceptable for a schema contract test
 // that only needs the accounts to exist, not the HTTP surface.
 func provisionStandardAccounts(t *testing.T, db *database.DBSQL, userID uuid.UUID) error {
@@ -857,7 +857,7 @@ func TestSchemaContract_AccountRepository(t *testing.T) {
 }
 
 // TestSchemaContract_ConcurrentSystemAccountDeltas_NoLostUpdate is the core
-// proof for docs/plan/11 Task T1: settlement[bca] is never locked with
+// proof for docs/roadmap/archive/11 Task T1: settlement[bca] is never locked with
 // FOR UPDATE (allow_negative=true — see ApplySystemDeltas), only updated via
 // `balance = balance + delta`. Firing many concurrent money_in postings
 // through the SAME settlement account and checking its final balance
@@ -946,7 +946,7 @@ func TestSchemaContract_ConcurrentSystemAccountDeltas_NoLostUpdate(t *testing.T)
 	require.True(t, isConsistent, "settlement[bca] projection vs entries diverged, diff=%d", diff)
 }
 
-// ─── docs/plan/15 Task T1: balance snapshots ───────────────────────────────
+// ─── docs/roadmap/archive/15 Task T1: balance snapshots ───────────────────────────────
 
 func jakartaLoc(t *testing.T) *time.Location {
 	t.Helper()
@@ -1024,7 +1024,7 @@ func TestSchemaContract_BalanceSnapshot_MultiDay(t *testing.T) {
 // 23:30 WIB and one at 00:30 WIB the next calendar day land in different
 // snapshot dates — even though in UTC they're only ~1 hour apart on the SAME
 // UTC calendar day, which is exactly the trap AT TIME ZONE arithmetic must
-// avoid (docs/plan/15 Task T1).
+// avoid (docs/roadmap/archive/15 Task T1).
 func TestSchemaContract_BalanceSnapshot_TimezoneBoundary(t *testing.T) {
 	db := setupSchemaTestDB(t)
 	loc := jakartaLoc(t)
@@ -1122,7 +1122,7 @@ func TestSchemaContract_BalanceSnapshot_MismatchDetected(t *testing.T) {
 }
 
 // TestSchemaContract_BalanceSnapshot_LatestDate_EmptyTable is a regression
-// test for a real bug the docs/plan/15 Task T1 Docker smoke test caught:
+// test for a real bug the docs/roadmap/archive/15 Task T1 Docker smoke test caught:
 // `SELECT max(as_of_date)` over an EMPTY table returns one row with a NULL
 // value, not zero rows — sql.ErrNoRows never fires, and scanning straight
 // into *time.Time panicked with "unsupported Scan ... storing driver.Value
@@ -1152,7 +1152,7 @@ func TestSchemaContract_BalanceSnapshot_LatestDate_EmptyTable(t *testing.T) {
 	require.Equal(t, day1.Format("2006-01-02"), date.Format("2006-01-02"))
 }
 
-// ─── docs/plan/15 Task T2: statement (opening/closing + entries) ──────────
+// ─── docs/roadmap/archive/15 Task T2: statement (opening/closing + entries) ──────────
 
 // TestSchemaContract_Statement_PeriodOpeningClosing exercises the exact
 // repository composition Module.Statement uses — SnapshotRepository.
@@ -1233,7 +1233,7 @@ func TestSchemaContract_Statement_RangeTooLarge_LimitPlusOne(t *testing.T) {
 	require.Len(t, entries, maxRows+1, "LIMIT+1 must return maxRows+1 rows when that many exist, so the caller can detect the overflow")
 }
 
-// ─── docs/plan/16 Task T1: maker-checker adjustments ───────────────────────
+// ─── docs/roadmap/archive/16 Task T1: maker-checker adjustments ───────────────────────
 
 // TestSchemaContract_PendingAdjustment_DBConstraint_RejectsSelfApprove
 // bypasses Go entirely — a raw SQL UPDATE trying to set approved_by equal
@@ -1260,7 +1260,7 @@ func TestSchemaContract_PendingAdjustment_DBConstraint_RejectsSelfApprove(t *tes
 // TestSchemaContract_PendingAdjustment_ConcurrentApprove_ExactlyOneWins
 // races N distinct approvers against the same pending adjustment — proves
 // MarkApproved's atomic UPDATE (WHERE status='pending') lets exactly one
-// win, same guarantee pattern as docs/plan/14 Task T2's CloseOriginal.
+// win, same guarantee pattern as docs/roadmap/archive/14 Task T2's CloseOriginal.
 func TestSchemaContract_PendingAdjustment_ConcurrentApprove_ExactlyOneWins(t *testing.T) {
 	db := setupSchemaTestDB(t)
 	adjSvc, _ := newAdjustmentsService(db)
@@ -1299,7 +1299,7 @@ func TestSchemaContract_PendingAdjustment_ConcurrentApprove_ExactlyOneWins(t *te
 // calling Approve again after a successful approve never posts a second
 // ledger transaction — the atomic status guard (no longer 'pending') stops
 // the retry before it reaches Post, which is the concrete meaning of
-// "idempotent" the docs/plan/16 Task T1 test list asks for.
+// "idempotent" the docs/roadmap/archive/16 Task T1 test list asks for.
 func TestSchemaContract_PendingAdjustment_RetryApprove_NoDoublePost(t *testing.T) {
 	db := setupSchemaTestDB(t)
 	adjSvc, _ := newAdjustmentsService(db)
@@ -1412,7 +1412,7 @@ func TestSchemaContract_PendingAdjustment_Reject_NoMoneyMoves(t *testing.T) {
 	require.Nil(t, rejected.ExecutedTxID)
 }
 
-// ─── docs/plan/16 Task T2: external reconciliation ─────────────────────────
+// ─── docs/roadmap/archive/16 Task T2: external reconciliation ─────────────────────────
 
 // TestSchemaContract_Recon_Matcher_AllFourStatuses posts three real internal
 // transactions via the normal posting engine (so gateway/external_ref land
@@ -1498,7 +1498,7 @@ func TestSchemaContract_Recon_Matcher_AllFourStatuses(t *testing.T) {
 }
 
 // TestSchemaContract_Recon_ResolveItem_CreatesAdjustment_ApproveMovesBalance
-// is the end-to-end proof for K5 step 5 ("uang tidak bergerak tanpa approve
+// is the end-to-end proof for K5 step 5 ("funds must not move without approval
 // manusia kedua"): resolving a non-matched item creates a pending
 // adjustment but does NOT move money; only a second identity's Approve
 // actually credits the gateway's suspense account.
@@ -1580,10 +1580,10 @@ func TestSchemaContract_Recon_DBConstraint_UniqueExternalRefPerBatch(t *testing.
 	require.Error(t, err, "UNIQUE(batch_id, external_ref) must reject a duplicate external_ref within the same batch")
 }
 
-// ─── docs/plan/16 Task T3: RLS & DB roles ───────────────────────────────────
+// ─── docs/roadmap/archive/16 Task T3: RLS & DB roles ───────────────────────────────────
 
 // TestSchemaContract_AppServiceRole_FullFlowSucceeds is T3's most important
-// test (per the plan's own "Test wajib"): every write the application
+// test (per the plan's own "Required test"): every write the application
 // actually performs — money_in, transfer_p2p, an adjustment create+approve,
 // a recon import+resolve+approve — run through a connection that ONLY has
 // migrations/000009_rls_roles.up.sql's app_service grants, proving those
@@ -1646,7 +1646,7 @@ func TestSchemaContract_AppServiceRole_FullFlowSucceeds(t *testing.T) {
 // TestSchemaContract_AppServiceRole_CannotUpdateLedgerEntries proves the
 // app_service grant itself (not just the immutability trigger) rejects a
 // direct UPDATE on ledger_entries — a second, independent layer under the
-// trigger (docs/plan/16 Task T3 step 2).
+// trigger (docs/roadmap/archive/16 Task T3 step 2).
 func TestSchemaContract_AppServiceRole_CannotUpdateLedgerEntries(t *testing.T) {
 	dbs := setupAppServiceTestDB(t)
 	ctx := context.Background()
@@ -1671,7 +1671,7 @@ func TestSchemaContract_AppReadonlyRole_CannotWrite(t *testing.T) {
 
 // TestSchemaContract_AppReadonlyRole_CannotSeeOutboxOrAdjustments proves
 // app_readonly's table-level exclusion of outbox_events and
-// pending_adjustments (docs/plan/16 Task T3 step 3 — internal payloads, not
+// pending_adjustments (docs/roadmap/archive/16 Task T3 step 3 — internal payloads, not
 // for reporting consumption).
 func TestSchemaContract_AppReadonlyRole_CannotSeeOutboxOrAdjustments(t *testing.T) {
 	dbs := setupAppServiceTestDB(t)
@@ -1702,7 +1702,7 @@ func TestSchemaContract_AppReadonlyRole_CanReadEverythingElse(t *testing.T) {
 	}
 }
 
-// ─── docs/plan/17 Task T2: point-in-time rebuild ───────────────────────────
+// ─── docs/roadmap/archive/17 Task T2: point-in-time rebuild ───────────────────────────
 
 // rebuildProjectionSQL reads scripts/sql/rebuild_projection.sql — the exact
 // same file scripts/rebuild-projection.sh executes — so this test proves
@@ -1724,7 +1724,7 @@ func rebuildProjectionSQL(t *testing.T) string {
 // the exact rebuild SQL the ops script uses, and proves every account's
 // balance is restored from ledger_entries alone — AND that allow_negative
 // (not derived from entries) survives untouched, the entire point of using
-// UPDATE instead of TRUNCATE+replay (docs/plan/17 Task T2).
+// UPDATE instead of TRUNCATE+replay (docs/roadmap/archive/17 Task T2).
 func TestSchemaContract_RebuildProjection(t *testing.T) {
 	db := setupSchemaTestDB(t)
 	handleSvc, accRepo := newService(db)
@@ -1831,7 +1831,7 @@ func TestSchemaContract_RebuildProjection_IdempotentNoOp(t *testing.T) {
 	require.True(t, getBalance(t, db, cashA).Equal(decimal.NewFromInt(42_000)))
 }
 
-// ─── docs/plan/18 Task T1: currency registry ────────────────────────────────
+// ─── docs/roadmap/archive/18 Task T1: currency registry ────────────────────────────────
 
 // TestSchemaContract_CurrencyRepository_ListEnabled proves the repository
 // reads migrations/000011's seed data correctly and respects enabled=false.
@@ -1916,7 +1916,7 @@ func TestSchemaContract_Provisioning_RespectsLoadedCurrencyRegistry(t *testing.T
 	require.True(t, errors.Is(err, apperror.ErrValidation))
 }
 
-// loadFullCurrencyRegistry is docs/plan/18 Task T2's own test setup: load
+// loadFullCurrencyRegistry is docs/roadmap/archive/18 Task T2's own test setup: load
 // IDR+USD from the real `currencies` table (migration 000011) into the
 // process-global registry, and reset it back to the IDR-only bootstrap
 // default afterward so this test's state can't leak into another test in
@@ -1942,7 +1942,7 @@ func cashAccountOf(t *testing.T, accounts []model.Account) uuid.UUID {
 }
 
 // TestSchemaContract_MultiCurrency_MoneyIn_UsesCorrectSettlementPool is
-// docs/plan/18 Task T2's first required integration test: provision a USD
+// docs/roadmap/archive/18 Task T2's first required integration test: provision a USD
 // user, money_in via settlement[bca], and prove the movement actually
 // touched the USD settlement pool (not the IDR one seeded by 000002) — the
 // exact bug T2 exists to prevent (currency-blind system account lookup
@@ -2025,7 +2025,7 @@ func TestSchemaContract_MultiCurrency_TransferP2P_CrossCurrencyRejected(t *testi
 }
 
 // TestSchemaContract_MultiCurrency_ParallelIDRAndUSD_HitDistinctSettlementAccounts
-// is docs/plan/18 Task T2's second required integration test: post IDR and
+// is docs/roadmap/archive/18 Task T2's second required integration test: post IDR and
 // USD money_in through the SAME gateway ("bca") and prove each lands on its
 // own settlement account, not a shared/arbitrary one.
 func TestSchemaContract_MultiCurrency_ParallelIDRAndUSD_HitDistinctSettlementAccounts(t *testing.T) {
@@ -2089,7 +2089,7 @@ func getTransactionID(t *testing.T, db *database.DBSQL, idempotencyKey string) u
 }
 
 // fxCommand builds the shared metadata contract both fx_out and fx_in
-// require (docs/plan/18 Task T3) — quote_id/rate/pair, none of which are
+// require (docs/roadmap/archive/18 Task T3) — quote_id/rate/pair, none of which are
 // ever used arithmetically by the processors themselves.
 func fxCommand(idemKey, txType string, amount decimal.Decimal, userID uuid.UUID, quoteID string) processors.Command {
 	return processors.Command{
@@ -2101,7 +2101,7 @@ func fxCommand(idemKey, txType string, amount decimal.Decimal, userID uuid.UUID,
 	}
 }
 
-// TestSchemaContract_FX_OutThenIn_MovesBothLegsCorrectly is docs/plan/18
+// TestSchemaContract_FX_OutThenIn_MovesBothLegsCorrectly is docs/roadmap/archive/18
 // Task T3's first required integration test. fx_out and fx_in are two
 // independent single-currency ledger transactions (K-S S2: FX is
 // orchestration, not a ledger feature) — the ledger has no notion of "the
@@ -2154,7 +2154,7 @@ func TestSchemaContract_FX_OutThenIn_MovesBothLegsCorrectly(t *testing.T) {
 	require.NoError(t, rows.Err())
 }
 
-// TestSchemaContract_FX_In_RetrySameKey_Idempotent is docs/plan/18 Task T3's
+// TestSchemaContract_FX_In_RetrySameKey_Idempotent is docs/roadmap/archive/18 Task T3's
 // second required integration test.
 func TestSchemaContract_FX_In_RetrySameKey_Idempotent(t *testing.T) {
 	db := setupSchemaTestDB(t)
@@ -2176,8 +2176,8 @@ func TestSchemaContract_FX_In_RetrySameKey_Idempotent(t *testing.T) {
 }
 
 // TestSchemaContract_FX_InFails_OpenPositionVisible_ReversalCloses is
-// docs/plan/18 Task T3's third required integration test — proves the
-// runbook's (docs/runbooks/fx-position.md) core claim: a failed second leg
+// docs/roadmap/archive/18 Task T3's third required integration test — proves the
+// runbook's (docs/operations/runbooks/fx-position.md) core claim: a failed second leg
 // leaves a VISIBLE non-zero fx_conversion balance, and reversing the posted
 // leg brings it back to zero.
 func TestSchemaContract_FX_InFails_OpenPositionVisible_ReversalCloses(t *testing.T) {
@@ -2260,7 +2260,7 @@ func scheduleIdempotencyKeyForTest(id uuid.UUID, asOf time.Time) string {
 }
 
 // TestSchemaContract_Schedule_DailyRunDue_IdempotentAcrossDays is
-// docs/plan/19 Task T1's first required integration test: create daily ->
+// docs/roadmap/archive/19 Task T1's first required integration test: create daily ->
 // RunDue(day1) posts; RunDue(day1) again is idempotent (no double post);
 // RunDue(day2) posts a second time.
 func TestSchemaContract_Schedule_DailyRunDue_IdempotentAcrossDays(t *testing.T) {
@@ -2314,7 +2314,7 @@ func TestSchemaContract_Schedule_DailyRunDue_IdempotentAcrossDays(t *testing.T) 
 }
 
 // TestSchemaContract_Schedule_CrashWindow_AlreadyPostedTreatedAsSuccess
-// is docs/plan/19 Task T1's crash-window integration test: simulate a prior
+// is docs/roadmap/archive/19 Task T1's crash-window integration test: simulate a prior
 // run that posted successfully but crashed before last_run_date was
 // updated (by posting the exact same idempotency key manually), then prove
 // RunDue treats the resulting ErrAlreadyPosted as success and still writes
@@ -2368,7 +2368,7 @@ func TestSchemaContract_Schedule_CrashWindow_AlreadyPostedTreatedAsSuccess(t *te
 	require.Equal(t, "finished", after.Status, "'once' schedule must finish after the crash-window retry")
 }
 
-// TestSchemaContract_Schedule_ListDue_PerScheduleKind is docs/plan/19 Task
+// TestSchemaContract_Schedule_ListDue_PerScheduleKind is docs/roadmap/archive/19 Task
 // T1's table-driven due-selection test, run directly against the
 // repository (the SQL logic itself — the layer that actually implements
 // per-kind matching — rather than mocked).
@@ -2443,7 +2443,7 @@ func TestSchemaContract_Schedule_ListDue_PerScheduleKind(t *testing.T) {
 func ptrTime(t time.Time) *time.Time { return &t }
 
 // TestSchemaContract_Disbursement_ImportThenRun_AllPostedAcrossMultipleCalls
-// is docs/plan/19 Task T2's first required integration test: import 10
+// is docs/roadmap/archive/19 Task T2's first required integration test: import 10
 // items -> run twice with maxItemsPerRun=6 -> all 10 posted, balances
 // correct, exactly one transaction per item key.
 func TestSchemaContract_Disbursement_ImportThenRun_AllPostedAcrossMultipleCalls(t *testing.T) {
@@ -2488,7 +2488,7 @@ func TestSchemaContract_Disbursement_ImportThenRun_AllPostedAcrossMultipleCalls(
 
 func fmtInt(n int) string { return fmt.Sprintf("%d", n) }
 
-// TestSchemaContract_Disbursement_Resume_NoDoublePost is docs/plan/19 Task
+// TestSchemaContract_Disbursement_Resume_NoDoublePost is docs/roadmap/archive/19 Task
 // T2's resume integration test: simulate a "process died mid-batch" state
 // by posting item 5 directly (bypassing Run) before ever calling Run, then
 // prove Run only advances items 1-4 and 6-10 (5 stays untouched by Run,
@@ -2550,7 +2550,7 @@ func TestSchemaContract_Disbursement_Resume_NoDoublePost(t *testing.T) {
 }
 
 // TestSchemaContract_Disbursement_BusinessFailure_OtherItemsStillProcess is
-// docs/plan/19 Task T2's business-failure integration test: one item
+// docs/roadmap/archive/19 Task T2's business-failure integration test: one item
 // targets a user with no cash account (business failure at ResolveAccounts
 // time) — it must be marked 'failed' with an error, the OTHER items must
 // still post, and the batch ends 'completed_with_errors'.
@@ -2595,7 +2595,7 @@ func TestSchemaContract_Disbursement_BusinessFailure_OtherItemsStillProcess(t *t
 	require.Equal(t, "completed_with_errors", status)
 }
 
-// TestSchemaContract_Accrual_BasicFlow_IdempotentAcrossRuns is docs/plan/19
+// TestSchemaContract_Accrual_BasicFlow_IdempotentAcrossRuns is docs/roadmap/archive/19
 // Task T3's basic integration test: fund an account -> snapshot -> accrue
 // -> balance increases correctly with a unique key; running the job again
 // for the same date is idempotent; the ledger verifier stays clean.
@@ -2648,7 +2648,7 @@ func TestSchemaContract_Accrual_BasicFlow_IdempotentAcrossRuns(t *testing.T) {
 	require.NoError(t, rows.Err())
 }
 
-// TestSchemaContract_Accrual_BasisIsSnapshotNotLiveBalance is docs/plan/19
+// TestSchemaContract_Accrual_BasisIsSnapshotNotLiveBalance is docs/roadmap/archive/19
 // Task T3's DoD-required explicit proof: changing the LIVE balance after
 // the snapshot was taken must NOT change the accrued amount — the basis is
 // always the snapshot, never a live re-read.
@@ -2703,7 +2703,7 @@ func TestSchemaContract_Accrual_BasisIsSnapshotNotLiveBalance(t *testing.T) {
 		"accrual must have used the SNAPSHOT balance (1,000,000), not the live balance (51,000,000) — got balance %s", got)
 }
 
-// TestSchemaContract_Accrual_DisabledAccount_NotAccrued is docs/plan/19
+// TestSchemaContract_Accrual_DisabledAccount_NotAccrued is docs/roadmap/archive/19
 // Task T3's third required integration test: an account with
 // enabled=false in savings_config must never be accrued.
 func TestSchemaContract_Accrual_DisabledAccount_NotAccrued(t *testing.T) {
@@ -2740,12 +2740,12 @@ func TestSchemaContract_Accrual_DisabledAccount_NotAccrued(t *testing.T) {
 }
 
 // =============================================================================
-// docs/plan/37 Task T3 — fraud screening removed from the posting pipeline
+// docs/roadmap/archive/37 Task T3 — fraud screening removed from the posting pipeline
 // =============================================================================
 
 // TestSchemaContract_ExecTransfer_PostsWithoutAnyFraudClientConfigured
 // proves the posting pipeline no longer has ANY screening seam
-// (docs/plan/37 Task T3): newService wires no fraud client of any kind, yet
+// (docs/roadmap/archive/37 Task T3): newService wires no fraud client of any kind, yet
 // a normal transfer_p2p posts successfully — there is nothing left in
 // internal/ledger/service/handle for a caller to even configure.
 // Screening now happens entirely in the transport layer, before Handle is
@@ -2779,7 +2779,7 @@ func TestSchemaContract_ExecTransfer_PostsWithoutAnyFraudClientConfigured(t *tes
 }
 
 // =============================================================================
-// docs/plan/20 Task T2 — Regulatory reporting views
+// docs/roadmap/archive/20 Task T2 — Regulatory reporting views
 // =============================================================================
 
 // seedPostedTransaction directly inserts a 'posted' ledger_transactions row
@@ -2966,9 +2966,9 @@ func TestSchemaContract_Reporting_ReconSummaryMatchesManualAggregate(t *testing.
 }
 
 // TestSchemaContract_Reporting_AppReadonlyCanSelectViews proves an external
-// BI tool connecting as app_readonly (docs/plan/16 Task T3's role split)
+// BI tool connecting as app_readonly (docs/roadmap/archive/16 Task T3's role split)
 // can SELECT all three report views directly — this is the whole point of
-// the views being the query contract (docs/plan/20 Task T2 step 1).
+// the views being the query contract (docs/roadmap/archive/20 Task T2 step 1).
 func TestSchemaContract_Reporting_AppReadonlyCanSelectViews(t *testing.T) {
 	dbs := setupAppServiceTestDB(t)
 	ctx := context.Background()
@@ -2982,12 +2982,12 @@ func TestSchemaContract_Reporting_AppReadonlyCanSelectViews(t *testing.T) {
 
 // TestSchemaContract_Reporting_AppReadonlyBlockedFromPayloadTables proves
 // app_readonly still cannot read outbox_events/pending_adjustments directly
-// (docs/plan/20 Task T2's own DoD: the new views must not become a
-// side-door around the docs/plan/16 Task T3 grant boundary — this
+// (docs/roadmap/archive/20 Task T2's own DoD: the new views must not become a
+// side-door around the docs/roadmap/archive/16 Task T3 grant boundary — this
 // re-asserts the boundary itself is unchanged by this task).
 //
 // scheduled_transactions is deliberately NOT in this list — migrations/
-// 000014_scheduled_transactions.up.sql (docs/plan/19 Task T1, predating this
+// 000014_scheduled_transactions.up.sql (docs/roadmap/archive/19 Task T1, predating this
 // task) already GRANTs app_readonly SELECT on it, unlike outbox_events/
 // pending_adjustments. This task doesn't touch that grant either way; this
 // test documents the actual current boundary rather than an assumed one.
@@ -3002,8 +3002,8 @@ func TestSchemaContract_Reporting_AppReadonlyBlockedFromPayloadTables(t *testing
 	}
 }
 
-// TestSchemaContract_Reporting_TimezoneRegressionGuard is docs/plan/20 Task
-// T2's mandatory regression guard for the docs/plan/16 Task T2 ::date vs
+// TestSchemaContract_Reporting_TimezoneRegressionGuard is docs/roadmap/archive/20 Task
+// T2's mandatory regression guard for the docs/roadmap/archive/16 Task T2 ::date vs
 // ::timestamptz::date lesson: a transaction posted at 00:30 WIB (17:30 UTC
 // the PREVIOUS day) must land on the correct WIB calendar date in
 // v_report_daily_mutation, not the UTC date.

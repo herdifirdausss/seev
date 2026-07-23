@@ -1,7 +1,7 @@
 package grpcx
 
 // Package-level metric, registered once regardless of how many times
-// NewServer is called (docs/plan/43 K5).
+// NewServer is called (docs/roadmap/archive/43 K5).
 
 import (
 	"github.com/prometheus/client_golang/prometheus"
@@ -10,8 +10,8 @@ import (
 
 // grpcHandlingDuration observes one duration per unary RPC in
 // loggingInterceptor — deliberately not a second, separate interceptor, so
-// there is exactly one place computing RPC duration (docs/plan/43 K5: "jangan
-// duplikasi observasi dengan stats handler" — the otelgrpc stats handler
+// there is exactly one place computing RPC duration (docs/roadmap/archive/43 K5: "jangan
+// duplicate observations with the stats handler" — the otelgrpc stats handler
 // wired in NewServer only contributes TRACE spans here, no MeterProvider is
 // configured, so there is no competing metrics source to duplicate against
 // regardless). grpc_method and grpc_code are both bounded (finite RPC

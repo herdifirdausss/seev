@@ -32,7 +32,7 @@ func TestMain(m *testing.M) {
 	dbPassword := "secret"
 
 	container, err := postgres.Run(ctx,
-		"postgres:16-alpine",
+		"postgres:16.14-alpine",
 		postgres.WithDatabase(dbName),
 		postgres.WithUsername(dbUser),
 		postgres.WithPassword(dbPassword),
@@ -213,7 +213,7 @@ func TestPaginate(t *testing.T) {
 
 // TestNew_SessionTimeouts_AppliedViaDSN proves the statement_timeout/
 // lock_timeout/idle_in_transaction_session_timeout GUCs configured in
-// PostgresConfig actually reach the server (docs/plan/11 Task T5) — this is
+// PostgresConfig actually reach the server (docs/roadmap/archive/11 Task T5) — this is
 // exactly the kind of DSN-string-construction behavior that can silently be
 // wrong (typo'd keyword, bad quoting) without ever failing to connect, so it
 // must be verified against real Postgres, not asserted from the Go string

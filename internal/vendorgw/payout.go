@@ -28,14 +28,14 @@ type PayoutProvider interface {
 	Vendor() string
 
 	// Submit initiates a payout. idempotencyKey (= payout_requests.id,
-	// docs/plan/23 Task T1) MUST make a repeated Submit with the same key
+	// docs/roadmap/archive/23 Task T1) MUST make a repeated Submit with the same key
 	// safe — the vendor (or this provider, standing in for it) must never
 	// send money twice for the same key, and must return the SAME result
 	// both times.
 	Submit(ctx context.Context, idempotencyKey string, amount decimal.Decimal, currency string, destination json.RawMessage) (PayoutResult, error)
 
 	// Query polls the current status of a previously-submitted payout —
-	// used by the resume/polling job (docs/plan/23 Task T3) for requests
+	// used by the resume/polling job (docs/roadmap/archive/23 Task T3) for requests
 	// still Pending.
 	Query(ctx context.Context, idempotencyKey string) (PayoutResult, error)
 }

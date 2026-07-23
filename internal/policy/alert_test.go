@@ -109,7 +109,7 @@ func TestCheck_NilAlertFn_NeverPanicsNeverBlocks(t *testing.T) {
 }
 
 // TestFireFailOpenAlert_ThrottledWithinWindow_FiresOnceOnly proves the
-// docs/plan/25 Task T5 requirement directly: "Redis outage != alert storm"
+// docs/roadmap/archive/25 Task T5 requirement directly: "Redis outage != alert storm"
 // — many fail-open events within one throttle window must fire at most one
 // alert.
 func TestFireFailOpenAlert_ThrottledWithinWindow_FiresOnceOnly(t *testing.T) {
@@ -129,8 +129,8 @@ func TestFireFailOpenAlert_ThrottledWithinWindow_FiresOnceOnly(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	stub.awaitCall(t)      // exactly one delivery makes it through...
-	stub.assertNoCall(t)   // ...and no second one within the window.
+	stub.awaitCall(t)    // exactly one delivery makes it through...
+	stub.assertNoCall(t) // ...and no second one within the window.
 }
 
 // TestFireFailOpenAlert_FiresAgainAfterWindowElapses proves throttling is a

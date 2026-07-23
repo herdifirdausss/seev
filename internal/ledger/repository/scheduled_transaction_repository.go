@@ -17,7 +17,7 @@ import (
 )
 
 // ScheduledTransactionRepository persists recurring/deferred user
-// transactions (docs/plan/19 Task T1). Write methods that mutate execution
+// transactions (docs/roadmap/archive/19 Task T1). Write methods that mutate execution
 // state (MarkSuccess/MarkBusinessFailure) take a *sql.Tx — the caller
 // (internal/ledger/service/schedule) owns transaction boundaries, same
 // pattern as every other repository in this module.
@@ -43,7 +43,7 @@ type ScheduledTransactionRepository interface {
 	MarkSuccess(ctx context.Context, tx *sql.Tx, id uuid.UUID, asOf time.Time, finish bool) error
 
 	// MarkBusinessFailure records last_error WITHOUT touching last_run_date
-	// (docs/plan/19 Task T1 step 3) — the row stays due for the next
+	// (docs/roadmap/archive/19 Task T1 step 3) — the row stays due for the next
 	// evaluation. status->'failed' when terminal is true ('once' schedules;
 	// a recurring schedule stays 'active' and retries at its next
 	// occurrence).

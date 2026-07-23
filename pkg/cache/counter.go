@@ -9,7 +9,7 @@ import (
 )
 
 // Counter is a TTL-windowed cumulative counter — the primitive
-// internal/policy needs for daily/monthly velocity (docs/plan/17 Task T1):
+// internal/policy needs for daily/monthly velocity (docs/roadmap/archive/17 Task T1):
 // "how much has this user done in this window so far", not "how fast can
 // they call this endpoint" (that's Limiter's job, a different shape).
 // Redis-backed in production, in-memory when REDIS_ENABLED=false — same
@@ -62,7 +62,7 @@ func (c *RedisCounter) Get(ctx context.Context, key string) (int64, error) {
 // ─── MemoryCounter ──────────────────────────────────────────────────────────
 
 // MemoryCounter is an in-process fallback for single-node deployments
-// without Redis (docs/plan/12 Task T1 pattern). NOT safe across multiple
+// without Redis (docs/roadmap/archive/12 Task T1 pattern). NOT safe across multiple
 // process replicas — each instance has its own independent counters.
 type MemoryCounter struct {
 	mu     sync.Mutex

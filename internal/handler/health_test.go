@@ -152,7 +152,7 @@ func TestReady_NilDependencies(t *testing.T) {
 	data := body["data"].(map[string]any)
 	assert.Equal(t, "ok", data["status"])
 	// Cache == nil is reported as "disabled" rather than omitted — it's not
-	// a degraded state when REDIS_ENABLED=false (docs/plan/12 Task T1); DB
+	// a degraded state when REDIS_ENABLED=false (docs/roadmap/archive/12 Task T1); DB
 	// and MQ stay genuinely absent from the map since there's no such
 	// "disabled" concept for them.
 	components := data["components"].(map[string]any)

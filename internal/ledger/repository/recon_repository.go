@@ -18,7 +18,7 @@ import (
 )
 
 // insertItemsChunkSize caps how many recon_items rows one INSERT statement
-// carries — a full batch (up to 50,000 rows, docs/plan/16 Task T2 step 3)
+// carries — a full batch (up to 50,000 rows, docs/roadmap/archive/16 Task T2 step 3)
 // would otherwise exceed Postgres's ~65535 bind-parameter limit (6 columns
 // per row), so InsertItems loops in chunks within the caller's transaction
 // instead of one giant statement (same concern as ledger_entry_repository's
@@ -26,7 +26,7 @@ import (
 const insertItemsChunkSize = 2000
 
 // ReconRepository persists imported settlement batches and their per-row
-// match outcomes (docs/plan/16 Task T2, decision K5). Write methods take a
+// match outcomes (docs/roadmap/archive/16 Task T2, decision K5). Write methods take a
 // *sql.Tx — the caller (internal/ledger/service/recon) owns transaction
 // boundaries, same pattern as every other repository in this module.
 type ReconRepository interface {
@@ -34,7 +34,7 @@ type ReconRepository interface {
 	UpdateBatchStatus(ctx context.Context, tx *sql.Tx, batchID uuid.UUID, status string) error
 	GetBatch(ctx context.Context, id uuid.UUID) (model.ReconBatch, error)
 
-	// ListBatches returns batches newest first, paginated (docs/plan/25
+	// ListBatches returns batches newest first, paginated (docs/roadmap/archive/25
 	// Task T5) — lets an operator find a batch's id without SQL before
 	// drilling into GetBatchReport.
 	ListBatches(ctx context.Context, limit, offset int) ([]model.ReconBatch, error)
@@ -44,7 +44,7 @@ type ReconRepository interface {
 	// 'matched'/'amount_mismatch' afterward. Items must all share BatchID.
 	InsertItems(ctx context.Context, tx *sql.Tx, items []model.ReconItem) error
 
-	// RunMatcher is the two-statement set-based match (docs/plan/16 Task T2
+	// RunMatcher is the two-statement set-based match (docs/roadmap/archive/16 Task T2
 	// step 4): first promotes existing batch items to matched/amount_mismatch
 	// by joining ledger_transactions on (gateway, external_ref); items left
 	// untouched stay 'missing_internal'. Second, inserts a NEW item for every
@@ -53,7 +53,7 @@ type ReconRepository interface {
 	RunMatcher(ctx context.Context, tx *sql.Tx, batchID uuid.UUID, gateway string, reportDate time.Time) error
 
 	// GetCounts returns a count of items per match_status for a batch —
-	// the report summary (docs/plan/16 Task T2 step 5).
+	// the report summary (docs/roadmap/archive/16 Task T2 step 5).
 	GetCounts(ctx context.Context, batchID uuid.UUID) (map[string]int, error)
 
 	// ListItems returns items for a batch, newest first, optionally filtered
@@ -65,7 +65,7 @@ type ReconRepository interface {
 	// MarkItemResolved atomically sets resolved_by_adjustment_id — guarded
 	// by `WHERE resolved_by_adjustment_id IS NULL` so a double-resolve
 	// (retry, or a race between two ops) can't create two pending
-	// adjustments for the same discrepancy (docs/plan/14 Task T2 K3
+	// adjustments for the same discrepancy (docs/roadmap/archive/14 Task T2 K3
 	// pattern). Returns rows affected: 1 on success, 0 if already resolved.
 	MarkItemResolved(ctx context.Context, tx *sql.Tx, itemID, adjustmentID uuid.UUID) (int64, error)
 }
@@ -186,7 +186,7 @@ func (r *reconRepo) RunMatcher(ctx context.Context, tx *sql.Tx, batchID uuid.UUI
 
 	// Step B: the reverse direction — a posted internal transaction on
 	// report_date with this gateway that no batch row claimed at all. Each
-	// becomes its own new item, match_status='missing_external' (docs/plan/16
+	// becomes its own new item, match_status='missing_external' (docs/roadmap/archive/16
 	// Task T2 step 4).
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO recon_items (id, batch_id, external_ref, amount, raw, match_status, matched_tx_id, created_at)

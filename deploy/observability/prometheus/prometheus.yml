@@ -1,11 +1,11 @@
-# docs/plan/43 Task T1 — scrapes /metrics on each service's internal/admin
-# listener only, never the public listener (docs/plan/10 Task T6 boundary).
-# docs/plan/49 K6: every one of those listeners now requires mTLS —
+# docs/roadmap/archive/43 Task T1 — scrapes /metrics on each service's internal/admin
+# listener only, never the public listener (docs/roadmap/archive/10 Task T6 boundary).
+# docs/roadmap/archive/49 K6: every one of those listeners now requires mTLS —
 # Prometheus presents the "prometheus" client identity and trusts only the
 # shared CA, mirroring what a real dev-operator curl session needs.
 #
 # insecure_skip_verify: true is required in every tls_config below — found
-# live in docs/plan/50 T2 execution, not a pre-existing pattern to copy
+# live in docs/roadmap/active/50 T2 execution, not a pre-existing pattern to copy
 # without it: this repo's leaf certs carry a SPIFFE URI SAN only, never a
 # DNS SAN (pkg/tlsx/config.go's own comments), so Prometheus's stock Go TLS
 # client can never satisfy standard hostname verification against any of
@@ -93,7 +93,7 @@ scrape_configs:
       - targets: ["fraud-service:8094"]
 
   # admin-bff-service and assurance-service had no scrape job at all before
-  # docs/plan/49 (TM-04/TM-09 in docs/security/threat-model.md) — added
+  # docs/roadmap/archive/49 (TM-04/TM-09 in docs/security/threat-model.md) — added
   # here rather than left as a metrics blind spot now that both listeners
   # are being flipped to mTLS in this same task anyway.
   - job_name: admin-bff-service
@@ -118,7 +118,7 @@ scrape_configs:
     static_configs:
       - targets: ["assurance-service:8096"]
 
-  # docs/plan/50 T2 (K13) — backup-agent runs only under the opt-in
+  # docs/roadmap/active/50 T2 (K13) — backup-agent runs only under the opt-in
   # "backup" Compose profile, so this target is unreachable (and simply
   # shows as "down" in Prometheus, not an error) unless that profile is
   # started; scraped the same mTLS way as every other internal listener

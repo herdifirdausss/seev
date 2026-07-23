@@ -16,10 +16,10 @@ import (
 // unusual happened (fresh restore from an old backup, the job disabled for
 // weeks) — log a warning and stop, pointing at the runbook, rather than
 // silently doing a month+ of backfill work inline with process startup
-// (docs/plan/15 Task T1).
+// (docs/roadmap/archive/15 Task T1).
 const maxCatchUpDays = 31
 
-// SnapshotJob runs the daily balance snapshot (docs/plan/15 Task T1,
+// SnapshotJob runs the daily balance snapshot (docs/roadmap/archive/15 Task T1,
 // decision K6): it writes account_balance_snapshots rows for the previous
 // calendar day, then cross-checks them against account_balances.balance for
 // accounts that haven't moved since — a mismatch there is a real projection
@@ -32,7 +32,7 @@ type SnapshotJob struct {
 	logger       *slog.Logger
 	sched        *scheduler.Scheduler
 	loc          *time.Location
-	// alertFn mirrors Verifier's (docs/plan/12 Task T4) — may be nil.
+	// alertFn mirrors Verifier's (docs/roadmap/archive/12 Task T4) — may be nil.
 	alertFn alerting.AlertFunc
 }
 
@@ -111,7 +111,7 @@ func (j *SnapshotJob) catchUp(ctx context.Context) error {
 	if gapDays > maxCatchUpDays {
 		j.logger.Warn("balance snapshot: gap since last snapshot exceeds catch-up limit, not backfilling automatically",
 			slog.Int("gap_days", gapDays), slog.Int("max_catch_up_days", maxCatchUpDays),
-			slog.String("hint", "see docs/runbooks — likely a restored backup or the job was disabled for a long time; backfill manually"))
+			slog.String("hint", "see docs/operations/runbooks — likely a restored backup or the job was disabled for a long time; backfill manually"))
 		return nil
 	}
 
@@ -153,6 +153,6 @@ func (j *SnapshotJob) snapshotForDate(ctx context.Context, date time.Time) error
 	// Deliberately does NOT overwrite the (possibly correct) snapshot with
 	// the (possibly wrong) current balance, or vice versa — a mismatch means
 	// a human needs to investigate which side is actually right
-	// (docs/plan/15 Task T1). The job's job is to detect, not repair.
+	// (docs/roadmap/archive/15 Task T1). The job's job is to detect, not repair.
 	return nil
 }

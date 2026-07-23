@@ -70,8 +70,8 @@ func run(parent context.Context) error {
 		cfg.App.Port = "8095"
 	}
 	log := logger.New(cfg.Logger.Pkg())
-	// docs/plan/49 K6: admin-bff was deliberately excluded from T2's gRPC-
-	// only cert mount ("itu lingkup T3 HTTP bukan T2 gRPC") — this is
+	// docs/roadmap/archive/49 K6: admin-bff was deliberately excluded from T2's gRPC-
+	// only cert mount ("that is the T3 HTTP scope, not T2 gRPC") — this is
 	// where it gains its own identity, both to serve its own listener and
 	// to dial every downstream service it proxies for except auth's
 	// public login endpoint.
@@ -107,10 +107,10 @@ func run(parent context.Context) error {
 		return fmt.Errorf("start admin-bff jobs: %w", err)
 	}
 	defer module.Stop()
-	// docs/plan/49 K6: admin-bff's console listener requires mTLS like
+	// docs/roadmap/archive/49 K6: admin-bff's console listener requires mTLS like
 	// every other internal surface — an operator's browser needs a
 	// dev-operator client certificate loaded, same as this harness's own
-	// curl_internal (docs/plan/49 §T3 constraint 5's own justification).
+	// curl_internal (docs/roadmap/archive/49 §T3 constraint 5's own justification).
 	server := &http.Server{
 		Addr: ":" + cfg.App.Port, Handler: adminRouter(cfg, module, log),
 		ReadTimeout: cfg.App.ReadTimeout, WriteTimeout: cfg.App.WriteTimeout,

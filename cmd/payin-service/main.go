@@ -85,7 +85,7 @@ func run(parent context.Context) error {
 		cfg.GRPCPort = "9092"
 	}
 	log := logger.New(cfg.Logger.Pkg())
-	// docs/plan/49 K3/K5: load this process's own identity + the shared CA
+	// docs/roadmap/archive/49 K3/K5: load this process's own identity + the shared CA
 	// before anything else.
 	certSrc, err := tlsx.LoadFromDir(cfg.TLSCertDir, "payin", log)
 	if err != nil {
@@ -109,7 +109,7 @@ func run(parent context.Context) error {
 		return fmt.Errorf("connect postgres: %w", err)
 	}
 	// Redis is entirely optional for payin-service today — its only
-	// consumer is an opt-in distributed breaker (docs/plan/45 Task T2,
+	// consumer is an opt-in distributed breaker (docs/roadmap/archive/45 Task T2,
 	// BREAKER_DISTRIBUTED, default false). Same nil-means-disabled
 	// convention as payout/ledger-service's own Redis wiring; DB 0 is safe
 	// to share with payout's own breaker keys since every key is namespaced
@@ -151,7 +151,7 @@ func run(parent context.Context) error {
 		log.Info("vendorgw: distributed breaker enabled", "namespace", "payin")
 	}
 
-	// fraud client screens deposits pre-posting (docs/plan/37 Task T4).
+	// fraud client screens deposits pre-posting (docs/roadmap/archive/37 Task T4).
 	// FRAUD_GRPC_ADDR unset (dev/test defaults) => nil client => no screening.
 	var fraudClient *fraudcheck.Client
 	var fraudConn *grpc.ClientConn
@@ -170,7 +170,7 @@ func run(parent context.Context) error {
 	}
 
 	module := payin.NewModule(db, ledgerclient.New(ledgerConn), registry, cfg.Vendor.TopupIntentTTL, log, fraudClient, breaker)
-	// docs/plan/49 K4: gateway calls payin's gRPC surface for user-facing
+	// docs/roadmap/archive/49 K4: gateway calls payin's gRPC surface for user-facing
 	// topup flows; assurance-service (TM-09 — added after K4 was written,
 	// see docs/security/threat-model.md §4) reads it for cross-service
 	// correlation. Verified live: no other caller exists.
@@ -195,7 +195,7 @@ func run(parent context.Context) error {
 		_ = db.Close()
 		return fmt.Errorf("listen grpc: %w", err)
 	}
-	// docs/plan/49 K6: payin's admin listener is internal-only mTLS.
+	// docs/roadmap/archive/49 K6: payin's admin listener is internal-only mTLS.
 	httpServer := &http.Server{Addr: ":" + cfg.App.Port, Handler: adminRouter(cfg, module, log), ReadTimeout: cfg.App.ReadTimeout, WriteTimeout: cfg.App.WriteTimeout, IdleTimeout: cfg.App.IdleTimeout, ReadHeaderTimeout: 5 * time.Second, MaxHeaderBytes: 1 << 20, TLSConfig: tlsx.ServerConfig(certSrc, []string{
 		tlsx.IdentityDevOperator, tlsx.IdentityPrometheus, tlsx.IdentityAdminBFF,
 	})}

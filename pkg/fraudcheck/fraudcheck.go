@@ -2,7 +2,7 @@
 // fraud-service's Screen RPC uses — ledger's transport (P2P transfer),
 // payin (topup), and payout (payout create) all wrap the SAME timeout/
 // fail-open/fail-closed rules through this one implementation
-// (docs/plan/37 Task T2), rather than each service re-deriving its own
+// (docs/roadmap/archive/37 Task T2), rather than each service re-deriving its own
 // copy of internal/ledger/screening/grpchook.go's logic.
 //
 // Contract: Check returns a non-nil error ONLY for an infra failure
@@ -33,7 +33,7 @@ import (
 
 // ErrDependencyUnavailable is returned by Check when fraud-service is
 // REACHABLE but explicitly reports that its velocity dependency (Redis) is
-// currently down (docs/plan/45 Task T3/K4) — distinct from every other
+// currently down (docs/roadmap/archive/45 Task T3/K4) — distinct from every other
 // Check error, which means fraud-service itself is unreachable/erroring
 // and every existing caller fails OPEN for. This one caller MUST fail
 // CLOSED instead: map it to an HTTP 503 DEPENDENCY_UNAVAILABLE response
@@ -47,14 +47,14 @@ var ErrDependencyUnavailable = errors.New("fraudcheck: fraud velocity dependency
 const dependencyUnavailableMessage = "DEPENDENCY_UNAVAILABLE"
 
 // screenTimeout bounds every Screen call — the same 500ms budget the
-// in-transaction hook used before docs/plan/37 moved screening out of the
+// in-transaction hook used before docs/roadmap/archive/37 moved screening out of the
 // posting DB transaction; unchanged here since callers still need a bound
 // fast enough to not stall a user-facing request.
 const screenTimeout = 500 * time.Millisecond
 
 // screeningClientErrorsTotal counts EVERY Check call that returned an infra
 // error, labeled by caller (ledger|payin|payout) — every one of these is a
-// fail-open event for whichever caller hit it (docs/plan/20 Task T1's
+// fail-open event for whichever caller hit it (docs/roadmap/archive/20 Task T1's
 // original tradeoff, now shared three ways instead of ledger-only). Ops
 // should alert on a sustained rate here: it means screening coverage is
 // degraded for that flow even though no request-facing error occurred.
@@ -90,9 +90,9 @@ func New(grpc fraudv1.FraudServiceClient, caller string) *Client {
 }
 
 // Check screens one candidate transaction. flow identifies the calling
-// surface ("p2p_transfer" | "topup" | "payout", docs/plan/37) and rides
+// surface ("p2p_transfer" | "topup" | "payout", docs/roadmap/archive/37) and rides
 // along purely for screening_events audit/trace correlation — rules never
-// branch on it. request_id is read from ctx (docs/plan/36) and forwarded
+// branch on it. request_id is read from ctx (docs/roadmap/archive/36) and forwarded
 // the same way.
 func (c *Client) Check(ctx context.Context, flow, txType string, userID uuid.UUID, amount decimal.Decimal, currency string) (Verdict, error) {
 	return c.CheckWithSubject(ctx, flow, txType, userID, amount, currency, "", "")

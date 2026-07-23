@@ -15,7 +15,7 @@ import (
 // 5. WithdrawSettle — user.hold → settlement[gateway] (disbursed successfully)
 //
 // Metadata: "gateway" (required) — the bank rail used for disbursement.
-// Optional inline fee via "fee_amount"/"fee_gateway" (docs/plan/25 Task T2):
+// Optional inline fee via "fee_amount"/"fee_gateway" (docs/roadmap/archive/25 Task T2):
 // the withdraw fee is charged HERE, on settle, never on withdraw_initiate —
 // validateOriginalForClose demands the exact original amount at close and
 // withdraw_cancel refunds the full hold, so an initiate-time fee would
@@ -26,7 +26,7 @@ import (
 // CANCELLED withdrawal pays zero fee. Mirrors escrow_release exactly (the
 // established validateOriginalForClose + inline-fee combination).
 // ReferenceID (required) must point at the withdraw_initiate this settles
-// (docs/plan/14 Task T2) — full amount only, no partial settle in MVP.
+// (docs/roadmap/archive/14 Task T2) — full amount only, no partial settle in MVP.
 // =============================================================================
 
 type WithdrawSettle struct {
@@ -102,7 +102,7 @@ func (p *WithdrawSettle) OutboxEvents(cmd ResolvedCommand, txID uuid.UUID, entri
 }
 func (p *WithdrawSettle) AfterCommit(_ context.Context, _ Command) error { return nil }
 
-// ValidateCommand requires ReferenceID (docs/plan/14 Task T2) — the
+// ValidateCommand requires ReferenceID (docs/roadmap/archive/14 Task T2) — the
 // withdraw_initiate this settle is closing.
 func (p *WithdrawSettle) ValidateCommand(_ context.Context, cmd Command) error {
 	return requireReferenceID(cmd, "withdraw_settle")

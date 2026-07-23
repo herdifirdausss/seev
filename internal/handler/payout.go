@@ -19,7 +19,7 @@ import (
 type createPayoutRequest struct {
 	Amount      string          `json:"amount"`
 	Destination json.RawMessage `json:"destination"`
-	// QuoteID (docs/plan/38 Task T5), when set, consumes a fee quote
+	// QuoteID (docs/roadmap/archive/38 Task T5), when set, consumes a fee quote
 	// BEFORE the hold is posted — the fee it locks in is honored at settle
 	// time regardless of any fee_rules change in between.
 	QuoteID string `json:"quote_id,omitempty"`
@@ -75,12 +75,12 @@ func createPayoutHandler(client payoutv1.PayoutServiceClient) http.HandlerFunc {
 				case msg == "no payout route available":
 					response.JSON(w, http.StatusUnprocessableEntity, response.Envelope{Success: false, Error: &response.Error{Code: "NO_ROUTE", Message: "no payout route available"}})
 				case strings.HasPrefix(msg, "payout: screening blocked"):
-					// docs/plan/37 Task T5 — same HTTP contract as the
-					// ledger's own SCREENING_BLOCKED (docs/plan/37 Task T3):
+					// docs/roadmap/archive/37 Task T5 — same HTTP contract as the
+					// ledger's own SCREENING_BLOCKED (docs/roadmap/archive/37 Task T3):
 					// no payout_requests row was ever created.
 					response.JSON(w, http.StatusUnprocessableEntity, response.Envelope{Success: false, Error: &response.Error{Code: "SCREENING_BLOCKED", Message: msg}})
 				case strings.HasPrefix(msg, "[QUOTE_EXPIRED]"):
-					// docs/plan/38 Task T5 — ledgerclient.ConsumeFeeQuote's
+					// docs/roadmap/archive/38 Task T5 — ledgerclient.ConsumeFeeQuote's
 					// error decodes via pkg/ledgererr.FromStatus's GENERIC
 					// FailedPrecondition handling into
 					// "[QUOTE_EXPIRED] <message>" (ledgererr.LedgerError.Error's
@@ -95,13 +95,13 @@ func createPayoutHandler(client payoutv1.PayoutServiceClient) http.HandlerFunc {
 			case codes.Unavailable:
 				msg := status.Convert(err).Message()
 				if msg == "screening dependency unavailable" {
-					// docs/plan/45 Task T3/K4 — fraud-service is reachable
+					// docs/roadmap/archive/45 Task T3/K4 — fraud-service is reachable
 					// but its velocity dependency is down; fail closed
 					// before any hold is posted.
 					response.ServiceUnavailable(w, "DEPENDENCY_UNAVAILABLE", "fraud screening dependency unavailable")
 					break
 				}
-				// docs/plan/40 Task T2 — every candidate vendor is
+				// docs/roadmap/archive/40 Task T2 — every candidate vendor is
 				// registered but circuit-broken; distinct from NO_ROUTE
 				// (a config problem) since this is transient.
 				response.JSON(w, http.StatusServiceUnavailable, response.Envelope{Success: false, Error: &response.Error{Code: "VENDOR_UNAVAILABLE", Message: "no vendor available"}})

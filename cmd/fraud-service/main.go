@@ -80,7 +80,7 @@ func run(parent context.Context) error {
 		cfg.GRPCPort = "9094"
 	}
 	log := logger.New(cfg.Logger.Pkg())
-	// docs/plan/49 K3/K5: load this process's own identity + the shared CA
+	// docs/roadmap/archive/49 K3/K5: load this process's own identity + the shared CA
 	// before anything else — a service must never boot believing it's
 	// running mTLS when its certificates are missing or invalid.
 	certSrc, err := tlsx.LoadFromDir(cfg.TLSCertDir, "fraud", log)
@@ -107,7 +107,7 @@ func run(parent context.Context) error {
 	}
 	cfg.Redis.Enabled = true
 	cfg.Redis.DB = 1
-	// docs/plan/45 Task T3/K4: fraud-service may now START without Redis
+	// docs/roadmap/archive/45 Task T3/K4: fraud-service may now START without Redis
 	// being reachable — NewClientWithoutPing never fails at construction,
 	// unlike cache.New's eager Ping. FailClosedVelocityStore's own
 	// background probe (started inside its constructor) is what actually
@@ -136,7 +136,7 @@ func run(parent context.Context) error {
 		return err
 	}
 
-	// docs/plan/49 K4: fraud's gRPC listener only accepts the three
+	// docs/roadmap/archive/49 K4: fraud's gRPC listener only accepts the three
 	// services that legitimately call it.
 	grpcServer, err := grpcx.NewServer(log, cfg.InternalGRPCToken, tlsx.ServerConfig(certSrc, []string{
 		tlsx.IdentityLedger, tlsx.IdentityPayin, tlsx.IdentityPayout,
@@ -159,7 +159,7 @@ func run(parent context.Context) error {
 		_ = db.Close()
 		return err
 	}
-	// docs/plan/49 K6: fraud's admin listener is internal-only mTLS.
+	// docs/roadmap/archive/49 K6: fraud's admin listener is internal-only mTLS.
 	httpServer := &http.Server{
 		Addr: ":" + cfg.App.Port, Handler: adminRouter(cfg, module, log),
 		ReadTimeout: cfg.App.ReadTimeout, WriteTimeout: cfg.App.WriteTimeout,

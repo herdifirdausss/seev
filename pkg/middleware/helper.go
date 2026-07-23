@@ -80,7 +80,7 @@ func (rw *captureWriter) Write(b []byte) (int, error) {
 // RequireJSON rejects mutation requests without Content-Type: application/json
 // — except multipart/form-data, the one legitimate non-JSON body this API
 // accepts (file uploads, e.g. POST /admin/recon/batches's CSV import,
-// docs/plan/16 Task T2). Rejecting multipart here would 400 every such
+// docs/roadmap/archive/16 Task T2). Rejecting multipart here would 400 every such
 // upload before it ever reaches the handler that's supposed to parse it.
 func RequireJSON() Middleware {
 	return func(next http.Handler) http.Handler {

@@ -9,13 +9,13 @@ import (
 )
 
 // minTLSVersion matches internal/config's parseTLSConfig convention for
-// DB/Redis connections (docs/plan/49 §2) — one floor for every TLS
+// DB/Redis connections (docs/roadmap/archive/49 §2) — one floor for every TLS
 // surface in this repo, service-plane included.
 const minTLSVersion = tls.VersionTLS12
 
 // ServerConfig builds a *tls.Config for a listener that requires and
 // verifies a client certificate, then checks the client's URI SAN
-// against allowedClientIdentities (docs/plan/49 K4 — identity is the URI
+// against allowedClientIdentities (docs/roadmap/archive/49 K4 — identity is the URI
 // SAN, never just "signed by our CA"). A connection from a validly-signed
 // certificate whose identity isn't on the list is rejected just as hard
 // as an unsigned one.
@@ -26,7 +26,7 @@ const minTLSVersion = tls.VersionTLS12
 // under this repo's short-lived leaves and rotate-in-place CA (K3/K9),
 // that pool would never see a rotated CA for the rest of the process's
 // life, permanently rejecting every legitimately-reissued client after a
-// single rotation (docs/plan/49 TM-13, found live by the T6 rotation
+// single rotation (docs/roadmap/archive/49 TM-13, found live by the T6 rotation
 // drill — cert files and CertSource's in-memory state were both correctly
 // current; only this static field was stale). VerifyConnection below does
 // the chain verification itself, reading src.CAPool() fresh on every
@@ -69,7 +69,7 @@ func ClientConfig(src *CertSource, expectedServerIdentity string) *tls.Config {
 		GetClientCertificate: src.GetClientCertificate,
 		// No RootCAs field: it would be a snapshot fixed at construction
 		// time, same trap ServerConfig's old ClientCAs field fell into
-		// (docs/plan/49 TM-13) — and it would go entirely unused anyway,
+		// (docs/roadmap/archive/49 TM-13) — and it would go entirely unused anyway,
 		// since InsecureSkipVerify below disables Go's built-in
 		// verification path that RootCAs feeds. VerifyConnection calls
 		// src.CAPool() itself, fresh on every handshake, instead.
@@ -77,7 +77,7 @@ func ClientConfig(src *CertSource, expectedServerIdentity string) *tls.Config {
 		// ServerName is required by crypto/tls to run its own default
 		// hostname verification against the leaf's DNS SANs; this repo's
 		// leaves carry no DNS SANs at all (identity is the URI SAN only,
-		// docs/plan/49 K3/K4), so default verification would always fail.
+		// docs/roadmap/archive/49 K3/K4), so default verification would always fail.
 		// VerifyConnection performs the ACTUAL identity + trust check
 		// below instead — skip the built-in check entirely, not just the
 		// hostname part of it.
@@ -95,7 +95,7 @@ func ClientConfig(src *CertSource, expectedServerIdentity string) *tls.Config {
 	}
 }
 
-// HTTPClient is the *http.Client counterpart to ClientConfig (docs/plan/49
+// HTTPClient is the *http.Client counterpart to ClientConfig (docs/roadmap/archive/49
 // K6) — the many internal HTTP callers (admin-bff's downstream clients,
 // gateway's ledger proxy, every service's own -healthcheck probe) need a
 // ready-to-use client rather than a raw *tls.Config.
@@ -110,7 +110,7 @@ func HTTPClient(src *CertSource, expectedServerIdentity string, timeout time.Dur
 // against roots for the given usage — read fresh from CertSource.CAPool()
 // by both callers below, so a CA rotation is honored on the very next
 // handshake rather than a snapshot frozen at *tls.Config construction
-// time (docs/plan/49 TM-13).
+// time (docs/roadmap/archive/49 TM-13).
 func verifyChainAgainst(cs tls.ConnectionState, roots *x509.CertPool, usage x509.ExtKeyUsage) error {
 	if len(cs.PeerCertificates) == 0 {
 		return fmt.Errorf("tlsx: no peer certificate presented")

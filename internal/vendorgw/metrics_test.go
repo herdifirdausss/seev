@@ -11,7 +11,7 @@ import (
 )
 
 // TestBreakerState_ReflectsFullLifecycle proves the gauge tracks every
-// transition Allow/RecordFailure/RecordSuccess drive (docs/plan/43 K5):
+// transition Allow/RecordFailure/RecordSuccess drive (docs/roadmap/archive/43 K5):
 // unseen vendor is absent, first-seen vendor reports closed (0), threshold
 // trip reports open (2), cooldown-elapsed probe reports half_open (1), and
 // a successful probe reports closed (0) again.

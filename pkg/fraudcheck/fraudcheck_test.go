@@ -92,7 +92,7 @@ func TestCheck_AllowVerdictNoBlock(t *testing.T) {
 	assert.False(t, verdict.Block)
 }
 
-// TestCheck_DependencyUnavailable_ClassifiedDistinctly proves docs/plan/45
+// TestCheck_DependencyUnavailable_ClassifiedDistinctly proves docs/roadmap/archive/45
 // Task T3/K4: fraud-service signaling its velocity dependency is down
 // (codes.FailedPrecondition + the exact "DEPENDENCY_UNAVAILABLE" message)
 // must be distinguishable from every other Check error via

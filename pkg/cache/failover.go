@@ -14,14 +14,14 @@ const (
 	defaultProbeInterval = 5 * time.Second
 	defaultProbeTimeout  = 2 * time.Second
 	// recoverThreshold is the number of CONSECUTIVE successful background
-	// probes required before switching back to Redis (docs/plan/45 K4's
+	// probes required before switching back to Redis (docs/roadmap/archive/45 K4's
 	// anti-flapping hysteresis) — a single lucky probe is not enough
 	// evidence that a flapping Redis has actually stabilized.
 	recoverThreshold = 2
 )
 
 // RedisHealthSwitcher tracks whether Redis is currently healthy for one
-// primitive (docs/plan/45 Task T3/K4), shared by FailoverLimiter/
+// primitive (docs/roadmap/archive/45 Task T3/K4), shared by FailoverLimiter/
 // FailoverCounter (route to a local in-memory fallback while unhealthy)
 // and internal/fraud's FailClosedVelocityStore (returns a classified
 // dependency error while unhealthy instead of a memory approximation —
@@ -55,7 +55,7 @@ type RedisHealthSwitcher struct {
 // "launch the goroutine in the constructor" convention rather than
 // requiring a separate Start call. primitive is a fixed, low-cardinality
 // label ("rate_limiter" | "policy_counter" | "fraud_velocity") for the
-// redis_backend_active{primitive,backend} gauge (docs/plan/45 K6) — never
+// redis_backend_active{primitive,backend} gauge (docs/roadmap/archive/45 K6) — never
 // derived from request input. ping should be a short, side-effect-free
 // Redis health check (e.g. *redis.Client.Ping). Starts optimistically
 // healthy: the first real operation's own outcome is what actually proves
@@ -167,7 +167,7 @@ func (s *RedisHealthSwitcher) probeOnce(ctx context.Context) {
 // ─── FailoverLimiter ────────────────────────────────────────────────────────
 
 // FailoverLimiter implements Limiter, routing to Redis while healthy and
-// to an embedded MemoryRateLimiter while degraded (docs/plan/45 Task T3/
+// to an embedded MemoryRateLimiter while degraded (docs/roadmap/archive/45 Task T3/
 // K4) — unlike DistributedBreaker/fraud's FailClosedVelocityStore, a rate
 // limiter's memory fallback is an accepted, documented weakening (each
 // replica enforces its own independent bucket), not a money-safety
@@ -212,10 +212,10 @@ var _ Limiter = (*FailoverLimiter)(nil)
 // ─── FailoverCounter ────────────────────────────────────────────────────────
 
 // FailoverCounter implements Counter, routing to Redis while healthy and
-// to an embedded MemoryCounter while degraded (docs/plan/45 Task T3/K4).
+// to an embedded MemoryCounter while degraded (docs/roadmap/archive/45 Task T3/K4).
 // The memory fallback is per-replica and can only ever OVER-count
 // leniently relative to a true cross-replica total during an outage
-// (docs/plan/45 K4: "dapat memperbesar allowance saat outage") — since
+// (docs/roadmap/archive/45 K4: "may increase the allowance during an outage") — since
 // internal/policy's existing behavior on a counter error is already
 // fail-open, this is a strictly stronger degradation than today's
 // no-enforcement-at-all gap, but it is NOT a substitute for real

@@ -64,7 +64,7 @@ func TestScreenRoundTrip(t *testing.T) {
 	assert.Equal(t, "100000", service.input.Amount.String())
 }
 
-// TestScreenPropagatesRequestIDAndFlow proves docs/plan/37 Task T1: the
+// TestScreenPropagatesRequestIDAndFlow proves docs/roadmap/archive/37 Task T1: the
 // additive request_id/flow fields on ScreenRequest reach the service's
 // ScreenInput unchanged, for persistence into screening_events.
 func TestScreenPropagatesRequestIDAndFlow(t *testing.T) {
@@ -88,7 +88,7 @@ func TestScreenRejectsInvalidInput(t *testing.T) {
 }
 
 // TestScreenDependencyUnavailable_MapsToDistinguishableStatus proves
-// docs/plan/45 Task T3/K4: Module.Screen returning
+// docs/roadmap/archive/45 Task T3/K4: Module.Screen returning
 // model.ErrDependencyUnavailable (wrapped, as VelocityAnomalyRule.Screen
 // actually does) maps to codes.FailedPrecondition with the exact
 // "DEPENDENCY_UNAVAILABLE" message pkg/fraudcheck.Client checks for —

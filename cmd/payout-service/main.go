@@ -84,7 +84,7 @@ func run(parent context.Context) error {
 		cfg.GRPCPort = "9093"
 	}
 	log := logger.New(cfg.Logger.Pkg())
-	// docs/plan/49 K3/K5: load this process's own identity + the shared
+	// docs/roadmap/archive/49 K3/K5: load this process's own identity + the shared
 	// CA before anything else. A second payout-service replica (docs/
 	// plan/45 T4's start_payout_service_replica) is the SAME workload
 	// identity, not a distinct one — SPIFFE-style identity is per-service,
@@ -144,7 +144,7 @@ func run(parent context.Context) error {
 		log.Info("vendorgw: distributed breaker enabled", "namespace", "payout")
 	}
 
-	// fraud client screens payouts pre-hold (docs/plan/37 Task T5).
+	// fraud client screens payouts pre-hold (docs/roadmap/archive/37 Task T5).
 	// FRAUD_GRPC_ADDR unset (dev/test defaults) => nil client => no screening.
 	var fraudClient *fraudcheck.Client
 	var fraudConn *grpc.ClientConn
@@ -164,7 +164,7 @@ func run(parent context.Context) error {
 
 	module := payout.NewModule(db, ledgerclient.New(ledgerConn), registry, redisClient, log, fraudClient, breaker)
 	module.StartWorkers(ctx)
-	// docs/plan/49 K4: gateway calls payout's gRPC surface for user-facing
+	// docs/roadmap/archive/49 K4: gateway calls payout's gRPC surface for user-facing
 	// payout flows; assurance-service (TM-09) reads it for cross-service
 	// correlation.
 	grpcServer, err := grpcx.NewServer(log, cfg.InternalGRPCToken, tlsx.ServerConfig(certSrc, []string{
@@ -190,8 +190,8 @@ func run(parent context.Context) error {
 		_ = db.Close()
 		return err
 	}
-	// docs/plan/49 K6: payout's admin listener is internal-only mTLS —
-	// both replicas (docs/plan/45 T4) share the same "payout" identity.
+	// docs/roadmap/archive/49 K6: payout's admin listener is internal-only mTLS —
+	// both replicas (docs/roadmap/archive/45 T4) share the same "payout" identity.
 	httpServer := &http.Server{Addr: ":" + cfg.App.Port, Handler: adminRouter(cfg, module, log), ReadTimeout: cfg.App.ReadTimeout, WriteTimeout: cfg.App.WriteTimeout, IdleTimeout: cfg.App.IdleTimeout, ReadHeaderTimeout: 5 * time.Second, MaxHeaderBytes: 1 << 20, TLSConfig: tlsx.ServerConfig(certSrc, []string{
 		tlsx.IdentityDevOperator, tlsx.IdentityPrometheus, tlsx.IdentityAdminBFF,
 	})}

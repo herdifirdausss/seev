@@ -1,4 +1,4 @@
-// Package drverify implements docs/plan/50 T4 (K8-K9): an offline,
+// Package drverify implements docs/roadmap/active/50 T4 (K8-K9): an offline,
 // read-only integrity verifier that runs against explicit DSNs for the
 // eight restored authoritative databases. It is an operational tool, not
 // a deployed service — every connection is read-only, bounded, and

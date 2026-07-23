@@ -1,10 +1,10 @@
--- docs/plan/23 Task T1: payout orchestration state machine — a user
+-- docs/roadmap/archive/23 Task T1: payout orchestration state machine — a user
 -- withdraw request tracked through hold -> vendor submission -> terminal
 -- state (settled/cancelled/failed). Every state transition is an atomic
 -- conditional UPDATE (WHERE status = $expected) at the repository layer —
 -- this table has no trigger-level concurrency guard of its own; the
 -- guard that actually prevents double-settle/settle-after-cancel is the
--- LEDGER's own closed_by_tx_id (docs/plan/14 Task T2, decision K3) on
+-- LEDGER's own closed_by_tx_id (docs/roadmap/archive/14 Task T2, decision K3) on
 -- hold_tx_id's withdraw_initiate — payout_requests.status is a read model
 -- of that, reconciled after the fact, never the source of truth for money
 -- movement itself.
