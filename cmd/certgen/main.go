@@ -262,7 +262,20 @@ func issueLeaf(out, service, identity string, ca *x509.Certificate, caKey *ecdsa
 	if err != nil {
 		return fmt.Errorf("marshal %s key: %w", service, err)
 	}
-	if err := writePEM(filepath.Join(out, service+"-key.pem"), "EC PRIVATE KEY", keyDER, 0o600); err != nil {
+	// 0o644, not 0o600 (docs/roadmap/active/50 T6 fix, same root cause as
+	// backup-secret's own fix): deploy/certs is bind-mounted read-only
+	// into every app container (x-cert-volume), and this leaf key is
+	// exactly what that service's own process loads at boot
+	// (pkg/tlsx.CertSource) — running as a non-root, non-matching uid.
+	// docker compose (and a plain bind mount) preserves the host file's
+	// own owner/mode rather than normalizing it, so a 0600 key generated
+	// by one uid is unreadable to the container's uid on any host where
+	// they differ, which is every CI runner. Found live: "load TLS
+	// certificates: ... open /certs/ledger-key.pem: permission denied"
+	// crashed every app-profile service outright in CI. ca-key.pem stays
+	// 0o600 — it is never mounted into an application container's own
+	// read path (only certgen itself, run on the host, ever opens it).
+	if err := writePEM(filepath.Join(out, service+"-key.pem"), "EC PRIVATE KEY", keyDER, 0o644); err != nil {
 		return err
 	}
 	fmt.Printf("certgen: issued %s (%s), expires %s\n", service, identity, template.NotAfter.Format(time.RFC3339))
