@@ -836,7 +836,7 @@ services:
     # /var/run/docker.sock (docs/roadmap/archive/43 K1 hardening exception, by design).
 
   alloy:
-    image: grafana/alloy@sha256:51aeb9d829239345070619dad3edd6873186f913c84f45b365b74574fcb38ec0 # v1.16.1
+    image: grafana/alloy@sha256:491b0578c04983fd54fe99b587b6fab4404dc46d0dc16677bd6b00cc1140b308 # v1.16.1
     profiles: ["observability"]
     # The image's own entrypoint drops root -> uid 473 (alloy) via a setuid
     # call that needs CAP_SETUID/CAP_SETGID; cap_drop: ALL below removes
