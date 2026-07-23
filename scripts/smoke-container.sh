@@ -89,15 +89,24 @@ trap cleanup EXIT
 # save_diagnostics (K4 step 7) — allowlisted only: compose ps, health
 # inspect, and container logs. Never binaries, .env, git metadata, or a
 # full environment dump (K6's artifact allowlist).
+#
+# `docker compose ps` (without -a) only lists RUNNING containers — found
+# live: a container that crashed and exited before this ran (e.g.
+# postgres exiting non-zero, which makes Compose's own dependency-wait
+# fail the whole `up`) was invisible to `ps -q`, so its cid came back
+# empty and its own crash log — the one artifact that would have
+# explained the failure — was silently never captured. `-a` includes
+# stopped containers too, so a container's exit doesn't erase the
+# evidence of why it exited.
 save_diagnostics() {
 	log "saving failure diagnostics to $ARTIFACT_DIR"
 	mkdir -p "$ARTIFACT_DIR"
-	docker compose --profile app ps >"$ARTIFACT_DIR/compose-ps.txt" 2>&1 || true
+	docker compose --profile app ps -a >"$ARTIFACT_DIR/compose-ps.txt" 2>&1 || true
 	for svc in "${EXPECTED_SERVICES[@]}"; do
 		local cid
-		cid="$(docker compose --profile app ps -q "$svc" 2>/dev/null || true)"
+		cid="$(docker compose --profile app ps -a -q "$svc" 2>/dev/null || true)"
 		if [ -n "$cid" ]; then
-			docker inspect "$cid" --format '{{json .State.Health}}' >"$ARTIFACT_DIR/health-$svc.json" 2>&1 || true
+			docker inspect "$cid" --format '{{json .State}}' >"$ARTIFACT_DIR/state-$svc.json" 2>&1 || true
 			docker logs "$cid" >"$ARTIFACT_DIR/logs-$svc.txt" 2>&1 || true
 		fi
 	done
