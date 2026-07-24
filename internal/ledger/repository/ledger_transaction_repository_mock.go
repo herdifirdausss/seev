@@ -44,6 +44,21 @@ func (m *MockTransactionRepository) EXPECT() *MockTransactionRepositoryMockRecor
 	return m.recorder
 }
 
+// BackfillOnce mocks base method.
+func (m *MockTransactionRepository) BackfillOnce(ctx context.Context, batchSize int) (int, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "BackfillOnce", ctx, batchSize)
+	ret0, _ := ret[0].(int)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// BackfillOnce indicates an expected call of BackfillOnce.
+func (mr *MockTransactionRepositoryMockRecorder) BackfillOnce(ctx, batchSize any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "BackfillOnce", reflect.TypeOf((*MockTransactionRepository)(nil).BackfillOnce), ctx, batchSize)
+}
+
 // CloseOriginal mocks base method.
 func (m *MockTransactionRepository) CloseOriginal(ctx context.Context, tx *sql.Tx, originalID, byTxID uuid.UUID, reason string) (int64, error) {
 	m.ctrl.T.Helper()
@@ -57,6 +72,22 @@ func (m *MockTransactionRepository) CloseOriginal(ctx context.Context, tx *sql.T
 func (mr *MockTransactionRepositoryMockRecorder) CloseOriginal(ctx, tx, originalID, byTxID, reason any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CloseOriginal", reflect.TypeOf((*MockTransactionRepository)(nil).CloseOriginal), ctx, tx, originalID, byTxID, reason)
+}
+
+// FindConflictOrDuplicate mocks base method.
+func (m *MockTransactionRepository) FindConflictOrDuplicate(ctx context.Context, tx *sql.Tx, key string, scope *string, txType string, amount decimal.Decimal, currency string) (string, bool, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "FindConflictOrDuplicate", ctx, tx, key, scope, txType, amount, currency)
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(bool)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
+}
+
+// FindConflictOrDuplicate indicates an expected call of FindConflictOrDuplicate.
+func (mr *MockTransactionRepositoryMockRecorder) FindConflictOrDuplicate(ctx, tx, key, scope, txType, amount, currency any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FindConflictOrDuplicate", reflect.TypeOf((*MockTransactionRepository)(nil).FindConflictOrDuplicate), ctx, tx, key, scope, txType, amount, currency)
 }
 
 // GetAccountIDs mocks base method.
@@ -150,21 +181,6 @@ func (m *MockTransactionRepository) GetStatus(ctx context.Context, tx *sql.Tx, t
 func (mr *MockTransactionRepositoryMockRecorder) GetStatus(ctx, tx, transactionID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetStatus", reflect.TypeOf((*MockTransactionRepository)(nil).GetStatus), ctx, tx, transactionID)
-}
-
-// GetStatusByIdempotency mocks base method.
-func (m *MockTransactionRepository) GetStatusByIdempotency(ctx context.Context, tx *sql.Tx, key string, scope *string) (string, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetStatusByIdempotency", ctx, tx, key, scope)
-	ret0, _ := ret[0].(string)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// GetStatusByIdempotency indicates an expected call of GetStatusByIdempotency.
-func (mr *MockTransactionRepositoryMockRecorder) GetStatusByIdempotency(ctx, tx, key, scope any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetStatusByIdempotency", reflect.TypeOf((*MockTransactionRepository)(nil).GetStatusByIdempotency), ctx, tx, key, scope)
 }
 
 // Insert mocks base method.

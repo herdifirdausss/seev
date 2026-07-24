@@ -35,6 +35,17 @@ JWT_ISSUER="${JWT_ISSUER:-seev}"
 # behavior that silently accepted every call is gone), so this can no
 # longer default to empty the way it used to across this whole harness.
 INTERNAL_GRPC_TOKEN="${INTERNAL_GRPC_TOKEN:-change-me-to-a-random-32-plus-character-token}"
+# docs/roadmap/active/51 T3 (K7): ledger-service now REFUSES to boot without this
+# (money-safety idempotency-key digest ring, required unconditionally,
+# never optional the way the field-encryption/export/closure rings
+# below are) — fixed 32-byte test value, this harness's own convention
+# for every other fixed secret above.
+LEDGER_IDEMPOTENCY_KEY_V1="${LEDGER_IDEMPOTENCY_KEY_V1:-1111111111111111111111111111111111111111111111111111111111111111}"
+# docs/roadmap/active/51 T4/T5 (K9/K10): optional — export/closure requests simply
+# return 503 when unset, never a boot failure — but this harness's own
+# privacy-e2e.sh needs both actually configured to exercise those flows.
+EXPORT_KEK_V1="${EXPORT_KEK_V1:-2222222222222222222222222222222222222222222222222222222222222222}"
+CLOSURE_KEK_V1="${CLOSURE_KEK_V1:-3333333333333333333333333333333333333333333333333333333333333333}"
 # docs/roadmap/archive/49 TM-11: the per-IP(+path) rate limiter now actually enforces
 # (previously bypassed by keying on the ephemeral source port) — this
 # harness legitimately fires many requests per minute from ONE machine
@@ -554,6 +565,7 @@ start_ledger_service() {
 		export RATE_LIMIT_BURST=$RATE_LIMIT_BURST
 		export TLS_CERT_DIR=$CERT_DIR
 		export INTERNAL_GRPC_TOKEN=$INTERNAL_GRPC_TOKEN
+		export LEDGER_IDEMPOTENCY_KEY_V1=$LEDGER_IDEMPOTENCY_KEY_V1
 		export LOG_FORMAT=json
 		nohup "$LEDGER_BIN" >>"$LEDGER_LOG" 2>&1 &
 		echo $! >"$LEDGER_PID_FILE"
@@ -619,6 +631,9 @@ start_auth_service() {
 		export REDIS_ENABLED="${REDIS_ENABLED:-true}"
 		export REDIS_ADDR=localhost:$REDIS_HOST_PORT
 		export LEDGER_GRPC_ADDR=localhost:$LEDGER_GRPC_PORT
+		# docs/roadmap/active/51 T5 (K10): where the closure saga calls ledger's
+		# ClosureRouter — the internal (:$LEDGER_INTERNAL_PORT-class) port.
+		export LEDGER_INTERNAL_API_URL=https://localhost:$LEDGER_INTERNAL_PORT
 		export FRAUD_GRPC_ADDR=localhost:$FRAUD_GRPC_PORT
 		export JWT_SECRET=$JWT_SECRET
 		export JWT_ISSUER=$JWT_ISSUER
@@ -627,6 +642,8 @@ start_auth_service() {
 		export RATE_LIMIT_BURST=$RATE_LIMIT_BURST
 		export TLS_CERT_DIR=$CERT_DIR
 		export INTERNAL_GRPC_TOKEN=$INTERNAL_GRPC_TOKEN
+		export EXPORT_KEK_V1=$EXPORT_KEK_V1
+		export CLOSURE_KEK_V1=$CLOSURE_KEK_V1
 		export LOG_FORMAT=json
 		nohup "$AUTH_BIN" >>"$AUTH_LOG" 2>&1 &
 		echo $! >"$AUTH_PID_FILE"

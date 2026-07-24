@@ -266,6 +266,14 @@ services:
       FRAUD_GRPC_ADDR: fraud-service:9094
       JWT_SECRET: ${JWT_SECRET:-change-me-to-a-random-32-plus-character-secret}
       JWT_ISSUER: ${JWT_ISSUER:-seev}
+      CRYPTOX_KEY_V1_FILE: /run/secrets/cryptox_key_v1
+      # docs/roadmap/active/51 T3 (K7): required unconditionally — ledger-service
+      # fails to boot without this (money-safety dedup, never optional
+      # like the field-encryption ring above).
+      LEDGER_IDEMPOTENCY_KEY_V1_FILE: /run/secrets/ledger_idempotency_key_v1
+    secrets:
+      - cryptox_key_v1
+      - ledger_idempotency_key_v1
     volumes: *cert-volume
     ports:
       - "127.0.0.1:8090:8090"
@@ -311,11 +319,32 @@ services:
       REDIS_ENABLED: "true"
       REDIS_ADDR: redis:6379
       LEDGER_GRPC_ADDR: ledger-service:9091
+      # docs/roadmap/active/51 T5 (K10): the closure saga's outbound HTTP client to
+      # ledger's internal ClosureRouter — the internal (:8091-class) port,
+      # deliberately NOT LEDGER_USER_API_URL's public :8090.
+      LEDGER_INTERNAL_API_URL: https://ledger-service:8091
       FRAUD_GRPC_ADDR: fraud-service:9094
       INTERNAL_GRPC_TOKEN: ${INTERNAL_GRPC_TOKEN:-change-me-to-a-random-32-plus-character-token}
       TLS_CERT_DIR: /certs
       JWT_SECRET: ${JWT_SECRET:-change-me-to-a-random-32-plus-character-secret}
       JWT_ISSUER: ${JWT_ISSUER:-seev}
+      # docs/roadmap/active/51 T2.2: auth is the only service that needs the
+      # lookup key (K2's normalized-email HMAC digest) — every other
+      # cryptox-using service only ever seals/opens, never looks up by
+      # equality.
+      CRYPTOX_KEY_V1_FILE: /run/secrets/cryptox_key_v1
+      CRYPTOX_LOOKUP_KEY_FILE: /run/secrets/cryptox_lookup_key
+      # docs/roadmap/active/51 T4/T5 (K9/K10): dedicated export/closure KEKs — both
+      # optional (a missing key simply disables the feature, never a boot
+      # failure), wired here so the dev/compose stack can actually exercise
+      # scripts/privacy-export.sh and scripts/privacy-e2e.sh.
+      EXPORT_KEK_V1_FILE: /run/secrets/export_kek_v1
+      CLOSURE_KEK_V1_FILE: /run/secrets/closure_kek_v1
+    secrets:
+      - cryptox_key_v1
+      - cryptox_lookup_key
+      - export_kek_v1
+      - closure_kek_v1
     volumes: *cert-volume
     ports:
       - "127.0.0.1:8082:8082"
@@ -366,6 +395,9 @@ services:
       VENDOR_MOCKVENDOR_SECRET: ${VENDOR_MOCKVENDOR_SECRET:-change-me-mockvendor-secret}
       MOCKVENDOR2_ENABLED: "true"
       MOCKVENDOR2_SECRET: ${MOCKVENDOR2_SECRET:-change-me-mockvendor2-secret}
+      CRYPTOX_KEY_V1_FILE: /run/secrets/cryptox_key_v1
+    secrets:
+      - cryptox_key_v1
     volumes: *cert-volume
     ports:
       - "127.0.0.1:8092:8092"
@@ -417,6 +449,9 @@ services:
       VENDOR_MOCKVENDOR_SECRET: ${VENDOR_MOCKVENDOR_SECRET:-change-me-mockvendor-secret}
       MOCKVENDOR2_ENABLED: "true"
       MOCKVENDOR2_SECRET: ${MOCKVENDOR2_SECRET:-change-me-mockvendor2-secret}
+      CRYPTOX_KEY_V1_FILE: /run/secrets/cryptox_key_v1
+    secrets:
+      - cryptox_key_v1
     volumes: *cert-volume
     ports:
       - "127.0.0.1:8093:8093"
@@ -522,6 +557,9 @@ services:
       FRAUD_SERVICE_URL: https://fraud-service:8094
       GATEWAY_SERVICE_URL: https://gateway-service:8081
       ADMIN_BFF_SECURE_COOKIE: "false"
+      CRYPTOX_KEY_V1_FILE: /run/secrets/cryptox_key_v1
+    secrets:
+      - cryptox_key_v1
     volumes: *cert-volume
     ports:
       - "127.0.0.1:8095:8095"
@@ -892,6 +930,25 @@ secrets:
     file: ./deploy/backup/secrets/seev_backup_password
   pgbackrest_repo_passphrase:
     file: ./deploy/backup/secrets/pgbackrest_repo_passphrase
+  # docs/roadmap/active/51 T2.2: generated locally by `make cryptox-secret`, mode
+  # 0644 (same as backup-secret's own — see that target's own comment on
+  # why 0600 isn't required for a local/CI-ephemeral dev secret), gitignored.
+  cryptox_key_v1:
+    file: ./deploy/cryptox/secrets/cryptox_key_v1
+  cryptox_lookup_key:
+    file: ./deploy/cryptox/secrets/cryptox_lookup_key
+  # docs/roadmap/active/51 T3/T4/T5: generated locally by `make cryptox-secret`
+  # (same target, extended), mode 0644, gitignored — separate key
+  # namespaces from cryptox_key_v1 above (K2's own separate-key-material
+  # principle: ledger idempotency digests, export archives, and closure
+  # active-subject ciphertext must never share key material with field
+  # encryption or each other).
+  ledger_idempotency_key_v1:
+    file: ./deploy/cryptox/secrets/ledger_idempotency_key_v1
+  export_kek_v1:
+    file: ./deploy/cryptox/secrets/export_kek_v1
+  closure_kek_v1:
+    file: ./deploy/cryptox/secrets/closure_kek_v1
 
 volumes:
   seev_postgres_data:

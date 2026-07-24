@@ -39,6 +39,17 @@ func migrationsSourceURL(t *testing.T) string {
 
 func setupAuthTestDB(t *testing.T) *database.DBSQL {
 	t.Helper()
+	db, _ := setupAuthTestDBWithConfig(t)
+	return db
+}
+
+// setupAuthTestDBWithConfig is setupAuthTestDB plus the owner connection's
+// own config.PostgresConfig, for tests that need a second connection under
+// a different role (e.g. object_outbox_integration_test.go's
+// TestObjectOutbox_DirectDeleteForbidden — same pattern as
+// internal/ledger/retention_integration_test.go's setupLedgerOnlyDBWithConfig).
+func setupAuthTestDBWithConfig(t *testing.T) (*database.DBSQL, config.PostgresConfig) {
+	t.Helper()
 	ctx := context.Background()
 
 	const dbName, dbUser, dbPassword = "seev_test", "test", "secret"
@@ -71,7 +82,7 @@ func setupAuthTestDB(t *testing.T) *database.DBSQL {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 
-	return db
+	return db, cfg
 }
 
 func newAuthModule(db *database.DBSQL) (*auth.Module, *testutil.LedgerHarness) {

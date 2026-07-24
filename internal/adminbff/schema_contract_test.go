@@ -117,7 +117,7 @@ func TestSchemaContract_AppServiceRole_CannotDeleteSessionDirectly(t *testing.T)
 	dbs := setupAppServiceSessionTestDB(t)
 	ctx := context.Background()
 
-	repo := NewSessionRepository(dbs.appDB)
+	repo := NewSessionRepository(dbs.appDB, nil)
 	seedSession(t, repo, "direct-delete-session")
 
 	_, err := dbs.appDB.ExecContext(ctx, `DELETE FROM sessions WHERE id = $1`, "direct-delete-session")
@@ -132,7 +132,7 @@ func TestSchemaContract_AppServiceRole_DeleteSessionRemovesRow(t *testing.T) {
 	dbs := setupAppServiceSessionTestDB(t)
 	ctx := context.Background()
 
-	repo := NewSessionRepository(dbs.appDB)
+	repo := NewSessionRepository(dbs.appDB, nil)
 	seedSession(t, repo, "logout-session")
 
 	require.NoError(t, repo.DeleteSession(ctx, "logout-session"))

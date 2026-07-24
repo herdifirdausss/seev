@@ -9,6 +9,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/redis/go-redis/v9"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 
 	payinv1 "github.com/herdifirdausss/seev/gen/payin/v1"
@@ -157,6 +158,10 @@ func main() {
 	if err := notifyModule.Start(ctx); err != nil {
 		log.Error("failed to start notify consumer", "error", err)
 	}
+	var stopRetention func()
+	if stopRetention, err = notifyModule.StartRetentionRunner(redisClientOrNil(redisCache), log); err != nil {
+		log.Error("failed to start data retention worker", "error", err)
+	}
 
 	// ─── Dependencies ─────────────────────────────────────────────────────────
 	// deps.Cache stays nil when Redis is disabled — every consumer
@@ -190,6 +195,9 @@ func main() {
 	publicSrv := server.New(cfg.App, publicRouter)
 	internalSrv := server.NewWithAddrTLS(cfg.App, cfg.App.InternalBindAddr+":"+cfg.App.InternalPort, internalRouter, tlsx.ServerConfig(certSrc, []string{
 		tlsx.IdentityDevOperator, tlsx.IdentityPrometheus, tlsx.IdentityAdminBFF,
+		// docs/roadmap/active/51 T4b/T5b: auth-service calls the new /privacy/
+		// export+closure routes as the export/closure saga's coordinator.
+		tlsx.IdentityAuth,
 	}))
 
 	// ─── Start + Graceful Shutdown ────────────────────────────────────────────
@@ -199,6 +207,10 @@ func main() {
 		// start) before closing the connections they depend on.
 		log.Info("cleanup: stopping notify consumer")
 		notifyModule.Stop()
+		if stopRetention != nil {
+			log.Info("cleanup: stopping data retention worker")
+			stopRetention()
+		}
 
 		log.Info("cleanup: closing ledger grpc connection")
 		if err := ledgerConn.Close(); err != nil {
@@ -238,6 +250,13 @@ func main() {
 		log.Error("server error", "error", err)
 		os.Exit(1)
 	}
+}
+
+func redisClientOrNil(c *cache.Cache) *redis.Client {
+	if c == nil {
+		return nil
+	}
+	return c.Client()
 }
 
 func probeHealth(getenv func(string) string) error {

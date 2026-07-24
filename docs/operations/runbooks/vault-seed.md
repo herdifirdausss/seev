@@ -28,7 +28,7 @@ docker compose --profile secrets up -d vault
 ./scripts/vault-seed.sh
 ```
 
-Idempotent: re-running never rotates an already-seeded value (it checks for existing `JWT_SECRET`+`INTERNAL_GRPC_TOKEN` keys first and skips a service that already has both). Since dev-mode storage is in-memory anyway, "idempotent" mostly matters within a single container's lifetime — a fresh container always starts empty regardless.
+Idempotent: re-running never rotates an already-seeded value (it checks for existing `JWT_SECRET`+`INTERNAL_GRPC_TOKEN`+`CRYPTOX_KEY_V1` keys first and skips a service that already has all three). Since dev-mode storage is in-memory anyway, "idempotent" mostly matters within a single container's lifetime — a fresh container always starts empty regardless.
 
 To point at a non-default Vault:
 
@@ -42,6 +42,8 @@ Seeded, one shared value written identically into every service's own KV v2 entr
 
 - `JWT_SECRET`
 - `INTERNAL_GRPC_TOKEN`
+- `CRYPTOX_KEY_V1` — docs/roadmap/active/51 T2.2's shared pkg/cryptox KEK; see [cryptox-key-rotation.md](cryptox-key-rotation.md).
+- `CRYPTOX_LOOKUP_KEY` — only auth actually reads this (normalized-email HMAC digest), seeded into every service anyway rather than special-casing one out.
 - `AUTH_BOOTSTRAP_ADMIN_PASSWORD` — auth-service only, safe to randomize independently.
 
 **Not seeded, on purpose:**

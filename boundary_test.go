@@ -24,7 +24,7 @@ const modulePath = "github.com/herdifirdausss/seev"
 // skipDirs are top-level directories that contain no Go packages subject to
 // the rules (or no Go code at all).
 var skipDirs = map[string]bool{
-	".git": true, ".github": true, "docs": true,
+	".git": true, ".github": true, ".claude": true, "docs": true,
 	"api": true, "gen": true, "migrations": true, "scripts": true, "vendor": true,
 }
 

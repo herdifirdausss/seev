@@ -3,7 +3,7 @@ BUILD_DIR := bin
 CMD_DIR   := ./cmd/gateway
 GOFLAGS   := -trimpath -ldflags="-s -w"
 
-.PHONY: build build-all run dev test lint docs-check tidy tools proto proto-lint proto-breaking docker-up docker-down smoke-container migrate-up migrate-up-all migrate-down grant-app-role verify-full chaos-debug observability-secret observability-up observability-down certs backup-secret backup-role-bootstrap backup-checksums-enable backup-stanza-init backup-full backup-diff backup-check backup-status backup-expire
+.PHONY: build build-all run dev test lint docs-check tidy tools proto proto-lint proto-breaking docker-up docker-down smoke-container migrate-up migrate-up-all migrate-down grant-app-role verify-full chaos-debug observability-secret observability-up observability-down certs backup-secret backup-role-bootstrap backup-checksums-enable backup-stanza-init backup-full backup-diff backup-check backup-status backup-expire cryptox-secret retention-docs retention-check
 
 BUF_VERSION                := v1.72.0
 PROTOC_GEN_GO_VERSION      := v1.36.11
@@ -50,6 +50,14 @@ lint:
 ## docs-check: Validate required guides, local Markdown links, and heading anchors
 docs-check:
 	go run ./cmd/doccheck
+
+## retention-docs: Regenerate docs/data/retention.md from config/data-retention.yaml
+retention-docs:
+	go run ./cmd/retentioncheck -write
+
+## retention-check: Validate config/data-retention.yaml and confirm docs/data/retention.md is current (CI)
+retention-check:
+	go run ./cmd/retentioncheck
 
 ## tidy: Tidy go.mod and go.sum
 tidy:
@@ -234,6 +242,51 @@ backup-secret:
 # Track A7 existed) never re-runs first-boot scripts, so this target
 # re-invokes the EXACT SAME script inside the running container — never a
 # hand-copied variant that could drift from the first-boot behavior.
+# docs/roadmap/active/51 T2.2: dev-only pkg/cryptox key material — shared
+# cluster-wide (K2's own deliberate choice, same as JWT_SECRET/
+# INTERNAL_GRPC_TOKEN, see scripts/vault-seed.sh's own comment), so ONE
+# key pair is generated here, not one per service. 32-byte keys hex-encoded
+# (64 hex chars) — internal/config.CryptoxConfig.Ring/Lookup decode hex,
+# never base64, unlike backup-secret's own base64 passphrases above.
+## cryptox-secret: Generate the dev pkg/cryptox KEK (v1) and lookup key (run once per machine)
+cryptox-secret:
+	@mkdir -p deploy/cryptox/secrets
+	@if [ ! -f deploy/cryptox/secrets/cryptox_key_v1 ]; then \
+		openssl rand -hex 32 > deploy/cryptox/secrets/cryptox_key_v1; \
+		chmod 644 deploy/cryptox/secrets/cryptox_key_v1; \
+		echo "generated deploy/cryptox/secrets/cryptox_key_v1"; \
+	else \
+		echo "deploy/cryptox/secrets/cryptox_key_v1 already exists, leaving it alone"; \
+	fi
+	@if [ ! -f deploy/cryptox/secrets/cryptox_lookup_key ]; then \
+		openssl rand -hex 32 > deploy/cryptox/secrets/cryptox_lookup_key; \
+		chmod 644 deploy/cryptox/secrets/cryptox_lookup_key; \
+		echo "generated deploy/cryptox/secrets/cryptox_lookup_key"; \
+	else \
+		echo "deploy/cryptox/secrets/cryptox_lookup_key already exists, leaving it alone"; \
+	fi
+	@if [ ! -f deploy/cryptox/secrets/ledger_idempotency_key_v1 ]; then \
+		openssl rand -hex 32 > deploy/cryptox/secrets/ledger_idempotency_key_v1; \
+		chmod 644 deploy/cryptox/secrets/ledger_idempotency_key_v1; \
+		echo "generated deploy/cryptox/secrets/ledger_idempotency_key_v1"; \
+	else \
+		echo "deploy/cryptox/secrets/ledger_idempotency_key_v1 already exists, leaving it alone"; \
+	fi
+	@if [ ! -f deploy/cryptox/secrets/export_kek_v1 ]; then \
+		openssl rand -hex 32 > deploy/cryptox/secrets/export_kek_v1; \
+		chmod 644 deploy/cryptox/secrets/export_kek_v1; \
+		echo "generated deploy/cryptox/secrets/export_kek_v1"; \
+	else \
+		echo "deploy/cryptox/secrets/export_kek_v1 already exists, leaving it alone"; \
+	fi
+	@if [ ! -f deploy/cryptox/secrets/closure_kek_v1 ]; then \
+		openssl rand -hex 32 > deploy/cryptox/secrets/closure_kek_v1; \
+		chmod 644 deploy/cryptox/secrets/closure_kek_v1; \
+		echo "generated deploy/cryptox/secrets/closure_kek_v1"; \
+	else \
+		echo "deploy/cryptox/secrets/closure_kek_v1 already exists, leaving it alone"; \
+	fi
+
 ## backup-role-bootstrap: Create/refresh the seev_backup role on an ALREADY-INITIALIZED volume (run once per environment after `make backup-secret`)
 backup-role-bootstrap:
 	docker compose exec postgres sh /docker-entrypoint-initdb.d/04-backup-role.sh

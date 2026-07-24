@@ -18,6 +18,7 @@ import (
 
 	fraudv1 "github.com/herdifirdausss/seev/gen/fraud/v1"
 	"github.com/herdifirdausss/seev/internal/auth"
+	authrepository "github.com/herdifirdausss/seev/internal/auth/repository"
 	"github.com/herdifirdausss/seev/internal/config"
 	"github.com/herdifirdausss/seev/internal/kycvendor"
 	"github.com/herdifirdausss/seev/internal/kycvendor/httpkyc"
@@ -34,6 +35,7 @@ import (
 
 func main() {
 	healthcheck := flag.Bool("healthcheck", false, "probe the auth-service liveness endpoint")
+	backfillCryptox := flag.String("backfill-cryptox", "", "docs/roadmap/active/51-a8-data-lifecycle-privacy.md T2.5: run bounded cryptox backfill for auth_users/kyc_submissions and exit (all|users|kyc)")
 	flag.Parse()
 	if *healthcheck {
 		if err := probeHealth(os.Getenv); err != nil {
@@ -42,10 +44,86 @@ func main() {
 		}
 		return
 	}
+	if *backfillCryptox != "" {
+		if err := runCryptoxBackfill(context.Background(), *backfillCryptox); err != nil {
+			slog.Error("cryptox backfill failed", "error", err)
+			os.Exit(1)
+		}
+		return
+	}
 	if err := run(context.Background()); err != nil {
 		slog.Error("auth-service stopped", "error", err)
 		os.Exit(1)
 	}
+}
+
+// runCryptoxBackfill is docs/roadmap/active/51-a8-data-lifecycle-privacy.md T2.5's bounded
+// backfill entrypoint: a one-shot mode that connects only to Postgres (no
+// gRPC/Redis/HTTP — everything run() otherwise brings up), loops each
+// target's own repository.BackfillOnce(ctx, batchSize) until it returns 0
+// (that emptiness IS the completion proof, see UserRepository.BackfillOnce's
+// own doc comment), and exits. Kept inside auth-service's own main.go
+// rather than a separate cross-service CLI so it stays within
+// TestModuleBoundaries' one-command-one-module rule — a shared
+// cryptoxbackfillctl importing all five owners' internal/ packages at once
+// would violate the same rule cmd/retentionctl avoids by staying
+// SQL-generic instead.
+func runCryptoxBackfill(ctx context.Context, target string) error {
+	if target != "all" && target != "users" && target != "kyc" {
+		return fmt.Errorf("unknown --backfill-cryptox %q (want all|users|kyc)", target)
+	}
+	cfg, err := config.LoadAuthService()
+	if err != nil {
+		return fmt.Errorf("load config: %w", err)
+	}
+	if len(cfg.Cryptox.Keys) == 0 {
+		return fmt.Errorf("no CRYPTOX_KEY_V* configured, nothing to backfill against")
+	}
+	ring, err := cfg.Cryptox.Ring()
+	if err != nil {
+		return fmt.Errorf("build cryptox ring: %w", err)
+	}
+	lookup, err := cfg.Cryptox.Lookup()
+	if err != nil {
+		return fmt.Errorf("build cryptox lookup key: %w", err)
+	}
+	db, err := database.New(ctx, cfg.Postgres.Pkg())
+	if err != nil {
+		return fmt.Errorf("connect postgres: %w", err)
+	}
+	defer db.Close()
+
+	const batchSize = 500
+	if target == "all" || target == "users" {
+		if err := backfillLoop(ctx, "auth_users", batchSize, authrepository.NewUserRepository(db, ring, lookup).BackfillOnce); err != nil {
+			return err
+		}
+	}
+	if target == "all" || target == "kyc" {
+		if err := backfillLoop(ctx, "kyc_submissions", batchSize, authrepository.NewKYCRepository(db, ring).BackfillOnce); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func backfillLoop(ctx context.Context, label string, batchSize int, once func(context.Context, int) (int, error)) error {
+	total := 0
+	for {
+		n, err := once(ctx, batchSize)
+		if err != nil {
+			return fmt.Errorf("backfill %s (processed %d so far): %w", label, total, err)
+		}
+		total += n
+		if n > 0 {
+			slog.Info("cryptox backfill progress", "target", label, "batch", n, "total", total)
+		}
+		if n == 0 {
+			break
+		}
+	}
+	slog.Info("cryptox backfill done", "target", label, "total", total)
+	return nil
 }
 
 // probeHealth dials the INTERNAL :8083 listener, which is mTLS since
@@ -174,9 +252,83 @@ func run(parent context.Context) error {
 		startRescreen = func() error { return rescreenJob.Start(ctx) }
 		stopRescreen = rescreenJob.Stop
 	}
-	if kek := os.Getenv("KYC_DOC_KEK"); kek != "" {
-		module.SetDocumentKEK([]byte(kek))
+	// docs/roadmap/active/51 T2.2: replaces the old KYC_DOC_KEK raw-string env var
+	// with the shared cluster-wide cryptox key ring (CRYPTOX_KEY_V1_FILE /
+	// CRYPTOX_KEY_CURRENT_VERSION) — a missing/unconfigured ring is not an
+	// error here (KYC document encryption stays optional outside
+	// production, matching UploadKYCDocument's own existing
+	// "storage is optional in this binary" convention); a malformed one is.
+	if len(cfg.Cryptox.Keys) > 0 {
+		ring, err := cfg.Cryptox.Ring()
+		if err != nil {
+			closeAuthDependencies(log, ledgerConn.Close, closeFraud, redisCache, db, shutdownTracing)
+			return fmt.Errorf("build cryptox ring: %w", err)
+		}
+		module.SetDocumentKeyRing(ring)
+
+		// docs/roadmap/active/51 T2.3: same ring, plus the separate lookup key
+		// (K2 — encryption keys and lookup keys must never be the same
+		// key material) for auth_users.email/full_name and
+		// kyc_submissions.payload field encryption. lookup may be nil
+		// (CRYPTOX_LOOKUP_KEY unset) — GetUserByEmail then falls back to
+		// the plaintext-only lookup path for every row, not just
+		// pre-backfill ones (see repository.NewUserRepository's own doc
+		// comment).
+		lookup, err := cfg.Cryptox.Lookup()
+		if err != nil {
+			closeAuthDependencies(log, ledgerConn.Close, closeFraud, redisCache, db, shutdownTracing)
+			return fmt.Errorf("build cryptox lookup key: %w", err)
+		}
+		module.SetCryptoxRing(ring, lookup)
 	}
+	// docs/roadmap/active/51 T4 (K9): a dedicated export KEK, deliberately its own
+	// key namespace (never Cryptox above) — a missing/unconfigured ring
+	// is not an error (export creation stays optional outside
+	// production, same "storage is optional in this binary" convention
+	// every other ring here already follows); a malformed one is.
+	if len(cfg.Export.Keys) > 0 {
+		exportRing, err := cfg.Export.Ring()
+		if err != nil {
+			closeAuthDependencies(log, ledgerConn.Close, closeFraud, redisCache, db, shutdownTracing)
+			return fmt.Errorf("build export ring: %w", err)
+		}
+		module.SetExportKeyRing(exportRing)
+	}
+	// docs/roadmap/active/51 T5 (K10): a dedicated closure KEK, same optionality as
+	// Export above.
+	if len(cfg.Closure.Keys) > 0 {
+		closureRing, err := cfg.Closure.Ring()
+		if err != nil {
+			closeAuthDependencies(log, ledgerConn.Close, closeFraud, redisCache, db, shutdownTracing)
+			return fmt.Errorf("build closure ring: %w", err)
+		}
+		module.SetClosureKeyRing(closureRing)
+	}
+	// docs/roadmap/active/51 T4b/T5b: owner clients are registered UNCONDITIONALLY
+	// (not gated on cfg.Closure.Keys) — the SAME registry backs both the
+	// export saga (buildAndUploadExport, gated independently by
+	// EXPORT_KEK above) and the closure saga (gated independently by
+	// CLOSURE_KEK above), so an export-only deployment (closure ring
+	// unconfigured) still gets every owner's export data; only
+	// StartClosureWorker/RequestClosure themselves stay gated on
+	// m.closureRing being non-nil. The outbound clients share the
+	// process's own mTLS identity (already loaded as certSrc) plus the
+	// same INTERNAL_GRPC_TOKEN every other internal caller in this
+	// codebase already uses — no new secret introduced for this feature.
+	// Registration order is the closure saga's own owner-processing order
+	// (internal/auth.RegisterClosureOwner's own doc comment) — ledger
+	// first (money-safety, the most consequential owner to fail on), then
+	// the four T5b owners.
+	module.RegisterClosureOwner("ledger", auth.NewOwnerClosureClient(
+		cfg.LedgerInternalAPIURL, cfg.InternalGRPCToken, tlsx.HTTPClient(certSrc, tlsx.IdentityLedger, 5*time.Second)))
+	module.RegisterClosureOwner("payin", auth.NewOwnerClosureClient(
+		cfg.PayinInternalAPIURL, cfg.InternalGRPCToken, tlsx.HTTPClient(certSrc, tlsx.IdentityPayin, 5*time.Second)))
+	module.RegisterClosureOwner("payout", auth.NewOwnerClosureClient(
+		cfg.PayoutInternalAPIURL, cfg.InternalGRPCToken, tlsx.HTTPClient(certSrc, tlsx.IdentityPayout, 5*time.Second)))
+	module.RegisterClosureOwner("fraud", auth.NewOwnerClosureClient(
+		cfg.FraudInternalAPIURL, cfg.InternalGRPCToken, tlsx.HTTPClient(certSrc, tlsx.IdentityFraud, 5*time.Second)))
+	module.RegisterClosureOwner("gateway", auth.NewOwnerClosureClient(
+		cfg.GatewayInternalAPIURL, cfg.InternalGRPCToken, tlsx.HTTPClient(certSrc, tlsx.IdentityGateway, 5*time.Second)))
 	if err := module.EnsureBootstrapAdmin(ctx, cfg.Auth.BootstrapAdminEmail, cfg.Auth.BootstrapAdminPassword); err != nil {
 		closeAuthDependencies(log, ledgerConn.Close, closeFraud, redisCache, db, shutdownTracing)
 		return fmt.Errorf("ensure bootstrap admin: %w", err)
@@ -194,12 +346,46 @@ func run(parent context.Context) error {
 		closeAuthDependencies(log, ledgerConn.Close, closeFraud, redisCache, db, shutdownTracing)
 		return fmt.Errorf("start kyc apply retry worker: %w", err)
 	}
+	stopRetention, err := module.StartRetentionRunner(redisClientClient(redisCache), log)
+	if err != nil {
+		retryJob.Stop()
+		closeAuthDependencies(log, ledgerConn.Close, closeFraud, redisCache, db, shutdownTracing)
+		return fmt.Errorf("start data retention worker: %w", err)
+	}
+	// docs/roadmap/active/51 T1.6 (K6): stopObjectOutbox is nil when no
+	// document store is configured (matches UploadKYCDocument's own
+	// "storage is optional in this binary" convention) — never nil
+	// otherwise, so calling it unconditionally at shutdown below is safe.
+	stopObjectOutbox, err := module.StartObjectOutboxWorker(ctx, log)
+	if err != nil {
+		stopRetention()
+		retryJob.Stop()
+		closeAuthDependencies(log, ledgerConn.Close, closeFraud, redisCache, db, shutdownTracing)
+		return fmt.Errorf("start object delete outbox worker: %w", err)
+	}
 	if startRescreen != nil {
 		if err := startRescreen(); err != nil {
 			retryJob.Stop()
 			closeAuthDependencies(log, ledgerConn.Close, closeFraud, redisCache, db, shutdownTracing)
 			return fmt.Errorf("start kyc sanctions rescreen worker: %w", err)
 		}
+	}
+	// docs/roadmap/active/51 T4 (K9): stopPrivacyExport is nil when no document
+	// store or export ring is configured — same optionality as
+	// stopObjectOutbox above, never nil otherwise.
+	stopPrivacyExport, err := module.StartPrivacyExportWorker(ctx, log)
+	if err != nil {
+		retryJob.Stop()
+		closeAuthDependencies(log, ledgerConn.Close, closeFraud, redisCache, db, shutdownTracing)
+		return fmt.Errorf("start privacy export worker: %w", err)
+	}
+	// docs/roadmap/active/51 T5 (K10): stopClosureWorker is nil when no closure ring
+	// or ledger client is configured — same optionality as stopPrivacyExport.
+	stopClosureWorker, err := module.StartClosureWorker(ctx, log)
+	if err != nil {
+		retryJob.Stop()
+		closeAuthDependencies(log, ledgerConn.Close, closeFraud, redisCache, db, shutdownTracing)
+		return fmt.Errorf("start closure saga worker: %w", err)
 	}
 
 	// docs/roadmap/archive/49 K6: auth's public :8082 stays plain (anti-scope edge
@@ -222,6 +408,16 @@ func run(parent context.Context) error {
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), cfg.App.ShutdownTimeout)
 	defer shutdownCancel()
 	retryJob.Stop()
+	stopRetention()
+	if stopObjectOutbox != nil {
+		stopObjectOutbox()
+	}
+	if stopPrivacyExport != nil {
+		stopPrivacyExport()
+	}
+	if stopClosureWorker != nil {
+		stopClosureWorker()
+	}
 	if stopRescreen != nil {
 		stopRescreen()
 	}

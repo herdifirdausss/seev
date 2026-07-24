@@ -30,6 +30,7 @@ import (
 	"github.com/herdifirdausss/seev/internal/auth/model"
 	"github.com/herdifirdausss/seev/internal/auth/repository"
 	"github.com/herdifirdausss/seev/internal/kycvendor"
+	"github.com/herdifirdausss/seev/pkg/cryptox"
 	"github.com/herdifirdausss/seev/pkg/database"
 	"github.com/herdifirdausss/seev/pkg/fraudcheck"
 	"github.com/herdifirdausss/seev/pkg/middleware"
@@ -71,6 +72,7 @@ type Config struct {
 
 // Module is the public facade for the auth module.
 type Module struct {
+	db               database.DatabaseSQL
 	users            repository.UserRepository
 	refreshTokens    repository.RefreshTokenRepository
 	kyc              repository.KYCRepository
@@ -82,7 +84,19 @@ type Module struct {
 		CheckWithSubject(context.Context, string, string, uuid.UUID, decimal.Decimal, string, string, string) (fraudcheck.Verdict, error)
 	}
 	documentStore DocumentStore
-	documentKEK   []byte
+	documentRing  *cryptox.Ring
+	exportRing    *cryptox.Ring
+	// closureRing/closureOwners back docs/roadmap/active/51-a8-data-lifecycle-privacy.md T5's
+	// (K10) account-closure saga — both optional/nil-safe like exportRing
+	// above (RequestClosure returns ErrClosureUnavailable until the ring
+	// and at least one owner are wired), never required at NewModule
+	// construction. closureOwners is an ORDERED registry (A8 T5b: ledger
+	// alone at T5, payin/payout/fraud/gateway added at T5b) — order is
+	// the saga's own owner-processing order, fixed at registration time
+	// so a resumed saga's "next unprepared/uncommitted owner" lookup is
+	// deterministic across restarts.
+	closureRing   *cryptox.Ring
+	closureOwners []closureOwnerRegistration
 }
 
 // SetSanctionsChecker enables the optional fraud-service sanctions seam. A
@@ -103,14 +117,29 @@ func NewModule(db database.DatabaseSQL, provisioner Provisioner, cfg Config, log
 		provider = providers[0]
 	}
 	return &Module{
-		users:         repository.NewUserRepository(db),
+		db:            db,
+		users:         repository.NewUserRepository(db, nil, nil),
 		refreshTokens: repository.NewRefreshTokenRepository(db),
-		kyc:           repository.NewKYCRepository(db),
+		kyc:           repository.NewKYCRepository(db, nil),
 		provisioner:   provisioner,
 		cfg:           cfg,
 		logger:        logger,
 		kycProvider:   provider,
 	}
+}
+
+// SetCryptoxRing wires docs/roadmap/active/51-a8-data-lifecycle-privacy.md T2.3's K2/K3
+// field encryption (auth_users.email/full_name, kyc_submissions.payload) —
+// same optionality convention as SetDocumentKeyRing: a nil ring leaves
+// every read/write exactly as it behaved before this task (plaintext
+// columns only). lookup may be nil even when ring isn't (GetUserByEmail
+// then falls back to the plaintext-only lookup query for every row, not
+// just pre-backfill ones). Reconstructs the user/kyc repositories rather
+// than mutating fields on the existing ones, since both are constructed
+// once inside NewModule with ring=nil/lookup=nil by default.
+func (m *Module) SetCryptoxRing(ring *cryptox.Ring, lookup *cryptox.LookupKey) {
+	m.users = repository.NewUserRepository(m.db, ring, lookup)
+	m.kyc = repository.NewKYCRepository(m.db, ring)
 }
 
 // TokenPair is what Login/Refresh/Register hand back to the transport layer.
@@ -266,12 +295,33 @@ func (m *Module) Me(ctx context.Context, userID uuid.UUID) (User, error) {
 	if errors.Is(err, repository.ErrNotFound) {
 		return User{}, ErrInvalidCredentials
 	}
-	return u, err
+	if err != nil {
+		return User{}, err
+	}
+	// docs/roadmap/active/51-a8-data-lifecycle-privacy.md T5 (K10): a still-valid (unexpired)
+	// access token issued before closure would otherwise keep working here
+	// — Login/Refresh already reject on status, but a live access token
+	// never round-trips through either of those, so this route needs its
+	// own live-status check.
+	if u.Status == model.StatusClosing || u.Status == model.StatusClosed {
+		return User{}, ErrUserDisabled
+	}
+	return u, nil
 }
 
 // UpdateMe updates the caller's own mutable profile fields (full name only
 // for now — email/role/status changes are admin/security flows, not here).
 func (m *Module) UpdateMe(ctx context.Context, userID uuid.UUID, fullName string) (User, error) {
+	u, err := m.users.GetUserByID(ctx, userID)
+	if errors.Is(err, repository.ErrNotFound) {
+		return User{}, ErrInvalidCredentials
+	}
+	if err != nil {
+		return User{}, err
+	}
+	if u.Status == model.StatusClosing || u.Status == model.StatusClosed {
+		return User{}, ErrUserDisabled
+	}
 	if err := m.users.UpdateFullName(ctx, userID, fullName); err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
 			return User{}, ErrInvalidCredentials

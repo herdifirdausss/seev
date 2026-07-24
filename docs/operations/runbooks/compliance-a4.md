@@ -31,7 +31,9 @@ workflow; record the version and checksum in the change ticket.
 
 ## KYC documents
 
-Without a configured object-store adapter or 32-byte `KYC_DOC_KEK`, uploads
-return `503 DOCUMENT_STORAGE_UNAVAILABLE`; this is intentional. Never log KEK,
+Without a configured object-store adapter or `CRYPTOX_KEY_V1` (docs/roadmap/active/51
+T2.2's shared cluster-wide `pkg/cryptox` key ring — see
+[cryptox-key-rotation.md](cryptox-key-rotation.md)), uploads return `503
+DOCUMENT_STORAGE_UNAVAILABLE`; this is intentional. Never log the key,
 plaintext bytes, or object contents. Download is internal admin-only and
 decrypts in memory.

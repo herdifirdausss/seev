@@ -251,9 +251,30 @@ func TestLoadFromEnv_ProductionWithSSL(t *testing.T) {
 		"POSTGRES_SSL_MODE": "require",
 		"RABBITMQ_TLS":      "min_version=tls1.2",
 		"RABBITMQ_HOST":     "localhost",
+		"CRYPTOX_KEY_V1":    strings.Repeat("ab", 32),
 	}))
 	require.NoError(t, err)
 	assert.True(t, cfg.IsProduction())
+}
+
+func TestLoadFromEnv_ProductionMissingCryptoxKey(t *testing.T) {
+	// docs/roadmap/active/51 K3: "service boot fails when a required current key is
+	// missing" — production must refuse to start without CRYPTOX_KEY_V1
+	// matching CRYPTOX_KEY_CURRENT_VERSION's default of 1.
+	_, err := loadFromEnv(validEnv(map[string]string{
+		"APP_ENV":           "production",
+		"POSTGRES_SSL_MODE": "require",
+		"RABBITMQ_TLS":      "min_version=tls1.2",
+		"RABBITMQ_HOST":     "localhost",
+	}))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "CRYPTOX_KEY_V1")
+}
+
+func TestLoadFromEnv_DevelopmentAllowsMissingCryptoxKey(t *testing.T) {
+	cfg, err := loadFromEnv(validEnv(nil))
+	require.NoError(t, err)
+	assert.Empty(t, cfg.Cryptox.Keys)
 }
 
 func TestLoadFromEnv_JWTSecretTooShort(t *testing.T) {

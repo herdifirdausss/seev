@@ -27,6 +27,10 @@ type Config struct {
 }
 
 type Module struct {
+	// db is retained only for docs/roadmap/active/51-a8-data-lifecycle-privacy.md T4b/T5b's
+	// own export/closure contract (privacy.go) — every other query in this
+	// module goes through repo/modeRepo, not raw SQL.
+	db           database.DatabaseSQL
 	repo         repository.ScreeningRepository
 	modeRepo     repository.RuleModeRepository
 	modeResolver *ruleModeResolver
@@ -51,7 +55,7 @@ func NewModule(db database.DatabaseSQL, store VelocityStore, broker Broker, cfg 
 	mode := rules.ParseMode(cfg.Mode)
 	modeRepo := repository.NewRuleModeRepository(db)
 	sanctionsRepo := repository.NewSanctionsRepository(db)
-	module := &Module{repo: repo, modeRepo: modeRepo, modeResolver: newRuleModeResolver(modeRepo, mode, logger), store: store, broker: broker, logger: logger, spill: newEventSpill()}
+	module := &Module{db: db, repo: repo, modeRepo: modeRepo, modeResolver: newRuleModeResolver(modeRepo, mode, logger), store: store, broker: broker, logger: logger, spill: newEventSpill()}
 	if cfg.AmountThreshold.IsPositive() {
 		module.rules = append(module.rules, rules.NewAmountThresholdRuleWithResolver(cfg.AmountThreshold, mode, module.modeResolver, repo, logger))
 	}

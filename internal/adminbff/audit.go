@@ -11,6 +11,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/herdifirdausss/seev/pkg/cryptox"
 	"github.com/herdifirdausss/seev/pkg/database"
 )
 
@@ -61,11 +62,16 @@ func (r *auditRepo) WriteAudit(ctx context.Context, entry AuditEntry) error {
 	if err != nil {
 		return fmt.Errorf("adminbff: encode audit summary: %w", err)
 	}
+	// docs/roadmap/active/51 T2.4 (K2): "masked ... audit identity" — the audit
+	// trail never stores the real operator email, only a one-way masked
+	// form. Unlike sessions.email (pkg/cryptox.Ring, fully decryptable),
+	// there is no ciphertext column and no key version here: masking has
+	// nothing to backfill/contract, it's a permanent write-time transform.
 	_, err = r.db.ExecContext(ctx, `
 		INSERT INTO audit_log
 			(user_id, email, role, method, route_pattern, target_service, resource_id, outcome, request_id, summary)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb)`,
-		entry.UserID, entry.Email, entry.Role, entry.Method, entry.RoutePattern,
+		entry.UserID, cryptox.MaskEmail(entry.Email), entry.Role, entry.Method, entry.RoutePattern,
 		entry.TargetService, entry.ResourceID, entry.Outcome, entry.RequestID, summary)
 	if err != nil {
 		return fmt.Errorf("adminbff: write audit: %w", err)
@@ -77,16 +83,23 @@ func (r *auditRepo) ListAudit(ctx context.Context, filter AuditFilter) ([]AuditE
 	if filter.Limit <= 0 || filter.Limit > 100 {
 		filter.Limit = 100
 	}
+	// Search by email must try both forms: rows written before this task
+	// still hold the real plaintext email; rows written after hold only
+	// cryptox.MaskEmail's output. MaskEmail is deterministic, so masking
+	// the search term here reproduces exactly what a post-migration row
+	// stored, without needing any backfill of historical rows (masking
+	// has no ciphertext to backfill FROM — see the migration's own
+	// comment).
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT user_id, email, role, method, route_pattern, target_service,
 		       resource_id, outcome, request_id, summary, created_at
 		FROM audit_log
-		WHERE ($1 = '' OR user_id::text = $1 OR email = $1)
+		WHERE ($1 = '' OR user_id::text = $1 OR email = $1 OR email = $6)
 		  AND ($2 = '' OR target_service = $2)
 		  AND ($3::timestamptz IS NULL OR created_at >= $3)
 		  AND ($4::timestamptz IS NULL OR created_at < $4)
 		ORDER BY created_at DESC, id DESC LIMIT $5`,
-		filter.Operator, filter.Service, filter.From, filter.To, filter.Limit)
+		filter.Operator, filter.Service, filter.From, filter.To, filter.Limit, cryptox.MaskEmail(filter.Operator))
 	if err != nil {
 		return nil, fmt.Errorf("adminbff: list audit: %w", err)
 	}

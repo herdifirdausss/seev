@@ -54,6 +54,7 @@ type Broker interface {
 
 // Module is the notify module's public facade.
 type Module struct {
+	db     database.DatabaseSQL
 	repo   repository.Repository
 	broker Broker
 	logger *slog.Logger
@@ -65,6 +66,7 @@ func NewModule(db database.DatabaseSQL, broker Broker, logger *slog.Logger) *Mod
 		logger = slog.Default()
 	}
 	return &Module{
+		db:     db,
 		repo:   repository.NewRepository(db),
 		broker: broker,
 		logger: logger,

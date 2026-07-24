@@ -33,6 +33,7 @@ import (
 	"github.com/herdifirdausss/seev/internal/payout/repository"
 	"github.com/herdifirdausss/seev/internal/payout/worker"
 	"github.com/herdifirdausss/seev/internal/vendorgw"
+	"github.com/herdifirdausss/seev/pkg/cryptox"
 	"github.com/herdifirdausss/seev/pkg/database"
 	"github.com/herdifirdausss/seev/pkg/fraudcheck"
 	"github.com/herdifirdausss/seev/pkg/ledgerclient"
@@ -113,7 +114,7 @@ func NewModule(db database.DatabaseSQL, poster Poster, registry *vendorgw.Regist
 	}
 	m := &Module{
 		db:          db,
-		repo:        repository.NewRepository(db),
+		repo:        repository.NewRepository(db, nil),
 		routing:     repository.NewRoutingRepository(db),
 		commandRepo: repository.NewVendorCommandRepository(db),
 		poster:      poster,
@@ -137,6 +138,14 @@ func NewModule(db database.DatabaseSQL, poster Poster, registry *vendorgw.Regist
 	m.relay = worker.NewVendorRelay(m, logger, worker.VendorRelayConfig{})
 
 	return m
+}
+
+// SetCryptoxRing wires docs/roadmap/active/51-a8-data-lifecycle-privacy.md T2.4's K2/K3
+// field encryption for payout_requests.destination — same nil-safe
+// optionality as internal/auth.Module.SetCryptoxRing: a nil ring leaves
+// every read/write exactly as it behaved before this task.
+func (m *Module) SetCryptoxRing(ring *cryptox.Ring) {
+	m.repo = repository.NewRepository(m.db, ring)
 }
 
 // StartWorkers launches the resume/polling job (docs/roadmap/archive/23 Task T3 step

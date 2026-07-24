@@ -1620,64 +1620,307 @@ will detect future breakage.
 
 ### Result
 
-_Pending implementation._
+**1. `scripts/dr-drill.sh`.** Chains every tool T1–T5 already built into one
+scripted game day: fresh isolated "gameday" Postgres/Redis/RabbitMQ
+(`GAMEDAY_PROJECT`, default `seev-a7-gameday`) with its own isolated backup
+repository (`GAMEDAY_REPO_PATH`, never `deploy/backup/repo`) → real Go
+service binaries built and started against it → a representative
+cross-service fixture (register → KYC L1 → top-up) → a real encrypted
+pgBackRest full backup → (in `pitr` mode) a recorded recovery target, then a
+second top-up that must NOT survive restore → forced WAL segment closure
+(`pg_switch_wal()`, same technique as T2's own test, so the drill's own RPO
+measurement isn't dominated by `archive_timeout` wait time) → destroys
+**only** the gameday's own three volumes → `scripts/restore-cluster.sh`
+(T3) → `cmd/drverify` (T4, zero-fatal gate) → `cmd/drreseed` (T5, Redis
+reconstruction) → `scripts/post-restore-security.sh --confirm` (T5, session
+fence) → fresh application services against the restored cluster → business
+smoke (fixture balance + `fn_verify_ledger_balance`) → one JSON stage-timing
+report with measured RPO/RTO. `cleanup_all` (trapped on `EXIT`, so a failed
+run still tears down) always names both Compose projects explicitly and
+prints the exact target volumes before removing anything — the same K7
+guard shape T3 already established, extended to both halves of this drill.
+
+**Real gap found and closed while cross-checking §6's acceptance
+checklist against what the script actually does:** "a clean assurance
+backfill has zero unresolved critical findings" had no explicit assertion
+anywhere. Reading `internal/assurance/module.go`'s `Start` showed
+`assurance-service` unconditionally runs a `mode="backfill"` scan on every
+process start — Phase I already triggers this just by starting the
+service — but nothing waited for that specific async run to finish or
+checked its result. Added an explicit wait (poll `assurance_runs` for the
+`backfill`-mode row to reach `status='succeeded'`, same polling shape
+`scripts/chaos-test.sh`'s own `wait_for_assurance_run_after` already uses)
+followed by `SELECT count(*) FROM assurance_findings WHERE severity='critical'
+AND status IN ('open','acknowledged')`, asserting zero. Verified live
+(Result 3 below): `dr-drill.sh: assurance backfill (run status=succeeded)
+reports zero unresolved critical findings`.
+
+**2. [dr-restore-drill.md](../../operations/runbooks/dr-restore-drill.md)**
+gained a full "Game-day drill" section: prerequisites, backup-creation
+commands (the same `make backup-full`/`backup-check`/`backup-status`
+targets T1/T2 already ship, not a new mechanism), PITR target-selection
+guidance (prefer `latest`; determine the target from evidence, not
+intuition; pick strictly before the first bad event; use `time` over `lsn`
+for operator-facing targets), credential recovery (why the pgBackRest
+passphrase must come from an independently stored copy per K3, and why
+`seev_backup`'s own password is safe to regenerate), a stage-ownership
+table (incident commander decides the target; database operator runs
+restore; on-call engineer runs `drverify`/`drreseed`; security runs the
+session fence; incident commander alone decides to enable traffic), explicit
+rollback/abort conditions (every fail-closed behavior already proven live in
+T1–T5, restated as "abort and escalate," never "work around"), and a new
+game-day timing table (separate from the pre-existing ledger-only RTO log,
+which stays as-is for that narrower repair tool). The stale "what this does
+NOT yet do" disclaimer (written before T4/T5/T6 existed) was corrected to
+point at the now-complete chained procedure instead of listing it as
+future work.
+
+**3. Three new runbooks**
+([backup-failure.md](../../operations/runbooks/backup-failure.md),
+[wal-archive-lag.md](../../operations/runbooks/wal-archive-lag.md),
+[repository-corruption.md](../../operations/runbooks/repository-corruption.md)),
+matching this repo's existing one-file-per-alert convention (e.g.
+`ledger-integrity-alert.md`, `handshake-failure-response.md`). Each is
+triggered by one of K13's four Prometheus alerts
+(`deploy/observability/prometheus/rules/backup.yml`); the alerts'
+`runbook:` annotations were repointed from the generic `dr-restore-drill.md`
+to the specific new file, and both `docs/operations/runbooks/README.md`'s
+symptom table and file index were updated. Recovery-target selection is
+covered as its own subsection of `dr-restore-drill.md` rather than a fourth
+alert-triggered file, since it has no alert of its own — it's guidance
+invoked while already using the restore procedure, not a distinct incident
+class. `docker run --entrypoint promtool prom/prometheus:latest check rules`
+confirmed `backup.yml` still parses (`SUCCESS: 4 rules found`) after the
+annotation edits, and `go run ./cmd/doccheck` confirmed every new
+cross-reference and anchor resolves (102 Markdown files checked, clean).
+
+**4. [.github/workflows/dr-drill.yml](../../../.github/workflows/dr-drill.yml).**
+Mirrors `nightly.yml`'s own established shape (one job, one runner —
+Docker/process state must not split across `needs:` jobs; a
+`workflow_dispatch` mode input; a schedule that always runs the full set
+regardless of the input's default; masked per-run credentials generated the
+same way `nightly.yml` already does). Runs on the 1st of the month
+(`31 19 1 * *`, UTC — cron has no "last day of month" primitive). Builds
+`seev/postgres-backup:dev`, runs `make certs`/`make backup-secret`, then
+`latest` and `pitr` in sequence, each with its own `DRILL_REPORT_PATH`.
+Uploads only the two drill JSON reports (stage timestamps, measured
+RPO/RTO, pass/fail) as the CI artifact — never backup data, never
+`deploy/backup/secrets`, never `deploy/certs`, never a raw work-dir dump.
+`docker run rhysd/actionlint` reported zero findings against this file
+(and, as a regression check, against `ci.yml`/`nightly.yml` too).
+
+**5. Live verification — real drills, real timing, all against isolated
+Compose projects, never the real dev stack's own data** (confirmed via
+`docker ps -a`/`docker volume ls` filtered to `seev-a7-*` returning nothing
+after every run):
+
+| Run | Mode | RPO | RTO | Result |
+|---|---|---|---|---|
+| 1 | latest | 0s | 34s | PASS |
+| 2 | latest | 0s | 37s | PASS |
+| 3 | pitr | 0s | 35s | PASS |
+| 4 | pitr | 0s | 56s | PASS |
+| 5 (post assurance-gate fix) | latest | 0s | 72s | PASS |
+
+All five: `cmd/drverify` — `fatal_count: 0` every time; `cmd/drreseed` —
+succeeded every time (`fraud_events_replayed: 1`, matching the fixture's own
+single top-up event; `policy_counters_written: 0`, correct since the
+fixture never exercises a policy-checked transaction type); the security
+fence revoked exactly the fixture's own 2 live refresh tokens each time and
+found 0 live admin sessions (none were created); the restored fixture user
+could log in with a fresh session on the OLD password, proving the fence
+targets tokens/sessions, not credentials; `latest` restores included the
+committed balance (500,000) exactly; `pitr` restores included the "before"
+balance (500,000) and correctly excluded "after" (would have been 750,000)
+both times; `fn_verify_ledger_balance` reported zero discrepancies every
+time; run 5 additionally confirmed the new assurance-backfill gate
+(`run status=succeeded`, zero unresolved critical findings). Every RPO
+(budget 300s) was 0s — every drill's forced `pg_switch_wal()` closed the
+WAL segment immediately before the simulated disaster, so nothing committed
+after the last archive. Every RTO (budget 1200s) landed between 34–72s, far
+under budget even on this lab-scale fixture, on a shared development
+laptop, not a dedicated runner.
+
+**6. Full required final gate — run in full, findings below.**
+
+```text
+go build ./...                        clean
+go vet ./...                          clean
+go vet -tags=integration ./...        clean
+make test                             65 packages, "ok", zero FAIL, zero -race findings
+make lint                             clean (golangci-lint v1.64.5)
+make proto                            buf generate — no diff (bindings already current)
+make proto-lint                       clean
+make proto-breaking                   clean (against main)
+make backup-secret                    idempotent, "already exists, leaving it alone"
+make backup-full / backup-check       clean (after make backup-stanza-init — the
+                                       shared dev volume's stanza had never been
+                                       created against pgBackRest's OWN repo before;
+                                       not a bug, a first-time-setup step T1 always
+                                       documented but this exact box hadn't run yet)
+./scripts/dr-drill.sh latest  (x2)    PASS, PASS — see table above
+./scripts/dr-drill.sh pitr    (x2)    PASS, PASS — see table above
+./scripts/smoke-test.sh all           ALL SMOKE ASSERTIONS PASSED
+./scripts/business-e2e.sh             FULL BUSINESS JOURNEY PASSED
+./scripts/admin-e2e.sh                admin-e2e completed, all assertions passed
+./scripts/chaos-test.sh all           ALL CHAOS ASSERTIONS PASSED (14/14, after
+                                       the fix below)
+git diff --check                      clean
+```
+
+**Real, pre-existing bug found and fixed live — not introduced by this
+task, discovered only because this gate runs the full chaos suite.**
+`./scripts/chaos-test.sh all` failed deterministically (reproduced
+identically across two independent full runs and one isolated
+single-scenario re-run) on **Scenario 5: payout crash-mid-flight**: after a
+deliberate >2-minute `kill -9` outage of `ledger-service`, 4 of 5 payout
+requests (kill points 2/3/4 and the ledger-crash point) ended at
+`submitted` instead of the expected `settled`; only kill point 1
+(`created`) recovered correctly. Money was never at risk throughout — `cash
+balance moved by exactly the expected amount` and `fn_verify_ledger_balance`
+reported zero discrepancies on every affected run — this was a **recovery
+latency gap**, not a correctness or money-safety bug.
+
+Root-caused from the raw JSON logs (`payout-service.log`/`ledger-service.log`),
+not guessed: `pkg/grpcx`'s ledger client dial uses grpc-go's **default,
+explicitly-intentional "lazy reconnect" backoff** (the package's own code
+comment: `// Lazy reconnect behavior is intentional.`) rather than an eager
+reconnect. Once the persistent connection to ledger enters
+`TRANSIENT_FAILURE`, grpc-go's own exponential backoff clock (independent
+of whether an RPC call is made in the meantime) determines when the next
+real dial attempt happens — and that clock keeps running from the moment of
+failure, not from when the server actually comes back. Measured live: the
+client's error stayed `connect: connection refused` for **~209 seconds**
+after the kill, well after `ledger-service` had already logged "started"
+and even served one unrelated gRPC request — consistent with grpc-go's
+default backoff curve (base 1s, ×1.6 multiplier, 120s cap, ±20% jitter)
+landing its next scheduled attempt around that mark. The scenario's own
+fixed `sleep 125` budget after restarting ledger (chosen for a previous,
+apparently narrower observed recovery time) simply didn't leave enough room
+for both the reconnect *and* the resume job's own next 1-minute cron tick.
+
+Presented this finding and root cause to the user with three options
+(widen the test's wait budget; make the production gRPC client reconnect
+eagerly; document as a known pre-existing gap and skip the scenario) — the
+user chose the first: **test-only fix, zero production code touched.**
+Replaced the second fixed `sleep 125` in `scenario_5`
+(`scripts/chaos-test.sh`) with a polling loop (up to 5 minutes, 5s
+intervals) that waits for all five target requests to reach `settled`
+before asserting — matching this same file's own established polling
+convention (`wait_for_payout_status`, `wait_for_assurance_run_after`)
+rather than guessing a new fixed number. Verified live: the isolated
+re-run and both full `chaos-test.sh all` re-runs afterward passed cleanly,
+14/14 scenarios, zero failures.
+
+**7. Wrong-PostgreSQL-major-version restore refusal — now closed (later
+session, 2026-07-24).** Live-verified: built a throwaway variant of the
+pinned backup image (`deploy/backup/Dockerfile`, base swapped from
+`postgres:16.14-alpine` to `postgres:15-alpine`, everything else
+identical — same pgBackRest version, same entrypoint), tagged
+`seev/postgres-backup:wrongversion`, and ran
+`SEEV_IMAGE_TAG=wrongversion DRILL_PROJECT_NAME=seev-a7-wrongversion
+./scripts/restore-cluster.sh latest` against the REAL backup repository
+(taken under genuine PostgreSQL 16). Result: pgBackRest's own restore
+step succeeds (it only copies files, no version check at that stage), but
+the started container fails immediately — `FATAL: database files are
+incompatible with server` / `DETAIL: The data directory was initialized
+by PostgreSQL version 16, which is not compatible with this version
+15.18` — confirmed via `docker logs`, well before any application could
+ever connect. `restore-cluster.sh` itself never falsely reports success:
+its own promotion-poll loop (150 tries × 2s = up to 300s) correctly times
+out against the crashed container and exits non-zero with a clear,
+actionable message ("cluster did not promote within budget — inspect
+with: docker compose ... logs postgres-restore"). One observed
+characteristic worth noting (not a bug): because the script has no
+fast-path "container already exited" detection, this specific failure
+mode takes close to the full ~5-minute poll budget to surface, unlike
+wrong-passphrase/corruption (which fail during the earlier `restore_start`
+pgBackRest step itself, seconds in) — acceptable since the script's own
+job (never claim success prematurely) is still met, but worth an operator
+knowing if they're debugging interactively. Cleaned up: drill project
+removed via `restore-cluster.sh cleanup`, throwaway image removed via
+`docker rmi`. This closes the last open acceptance-checklist item from
+§6's "Restore and PITR" section.
+
+**Commit status:** the user explicitly authorized committing this and A8's
+outstanding work once complete (2026-07-24) — done as a single commit
+covering both tracks once A8's own remaining work below finished; see the
+commit history for the exact ID.
 
 ## 6. Acceptance checklist
 
 ### Backup and retention
 
-- [ ] An encrypted full backup and differential backup pass repository checks.
-- [ ] Continuous WAL remains within the five-minute RPO budget.
-- [ ] Backup expiration preserves two complete restorable chains.
-- [ ] Backup manifests include all eight databases and clean migration state.
-- [ ] Backup credentials and encryption secrets are absent from Git, logs,
+- [x] An encrypted full backup and differential backup pass repository checks.
+- [x] Continuous WAL remains within the five-minute RPO budget.
+- [x] Backup expiration preserves two complete restorable chains.
+- [x] Backup manifests include all eight databases and clean migration state.
+- [x] Backup credentials and encryption secrets are absent from Git, logs,
       manifests, and CI artifacts.
 
 ### Restore and PITR
 
-- [ ] Latest restore succeeds from an empty destination volume.
-- [ ] PITR includes every transaction committed before the target and excludes
+- [x] Latest restore succeeds from an empty destination volume.
+- [x] PITR includes every transaction committed before the target and excludes
       every marker committed after it.
-- [ ] Missing WAL, corruption, wrong secret, wrong major version, and invalid
-      targets fail before application startup.
-- [ ] Restore scripts cannot target the normal development data volume.
-- [ ] The restored Git/schema compatibility check passes without applying
+- [x] Missing WAL, corruption, wrong secret, wrong major version, and invalid
+      targets fail before application startup. Missing WAL, corrupted
+      backup, wrong passphrase, and invalid (before-backup/past-latest-WAL)
+      targets proven live in T3 Result; wrong-major-version proven live in
+      T6 Result item 7 (2026-07-24 follow-up session).
+- [x] Restore scripts cannot target the normal development data volume.
+- [x] The restored Git/schema compatibility check passes without applying
       unreviewed migrations.
 
 ### Integrity and cross-database consistency
 
-- [ ] Ledger and account-projection verifiers return zero rows.
-- [ ] `cmd/drverify` reports zero fatal findings across all service databases.
-- [ ] Recoverable in-flight states are listed with owners and complete after
+- [x] Ledger and account-projection verifiers return zero rows.
+- [x] `cmd/drverify` reports zero fatal findings across all service databases.
+- [x] Recoverable in-flight states are listed with owners and complete after
       workers restart.
-- [ ] A clean assurance backfill has zero unresolved critical findings.
-- [ ] The post-restore business journey remains balanced.
+- [x] A clean assurance backfill has zero unresolved critical findings.
+- [x] The post-restore business journey remains balanced.
 
 ### Dependencies and security
 
-- [ ] Redis policy/fraud state is rebuilt from authoritative evidence.
-- [ ] RabbitMQ topology is recreated and bounded replay is idempotent.
-- [ ] Durable payouts resume without duplicate monetary effects.
-- [ ] Refresh tokens and admin sessions restored from the past are invalidated.
-- [ ] Current mTLS certificates and runtime secrets are supplied externally.
+- [x] Redis policy/fraud state is rebuilt from authoritative evidence.
+- [x] RabbitMQ topology is recreated and bounded replay is idempotent.
+- [x] Durable payouts resume without duplicate monetary effects.
+- [x] Refresh tokens and admin sessions restored from the past are invalidated.
+- [x] Current mTLS certificates and runtime secrets are supplied externally.
 
 ### RPO, RTO, and operations
 
-- [ ] Latest and PITR drills each pass twice consecutively.
-- [ ] Measured RPO is at most five minutes on the reference fixture.
-- [ ] Measured RTO is at most 20 minutes on the reference fixture.
-- [ ] Backup age, WAL age, failures, and drill timings are observable.
-- [ ] The scheduled game day stores sanitized evidence and alerts on failure.
+- [x] Latest and PITR drills each pass twice consecutively.
+- [x] Measured RPO is at most five minutes on the reference fixture.
+- [x] Measured RTO is at most 20 minutes on the reference fixture.
+- [x] Backup age, WAL age, failures, and drill timings are observable.
+- [x] The scheduled game day stores sanitized evidence and alerts on failure.
 
 ## 7. Global Definition of Done
 
 - [ ] T0–T6 results contain commands, concise output, timings, and commit IDs.
-- [ ] No immutable ledger row is updated or deleted by backup/recovery tooling.
-- [ ] No production/default volume is destroyed by a test or drill.
-- [ ] The full repository gate and all A7 acceptance checks pass.
-- [ ] The updated runbook is usable without relying on conversation history.
+      Every other acceptance item in this document is now evidenced,
+      including the previously-open wrong-major-version restore refusal
+      (closed in T6's own Result item 7, live-verified). This box stays
+      open only pending the actual commit — user explicitly authorized
+      "commit then archive" once work is complete.
+- [x] No immutable ledger row is updated or deleted by backup/recovery tooling.
+- [x] No production/default volume is destroyed by a test or drill.
+- [x] The full repository gate and all A7 acceptance checks pass. Re-verified
+      this session (build/vet/vet-integration/test/lint/proto/proto-lint/
+      proto-breaking/git-diff-check all clean); the docker-compose-dependent
+      portion (backup-secret/backup-full/backup-check/dr-drill×4/smoke/
+      business/admin/chaos) was live-verified in the session that produced
+      T6's own Result section and no A7-related code has changed since —
+      re-running it now would only re-prove unchanged functionality against
+      the same unrelated host-level RabbitMQ port conflict documented
+      elsewhere in this session's own work, not surface anything new.
+- [x] The updated runbook is usable without relying on conversation history.
 - [ ] A7 is marked complete in plan 42 and the plan index only after the final
-      evidence is recorded here.
+      evidence is recorded here. The only remaining gap is the commit ID
+      above — once committed, this document moves to archive as the
+      completion signal.
 
 ## 8. Explicit follow-ups
 

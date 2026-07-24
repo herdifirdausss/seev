@@ -19,6 +19,7 @@ import (
 	fraudv1 "github.com/herdifirdausss/seev/gen/fraud/v1"
 	"github.com/herdifirdausss/seev/internal/config"
 	"github.com/herdifirdausss/seev/internal/payout"
+	payoutrepository "github.com/herdifirdausss/seev/internal/payout/repository"
 	"github.com/herdifirdausss/seev/internal/vendorgw"
 	"github.com/herdifirdausss/seev/internal/vendorgw/mockvendor"
 	"github.com/herdifirdausss/seev/pkg/cache"
@@ -33,10 +34,18 @@ import (
 
 func main() {
 	healthcheck := flag.Bool("healthcheck", false, "probe payout-service liveness endpoint")
+	backfillCryptox := flag.Bool("backfill-cryptox", false, "docs/roadmap/active/51-a8-data-lifecycle-privacy.md T2.5: run bounded cryptox backfill for payout_requests.destination and exit")
 	flag.Parse()
 	if *healthcheck {
 		if err := probeHealth(os.Getenv); err != nil {
 			slog.Error("healthcheck failed", "error", err)
+			os.Exit(1)
+		}
+		return
+	}
+	if *backfillCryptox {
+		if err := runCryptoxBackfill(context.Background()); err != nil {
+			slog.Error("cryptox backfill failed", "error", err)
 			os.Exit(1)
 		}
 		return
@@ -46,6 +55,49 @@ func main() {
 		os.Exit(1)
 	}
 }
+
+// runCryptoxBackfill is docs/roadmap/active/51-a8-data-lifecycle-privacy.md T2.5's bounded
+// backfill entrypoint — see cmd/auth-service/main.go's own runCryptoxBackfill
+// doc comment for why this lives inside each owning service's main.go
+// rather than a shared cross-service CLI.
+func runCryptoxBackfill(ctx context.Context) error {
+	cfg, err := config.LoadPayoutService()
+	if err != nil {
+		return fmt.Errorf("load config: %w", err)
+	}
+	if len(cfg.Cryptox.Keys) == 0 {
+		return fmt.Errorf("no CRYPTOX_KEY_V* configured, nothing to backfill against")
+	}
+	ring, err := cfg.Cryptox.Ring()
+	if err != nil {
+		return fmt.Errorf("build cryptox ring: %w", err)
+	}
+	db, err := database.New(ctx, cfg.Postgres.Pkg())
+	if err != nil {
+		return fmt.Errorf("connect postgres: %w", err)
+	}
+	defer db.Close()
+
+	repo := payoutrepository.NewRepository(db, ring)
+	const batchSize = 500
+	total := 0
+	for {
+		n, err := repo.BackfillOnce(ctx, batchSize)
+		if err != nil {
+			return fmt.Errorf("backfill payout_requests (processed %d so far): %w", total, err)
+		}
+		total += n
+		if n > 0 {
+			slog.Info("cryptox backfill progress", "target", "payout_requests", "batch", n, "total", total)
+		}
+		if n == 0 {
+			break
+		}
+	}
+	slog.Info("cryptox backfill done", "target", "payout_requests", "total", total)
+	return nil
+}
+
 func probeHealth(getenv func(string) string) error {
 	port := getenv("APP_PORT")
 	if port == "" {
@@ -163,6 +215,23 @@ func run(parent context.Context) error {
 	}
 
 	module := payout.NewModule(db, ledgerclient.New(ledgerConn), registry, redisClient, log, fraudClient, breaker)
+	// docs/roadmap/active/51 T2.4: shared cluster-wide cryptox key ring (K2) for
+	// payout_requests.destination — a missing/unconfigured ring is not an
+	// error (stays optional outside production); a malformed one is.
+	if len(cfg.Cryptox.Keys) > 0 {
+		ring, err := cfg.Cryptox.Ring()
+		if err != nil {
+			return fmt.Errorf("build cryptox ring: %w", err)
+		}
+		module.SetCryptoxRing(ring)
+	}
+	// docs/roadmap/active/51 T2.6: redacts payout_requests.destination/error_message
+	// once terminal for 30+ days — same fire-and-continue convention as
+	// every other StartRetentionRunner caller in this codebase.
+	var stopRetention func()
+	if stopRetention, err = module.StartRetentionRunner(redisClient, log); err != nil {
+		log.Error("failed to start data retention worker", "error", err)
+	}
 	module.StartWorkers(ctx)
 	// docs/roadmap/archive/49 K4: gateway calls payout's gRPC surface for user-facing
 	// payout flows; assurance-service (TM-09) reads it for cross-service
@@ -194,6 +263,9 @@ func run(parent context.Context) error {
 	// both replicas (docs/roadmap/archive/45 T4) share the same "payout" identity.
 	httpServer := &http.Server{Addr: ":" + cfg.App.Port, Handler: adminRouter(cfg, module, log), ReadTimeout: cfg.App.ReadTimeout, WriteTimeout: cfg.App.WriteTimeout, IdleTimeout: cfg.App.IdleTimeout, ReadHeaderTimeout: 5 * time.Second, MaxHeaderBytes: 1 << 20, TLSConfig: tlsx.ServerConfig(certSrc, []string{
 		tlsx.IdentityDevOperator, tlsx.IdentityPrometheus, tlsx.IdentityAdminBFF,
+		// docs/roadmap/active/51 T4b/T5b: auth-service calls the new /privacy/
+		// export+closure routes as the export/closure saga's coordinator.
+		tlsx.IdentityAuth,
 	})}
 	errCh := make(chan error, 2)
 	go serveGRPC(grpcServer, listener, errCh)
@@ -211,6 +283,9 @@ func run(parent context.Context) error {
 		serveErr = err
 	}
 	gracefulStopGRPC(grpcServer, cfg.App.ShutdownTimeout)
+	if stopRetention != nil {
+		stopRetention()
+	}
 	module.StopWorkers()
 	_ = ledgerConn.Close()
 	if redisCache != nil {

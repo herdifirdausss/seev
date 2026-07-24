@@ -35,9 +35,23 @@ import (
 	"github.com/herdifirdausss/seev/internal/ledger"
 	"github.com/herdifirdausss/seev/internal/notify"
 	"github.com/herdifirdausss/seev/internal/testutil"
+	"github.com/herdifirdausss/seev/pkg/cryptox"
 	"github.com/herdifirdausss/seev/pkg/database"
 	"github.com/herdifirdausss/seev/pkg/messaging"
 )
+
+// notifyTestDigestRing is docs/roadmap/active/51-a8-data-lifecycle-privacy.md T3's (K7) fixed test
+// key — ledger.NewModule requires a real, non-nil idempotency digest ring.
+func notifyTestDigestRing(t *testing.T) *cryptox.DigestRing {
+	t.Helper()
+	key := make([]byte, 32)
+	for i := range key {
+		key[i] = byte(i + 29)
+	}
+	ring, err := cryptox.NewDigestRing(map[int][]byte{1: key}, 1)
+	require.NoError(t, err)
+	return ring
+}
 
 func migrationsSourceURL(t *testing.T) string {
 	t.Helper()
@@ -47,6 +61,17 @@ func migrationsSourceURL(t *testing.T) string {
 }
 
 func setupNotifyTestDBs(t *testing.T) (ledgerDB, gatewayDB *database.DBSQL) {
+	t.Helper()
+	ledgerDB, gatewayDB, _ = setupNotifyTestDBsWithConfig(t)
+	return ledgerDB, gatewayDB
+}
+
+// setupNotifyTestDBsWithConfig is setupNotifyTestDBs plus the gateway
+// connection's own config.PostgresConfig, for tests that need a second
+// connection under a different role (e.g. retention_integration_test.go's
+// TestRetention_Notifications_DirectDeleteStillForbidden — same pattern as
+// internal/ledger/retention_integration_test.go's setupLedgerOnlyDBWithConfig).
+func setupNotifyTestDBsWithConfig(t *testing.T) (ledgerDB, gatewayDB *database.DBSQL, gatewayConfig config.PostgresConfig) {
 	t.Helper()
 	ctx := context.Background()
 
@@ -85,12 +110,12 @@ func setupNotifyTestDBs(t *testing.T) (ledgerDB, gatewayDB *database.DBSQL) {
 	require.NoError(t, testutil.ApplyMigration(migrationsSourceURL(t), "ledger", ledgerDSN))
 	require.NoError(t, testutil.ApplyMigration(migrationsSourceURL(t), "gateway", gatewayDSN))
 
-	gatewayConfig := ledgerConfig
+	gatewayConfig = ledgerConfig
 	gatewayConfig.DB = gatewayDBName
 	gatewayDB, err = database.New(ctx, gatewayConfig.Pkg())
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = gatewayDB.Close() })
-	return ledgerDB, gatewayDB
+	return ledgerDB, gatewayDB, gatewayConfig
 }
 
 // setupNotifyTestBroker starts a real RabbitMQ container and returns a
@@ -232,7 +257,7 @@ func TestNotify_MoneyIn_RealStack_NotificationRowAppears_DuplicateDeliveryDedup(
 		Enabled:            true,
 		OutboxPollInterval: 200 * time.Millisecond,
 		OutboxBatchSize:    10,
-	}, nil, decimal.NewFromInt(1_000_000_000), nil, nil, 0)
+	}, nil, decimal.NewFromInt(1_000_000_000), nil, nil, 0, notifyTestDigestRing(t))
 	ledgerModule.StartWorkers(ctx)
 	t.Cleanup(ledgerModule.StopWorkers)
 

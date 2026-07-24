@@ -57,6 +57,21 @@ func (mr *MockKYCRepositoryMockRecorder) ApproveKYCSubmission(ctx, id, decidedBy
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ApproveKYCSubmission", reflect.TypeOf((*MockKYCRepository)(nil).ApproveKYCSubmission), ctx, id, decidedBy, providerRef, reason, applyTier)
 }
 
+// BackfillOnce mocks base method.
+func (m *MockKYCRepository) BackfillOnce(ctx context.Context, batchSize int) (int, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "BackfillOnce", ctx, batchSize)
+	ret0, _ := ret[0].(int)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// BackfillOnce indicates an expected call of BackfillOnce.
+func (mr *MockKYCRepositoryMockRecorder) BackfillOnce(ctx, batchSize any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "BackfillOnce", reflect.TypeOf((*MockKYCRepository)(nil).BackfillOnce), ctx, batchSize)
+}
+
 // ClaimKYCApplyRetries mocks base method.
 func (m *MockKYCRepository) ClaimKYCApplyRetries(ctx context.Context, limit int, lease time.Duration) ([]model.KYCApplyRetry, error) {
 	m.ctrl.T.Helper()

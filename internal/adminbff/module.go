@@ -1,7 +1,6 @@
 package adminbff
 
 import (
-	"context"
 	"log/slog"
 	"net/http"
 	"sync"
@@ -10,12 +9,15 @@ import (
 	"github.com/herdifirdausss/seev/internal/adminbff/client"
 	adminweb "github.com/herdifirdausss/seev/internal/adminbff/web"
 	"github.com/herdifirdausss/seev/internal/config"
+	"github.com/herdifirdausss/seev/pkg/cryptox"
 	"github.com/herdifirdausss/seev/pkg/database"
+	"github.com/herdifirdausss/seev/pkg/retentionworker"
 	"github.com/herdifirdausss/seev/pkg/scheduler"
 	"github.com/herdifirdausss/seev/pkg/tlsx"
 )
 
 type Module struct {
+	db        database.DatabaseSQL
 	repo      SessionRepository
 	audit     auditWriter
 	auditRead auditReader
@@ -58,17 +60,41 @@ func NewModule(db database.DatabaseSQL, cfg config.AdminBFFConfig, logger *slog.
 		Fraud:     client.New("fraud", cfg.FraudServiceURL, internalClient(tlsx.IdentityFraud)),
 		Gateway:   client.New("gateway", cfg.GatewayServiceURL, internalClient(tlsx.IdentityGateway)),
 	}
-	return &Module{repo: NewSessionRepository(db), auth: NewAuthClient(cfg.AuthServiceURL), clients: clients, cfg: cfg, logger: logger,
+	return &Module{db: db, repo: NewSessionRepository(db, nil), auth: NewAuthClient(cfg.AuthServiceURL), clients: clients, cfg: cfg, logger: logger,
 		audit: auditRepo, auditRead: auditRepo,
-		lock: lock, scheduler: scheduler.NewScheduler(lock, scheduler.NewPrometheusMetrics())}
+		lock: lock, scheduler: scheduler.NewScheduler(lock, scheduler.NewPrometheusMetrics(), scheduler.WithLocation(retentionworker.JakartaLocation))}
 }
 
+// SetCryptoxRing wires docs/roadmap/active/51-a8-data-lifecycle-privacy.md T2.4's K2/K3
+// field encryption for sessions.email — same nil-safe optionality as
+// internal/auth.Module.SetCryptoxRing: a nil ring leaves every read/write
+// exactly as it behaved before this task. audit_log.email's masking
+// (cryptox.MaskEmail) needs no key at all and is always active
+// regardless of whether this is ever called — see audit.go's own comment.
+func (m *Module) SetCryptoxRing(ring *cryptox.Ring) {
+	m.repo = NewSessionRepository(m.db, ring)
+}
+
+// Start registers the docs/roadmap/active/51-a8-data-lifecycle-privacy.md T1 data-retention
+// job on this module's own scheduler (reused directly — adminbff already
+// runs exactly one shared scheduler for all its cron jobs, unlike ledger's
+// one-scheduler-per-job convention). Replaces the old
+// "adminbff-session-cleanup" cron, which called a plain `DELETE FROM
+// sessions` that has always failed with "permission denied" in every real
+// deployment (adminbff_app was never granted DELETE) — the new
+// SECURITY DEFINER retention function fixes that as a side effect of
+// enforcing K4's own no-broad-DELETE-grant rule, not by widening the grant.
 func (m *Module) Start() error {
 	var startErr error
 	m.startOnce.Do(func() {
-		startErr = m.scheduler.Cron("adminbff-session-cleanup", "*/5 * * * *", func(ctx context.Context) error {
-			return m.repo.CleanupSessions(ctx, time.Now())
+		var runner *retentionworker.Runner
+		runner, startErr = retentionworker.NewRunner("adminbff", m.db, []retentionworker.Class{
+			{Name: "adminbff.sessions", Action: "delete", FunctionName: "fn_retention_purge_sessions"},
 		})
+		if startErr != nil {
+			return
+		}
+		startErr = runner.Start(m.scheduler)
 	})
 	return startErr
 }
@@ -101,6 +127,9 @@ func (m *Module) AdminRouter() http.Handler {
 	mux.Handle("/api/v1/admin/payout/", m.proxy("payout", m.clients.Payout, "/api/v1/admin/payout/", "/admin/payout/"))
 	mux.Handle("/api/v1/admin/fraud/", m.proxy("fraud", m.clients.Fraud, "/api/v1/admin/fraud/", "/api/v1/admin/fraud/"))
 	mux.Handle("/api/v1/admin/kyc/", m.proxy("auth", m.clients.AuthAdmin, "/api/v1/admin/kyc/", "/api/v1/admin/kyc/"))
+	// docs/roadmap/active/51 T6: read-only status panel for export/closure requests
+	// (never subject data — see internal/auth.AdminPrivacyRequest's own doc comment).
+	mux.Handle("/api/v1/admin/privacy/", m.proxy("auth", m.clients.AuthAdmin, "/api/v1/admin/privacy/", "/api/v1/admin/privacy/"))
 	mux.Handle("/api/v1/admin/gateway/", m.proxy("gateway", m.clients.Gateway, "/api/v1/admin/gateway/", "/api/v1/admin/gateway/"))
 	mux.HandleFunc("/api/v1/admin/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/v1/admin/" {

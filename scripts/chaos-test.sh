@@ -507,8 +507,29 @@ scenario_5() {
 	# that backoff naturally elapses, well past this scenario's own wait.
 	psql_exec "$PAYOUT_DB_NAME" -c "UPDATE payout_vendor_commands SET next_attempt_at = now() WHERE payout_request_id IN (SELECT id FROM payout_requests WHERE user_id='$user_id' AND status IN ('created','held','submitted','vendor_pending'));" >/dev/null
 
-	log "waiting for the resume job's cron tick (every 1 minute) to pick up all four requests..."
-	sleep 125
+	log "waiting for all five requests to reach a terminal 'settled' state..."
+	# A fixed sleep here undercounts real recovery time: pkg/grpcx's client to
+	# ledger uses grpc-go's default "lazy reconnect" backoff (intentional,
+	# see pkg/grpcx's own comment) rather than an eager reconnect, so after a
+	# >2-minute ledger outage the client can take on the order of 200s to
+	# even notice ledger is reachable again — independent of how many resume
+	# ticks fire in the meantime, since each one fails fast against the same
+	# still-backing-off connection. Poll for the real terminal condition
+	# instead of guessing a fixed budget; five cron ticks (five minutes) is
+	# comfortably past the measured worst case observed live while
+	# diagnosing this.
+	local poll_tries=60 all_settled=0
+	while [ "$poll_tries" -gt 0 ]; do
+		local settled_count
+		settled_count="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT count(*) FROM payout_requests WHERE id IN ('$id_created','$id_held','$id_submitted','$id_pending','$id_ledger') AND status = 'settled';")"
+		if [ "$settled_count" = "5" ]; then
+			all_settled=1
+			break
+		fi
+		sleep 5
+		poll_tries=$((poll_tries - 1))
+	done
+	[ "$all_settled" = "1" ] || log "not all five requests reached 'settled' within the poll budget — asserting individually below for a precise per-request failure"
 
 	log "asserting terminal states for created/held/submitted, and correct polling for vendor_pending..."
 	local final_created final_held final_submitted final_pending

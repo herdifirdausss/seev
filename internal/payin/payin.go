@@ -23,6 +23,7 @@ import (
 	"github.com/herdifirdausss/seev/internal/payin/model"
 	"github.com/herdifirdausss/seev/internal/payin/repository"
 	"github.com/herdifirdausss/seev/internal/vendorgw"
+	"github.com/herdifirdausss/seev/pkg/cryptox"
 	"github.com/herdifirdausss/seev/pkg/database"
 	"github.com/herdifirdausss/seev/pkg/fraudcheck"
 	"github.com/herdifirdausss/seev/pkg/generalutil"
@@ -88,7 +89,7 @@ func NewModule(db database.DatabaseSQL, poster Poster, registry *vendorgw.Regist
 	}
 	return &Module{
 		db:          db,
-		repo:        repository.NewRepository(db),
+		repo:        repository.NewRepository(db, nil),
 		routing:     repository.NewRoutingRepository(db),
 		poster:      poster,
 		registry:    registry,
@@ -97,6 +98,14 @@ func NewModule(db database.DatabaseSQL, poster Poster, registry *vendorgw.Regist
 		fraudClient: fraudClient,
 		breaker:     breaker,
 	}
+}
+
+// SetCryptoxRing wires docs/roadmap/active/51-a8-data-lifecycle-privacy.md T2.4's K2/K3
+// field encryption for payin_webhook_events.raw — same nil-safe
+// optionality as internal/auth.Module.SetCryptoxRing: a nil ring leaves
+// every read/write exactly as it behaved before this task.
+func (m *Module) SetCryptoxRing(ring *cryptox.Ring) {
+	m.repo = repository.NewRepository(m.db, ring)
 }
 
 // HandleWebhook processes one webhook delivery end to end (docs/roadmap/archive/22

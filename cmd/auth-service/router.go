@@ -32,6 +32,42 @@ type kycHandlers interface {
 	AdminDownloadKYCDocumentHandler() http.HandlerFunc
 }
 
+// privacyHandlers is docs/roadmap/active/51-a8-data-lifecycle-privacy.md T4's (K9) export
+// route set — a separate interface (not folded into authHandlers), same
+// optional-type-assertion convention as kycHandlers, so a test harness
+// that only implements a subset of *Module's surface still compiles.
+type privacyHandlers interface {
+	CreateExportHandler() http.HandlerFunc
+	ExportStatusHandler() http.HandlerFunc
+	DownloadExportHandler() http.HandlerFunc
+}
+
+// closureHandlers is docs/roadmap/active/51-a8-data-lifecycle-privacy.md T5's (K10) account
+// closure route set — its own interface, same optional-type-assertion
+// convention as privacyHandlers/kycHandlers above.
+type closureHandlers interface {
+	CreateClosureHandler() http.HandlerFunc
+	ClosureStatusHandler() http.HandlerFunc
+}
+
+// privacyAdminHandlers is docs/roadmap/active/51-a8-data-lifecycle-privacy.md T6's own admin
+// BFF status panel — internal-router-only, same optional-type-assertion
+// convention as the other handler interfaces above.
+type privacyAdminHandlers interface {
+	AdminPrivacyRequestsHandler() http.HandlerFunc
+}
+
+// operatorOffboardingHandlers is docs/roadmap/active/51-a8-data-lifecycle-privacy.md
+// T5's own work item 2 (K10, A8 T5b) — maker/checker approval for
+// admin/operator account closure, internal-router-only like
+// privacyAdminHandlers above.
+type operatorOffboardingHandlers interface {
+	AdminProposeOperatorOffboardingHandler() http.HandlerFunc
+	AdminApproveOperatorOffboardingHandler() http.HandlerFunc
+	AdminRejectOperatorOffboardingHandler() http.HandlerFunc
+	AdminListOperatorOffboardingHandler() http.HandlerFunc
+}
+
 func publicRouter(cfg *config.Config, handlers authHandlers, redisCache *cache.Cache, log *slog.Logger) http.Handler {
 	root := http.NewServeMux()
 	apiRoot := http.NewServeMux()
@@ -77,6 +113,15 @@ func publicRouter(cfg *config.Config, handlers authHandlers, redisCache *cache.C
 		api.Handle("GET /users/me/kyc", authed(kyc.KYCStatusHandler()))
 		api.Handle("POST /users/me/kyc/documents", authed(kyc.UploadKYCDocumentHandler()))
 	}
+	if privacy, ok := handlers.(privacyHandlers); ok {
+		api.Handle("POST /users/me/privacy/exports", authed(privacy.CreateExportHandler()))
+		api.Handle("GET /users/me/privacy/requests/{id}", authed(privacy.ExportStatusHandler()))
+		api.Handle("GET /users/me/privacy/exports/{id}/download", authed(privacy.DownloadExportHandler()))
+	}
+	if closureH, ok := handlers.(closureHandlers); ok {
+		api.Handle("POST /users/me/privacy/closure", authed(closureH.CreateClosureHandler()))
+		api.Handle("GET /users/me/privacy/closure/{id}", authed(closureH.ClosureStatusHandler()))
+	}
 	apiRoot.Handle("/api/v1/", http.StripPrefix("/api/v1", api))
 	apiRoot.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) { http.NotFound(w, r) })
 	root.Handle("/", global(apiRoot))
@@ -97,6 +142,17 @@ func internalRouter(args ...any) http.Handler {
 			mux.Handle("POST /api/v1/admin/kyc/submissions/{id}/reject", authedAdmin(handlers.AdminRejectKYCHandler()))
 			mux.Handle("POST /api/v1/admin/kyc/users/{id}/downgrade", authedAdmin(handlers.AdminDowngradeKYCHandler()))
 			mux.Handle("GET /api/v1/admin/kyc/documents/{id}", authedAdmin(handlers.AdminDownloadKYCDocumentHandler()))
+		}
+		if privacyAdmin, ok := args[1].(privacyAdminHandlers); ok && cfgOK {
+			authedAdmin := middleware.Chain(middleware.WithAuth(cfg.JWT.Secret, cfg.JWT.Issuer), middleware.WithRole("admin", "admin_maker", "admin_checker"), middleware.RequireJSON())
+			mux.Handle("GET /api/v1/admin/privacy/requests", authedAdmin(privacyAdmin.AdminPrivacyRequestsHandler()))
+		}
+		if offboarding, ok := args[1].(operatorOffboardingHandlers); ok && cfgOK {
+			authedAdmin := middleware.Chain(middleware.WithAuth(cfg.JWT.Secret, cfg.JWT.Issuer), middleware.WithRole("admin", "admin_maker", "admin_checker"), middleware.RequireJSON())
+			mux.Handle("POST /api/v1/admin/privacy/operator-offboarding", authedAdmin(offboarding.AdminProposeOperatorOffboardingHandler()))
+			mux.Handle("POST /api/v1/admin/privacy/operator-offboarding/{id}/approve", authedAdmin(offboarding.AdminApproveOperatorOffboardingHandler()))
+			mux.Handle("POST /api/v1/admin/privacy/operator-offboarding/{id}/reject", authedAdmin(offboarding.AdminRejectOperatorOffboardingHandler()))
+			mux.Handle("GET /api/v1/admin/privacy/operator-offboarding", authedAdmin(offboarding.AdminListOperatorOffboardingHandler()))
 		}
 	}
 	return mux

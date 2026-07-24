@@ -23,7 +23,7 @@ import (
 // attempt-1 command, together.
 func TestEnqueueInitialSubmit_TransitionsAndInsertsCommandAtomically(t *testing.T) {
 	db := setupTestDB(t)
-	repo := repository.NewRepository(db)
+	repo := repository.NewRepository(db, nil)
 	cmdRepo := repository.NewVendorCommandRepository(db)
 	ctx := context.Background()
 
@@ -54,7 +54,7 @@ func TestEnqueueInitialSubmit_TransitionsAndInsertsCommandAtomically(t *testing.
 // vendor_pending gets no transition and no command, not a partial effect.
 func TestEnqueueInitialSubmit_WrongStatus_NoOp(t *testing.T) {
 	db := setupTestDB(t)
-	repo := repository.NewRepository(db)
+	repo := repository.NewRepository(db, nil)
 	cmdRepo := repository.NewVendorCommandRepository(db)
 	ctx := context.Background()
 
@@ -84,7 +84,7 @@ func TestEnqueueInitialSubmit_WrongStatus_NoOp(t *testing.T) {
 // not left half-applied.
 func TestEnqueueInitialSubmit_RollsBackTransitionWhenCommandConflicts(t *testing.T) {
 	db := setupTestDB(t)
-	repo := repository.NewRepository(db)
+	repo := repository.NewRepository(db, nil)
 	ctx := context.Background()
 
 	req := newTestRequest()
@@ -114,7 +114,7 @@ func TestEnqueueInitialSubmit_RollsBackTransitionWhenCommandConflicts(t *testing
 
 func TestEnsureSubmitCommand_InsertsWhenNoneLive_NoOpWhenLiveExists(t *testing.T) {
 	db := setupTestDB(t)
-	repo := repository.NewRepository(db)
+	repo := repository.NewRepository(db, nil)
 	cmdRepo := repository.NewVendorCommandRepository(db)
 	ctx := context.Background()
 
@@ -145,7 +145,7 @@ func TestEnsureSubmitCommand_InsertsWhenNoneLive_NoOpWhenLiveExists(t *testing.T
 
 func TestCompleteAndEnqueueFailover_AtomicFailover(t *testing.T) {
 	db := setupTestDB(t)
-	repo := repository.NewRepository(db)
+	repo := repository.NewRepository(db, nil)
 	cmdRepo := repository.NewVendorCommandRepository(db)
 	ctx := context.Background()
 
@@ -189,7 +189,7 @@ func TestCompleteAndEnqueueFailover_AtomicFailover(t *testing.T) {
 // never a clobber of the winner.
 func TestCompleteAndEnqueueFailover_VendorMismatch_NoOp(t *testing.T) {
 	db := setupTestDB(t)
-	repo := repository.NewRepository(db)
+	repo := repository.NewRepository(db, nil)
 	cmdRepo := repository.NewVendorCommandRepository(db)
 	ctx := context.Background()
 
@@ -223,7 +223,7 @@ func TestCompleteAndEnqueueFailover_VendorMismatch_NoOp(t *testing.T) {
 // lease" proof for FOR UPDATE SKIP LOCKED.
 func TestClaimPendingCommands_ConcurrentCallers_OneOwnerPerLease(t *testing.T) {
 	db := setupTestDB(t)
-	repo := repository.NewRepository(db)
+	repo := repository.NewRepository(db, nil)
 	cmdRepo := repository.NewVendorCommandRepository(db)
 	ctx := context.Background()
 
@@ -268,7 +268,7 @@ func TestClaimPendingCommands_ConcurrentCallers_OneOwnerPerLease(t *testing.T) {
 
 func TestFailCommand_BackoffThenDeadLetterThenReplay(t *testing.T) {
 	db := setupTestDB(t)
-	repo := repository.NewRepository(db)
+	repo := repository.NewRepository(db, nil)
 	cmdRepo := repository.NewVendorCommandRepository(db)
 	ctx := context.Background()
 
@@ -325,7 +325,7 @@ func TestFailCommand_BackoffThenDeadLetterThenReplay(t *testing.T) {
 // vendor call itself completed).
 func TestReapStuckCommands(t *testing.T) {
 	db := setupTestDB(t)
-	repo := repository.NewRepository(db)
+	repo := repository.NewRepository(db, nil)
 	cmdRepo := repository.NewVendorCommandRepository(db)
 	ctx := context.Background()
 
@@ -361,7 +361,7 @@ func TestReapStuckCommands(t *testing.T) {
 // be claimable, even though it's already 'failed'.
 func TestClaimFailedCommandsForRetry_RespectsBackoff(t *testing.T) {
 	db := setupTestDB(t)
-	repo := repository.NewRepository(db)
+	repo := repository.NewRepository(db, nil)
 	cmdRepo := repository.NewVendorCommandRepository(db)
 	ctx := context.Background()
 
@@ -392,7 +392,7 @@ func TestClaimFailedCommandsForRetry_RespectsBackoff(t *testing.T) {
 // safety proof for EnsureSubmitCommand's own conflict handling.
 func TestConcurrentEnsureSubmitCommand_ExactlyOneWins(t *testing.T) {
 	db := setupTestDB(t)
-	repo := repository.NewRepository(db)
+	repo := repository.NewRepository(db, nil)
 	cmdRepo := repository.NewVendorCommandRepository(db)
 	ctx := context.Background()
 

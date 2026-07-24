@@ -2,6 +2,7 @@ package config
 
 import (
 	"crypto/tls"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/url"
@@ -13,6 +14,7 @@ import (
 	"github.com/joho/godotenv"
 
 	"github.com/herdifirdausss/seev/pkg/cache"
+	"github.com/herdifirdausss/seev/pkg/cryptox"
 	"github.com/herdifirdausss/seev/pkg/database"
 	"github.com/herdifirdausss/seev/pkg/logger"
 	"github.com/herdifirdausss/seev/pkg/messaging"
@@ -35,6 +37,31 @@ type Config struct {
 	Breaker   BreakerConfig
 	AdminBFF  AdminBFFConfig
 	Assurance AssuranceConfig
+	// LedgerIdempotency is docs/roadmap/active/51-a8-data-lifecycle-privacy.md T3's (K7)
+	// HMAC key ring for ledger idempotency-key digests — ledger-service's
+	// OWN dedicated key material, never shared with Cryptox above (same
+	// K2 principle already applied to LookupKey: encryption keys, lookup
+	// keys, and this digest ring must never be the same key). Unlike
+	// Cryptox, this is required unconditionally in every environment, not
+	// just production, and is enforced directly by cmd/ledger-service's
+	// own main.go rather than this package's shared validate() — every
+	// OTHER service's config would otherwise also be forced to set an env
+	// var that only ledger-service ever uses.
+	LedgerIdempotency LedgerIdempotencyConfig
+	// Export is docs/roadmap/active/51-a8-data-lifecycle-privacy.md T4's (K9) dedicated KEK for
+	// user-export ZIP archives — deliberately its own key namespace,
+	// separate from both Cryptox (field-level envelope encryption) and
+	// LedgerIdempotency (a digest ring, not encryption at all): an export
+	// archive is a much larger, longer-lived, operator-downloadable
+	// artifact than a single field's ciphertext, and K2's own
+	// separate-key-material principle applies here the same way it does
+	// to LookupKey vs Ring.
+	Export ExportConfig
+	// Closure is docs/roadmap/active/51-a8-data-lifecycle-privacy.md T5's (K10) dedicated KEK
+	// for the account-closure saga's active-subject ciphertext — its own key
+	// namespace for the same K2 reason as Export above.
+	Closure ClosureConfig
+	Cryptox CryptoxConfig
 
 	// Cross-process endpoints introduced by the service extraction phases.
 	GRPCPort          string
@@ -44,6 +71,25 @@ type Config struct {
 	PayoutGRPCAddr    string
 	FraudGRPCAddr     string
 	LedgerUserAPIURL  string
+	// LedgerInternalAPIURL is docs/roadmap/active/51-a8-data-lifecycle-privacy.md T5's (K10)
+	// base URL auth-service's closure saga worker calls ledger's internal
+	// (:8091-class) ClosureRouter on — deliberately separate from
+	// LedgerUserAPIURL above (that one is the PUBLIC :8090 port gateway
+	// proxies to; closure/prepare/commit must never be reachable there).
+	LedgerInternalAPIURL string
+	// PayinInternalAPIURL/PayoutInternalAPIURL/FraudInternalAPIURL/
+	// GatewayInternalAPIURL are docs/roadmap/active/51 T5b's (K10/K11) base URLs
+	// auth-service's closure saga worker calls each owner's own
+	// /privacy/closure/{prepare,commit} and /privacy/export routes on.
+	// Unlike ledger, these four owners have only ONE HTTP listener each
+	// (already mTLS-gated) — the same base URL admin-bff's own
+	// AdminBFFConfig.{Payin,Payout,Fraud,Gateway}ServiceURL point at, but
+	// declared separately here since auth-service is a different process
+	// with its own config load path.
+	PayinInternalAPIURL   string
+	PayoutInternalAPIURL  string
+	FraudInternalAPIURL   string
+	GatewayInternalAPIURL string
 
 	// TLSCertDir is where cmd/certgen (docs/roadmap/archive/49 K3) writes ca.pem plus
 	// one <service>.pem/<service>-key.pem pair per identity — every
@@ -195,6 +241,78 @@ type AssuranceConfig struct {
 	RPCTimeout       time.Duration
 	Concurrency      int
 	AlertWebhookURL  string
+}
+
+// CryptoxConfig is docs/roadmap/active/51-a8-data-lifecycle-privacy.md T2's shared, cluster-wide
+// pkg/cryptox key set — one KEK ring and one lookup key for every service,
+// the same deliberate choice this repo already made for JWT_SECRET and
+// INTERNAL_GRPC_TOKEN (scripts/vault-seed.sh's own comment: "shared
+// cluster-wide... one value generated once and written identically into
+// every service's own KV v2 entry"). Field-level isolation between
+// services comes from pkg/cryptox.AAD's Service/Table/Column binding, not
+// from separate key material — a ciphertext sealed by one service can
+// never be opened under another service's AAD context regardless of
+// whether the underlying key is shared.
+type CryptoxConfig struct {
+	CurrentVersion int
+	Keys           map[int]string // version -> hex-encoded 32-byte key
+	LookupKey      string         // hex-encoded 32-byte key; "" if unset (only auth's email lookup needs one)
+}
+
+// Ring decodes Keys and constructs a *cryptox.Ring — hex-decode errors and
+// NewRing's own validation (key size, current-version-present) both
+// surface here, at the same "fail at boot, not at first write" point
+// every other required config value already fails at.
+func (c CryptoxConfig) Ring() (*cryptox.Ring, error) {
+	keys := make(map[int][]byte, len(c.Keys))
+	for version, hexKey := range c.Keys {
+		raw, err := hex.DecodeString(hexKey)
+		if err != nil {
+			return nil, fmt.Errorf("config: CRYPTOX_KEY_V%d is not valid hex: %w", version, err)
+		}
+		keys[version] = raw
+	}
+	return cryptox.NewRing(keys, c.CurrentVersion)
+}
+
+// Lookup decodes LookupKey and constructs a *cryptox.LookupKey. Returns
+// (nil, nil) when LookupKey is unset — callers that don't need
+// deterministic lookups (every service except auth's email uniqueness
+// check) never construct one at all.
+func (c CryptoxConfig) Lookup() (*cryptox.LookupKey, error) {
+	if c.LookupKey == "" {
+		return nil, nil
+	}
+	raw, err := hex.DecodeString(c.LookupKey)
+	if err != nil {
+		return nil, fmt.Errorf("config: CRYPTOX_LOOKUP_KEY is not valid hex: %w", err)
+	}
+	return cryptox.NewLookupKey(raw)
+}
+
+// LedgerIdempotencyConfig is docs/roadmap/active/51-a8-data-lifecycle-privacy.md T3's
+// versioned HMAC key ring for ledger idempotency-key digests (K7) — same
+// shape as CryptoxConfig (current version + version->hex-key map) but a
+// completely separate key namespace, since this ring exists purely to
+// enforce a permanent uniqueness constraint, never to encrypt/decrypt
+// anything Ring/LookupKey touch.
+type LedgerIdempotencyConfig struct {
+	CurrentVersion int
+	Keys           map[int]string // version -> hex-encoded 32-byte key
+}
+
+// Ring decodes Keys and constructs a *cryptox.DigestRing — same
+// fail-at-construction reasoning as CryptoxConfig.Ring.
+func (c LedgerIdempotencyConfig) Ring() (*cryptox.DigestRing, error) {
+	keys := make(map[int][]byte, len(c.Keys))
+	for version, hexKey := range c.Keys {
+		raw, err := hex.DecodeString(hexKey)
+		if err != nil {
+			return nil, fmt.Errorf("config: LEDGER_IDEMPOTENCY_KEY_V%d is not valid hex: %w", version, err)
+		}
+		keys[version] = raw
+	}
+	return cryptox.NewDigestRing(keys, c.CurrentVersion)
 }
 
 type AppConfig struct {
@@ -590,14 +708,30 @@ func loadFromEnvMode(getenv func(string) string, requireRabbitMQ bool) (*Config,
 			Concurrency:      parseInt(getenv("ASSURANCE_CONCURRENCY"), 2),
 			AlertWebhookURL:  getenv("ALERT_WEBHOOK_URL"),
 		},
-		GRPCPort:          getWithDefault(getenv, "GRPC_PORT", "9091"),
-		InternalGRPCToken: getenv("INTERNAL_GRPC_TOKEN"),
-		LedgerGRPCAddr:    getWithDefault(getenv, "LEDGER_GRPC_ADDR", "localhost:9091"),
-		PayinGRPCAddr:     getWithDefault(getenv, "PAYIN_GRPC_ADDR", "localhost:9092"),
-		PayoutGRPCAddr:    getWithDefault(getenv, "PAYOUT_GRPC_ADDR", "localhost:9093"),
-		FraudGRPCAddr:     getenv("FRAUD_GRPC_ADDR"),
-		LedgerUserAPIURL:  getWithDefault(getenv, "LEDGER_USER_API_URL", "https://localhost:8090"),
-		TLSCertDir:        getWithDefault(getenv, "TLS_CERT_DIR", "deploy/certs"),
+		Cryptox: CryptoxConfig{
+			CurrentVersion: parseInt(getenv("CRYPTOX_KEY_CURRENT_VERSION"), 1),
+			Keys:           loadVersionedKeys(getenv, "CRYPTOX_KEY_V"),
+			LookupKey:      firstNonEmpty(readOptionalSecretFile(getenv("CRYPTOX_LOOKUP_KEY_FILE")), getenv("CRYPTOX_LOOKUP_KEY")),
+		},
+		LedgerIdempotency: LedgerIdempotencyConfig{
+			CurrentVersion: parseInt(getenv("LEDGER_IDEMPOTENCY_KEY_CURRENT_VERSION"), 1),
+			Keys:           loadVersionedKeys(getenv, "LEDGER_IDEMPOTENCY_KEY_V"),
+		},
+		Export:                loadExportConfig(getenv),
+		Closure:               loadClosureConfig(getenv),
+		GRPCPort:              getWithDefault(getenv, "GRPC_PORT", "9091"),
+		InternalGRPCToken:     getenv("INTERNAL_GRPC_TOKEN"),
+		LedgerGRPCAddr:        getWithDefault(getenv, "LEDGER_GRPC_ADDR", "localhost:9091"),
+		PayinGRPCAddr:         getWithDefault(getenv, "PAYIN_GRPC_ADDR", "localhost:9092"),
+		PayoutGRPCAddr:        getWithDefault(getenv, "PAYOUT_GRPC_ADDR", "localhost:9093"),
+		FraudGRPCAddr:         getenv("FRAUD_GRPC_ADDR"),
+		LedgerUserAPIURL:      getWithDefault(getenv, "LEDGER_USER_API_URL", "https://localhost:8090"),
+		LedgerInternalAPIURL:  getWithDefault(getenv, "LEDGER_INTERNAL_API_URL", "https://localhost:8091"),
+		PayinInternalAPIURL:   getWithDefault(getenv, "PAYIN_INTERNAL_API_URL", "https://localhost:8092"),
+		PayoutInternalAPIURL:  getWithDefault(getenv, "PAYOUT_INTERNAL_API_URL", "https://localhost:8093"),
+		FraudInternalAPIURL:   getWithDefault(getenv, "FRAUD_INTERNAL_API_URL", "https://localhost:8094"),
+		GatewayInternalAPIURL: getWithDefault(getenv, "GATEWAY_INTERNAL_API_URL", "https://localhost:8081"),
+		TLSCertDir:            getWithDefault(getenv, "TLS_CERT_DIR", "deploy/certs"),
 	}
 
 	if err := validate(cfg, requireRabbitMQ, &errs); err != nil {
@@ -609,6 +743,64 @@ func loadFromEnvMode(getenv func(string) string, requireRabbitMQ bool) (*Config,
 	}
 
 	return cfg, nil
+}
+
+// maxVersionedKeys bounds how many <prefix><N> env vars
+// loadVersionedKeys scans for. A generous ceiling for realistic rotation
+// history — K3's own rotation runbook retires old versions once nothing
+// still references them, so a real deployment is never expected to
+// approach this. Shared by both CryptoxConfig and LedgerIdempotencyConfig
+// (docs/roadmap/active/51 T3) — same scanning rule, different key namespace.
+const maxVersionedKeys = 8
+
+// loadVersionedKeys scans "<prefix>1".."<prefix>8" (e.g. CRYPTOX_KEY_V or
+// LEDGER_IDEMPOTENCY_KEY_V), collecting whichever are actually set — a
+// missing version is simply absent from the map, never an error at this
+// stage (each config type's own Ring() and validate's own checks are what
+// enforce "current version must be present"). Each version also accepts
+// "<prefix><N>_FILE" (docs/roadmap/active/51 T2.2's Docker secrets mount — same
+// BACKUP_PASSWORD_FILE convention internal/backupagent/config.go already
+// established): the file wins when both are set, since a compose
+// deployment mounting a real secret file should never be silently
+// overridden by a stray plain env var.
+func loadVersionedKeys(getenv func(string) string, prefix string) map[int]string {
+	keys := make(map[int]string)
+	for v := 1; v <= maxVersionedKeys; v++ {
+		if fromFile := readOptionalSecretFile(getenv(fmt.Sprintf("%s%d_FILE", prefix, v))); fromFile != "" {
+			keys[v] = fromFile
+			continue
+		}
+		if val := getenv(fmt.Sprintf("%s%d", prefix, v)); val != "" {
+			keys[v] = val
+		}
+	}
+	return keys
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+// readOptionalSecretFile reads path (if non-empty) and returns its
+// trimmed contents, or "" on any error (unset path, missing file, etc.) —
+// deliberately non-fatal here, since a service running without any
+// cryptox key configured at all is a valid, already-supported state
+// outside production (validate's own production-only check is what turns
+// "no current key" into a hard boot failure when it matters).
+func readOptionalSecretFile(path string) string {
+	if path == "" {
+		return ""
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(raw))
 }
 
 func optionalRequired(getenv func(string) string, key string, required bool, errs *[]string) string {
@@ -711,6 +903,18 @@ func validate(cfg *Config, requireRabbitMQ bool, errs *[]string) error {
 
 	if len(cfg.JWT.Secret) < 32 {
 		*errs = append(*errs, "JWT_SECRET must be at least 32 characters long")
+	}
+
+	// docs/roadmap/active/51 K3: "service boot fails when a required current key is
+	// missing." Only enforced in production — development/staging may run
+	// with cryptox entirely unconfigured (every writer that needs it fails
+	// its own operation via CryptoxConfig.Ring's own error, not the whole
+	// service refusing to start, matching how a fresh Vault dev instance
+	// with nothing seeded must never block boot either).
+	if cfg.App.Env == "production" {
+		if _, ok := cfg.Cryptox.Keys[cfg.Cryptox.CurrentVersion]; !ok {
+			*errs = append(*errs, fmt.Sprintf("CRYPTOX_KEY_V%d is required in production (CRYPTOX_KEY_CURRENT_VERSION=%d has no matching key)", cfg.Cryptox.CurrentVersion, cfg.Cryptox.CurrentVersion))
+		}
 	}
 
 	// docs/roadmap/archive/49 TM-07: issuer validation used to be skippable by simply

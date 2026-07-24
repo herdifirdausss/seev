@@ -24,6 +24,7 @@ global:
 rule_files:
   - /etc/prometheus/rules/slo.yml
   - /etc/prometheus/rules/backup.yml
+  - /etc/prometheus/rules/retention.yml
 
 scrape_configs:
   - job_name: gateway-service

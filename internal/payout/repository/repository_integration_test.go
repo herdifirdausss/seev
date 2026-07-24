@@ -84,7 +84,7 @@ func newTestRequest() model.PayoutRequest {
 // one winner, never both, never neither.
 func TestTransitionToHeld_ConcurrentCallers_ExactlyOneWins(t *testing.T) {
 	db := setupTestDB(t)
-	repo := repository.NewRepository(db)
+	repo := repository.NewRepository(db, nil)
 	ctx := context.Background()
 
 	req := newTestRequest()
@@ -133,7 +133,7 @@ func TestTransitionToHeld_ConcurrentCallers_ExactlyOneWins(t *testing.T) {
 // concurrent same-status races).
 func TestTransitionToHeld_WrongStartingStatus_NoOp(t *testing.T) {
 	db := setupTestDB(t)
-	repo := repository.NewRepository(db)
+	repo := repository.NewRepository(db, nil)
 	ctx := context.Background()
 
 	req := newTestRequest()
@@ -157,7 +157,7 @@ func TestTransitionToHeld_WrongStartingStatus_NoOp(t *testing.T) {
 
 func TestFullLifecycle_CreatedToSettled(t *testing.T) {
 	db := setupTestDB(t)
-	repo := repository.NewRepository(db)
+	repo := repository.NewRepository(db, nil)
 	ctx := context.Background()
 
 	req := newTestRequest()
@@ -191,7 +191,7 @@ func TestFullLifecycle_CreatedToSettled(t *testing.T) {
 
 func TestInsertVendorCall_And_ListStuck(t *testing.T) {
 	db := setupTestDB(t)
-	repo := repository.NewRepository(db)
+	repo := repository.NewRepository(db, nil)
 	ctx := context.Background()
 
 	req := newTestRequest()

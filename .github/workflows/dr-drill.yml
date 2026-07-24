@@ -1,0 +1,191 @@
+name: DR Game Day
+
+# docs/roadmap/active/50 (Track A7) T6: the scripted end-to-end disaster-recovery
+# rehearsal (scripts/dr-drill.sh) run on a schedule so a future regression in
+# backup, restore, cross-database verification, or the session fence is
+# caught automatically instead of only being discovered during a real
+# incident. Mirrors nightly.yml's own shape (K7 in that file): one job, one
+# runner (Docker/process state must not be split across `needs:` jobs), a
+# workflow_dispatch input for on-demand runs, and a schedule that always
+# exercises the full "both" set regardless of the input's default.
+on:
+  schedule:
+    # 1st of the month, 19:31 UTC (02:31 WIB the following day — cron has
+    # no "last day of month" primitive, so this uses a plain calendar-day
+    # match instead of the day-range trick that would fire multiple times
+    # in a 29-31 day month). Off-the-hour minute (matches nightly.yml's
+    # own K1 convention) to avoid the top-of-hour scheduling rush.
+    - cron: "31 19 1 * *"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Which drill mode(s) to run"
+        type: choice
+        options:
+          - both
+          - latest
+          - pitr
+        default: both
+
+permissions:
+  contents: read
+
+concurrency:
+  # Fixed group (not per-ref) — a manual run must never silently cancel a
+  # scheduled run mid-drill, or vice versa; they queue instead.
+  group: dr-game-day
+  cancel-in-progress: false
+
+jobs:
+  game-day:
+    name: game-day
+    runs-on: ubuntu-24.04
+    # A full latest+pitr pair chains Postgres/Redis/RabbitMQ startup, a
+    # real pgBackRest full backup, application boot (8 Go services built
+    # from source), restore+promote, drverify, drreseed, the security
+    # fence, a second application boot, and the business smoke test —
+    # twice. The A7 RTO budget alone is 20 minutes per mode; this ceiling
+    # leaves real headroom for image/dependency setup on a cold runner.
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    env:
+      MODE: ${{ github.event_name == 'schedule' && 'both' || inputs.mode }}
+      KEEP_WORK_DIR: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Read Go version from go.mod
+        id: goversion
+        run: echo "version=$(grep -E '^go ' go.mod | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ steps.goversion.outputs.version }}
+          cache: true
+
+      # docs/roadmap/active/50 K6: generated fresh per run, masked BEFORE landing in
+      # $GITHUB_ENV — same pattern nightly.yml already established. The
+      # drill's own scripts fall back to a fixed dev placeholder when these
+      # are unset, so this step exists for defense in depth, not because
+      # the drill would otherwise fail.
+      - name: Generate per-run credentials
+        run: |
+          set -euo pipefail
+          JWT_SECRET="$(openssl rand -hex 32)"
+          INTERNAL_GRPC_TOKEN="$(openssl rand -hex 32)"
+          VENDOR_MOCKVENDOR_SECRET="$(openssl rand -hex 32)"
+          MOCKVENDOR2_SECRET="$(openssl rand -hex 32)"
+
+          echo "::add-mask::$JWT_SECRET"
+          echo "::add-mask::$INTERNAL_GRPC_TOKEN"
+          echo "::add-mask::$VENDOR_MOCKVENDOR_SECRET"
+          echo "::add-mask::$MOCKVENDOR2_SECRET"
+
+          {
+            echo "JWT_SECRET=$JWT_SECRET"
+            echo "INTERNAL_GRPC_TOKEN=$INTERNAL_GRPC_TOKEN"
+            echo "VENDOR_MOCKVENDOR_SECRET=$VENDOR_MOCKVENDOR_SECRET"
+            echo "MOCKVENDOR2_SECRET=$MOCKVENDOR2_SECRET"
+          } >> "$GITHUB_ENV"
+
+      - name: make certs
+        run: make certs
+
+      - name: make backup-secret
+        run: make backup-secret
+
+      - name: Build the pinned postgres+pgBackRest image
+        run: docker compose build postgres
+
+      - name: Compute report paths
+        run: |
+          {
+            echo "LATEST_REPORT=$RUNNER_TEMP/dr-drill-latest-report.json"
+            echo "PITR_REPORT=$RUNNER_TEMP/dr-drill-pitr-report.json"
+          } >> "$GITHUB_ENV"
+
+      - name: Drill — latest
+        id: latest
+        if: env.MODE == 'latest' || env.MODE == 'both'
+        continue-on-error: true
+        env:
+          DRILL_REPORT_PATH: ${{ env.LATEST_REPORT }}
+        run: ./scripts/dr-drill.sh latest
+
+      - name: Drill — pitr
+        id: pitr
+        if: env.MODE == 'pitr' || env.MODE == 'both'
+        continue-on-error: true
+        env:
+          DRILL_REPORT_PATH: ${{ env.PITR_REPORT }}
+        run: ./scripts/dr-drill.sh pitr
+
+      # Outcome-based, not parsed from colored log lines — same convention
+      # as nightly.yml's own summary step.
+      - name: Write summary
+        if: always()
+        run: |
+          {
+            echo "## DR game day — mode: \`${MODE}\`"
+            echo ""
+            echo "| Drill | Outcome |"
+            echo "|---|---|"
+            echo "| latest | ${{ steps.latest.outcome || '_skipped_' }} |"
+            echo "| pitr | ${{ steps.pitr.outcome || '_skipped_' }} |"
+            echo ""
+            if [ -f "$LATEST_REPORT" ]; then
+              echo "### latest report"
+              echo '```json'
+              cat "$LATEST_REPORT"
+              echo '```'
+            fi
+            if [ -f "$PITR_REPORT" ]; then
+              echo "### pitr report"
+              echo '```json'
+              cat "$PITR_REPORT"
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Belt-and-suspenders: scripts/dr-drill.sh already traps EXIT with
+      # its own cleanup_all (names both projects explicitly, prints the
+      # target volumes before removing anything — never an unscoped
+      # `docker compose down -v`). Re-running cleanup here is a no-op on
+      # the success path and only matters if the runner itself was killed
+      # mid-drill (e.g. the timeout above), in which case the script's own
+      # trap never got to run.
+      - name: Final cleanup
+        if: always()
+        run: ./scripts/dr-drill.sh cleanup
+
+      # Only the drill's own sanitized JSON reports (stage timestamps,
+      # measured RPO/RTO, pass/fail) — never backup data, never
+      # deploy/backup/secrets, never deploy/certs, never a raw work-dir
+      # dump. cmd/drverify and cmd/drreseed's own reports (surfaced only
+      # in the job log on failure, per the drill script itself, not
+      # uploaded here) contain counts and UUIDs, never row values or
+      # secrets, but are deliberately kept out of the long-lived artifact
+      # store too — the job log is enough for triage, and the smaller the
+      # artifact, the smaller the review surface for what "sanitized"
+      # actually has to mean here.
+      - name: Upload sanitized drill reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dr-game-day-reports
+          path: |
+            ${{ env.LATEST_REPORT }}
+            ${{ env.PITR_REPORT }}
+          retention-days: 90
+          if-no-files-found: ignore
+
+      - name: Fail the job if a selected drill failed
+        if: steps.latest.outcome == 'failure' || steps.pitr.outcome == 'failure'
+        run: |
+          echo "::error::one or more selected drill modes failed — see summary and job log"
+          exit 1

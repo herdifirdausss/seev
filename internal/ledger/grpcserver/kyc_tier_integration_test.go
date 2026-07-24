@@ -66,7 +66,7 @@ func setupKycTierTestServer(t *testing.T) (ledgerv1.LedgerServiceClient, *databa
 	})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
-	module := ledger.NewModule(db, nil, nil, ledger.WorkerConfig{}, slog.Default(), decimal.Zero, nil, nil, 0)
+	module := ledger.NewModule(db, nil, nil, ledger.WorkerConfig{}, slog.Default(), decimal.Zero, nil, nil, 0, testDigestRing(t))
 
 	listener := bufconn.Listen(1024 * 1024)
 	grpcServer := grpc.NewServer()

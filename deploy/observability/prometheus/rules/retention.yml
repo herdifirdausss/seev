@@ -1,0 +1,119 @@
+# docs/roadmap/active/51 T1.8 (K13) — alerts on pkg/retentionworker's and
+# pkg/objectoutbox's own metrics (pkg/retentionworker/metrics.go,
+# pkg/objectoutbox/metrics.go). Every expression below reads only the
+# fixed, low-cardinality metric set those packages expose — owner, class,
+# action, scope, status, ref_table, result — never a table primary key,
+# object key, or free-text reason (K13's own constraint).
+groups:
+- name: retention-a8
+  interval: 30s
+  rules:
+  - alert: SeevRetentionRunFailing
+    # A class run reported result="error" at least once in the last hour.
+    # One-shot noise from a transient DB blip would be unusual to persist
+    # this long, and the retry cadence is the next scheduled tick — the
+    # 10m for-duration filters a single missed poll before this pages.
+    expr: increase(seev_retention_runs_total{result="error"}[1h]) > 0
+    for: 10m
+    labels:
+      severity: warning
+      service: retention
+    annotations:
+      summary: "a data-retention class run is failing for owner={{ $labels.owner }} action={{ $labels.action }}"
+      runbook: docs/roadmap/active/51-a8-data-lifecycle-privacy.md
+
+  - alert: SeevRetentionRunStale
+    # K6's default schedule is daily 01:30 Asia/Jakarta with deterministic
+    # per-service jitter — 26h covers one full day plus a comfortable
+    # buffer for a single delayed/retried run before this pages anyone.
+    # increase(...) == 0 rather than a last-success timestamp gauge: this
+    # package intentionally has no such gauge yet (see T1.8's own Result
+    # note on the deferred seev_retention_oldest_eligible_age_seconds
+    # metric — the same reasoning applies here), so staleness is inferred
+    # from the counter's own rolling window instead.
+    expr: increase(seev_retention_runs_total{result="ok"}[26h]) == 0
+    for: 5m
+    labels:
+      severity: warning
+      service: retention
+    annotations:
+      summary: "no successful data-retention run for owner={{ $labels.owner }} action={{ $labels.action }} in over 26 hours"
+      runbook: docs/roadmap/active/51-a8-data-lifecycle-privacy.md
+
+  - alert: SeevObjectOutboxDeleteFailing
+    # K6's object-delete outbox: a storage outage must never let metadata
+    # claim an object was removed, but repeated failures mean a growing
+    # backlog of objects that were never actually deleted — worth paging
+    # on, distinct from (and less urgent than) a full retention-run error.
+    expr: increase(seev_object_outbox_failures_total[1h]) > 0
+    for: 30m
+    labels:
+      severity: warning
+      service: retention
+    annotations:
+      summary: "object-store deletes are failing for owner={{ $labels.owner }} ref_table={{ $labels.ref_table }} — objects are retried, not lost, but the backlog is growing"
+      runbook: docs/roadmap/active/51-a8-data-lifecycle-privacy.md
+
+# docs/roadmap/active/51 T6 (K13) — alerts on T4/T5's privacy-request metrics
+# (internal/auth/privacy_metrics.go). Same low-cardinality-only constraint:
+# kind/status/owner/operation/result labels only, never a request id, user
+# id, or free-text error.
+- name: privacy-a8
+  interval: 30s
+  rules:
+  - alert: SeevPrivacyExportStuckCollecting
+    # exportPollInterval is 15s and archive assembly is a single in-memory
+    # ZIP build — a request sitting in 'collecting' this long means the
+    # worker died mid-build or is wedged, not that the build is merely
+    # slow.
+    expr: seev_privacy_requests{kind="export", status="collecting"} > 0
+    for: 15m
+    labels:
+      severity: warning
+      service: privacy
+    annotations:
+      summary: "a privacy export request has been stuck in 'collecting' for over 15 minutes"
+      runbook: docs/roadmap/active/51-a8-data-lifecycle-privacy.md
+
+  - alert: SeevPrivacyClosureStuck
+    # closureBaseBackoff is 30s with up to 5 retries (~8 minutes of
+    # backoff at the very worst) before a closure request either advances
+    # or is marked dead — 30 minutes sitting in an in-flight status means
+    # the worker itself is not ticking, not that a single owner call is
+    # slow.
+    expr: seev_privacy_requests{kind="closure", status=~"preparing|committing"} > 0
+    for: 30m
+    labels:
+      severity: warning
+      service: privacy
+    annotations:
+      summary: "an account-closure request has been stuck in status={{ $labels.status }} for over 30 minutes"
+      runbook: docs/roadmap/active/51-a8-data-lifecycle-privacy.md
+
+  - alert: SeevPrivacyClosureDead
+    # A closure request only reaches 'dead' after closureMaxRetries (5)
+    # transient owner-call failures — this is not self-healing and needs
+    # an operator to investigate and replay (same posture as an outbox
+    # dead-letter), so this pages immediately rather than waiting on a
+    # for-duration.
+    expr: seev_privacy_requests{kind="closure", status="dead"} > 0
+    for: 1m
+    labels:
+      severity: critical
+      service: privacy
+    annotations:
+      summary: "an account-closure request is dead-lettered and needs operator replay"
+      runbook: docs/roadmap/active/51-a8-data-lifecycle-privacy.md
+
+  - alert: SeevPrivacyOwnerCallsFailing
+    # Any owner (ledger, in this pass's scope) prepare/commit call
+    # failing repeatedly is what drives requests toward SeevPrivacyClosureDead
+    # above — this fires earlier, while the saga is still retrying.
+    expr: increase(seev_privacy_owner_calls_total{result="error"}[1h]) > 0
+    for: 15m
+    labels:
+      severity: warning
+      service: privacy
+    annotations:
+      summary: "closure saga owner calls are failing for owner={{ $labels.owner }} operation={{ $labels.operation }}"
+      runbook: docs/roadmap/active/51-a8-data-lifecycle-privacy.md

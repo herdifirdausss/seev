@@ -17,7 +17,7 @@ groups:
       service: backup-agent
     annotations:
       summary: WAL archiving has not advanced within the five-minute RPO budget
-      runbook: docs/operations/runbooks/dr-restore-drill.md
+      runbook: docs/operations/runbooks/wal-archive-lag.md
 
   - alert: SeevBackupRepositoryCheckFailing
     expr: increase(seev_backup_repository_check_total{result="error"}[1h]) > 0
@@ -27,7 +27,7 @@ groups:
       service: backup-agent
     annotations:
       summary: pgBackRest repository check failed — repository integrity is unconfirmed
-      runbook: docs/operations/runbooks/dr-restore-drill.md
+      runbook: docs/operations/runbooks/repository-corruption.md
 
   - alert: SeevBackupFullStale
     # Weekly full (Sunday 02:10 Asia/Jakarta) plus a one-day buffer for a
@@ -39,7 +39,7 @@ groups:
       service: backup-agent
     annotations:
       summary: no successful full backup in over eight days
-      runbook: docs/operations/runbooks/dr-restore-drill.md
+      runbook: docs/operations/runbooks/backup-failure.md
 
   - alert: SeevBackupDiffStale
     # Daily differential (Mon-Sat 02:10 Asia/Jakarta) plus a six-hour
@@ -52,4 +52,4 @@ groups:
       service: backup-agent
     annotations:
       summary: no successful backup (full or differential) in over thirty hours
-      runbook: docs/operations/runbooks/dr-restore-drill.md
+      runbook: docs/operations/runbooks/backup-failure.md

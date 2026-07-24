@@ -1,0 +1,145 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://seev.internal/schema/data-retention.json",
+  "title": "Seev data retention policy (docs/roadmap/active/51 K1)",
+  "description": "Validates config/data-retention.yaml (parsed as JSON). Enforced by cmd/retentioncheck.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["policy_version", "classifications", "actions", "permanent_tables", "entries"],
+  "properties": {
+    "policy_version": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Current writable policy version. Every entry's own policy_version must be <= this value."
+    },
+    "classifications": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "enum": ["public", "internal", "personal", "sensitive", "financial", "secret"] }
+    },
+    "actions": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "enum": [
+          "retain_permanent",
+          "retain_immutable",
+          "retain_state",
+          "delete",
+          "redact",
+          "pseudonymize_on_closure",
+          "never_automatic",
+          "self_replacing",
+          "not_persisted",
+          "protected_by_masking",
+          "expiration_based"
+        ]
+      }
+    },
+    "permanent_tables": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[a-z0-9_]+\\.[a-z0-9_]+$" },
+      "description": "owner.table pairs where no entry may fully DELETE a row (redact/retain_* only)."
+    },
+    "entries": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/entry" }
+    }
+  },
+  "$defs": {
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "owner", "class", "table", "classification", "terminal_timestamp",
+        "duration", "action", "batch_size", "hold_scope", "policy_version", "notes"
+      ],
+      "properties": {
+        "owner": {
+          "type": "string",
+          "description": "The one service that loads this entry at runtime, or 'shared' for cross-cutting infrastructure classes with no single owning service.",
+          "enum": ["adminbff", "assurance", "auth", "fraud", "gateway", "ledger", "payin", "payout", "shared"]
+        },
+        "class": {
+          "type": "string",
+          "pattern": "^[a-z0-9_]+(\\.[a-z0-9_]+)+$",
+          "description": "Globally unique policy class id, e.g. 'ledger.fee_quotes.unconsumed'. Multiple classes may target the same table when eligibility differs by row state."
+        },
+        "table": {
+          "type": ["string", "null"],
+          "pattern": "^[a-z0-9_]+\\.[a-z0-9_]+$",
+          "description": "owner.table for a real Postgres table this entry governs, cross-checked against every migrations/<owner>/*.up.sql CREATE TABLE. Null for a non-Postgres class (object store, Redis, RabbitMQ, logs/traces, backups) — use object_class instead."
+        },
+        "object_class": {
+          "type": "string",
+          "description": "Required when table is null: a short human-readable description of the non-Postgres data class this entry governs."
+        },
+        "classification": {
+          "type": "string",
+          "enum": ["public", "internal", "personal", "sensitive", "financial", "secret"]
+        },
+        "terminal_timestamp": {
+          "type": ["string", "null"],
+          "description": "The column (or short SQL expression over the table's own columns) that anchors eligibility, e.g. 'expires_at' or 'COALESCE(revoked_at, expires_at)'. Null for actions with no age component (retain_state, retain_permanent, retain_immutable, self_replacing, not_persisted, protected_by_masking, expiration_based, pseudonymize_on_closure, never_automatic)."
+        },
+        "duration": {
+          "type": ["string", "null"],
+          "pattern": "^[0-9]+[hd]$",
+          "description": "Grace period after terminal_timestamp before the row/field becomes eligible, e.g. '24h', '30d', '365d'. Null when action has no age component."
+        },
+        "action": {
+          "type": "string",
+          "enum": [
+            "retain_permanent", "retain_immutable", "retain_state", "delete", "redact",
+            "pseudonymize_on_closure", "never_automatic", "self_replacing",
+            "not_persisted", "protected_by_masking", "expiration_based"
+          ]
+        },
+        "batch_size": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 500,
+          "description": "Max rows per owner-function transaction (K6). 0 for actions with no batched row processing."
+        },
+        "hold_scope": {
+          "type": "string",
+          "enum": ["subject", "resource", "table", "time_range", "none"],
+          "description": "Which K5 retention-hold scope, if any, can block this entry's eligibility."
+        },
+        "policy_version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "notes": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Cites the exact docs/roadmap/active/51 section this entry implements, or states explicitly that it is a T0 judgment call extending beyond the locked matrix."
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "table": { "type": "null" } } },
+          "then": { "required": ["object_class"] }
+        },
+        {
+          "if": {
+            "properties": {
+              "action": { "enum": ["delete", "redact"] }
+            }
+          },
+          "then": {
+            "properties": {
+              "terminal_timestamp": { "type": "string" },
+              "duration": { "type": "string" }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

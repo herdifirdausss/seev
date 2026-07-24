@@ -6,11 +6,16 @@
 # container always starts empty and needs a real seed regardless).
 #
 # Scope is deliberately narrow: only secrets that are safe to source
-# independently of anything else already provisioned. JWT_SECRET and
-# INTERNAL_GRPC_TOKEN are shared cluster-wide (every service must agree on
-# the SAME value — issuer/verifier or client/server pairs), so one value is
-# generated once and written identically into every service's own KV v2
-# entry. AUTH_BOOTSTRAP_ADMIN_PASSWORD is auth-service-only and safe to
+# independently of anything else already provisioned. JWT_SECRET,
+# INTERNAL_GRPC_TOKEN, and CRYPTOX_KEY_V1 are shared cluster-wide (every
+# service must agree on the SAME value — issuer/verifier or client/server
+# pairs, or in cryptox's case docs/roadmap/active/51 K2's own deliberate
+# one-key-set-per-cluster design), so each is generated once and written
+# identically into every service's own KV v2 entry. CRYPTOX_LOOKUP_KEY is
+# also shared but only auth actually reads it (K2's normalized-email HMAC
+# digest) — every other service gets it anyway rather than special-casing
+# one service out of an otherwise-uniform seed body.
+# AUTH_BOOTSTRAP_ADMIN_PASSWORD is auth-service-only and safe to
 # randomize independently (nothing else needs to already know it).
 # POSTGRES_PASSWORD and the mockvendor webhook secrets are deliberately NOT
 # seeded here: docker-compose.yml hardcodes the Postgres role passwords
@@ -52,24 +57,24 @@ SERVICES=(gateway-service auth-service ledger-service payin-service payout-servi
 # Vault's KV v2 write REPLACES the whole secret at that path — every key a
 # service needs must go in ONE POST, never a separate call per key (a
 # second write with only one key would silently wipe out whatever the
-# first write just wrote). auth-service is the only service with a third,
-# service-specific key; every other service gets exactly the two shared
+# first write just wrote). auth-service is the only service with a fifth,
+# service-specific key; every other service gets exactly the four shared
 # ones.
 seed_service() {
-	local service=$1 jwt_secret=$2 internal_grpc_token=$3
+	local service=$1 jwt_secret=$2 internal_grpc_token=$3 cryptox_key_v1=$4 cryptox_lookup_key=$5
 	local existing
 	existing="$(curl -fsS "$VAULT_ADDR/v1/secret/data/$service" -H "X-Vault-Token: $VAULT_TOKEN" 2>/dev/null || true)"
 
-	if echo "$existing" | grep -q '"JWT_SECRET"' && echo "$existing" | grep -q '"INTERNAL_GRPC_TOKEN"'; then
+	if echo "$existing" | grep -q '"JWT_SECRET"' && echo "$existing" | grep -q '"INTERNAL_GRPC_TOKEN"' && echo "$existing" | grep -q '"CRYPTOX_KEY_V1"'; then
 		log "$service: already seeded, leaving it alone"
 		return
 	fi
 
 	local body
 	if [ "$service" = "auth-service" ]; then
-		body="{\"data\":{\"JWT_SECRET\":\"$jwt_secret\",\"INTERNAL_GRPC_TOKEN\":\"$internal_grpc_token\",\"AUTH_BOOTSTRAP_ADMIN_PASSWORD\":\"$(openssl rand -hex 16)\"}}"
+		body="{\"data\":{\"JWT_SECRET\":\"$jwt_secret\",\"INTERNAL_GRPC_TOKEN\":\"$internal_grpc_token\",\"CRYPTOX_KEY_V1\":\"$cryptox_key_v1\",\"CRYPTOX_LOOKUP_KEY\":\"$cryptox_lookup_key\",\"AUTH_BOOTSTRAP_ADMIN_PASSWORD\":\"$(openssl rand -hex 16)\"}}"
 	else
-		body="{\"data\":{\"JWT_SECRET\":\"$jwt_secret\",\"INTERNAL_GRPC_TOKEN\":\"$internal_grpc_token\"}}"
+		body="{\"data\":{\"JWT_SECRET\":\"$jwt_secret\",\"INTERNAL_GRPC_TOKEN\":\"$internal_grpc_token\",\"CRYPTOX_KEY_V1\":\"$cryptox_key_v1\",\"CRYPTOX_LOOKUP_KEY\":\"$cryptox_lookup_key\"}}"
 	fi
 	curl -fsS -o /dev/null -X POST "$VAULT_ADDR/v1/secret/data/$service" \
 		-H "X-Vault-Token: $VAULT_TOKEN" -H "Content-Type: application/json" \
@@ -79,9 +84,11 @@ seed_service() {
 
 JWT_SECRET="$(openssl rand -hex 32)"
 INTERNAL_GRPC_TOKEN="$(openssl rand -hex 32)"
+CRYPTOX_KEY_V1="$(openssl rand -hex 32)"
+CRYPTOX_LOOKUP_KEY="$(openssl rand -hex 32)"
 
 for service in "${SERVICES[@]}"; do
-	seed_service "$service" "$JWT_SECRET" "$INTERNAL_GRPC_TOKEN"
+	seed_service "$service" "$JWT_SECRET" "$INTERNAL_GRPC_TOKEN" "$CRYPTOX_KEY_V1" "$CRYPTOX_LOOKUP_KEY"
 done
 
 log "done. Boot any service with VAULT_ADDR=$VAULT_ADDR VAULT_TOKEN=<token> APP_NAME=<service> to source these."

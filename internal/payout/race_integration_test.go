@@ -147,7 +147,7 @@ func newRaceModule(db *database.DBSQL) (*Module, *testutil.LedgerHarness) {
 	registry := vendorgw.NewRegistry()
 	registry.AddPayout(mockvendor.NewPayoutProvider(mockvendor.VendorName))
 	m := &Module{
-		repo:     repository.NewRepository(db),
+		repo:     repository.NewRepository(db, nil),
 		poster:   ledgerModule,
 		registry: registry,
 		routing:  routeTo(mockvendor.VendorName, "bca"),

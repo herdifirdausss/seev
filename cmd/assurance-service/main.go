@@ -134,6 +134,12 @@ func run(parent context.Context) error {
 	module := assurance.NewModule(db, cfg.Assurance, payinv1.NewPayinServiceClient(payinConn), payoutv1.NewPayoutServiceClient(payoutConn), ledgerv1.NewLedgerServiceClient(ledgerConn), alertFn, log)
 	module.Start(ctx)
 	defer module.Stop()
+	stopRetention, err := module.StartRetentionRunner(log)
+	if err != nil {
+		log.Error("failed to start data retention worker", "error", err)
+	} else {
+		defer stopRetention()
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {

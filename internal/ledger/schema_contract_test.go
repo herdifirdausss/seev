@@ -43,9 +43,27 @@ import (
 	"github.com/herdifirdausss/seev/internal/ledger/service/recon"
 	"github.com/herdifirdausss/seev/internal/ledger/service/schedule"
 	"github.com/herdifirdausss/seev/internal/testutil"
+	"github.com/herdifirdausss/seev/pkg/cryptox"
 	"github.com/herdifirdausss/seev/pkg/currency"
 	"github.com/herdifirdausss/seev/pkg/database"
 )
+
+// schemaTestDigestRing is docs/roadmap/active/51-a8-data-lifecycle-privacy.md T3's (K7) fixed test
+// key for this file's own repository.NewTransactionRepository call sites —
+// package-level (not a *testing.T helper) since several callers here
+// (newService, newAdjustmentsService) build repositories outside any test
+// function.
+func schemaTestDigestRing() *cryptox.DigestRing {
+	key := make([]byte, 32)
+	for i := range key {
+		key[i] = byte(i + 37)
+	}
+	ring, err := cryptox.NewDigestRing(map[int][]byte{1: key}, 1)
+	if err != nil {
+		panic(err)
+	}
+	return ring
+}
 
 // migrationsSourceURL resolves migrations/ relative to this test file so the
 // test works regardless of the working directory `go test` is invoked from.
@@ -238,7 +256,7 @@ func seedCreditEntry(t *testing.T, db *database.DBSQL, accountID uuid.UUID, amou
 // pkg/fraudcheck).
 func newService(db *database.DBSQL) (*ledgerhandle.Service, repository.AccountRepository) {
 	accRepo := repository.NewAccountRepository(db)
-	txRepo := repository.NewTransactionRepository(db)
+	txRepo := repository.NewTransactionRepository(db, schemaTestDigestRing())
 	balRepo := repository.NewBalanceRepository(db)
 	entryRepo := repository.NewEntryRepository(db)
 	outboxRepo := repository.NewOutboxRepository(db)
@@ -253,7 +271,7 @@ func newService(db *database.DBSQL) (*ledgerhandle.Service, repository.AccountRe
 func newAdjustmentsService(db *database.DBSQL) (*adjustments.Service, repository.AccountRepository) {
 	handleSvc, accRepo := newService(db)
 	adjRepo := repository.NewPendingAdjustmentRepository(db)
-	txRepo := repository.NewTransactionRepository(db)
+	txRepo := repository.NewTransactionRepository(db, schemaTestDigestRing())
 	outboxRepo := repository.NewOutboxRepository(db)
 	return adjustments.New(db, adjRepo, txRepo, outboxRepo, handleSvc), accRepo
 }
@@ -265,7 +283,7 @@ func newAdjustmentsService(db *database.DBSQL) (*adjustments.Service, repository
 // path a resolve request does in production.
 func newReconService(db *database.DBSQL) (*recon.Service, *adjustments.Service, repository.AccountRepository) {
 	adjSvc, accRepo := newAdjustmentsService(db)
-	reconRepo := repository.NewReconRepository(db)
+	reconRepo := repository.NewReconRepository(db, nil)
 	return recon.New(db, reconRepo, adjSvc), adjSvc, accRepo
 }
 
@@ -284,7 +302,7 @@ func newScheduleService(db *database.DBSQL) (*schedule.Service, repository.Sched
 // can prove multi-call pagination without importing hundreds of rows.
 func newDisbursementService(db *database.DBSQL, maxPerRun int) (*disbursement.Service, repository.DisbursementRepository) {
 	handleSvc, _ := newService(db)
-	txRepo := repository.NewTransactionRepository(db)
+	txRepo := repository.NewTransactionRepository(db, schemaTestDigestRing())
 	disbursementRepo := repository.NewDisbursementRepository(db)
 	return disbursement.New(db, disbursementRepo, txRepo, handleSvc, disbursement.WithMaxItemsPerRun(maxPerRun)), disbursementRepo
 }
@@ -1596,9 +1614,9 @@ func TestSchemaContract_AppServiceRole_FullFlowSucceeds(t *testing.T) {
 	handleSvc, _ := newService(dbs.appDB)
 	adjSvc := adjustments.New(dbs.appDB,
 		repository.NewPendingAdjustmentRepository(dbs.appDB),
-		repository.NewTransactionRepository(dbs.appDB),
+		repository.NewTransactionRepository(dbs.appDB, schemaTestDigestRing()),
 		repository.NewOutboxRepository(dbs.appDB), handleSvc)
-	reconSvc := recon.New(dbs.appDB, repository.NewReconRepository(dbs.appDB), adjSvc)
+	reconSvc := recon.New(dbs.appDB, repository.NewReconRepository(dbs.appDB, nil), adjSvc)
 
 	userA := uuid.New()
 	userB := uuid.New()
@@ -2530,7 +2548,7 @@ func TestSchemaContract_Disbursement_Resume_NoDoublePost(t *testing.T) {
 		}
 	}
 	require.NotEqual(t, uuid.Nil, item5ID)
-	postedTx, err := repository.NewTransactionRepository(db).GetByIdempotencyKey(ctx, item5Key, nil)
+	postedTx, err := repository.NewTransactionRepository(db, schemaTestDigestRing()).GetByIdempotencyKey(ctx, item5Key, nil)
 	require.NoError(t, err)
 	require.NoError(t, db.WithTx(ctx, nil, func(tx *sql.Tx) error {
 		return disbRepo.MarkItemPosted(ctx, tx, item5ID, postedTx.ID)

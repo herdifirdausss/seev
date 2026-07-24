@@ -174,6 +174,17 @@ func NewInternalRouter(cfg *config.Config, deps *Dependencies, logger *slog.Logg
 	// reachable from the public-facing port (docs/roadmap/archive/10 Task T6).
 	root.Handle("GET /metrics", promhttp.Handler())
 
+	// docs/roadmap/active/51 T4b/T5b (K9/K10/K11): auth-service's own export/closure
+	// saga calls gateway's notif_notifications owner contract here — same
+	// bare "/privacy/..." path every other owner mounts at (the client is
+	// one generic type, internal/auth.httpOwnerClosureClient, that assumes
+	// an identical relative path across every owner), gated by the shared
+	// internal token rather than an end-user JWT (this listener has no
+	// JWT-`authed` chain to mount alongside, unlike payin/payout/fraud).
+	if deps.Notify != nil {
+		root.Handle("/privacy/", middleware.WithInternalToken(cfg.InternalGRPCToken)(deps.Notify.PrivacyRouter()))
+	}
+
 	global := middleware.Chain(
 		middleware.WithRequestID(),
 		middleware.WithRoutePattern(apiRoot),

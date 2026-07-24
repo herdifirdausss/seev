@@ -33,6 +33,7 @@ import (
 	"github.com/herdifirdausss/seev/internal/ledger/repository"
 	"github.com/herdifirdausss/seev/internal/ledger/service/accrual"
 	"github.com/herdifirdausss/seev/internal/ledger/service/adjustments"
+	"github.com/herdifirdausss/seev/internal/ledger/service/closure"
 	"github.com/herdifirdausss/seev/internal/ledger/service/disbursement"
 	ledgerhandle "github.com/herdifirdausss/seev/internal/ledger/service/handle"
 	"github.com/herdifirdausss/seev/internal/ledger/service/provision"
@@ -41,10 +42,12 @@ import (
 	"github.com/herdifirdausss/seev/internal/ledger/transport"
 	"github.com/herdifirdausss/seev/internal/ledger/worker"
 	"github.com/herdifirdausss/seev/pkg/alerting"
+	"github.com/herdifirdausss/seev/pkg/cryptox"
 	"github.com/herdifirdausss/seev/pkg/currency"
 	"github.com/herdifirdausss/seev/pkg/database"
 	"github.com/herdifirdausss/seev/pkg/fraudcheck"
 	"github.com/herdifirdausss/seev/pkg/messaging"
+	"github.com/herdifirdausss/seev/pkg/retentionworker"
 	"github.com/herdifirdausss/seev/pkg/scheduler"
 )
 
@@ -149,6 +152,7 @@ type Module struct {
 	scheduleSvc     *schedule.Service
 	disbursementSvc *disbursement.Service
 	accrualSvc      *accrual.Service
+	closureSvc      *closure.Service
 
 	accountRepo      repository.AccountRepository
 	balanceRepo      repository.BalanceRepository
@@ -168,13 +172,15 @@ type Module struct {
 	feePolicy         *feepolicy.Policy
 	processorRegistry *processors.ProcessorRegistry
 
-	broker      messaging.Broker
-	workerCfg   WorkerConfig
-	outboxRelay *worker.OutboxRelay
-	verifier    *worker.Verifier
-	snapshotJob *worker.SnapshotJob
-	scheduleJob *worker.ScheduleRunnerJob
-	accrualJob  *worker.AccrualJob
+	broker          messaging.Broker
+	workerCfg       WorkerConfig
+	outboxRelay     *worker.OutboxRelay
+	verifier        *worker.Verifier
+	snapshotJob     *worker.SnapshotJob
+	scheduleJob     *worker.ScheduleRunnerJob
+	accrualJob      *worker.AccrualJob
+	retentionRunner *retentionworker.Runner
+	retentionSched  *scheduler.Scheduler
 	// loc is Asia/Jakarta (or UTC as a load-failure fallback) — the single
 	// timezone every calendar-day boundary in this module (snapshots,
 	// statements) is computed against.
@@ -205,13 +211,17 @@ type Module struct {
 // PrePostHook seam (docs/roadmap/archive/20): screening moved out of
 // internal/ledger/service/handle entirely, into the transport layer, so no
 // network round-trip ever happens while a row lock is held.
-func NewModule(db database.DatabaseSQL, broker messaging.Broker, redisClient *redis.Client, workerCfg WorkerConfig, logger *slog.Logger, maxAmountPerTx decimal.Decimal, policyChecker PolicyChecker, fraudClient *fraudcheck.Client, feeQuoteTTL time.Duration) *Module {
+// digestRing is docs/roadmap/active/51-a8-data-lifecycle-privacy.md T3's (K7) idempotency-key
+// digest ring, REQUIRED (never nil, unlike every T2 field-encryption ring)
+// — see repository.NewTransactionRepository's own doc comment for why
+// deduplication can never be allowed to silently run without one.
+func NewModule(db database.DatabaseSQL, broker messaging.Broker, redisClient *redis.Client, workerCfg WorkerConfig, logger *slog.Logger, maxAmountPerTx decimal.Decimal, policyChecker PolicyChecker, fraudClient *fraudcheck.Client, feeQuoteTTL time.Duration, digestRing *cryptox.DigestRing) *Module {
 	if logger == nil {
 		logger = slog.Default()
 	}
 
 	accountRepo := repository.NewAccountRepository(db)
-	txRepo := repository.NewTransactionRepository(db)
+	txRepo := repository.NewTransactionRepository(db, digestRing)
 	balanceRepo := repository.NewBalanceRepository(db)
 	entryRepo := repository.NewEntryRepository(db)
 	outboxRepo := repository.NewOutboxRepository(db)
@@ -223,7 +233,7 @@ func NewModule(db database.DatabaseSQL, broker messaging.Broker, redisClient *re
 	}
 	snapshotRepo := repository.NewSnapshotRepository(db, loc)
 	adjRepo := repository.NewPendingAdjustmentRepository(db)
-	reconRepo := repository.NewReconRepository(db)
+	reconRepo := repository.NewReconRepository(db, nil)
 	currencyRepo := repository.NewCurrencyRepository(db)
 	scheduleRepo := repository.NewScheduledTransactionRepository(db)
 	disbursementRepo := repository.NewDisbursementRepository(db)
@@ -247,6 +257,7 @@ func NewModule(db database.DatabaseSQL, broker messaging.Broker, redisClient *re
 		scheduleSvc:       scheduleSvc,
 		disbursementSvc:   disbursementSvc,
 		accrualSvc:        accrualSvc,
+		closureSvc:        closure.New(db),
 		accountRepo:       accountRepo,
 		balanceRepo:       balanceRepo,
 		txRepo:            txRepo,
@@ -293,7 +304,48 @@ func NewModule(db database.DatabaseSQL, broker messaging.Broker, redisClient *re
 	m.scheduleJob = worker.NewScheduleRunnerJob(scheduleSvc, lock, logger, loc)
 	m.accrualJob = worker.NewAccrualJob(accrualSvc, lock, logger, loc)
 
+	// docs/roadmap/active/51-a8-data-lifecycle-privacy.md T1: this module's own retention
+	// classes (config/data-retention.yaml). One dedicated scheduler, matching
+	// this constructor's own per-job-group convention above (verifier,
+	// snapshot, schedule, accrual each get their own too) rather than
+	// sharing one of theirs.
+	retentionRunner, err := retentionworker.NewRunner("ledger", db, []retentionworker.Class{
+		{Name: "ledger.fee_quotes.unconsumed", Action: "delete", FunctionName: "fn_retention_purge_fee_quotes_unconsumed"},
+		{Name: "ledger.fee_quotes.consumed", Action: "delete", FunctionName: "fn_retention_purge_fee_quotes_consumed"},
+		{Name: "ledger.outbox_events.published", Action: "delete", FunctionName: "fn_retention_purge_outbox_events_published"},
+		// docs/roadmap/active/51 T2.6: redacts recon_batches.source_filename /
+		// recon_items.raw (both plaintext AND T2.4 ciphertext columns)
+		// without ever decrypting them.
+		{Name: "ledger.recon_batches", Action: "redact", FunctionName: "fn_retention_purge_recon_batches"},
+		{Name: "ledger.recon_items", Action: "redact", FunctionName: "fn_retention_purge_recon_items"},
+		// docs/roadmap/active/51 T3 (K7): nulls idempotency_key/idempotency_scope 30
+		// days after a transaction reaches a terminal status — the
+		// SECURITY DEFINER function's own idempotency_key_digest IS NOT
+		// NULL guard is what makes this safe (never redacts a row whose
+		// permanent digest hasn't been backfilled yet).
+		{Name: "ledger.transactions.idempotency_raw", Action: "redact", FunctionName: "fn_retention_purge_transactions_idempotency_raw"},
+	})
+	if err != nil {
+		// Every Class above is a fixed literal this constructor controls —
+		// an error here means a programming mistake (typo'd function name,
+		// duplicate class), not a runtime condition. Fail loudly at boot
+		// rather than silently run without retention.
+		panic(fmt.Sprintf("ledger: invalid retention configuration: %v", err))
+	}
+	m.retentionRunner = retentionRunner
+	m.retentionSched = scheduler.NewScheduler(lock, scheduler.NewPrometheusMetrics(), scheduler.WithLocation(loc))
+
 	return m
+}
+
+// SetCryptoxRing wires docs/roadmap/active/51-a8-data-lifecycle-privacy.md T2.4's K2/K3
+// field encryption for recon_batches.source_filename and recon_items.raw
+// — same nil-safe optionality as internal/auth.Module.SetCryptoxRing: a
+// nil ring leaves every read/write exactly as it behaved before this
+// task. Reconstructs reconSvc (recon.Service wraps the repository, not
+// exposed directly) rather than a bare repository field.
+func (m *Module) SetCryptoxRing(ring *cryptox.Ring) {
+	m.reconSvc = recon.New(m.db, repository.NewReconRepository(m.db, ring), m.adjustmentsSvc)
 }
 
 // IsKnownTransactionType validates admin-managed configuration against the
@@ -374,6 +426,27 @@ func (m *Module) InternalRouter() http.Handler {
 	return transport.NewInternalRouterWithFeePolicy(m, m.feePolicy)
 }
 
+// ClosureRouter returns docs/roadmap/active/51-a8-data-lifecycle-privacy.md T5/T4b's (K9, K10,
+// K11) privacy endpoints for auth-service's cross-service closure and
+// export sagas: POST /privacy/closure/prepare, POST /privacy/closure/commit,
+// and GET /privacy/export. Deliberately a SEPARATE handler from InternalRouter/transport.Service
+// rather than an addition to that existing, heavily-used interface — this
+// is a narrowly-scoped, single-caller (auth-service only) feature, and
+// widening transport.Service would force every other transport.Service
+// implementer (there is only one today, but the interface is the module
+// boundary) to grow two methods it will never use. The caller MUST wrap
+// this in pkg/middleware.WithInternalToken and mount it only on the
+// internal-only listener, same as InternalRouter.
+func (m *Module) ClosureRouter() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /privacy/closure/prepare", m.handleClosurePrepare)
+	mux.HandleFunc("POST /privacy/closure/commit", m.handleClosureCommit)
+	// docs/roadmap/active/51 T4b (K9): same router, same token gate — auth's
+	// export saga's own owner-composed export contract for ledger.
+	mux.HandleFunc("GET /privacy/export", m.handlePrivacyExport)
+	return mux
+}
+
 // LoadCurrencies loads the `currencies` table into pkg/currency's runtime
 // registry (docs/roadmap/archive/18 Task T1) — call once at startup, BEFORE serving
 // traffic, right after NewModule. Deliberately a separate call rather than
@@ -433,6 +506,9 @@ func (m *Module) StartWorkers(ctx context.Context) {
 	if err := m.accrualJob.Start(ctx); err != nil {
 		m.logger.Error("ledger: failed to start interest accrual job", slog.Any("error", err))
 	}
+	if err := m.retentionRunner.Start(m.retentionSched); err != nil {
+		m.logger.Error("ledger: failed to start data retention job", slog.Any("error", err))
+	}
 }
 
 // StopWorkers gracefully stops the outbox relay and verifier, waiting for
@@ -447,6 +523,7 @@ func (m *Module) StopWorkers() {
 	m.snapshotJob.Stop()
 	m.scheduleJob.Stop()
 	m.accrualJob.Stop()
+	m.retentionSched.Stop()
 }
 
 // Post submits a ledger command to the posting engine.

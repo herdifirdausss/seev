@@ -66,16 +66,185 @@ the exact volumes before removing anything, never an unscoped
 scripts/restore-cluster.sh cleanup
 ```
 
-**What this does NOT yet do** (later Track A7 tasks, not built as of this
-runbook's last update): offline cross-database integrity verification
-(`cmd/drverify`, T4), Redis/RabbitMQ ephemeral-state reseed and the
-post-restore session/token revocation fence (`cmd/drreseed`, T5), and a
-scripted end-to-end game-day drill with RPO/RTO reporting
-(`scripts/dr-drill.sh`, T6). Until those land, treat a
-`restore-cluster.sh` run as producing an **inventoried but unverified**
-restored cluster — inspect it manually (the drill project is left running
-specifically for this) before drawing any conclusion about data
-integrity, and never point real traffic at it.
+**What `restore-cluster.sh` alone does NOT do:** it stops at "cluster
+restored, promoted, and inventoried" — it never runs cross-database
+integrity verification, never reconstructs Redis/RabbitMQ state, and
+never fences pre-restore sessions. A bare `restore-cluster.sh` run
+produces an **inventoried but unverified** restored cluster; never point
+real traffic at it on its own. For a real incident or a rehearsed drill,
+use the full chained procedure below
+([Game-day drill](#game-day-drill-scriptsdr-drillsh)), which runs
+`restore-cluster.sh` as its own Phase E and then chains `cmd/drverify`
+(T4), `cmd/drreseed` + the post-restore security fence (T5), and the
+business smoke test before any traffic is allowed.
+
+## Game-day drill (scripts/dr-drill.sh)
+
+`scripts/dr-drill.sh <latest|pitr>` is the full, scripted, end-to-end
+rehearsal (Track A7 T6). It does not touch the real dev stack or the real
+backup repository — it builds its own throwaway "gameday" Postgres/Redis/
+RabbitMQ under an isolated Compose project (`GAMEDAY_PROJECT`, default
+`seev-a7-gameday`) with its own isolated backup repository
+(`GAMEDAY_REPO_PATH`, default `/tmp/seev-a7-gameday-repo` — never
+`deploy/backup/repo`), creates a small representative cross-service
+fixture (register → KYC L1 → top-up), takes a real encrypted pgBackRest
+backup, destroys **only** the gameday's own volumes (the simulated
+disaster), then chains every recovery tool T1–T5 built, in order:
+
+```text
+restore-cluster.sh (restore + promote)
+  → cmd/drverify        (zero-fatal cross-database gate)
+  → cmd/drreseed         (Redis policy/fraud reconstruction)
+  → post-restore-security.sh --confirm  (session/token fence, K11)
+  → application services started against the restored cluster
+  → business smoke (fixture balance + fn_verify_ledger_balance)
+```
+
+It prints one JSON report (`DRILL_REPORT_PATH`, default
+`/tmp/seev-a7-dr-drill-report.json`) with every stage timestamp and the
+measured RPO/RTO for that run.
+
+### Prerequisites
+
+- The real dev stack must be **stopped**, not torn down
+  (`docker compose stop` — never `down -v`): the drill reuses the same
+  host ports (`127.0.0.1:8080` etc.) the app profile normally binds.
+- `make backup-secret` has been run at least once (`deploy/backup/secrets/`
+  populated).
+- `make certs` has been run at least once (`deploy/certs/ca.pem` present).
+- The `seev/postgres-backup:dev` image has been built
+  (`docker compose build postgres`).
+
+```sh
+./scripts/dr-drill.sh latest   # restore to the latest available point
+./scripts/dr-drill.sh pitr     # restore to a recorded point in time, proving
+                                # post-target activity is correctly excluded
+./scripts/dr-drill.sh cleanup  # tear down both the gameday and drill
+                                # projects explicitly, by name — never an
+                                # unscoped `docker compose down -v`
+```
+
+### Backup creation (what the drill exercises, and what real operation uses)
+
+The drill's Phase A–C take a real `--type=full` pgBackRest backup against
+its own isolated repository, exactly the same mechanism a real operator
+uses day to day:
+
+```sh
+make backup-secret   # idempotent — generates deploy/backup/secrets/* once
+make backup-full      # or backup-diff for the Mon–Sat scheduled type
+make backup-check     # repository check — must be clean before trusting a backup
+make backup-status    # oldest/latest restorable point, WAL archive age
+```
+
+In real operation these run on the K4 schedule via `backup-agent`
+(weekly full Sunday 02:10 WIB, differential Monday–Saturday 02:10 WIB);
+the Makefile targets are the same code path used manually or in a drill,
+never a separate implementation (T2).
+
+### PITR target selection
+
+Choosing a recovery target is a judgment call, not a script input to
+guess at:
+
+1. **Prefer `latest`** unless there is a specific reason to go further
+   back — every PITR restore discards everything committed after the
+   chosen target, on all eight databases at once.
+2. **Determine the target time from evidence, not intuition**: the
+   incident timeline (when did the bad write/corruption/compromise
+   start?), `docs/operations/runbooks/ledger-integrity-alert.md`'s own
+   findings, application logs, or — for a suspected bad deploy — the
+   commit/deploy timestamp itself.
+3. **Pick a time strictly before the first bad event**, not exactly at
+   it — clock skew and in-flight transactions mean "exactly at" can go
+   either way. A few seconds of margin is cheap; restoring the same bad
+   write again is not.
+4. **Use `time` for an operator-facing target** (`scripts/restore-cluster.sh
+   time "2026-07-22 15:00:00+07"`), and reserve `lsn` for the rare case
+   where a specific transaction's LSN is already known precisely (e.g.
+   from a `pg_waldump` investigation) — `time` is what most incidents
+   actually reason about.
+5. **A target before the earliest retained backup, or after the latest
+   archived WAL, fails closed** — pgBackRest and PostgreSQL themselves
+   refuse rather than silently picking the nearest available point (T3
+   Result, verified live). Re-check `make backup-status`'s reported
+   restorable range if a target is rejected.
+
+### Credential recovery
+
+Recovery depends on two secrets that are deliberately **not** stored
+inside the backup repository itself (K3):
+
+- `deploy/backup/secrets/pgbackrest_repo_passphrase` — without this, the
+  encrypted repository cannot be read at all (fails closed with a clear
+  decrypt error, T1 Result). This is why K3 requires an **independently
+  stored copy** — if this machine/volume is what was lost, the passphrase
+  must come from that independent copy, never regenerated (a new
+  passphrase cannot decrypt an existing repository).
+- `deploy/backup/secrets/seev_backup_password` — the `seev_backup` role's
+  password; only needed for interactive `psql` access as that role, not
+  for `pgbackrest` itself (which authenticates via `PGBACKREST_REPO1_CIPHER_PASS`
+  plus the local Unix-socket trust, not this password). Safe to regenerate
+  via `make backup-role-bootstrap` if lost, since the role has no
+  domain-table access to protect.
+
+Runtime secrets, mTLS certificates, and Vault data are **not** part of
+this recovery path at all (K11) — they come from the current external
+configuration (`make certs`, `scripts/vault-seed.sh`), never from a
+database backup. See
+[docs/security/threat-model.md](../../security/threat-model.md) for why.
+
+### Stage ownership
+
+A real incident needs a single decision-maker and clear handoffs, even on
+a small team:
+
+| Stage | Owner | Decision |
+|---|---|---|
+| Declare incident, choose `latest` vs. PITR target | Incident commander | Judgment call from evidence (see target selection above); everyone else waits for this before touching anything |
+| Restore + promote (`restore-cluster.sh`) | Database operator | Mechanical once the target is chosen; abort and escalate on any fail-closed error (below) |
+| Cross-database gate (`cmd/drverify`) | Database operator or on-call engineer | Zero fatal findings required before proceeding — a partial pass is not a pass |
+| Redis/fraud reconstruction (`cmd/drreseed`) | On-call engineer | Fails closed if outbox evidence is incomplete — do not override |
+| Session/token fence (`post-restore-security.sh --confirm`) | Security/on-call engineer | Must run before the next stage, never after |
+| Enable traffic | Incident commander | Final go/no-go, after every prior stage reports success — this is the one action that cannot be undone by re-running a script |
+
+### Rollback / abort conditions
+
+Abort the restore (`scripts/restore-cluster.sh cleanup` /
+`scripts/dr-drill.sh cleanup`) and escalate rather than continuing past
+any of these — every one of them is a real fail-closed behavior already
+proven live in T1–T5, not a theoretical concern:
+
+- `cmd/drverify` reports any fatal finding, or exits non-zero for any
+  reason (including a check that could not run at all — `Passed()` is
+  `false` whenever `errors` is non-empty too).
+- `cmd/drreseed` fails closed on missing fraud-evidence coverage (a real,
+  intentional refusal — never override by re-running with weaker
+  evidence).
+- The restore target itself is unreachable (before the earliest backup,
+  or past the latest archived WAL) — PostgreSQL refuses to promote.
+- Wrong repository passphrase, a corrupted backup, or a repository-check
+  failure — all fail before any container starts serving.
+- Any script refuses the default project name or an already-populated
+  target volume without `FORCE_REUSE_VOLUME=1` — do not force reuse
+  during a real incident; investigate first.
+- Disk space or time budget genuinely exhausted mid-restore — stop,
+  document what stage was reached, and retry with more headroom rather
+  than letting a partial restore's application start.
+
+None of these should ever be worked around by editing the passphrase,
+disabling a check, or force-starting the application — every one exists
+specifically to keep a bad restore from reaching real users.
+
+### Game-day drill log
+
+Fill in a new row every time `scripts/dr-drill.sh` runs for real —
+timestamps and RPO/RTO come from the script's own JSON report
+(`DRILL_REPORT_PATH`), not estimated.
+
+| Date | Mode | Environment | RPO | RTO | Stages | Result | Notes |
+|---|---|---|---|---|---|---|---|
+| _pending first live run_ | | | | | | | |
 
 ## What must be restored, and from where
 

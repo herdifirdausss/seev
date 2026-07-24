@@ -433,6 +433,36 @@ ZERO_ROW_CHECK="$(psql_exec "$LEDGER_DB_NAME" -c "SELECT count(*) FROM fn_verify
 	exit 1
 }
 echo "dr-drill.sh: fn_verify_ledger_balance reports zero discrepancies"
+
+# T4/T6 acceptance: "a clean assurance backfill has zero unresolved critical
+# findings." internal/assurance's Module.Start (internal/assurance/module.go)
+# unconditionally runs a mode="backfill" scan on every process start — Phase I
+# above already triggered it just by starting assurance-service. It runs
+# async in its own goroutine, so wait for that specific run to leave
+# "running" before trusting assurance_findings, the same polling shape
+# scripts/chaos-test.sh's wait_for_assurance_run_after already uses.
+echo "dr-drill.sh: waiting for the restored cluster's automatic assurance backfill to finish..."
+tries=60
+while [ "$tries" -gt 0 ]; do
+	backfill_status="$(psql_exec "$ASSURANCE_DB_NAME" -c "SELECT status FROM assurance_runs WHERE mode='backfill' ORDER BY started_at DESC, id DESC LIMIT 1;")"
+	[ "$backfill_status" = "succeeded" ] && break
+	if [ "$backfill_status" = "failed" ]; then
+		echo "dr-drill.sh: the restored cluster's automatic assurance backfill run failed" >&2
+		exit 1
+	fi
+	sleep 1
+	tries=$((tries - 1))
+done
+[ "$backfill_status" = "succeeded" ] || {
+	echo "dr-drill.sh: assurance backfill did not reach 'succeeded' in time (last status='$backfill_status')" >&2
+	exit 1
+}
+ASSURANCE_CRITICAL_OPEN="$(psql_exec "$ASSURANCE_DB_NAME" -c "SELECT count(*) FROM assurance_findings WHERE severity='critical' AND status IN ('open','acknowledged');")"
+[ "$ASSURANCE_CRITICAL_OPEN" = "0" ] || {
+	echo "dr-drill.sh: assurance backfill found $ASSURANCE_CRITICAL_OPEN unresolved critical finding(s) after restore" >&2
+	exit 1
+}
+echo "dr-drill.sh: assurance backfill (run status=succeeded) reports zero unresolved critical findings"
 record_stage smoke_pass
 
 # ─── RPO/RTO and final report ───────────────────────────────────────────────

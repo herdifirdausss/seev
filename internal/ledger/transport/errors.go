@@ -55,7 +55,8 @@ func writeError(w http.ResponseWriter, err error) {
 	case errors.Is(err, apperror.ErrStillProcessing),
 		errors.Is(err, apperror.ErrPreviousFailed),
 		errors.Is(err, apperror.ErrAdjustmentAlreadyDecided),
-		errors.Is(err, apperror.ErrReconItemAlreadyResolved):
+		errors.Is(err, apperror.ErrReconItemAlreadyResolved),
+		errors.Is(err, apperror.ErrIdempotencyConflict):
 		response.Conflict(w, err.Error())
 
 	default:

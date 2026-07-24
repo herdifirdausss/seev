@@ -346,7 +346,7 @@ func (s *Service) execTransfer(ctx context.Context, cmd processors.ResolvedComma
 				}
 				// [FIX #3] handleDuplicate returns ErrAlreadyPosted for "posted" —
 				// Handle() converts that to nil (idempotent success).
-				return s.handleDuplicate(ctx, tx, cmd.IdempotencyKey, cmd.IdempotencyScope)
+				return s.handleDuplicate(ctx, tx, cmd)
 			}
 			_, _ = tx.ExecContext(ctx, `RELEASE SAVEPOINT sp_idem`)
 
@@ -689,18 +689,26 @@ func (s *Service) markFailed(ctx context.Context, tx *sql.Tx, txID uuid.UUID, ms
 // handleDuplicate
 // =============================================================================
 
-func (s *Service) handleDuplicate(ctx context.Context, tx *sql.Tx, key, scope string) error {
-	// GetStatusByIdempotency reports a missing row as ("", nil) rather than
-	// sql.ErrNoRows (see its own doc comment) — an empty status here means
-	// the very row that caused our duplicate-key violation vanished, a race
-	// this repository method's contract deliberately surfaces as "not found"
-	// rather than an error.
-	status, err := s.txRepo.GetStatusByIdempotency(ctx, tx, key, generalutil.StringPtr(scope))
+func (s *Service) handleDuplicate(ctx context.Context, tx *sql.Tx, cmd processors.ResolvedCommand) error {
+	// FindConflictOrDuplicate reports a missing row as ("", false, nil)
+	// rather than sql.ErrNoRows (see its own doc comment) — an empty
+	// status here means the very row that caused our duplicate-key
+	// violation vanished, a race this repository method's contract
+	// deliberately surfaces as "not found" rather than an error.
+	status, conflict, err := s.txRepo.FindConflictOrDuplicate(ctx, tx, cmd.IdempotencyKey, generalutil.StringPtr(cmd.IdempotencyScope), cmd.Type, cmd.Amount, cmd.Currency)
 	if err != nil {
 		return fmt.Errorf("lookup duplicate: %w", err)
 	}
 	if status == "" {
 		return fmt.Errorf("idempotency record vanished after duplicate error (race)")
+	}
+	// docs/roadmap/active/51 T3 (K7): the SAME idempotency key/scope reused with a
+	// DIFFERENT type/amount/currency is a conflict, never treated as a
+	// legitimate retry — checked before the status switch below so a
+	// mismatched retry against an already-posted original never silently
+	// returns ErrAlreadyPosted (idempotent "success").
+	if conflict {
+		return apperror.ErrIdempotencyConflict
 	}
 	switch status {
 	case "posted":

@@ -41,6 +41,7 @@ Each directory has one purpose and its own index.
 | [`operations/`](operations/README.md) | Runtime tooling, verification, observability, and runbooks | Future architecture claims |
 | [`security/`](security/README.md) | Threat model and trust boundaries | Private vulnerability reports |
 | [`roadmap/`](roadmap/README.md) | Strategy, active plans, and archived decisions | Current runtime truth |
+| [`data/`](data/README.md) | The generated data retention/classification matrix | Hand-written policy — edit `config/data-retention.yaml` instead |
 
 The root of the repository intentionally keeps only public-project entry files:
 `README.md`, `LICENSE`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, and

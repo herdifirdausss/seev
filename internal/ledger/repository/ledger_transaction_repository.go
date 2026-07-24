@@ -3,14 +3,18 @@ package repository
 //go:generate mockgen -source=ledger_transaction_repository.go -destination=ledger_transaction_repository_mock.go -package=repository
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/binary"
 	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
 	"github.com/herdifirdausss/seev/internal/ledger/apperror"
 	"github.com/herdifirdausss/seev/internal/ledger/model"
+	"github.com/herdifirdausss/seev/pkg/cryptox"
 	"github.com/herdifirdausss/seev/pkg/database"
 	"github.com/shopspring/decimal"
 )
@@ -63,14 +67,49 @@ type TransactionRepository interface {
 		errorMessage *string,
 	) error
 
-	// GetStatusByIdempotency returns the status of a transaction
-	// identified by idempotency key and scope.
-	GetStatusByIdempotency(
+	// FindConflictOrDuplicate is docs/roadmap/active/51-a8-data-lifecycle-privacy.md T3's (K7)
+	// digest-first replacement for the old GetStatusByIdempotency: called
+	// only after Insert has already hit a unique-key violation for
+	// (key, scope), so a matching row is known to exist — this just needs
+	// to find it and decide whether it's a legitimate retry or a
+	// different request colliding on the same key.
+	//
+	// Lookup is digest-first (computed fresh from key/scope under the
+	// ring's CURRENT version) with a raw-key/scope fallback — the fallback
+	// is what makes "preserving temporary raw compatibility" (T3 work item
+	// 4) real: during an active key rotation, a row backfilled to the new
+	// digest version hasn't happened yet for every existing row, so a
+	// fresh current-version digest can legitimately fail to match an old
+	// row's still-old-version digest even though the raw (key, scope) is
+	// identical. Once raw is nulled by retention (30+ days later), the
+	// fallback simply never matches anything, which is correct — by then
+	// backfill has long since caught every row up to a current-version
+	// digest.
+	//
+	// status=="" means the row that caused the caller's unique-violation
+	// vanished (a genuine race, not a normal miss) — same contract
+	// GetStatusByIdempotency used to document. conflict==true means a row
+	// WAS found but its stored conflict_fingerprint (type, amount,
+	// currency) does not match the caller's own — a different request
+	// reusing the same idempotency key, not a legitimate retry.
+	FindConflictOrDuplicate(
 		ctx context.Context,
 		tx *sql.Tx,
 		key string,
 		scope *string,
-	) (string, error)
+		txType string,
+		amount decimal.Decimal,
+		currency string,
+	) (status string, conflict bool, err error)
+
+	// BackfillOnce is docs/roadmap/active/51-a8-data-lifecycle-privacy.md T3's bounded backfill
+	// (work item 3): one batch of pre-T3 rows (idempotency_key_digest IS
+	// NULL) gets a digest + conflict_fingerprint computed from their
+	// still-present raw key/scope/type/amount/currency and written in
+	// place — same shape as every T2.5 repository's own BackfillOnce
+	// (WHERE-IS-NULL-driven, FOR UPDATE SKIP LOCKED, caller loops until 0
+	// is itself the completion proof).
+	BackfillOnce(ctx context.Context, batchSize int) (int, error)
 
 	// GetEntries returns all ledger entries associated with a transaction.
 	// Used by processors such as reversal to reconstruct accounting movements.
@@ -131,13 +170,60 @@ type TransactionRepository interface {
 }
 
 type transactionRepo struct {
-	db database.DatabaseSQL
+	db         database.DatabaseSQL
+	digestRing *cryptox.DigestRing
 }
 
 // NewTransactionRepository requires a DB handle (outside any ledger
-// transaction) for read-only lookups such as GetAccountIDs.
-func NewTransactionRepository(db database.DatabaseSQL) TransactionRepository {
-	return &transactionRepo{db: db}
+// transaction) for read-only lookups such as GetAccountIDs, and a
+// docs/roadmap/active/51-a8-data-lifecycle-privacy.md T3 (K7) digest ring — unlike every T2
+// repository's OPTIONAL nil-safe ring (privacy fields degrade gracefully
+// without one), digestRing is REQUIRED here: idempotency deduplication is
+// a money-safety invariant, not a confidentiality one, and K7 is explicit
+// that "a missing key version... never bypasses deduplication." A nil
+// ring panics immediately rather than letting posting silently run
+// without ever computing a digest.
+func NewTransactionRepository(db database.DatabaseSQL, digestRing *cryptox.DigestRing) TransactionRepository {
+	if digestRing == nil {
+		panic("ledger: digest ring is required (docs/roadmap/active/51-a8-data-lifecycle-privacy.md K7)")
+	}
+	return &transactionRepo{db: db, digestRing: digestRing}
+}
+
+// canonicalIdempotencyInput length-prefixes scope and key before
+// concatenating them — a plain "scope+key" string would let
+// scope="ab",key="c" collide with scope="a",key="bc", silently merging two
+// distinct idempotency identities into the same digest.
+func canonicalIdempotencyInput(scope *string, key string) []byte {
+	s := ""
+	if scope != nil {
+		s = *scope
+	}
+	buf := make([]byte, 0, 8+len(s)+len(key))
+	var lenBuf [4]byte
+	binary.BigEndian.PutUint32(lenBuf[:], uint32(len(s)))
+	buf = append(buf, lenBuf[:]...)
+	buf = append(buf, s...)
+	binary.BigEndian.PutUint32(lenBuf[:], uint32(len(key)))
+	buf = append(buf, lenBuf[:]...)
+	buf = append(buf, key...)
+	return buf
+}
+
+// conflictFingerprint hashes the business-conflict-relevant fields of a
+// posting attempt — plain SHA-256 (unlike the idempotency digest, this
+// never needs to resist offline guessing; its only job is exact-match
+// comparison against itself), same length-prefixing discipline as
+// canonicalIdempotencyInput.
+func conflictFingerprint(txType string, amount decimal.Decimal, currency string) []byte {
+	h := sha256.New()
+	for _, part := range []string{txType, amount.String(), currency} {
+		var lenBuf [4]byte
+		binary.BigEndian.PutUint32(lenBuf[:], uint32(len(part)))
+		h.Write(lenBuf[:])
+		h.Write([]byte(part))
+	}
+	return h.Sum(nil)
 }
 
 func (r *transactionRepo) Insert(
@@ -145,13 +231,16 @@ func (r *transactionRepo) Insert(
 	tx *sql.Tx,
 	p InsertTransactionParams,
 ) error {
+	digest, version := r.digestRing.Digest(canonicalIdempotencyInput(p.IdempotencyScope, p.IdempotencyKey))
+	fingerprint := conflictFingerprint(p.Type, p.Amount, p.Currency)
 
 	_, err := tx.ExecContext(ctx, `
 		INSERT INTO ledger_transactions
 			(id, idempotency_key, idempotency_scope, type, status,
 			 amount, currency, source_account_id, destination_account_id,
-			 external_ref, gateway, request_id, created_at, updated_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,now(),now())`,
+			 external_ref, gateway, request_id, created_at, updated_at,
+			 idempotency_key_digest, idempotency_key_version, conflict_fingerprint)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,now(),now(),$13,$14,$15)`,
 		p.ID,
 		p.IdempotencyKey,
 		p.IdempotencyScope,
@@ -164,6 +253,9 @@ func (r *transactionRepo) Insert(
 		p.ExternalRef,
 		p.Gateway,
 		p.RequestID,
+		digest,
+		version,
+		fingerprint,
 	)
 
 	if err != nil {
@@ -218,33 +310,118 @@ func (r *transactionRepo) GetStatus(
 	return status, nil
 }
 
-func (r *transactionRepo) GetStatusByIdempotency(
+func (r *transactionRepo) FindConflictOrDuplicate(
 	ctx context.Context,
 	tx *sql.Tx,
 	key string,
 	scope *string,
-) (string, error) {
+	txType string,
+	amount decimal.Decimal,
+	currency string,
+) (string, bool, error) {
+	digest, _ := r.digestRing.Digest(canonicalIdempotencyInput(scope, key))
 
 	var status string
-
+	var storedFingerprint []byte
 	err := tx.QueryRowContext(ctx, `
-		SELECT status
+		SELECT status, conflict_fingerprint
 		FROM ledger_transactions
-		WHERE idempotency_key = $1
-		  AND (idempotency_scope = $2 OR ($2 IS NULL AND idempotency_scope IS NULL))
+		WHERE idempotency_key_digest = $1
 		LIMIT 1`,
-		key,
-		scope,
-	).Scan(&status)
+		digest,
+	).Scan(&status, &storedFingerprint)
 
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return "", nil
-		}
-		return "", err
+	if errors.Is(err, sql.ErrNoRows) {
+		// Rotation-transition fallback (see this method's own interface
+		// doc comment) — only ever matches a row whose raw key/scope is
+		// still present (pre-30-day-retention, or not yet nulled).
+		err = tx.QueryRowContext(ctx, `
+			SELECT status, conflict_fingerprint
+			FROM ledger_transactions
+			WHERE idempotency_key = $1
+			  AND (idempotency_scope = $2 OR ($2 IS NULL AND idempotency_scope IS NULL))
+			LIMIT 1`,
+			key, scope,
+		).Scan(&status, &storedFingerprint)
 	}
 
-	return status, nil
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+
+	conflict := len(storedFingerprint) > 0 && !bytes.Equal(storedFingerprint, conflictFingerprint(txType, amount, currency))
+	return status, conflict, nil
+}
+
+func (r *transactionRepo) BackfillOnce(ctx context.Context, batchSize int) (int, error) {
+	type pendingRow struct {
+		id       uuid.UUID
+		key      string
+		scope    *string
+		txType   string
+		amount   decimal.Decimal
+		currency string
+	}
+	var rows []pendingRow
+	err := r.db.WithTx(ctx, nil, func(tx *sql.Tx) error {
+		result, queryErr := tx.QueryContext(ctx, `
+			SELECT id, idempotency_key, idempotency_scope, type, amount, currency
+			FROM ledger_transactions
+			WHERE idempotency_key_digest IS NULL
+			ORDER BY created_at, id
+			LIMIT $1
+			FOR UPDATE SKIP LOCKED`, batchSize)
+		if queryErr != nil {
+			return fmt.Errorf("select backfill batch: %w", queryErr)
+		}
+		for result.Next() {
+			var pr pendingRow
+			var scope sql.NullString
+			var key sql.NullString
+			if scanErr := result.Scan(&pr.id, &key, &scope, &pr.txType, &pr.amount, &pr.currency); scanErr != nil {
+				result.Close()
+				return fmt.Errorf("scan backfill row: %w", scanErr)
+			}
+			if !key.Valid {
+				// idempotency_key is already nulled (retention ran before
+				// backfill reached this row) — nothing left to derive a
+				// digest from; skip rather than write a digest over an
+				// empty key that could collide with a real one.
+				continue
+			}
+			pr.key = key.String
+			if scope.Valid {
+				s := scope.String
+				pr.scope = &s
+			}
+			rows = append(rows, pr)
+		}
+		if rowsErr := result.Err(); rowsErr != nil {
+			result.Close()
+			return fmt.Errorf("iterate backfill batch: %w", rowsErr)
+		}
+		result.Close()
+
+		for _, pr := range rows {
+			digest, version := r.digestRing.Digest(canonicalIdempotencyInput(pr.scope, pr.key))
+			fingerprint := conflictFingerprint(pr.txType, pr.amount, pr.currency)
+			if _, execErr := tx.ExecContext(ctx, `
+				UPDATE ledger_transactions
+				SET idempotency_key_digest = $1, idempotency_key_version = $2, conflict_fingerprint = $3
+				WHERE id = $4`,
+				digest, version, fingerprint, pr.id); execErr != nil {
+				return fmt.Errorf("update backfilled transaction %s: %w", pr.id, execErr)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	return len(rows), nil
 }
 
 func (r *transactionRepo) GetEntries(

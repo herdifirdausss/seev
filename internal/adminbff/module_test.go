@@ -46,13 +46,8 @@ func (f *sessionRepoFake) DeleteSession(_ context.Context, id string) error {
 	delete(f.sessions, id)
 	return nil
 }
-func (f *sessionRepoFake) CleanupSessions(_ context.Context, now time.Time) error {
-	for id, s := range f.sessions {
-		if now.After(s.ExpiresAt) || now.After(s.AbsoluteExpiresAt) {
-			delete(f.sessions, id)
-		}
-	}
-	return nil
+func (f *sessionRepoFake) BackfillOnce(_ context.Context, _ int) (int, error) {
+	return 0, nil
 }
 
 func TestNewOpaqueTokenIsRandom256Bit(t *testing.T) {

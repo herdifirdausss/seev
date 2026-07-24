@@ -12,7 +12,26 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herdifirdausss/seev/internal/ledger/apperror"
+	"github.com/herdifirdausss/seev/pkg/cryptox"
 )
+
+// mockDigestRingForTest is docs/roadmap/active/51-a8-data-lifecycle-privacy.md T3's (K7) fixed test
+// key for this file's sqlmock-based unit tests — none of them exercise
+// Insert/FindConflictOrDuplicate (those need a real Postgres unique
+// constraint to race against, covered by schema_contract_test.go's own
+// integration tests instead), so the ring's actual key material is never
+// observed here, only required by NewTransactionRepository's own
+// non-nil constructor guard.
+func mockDigestRingForTest(t *testing.T) *cryptox.DigestRing {
+	t.Helper()
+	key := make([]byte, 32)
+	for i := range key {
+		key[i] = byte(i + 53)
+	}
+	ring, err := cryptox.NewDigestRing(map[int][]byte{1: key}, 1)
+	require.NoError(t, err)
+	return ring
+}
 
 // ─── GetByID: uuid.Parse not uuid.MustParse (docs/roadmap/archive/12 Task T6) ────────────
 
@@ -24,7 +43,7 @@ var txColumns = []string{
 
 func TestGetByID_ValidRow_ParsesAccountIDs(t *testing.T) {
 	db, mock := newMockDB(t)
-	repo := NewTransactionRepository(db)
+	repo := NewTransactionRepository(db, mockDigestRingForTest(t))
 	ctx := context.Background()
 
 	txID := uuid.New()
@@ -46,7 +65,7 @@ func TestGetByID_ValidRow_ParsesAccountIDs(t *testing.T) {
 
 func TestGetByID_MalformedStoredSourceAccountID_ReturnsErrorNotPanic(t *testing.T) {
 	db, mock := newMockDB(t)
-	repo := NewTransactionRepository(db)
+	repo := NewTransactionRepository(db, mockDigestRingForTest(t))
 	ctx := context.Background()
 
 	txID := uuid.New()
@@ -68,7 +87,7 @@ func TestGetByID_MalformedStoredSourceAccountID_ReturnsErrorNotPanic(t *testing.
 
 func TestGetByID_MalformedStoredDestinationAccountID_ReturnsErrorNotPanic(t *testing.T) {
 	db, mock := newMockDB(t)
-	repo := NewTransactionRepository(db)
+	repo := NewTransactionRepository(db, mockDigestRingForTest(t))
 	ctx := context.Background()
 
 	txID := uuid.New()
@@ -88,7 +107,7 @@ func TestGetByID_MalformedStoredDestinationAccountID_ReturnsErrorNotPanic(t *tes
 
 func TestGetByID_NotFound_ReturnsSentinel(t *testing.T) {
 	db, mock := newMockDB(t)
-	repo := NewTransactionRepository(db)
+	repo := NewTransactionRepository(db, mockDigestRingForTest(t))
 	ctx := context.Background()
 
 	mock.ExpectQuery(`SELECT id, idempotency_key`).WillReturnError(sql.ErrNoRows)

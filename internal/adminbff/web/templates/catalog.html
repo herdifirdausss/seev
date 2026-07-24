@@ -8,5 +8,7 @@
   <article><h2>KYC review</h2><div hx-get="/api/v1/admin/kyc/submissions" hx-trigger="load, every 30s">Loading KYC submissions…</div></article>
   <article><h2>Fraud events</h2><div hx-get="/api/v1/admin/fraud/events" hx-trigger="load, every 30s">Loading fraud events…</div></article>
   <article><h2>Audit log</h2><div hx-get="/api/v1/admin/audit?limit=25" hx-trigger="load, every 30s">Loading audit log…</div></article>
+  <article><h2>Privacy exports</h2><div hx-get="/api/v1/admin/privacy/requests?type=export" hx-trigger="load, every 30s">Loading export requests…</div></article>
+  <article><h2>Account closures</h2><div hx-get="/api/v1/admin/privacy/requests?type=closure" hx-trigger="load, every 30s">Loading closure requests…</div></article>
 </div>
 {{end}}

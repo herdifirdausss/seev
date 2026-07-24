@@ -165,6 +165,13 @@ var (
 	ErrAlreadyPosted   = errors.New("ALREADY_POSTED")
 	ErrPreviousFailed  = errors.New("PREVIOUS_ATTEMPT_FAILED")
 	ErrStillProcessing = errors.New("STILL_PROCESSING")
+	// ErrIdempotencyConflict is docs/roadmap/active/51-a8-data-lifecycle-privacy.md T3's (K7)
+	// new outcome: the SAME idempotency key/scope was reused with a
+	// DIFFERENT type/amount/currency than the original request — distinct
+	// from ErrAlreadyPosted (a legitimate retry of the identical request),
+	// which always returns the ORIGINAL result rather than silently
+	// treating the mismatched retry as success.
+	ErrIdempotencyConflict = errors.New("IDEMPOTENCY_CONFLICT")
 )
 
 // businessRejectionSentinels mirrors internal/ledger/transport/errors.go's
@@ -188,7 +195,7 @@ var businessRejectionSentinels = []error{
 	ErrNotReversible, ErrAlreadyClosed, ErrOriginalTypeMismatch,
 	ErrLifecycleAmountMismatch, ErrUnbalancedEntries, ErrScreeningBlocked,
 	ErrQuoteExpired, ErrQuoteMismatch, ErrStillProcessing, ErrPreviousFailed,
-	ErrAdjustmentAlreadyDecided, ErrReconItemAlreadyResolved,
+	ErrAdjustmentAlreadyDecided, ErrReconItemAlreadyResolved, ErrIdempotencyConflict,
 }
 
 // IsBusinessRejection reports whether err is a valid business/input outcome
