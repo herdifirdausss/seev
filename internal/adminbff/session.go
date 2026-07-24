@@ -97,7 +97,7 @@ func (r *sessionRepo) TouchSession(ctx context.Context, id string, expiresAt tim
 }
 
 // DeleteSession calls the fn_delete_session SECURITY DEFINER function
-// (migrations/adminbff/000002_session_delete_fn.up.sql) instead of issuing a
+// (migrations/adminbff/000004_session_delete_fn.up.sql) instead of issuing a
 // direct DELETE: app_service (and therefore adminbff_app) is only ever
 // granted SELECT, INSERT, UPDATE on sessions, so a direct DELETE fails with
 // "permission denied for table sessions".

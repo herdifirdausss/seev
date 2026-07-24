@@ -1,7 +1,7 @@
 //go:build integration
 
 // Package adminbff proves the sessions DELETE fix (migrations/adminbff/
-// 000002_session_delete_fn.up.sql) actually works against a real Postgres
+// 000004_session_delete_fn.up.sql) actually works against a real Postgres
 // role that only holds the app_service grant — the same role adminbff_app
 // connects as in every real deployment path (docker-compose.yml,
 // scripts/lib.sh ensure_app_role). Before this fix, DeleteSession and
