@@ -96,15 +96,20 @@ func (r *sessionRepo) TouchSession(ctx context.Context, id string, expiresAt tim
 	return nil
 }
 
+// DeleteSession calls the fn_delete_session SECURITY DEFINER function
+// (migrations/adminbff/000002_session_delete_fn.up.sql) instead of issuing a
+// direct DELETE: app_service (and therefore adminbff_app) is only ever
+// granted SELECT, INSERT, UPDATE on sessions, so a direct DELETE fails with
+// "permission denied for table sessions".
 func (r *sessionRepo) DeleteSession(ctx context.Context, id string) error {
-	if _, err := r.db.ExecContext(ctx, `DELETE FROM sessions WHERE id = $1`, id); err != nil {
+	if _, err := r.db.ExecContext(ctx, `SELECT fn_delete_session($1)`, id); err != nil {
 		return fmt.Errorf("adminbff: delete session: %w", err)
 	}
 	return nil
 }
 
 func (r *sessionRepo) CleanupSessions(ctx context.Context, now time.Time) error {
-	if _, err := r.db.ExecContext(ctx, `DELETE FROM sessions WHERE expires_at <= $1 OR absolute_expires_at <= $1`, now); err != nil {
+	if _, err := r.db.ExecContext(ctx, `SELECT fn_cleanup_expired_sessions($1)`, now); err != nil {
 		return fmt.Errorf("adminbff: cleanup sessions: %w", err)
 	}
 	return nil
