@@ -62,7 +62,9 @@ func (m *Module) LoginHandler() http.Handler {
 func (m *Module) LogoutHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if s := SessionFromContext(r.Context()); s != nil {
-			_ = m.repo.DeleteSession(r.Context(), s.ID)
+			if err := m.repo.DeleteSession(r.Context(), s.ID); err != nil {
+				m.logger.Error("adminbff: failed to delete session on logout", "error", err)
+			}
 		}
 		http.SetCookie(w, &http.Cookie{Name: sessionCookieName, Value: "", Path: "/", HttpOnly: true, Secure: m.cfg.SecureCookie, SameSite: http.SameSiteLaxMode, MaxAge: -1})
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
