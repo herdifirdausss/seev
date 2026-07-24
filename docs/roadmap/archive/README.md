@@ -9,7 +9,7 @@ system shape.
 Use the current [architecture](../../reference/architecture.md) and
 [services](../../reference/services.md) for runtime truth. Open one archived
 record only when you need the reasoning or acceptance evidence for that phase.
-The directory has 50 files represented by 48 numbered rows because plan 45
+The directory has 51 files represented by 49 numbered rows because plan 45
 links to two supporting review records.
 
 | # | Document | Scope | Final status |
@@ -62,3 +62,4 @@ links to two supporting review records.
 | 47 | [47-a5-admin-console.md](47-a5-admin-console.md) | Admin BFF, sessions, maker/checker roles, audit logs, and operations panels | ✅ Done |
 | 48 | [48-a10-product-assurance.md](48-a10-product-assurance.md) | Durable product assurance and emergency-intake controls | ✅ Done |
 | 49 | [49-a6-internal-security.md](49-a6-internal-security.md) | Threat modeling, mTLS, internal allowlists, fail-closed tokens, Vault, and security drills | ✅ Done |
+| 50 | [50-a7-backup-pitr-disaster-recovery.md](50-a7-backup-pitr-disaster-recovery.md) | Encrypted continuous backup, isolated latest/PITR restore, offline integrity verification, ephemeral-state reseed, and scheduled game-day drills | ✅ Done |

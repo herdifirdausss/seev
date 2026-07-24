@@ -971,7 +971,7 @@ entries:
       retained full chains + their WAL). Privacy status responses and
       runbooks must state the latest backup-expiration horizon rather than
       claim complete erasure. Not independently age-purged by this policy —
-      governed entirely by docs/roadmap/active/50-a7-backup-pitr-disaster-recovery.md K4.
+      governed entirely by docs/roadmap/archive/50-a7-backup-pitr-disaster-recovery.md K4.
 
   # ── T1 K5/K4 infrastructure: identical shape in every owner database ──────
   - owner: adminbff

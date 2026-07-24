@@ -107,5 +107,5 @@ escalate and treat any restore target inside that gap as unavailable
 - [DR restore drill](dr-restore-drill.md) — PITR target selection assumes
   a continuous, gap-free WAL archive; a confirmed gap (Step 4) narrows
   which targets are actually reachable.
-- docs/roadmap/active/50-a7-backup-pitr-disaster-recovery.md — K4 (`archive_timeout`
+- docs/roadmap/archive/50-a7-backup-pitr-disaster-recovery.md — K4 (`archive_timeout`
   policy), K12 (RPO measurement boundaries).

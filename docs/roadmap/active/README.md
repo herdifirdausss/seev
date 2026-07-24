@@ -8,7 +8,6 @@
 | Plan | Scope |
 |---|---|
 | [35](35-phase6j-kubernetes.md) | Optional local Kubernetes learning |
-| [50 · A7](50-a7-backup-pitr-disaster-recovery.md) | Backup, PITR, and disaster recovery |
 | [51 · A8](51-a8-data-lifecycle-privacy.md) | Data lifecycle and privacy |
 | [52 · A9](52-a9-api-contracts-schema-evolution.md) | API contracts and schema evolution |
 | [53 · B0](53-b0-load-capacity-gate.md) | Load and capacity gate |

@@ -114,5 +114,5 @@ severity here (backups may not be restorable) is comparable.
   an otherwise-healthy repository.
 - [DR restore drill](dr-restore-drill.md) — the full recovery procedure;
   Step 4 above is a direct application of it.
-- docs/roadmap/active/50-a7-backup-pitr-disaster-recovery.md — K4 (expire-after-check
+- docs/roadmap/archive/50-a7-backup-pitr-disaster-recovery.md — K4 (expire-after-check
   ordering, two-chain retention), K6 (manifest checksum status).

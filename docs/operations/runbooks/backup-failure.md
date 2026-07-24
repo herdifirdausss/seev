@@ -127,6 +127,6 @@ page again on the next scheduled window.
   fails its own integrity check.
 - [DR restore drill](dr-restore-drill.md) — the full recovery procedure
   this backup chain exists to support.
-- docs/roadmap/active/50-a7-backup-pitr-disaster-recovery.md — K4 (backup/WAL
+- docs/roadmap/archive/50-a7-backup-pitr-disaster-recovery.md — K4 (backup/WAL
   policy), K5 (least-privilege backup identity), K13 (observable backup
   status).

@@ -1843,9 +1843,9 @@ removed via `restore-cluster.sh cleanup`, throwaway image removed via
 §6's "Restore and PITR" section.
 
 **Commit status:** the user explicitly authorized committing this and A8's
-outstanding work once complete (2026-07-24) — done as a single commit
-covering both tracks once A8's own remaining work below finished; see the
-commit history for the exact ID.
+outstanding work once complete (2026-07-24) — landed as commit `dfecb13`
+("docs/plan/50+51: complete A7 backup/DR and A8 data-lifecycle-privacy
+through T6 (+T4b/T5b)"), covering both tracks together.
 
 ## 6. Acceptance checklist
 
@@ -1899,12 +1899,10 @@ commit history for the exact ID.
 
 ## 7. Global Definition of Done
 
-- [ ] T0–T6 results contain commands, concise output, timings, and commit IDs.
-      Every other acceptance item in this document is now evidenced,
-      including the previously-open wrong-major-version restore refusal
-      (closed in T6's own Result item 7, live-verified). This box stays
-      open only pending the actual commit — user explicitly authorized
-      "commit then archive" once work is complete.
+- [x] T0–T6 results contain commands, concise output, timings, and commit IDs.
+      Landed as commit `dfecb13`, including the previously-open
+      wrong-major-version restore refusal (closed in T6's own Result item
+      7, live-verified).
 - [x] No immutable ledger row is updated or deleted by backup/recovery tooling.
 - [x] No production/default volume is destroyed by a test or drill.
 - [x] The full repository gate and all A7 acceptance checks pass. Re-verified
@@ -1917,10 +1915,9 @@ commit history for the exact ID.
       the same unrelated host-level RabbitMQ port conflict documented
       elsewhere in this session's own work, not surface anything new.
 - [x] The updated runbook is usable without relying on conversation history.
-- [ ] A7 is marked complete in plan 42 and the plan index only after the final
-      evidence is recorded here. The only remaining gap is the commit ID
-      above — once committed, this document moves to archive as the
-      completion signal.
+- [x] A7 is marked complete in plan 42 and the plan index only after the final
+      evidence is recorded here. Committed as `dfecb13`; this document now
+      moves to `docs/roadmap/archive/` as the completion signal.
 
 ## 8. Explicit follow-ups
 

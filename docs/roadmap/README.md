@@ -13,8 +13,7 @@ trigger, prerequisites, and owner decision are satisfied.
 | # | Plan | Purpose | Status |
 |---|---|---|---|
 | 35 | [Optional local Kubernetes](active/35-phase6j-kubernetes.md) | Learn local orchestration with kind | Todo |
-| 50 · A7 | [Backup, PITR, and disaster recovery](active/50-a7-backup-pitr-disaster-recovery.md) | Build and prove cluster-wide recovery | Todo |
-| 51 · A8 | [Data lifecycle and privacy](active/51-a8-data-lifecycle-privacy.md) | Govern retention, export, encryption, and pseudonymization | Core complete (T2.5b/T4b/T5b/T6b follow-ups tracked) |
+| 51 · A8 | [Data lifecycle and privacy](active/51-a8-data-lifecycle-privacy.md) | Govern retention, export, encryption, and pseudonymization | Core complete (T2.5b/T4b/T6b follow-ups tracked) |
 | 52 · A9 | [API contracts and schema evolution](active/52-a9-api-contracts-schema-evolution.md) | Add compatibility and deprecation gates | Todo |
 | 53 · B0 | [Load and capacity gate](active/53-b0-load-capacity-gate.md) | Measure whether later scale work is justified | Todo |
 | 54 | [VendorService boundary](active/54-vendor-service-boundary.md) | Isolate vendor connectivity and callback ingress | Todo |
@@ -29,7 +28,7 @@ not a promise that every track will be implemented.
 
 ## Archive
 
-The [archive index](archive/README.md) contains 50 files organized as 48
+The [archive index](archive/README.md) contains 51 files organized as 49
 numbered entries; entry 45 has two supporting review records. Archived plans
 preserve the assumptions and task wording from their original phase. They may
 say “current” while describing an older system shape; use the

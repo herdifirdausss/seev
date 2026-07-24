@@ -271,7 +271,7 @@ func requiredDocumentationFailures(root string) []string {
 			"Three kinds of truth must not be mixed",
 			"pkg transport code proves callers and deadlines",
 			"PostgreSQL keeps durable owner facts",
-			"Backup, PITR, and disaster recovery are a prepared target",
+			"Backup, PITR, and disaster recovery are proven and complete",
 			"Data lifecycle is another explicit target",
 			"B0 decides whether B1–B3 should exist",
 			"The code of conduct protects participation",
