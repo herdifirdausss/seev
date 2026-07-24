@@ -45,14 +45,6 @@ type KYCRepository interface {
 	CreateKYCDocument(context.Context, model.KYCDocument) error
 	GetKYCDocument(context.Context, uuid.UUID) (model.KYCDocument, error)
 
-	// BackfillOnce is docs/roadmap/active/51-a8-data-lifecycle-privacy.md T2.5's bounded backfill
-	// for kyc_submissions.payload — same shape as UserRepository's own
-	// BackfillOnce, but also re-derives rescreen_name/rescreen_birth_date
-	// from the decoded payload so ListKYCRescreenSubjects keeps working
-	// for rows created before this task existed (see extractRescreenFields,
-	// the exact same derivation CreateKYCSubmission already applies at
-	// write time).
-	BackfillOnce(ctx context.Context, batchSize int) (int, error)
 }
 
 type kycRepo struct {
@@ -60,11 +52,15 @@ type kycRepo struct {
 	ring *cryptox.Ring
 }
 
-// NewKYCRepository's ring is docs/roadmap/active/51-a8-data-lifecycle-privacy.md T2.3's K2/K3
-// expand-phase encryption for kyc_submissions.payload — same nil-safe
-// optionality as UserRepository's own ring parameter. No separate lookup
-// key: nothing looks up a submission by payload equality.
+// NewKYCRepository's ring is REQUIRED — docs/roadmap/active/51-a8-data-lifecycle-privacy.md
+// "A8 T2.5b" (the contract migration): kyc_submissions.payload has no
+// plaintext column anymore (migrations/auth/000014_cryptox_contract), so
+// every read/write here needs the ring to function at all. No separate
+// lookup key: nothing looks up a submission by payload equality.
 func NewKYCRepository(db database.DatabaseSQL, ring *cryptox.Ring) KYCRepository {
+	if ring == nil {
+		panic("auth: NewKYCRepository requires a non-nil cryptox ring")
+	}
 	return &kycRepo{db: db, ring: ring}
 }
 
@@ -90,28 +86,22 @@ func extractRescreenFields(payload map[string]any) (name *string, birthDate stri
 	return name, birthDate
 }
 
-const kycSubmissionColumns = `id, user_id, level_requested, status, payload, provider, provider_ref, decided_by, decision_reason, created_at, decided_at, payload_ciphertext, payload_key_version`
+const kycSubmissionColumns = `id, user_id, level_requested, status, provider, provider_ref, decided_by, decision_reason, created_at, decided_at, payload_ciphertext`
 
 func (r *kycRepo) scanKYCSubmission(scanner interface{ Scan(...any) error }) (model.KYCSubmission, error) {
 	var s model.KYCSubmission
-	var payload, payloadCiphertext []byte
-	var payloadKeyVersion *int
+	var payloadCiphertext []byte
 	var providerRef, decidedBy, reason sql.NullString
 	var decidedAt sql.NullTime
-	if err := scanner.Scan(&s.ID, &s.UserID, &s.LevelRequested, &s.Status, &payload, &s.Provider, &providerRef, &decidedBy, &reason, &s.CreatedAt, &decidedAt, &payloadCiphertext, &payloadKeyVersion); err != nil {
+	if err := scanner.Scan(&s.ID, &s.UserID, &s.LevelRequested, &s.Status, &s.Provider, &providerRef, &decidedBy, &reason, &s.CreatedAt, &decidedAt, &payloadCiphertext); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return model.KYCSubmission{}, ErrKYCSubmissionNotFound
 		}
 		return model.KYCSubmission{}, fmt.Errorf("auth: scan kyc submission: %w", err)
 	}
-	// Dual-read (K3): ciphertext wins when present (already backfilled);
-	// otherwise the plaintext payload column already scanned above stands.
-	if r.ring != nil && payloadCiphertext != nil {
-		plain, err := r.ring.Open(payloadAAD(s.ID), payloadCiphertext)
-		if err != nil {
-			return model.KYCSubmission{}, fmt.Errorf("auth: decrypt kyc payload: %w", err)
-		}
-		payload = plain
+	payload, err := r.ring.Open(payloadAAD(s.ID), payloadCiphertext)
+	if err != nil {
+		return model.KYCSubmission{}, fmt.Errorf("auth: decrypt kyc payload: %w", err)
 	}
 	if err := json.Unmarshal(payload, &s.Payload); err != nil {
 		return model.KYCSubmission{}, fmt.Errorf("auth: decode kyc payload: %w", err)
@@ -139,22 +129,18 @@ func (r *kycRepo) CreateKYCSubmission(ctx context.Context, s model.KYCSubmission
 	}
 	rescreenName, rescreenBirthDate := extractRescreenFields(s.Payload)
 
-	var payloadCiphertext []byte
-	var payloadKeyVersion *int
-	if r.ring != nil {
-		if payloadCiphertext, err = r.ring.Seal(payloadAAD(s.ID), payload); err != nil {
-			return fmt.Errorf("auth: encrypt kyc payload: %w", err)
-		}
-		v := r.ring.CurrentVersion()
-		payloadKeyVersion = &v
+	payloadCiphertext, err := r.ring.Seal(payloadAAD(s.ID), payload)
+	if err != nil {
+		return fmt.Errorf("auth: encrypt kyc payload: %w", err)
 	}
+	v := r.ring.CurrentVersion()
 
 	_, err = r.db.ExecContext(ctx, `
-		INSERT INTO kyc_submissions (id, user_id, level_requested, status, payload, provider,
+		INSERT INTO kyc_submissions (id, user_id, level_requested, status, provider,
 			payload_ciphertext, payload_key_version, rescreen_name, rescreen_birth_date)
-		VALUES ($1, $2, $3, 'pending', $4, $5, $6, $7, $8, $9)`,
-		s.ID, s.UserID, s.LevelRequested, payload, s.Provider,
-		payloadCiphertext, payloadKeyVersion, rescreenName, rescreenBirthDate)
+		VALUES ($1, $2, $3, 'pending', $4, $5, $6, $7, $8)`,
+		s.ID, s.UserID, s.LevelRequested, s.Provider,
+		payloadCiphertext, v, rescreenName, rescreenBirthDate)
 	if err != nil {
 		if generalerror.IsDuplicateKey(err) {
 			return ErrKYCSubmissionNotPending
@@ -480,66 +466,6 @@ func (r *kycRepo) MarkKYCApplyRetryFailure(ctx context.Context, id uuid.UUID, re
 		return fmt.Errorf("auth: mark kyc apply retry failure: %w", err)
 	}
 	return nil
-}
-
-func (r *kycRepo) BackfillOnce(ctx context.Context, batchSize int) (int, error) {
-	if r.ring == nil {
-		return 0, fmt.Errorf("auth: cryptox ring not configured, cannot backfill")
-	}
-	type pendingRow struct {
-		id      uuid.UUID
-		payload []byte
-	}
-	var rows []pendingRow
-	err := r.db.WithTx(ctx, nil, func(tx *sql.Tx) error {
-		result, queryErr := tx.QueryContext(ctx, `
-			SELECT id, payload FROM kyc_submissions
-			WHERE payload_ciphertext IS NULL
-			ORDER BY created_at, id
-			LIMIT $1
-			FOR UPDATE SKIP LOCKED`, batchSize)
-		if queryErr != nil {
-			return fmt.Errorf("select backfill batch: %w", queryErr)
-		}
-		for result.Next() {
-			var pr pendingRow
-			if scanErr := result.Scan(&pr.id, &pr.payload); scanErr != nil {
-				result.Close()
-				return fmt.Errorf("scan backfill row: %w", scanErr)
-			}
-			rows = append(rows, pr)
-		}
-		if rowsErr := result.Err(); rowsErr != nil {
-			result.Close()
-			return fmt.Errorf("iterate backfill batch: %w", rowsErr)
-		}
-		result.Close()
-
-		v := r.ring.CurrentVersion()
-		for _, pr := range rows {
-			var decoded map[string]any
-			if err := json.Unmarshal(pr.payload, &decoded); err != nil {
-				return fmt.Errorf("decode kyc payload for backfill %s: %w", pr.id, err)
-			}
-			rescreenName, rescreenBirthDate := extractRescreenFields(decoded)
-			ciphertext, sealErr := r.ring.Seal(payloadAAD(pr.id), pr.payload)
-			if sealErr != nil {
-				return fmt.Errorf("encrypt kyc payload for backfill %s: %w", pr.id, sealErr)
-			}
-			if _, execErr := tx.ExecContext(ctx, `
-				UPDATE kyc_submissions
-				SET payload_ciphertext = $1, payload_key_version = $2, rescreen_name = $3, rescreen_birth_date = $4
-				WHERE id = $5`,
-				ciphertext, v, rescreenName, rescreenBirthDate, pr.id); execErr != nil {
-				return fmt.Errorf("update backfilled kyc submission %s: %w", pr.id, execErr)
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		return 0, err
-	}
-	return len(rows), nil
 }
 
 func (r *kycRepo) RejectKYCSubmission(ctx context.Context, id uuid.UUID, decidedBy, reason string) error {

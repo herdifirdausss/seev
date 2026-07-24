@@ -35,6 +35,14 @@ JWT_ISSUER="${JWT_ISSUER:-seev}"
 # behavior that silently accepted every call is gone), so this can no
 # longer default to empty the way it used to across this whole harness.
 INTERNAL_GRPC_TOKEN="${INTERNAL_GRPC_TOKEN:-change-me-to-a-random-32-plus-character-token}"
+# docs/roadmap/active/51 "A8 T2.5b" (the contract migration): auth-service now
+# REFUSES to boot without both of these — auth_users.email/full_name and
+# kyc_submissions.payload have no plaintext column left to fall back to,
+# so this pair is no longer the "optional outside production" ring T2.2
+# originally shipped. Fixed 32-byte test values, same convention as every
+# other fixed secret in this file.
+CRYPTOX_KEY_V1="${CRYPTOX_KEY_V1:-4444444444444444444444444444444444444444444444444444444444444444}"
+CRYPTOX_LOOKUP_KEY="${CRYPTOX_LOOKUP_KEY:-5555555555555555555555555555555555555555555555555555555555555555}"
 # docs/roadmap/active/51 T3 (K7): ledger-service now REFUSES to boot without this
 # (money-safety idempotency-key digest ring, required unconditionally,
 # never optional the way the field-encryption/export/closure rings
@@ -413,6 +421,7 @@ start_payout_service() {
 		export RATE_LIMIT_BURST=$RATE_LIMIT_BURST
 		export TLS_CERT_DIR=$CERT_DIR
 		export INTERNAL_GRPC_TOKEN=$INTERNAL_GRPC_TOKEN
+		export CRYPTOX_KEY_V1=$CRYPTOX_KEY_V1
 		export VENDOR_MOCKVENDOR_ENABLED=true
 		export VENDOR_MOCKVENDOR_SECRET="${VENDOR_MOCKVENDOR_SECRET:-script-test-mockvendor-secret-at-least-32-chars-long}"
 		# mockvendor2 registered alongside mockvendor (docs/roadmap/archive/40 Task T4) —
@@ -463,6 +472,7 @@ start_payout_service_replica() {
 		export RATE_LIMIT_BURST=$RATE_LIMIT_BURST
 		export TLS_CERT_DIR=$CERT_DIR
 		export INTERNAL_GRPC_TOKEN=$INTERNAL_GRPC_TOKEN
+		export CRYPTOX_KEY_V1=$CRYPTOX_KEY_V1
 		export VENDOR_MOCKVENDOR_ENABLED=true
 		export VENDOR_MOCKVENDOR_SECRET="${VENDOR_MOCKVENDOR_SECRET:-script-test-mockvendor-secret-at-least-32-chars-long}"
 		export MOCKVENDOR2_ENABLED=true
@@ -516,6 +526,7 @@ start_payin_service() {
 		export RATE_LIMIT_BURST=$RATE_LIMIT_BURST
 		export TLS_CERT_DIR=$CERT_DIR
 		export INTERNAL_GRPC_TOKEN=$INTERNAL_GRPC_TOKEN
+		export CRYPTOX_KEY_V1=$CRYPTOX_KEY_V1
 		export VENDOR_MOCKVENDOR_ENABLED=true
 		export VENDOR_MOCKVENDOR_SECRET="${VENDOR_MOCKVENDOR_SECRET:-script-test-mockvendor-secret-at-least-32-chars-long}"
 		export MOCKVENDOR2_ENABLED=true
@@ -642,6 +653,8 @@ start_auth_service() {
 		export RATE_LIMIT_BURST=$RATE_LIMIT_BURST
 		export TLS_CERT_DIR=$CERT_DIR
 		export INTERNAL_GRPC_TOKEN=$INTERNAL_GRPC_TOKEN
+		export CRYPTOX_KEY_V1=$CRYPTOX_KEY_V1
+		export CRYPTOX_LOOKUP_KEY=$CRYPTOX_LOOKUP_KEY
 		export EXPORT_KEK_V1=$EXPORT_KEK_V1
 		export CLOSURE_KEK_V1=$CLOSURE_KEK_V1
 		export LOG_FORMAT=json

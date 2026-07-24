@@ -30,10 +30,30 @@ import (
 	"github.com/herdifirdausss/seev/internal/testutil"
 	"github.com/herdifirdausss/seev/internal/vendorgw"
 	"github.com/herdifirdausss/seev/internal/vendorgw/mockvendor"
+	"github.com/herdifirdausss/seev/pkg/cryptox"
 	"github.com/herdifirdausss/seev/pkg/database"
 	"github.com/herdifirdausss/seev/pkg/generalutil"
 	"github.com/herdifirdausss/seev/pkg/ledgerclient"
 )
+
+// payoutInternalTestRing is package-level (no *testing.T needed) — this
+// file and failover_integration_test.go are both white-box (package
+// payout, not payout_test), so they can't reach payout_test's own
+// payoutCryptoxTestRing; repository.NewRepository now REQUIRES a real
+// ring ("A8 T2.5b" removed the nil-ring-tolerant construction path).
+var payoutInternalTestRing = mustBuildPayoutInternalTestRing()
+
+func mustBuildPayoutInternalTestRing() *cryptox.Ring {
+	key := make([]byte, 32)
+	for i := range key {
+		key[i] = byte(i + 6)
+	}
+	ring, err := cryptox.NewRing(map[int][]byte{1: key}, 1)
+	if err != nil {
+		panic(err)
+	}
+	return ring
+}
 
 func raceMigrationsSourceURL(t *testing.T) string {
 	t.Helper()
@@ -147,7 +167,7 @@ func newRaceModule(db *database.DBSQL) (*Module, *testutil.LedgerHarness) {
 	registry := vendorgw.NewRegistry()
 	registry.AddPayout(mockvendor.NewPayoutProvider(mockvendor.VendorName))
 	m := &Module{
-		repo:     repository.NewRepository(db, nil),
+		repo:     repository.NewRepository(db, payoutInternalTestRing),
 		poster:   ledgerModule,
 		registry: registry,
 		routing:  routeTo(mockvendor.VendorName, "bca"),

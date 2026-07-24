@@ -18,7 +18,6 @@ import (
 
 	fraudv1 "github.com/herdifirdausss/seev/gen/fraud/v1"
 	"github.com/herdifirdausss/seev/internal/auth"
-	authrepository "github.com/herdifirdausss/seev/internal/auth/repository"
 	"github.com/herdifirdausss/seev/internal/config"
 	"github.com/herdifirdausss/seev/internal/kycvendor"
 	"github.com/herdifirdausss/seev/internal/kycvendor/httpkyc"
@@ -35,7 +34,6 @@ import (
 
 func main() {
 	healthcheck := flag.Bool("healthcheck", false, "probe the auth-service liveness endpoint")
-	backfillCryptox := flag.String("backfill-cryptox", "", "docs/roadmap/active/51-a8-data-lifecycle-privacy.md T2.5: run bounded cryptox backfill for auth_users/kyc_submissions and exit (all|users|kyc)")
 	flag.Parse()
 	if *healthcheck {
 		if err := probeHealth(os.Getenv); err != nil {
@@ -44,86 +42,10 @@ func main() {
 		}
 		return
 	}
-	if *backfillCryptox != "" {
-		if err := runCryptoxBackfill(context.Background(), *backfillCryptox); err != nil {
-			slog.Error("cryptox backfill failed", "error", err)
-			os.Exit(1)
-		}
-		return
-	}
 	if err := run(context.Background()); err != nil {
 		slog.Error("auth-service stopped", "error", err)
 		os.Exit(1)
 	}
-}
-
-// runCryptoxBackfill is docs/roadmap/active/51-a8-data-lifecycle-privacy.md T2.5's bounded
-// backfill entrypoint: a one-shot mode that connects only to Postgres (no
-// gRPC/Redis/HTTP — everything run() otherwise brings up), loops each
-// target's own repository.BackfillOnce(ctx, batchSize) until it returns 0
-// (that emptiness IS the completion proof, see UserRepository.BackfillOnce's
-// own doc comment), and exits. Kept inside auth-service's own main.go
-// rather than a separate cross-service CLI so it stays within
-// TestModuleBoundaries' one-command-one-module rule — a shared
-// cryptoxbackfillctl importing all five owners' internal/ packages at once
-// would violate the same rule cmd/retentionctl avoids by staying
-// SQL-generic instead.
-func runCryptoxBackfill(ctx context.Context, target string) error {
-	if target != "all" && target != "users" && target != "kyc" {
-		return fmt.Errorf("unknown --backfill-cryptox %q (want all|users|kyc)", target)
-	}
-	cfg, err := config.LoadAuthService()
-	if err != nil {
-		return fmt.Errorf("load config: %w", err)
-	}
-	if len(cfg.Cryptox.Keys) == 0 {
-		return fmt.Errorf("no CRYPTOX_KEY_V* configured, nothing to backfill against")
-	}
-	ring, err := cfg.Cryptox.Ring()
-	if err != nil {
-		return fmt.Errorf("build cryptox ring: %w", err)
-	}
-	lookup, err := cfg.Cryptox.Lookup()
-	if err != nil {
-		return fmt.Errorf("build cryptox lookup key: %w", err)
-	}
-	db, err := database.New(ctx, cfg.Postgres.Pkg())
-	if err != nil {
-		return fmt.Errorf("connect postgres: %w", err)
-	}
-	defer db.Close()
-
-	const batchSize = 500
-	if target == "all" || target == "users" {
-		if err := backfillLoop(ctx, "auth_users", batchSize, authrepository.NewUserRepository(db, ring, lookup).BackfillOnce); err != nil {
-			return err
-		}
-	}
-	if target == "all" || target == "kyc" {
-		if err := backfillLoop(ctx, "kyc_submissions", batchSize, authrepository.NewKYCRepository(db, ring).BackfillOnce); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func backfillLoop(ctx context.Context, label string, batchSize int, once func(context.Context, int) (int, error)) error {
-	total := 0
-	for {
-		n, err := once(ctx, batchSize)
-		if err != nil {
-			return fmt.Errorf("backfill %s (processed %d so far): %w", label, total, err)
-		}
-		total += n
-		if n > 0 {
-			slog.Info("cryptox backfill progress", "target", label, "batch", n, "total", total)
-		}
-		if n == 0 {
-			break
-		}
-	}
-	slog.Info("cryptox backfill done", "target", label, "total", total)
-	return nil
 }
 
 // probeHealth dials the INTERNAL :8083 listener, which is mTLS since
@@ -225,11 +147,41 @@ func run(parent context.Context) error {
 		}
 		kycProvider = configuredProvider
 	}
+	// docs/roadmap/active/51 "A8 T2.5b" (the contract migration): cryptox is no
+	// longer optional in any environment — auth_users.email/full_name and
+	// kyc_submissions.payload have no plaintext column left to fall back
+	// to, so a missing/malformed ring or lookup key fails boot here,
+	// unconditionally, the same "money-safety, never optional" posture
+	// T3's LedgerIdempotency ring already established for
+	// ledger-service. This replaces T2.2's own "optional outside
+	// production" gate entirely.
+	cryptoxRing, err := cfg.Cryptox.Ring()
+	if err != nil {
+		closeAuthDependencies(log, ledgerConn.Close, closeFraud, redisCache, db, shutdownTracing)
+		return fmt.Errorf("build cryptox ring: %w", err)
+	}
+	cryptoxLookup, err := cfg.Cryptox.Lookup()
+	if err != nil {
+		closeAuthDependencies(log, ledgerConn.Close, closeFraud, redisCache, db, shutdownTracing)
+		return fmt.Errorf("build cryptox lookup key: %w", err)
+	}
+	if cryptoxLookup == nil {
+		closeAuthDependencies(log, ledgerConn.Close, closeFraud, redisCache, db, shutdownTracing)
+		return fmt.Errorf("CRYPTOX_LOOKUP_KEY is required — auth_users.email has no plaintext lookup path left")
+	}
+
 	module := auth.NewModule(db, ledgerclient.New(ledgerConn), auth.Config{
 		JWTSecret: cfg.JWT.Secret, JWTIssuer: cfg.JWT.Issuer,
 		AccessExpiry: cfg.JWT.AccessExpiry, RefreshExpiry: cfg.JWT.RefreshExpiry,
 		DefaultCurrency: cfg.Auth.DefaultCurrency,
-	}, log, kycProvider)
+	}, log, cryptoxRing, cryptoxLookup, kycProvider)
+	// docs/roadmap/active/51 T2.2: KYC document object encryption is a SEPARATE
+	// concern from the field-level ring above (document blobs, not
+	// database columns) and stays optional outside production — the
+	// document store itself already fails closed at upload time when
+	// unconfigured, matching UploadKYCDocument's own existing "storage is
+	// optional in this binary" convention.
+	module.SetDocumentKeyRing(cryptoxRing)
 	var startRescreen func() error
 	var stopRescreen func()
 	if fraudConn != nil {
@@ -251,35 +203,6 @@ func run(parent context.Context) error {
 		rescreenJob := module.NewKYCRescreenJob(redisClientClient(redisCache), sanctionsChecker, interval, log)
 		startRescreen = func() error { return rescreenJob.Start(ctx) }
 		stopRescreen = rescreenJob.Stop
-	}
-	// docs/roadmap/active/51 T2.2: replaces the old KYC_DOC_KEK raw-string env var
-	// with the shared cluster-wide cryptox key ring (CRYPTOX_KEY_V1_FILE /
-	// CRYPTOX_KEY_CURRENT_VERSION) — a missing/unconfigured ring is not an
-	// error here (KYC document encryption stays optional outside
-	// production, matching UploadKYCDocument's own existing
-	// "storage is optional in this binary" convention); a malformed one is.
-	if len(cfg.Cryptox.Keys) > 0 {
-		ring, err := cfg.Cryptox.Ring()
-		if err != nil {
-			closeAuthDependencies(log, ledgerConn.Close, closeFraud, redisCache, db, shutdownTracing)
-			return fmt.Errorf("build cryptox ring: %w", err)
-		}
-		module.SetDocumentKeyRing(ring)
-
-		// docs/roadmap/active/51 T2.3: same ring, plus the separate lookup key
-		// (K2 — encryption keys and lookup keys must never be the same
-		// key material) for auth_users.email/full_name and
-		// kyc_submissions.payload field encryption. lookup may be nil
-		// (CRYPTOX_LOOKUP_KEY unset) — GetUserByEmail then falls back to
-		// the plaintext-only lookup path for every row, not just
-		// pre-backfill ones (see repository.NewUserRepository's own doc
-		// comment).
-		lookup, err := cfg.Cryptox.Lookup()
-		if err != nil {
-			closeAuthDependencies(log, ledgerConn.Close, closeFraud, redisCache, db, shutdownTracing)
-			return fmt.Errorf("build cryptox lookup key: %w", err)
-		}
-		module.SetCryptoxRing(ring, lookup)
 	}
 	// docs/roadmap/active/51 T4 (K9): a dedicated export KEK, deliberately its own
 	// key namespace (never Cryptox above) — a missing/unconfigured ring

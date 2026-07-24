@@ -19,7 +19,6 @@ import (
 	fraudv1 "github.com/herdifirdausss/seev/gen/fraud/v1"
 	"github.com/herdifirdausss/seev/internal/config"
 	"github.com/herdifirdausss/seev/internal/payin"
-	payinrepository "github.com/herdifirdausss/seev/internal/payin/repository"
 	"github.com/herdifirdausss/seev/internal/vendorgw"
 	"github.com/herdifirdausss/seev/internal/vendorgw/mockvendor"
 	"github.com/herdifirdausss/seev/pkg/cache"
@@ -34,7 +33,6 @@ import (
 
 func main() {
 	healthcheck := flag.Bool("healthcheck", false, "probe the payin-service liveness endpoint")
-	backfillCryptox := flag.Bool("backfill-cryptox", false, "docs/roadmap/active/51-a8-data-lifecycle-privacy.md T2.5: run bounded cryptox backfill for payin_webhook_events.raw and exit")
 	flag.Parse()
 	if *healthcheck {
 		if err := probeHealth(os.Getenv); err != nil {
@@ -43,59 +41,10 @@ func main() {
 		}
 		return
 	}
-	if *backfillCryptox {
-		if err := runCryptoxBackfill(context.Background()); err != nil {
-			slog.Error("cryptox backfill failed", "error", err)
-			os.Exit(1)
-		}
-		return
-	}
 	if err := run(context.Background()); err != nil {
 		slog.Error("payin-service stopped", "error", err)
 		os.Exit(1)
 	}
-}
-
-// runCryptoxBackfill is docs/roadmap/active/51-a8-data-lifecycle-privacy.md T2.5's bounded
-// backfill entrypoint — see cmd/auth-service/main.go's own runCryptoxBackfill
-// doc comment for why this lives inside each owning service's main.go
-// rather than a shared cross-service CLI.
-func runCryptoxBackfill(ctx context.Context) error {
-	cfg, err := config.LoadPayinService()
-	if err != nil {
-		return fmt.Errorf("load config: %w", err)
-	}
-	if len(cfg.Cryptox.Keys) == 0 {
-		return fmt.Errorf("no CRYPTOX_KEY_V* configured, nothing to backfill against")
-	}
-	ring, err := cfg.Cryptox.Ring()
-	if err != nil {
-		return fmt.Errorf("build cryptox ring: %w", err)
-	}
-	db, err := database.New(ctx, cfg.Postgres.Pkg())
-	if err != nil {
-		return fmt.Errorf("connect postgres: %w", err)
-	}
-	defer db.Close()
-
-	repo := payinrepository.NewRepository(db, ring)
-	const batchSize = 500
-	total := 0
-	for {
-		n, err := repo.BackfillOnce(ctx, batchSize)
-		if err != nil {
-			return fmt.Errorf("backfill payin_webhook_events (processed %d so far): %w", total, err)
-		}
-		total += n
-		if n > 0 {
-			slog.Info("cryptox backfill progress", "target", "payin_webhook_events", "batch", n, "total", total)
-		}
-		if n == 0 {
-			break
-		}
-	}
-	slog.Info("cryptox backfill done", "target", "payin_webhook_events", "total", total)
-	return nil
 }
 
 func probeHealth(getenv func(string) string) error {
@@ -220,23 +169,20 @@ func run(parent context.Context) error {
 		fraudClient = fraudcheck.New(fraudv1.NewFraudServiceClient(fraudConn), "payin")
 	}
 
-	module := payin.NewModule(db, ledgerclient.New(ledgerConn), registry, cfg.Vendor.TopupIntentTTL, log, fraudClient, breaker)
-	// docs/roadmap/active/51 T2.4: shared cluster-wide cryptox key ring (K2) for
-	// payin_webhook_events.raw — a missing/unconfigured ring is not an
-	// error (webhook raw encryption stays optional outside production,
-	// matching every other service's own cryptox wiring); a malformed
-	// one is.
-	if len(cfg.Cryptox.Keys) > 0 {
-		ring, err := cfg.Cryptox.Ring()
-		if err != nil {
-			_ = ledgerConn.Close()
-			if redisCache != nil {
-				_ = redisCache.Close()
-			}
-			return fmt.Errorf("build cryptox ring: %w", err)
+	// docs/roadmap/active/51 "A8 T2.5b" (the contract migration): cryptox is no
+	// longer optional — payin_webhook_events.raw has no plaintext column
+	// left to fall back to, so a missing/malformed ring fails boot here,
+	// unconditionally, the same "money-safety, never optional" posture
+	// T3's LedgerIdempotency ring already established for ledger-service.
+	cryptoxRing, err := cfg.Cryptox.Ring()
+	if err != nil {
+		_ = ledgerConn.Close()
+		if redisCache != nil {
+			_ = redisCache.Close()
 		}
-		module.SetCryptoxRing(ring)
+		return fmt.Errorf("build cryptox ring: %w", err)
 	}
+	module := payin.NewModule(db, ledgerclient.New(ledgerConn), registry, cfg.Vendor.TopupIntentTTL, log, fraudClient, breaker, cryptoxRing)
 	// docs/roadmap/active/51 T2.6: redacts payin_webhook_events.raw once terminal
 	// for 30+ days — same fire-and-continue convention as every other
 	// StartRetentionRunner caller in this codebase (a failed retention

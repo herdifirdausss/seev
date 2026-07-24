@@ -82,14 +82,19 @@ type Module struct {
 
 // NewModule wires the payin module. Vendor and gateway selection comes
 // from the routing repository; topupTTL <=0 defaults to 24h. fraudClient
-// may be nil to disable pre-posting fraud screening entirely.
-func NewModule(db database.DatabaseSQL, poster Poster, registry *vendorgw.Registry, topupTTL time.Duration, logger *slog.Logger, fraudClient *fraudcheck.Client, breaker vendorgw.Breaker) *Module {
+// may be nil to disable pre-posting fraud screening entirely. ring is
+// REQUIRED — docs/roadmap/active/51-a8-data-lifecycle-privacy.md "A8 T2.5b"
+// (the contract migration) removed payin_webhook_events.raw's plaintext
+// fallback, so there is no longer a valid "cryptox unconfigured" mode to
+// construct; repository.NewRepository itself panics on a nil ring as the
+// last-resort backstop.
+func NewModule(db database.DatabaseSQL, poster Poster, registry *vendorgw.Registry, topupTTL time.Duration, logger *slog.Logger, fraudClient *fraudcheck.Client, breaker vendorgw.Breaker, ring *cryptox.Ring) *Module {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	return &Module{
 		db:          db,
-		repo:        repository.NewRepository(db, nil),
+		repo:        repository.NewRepository(db, ring),
 		routing:     repository.NewRoutingRepository(db),
 		poster:      poster,
 		registry:    registry,
@@ -98,14 +103,6 @@ func NewModule(db database.DatabaseSQL, poster Poster, registry *vendorgw.Regist
 		fraudClient: fraudClient,
 		breaker:     breaker,
 	}
-}
-
-// SetCryptoxRing wires docs/roadmap/active/51-a8-data-lifecycle-privacy.md T2.4's K2/K3
-// field encryption for payin_webhook_events.raw — same nil-safe
-// optionality as internal/auth.Module.SetCryptoxRing: a nil ring leaves
-// every read/write exactly as it behaved before this task.
-func (m *Module) SetCryptoxRing(ring *cryptox.Ring) {
-	m.repo = repository.NewRepository(m.db, ring)
 }
 
 // HandleWebhook processes one webhook delivery end to end (docs/roadmap/archive/22

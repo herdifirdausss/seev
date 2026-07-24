@@ -1,10 +1,11 @@
 //go:build integration
 
-// Proves docs/roadmap/active/51-a8-data-lifecycle-privacy.md T2.3's K2/K3 expand-phase
-// encryption for auth_users.email/full_name and kyc_submissions.payload
-// end to end against a real Postgres: ciphertext round-trip, normalized
-// email lookup/uniqueness via the deterministic digest (never plaintext),
-// dual-read/write compatibility with pre-migration rows, and existing
+// Proves docs/roadmap/active/51-a8-data-lifecycle-privacy.md T2.3's K2/K3
+// encryption (contract-migrated by "A8 T2.5b" — no plaintext fallback
+// remains) for auth_users.email/full_name and kyc_submissions.payload end
+// to end against a real Postgres: ciphertext round-trip, normalized email
+// lookup/uniqueness via the deterministic digest, a nil ring/lookup being
+// refused at construction rather than silently degrading, and existing
 // business/KYC behavior (ListKYCRescreenSubjects) staying correct once
 // payload is encrypted. Reuses setupAuthTestDB (auth_integration_test.go,
 // same package).
@@ -24,23 +25,48 @@ import (
 
 func testRing(t *testing.T) *cryptox.Ring {
 	t.Helper()
+	require.NotNil(t, cryptoxTestRing)
+	return cryptoxTestRing
+}
+
+func testLookupKey(t *testing.T) *cryptox.LookupKey {
+	t.Helper()
+	require.NotNil(t, cryptoxTestLookup)
+	return cryptoxTestLookup
+}
+
+// cryptoxTestRing/cryptoxTestLookup are package-level (no *testing.T
+// needed) so setup helpers like newAuthModule — which auth.NewModule now
+// REQUIRES a real ring/lookup for, "A8 T2.5b" having removed the
+// nil-ring-tolerant construction path entirely — can use them without
+// threading t through every call site. testRing(t)/testLookupKey(t) above
+// stay as the test-facing accessors other test files already call.
+var (
+	cryptoxTestRing   = mustBuildTestRing()
+	cryptoxTestLookup = mustBuildTestLookupKey()
+)
+
+func mustBuildTestRing() *cryptox.Ring {
 	key := make([]byte, 32)
 	for i := range key {
 		key[i] = byte(i + 1)
 	}
 	ring, err := cryptox.NewRing(map[int][]byte{1: key}, 1)
-	require.NoError(t, err)
+	if err != nil {
+		panic(err)
+	}
 	return ring
 }
 
-func testLookupKey(t *testing.T) *cryptox.LookupKey {
-	t.Helper()
+func mustBuildTestLookupKey() *cryptox.LookupKey {
 	key := make([]byte, 32)
 	for i := range key {
 		key[i] = byte(i + 100)
 	}
 	lk, err := cryptox.NewLookupKey(key)
-	require.NoError(t, err)
+	if err != nil {
+		panic(err)
+	}
 	return lk
 }
 
@@ -52,10 +78,6 @@ func TestUserRepository_CreateAndGet_RoundTripsThroughCiphertext(t *testing.T) {
 	u := model.User{ID: uuid.New(), Email: "Mia@Example.Test", FullName: "Mia Wallace", Role: "user", Status: "active"}
 	require.NoError(t, repo.CreateUser(ctx, u, "hash"))
 
-	// user_repository.go dual-writes the plaintext email column too
-	// during the expand phase (K3 step 2) — this assertion targets the
-	// ciphertext column directly to prove it's genuinely encrypted, not
-	// just dual-written for show.
 	var ciphertext []byte
 	require.NoError(t, db.QueryRowContext(ctx, `SELECT email_ciphertext FROM auth_users WHERE id = $1`, u.ID).Scan(&ciphertext))
 	require.NotEmpty(t, ciphertext)
@@ -96,48 +118,23 @@ func TestUserRepository_DuplicateEmail_RejectedViaDigestUniqueness(t *testing.T)
 	require.ErrorIs(t, err, repository.ErrDuplicateEmail)
 }
 
-// TestUserRepository_DualReadWrite_PreMigrationRowStillWorks is T2's own
-// required test: "dual-read/write compatibility during backfill." A row
-// inserted directly (plaintext only, no ciphertext/digest — simulating a
-// row that predates this migration) must still be readable by both
-// GetUserByID and GetUserByEmail once a ring is configured.
-func TestUserRepository_DualReadWrite_PreMigrationRowStillWorks(t *testing.T) {
+// TestUserRepository_NilRingOrLookup_PanicsAtConstruction is "A8 T2.5b"'s
+// own required test: once auth_users.email/full_name has no plaintext
+// column, a missing ring or lookup key can never degrade gracefully — it
+// must fail loudly at construction, not nil-pointer somewhere inside a
+// live request.
+func TestUserRepository_NilRingOrLookup_PanicsAtConstruction(t *testing.T) {
 	db := setupAuthTestDB(t)
-	ctx := context.Background()
-
-	preMigrationID := uuid.New()
-	_, err := db.ExecContext(ctx, `
-		INSERT INTO auth_users (id, email, full_name, role, status)
-		VALUES ($1, 'legacy@example.test', 'Legacy User', 'user', 'active')`, preMigrationID)
-	require.NoError(t, err)
-
-	repo := repository.NewUserRepository(db, testRing(t), testLookupKey(t))
-
-	byID, err := repo.GetUserByID(ctx, preMigrationID)
-	require.NoError(t, err)
-	require.Equal(t, "legacy@example.test", byID.Email)
-	require.Equal(t, "Legacy User", byID.FullName)
-
-	byEmail, err := repo.GetUserByEmail(ctx, "legacy@example.test")
-	require.NoError(t, err, "GetUserByEmail must fall back to the plaintext path for a row with no lookup digest yet")
-	require.Equal(t, preMigrationID, byEmail.ID)
+	require.Panics(t, func() { repository.NewUserRepository(db, nil, testLookupKey(t)) })
+	require.Panics(t, func() { repository.NewUserRepository(db, testRing(t), nil) })
+	require.Panics(t, func() { repository.NewUserRepository(db, nil, nil) })
 }
 
-func TestUserRepository_NilRing_BehavesLikePreT2_3(t *testing.T) {
+// TestKYCRepository_NilRing_PanicsAtConstruction mirrors the user
+// repository's own construction-time fail-closed behavior.
+func TestKYCRepository_NilRing_PanicsAtConstruction(t *testing.T) {
 	db := setupAuthTestDB(t)
-	repo := repository.NewUserRepository(db, nil, nil)
-	ctx := context.Background()
-
-	u := model.User{ID: uuid.New(), Email: "plain@example.test", FullName: "Plain", Role: "user", Status: "active"}
-	require.NoError(t, repo.CreateUser(ctx, u, "hash"))
-
-	var ciphertext []byte
-	require.NoError(t, db.QueryRowContext(ctx, `SELECT email_ciphertext FROM auth_users WHERE id = $1`, u.ID).Scan(&ciphertext))
-	require.Nil(t, ciphertext, "a nil ring must never write ciphertext")
-
-	got, err := repo.GetUserByEmail(ctx, "plain@example.test")
-	require.NoError(t, err)
-	require.Equal(t, u.ID, got.ID)
+	require.Panics(t, func() { repository.NewKYCRepository(db, nil) })
 }
 
 func TestKYCRepository_CreateSubmission_EncryptsPayloadAndProjectsRescreenFields(t *testing.T) {

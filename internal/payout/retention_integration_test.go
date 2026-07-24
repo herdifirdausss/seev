@@ -26,9 +26,9 @@ func TestRetention_RequestsDestinationAndError_EligibilityBoundary(t *testing.T)
 		id := uuid.New()
 		_, err := db.ExecContext(ctx, `
 			INSERT INTO payout_requests
-				(id, user_id, amount, currency, vendor, destination, status, error_message, created_by,
+				(id, user_id, amount, currency, vendor, status, error_message, created_by,
 				 created_at, updated_at, destination_ciphertext, destination_key_version)
-			VALUES ($1, $2, 1000, 'IDR', 'mockvendor', '{"account_no":"x"}'::jsonb, $3, 'vendor timeout', 'test', $4, $4, $5, 1)`,
+			VALUES ($1, $2, 1000, 'IDR', 'mockvendor', $3, 'vendor timeout', 'test', $4, $4, $5, 1)`,
 			id, uuid.New(), status, updatedAt, []byte("ciphertext-stand-in"))
 		require.NoError(t, err)
 		return id
@@ -48,16 +48,13 @@ func TestRetention_RequestsDestinationAndError_EligibilityBoundary(t *testing.T)
 	require.Equal(t, dryRunCount, realCount, "dry-run and real run must affect the same count")
 
 	assertRedacted := func(id uuid.UUID, wantRedacted bool) {
-		var destination []byte
 		var ciphertext []byte
 		var errorMessage *string
-		require.NoError(t, db.QueryRowContext(ctx, `SELECT destination, destination_ciphertext, error_message FROM payout_requests WHERE id = $1`, id).Scan(&destination, &ciphertext, &errorMessage))
+		require.NoError(t, db.QueryRowContext(ctx, `SELECT destination_ciphertext, error_message FROM payout_requests WHERE id = $1`, id).Scan(&ciphertext, &errorMessage))
 		if wantRedacted {
-			require.JSONEq(t, `{"redacted":true}`, string(destination))
 			require.Nil(t, ciphertext)
 			require.Nil(t, errorMessage)
 		} else {
-			require.JSONEq(t, `{"account_no":"x"}`, string(destination))
 			require.NotNil(t, ciphertext)
 			require.NotNil(t, errorMessage)
 		}

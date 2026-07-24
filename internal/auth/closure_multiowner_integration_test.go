@@ -45,8 +45,8 @@ func setupMultiOwnerModule(t *testing.T) (*auth.Module, *database.DBSQL, *crypto
 	t.Helper()
 	db := setupAuthTestDB(t)
 	ledgerHarness := testutil.NewLedgerHarness(db)
-	payinModule := payin.NewModule(db, nil, nil, time.Hour, nil, nil, nil)
-	payoutModule := payout.NewModule(db, nil, nil, nil, nil, nil, nil)
+	payinModule := payin.NewModule(db, nil, nil, time.Hour, nil, nil, nil, cryptoxTestRing)
+	payoutModule := payout.NewModule(db, nil, nil, nil, nil, nil, nil, cryptoxTestRing)
 	fraudModule := fraud.NewModule(db, nil, nil, fraud.Config{}, nil)
 	notifyModule := notify.NewModule(db, nil, nil)
 
@@ -54,7 +54,7 @@ func setupMultiOwnerModule(t *testing.T) (*auth.Module, *database.DBSQL, *crypto
 		JWTSecret: testJWTSecretIT, JWTIssuer: "seev-test",
 		AccessExpiry: 15 * time.Minute, RefreshExpiry: 7 * 24 * time.Hour,
 		DefaultCurrency: "IDR",
-	}, nil)
+	}, nil, cryptoxTestRing, cryptoxTestLookup)
 	m.SetClosureKeyRing(testClosureRing(t))
 	exportRing := testRing(t)
 	m.SetExportKeyRing(exportRing)
@@ -87,14 +87,14 @@ func TestMultiOwner_Closure_RepointsAllFourNewOwners(t *testing.T) {
 	// rows is already tested elsewhere).
 	webhookEventID := uuid.New()
 	_, err := db.ExecContext(ctx, `
-		INSERT INTO payin_webhook_events (id, vendor, vendor_event_id, external_ref, user_id, amount, currency, raw, status)
-		VALUES ($1, 'mockvendor', 'evt-1', 'ref-1', $2, 50000, 'IDR', '{}'::jsonb, 'posted')`, webhookEventID, userID)
+		INSERT INTO payin_webhook_events (id, vendor, vendor_event_id, external_ref, user_id, amount, currency, status)
+		VALUES ($1, 'mockvendor', 'evt-1', 'ref-1', $2, 50000, 'IDR', 'posted')`, webhookEventID, userID)
 	require.NoError(t, err)
 
 	payoutRequestID := uuid.New()
 	_, err = db.ExecContext(ctx, `
-		INSERT INTO payout_requests (id, user_id, amount, currency, vendor, destination, status, created_by)
-		VALUES ($1, $2, 20000, 'IDR', 'mockvendor', '{}'::jsonb, 'settled', 'test')`, payoutRequestID, userID)
+		INSERT INTO payout_requests (id, user_id, amount, currency, vendor, status, created_by)
+		VALUES ($1, $2, 20000, 'IDR', 'mockvendor', 'settled', 'test')`, payoutRequestID, userID)
 	require.NoError(t, err)
 
 	screeningEventID := uuid.New()
@@ -178,8 +178,8 @@ func TestMultiOwner_Closure_OpenPayoutRequestBlocks(t *testing.T) {
 	userID := registerTestUser(t, m, "multiowner-payout-block@example.test", password)
 
 	_, err := db.ExecContext(ctx, `
-		INSERT INTO payout_requests (id, user_id, amount, currency, vendor, destination, status, created_by)
-		VALUES ($1, $2, 15000, 'IDR', 'mockvendor', '{}'::jsonb, 'held', 'test')`, uuid.New(), userID)
+		INSERT INTO payout_requests (id, user_id, amount, currency, vendor, status, created_by)
+		VALUES ($1, $2, 15000, 'IDR', 'mockvendor', 'held', 'test')`, uuid.New(), userID)
 	require.NoError(t, err)
 
 	req, err := m.RequestClosure(ctx, userID, password)
@@ -205,14 +205,14 @@ func TestMultiOwner_Export_IncludesAllRegisteredOwners(t *testing.T) {
 
 	ownEventID := uuid.New()
 	_, err := db.ExecContext(ctx, `
-		INSERT INTO payin_webhook_events (id, vendor, vendor_event_id, external_ref, user_id, amount, currency, raw, status)
-		VALUES ($1, 'mockvendor', 'evt-export', 'ref-export', $2, 75000, 'IDR', '{}'::jsonb, 'posted')`, ownEventID, userID)
+		INSERT INTO payin_webhook_events (id, vendor, vendor_event_id, external_ref, user_id, amount, currency, status)
+		VALUES ($1, 'mockvendor', 'evt-export', 'ref-export', $2, 75000, 'IDR', 'posted')`, ownEventID, userID)
 	require.NoError(t, err)
 	// Another user's row must never leak into the subject's own export.
 	otherEventID := uuid.New()
 	_, err = db.ExecContext(ctx, `
-		INSERT INTO payin_webhook_events (id, vendor, vendor_event_id, external_ref, user_id, amount, currency, raw, status)
-		VALUES ($1, 'mockvendor', 'evt-other', 'ref-other', $2, 1, 'IDR', '{}'::jsonb, 'posted')`, otherEventID, otherUserID)
+		INSERT INTO payin_webhook_events (id, vendor, vendor_event_id, external_ref, user_id, amount, currency, status)
+		VALUES ($1, 'mockvendor', 'evt-other', 'ref-other', $2, 1, 'IDR', 'posted')`, otherEventID, otherUserID)
 	require.NoError(t, err)
 
 	req, err := m.RequestExport(ctx, userID, password)

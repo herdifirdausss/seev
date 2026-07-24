@@ -59,8 +59,8 @@ func setupModuleWithFlakyPayin(t *testing.T) (*auth.Module, *database.DBSQL, *fl
 	t.Helper()
 	db := setupAuthTestDB(t)
 	ledgerHarness := testutil.NewLedgerHarness(db)
-	payinModule := payin.NewModule(db, nil, nil, time.Hour, nil, nil, nil)
-	payoutModule := payout.NewModule(db, nil, nil, nil, nil, nil, nil)
+	payinModule := payin.NewModule(db, nil, nil, time.Hour, nil, nil, nil, cryptoxTestRing)
+	payoutModule := payout.NewModule(db, nil, nil, nil, nil, nil, nil, cryptoxTestRing)
 	fraudModule := fraud.NewModule(db, nil, nil, fraud.Config{}, nil)
 	notifyModule := notify.NewModule(db, nil, nil)
 
@@ -68,7 +68,7 @@ func setupModuleWithFlakyPayin(t *testing.T) (*auth.Module, *database.DBSQL, *fl
 		JWTSecret: testJWTSecretIT, JWTIssuer: "seev-test",
 		AccessExpiry: 15 * time.Minute, RefreshExpiry: 7 * 24 * time.Hour,
 		DefaultCurrency: "IDR",
-	}, nil)
+	}, nil, cryptoxTestRing, cryptoxTestLookup)
 	m.SetClosureKeyRing(testClosureRing(t))
 	m.SetExportKeyRing(testRing(t))
 	m.SetDocumentStore(newFakeDocStore())

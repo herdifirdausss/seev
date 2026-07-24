@@ -26,8 +26,8 @@ func TestListAssuranceRecords_KeysetPaginationWithEqualTimestamps(t *testing.T) 
 		id := uuid.New()
 		_, err := db.ExecContext(ctx, `
 			INSERT INTO payout_requests
-			(id, user_id, amount, currency, vendor, destination, status, created_by, created_at, updated_at)
-			VALUES ($1, $2, 1000, 'IDR', 'mockvendor', '{"bank_code":"014","account_no":"1"}'::jsonb, 'rejected', 'integration-page', $3, $3)`,
+			(id, user_id, amount, currency, vendor, status, created_by, created_at, updated_at)
+			VALUES ($1, $2, 1000, 'IDR', 'mockvendor', 'rejected', 'integration-page', $3, $3)`,
 			id, uuid.New(), updated)
 		require.NoError(t, err, "row %d", i)
 	}

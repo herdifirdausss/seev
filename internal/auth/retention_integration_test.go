@@ -12,6 +12,7 @@ package auth_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -20,22 +21,30 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 
+	"github.com/herdifirdausss/seev/internal/auth/model"
+	"github.com/herdifirdausss/seev/internal/auth/repository"
 	"github.com/herdifirdausss/seev/internal/config"
 	"github.com/herdifirdausss/seev/internal/testutil"
 	"github.com/herdifirdausss/seev/pkg/database"
 )
 
 // insertTestUser satisfies auth_refresh_tokens.user_id's FK to auth_users.
-// ON CONFLICT DO NOTHING makes it safe to call once per userID across
-// several token inserts in the same test.
+// Goes through UserRepository (auth_users.email/full_name have no
+// plaintext column since "A8 T2.5b"'s contract migration) rather than a
+// raw INSERT — ON CONFLICT DO NOTHING at the SQL layer isn't available
+// through CreateUser, so a pre-existing id is tolerated by ignoring
+// ErrDuplicateEmail/a duplicate-key error, making this still safe to call
+// once per userID across several token inserts in the same test.
 func insertTestUser(t *testing.T, db *database.DBSQL, userID uuid.UUID) {
 	t.Helper()
-	_, err := db.ExecContext(context.Background(), `
-		INSERT INTO auth_users (id, email, full_name, role, status)
-		VALUES ($1, $2, 'Test User', 'user', 'active')
-		ON CONFLICT (id) DO NOTHING`,
-		userID, "retention-test-"+userID.String()+"@example.com")
-	require.NoError(t, err)
+	repo := repository.NewUserRepository(db, testRing(t), testLookupKey(t))
+	err := repo.CreateUser(context.Background(), model.User{
+		ID: userID, Email: "retention-test-" + userID.String() + "@example.com",
+		FullName: "Test User", Role: "user", Status: "active",
+	}, "hash")
+	if err != nil && !errors.Is(err, repository.ErrDuplicateEmail) {
+		require.NoError(t, err)
+	}
 }
 
 func insertRefreshToken(t *testing.T, db *database.DBSQL, id, userID uuid.UUID, expiresAt time.Time, revokedAt *time.Time) {
@@ -192,9 +201,10 @@ func insertKYCApplyRetry(t *testing.T, db *database.DBSQL, userID uuid.UUID, sta
 	t.Helper()
 	insertTestUser(t, db, userID)
 	submissionID := uuid.New()
-	_, err := db.ExecContext(context.Background(), `
-		INSERT INTO kyc_submissions (id, user_id, level_requested, status, payload, provider)
-		VALUES ($1, $2, 1, 'approved', '{}'::jsonb, 'test')`, submissionID, userID)
+	require.NoError(t, repository.NewKYCRepository(db, cryptoxTestRing).CreateKYCSubmission(context.Background(), model.KYCSubmission{
+		ID: submissionID, UserID: userID, LevelRequested: 1, Provider: "test", Payload: map[string]any{},
+	}))
+	_, err := db.ExecContext(context.Background(), `UPDATE kyc_submissions SET status = 'approved' WHERE id = $1`, submissionID)
 	require.NoError(t, err)
 	retryID := uuid.New()
 	_, err = db.ExecContext(context.Background(), `

@@ -107,14 +107,18 @@ type Module struct {
 // to an in-memory implementation (single-instance only). fraudClient may be
 // nil to disable pre-hold fraud screening entirely. breaker may be nil to
 // disable circuit-breaking entirely (every registered vendor is always
-// allowed).
-func NewModule(db database.DatabaseSQL, poster Poster, registry *vendorgw.Registry, redisClient *redis.Client, logger *slog.Logger, fraudClient *fraudcheck.Client, breaker vendorgw.Breaker) *Module {
+// allowed). ring is REQUIRED — docs/roadmap/active/51-a8-data-lifecycle-privacy.md
+// "A8 T2.5b" (the contract migration) removed payout_requests.destination's
+// plaintext fallback, so there is no longer a valid "cryptox unconfigured"
+// mode to construct; repository.NewRepository itself panics on a nil ring
+// as the last-resort backstop.
+func NewModule(db database.DatabaseSQL, poster Poster, registry *vendorgw.Registry, redisClient *redis.Client, logger *slog.Logger, fraudClient *fraudcheck.Client, breaker vendorgw.Breaker, ring *cryptox.Ring) *Module {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	m := &Module{
 		db:          db,
-		repo:        repository.NewRepository(db, nil),
+		repo:        repository.NewRepository(db, ring),
 		routing:     repository.NewRoutingRepository(db),
 		commandRepo: repository.NewVendorCommandRepository(db),
 		poster:      poster,
@@ -140,13 +144,6 @@ func NewModule(db database.DatabaseSQL, poster Poster, registry *vendorgw.Regist
 	return m
 }
 
-// SetCryptoxRing wires docs/roadmap/active/51-a8-data-lifecycle-privacy.md T2.4's K2/K3
-// field encryption for payout_requests.destination — same nil-safe
-// optionality as internal/auth.Module.SetCryptoxRing: a nil ring leaves
-// every read/write exactly as it behaved before this task.
-func (m *Module) SetCryptoxRing(ring *cryptox.Ring) {
-	m.repo = repository.NewRepository(m.db, ring)
-}
 
 // StartWorkers launches the resume/polling job (docs/roadmap/archive/23 Task T3 step
 // 3) and the vendor-command relay (docs/roadmap/archive/45 Task T1) — the only place

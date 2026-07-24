@@ -91,7 +91,7 @@ func newAuthModule(db *database.DBSQL) (*auth.Module, *testutil.LedgerHarness) {
 		JWTSecret: testJWTSecretIT, JWTIssuer: "seev-test",
 		AccessExpiry: 15 * time.Minute, RefreshExpiry: 7 * 24 * time.Hour,
 		DefaultCurrency: "IDR",
-	}, nil)
+	}, nil, cryptoxTestRing, cryptoxTestLookup)
 	return authModule, ledgerModule
 }
 

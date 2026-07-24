@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/herdifirdausss/seev/internal/auth/model"
+	"github.com/herdifirdausss/seev/pkg/cryptox"
 )
 
 const (
@@ -210,11 +211,29 @@ func (m *Module) closureStepFinalize(ctx context.Context, id, userID uuid.UUID) 
 		}
 		// Tombstone: fixed, non-reversible values — never the original
 		// email/name. Keyed by the request id (already unique) so the
-		// tombstone email itself can never collide across users.
+		// tombstone email itself can never collide across users. Sealed
+		// into ciphertext (and the lookup digest recomputed) the exact
+		// same way UserRepository.CreateUser/UpdateFullName do — there is
+		// no plaintext column left to fall back to since "A8 T2.5b"'s
+		// contract migration, so this direct-SQL bypass has to do its own
+		// encryption rather than relying on a repository helper.
 		tombstoneEmail := fmt.Sprintf("closed+%s@deleted.invalid", id)
+		emailCiphertext, err := m.cryptoxRing.Seal(cryptox.AAD{Service: "auth", Table: "auth_users", Column: "email", RowID: userID.String()}, []byte(tombstoneEmail))
+		if err != nil {
+			return fmt.Errorf("seal tombstone email: %w", err)
+		}
+		fullNameCiphertext, err := m.cryptoxRing.Seal(cryptox.AAD{Service: "auth", Table: "auth_users", Column: "full_name", RowID: userID.String()}, []byte("[deleted]"))
+		if err != nil {
+			return fmt.Errorf("seal tombstone full_name: %w", err)
+		}
+		emailDigest := m.cryptoxLookup.Digest(strings.ToLower(strings.TrimSpace(tombstoneEmail)))
+		v := m.cryptoxRing.CurrentVersion()
 		if _, err := tx.ExecContext(ctx, `
-			UPDATE auth_users SET email = $1, full_name = '[deleted]', status = $2, updated_at = now() WHERE id = $3`,
-			tombstoneEmail, model.StatusClosed, userID); err != nil {
+			UPDATE auth_users
+			SET email_ciphertext = $1, email_key_version = $2, email_lookup_digest = $3,
+			    full_name_ciphertext = $4, full_name_key_version = $5, status = $6, updated_at = now()
+			WHERE id = $7`,
+			emailCiphertext, v, emailDigest, fullNameCiphertext, v, model.StatusClosed, userID); err != nil {
 			return err
 		}
 		return tx.QueryRowContext(ctx, `

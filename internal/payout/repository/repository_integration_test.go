@@ -22,8 +22,27 @@ import (
 	"github.com/herdifirdausss/seev/internal/payout/model"
 	"github.com/herdifirdausss/seev/internal/payout/repository"
 	"github.com/herdifirdausss/seev/internal/testutil"
+	"github.com/herdifirdausss/seev/pkg/cryptox"
 	"github.com/herdifirdausss/seev/pkg/database"
 )
+
+// repoTestRing is package-level (no *testing.T needed) so every
+// NewRepository call site in this package can use it without threading t
+// through each one — repository.NewRepository now REQUIRES a real ring
+// ("A8 T2.5b" removed the nil-ring-tolerant construction path).
+var repoTestRing = mustBuildRepoTestRing()
+
+func mustBuildRepoTestRing() *cryptox.Ring {
+	key := make([]byte, 32)
+	for i := range key {
+		key[i] = byte(i + 9)
+	}
+	ring, err := cryptox.NewRing(map[int][]byte{1: key}, 1)
+	if err != nil {
+		panic(err)
+	}
+	return ring
+}
 
 func migrationsSourceURL(t *testing.T) string {
 	t.Helper()
@@ -84,7 +103,7 @@ func newTestRequest() model.PayoutRequest {
 // one winner, never both, never neither.
 func TestTransitionToHeld_ConcurrentCallers_ExactlyOneWins(t *testing.T) {
 	db := setupTestDB(t)
-	repo := repository.NewRepository(db, nil)
+	repo := repository.NewRepository(db, repoTestRing)
 	ctx := context.Background()
 
 	req := newTestRequest()
@@ -133,7 +152,7 @@ func TestTransitionToHeld_ConcurrentCallers_ExactlyOneWins(t *testing.T) {
 // concurrent same-status races).
 func TestTransitionToHeld_WrongStartingStatus_NoOp(t *testing.T) {
 	db := setupTestDB(t)
-	repo := repository.NewRepository(db, nil)
+	repo := repository.NewRepository(db, repoTestRing)
 	ctx := context.Background()
 
 	req := newTestRequest()
@@ -157,7 +176,7 @@ func TestTransitionToHeld_WrongStartingStatus_NoOp(t *testing.T) {
 
 func TestFullLifecycle_CreatedToSettled(t *testing.T) {
 	db := setupTestDB(t)
-	repo := repository.NewRepository(db, nil)
+	repo := repository.NewRepository(db, repoTestRing)
 	ctx := context.Background()
 
 	req := newTestRequest()
@@ -191,7 +210,7 @@ func TestFullLifecycle_CreatedToSettled(t *testing.T) {
 
 func TestInsertVendorCall_And_ListStuck(t *testing.T) {
 	db := setupTestDB(t)
-	repo := repository.NewRepository(db, nil)
+	repo := repository.NewRepository(db, repoTestRing)
 	ctx := context.Background()
 
 	req := newTestRequest()

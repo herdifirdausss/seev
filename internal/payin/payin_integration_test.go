@@ -115,7 +115,7 @@ func newPayinModule(db *database.DBSQL) *payin.Module {
 	registry := vendorgw.NewRegistry()
 	registry.AddPayin(mockvendor.New(mockvendor.VendorName, mockSecret))
 
-	return payin.NewModule(db, ledgerModule, registry, 0, nil, nil, nil)
+	return payin.NewModule(db, ledgerModule, registry, 0, nil, nil, nil, payinCryptoxTestRing)
 }
 
 func settledWebhookBody(eventID, externalRef string, userID uuid.UUID, amount int64) []byte {
@@ -150,7 +150,7 @@ func TestPayin_CreateTopupIntent_UsesDatabaseRoutingRule(t *testing.T) {
 	registry := vendorgw.NewRegistry()
 	registry.AddPayin(mockvendor.New(mockvendor.VendorName, mockSecret))
 	registry.AddPayin(routeOnlyVerifier{vendor: "priorityvendor"})
-	m := payin.NewModule(db, ledgerModule, registry, 0, nil, nil, nil)
+	m := payin.NewModule(db, ledgerModule, registry, 0, nil, nil, nil, payinCryptoxTestRing)
 
 	ctx := context.Background()
 	userID := uuid.New()
@@ -305,8 +305,8 @@ func TestPayin_ReplayEvent_FailedEvent_PostsSuccessfully_ThenRejectsDoublePost(t
 	id := uuid.New()
 	_, err := db.ExecContext(ctx, `
 		INSERT INTO payin_webhook_events
-			(id, vendor, vendor_event_id, external_ref, user_id, amount, currency, raw, status, created_at, updated_at)
-		VALUES ($1, 'mockvendor', 'evt-replay-1', 'ref-replay-1', $2, 50000, 'IDR', '{}'::jsonb, 'failed', now(), now())`,
+			(id, vendor, vendor_event_id, external_ref, user_id, amount, currency, status, created_at, updated_at)
+		VALUES ($1, 'mockvendor', 'evt-replay-1', 'ref-replay-1', $2, 50000, 'IDR', 'failed', now(), now())`,
 		id, userID)
 	require.NoError(t, err)
 

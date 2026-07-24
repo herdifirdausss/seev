@@ -1,17 +1,17 @@
 //go:build integration
 
-// Proves docs/roadmap/active/51-a8-data-lifecycle-privacy.md T2.4's K2/K3 expand-phase
-// encryption for payin_webhook_events.raw end to end against a real
-// Postgres: ciphertext round-trip and dual-read compatibility with a
-// pre-migration (plaintext-only) row. Reuses setupPayinTestDB
-// (payin_integration_test.go, same package).
+// Proves docs/roadmap/active/51-a8-data-lifecycle-privacy.md T2.4's K2/K3
+// encryption (contract-migrated by "A8 T2.5b" — no plaintext fallback
+// remains) for payin_webhook_events.raw end to end against a real
+// Postgres: ciphertext round-trip, a nil ring refused at construction, and
+// a row whose ciphertext T2.6's own retention redaction already nulled
+// reading back as the redacted marker rather than erroring. Reuses
+// setupPayinTestDB (payin_integration_test.go, same package).
 package payin_test
 
 import (
 	"context"
-	"fmt"
 	"testing"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
@@ -24,12 +24,25 @@ import (
 
 func payinTestRing(t *testing.T) *cryptox.Ring {
 	t.Helper()
+	require.NotNil(t, payinCryptoxTestRing)
+	return payinCryptoxTestRing
+}
+
+// payinCryptoxTestRing is package-level (no *testing.T needed) so setup
+// helpers like newPayinModule — which payin.NewModule now REQUIRES a real
+// ring for, "A8 T2.5b" having removed the nil-ring-tolerant construction
+// path entirely — can use it without threading t through every call site.
+var payinCryptoxTestRing = mustBuildPayinTestRing()
+
+func mustBuildPayinTestRing() *cryptox.Ring {
 	key := make([]byte, 32)
 	for i := range key {
 		key[i] = byte(i + 3)
 	}
 	ring, err := cryptox.NewRing(map[int][]byte{1: key}, 1)
-	require.NoError(t, err)
+	if err != nil {
+		panic(err)
+	}
 	return ring
 }
 
@@ -56,70 +69,37 @@ func TestPayinRepository_GetOrInsert_RoundTripsThroughCiphertext(t *testing.T) {
 	require.JSONEq(t, `{"secret":"do-not-leak"}`, string(got.Raw))
 }
 
-// TestPayinRepository_DualRead_PreMigrationRowStillWorks is T2's own
-// required test: "dual-read/write compatibility during backfill."
-func TestPayinRepository_DualRead_PreMigrationRowStillWorks(t *testing.T) {
+// TestPayinRepository_NilRing_PanicsAtConstruction is "A8 T2.5b"'s own
+// required test: once payin_webhook_events.raw has no plaintext column, a
+// missing ring can never degrade gracefully — it must fail loudly at
+// construction, not nil-pointer somewhere inside a live request.
+func TestPayinRepository_NilRing_PanicsAtConstruction(t *testing.T) {
 	db := setupPayinTestDB(t)
-	ctx := context.Background()
-
-	id := uuid.New()
-	userID := uuid.New()
-	_, err := db.ExecContext(ctx, `
-		INSERT INTO payin_webhook_events (id, vendor, vendor_event_id, external_ref, user_id, amount, currency, raw, status)
-		VALUES ($1, 'mockvendor', $2, 'ext-legacy', $3, 5000, 'IDR', '{"legacy":true}'::jsonb, 'received')`,
-		id, uuid.NewString(), userID)
-	require.NoError(t, err)
-
-	repo := repository.NewRepository(db, payinTestRing(t))
-	got, err := repo.Get(ctx, id)
-	require.NoError(t, err, "a row with no raw_ciphertext must still be readable via the plaintext fallback")
-	require.JSONEq(t, `{"legacy":true}`, string(got.Raw))
+	require.Panics(t, func() { repository.NewRepository(db, nil) })
 }
 
-// TestPayinRepository_BackfillOnce_RestartableEqualTimestamps is docs/roadmap/active/51
-// T2.5's own required test: pre-migration rows sharing an identical
-// created_at all get backfilled exactly once across many small,
-// restart-simulating BackfillOnce calls.
-func TestPayinRepository_BackfillOnce_RestartableEqualTimestamps(t *testing.T) {
+// TestPayinRepository_RedactedRow_ReadsAsMarkerNotError proves a row
+// T2.6's own retention redaction already nulled raw_ciphertext on (the
+// SAME state the pre-contract plaintext column's own
+// {"redacted":true} marker used to represent) reads back cleanly instead
+// of erroring.
+func TestPayinRepository_RedactedRow_ReadsAsMarkerNotError(t *testing.T) {
 	db := setupPayinTestDB(t)
 	ctx := context.Background()
-
-	const rowCount = 20
-	sharedCreatedAt := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
-	ids := make([]uuid.UUID, rowCount)
-	for i := 0; i < rowCount; i++ {
-		ids[i] = uuid.New()
-		raw := fmt.Sprintf(`{"secret":"legacy-%d"}`, i)
-		_, err := db.ExecContext(ctx, `
-			INSERT INTO payin_webhook_events (id, vendor, vendor_event_id, external_ref, user_id, amount, currency, raw, status, created_at, updated_at)
-			VALUES ($1, 'mockvendor', $2, 'ext-legacy', $3, 1000, 'IDR', $4::jsonb, 'received', $5, $5)`,
-			ids[i], uuid.NewString(), uuid.New(), raw, sharedCreatedAt)
-		require.NoError(t, err)
-	}
-
 	repo := repository.NewRepository(db, payinTestRing(t))
-	total := 0
-	for i := 0; i < rowCount+5; i++ {
-		n, err := repo.BackfillOnce(ctx, 3)
-		require.NoError(t, err)
-		total += n
-		if n == 0 {
-			break
-		}
+
+	ev := model.WebhookEvent{
+		ID: uuid.New(), Vendor: "mockvendor", VendorEventID: uuid.NewString(),
+		ExternalRef: "ext-redacted", UserID: uuid.New(), Amount: decimal.NewFromInt(10000), Currency: "IDR",
+		Raw: []byte(`{"secret":"do-not-leak"}`),
 	}
-	require.Equal(t, rowCount, total)
-
-	var remaining int
-	require.NoError(t, db.QueryRowContext(ctx, `SELECT count(*) FROM payin_webhook_events WHERE raw_ciphertext IS NULL`).Scan(&remaining))
-	require.Zero(t, remaining, "no payin_webhook_events row may still be missing ciphertext after backfill completes")
-
-	for i, id := range ids {
-		got, err := repo.Get(ctx, id)
-		require.NoError(t, err)
-		require.JSONEq(t, fmt.Sprintf(`{"secret":"legacy-%d"}`, i), string(got.Raw))
-	}
-
-	n, err := repo.BackfillOnce(ctx, 100)
+	_, err := repo.GetOrInsert(ctx, ev)
 	require.NoError(t, err)
-	require.Equal(t, 0, n)
+
+	_, err = db.ExecContext(ctx, `UPDATE payin_webhook_events SET raw_ciphertext = NULL, raw_key_version = NULL WHERE id = $1`, ev.ID)
+	require.NoError(t, err)
+
+	got, err := repo.Get(ctx, ev.ID)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"redacted":true}`, string(got.Raw))
 }

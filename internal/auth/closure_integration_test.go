@@ -23,6 +23,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herdifirdausss/seev/internal/auth"
+	"github.com/herdifirdausss/seev/internal/auth/repository"
 	"github.com/herdifirdausss/seev/internal/testutil"
 	"github.com/herdifirdausss/seev/pkg/cryptox"
 	"github.com/herdifirdausss/seev/pkg/database"
@@ -51,7 +52,7 @@ func setupClosureModule(t *testing.T) (*auth.Module, *database.DBSQL, *testutil.
 		JWTSecret: testJWTSecretIT, JWTIssuer: "seev-test",
 		AccessExpiry: 15 * time.Minute, RefreshExpiry: 7 * 24 * time.Hour,
 		DefaultCurrency: "IDR",
-	}, nil)
+	}, nil, cryptoxTestRing, cryptoxTestLookup)
 
 	m.SetClosureKeyRing(testClosureRing(t))
 	handler := middleware.WithInternalToken(testClosureInternalToken)(ledgerHarness.Module().ClosureRouter())
@@ -218,12 +219,13 @@ func TestClosure_HappyPath_FullLifecycle(t *testing.T) {
 	require.NoError(t, db.QueryRowContext(ctx, `SELECT count(*) FROM auth_credentials WHERE user_id = $1`, userID).Scan(&credCount))
 	require.Equal(t, 0, credCount)
 
-	var email, fullName, userStatus string
+	tombstoned, err := repository.NewUserRepository(db, cryptoxTestRing, cryptoxTestLookup).GetUserByID(ctx, userID)
+	require.NoError(t, err)
+	require.NotContains(t, tombstoned.Email, "close-happy@example.test")
+	require.Equal(t, "[deleted]", tombstoned.FullName)
+	require.Equal(t, "closed", tombstoned.Status)
+
 	var ciphertext []byte
-	require.NoError(t, db.QueryRowContext(ctx, `SELECT email, full_name, status FROM auth_users WHERE id = $1`, userID).Scan(&email, &fullName, &userStatus))
-	require.NotContains(t, email, "close-happy@example.test")
-	require.Equal(t, "[deleted]", fullName)
-	require.Equal(t, "closed", userStatus)
 
 	var surrogateID uuid.UUID
 	require.NoError(t, db.QueryRowContext(ctx, `SELECT surrogate_id, active_subject_ciphertext FROM privacy_requests WHERE id = $1`, req.ID).Scan(&surrogateID, &ciphertext))

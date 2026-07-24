@@ -63,11 +63,6 @@ type Repository interface {
 	// (GetTopupIntent's own read path) to 'expired'.
 	MarkTopupIntentExpired(ctx context.Context, id uuid.UUID) error
 
-	// BackfillOnce is docs/roadmap/active/51-a8-data-lifecycle-privacy.md T2.5's bounded backfill
-	// for payin_webhook_events.raw — same shape as auth's own
-	// UserRepository.BackfillOnce: one WHERE-raw_ciphertext-IS-NULL batch
-	// per call, FOR UPDATE SKIP LOCKED, caller loops until 0.
-	BackfillOnce(ctx context.Context, batchSize int) (int, error)
 }
 
 type repo struct {
@@ -75,11 +70,17 @@ type repo struct {
 	ring *cryptox.Ring
 }
 
-// NewRepository's ring is docs/roadmap/active/51-a8-data-lifecycle-privacy.md T2.4's K2/K3
-// expand-phase encryption for payin_webhook_events.raw — same nil-safe
-// optionality as internal/auth/repository's own ring parameters: nil
-// means every read/write behaves exactly as before this task.
+// NewRepository's ring is REQUIRED — docs/roadmap/active/51-a8-data-lifecycle-privacy.md
+// "A8 T2.5b" (the contract migration): payin_webhook_events.raw has no
+// plaintext column anymore (migrations/payin/000010), so every write
+// needs the ring to function at all. A NULL raw_ciphertext on an existing
+// row is still a legitimate READ state (T2.6's own retention redaction
+// nulls it after 30 days — see scanEvent below), which is why, unlike
+// auth's own contract migration, the column itself stays nullable.
 func NewRepository(db database.DatabaseSQL, ring *cryptox.Ring) Repository {
+	if ring == nil {
+		panic("payin: NewRepository requires a non-nil cryptox ring")
+	}
 	return &repo{db: db, ring: ring}
 }
 
@@ -87,24 +88,26 @@ func rawAAD(eventID uuid.UUID) cryptox.AAD {
 	return cryptox.AAD{Service: "payin", Table: "payin_webhook_events", Column: "raw", RowID: eventID.String()}
 }
 
+// redactedRawMarker is what scanEvent returns for a row T2.6's own
+// retention redaction already nulled raw_ciphertext on — the exact same
+// marker fn_retention_purge_webhook_events_raw used to write into the
+// (now-dropped) plaintext raw column directly, kept for any caller that
+// already expects to see it.
+var redactedRawMarker = []byte(`{"redacted":true}`)
+
 func (r *repo) GetOrInsert(ctx context.Context, ev model.WebhookEvent) (model.WebhookEvent, error) {
-	var rawCiphertext []byte
-	var rawKeyVersion *int
-	if r.ring != nil {
-		var err error
-		if rawCiphertext, err = r.ring.Seal(rawAAD(ev.ID), ev.Raw); err != nil {
-			return model.WebhookEvent{}, fmt.Errorf("encrypt payin webhook raw: %w", err)
-		}
-		v := r.ring.CurrentVersion()
-		rawKeyVersion = &v
+	rawCiphertext, err := r.ring.Seal(rawAAD(ev.ID), ev.Raw)
+	if err != nil {
+		return model.WebhookEvent{}, fmt.Errorf("encrypt payin webhook raw: %w", err)
 	}
-	_, err := r.db.ExecContext(ctx, `
+	v := r.ring.CurrentVersion()
+	_, err = r.db.ExecContext(ctx, `
 		INSERT INTO payin_webhook_events
-			(id, vendor, vendor_event_id, external_ref, user_id, amount, currency, raw, status, request_id, created_at, updated_at,
+			(id, vendor, vendor_event_id, external_ref, user_id, amount, currency, status, request_id, created_at, updated_at,
 			 raw_ciphertext, raw_key_version)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'received', $9, now(), now(), $10, $11)`,
-		ev.ID, ev.Vendor, ev.VendorEventID, ev.ExternalRef, ev.UserID, ev.Amount.IntPart(), ev.Currency, ev.Raw,
-		generalutil.NullString(ev.RequestID), rawCiphertext, rawKeyVersion,
+		VALUES ($1, $2, $3, $4, $5, $6, $7, 'received', $8, now(), now(), $9, $10)`,
+		ev.ID, ev.Vendor, ev.VendorEventID, ev.ExternalRef, ev.UserID, ev.Amount.IntPart(), ev.Currency,
+		generalutil.NullString(ev.RequestID), rawCiphertext, v,
 	)
 	if err != nil {
 		if !generalerror.IsDuplicateKey(err) {
@@ -122,9 +125,9 @@ func (r *repo) GetOrInsert(ctx context.Context, ev model.WebhookEvent) (model.We
 
 func (r *repo) getByVendorEventID(ctx context.Context, vendor, vendorEventID string) (model.WebhookEvent, error) {
 	row := r.db.QueryRowContext(ctx, `
-		SELECT id, vendor, vendor_event_id, external_ref, user_id, amount, currency, raw, status,
+		SELECT id, vendor, vendor_event_id, external_ref, user_id, amount, currency, status,
 		       COALESCE(error_message, ''), COALESCE(request_id, ''), created_at, updated_at,
-		       raw_ciphertext, raw_key_version
+		       raw_ciphertext
 		FROM payin_webhook_events WHERE vendor = $1 AND vendor_event_id = $2`,
 		vendor, vendorEventID)
 	return r.scanEvent(row)
@@ -132,9 +135,9 @@ func (r *repo) getByVendorEventID(ctx context.Context, vendor, vendorEventID str
 
 func (r *repo) Get(ctx context.Context, id uuid.UUID) (model.WebhookEvent, error) {
 	row := r.db.QueryRowContext(ctx, `
-		SELECT id, vendor, vendor_event_id, external_ref, user_id, amount, currency, raw, status,
+		SELECT id, vendor, vendor_event_id, external_ref, user_id, amount, currency, status,
 		       COALESCE(error_message, ''), COALESCE(request_id, ''), created_at, updated_at,
-		       raw_ciphertext, raw_key_version
+		       raw_ciphertext
 		FROM payin_webhook_events WHERE id = $1`,
 		id)
 	ev, err := r.scanEvent(row)
@@ -148,79 +151,28 @@ func (r *repo) scanEvent(scanner interface{ Scan(...any) error }) (model.Webhook
 	var ev model.WebhookEvent
 	var amount int64
 	var rawCiphertext []byte
-	var rawKeyVersion *int
 	if err := scanner.Scan(&ev.ID, &ev.Vendor, &ev.VendorEventID, &ev.ExternalRef, &ev.UserID, &amount,
-		&ev.Currency, &ev.Raw, &ev.Status, &ev.ErrorMessage, &ev.RequestID, &ev.CreatedAt, &ev.UpdatedAt,
-		&rawCiphertext, &rawKeyVersion); err != nil {
+		&ev.Currency, &ev.Status, &ev.ErrorMessage, &ev.RequestID, &ev.CreatedAt, &ev.UpdatedAt,
+		&rawCiphertext); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return model.WebhookEvent{}, err
 		}
 		return model.WebhookEvent{}, fmt.Errorf("scan payin webhook event: %w", err)
 	}
 	ev.Amount = decimal.NewFromInt(amount)
-	// Dual-read (K3): ciphertext wins when present (already backfilled);
-	// otherwise the plaintext raw column already scanned above stands.
-	if r.ring != nil && rawCiphertext != nil {
-		plain, err := r.ring.Open(rawAAD(ev.ID), rawCiphertext)
-		if err != nil {
-			return model.WebhookEvent{}, fmt.Errorf("decrypt payin webhook raw: %w", err)
-		}
-		ev.Raw = plain
+	if rawCiphertext == nil {
+		// T2.6's own retention redaction already nulled this — nothing
+		// left to decrypt, same marker the pre-contract plaintext column
+		// used to carry.
+		ev.Raw = redactedRawMarker
+		return ev, nil
 	}
-	return ev, nil
-}
-
-func (r *repo) BackfillOnce(ctx context.Context, batchSize int) (int, error) {
-	if r.ring == nil {
-		return 0, fmt.Errorf("payin: cryptox ring not configured, cannot backfill")
-	}
-	type pendingRow struct {
-		id  uuid.UUID
-		raw []byte
-	}
-	var rows []pendingRow
-	err := r.db.WithTx(ctx, nil, func(tx *sql.Tx) error {
-		result, queryErr := tx.QueryContext(ctx, `
-			SELECT id, raw FROM payin_webhook_events
-			WHERE raw_ciphertext IS NULL
-			ORDER BY created_at, id
-			LIMIT $1
-			FOR UPDATE SKIP LOCKED`, batchSize)
-		if queryErr != nil {
-			return fmt.Errorf("select backfill batch: %w", queryErr)
-		}
-		for result.Next() {
-			var pr pendingRow
-			if scanErr := result.Scan(&pr.id, &pr.raw); scanErr != nil {
-				result.Close()
-				return fmt.Errorf("scan backfill row: %w", scanErr)
-			}
-			rows = append(rows, pr)
-		}
-		if rowsErr := result.Err(); rowsErr != nil {
-			result.Close()
-			return fmt.Errorf("iterate backfill batch: %w", rowsErr)
-		}
-		result.Close()
-
-		v := r.ring.CurrentVersion()
-		for _, pr := range rows {
-			ciphertext, sealErr := r.ring.Seal(rawAAD(pr.id), pr.raw)
-			if sealErr != nil {
-				return fmt.Errorf("encrypt payin webhook raw for backfill %s: %w", pr.id, sealErr)
-			}
-			if _, execErr := tx.ExecContext(ctx, `
-				UPDATE payin_webhook_events SET raw_ciphertext = $1, raw_key_version = $2 WHERE id = $3`,
-				ciphertext, v, pr.id); execErr != nil {
-				return fmt.Errorf("update backfilled payin webhook event %s: %w", pr.id, execErr)
-			}
-		}
-		return nil
-	})
+	plain, err := r.ring.Open(rawAAD(ev.ID), rawCiphertext)
 	if err != nil {
-		return 0, err
+		return model.WebhookEvent{}, fmt.Errorf("decrypt payin webhook raw: %w", err)
 	}
-	return len(rows), nil
+	ev.Raw = plain
+	return ev, nil
 }
 
 func (r *repo) MarkPosted(ctx context.Context, id uuid.UUID) error {
@@ -259,9 +211,9 @@ func (r *repo) MarkBlocked(ctx context.Context, id uuid.UUID, reason string) err
 }
 
 func (r *repo) List(ctx context.Context, vendor, status string, limit, offset int) ([]model.WebhookEvent, error) {
-	query := `SELECT id, vendor, vendor_event_id, external_ref, user_id, amount, currency, raw, status,
+	query := `SELECT id, vendor, vendor_event_id, external_ref, user_id, amount, currency, status,
 	                 COALESCE(error_message, ''), COALESCE(request_id, ''), created_at, updated_at,
-	                 raw_ciphertext, raw_key_version
+	                 raw_ciphertext
 	          FROM payin_webhook_events WHERE 1=1`
 	args := []any{}
 	argN := 0

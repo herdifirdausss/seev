@@ -8,14 +8,10 @@ package auth
 // user id, request id, or free-text reason.
 //
 // seev_pii_backfill_rows_total{owner,field,result} from K13's own
-// canonical list is deliberately NOT implemented this pass: it would mean
-// instrumenting BackfillOnce across four separate repository packages
-// (auth, payin, payout, ledger/recon) for a one-time/operational CLI flow
-// (--backfill-cryptox) already proven complete via T2.5's own live
-// verification — lower incident-response value than the request-lifecycle
-// metrics below, and a real cross-package lift. Flagged as a gap for "A8
-// T5b"/a future pass, the same honest-gap convention T1 already used for
-// seev_retention_oldest_eligible_age_seconds.
+// canonical list is now permanently moot, not deferred: "A8 T2.5b" (the
+// contract migration) removed BackfillOnce and --backfill-cryptox
+// entirely once every field's plaintext column was dropped — there is no
+// longer a backfill operation left to ever instrument.
 
 import (
 	"github.com/prometheus/client_golang/prometheus"

@@ -33,7 +33,7 @@ func newAuthModuleWithMockKYC(db *database.DBSQL) (*auth.Module, *testutil.Ledge
 		JWTSecret: testJWTSecretIT, JWTIssuer: "seev-test",
 		AccessExpiry: 15 * time.Minute, RefreshExpiry: 7 * 24 * time.Hour,
 		DefaultCurrency: "IDR",
-	}, nil, mockkyc.New())
+	}, nil, cryptoxTestRing, cryptoxTestLookup, mockkyc.New())
 	return authModule, ledgerModule
 }
 

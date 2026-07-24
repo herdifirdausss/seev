@@ -44,21 +44,6 @@ func (m *MockRepository) EXPECT() *MockRepositoryMockRecorder {
 	return m.recorder
 }
 
-// BackfillOnce mocks base method.
-func (m *MockRepository) BackfillOnce(ctx context.Context, batchSize int) (int, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "BackfillOnce", ctx, batchSize)
-	ret0, _ := ret[0].(int)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// BackfillOnce indicates an expected call of BackfillOnce.
-func (mr *MockRepositoryMockRecorder) BackfillOnce(ctx, batchSize any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "BackfillOnce", reflect.TypeOf((*MockRepository)(nil).BackfillOnce), ctx, batchSize)
-}
-
 // CountStuck mocks base method.
 func (m *MockRepository) CountStuck(ctx context.Context, statuses []string, olderThan time.Time) (map[string]int, error) {
 	m.ctrl.T.Helper()

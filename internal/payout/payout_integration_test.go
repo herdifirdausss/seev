@@ -127,7 +127,7 @@ func newPayoutTestModules(db *database.DBSQL) (*testutil.LedgerHarness, *payout.
 	registry := vendorgw.NewRegistry()
 	registry.AddPayout(provider)
 
-	payoutModule := payout.NewModule(db, ledgerModule, registry, nil, nil, nil, nil)
+	payoutModule := payout.NewModule(db, ledgerModule, registry, nil, nil, nil, nil, payoutCryptoxTestRing)
 	return ledgerModule, payoutModule, provider
 }
 

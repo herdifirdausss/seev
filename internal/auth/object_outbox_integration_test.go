@@ -18,6 +18,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
+	"github.com/herdifirdausss/seev/internal/auth/model"
+	"github.com/herdifirdausss/seev/internal/auth/repository"
 	"github.com/herdifirdausss/seev/pkg/database"
 	"github.com/herdifirdausss/seev/pkg/objectoutbox"
 )
@@ -62,14 +64,11 @@ func insertKYCDocumentForOutboxTest(t *testing.T, db *database.DBSQL, userID uui
 	ctx := context.Background()
 
 	submissionID := uuid.New()
-	_, err := db.ExecContext(ctx, `
-		INSERT INTO auth_users (id, email, full_name, role, status)
-		VALUES ($1, $2, 'Test User', 'user', 'active') ON CONFLICT (id) DO NOTHING`,
-		userID, "outbox-test-"+userID.String()+"@example.com")
-	require.NoError(t, err)
-	_, err = db.ExecContext(ctx, `
-		INSERT INTO kyc_submissions (id, user_id, level_requested, status, payload, provider)
-		VALUES ($1, $2, 1, 'approved', '{}'::jsonb, 'test')`, submissionID, userID)
+	insertTestUser(t, db, userID)
+	require.NoError(t, repository.NewKYCRepository(db, cryptoxTestRing).CreateKYCSubmission(ctx, model.KYCSubmission{
+		ID: submissionID, UserID: userID, LevelRequested: 1, Provider: "test", Payload: map[string]any{},
+	}))
+	_, err := db.ExecContext(ctx, `UPDATE kyc_submissions SET status = 'approved' WHERE id = $1`, submissionID)
 	require.NoError(t, err)
 
 	docID = uuid.New()

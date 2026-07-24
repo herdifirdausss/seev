@@ -106,11 +106,6 @@ type Repository interface {
 	// this to decide whether any call has ever landed accepted/uncertain.
 	ListVendorCalls(ctx context.Context, payoutRequestID uuid.UUID) ([]model.PayoutVendorCall, error)
 
-	// BackfillOnce is docs/roadmap/active/51-a8-data-lifecycle-privacy.md T2.5's bounded backfill
-	// for payout_requests.destination — same shape as auth's own
-	// UserRepository.BackfillOnce: one WHERE-destination_ciphertext-IS-NULL
-	// batch per call, FOR UPDATE SKIP LOCKED, caller loops until 0.
-	BackfillOnce(ctx context.Context, batchSize int) (int, error)
 }
 
 type repo struct {
@@ -118,11 +113,17 @@ type repo struct {
 	ring *cryptox.Ring
 }
 
-// NewRepository's ring is docs/roadmap/active/51-a8-data-lifecycle-privacy.md T2.4's K2/K3
-// expand-phase encryption for payout_requests.destination — same nil-safe
-// optionality as internal/auth/repository's own ring parameters: nil
-// means every read/write behaves exactly as before this task.
+// NewRepository's ring is REQUIRED — docs/roadmap/active/51-a8-data-lifecycle-privacy.md
+// "A8 T2.5b" (the contract migration): payout_requests.destination has no
+// plaintext column anymore (migrations/payout/000011), so every write
+// needs the ring to function at all. A NULL destination_ciphertext on an
+// existing row is still a legitimate READ state (T2.6's own retention
+// redaction nulls it after 30 days — see scanRequest below), which is why
+// the column itself stays nullable.
 func NewRepository(db database.DatabaseSQL, ring *cryptox.Ring) Repository {
+	if ring == nil {
+		panic("payout: NewRepository requires a non-nil cryptox ring")
+	}
 	return &repo{db: db, ring: ring}
 }
 
@@ -130,82 +131,31 @@ func destinationAAD(requestID uuid.UUID) cryptox.AAD {
 	return cryptox.AAD{Service: "payout", Table: "payout_requests", Column: "destination", RowID: requestID.String()}
 }
 
+// redactedDestinationMarker is what scanRequest returns for a row T2.6's
+// own retention redaction already nulled destination_ciphertext on — the
+// exact same marker fn_retention_purge_requests_destination_and_error
+// used to write into the (now-dropped) plaintext destination column
+// directly.
+var redactedDestinationMarker = []byte(`{"redacted":true}`)
+
 func (r *repo) Insert(ctx context.Context, req model.PayoutRequest) error {
-	var destCiphertext []byte
-	var destKeyVersion *int
-	if r.ring != nil {
-		var err error
-		if destCiphertext, err = r.ring.Seal(destinationAAD(req.ID), req.Destination); err != nil {
-			return fmt.Errorf("encrypt payout destination: %w", err)
-		}
-		v := r.ring.CurrentVersion()
-		destKeyVersion = &v
+	destCiphertext, err := r.ring.Seal(destinationAAD(req.ID), req.Destination)
+	if err != nil {
+		return fmt.Errorf("encrypt payout destination: %w", err)
 	}
-	_, err := r.db.ExecContext(ctx, `
+	v := r.ring.CurrentVersion()
+	_, err = r.db.ExecContext(ctx, `
 		INSERT INTO payout_requests
-			(id, user_id, amount, currency, vendor, destination, status, created_by, request_id, created_at, updated_at,
+			(id, user_id, amount, currency, vendor, status, created_by, request_id, created_at, updated_at,
 			 destination_ciphertext, destination_key_version)
-		VALUES ($1, $2, $3, $4, $5, $6, 'created', $7, $8, now(), now(), $9, $10)`,
-		req.ID, req.UserID, req.Amount.IntPart(), req.Currency, req.Vendor, req.Destination, req.CreatedBy,
-		generalutil.NullString(req.RequestID), destCiphertext, destKeyVersion,
+		VALUES ($1, $2, $3, $4, $5, 'created', $6, $7, now(), now(), $8, $9)`,
+		req.ID, req.UserID, req.Amount.IntPart(), req.Currency, req.Vendor, req.CreatedBy,
+		generalutil.NullString(req.RequestID), destCiphertext, v,
 	)
 	if err != nil {
 		return fmt.Errorf("insert payout request: %w", err)
 	}
 	return nil
-}
-
-func (r *repo) BackfillOnce(ctx context.Context, batchSize int) (int, error) {
-	if r.ring == nil {
-		return 0, fmt.Errorf("payout: cryptox ring not configured, cannot backfill")
-	}
-	type pendingRow struct {
-		id          uuid.UUID
-		destination []byte
-	}
-	var rows []pendingRow
-	err := r.db.WithTx(ctx, nil, func(tx *sql.Tx) error {
-		result, queryErr := tx.QueryContext(ctx, `
-			SELECT id, destination FROM payout_requests
-			WHERE destination_ciphertext IS NULL
-			ORDER BY created_at, id
-			LIMIT $1
-			FOR UPDATE SKIP LOCKED`, batchSize)
-		if queryErr != nil {
-			return fmt.Errorf("select backfill batch: %w", queryErr)
-		}
-		for result.Next() {
-			var pr pendingRow
-			if scanErr := result.Scan(&pr.id, &pr.destination); scanErr != nil {
-				result.Close()
-				return fmt.Errorf("scan backfill row: %w", scanErr)
-			}
-			rows = append(rows, pr)
-		}
-		if rowsErr := result.Err(); rowsErr != nil {
-			result.Close()
-			return fmt.Errorf("iterate backfill batch: %w", rowsErr)
-		}
-		result.Close()
-
-		v := r.ring.CurrentVersion()
-		for _, pr := range rows {
-			ciphertext, sealErr := r.ring.Seal(destinationAAD(pr.id), pr.destination)
-			if sealErr != nil {
-				return fmt.Errorf("encrypt payout destination for backfill %s: %w", pr.id, sealErr)
-			}
-			if _, execErr := tx.ExecContext(ctx, `
-				UPDATE payout_requests SET destination_ciphertext = $1, destination_key_version = $2 WHERE id = $3`,
-				ciphertext, v, pr.id); execErr != nil {
-				return fmt.Errorf("update backfilled payout request %s: %w", pr.id, execErr)
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		return 0, err
-	}
-	return len(rows), nil
 }
 
 func (r *repo) transition(ctx context.Context, query string, args ...any) (bool, error) {
@@ -317,10 +267,10 @@ func (r *repo) SetVendor(ctx context.Context, id uuid.UUID, vendor string) error
 
 func (r *repo) Get(ctx context.Context, id uuid.UUID) (model.PayoutRequest, error) {
 	row := r.db.QueryRowContext(ctx, `
-		SELECT id, user_id, amount, currency, vendor, destination, status, hold_tx_id, settle_tx_id,
+		SELECT id, user_id, amount, currency, vendor, status, hold_tx_id, settle_tx_id,
 		       COALESCE(vendor_ref, ''), COALESCE(error_message, ''), created_by, COALESCE(request_id, ''),
 		       fee_quote_id, fee_amount, COALESCE(fee_gateway, ''), created_at, updated_at,
-		       destination_ciphertext, destination_key_version
+		       destination_ciphertext
 		FROM payout_requests WHERE id = $1`, id)
 	req, err := r.scanRequest(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -347,22 +297,23 @@ func (r *repo) scanRequest(s rowScanner) (model.PayoutRequest, error) {
 	var holdTxID, settleTxID, feeQuoteID sql.NullString
 	var feeAmount sql.NullInt64
 	var destCiphertext []byte
-	var destKeyVersion *int
-	if err := s.Scan(&req.ID, &req.UserID, &amount, &req.Currency, &req.Vendor, &req.Destination, &req.Status,
+	if err := s.Scan(&req.ID, &req.UserID, &amount, &req.Currency, &req.Vendor, &req.Status,
 		&holdTxID, &settleTxID, &req.VendorRef, &req.ErrorMessage, &req.CreatedBy, &req.RequestID,
 		&feeQuoteID, &feeAmount, &req.FeeGateway,
 		&req.CreatedAt, &req.UpdatedAt,
-		&destCiphertext, &destKeyVersion); err != nil {
+		&destCiphertext); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return model.PayoutRequest{}, err
 		}
 		return model.PayoutRequest{}, fmt.Errorf("scan payout request: %w", err)
 	}
 	req.Amount = decimal.NewFromInt(amount)
-	// Dual-read (K3): ciphertext wins when present (already backfilled);
-	// otherwise the plaintext destination column already scanned above
-	// stands.
-	if r.ring != nil && destCiphertext != nil {
+	if destCiphertext == nil {
+		// T2.6's own retention redaction already nulled this — nothing
+		// left to decrypt, same marker the pre-contract plaintext column
+		// used to carry.
+		req.Destination = redactedDestinationMarker
+	} else {
 		plain, err := r.ring.Open(destinationAAD(req.ID), destCiphertext)
 		if err != nil {
 			return model.PayoutRequest{}, fmt.Errorf("decrypt payout destination: %w", err)
@@ -398,10 +349,10 @@ func (r *repo) scanRequest(s rowScanner) (model.PayoutRequest, error) {
 }
 
 func (r *repo) List(ctx context.Context, status, vendor string, limit, offset int) ([]model.PayoutRequest, error) {
-	query := `SELECT id, user_id, amount, currency, vendor, destination, status, hold_tx_id, settle_tx_id,
+	query := `SELECT id, user_id, amount, currency, vendor, status, hold_tx_id, settle_tx_id,
 	                 COALESCE(vendor_ref, ''), COALESCE(error_message, ''), created_by, COALESCE(request_id, ''),
 	                 fee_quote_id, fee_amount, COALESCE(fee_gateway, ''), created_at, updated_at,
-	                 destination_ciphertext, destination_key_version
+	                 destination_ciphertext
 	          FROM payout_requests WHERE 1=1`
 	args := []any{}
 	argN := 0
@@ -423,10 +374,10 @@ func (r *repo) List(ctx context.Context, status, vendor string, limit, offset in
 
 func (r *repo) ListStuck(ctx context.Context, status string, olderThan time.Time, limit int) ([]model.PayoutRequest, error) {
 	return r.queryRequests(ctx, `
-		SELECT id, user_id, amount, currency, vendor, destination, status, hold_tx_id, settle_tx_id,
+		SELECT id, user_id, amount, currency, vendor, status, hold_tx_id, settle_tx_id,
 		       COALESCE(vendor_ref, ''), COALESCE(error_message, ''), created_by, COALESCE(request_id, ''),
 		       fee_quote_id, fee_amount, COALESCE(fee_gateway, ''), created_at, updated_at,
-		       destination_ciphertext, destination_key_version
+		       destination_ciphertext
 		FROM payout_requests
 		WHERE status = $1 AND updated_at < $2
 		ORDER BY updated_at

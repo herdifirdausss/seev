@@ -80,6 +80,16 @@ type Module struct {
 	cfg              Config
 	logger           *slog.Logger
 	kycProvider      kycvendor.Provider
+	// cryptoxRing/cryptoxLookup are the SAME ring/lookup key NewModule
+	// already used to construct users/kyc above — retained here for the
+	// small number of direct-SQL call sites in this package that
+	// deliberately bypass UserRepository/KYCRepository
+	// (closure_worker.go's tombstone, privacy_worker.go's export row
+	// collector) and therefore need to seal/open auth_users.email/
+	// full_name (and compute the lookup digest) themselves, the exact same
+	// way user_repository.go does.
+	cryptoxRing   *cryptox.Ring
+	cryptoxLookup *cryptox.LookupKey
 	sanctionsChecker interface {
 		CheckWithSubject(context.Context, string, string, uuid.UUID, decimal.Decimal, string, string, string) (fraudcheck.Verdict, error)
 	}
@@ -107,8 +117,17 @@ func (m *Module) SetSanctionsChecker(checker interface {
 	m.sanctionsChecker = checker
 }
 
-// NewModule wires the auth module.
-func NewModule(db database.DatabaseSQL, provisioner Provisioner, cfg Config, logger *slog.Logger, providers ...kycvendor.Provider) *Module {
+// NewModule wires the auth module. ring/lookup are REQUIRED —
+// docs/roadmap/active/51-a8-data-lifecycle-privacy.md "A8 T2.5b" (the
+// contract migration) removed the plaintext fallback for
+// auth_users.email/full_name and kyc_submissions.payload, so there is no
+// longer a valid "cryptox unconfigured" mode to construct: the caller
+// (cmd/auth-service/main.go) builds the ring/lookup unconditionally at
+// boot and fails the process if it can't, the same "money-safety, never
+// optional" posture T3's LedgerIdempotency ring already established.
+// NewUserRepository/NewKYCRepository themselves panic on a nil ring as
+// the last-resort backstop if this is ever miswired.
+func NewModule(db database.DatabaseSQL, provisioner Provisioner, cfg Config, logger *slog.Logger, ring *cryptox.Ring, lookup *cryptox.LookupKey, providers ...kycvendor.Provider) *Module {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -118,28 +137,16 @@ func NewModule(db database.DatabaseSQL, provisioner Provisioner, cfg Config, log
 	}
 	return &Module{
 		db:            db,
-		users:         repository.NewUserRepository(db, nil, nil),
+		users:         repository.NewUserRepository(db, ring, lookup),
 		refreshTokens: repository.NewRefreshTokenRepository(db),
-		kyc:           repository.NewKYCRepository(db, nil),
+		kyc:           repository.NewKYCRepository(db, ring),
 		provisioner:   provisioner,
 		cfg:           cfg,
 		logger:        logger,
 		kycProvider:   provider,
+		cryptoxRing:   ring,
+		cryptoxLookup: lookup,
 	}
-}
-
-// SetCryptoxRing wires docs/roadmap/active/51-a8-data-lifecycle-privacy.md T2.3's K2/K3
-// field encryption (auth_users.email/full_name, kyc_submissions.payload) —
-// same optionality convention as SetDocumentKeyRing: a nil ring leaves
-// every read/write exactly as it behaved before this task (plaintext
-// columns only). lookup may be nil even when ring isn't (GetUserByEmail
-// then falls back to the plaintext-only lookup query for every row, not
-// just pre-backfill ones). Reconstructs the user/kyc repositories rather
-// than mutating fields on the existing ones, since both are constructed
-// once inside NewModule with ring=nil/lookup=nil by default.
-func (m *Module) SetCryptoxRing(ring *cryptox.Ring, lookup *cryptox.LookupKey) {
-	m.users = repository.NewUserRepository(m.db, ring, lookup)
-	m.kyc = repository.NewKYCRepository(m.db, ring)
 }
 
 // TokenPair is what Login/Refresh/Register hand back to the transport layer.

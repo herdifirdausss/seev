@@ -35,6 +35,7 @@ import (
 	"github.com/herdifirdausss/seev/internal/testutil"
 	"github.com/herdifirdausss/seev/internal/vendorgw"
 	"github.com/herdifirdausss/seev/internal/vendorgw/mockvendor"
+	"github.com/herdifirdausss/seev/pkg/cryptox"
 	"github.com/herdifirdausss/seev/pkg/database"
 )
 
@@ -130,7 +131,13 @@ func newWebhookTestRouter(t *testing.T, db *database.DBSQL) http.Handler {
 
 	registry := vendorgw.NewRegistry()
 	registry.AddPayin(mockvendor.New(mockvendor.VendorName, webhookTestMockSecret))
-	payinModule := payin.NewModule(db, ledgerClient, registry, 0, nil, nil, nil)
+	webhookTestKey := make([]byte, 32)
+	for i := range webhookTestKey {
+		webhookTestKey[i] = byte(i + 7)
+	}
+	webhookTestRing, err := cryptox.NewRing(map[int][]byte{1: webhookTestKey}, 1)
+	require.NoError(t, err)
+	payinModule := payin.NewModule(db, ledgerClient, registry, 0, nil, nil, nil, webhookTestRing)
 	listener := bufconn.Listen(1024 * 1024)
 	grpcServer := grpc.NewServer()
 	payinModule.RegisterGRPC(grpcServer)

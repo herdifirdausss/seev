@@ -57,7 +57,7 @@ func TestFailover_ConcurrentDispatch_RaceRelayReplicasVsFailover(t *testing.T) {
 		ID: generalutil.NewV7(), UserID: userID, Amount: decimal.NewFromInt(100_000), Currency: "IDR",
 		Vendor: "vendorA", Destination: dest, CreatedBy: "test",
 	}
-	repo := repository.NewRepository(db, nil)
+	repo := repository.NewRepository(db, payoutInternalTestRing)
 	require.NoError(t, repo.Insert(ctx, req))
 
 	// providerA always returns a definitive business rejection (never an

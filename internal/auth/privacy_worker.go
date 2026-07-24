@@ -15,7 +15,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/herdifirdausss/seev/internal/auth/model"
+	"github.com/herdifirdausss/seev/internal/auth/repository"
 	"github.com/herdifirdausss/seev/pkg/objectoutbox"
 )
 
@@ -317,24 +317,27 @@ func rawRowsToNDJSON(rows []json.RawMessage) []byte {
 	return buf.Bytes()
 }
 
-// collectAuthOwnerRows queries auth's own tables directly (bypassing
-// UserRepository/KYCRepository — this is a read-only, same-database,
-// cross-cutting concern, the same convention internal/auth/retention.go
-// and object_outbox.go already use) — ordered deterministically
-// (created_at, id) per work item 3's own "stable ordering" requirement.
+// collectAuthOwnerRows reads the user profile through UserRepository (the
+// only path that can decrypt auth_users.email/full_name since "A8 T2.5b"'s
+// contract migration dropped their plaintext columns) and every other
+// auth table directly (bypassing KYCRepository for the KYC decision
+// summary — read-only, same-database, cross-cutting concern, the same
+// convention internal/auth/retention.go and object_outbox.go already use;
+// KYC's own encrypted payload is never selected here regardless, see the
+// exclusions list) — ordered deterministically (created_at, id) per work
+// item 3's own "stable ordering" requirement.
 func (m *Module) collectAuthOwnerRows(ctx context.Context, userID uuid.UUID, cutoff time.Time) ([]any, error) {
 	var rows []any
 
-	var u model.User
-	err := m.db.QueryRowContext(ctx, `
-		SELECT id, email, full_name, role, status, kyc_level, created_at
-		FROM auth_users WHERE id = $1 AND created_at <= $2`, userID, cutoff,
-	).Scan(&u.ID, &u.Email, &u.FullName, &u.Role, &u.Status, &u.KYCLevel, &u.CreatedAt)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, fmt.Errorf("user %s not found as of cutoff", userID)
+	u, err := m.users.GetUserByID(ctx, userID)
+	if errors.Is(err, repository.ErrNotFound) {
+		return nil, fmt.Errorf("user %s not found", userID)
 	}
 	if err != nil {
 		return nil, err
+	}
+	if u.CreatedAt.After(cutoff) {
+		return nil, fmt.Errorf("user %s not found as of cutoff", userID)
 	}
 	rows = append(rows, exportUserProfileRow{
 		Type: "user_profile", ID: u.ID.String(), Email: u.Email, FullName: u.FullName,
