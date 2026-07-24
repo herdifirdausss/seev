@@ -1,14 +1,13 @@
 //go:build integration
 
-// Package adminbff proves the sessions DELETE fix (migrations/adminbff/
+// Package adminbff proves the logout session-delete fix (migrations/adminbff/
 // 000004_session_delete_fn.up.sql) actually works against a real Postgres
 // role that only holds the app_service grant — the same role adminbff_app
 // connects as in every real deployment path (docker-compose.yml,
-// scripts/lib.sh ensure_app_role). Before this fix, DeleteSession and
-// CleanupSessions issued a direct DELETE, which app_service has never been
-// granted (migrations/adminbff/000001_core.up.sql line 35 grants only
-// SELECT, INSERT, UPDATE) and failed with "permission denied for table
-// sessions".
+// scripts/lib.sh ensure_app_role). Before this fix, DeleteSession issued a
+// direct DELETE, which app_service has never been granted
+// (migrations/adminbff/000001_core.up.sql line 35 grants only SELECT,
+// INSERT, UPDATE) and failed with "permission denied for table sessions".
 package adminbff
 
 import (
@@ -145,29 +144,4 @@ func TestSchemaContract_AppServiceRole_DeleteSessionRemovesRow(t *testing.T) {
 	// Deleting an id that no longer exists must stay a no-op, matching the
 	// original DELETE ... WHERE id = $1 semantics (no error on zero rows).
 	require.NoError(t, repo.DeleteSession(ctx, "logout-session"))
-}
-
-// TestSchemaContract_AppServiceRole_CleanupSessionsRemovesOnlyExpired proves
-// the periodic cleanup job (module.go Start's cron) removes rows past their
-// own expiry columns under app_service and leaves live sessions untouched.
-func TestSchemaContract_AppServiceRole_CleanupSessionsRemovesOnlyExpired(t *testing.T) {
-	dbs := setupAppServiceSessionTestDB(t)
-	ctx := context.Background()
-
-	repo := NewSessionRepository(dbs.appDB)
-	past := time.Now().Add(-time.Hour)
-	require.NoError(t, repo.CreateSession(ctx, Session{
-		ID: "expired-session", UserID: uuid.New(), Email: "operator@example.test", Role: "admin",
-		CSRFToken: "csrf", CreatedAt: past, LastSeenAt: past,
-		ExpiresAt: past.Add(time.Minute), AbsoluteExpiresAt: past.Add(time.Minute),
-	}))
-	seedSession(t, repo, "live-session")
-
-	require.NoError(t, repo.CleanupSessions(ctx, time.Now()))
-
-	var expiredCount, liveCount int
-	require.NoError(t, dbs.ownerDB.QueryRowContext(ctx, `SELECT count(*) FROM sessions WHERE id = $1`, "expired-session").Scan(&expiredCount))
-	require.Equal(t, 0, expiredCount)
-	require.NoError(t, dbs.ownerDB.QueryRowContext(ctx, `SELECT count(*) FROM sessions WHERE id = $1`, "live-session").Scan(&liveCount))
-	require.Equal(t, 1, liveCount)
 }

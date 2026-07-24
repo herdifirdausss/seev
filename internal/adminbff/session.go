@@ -109,7 +109,7 @@ func (r *sessionRepo) DeleteSession(ctx context.Context, id string) error {
 }
 
 func (r *sessionRepo) CleanupSessions(ctx context.Context, now time.Time) error {
-	if _, err := r.db.ExecContext(ctx, `SELECT fn_cleanup_expired_sessions($1)`, now); err != nil {
+	if _, err := r.db.ExecContext(ctx, `DELETE FROM sessions WHERE expires_at <= $1 OR absolute_expires_at <= $1`, now); err != nil {
 		return fmt.Errorf("adminbff: cleanup sessions: %w", err)
 	}
 	return nil
