@@ -1,4 +1,4 @@
--- docs/roadmap/active/51-a8-data-lifecycle-privacy.md "A8 T2.5b": migrations/payout/000011
+-- docs/roadmap/archive/51-a8-data-lifecycle-privacy.md "A8 T2.5b": migrations/payout/000011
 -- dropped payout_requests.destination — this function (migrations/payout/000010)
 -- wrote a {"redacted":true} marker into that column on every redaction and
 -- used "destination != marker" as part of its own idempotency guard. Both

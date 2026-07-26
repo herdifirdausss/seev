@@ -1,6 +1,6 @@
 //go:build integration
 
-// Proves docs/roadmap/active/51-a8-data-lifecycle-privacy.md T4's (K9) authenticated user
+// Proves docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T4's (K9) authenticated user
 // export end to end against a real Postgres: IDOR-safe ownership,
 // password re-verification, disabled-user rejection, duplicate-request
 // idempotency, the built archive containing the subject's own data (and
@@ -28,7 +28,7 @@ import (
 	"github.com/herdifirdausss/seev/pkg/objectoutbox"
 )
 
-// fakeDocStore is an in-memory docs/roadmap/active/51-a8-data-lifecycle-privacy.md auth.DocumentStore —
+// fakeDocStore is an in-memory docs/roadmap/archive/51-a8-data-lifecycle-privacy.md auth.DocumentStore —
 // this environment has no real MinIO/S3, matching every other T2/T4
 // integration test's own "no production object-store adapter exists yet"
 // reality (see internal/auth/documents.go's own long-standing comment).

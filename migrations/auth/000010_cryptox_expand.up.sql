@@ -1,4 +1,4 @@
--- docs/roadmap/active/51-a8-data-lifecycle-privacy.md T2.3 (K2/K3 expand phase): nullable
+-- docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T2.3 (K2/K3 expand phase): nullable
 -- ciphertext/key-version/lookup-digest columns for auth_users.email,
 -- auth_users.full_name, and kyc_submissions.payload. Plaintext columns
 -- stay in place and required — application code dual-writes both during

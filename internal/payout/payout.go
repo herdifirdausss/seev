@@ -107,7 +107,7 @@ type Module struct {
 // to an in-memory implementation (single-instance only). fraudClient may be
 // nil to disable pre-hold fraud screening entirely. breaker may be nil to
 // disable circuit-breaking entirely (every registered vendor is always
-// allowed). ring is REQUIRED — docs/roadmap/active/51-a8-data-lifecycle-privacy.md
+// allowed). ring is REQUIRED — docs/roadmap/archive/51-a8-data-lifecycle-privacy.md
 // "A8 T2.5b" (the contract migration) removed payout_requests.destination's
 // plaintext fallback, so there is no longer a valid "cryptox unconfigured"
 // mode to construct; repository.NewRepository itself panics on a nil ring

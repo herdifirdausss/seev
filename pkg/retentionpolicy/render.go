@@ -21,7 +21,7 @@ func RenderMarkdown(p *Policy) string {
 		" after changing the policy. `cmd/retentioncheck` fails CI if this file" +
 		" and the policy ever disagree.\n\n")
 	b.WriteString(fmt.Sprintf("Policy version: **%d**. See "+
-		"[docs/roadmap/active/51-a8-data-lifecycle-privacy.md](../roadmap/active/51-a8-data-lifecycle-privacy.md)"+
+		"[docs/roadmap/archive/51-a8-data-lifecycle-privacy.md](../roadmap/archive/51-a8-data-lifecycle-privacy.md)"+
 		" for the locked design decisions (K1–K13) this matrix implements.\n\n", p.PolicyVersion))
 
 	b.WriteString("These are conservative engineering defaults for this learning " +

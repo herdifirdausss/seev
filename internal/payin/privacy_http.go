@@ -7,10 +7,11 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/herdifirdausss/seev/pkg/privacyexport"
 	"github.com/herdifirdausss/seev/pkg/response"
 )
 
-// PrivacyRouter returns docs/roadmap/active/51-a8-data-lifecycle-privacy.md T4b/T5b's own
+// PrivacyRouter returns docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T4b/T5b's own
 // export + closure endpoints — deliberately a SEPARATE handler from
 // AdminRouter (JWT-gated) rather than an addition to it: these are
 // machine-to-machine calls from auth-service's own saga/export workers,
@@ -36,12 +37,17 @@ func (m *Module) handlePrivacyExport(w http.ResponseWriter, r *http.Request) {
 		response.BadRequest(w, "invalid or missing cutoff")
 		return
 	}
-	rows, err := m.PrivacyExportRows(r.Context(), subjectID, cutoff)
+	offset, pageSize, err := privacyexport.Parse(r.URL.Query())
+	if err != nil {
+		response.BadRequest(w, err.Error())
+		return
+	}
+	rows, next, err := m.PrivacyExportPage(r.Context(), subjectID, cutoff, offset, pageSize)
 	if err != nil {
 		response.InternalServerError(w, err)
 		return
 	}
-	response.OK(w, map[string]any{"rows": rows})
+	response.OK(w, map[string]any{"rows": rows, "next_cursor": next})
 }
 
 type closurePrepareRequest struct {

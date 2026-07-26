@@ -1,4 +1,4 @@
--- docs/roadmap/active/51-a8-data-lifecycle-privacy.md T1: SECURITY DEFINER retention
+-- docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T1: SECURITY DEFINER retention
 -- functions for ledger's three explicitly-named T1 classes
 -- (config/data-retention.yaml): fee_quotes.unconsumed, fee_quotes.consumed
 -- (K8 proof-aware), and outbox_events.published. Every function shares the

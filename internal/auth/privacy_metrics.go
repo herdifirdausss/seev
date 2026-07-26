@@ -1,6 +1,6 @@
 package auth
 
-// docs/roadmap/active/51-a8-data-lifecycle-privacy.md K13's remaining privacy-request metrics
+// docs/roadmap/archive/51-a8-data-lifecycle-privacy.md K13's remaining privacy-request metrics
 // (seev_retention_*/seev_object_outbox_* already exist from T1/T1.6) —
 // package-level so they register once regardless of how many Modules a
 // process constructs, mirroring pkg/retentionworker/pkg/objectoutbox's own

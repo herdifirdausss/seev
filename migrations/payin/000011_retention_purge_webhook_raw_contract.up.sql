@@ -1,4 +1,4 @@
--- docs/roadmap/active/51-a8-data-lifecycle-privacy.md "A8 T2.5b": migrations/payin/000010
+-- docs/roadmap/archive/51-a8-data-lifecycle-privacy.md "A8 T2.5b": migrations/payin/000010
 -- dropped payin_webhook_events.raw — this function (migrations/payin/000009)
 -- wrote a {"redacted":true} marker into that column on every redaction and
 -- used "raw != marker" as its own idempotency guard. Both are gone now:

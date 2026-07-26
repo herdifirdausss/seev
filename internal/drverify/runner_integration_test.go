@@ -138,6 +138,56 @@ func TestRunDetectsDirtyMigration(t *testing.T) {
 	}
 }
 
+func TestRunAcceptsCompletedClosureSurrogate(t *testing.T) {
+	dsns := setupCluster(t)
+	ctx := context.Background()
+	authDB, err := sql.Open("pgx", dsns["auth"])
+	if err != nil {
+		t.Fatalf("open auth: %v", err)
+	}
+	defer authDB.Close()
+	ledgerDB, err := sql.Open("pgx", dsns["ledger"])
+	if err != nil {
+		t.Fatalf("open ledger: %v", err)
+	}
+	defer ledgerDB.Close()
+
+	var userID, surrogateID, requestID string
+	if err := authDB.QueryRow(`SELECT gen_random_uuid()::text, gen_random_uuid()::text, gen_random_uuid()::text`).Scan(&userID, &surrogateID, &requestID); err != nil {
+		t.Fatalf("generate ids: %v", err)
+	}
+	if _, err := authDB.ExecContext(ctx, `
+		INSERT INTO auth_users
+			(id, role, status, email_ciphertext, email_key_version, email_lookup_digest,
+			 full_name_ciphertext, full_name_key_version)
+		VALUES ($1, 'user', 'closed', decode('01','hex'), 1, decode(repeat('01',32),'hex'),
+		        decode('02','hex'), 1)`, userID); err != nil {
+		t.Fatalf("insert closed auth user: %v", err)
+	}
+	if _, err := authDB.ExecContext(ctx, `
+		INSERT INTO privacy_requests
+			(id, user_id, status, request_type, surrogate_id, schema_version, cutoff, requested_at, ready_at)
+		VALUES ($1, $2, 'completed', 'closure', $3, 1, now(), now(), now())`,
+		requestID, userID, surrogateID); err != nil {
+		t.Fatalf("insert completed closure: %v", err)
+	}
+	if _, err := ledgerDB.ExecContext(ctx, `
+		INSERT INTO accounts (id, owner_type, owner_id, type, currency, created_by)
+		VALUES (gen_random_uuid(), 'user', $1, 'cash', 'IDR', 'test')`, surrogateID); err != nil {
+		t.Fatalf("insert surrogate account: %v", err)
+	}
+
+	setEnv(t, dsns)
+	cfg, err := drverify.Load()
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	report := drverify.Run(ctx, cfg)
+	if !report.Passed() {
+		t.Fatalf("completed closure surrogate must be a valid owner reference: %+v", report)
+	}
+}
+
 // TestNoWriteIsPossible is the required test: "no write is possible
 // through verifier DSNs." It connects with the exact same DSN drverify
 // itself uses and proves Postgres's own read-only-transaction guarantee

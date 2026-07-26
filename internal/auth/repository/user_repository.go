@@ -38,7 +38,7 @@ type userRepo struct {
 	lookup *cryptox.LookupKey
 }
 
-// NewUserRepository's ring/lookup are both REQUIRED — docs/roadmap/active/51-a8-data-lifecycle-privacy.md
+// NewUserRepository's ring/lookup are both REQUIRED — docs/roadmap/archive/51-a8-data-lifecycle-privacy.md
 // "A8 T2.5b" (the contract migration): auth_users.email/full_name have no
 // plaintext column anymore (migrations/auth/000014_cryptox_contract), so
 // every read/write here needs the ring to even function; email lookup

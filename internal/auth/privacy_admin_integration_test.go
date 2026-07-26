@@ -1,6 +1,6 @@
 //go:build integration
 
-// Proves docs/roadmap/active/51-a8-data-lifecycle-privacy.md T6's admin BFF status panel query
+// Proves docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T6's admin BFF status panel query
 // (AdminListPrivacyRequests) against a real Postgres: type/status filters
 // work, and the returned rows never carry subject data (the struct itself
 // has no email/full_name field — this test additionally proves the

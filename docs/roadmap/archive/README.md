@@ -63,3 +63,4 @@ links to two supporting review records.
 | 48 | [48-a10-product-assurance.md](48-a10-product-assurance.md) | Durable product assurance and emergency-intake controls | ✅ Done |
 | 49 | [49-a6-internal-security.md](49-a6-internal-security.md) | Threat modeling, mTLS, internal allowlists, fail-closed tokens, Vault, and security drills | ✅ Done |
 | 50 | [50-a7-backup-pitr-disaster-recovery.md](50-a7-backup-pitr-disaster-recovery.md) | Encrypted continuous backup, isolated latest/PITR restore, offline integrity verification, ephemeral-state reseed, and scheduled game-day drills | ✅ Done |
+| 51 | [51-a8-data-lifecycle-privacy.md](51-a8-data-lifecycle-privacy.md) | Retention, encrypted sensitive data, privacy export, closure pseudonymization, and backup interaction | ✅ Done |

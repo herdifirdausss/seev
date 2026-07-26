@@ -211,11 +211,14 @@ type Module struct {
 // PrePostHook seam (docs/roadmap/archive/20): screening moved out of
 // internal/ledger/service/handle entirely, into the transport layer, so no
 // network round-trip ever happens while a row lock is held.
-// digestRing is docs/roadmap/active/51-a8-data-lifecycle-privacy.md T3's (K7) idempotency-key
-// digest ring, REQUIRED (never nil, unlike every T2 field-encryption ring)
-// — see repository.NewTransactionRepository's own doc comment for why
-// deduplication can never be allowed to silently run without one.
-func NewModule(db database.DatabaseSQL, broker messaging.Broker, redisClient *redis.Client, workerCfg WorkerConfig, logger *slog.Logger, maxAmountPerTx decimal.Decimal, policyChecker PolicyChecker, fraudClient *fraudcheck.Client, feeQuoteTTL time.Duration, digestRing *cryptox.DigestRing) *Module {
+// digestRing is docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T3's (K7) idempotency-key
+// digest ring, REQUIRED (never nil, unlike every T2 field-encryption ring
+// used to be). cryptoxRing is now ALSO required — "A8 T2.5b" (the contract
+// migration) removed recon_batches.source_filename/recon_items.raw's
+// plaintext fallback, so repository.NewReconRepository panics on a nil
+// ring; there is no longer a valid "cryptox unconfigured" mode to
+// construct this module in.
+func NewModule(db database.DatabaseSQL, broker messaging.Broker, redisClient *redis.Client, workerCfg WorkerConfig, logger *slog.Logger, maxAmountPerTx decimal.Decimal, policyChecker PolicyChecker, fraudClient *fraudcheck.Client, feeQuoteTTL time.Duration, digestRing *cryptox.DigestRing, cryptoxRing *cryptox.Ring) *Module {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -233,7 +236,7 @@ func NewModule(db database.DatabaseSQL, broker messaging.Broker, redisClient *re
 	}
 	snapshotRepo := repository.NewSnapshotRepository(db, loc)
 	adjRepo := repository.NewPendingAdjustmentRepository(db)
-	reconRepo := repository.NewReconRepository(db, nil)
+	reconRepo := repository.NewReconRepository(db, cryptoxRing)
 	currencyRepo := repository.NewCurrencyRepository(db)
 	scheduleRepo := repository.NewScheduledTransactionRepository(db)
 	disbursementRepo := repository.NewDisbursementRepository(db)
@@ -304,7 +307,7 @@ func NewModule(db database.DatabaseSQL, broker messaging.Broker, redisClient *re
 	m.scheduleJob = worker.NewScheduleRunnerJob(scheduleSvc, lock, logger, loc)
 	m.accrualJob = worker.NewAccrualJob(accrualSvc, lock, logger, loc)
 
-	// docs/roadmap/active/51-a8-data-lifecycle-privacy.md T1: this module's own retention
+	// docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T1: this module's own retention
 	// classes (config/data-retention.yaml). One dedicated scheduler, matching
 	// this constructor's own per-job-group convention above (verifier,
 	// snapshot, schedule, accrual each get their own too) rather than
@@ -324,6 +327,7 @@ func NewModule(db database.DatabaseSQL, broker messaging.Broker, redisClient *re
 		// NULL guard is what makes this safe (never redacts a row whose
 		// permanent digest hasn't been backfilled yet).
 		{Name: "ledger.transactions.idempotency_raw", Action: "redact", FunctionName: "fn_retention_purge_transactions_idempotency_raw"},
+		{Name: "ledger.scheduled_transactions", Action: "delete", FunctionName: "fn_retention_purge_scheduled_transactions"},
 	})
 	if err != nil {
 		// Every Class above is a fixed literal this constructor controls —
@@ -336,16 +340,6 @@ func NewModule(db database.DatabaseSQL, broker messaging.Broker, redisClient *re
 	m.retentionSched = scheduler.NewScheduler(lock, scheduler.NewPrometheusMetrics(), scheduler.WithLocation(loc))
 
 	return m
-}
-
-// SetCryptoxRing wires docs/roadmap/active/51-a8-data-lifecycle-privacy.md T2.4's K2/K3
-// field encryption for recon_batches.source_filename and recon_items.raw
-// — same nil-safe optionality as internal/auth.Module.SetCryptoxRing: a
-// nil ring leaves every read/write exactly as it behaved before this
-// task. Reconstructs reconSvc (recon.Service wraps the repository, not
-// exposed directly) rather than a bare repository field.
-func (m *Module) SetCryptoxRing(ring *cryptox.Ring) {
-	m.reconSvc = recon.New(m.db, repository.NewReconRepository(m.db, ring), m.adjustmentsSvc)
 }
 
 // IsKnownTransactionType validates admin-managed configuration against the
@@ -426,7 +420,7 @@ func (m *Module) InternalRouter() http.Handler {
 	return transport.NewInternalRouterWithFeePolicy(m, m.feePolicy)
 }
 
-// ClosureRouter returns docs/roadmap/active/51-a8-data-lifecycle-privacy.md T5/T4b's (K9, K10,
+// ClosureRouter returns docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T5/T4b's (K9, K10,
 // K11) privacy endpoints for auth-service's cross-service closure and
 // export sagas: POST /privacy/closure/prepare, POST /privacy/closure/commit,
 // and GET /privacy/export. Deliberately a SEPARATE handler from InternalRouter/transport.Service

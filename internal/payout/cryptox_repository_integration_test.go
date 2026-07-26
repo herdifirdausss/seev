@@ -1,6 +1,6 @@
 //go:build integration
 
-// Proves docs/roadmap/active/51-a8-data-lifecycle-privacy.md T2.4's K2/K3
+// Proves docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T2.4's K2/K3
 // encryption (contract-migrated by "A8 T2.5b" — no plaintext fallback
 // remains) for payout_requests.destination end to end against a real
 // Postgres: ciphertext round-trip, a nil ring refused at construction, and

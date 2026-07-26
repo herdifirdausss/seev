@@ -37,7 +37,7 @@ type Config struct {
 	Breaker   BreakerConfig
 	AdminBFF  AdminBFFConfig
 	Assurance AssuranceConfig
-	// LedgerIdempotency is docs/roadmap/active/51-a8-data-lifecycle-privacy.md T3's (K7)
+	// LedgerIdempotency is docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T3's (K7)
 	// HMAC key ring for ledger idempotency-key digests — ledger-service's
 	// OWN dedicated key material, never shared with Cryptox above (same
 	// K2 principle already applied to LookupKey: encryption keys, lookup
@@ -48,7 +48,7 @@ type Config struct {
 	// OTHER service's config would otherwise also be forced to set an env
 	// var that only ledger-service ever uses.
 	LedgerIdempotency LedgerIdempotencyConfig
-	// Export is docs/roadmap/active/51-a8-data-lifecycle-privacy.md T4's (K9) dedicated KEK for
+	// Export is docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T4's (K9) dedicated KEK for
 	// user-export ZIP archives — deliberately its own key namespace,
 	// separate from both Cryptox (field-level envelope encryption) and
 	// LedgerIdempotency (a digest ring, not encryption at all): an export
@@ -57,7 +57,7 @@ type Config struct {
 	// separate-key-material principle applies here the same way it does
 	// to LookupKey vs Ring.
 	Export ExportConfig
-	// Closure is docs/roadmap/active/51-a8-data-lifecycle-privacy.md T5's (K10) dedicated KEK
+	// Closure is docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T5's (K10) dedicated KEK
 	// for the account-closure saga's active-subject ciphertext — its own key
 	// namespace for the same K2 reason as Export above.
 	Closure ClosureConfig
@@ -71,7 +71,7 @@ type Config struct {
 	PayoutGRPCAddr    string
 	FraudGRPCAddr     string
 	LedgerUserAPIURL  string
-	// LedgerInternalAPIURL is docs/roadmap/active/51-a8-data-lifecycle-privacy.md T5's (K10)
+	// LedgerInternalAPIURL is docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T5's (K10)
 	// base URL auth-service's closure saga worker calls ledger's internal
 	// (:8091-class) ClosureRouter on — deliberately separate from
 	// LedgerUserAPIURL above (that one is the PUBLIC :8090 port gateway
@@ -243,7 +243,7 @@ type AssuranceConfig struct {
 	AlertWebhookURL  string
 }
 
-// CryptoxConfig is docs/roadmap/active/51-a8-data-lifecycle-privacy.md T2's shared, cluster-wide
+// CryptoxConfig is docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T2's shared, cluster-wide
 // pkg/cryptox key set — one KEK ring and one lookup key for every service,
 // the same deliberate choice this repo already made for JWT_SECRET and
 // INTERNAL_GRPC_TOKEN (scripts/vault-seed.sh's own comment: "shared
@@ -290,7 +290,7 @@ func (c CryptoxConfig) Lookup() (*cryptox.LookupKey, error) {
 	return cryptox.NewLookupKey(raw)
 }
 
-// LedgerIdempotencyConfig is docs/roadmap/active/51-a8-data-lifecycle-privacy.md T3's
+// LedgerIdempotencyConfig is docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T3's
 // versioned HMAC key ring for ledger idempotency-key digests (K7) — same
 // shape as CryptoxConfig (current version + version->hex-key map) but a
 // completely separate key namespace, since this ring exists purely to

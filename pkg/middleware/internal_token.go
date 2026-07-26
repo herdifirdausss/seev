@@ -7,7 +7,7 @@ import (
 	"github.com/herdifirdausss/seev/pkg/response"
 )
 
-// WithInternalToken is docs/roadmap/active/51-a8-data-lifecycle-privacy.md T5's HTTP analog of
+// WithInternalToken is docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T5's HTTP analog of
 // pkg/grpcx's own authInterceptor(token) — this codebase's gRPC surface
 // has required a shared internal credential (INTERNAL_GRPC_TOKEN,
 // docs/roadmap/archive/49 K5, fail-closed on empty) since doc 49, but no HTTP

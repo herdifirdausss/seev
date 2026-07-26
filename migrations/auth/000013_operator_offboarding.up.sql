@@ -1,4 +1,4 @@
--- docs/roadmap/active/51-a8-data-lifecycle-privacy.md T5's own work item 2
+-- docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T5's own work item 2
 -- (K10): "Admin/operator accounts cannot use self-service closure; they
 -- require the operator offboarding runbook and maker/checker approval" —
 -- A8 T5b closes that gap. Mirrors ledger's own pending_adjustments

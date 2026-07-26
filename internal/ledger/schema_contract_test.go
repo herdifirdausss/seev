@@ -48,7 +48,7 @@ import (
 	"github.com/herdifirdausss/seev/pkg/database"
 )
 
-// schemaTestDigestRing is docs/roadmap/active/51-a8-data-lifecycle-privacy.md T3's (K7) fixed test
+// schemaTestDigestRing is docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T3's (K7) fixed test
 // key for this file's own repository.NewTransactionRepository call sites —
 // package-level (not a *testing.T helper) since several callers here
 // (newService, newAdjustmentsService) build repositories outside any test
@@ -59,6 +59,18 @@ func schemaTestDigestRing() *cryptox.DigestRing {
 		key[i] = byte(i + 37)
 	}
 	ring, err := cryptox.NewDigestRing(map[int][]byte{1: key}, 1)
+	if err != nil {
+		panic(err)
+	}
+	return ring
+}
+
+func schemaTestCryptoxRing() *cryptox.Ring {
+	key := make([]byte, 32)
+	for i := range key {
+		key[i] = byte(i + 53)
+	}
+	ring, err := cryptox.NewRing(map[int][]byte{1: key}, 1)
 	if err != nil {
 		panic(err)
 	}
@@ -283,7 +295,7 @@ func newAdjustmentsService(db *database.DBSQL) (*adjustments.Service, repository
 // path a resolve request does in production.
 func newReconService(db *database.DBSQL) (*recon.Service, *adjustments.Service, repository.AccountRepository) {
 	adjSvc, accRepo := newAdjustmentsService(db)
-	reconRepo := repository.NewReconRepository(db, nil)
+	reconRepo := repository.NewReconRepository(db, schemaTestCryptoxRing())
 	return recon.New(db, reconRepo, adjSvc), adjSvc, accRepo
 }
 
@@ -1582,9 +1594,14 @@ func TestSchemaContract_Recon_DBConstraint_UniqueExternalRefPerBatch(t *testing.
 	ctx := context.Background()
 
 	batchID := uuid.New()
-	_, err := db.ExecContext(ctx, `
-		INSERT INTO recon_batches (id, gateway, report_date, source_filename, row_count, status, created_by)
-		VALUES ($1, 'bca', now()::date, 'f.csv', 1, 'completed', 'ops-1')`, batchID)
+	filenameCiphertext, err := schemaTestCryptoxRing().Seal(cryptox.AAD{
+		Service: "ledger", Table: "recon_batches", Column: "source_filename", RowID: batchID.String(),
+	}, []byte("f.csv"))
+	require.NoError(t, err)
+	_, err = db.ExecContext(ctx, `
+		INSERT INTO recon_batches (id, gateway, report_date, row_count, status, created_by,
+			source_filename_ciphertext, source_filename_key_version)
+		VALUES ($1, 'bca', now()::date, 1, 'completed', 'ops-1', $2, 1)`, batchID, filenameCiphertext)
 	require.NoError(t, err)
 
 	_, err = db.ExecContext(ctx, `
@@ -1616,7 +1633,7 @@ func TestSchemaContract_AppServiceRole_FullFlowSucceeds(t *testing.T) {
 		repository.NewPendingAdjustmentRepository(dbs.appDB),
 		repository.NewTransactionRepository(dbs.appDB, schemaTestDigestRing()),
 		repository.NewOutboxRepository(dbs.appDB), handleSvc)
-	reconSvc := recon.New(dbs.appDB, repository.NewReconRepository(dbs.appDB, nil), adjSvc)
+	reconSvc := recon.New(dbs.appDB, repository.NewReconRepository(dbs.appDB, schemaTestCryptoxRing()), adjSvc)
 
 	userA := uuid.New()
 	userB := uuid.New()

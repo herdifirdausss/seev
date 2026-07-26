@@ -1,6 +1,6 @@
 //go:build integration
 
-// Proves docs/roadmap/active/51-a8-data-lifecycle-privacy.md T3's (K7) idempotency-key digest
+// Proves docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T3's (K7) idempotency-key digest
 // tombstone end to end against a real Postgres: dedup before/after raw
 // redaction, distinct scopes stay distinct, a conflicting retry is
 // rejected (not silently treated as a duplicate), concurrent retries have

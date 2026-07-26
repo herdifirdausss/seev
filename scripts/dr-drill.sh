@@ -282,9 +282,66 @@ BEFORE_BALANCE="$(account_balance "$FIXTURE_CASH_ACCOUNT")"
 echo "dr-drill.sh: fixture balance after 'before' top-up: $BEFORE_BALANCE"
 record_stage fixture_before
 
+PRIVACY_USER_ID=""
+PRIVACY_EMAIL=""
+PRIVACY_PASSWORD=""
+PRIVACY_POST_CIPHERTEXT=""
+if [ "$MODE" = "latest" ]; then
+	PRIVACY_EMAIL="privacy-backup-$RUN_ID@example.com"
+	PRIVACY_PASSWORD="PrivacyBackup!2026"
+	privacy_reg="$(curl -s -X POST "http://localhost:$AUTH_APP_PORT/api/v1/auth/register" \
+		-H "Content-Type: application/json" \
+		-d "{\"email\":\"$PRIVACY_EMAIL\",\"password\":\"$PRIVACY_PASSWORD\",\"full_name\":\"Privacy Backup Sentinel\"}")"
+	PRIVACY_USER_ID="$(echo "$privacy_reg" | json_field id)"
+	PRIVACY_TOKEN="$(echo "$privacy_reg" | json_field access_token)"
+	[ -n "$PRIVACY_USER_ID" ] && [ -n "$PRIVACY_TOKEN" ] || {
+		echo "dr-drill.sh: privacy backup sentinel registration failed: $privacy_reg" >&2
+		exit 1
+	}
+fi
+
 echo "dr-drill.sh: taking the gameday baseline full backup..."
 gameday_pgbackrest --type=full backup
 record_stage gameday_backup_full
+
+if [ "$MODE" = "latest" ]; then
+	# K12/Plan 51 backup interaction: the first full backup intentionally
+	# predates closure. A differential backup below must contain only the
+	# tombstoned post-closure state while the old chain remains on its normal
+	# pgBackRest retention schedule.
+	privacy_close="$(curl -s -X POST "http://localhost:$AUTH_APP_PORT/api/v1/users/me/privacy/closure" \
+		-H "Authorization: Bearer $PRIVACY_TOKEN" -H "Content-Type: application/json" \
+		-d "{\"password\":\"$PRIVACY_PASSWORD\"}")"
+	PRIVACY_REQUEST_ID="$(echo "$privacy_close" | json_field id)"
+	[ -n "$PRIVACY_REQUEST_ID" ] || {
+		echo "dr-drill.sh: privacy backup closure request failed: $privacy_close" >&2
+		exit 1
+	}
+	privacy_status=""
+	for _ in $(seq 1 60); do
+		privacy_status="$(curl -s "http://localhost:$AUTH_APP_PORT/api/v1/users/me/privacy/closure/$PRIVACY_REQUEST_ID" \
+			-H "Authorization: Bearer $PRIVACY_TOKEN" | json_field status)"
+		[ "$privacy_status" = "completed" ] && break
+		sleep 2
+	done
+	[ "$privacy_status" = "completed" ] || {
+		echo "dr-drill.sh: privacy backup closure did not complete (status=$privacy_status)" >&2
+		exit 1
+	}
+	PRIVACY_POST_CIPHERTEXT="$(psql_exec "$AUTH_DB_NAME" -c "SELECT encode(email_ciphertext,'hex') FROM auth_users WHERE id='$PRIVACY_USER_ID' AND status='closed';")"
+	[ -n "$PRIVACY_POST_CIPHERTEXT" ] || {
+		echo "dr-drill.sh: closure did not persist a tombstoned ciphertext" >&2
+		exit 1
+	}
+	gameday_pgbackrest --type=diff backup
+	backup_count="$(gameday_pgbackrest info --output=json | python3 -c 'import json,sys; print(len(json.load(sys.stdin)[0].get("backup",[])))')"
+	[ "$backup_count" -ge 2 ] || {
+		echo "dr-drill.sh: expected old full plus post-closure differential backup, got $backup_count set(s)" >&2
+		exit 1
+	}
+	echo "dr-drill.sh: privacy closure captured in a new differential backup; old full remains under normal retention"
+	record_stage privacy_post_closure_backup
+fi
 
 PITR_TARGET=""
 AFTER_BALANCE_EXPECTED="$BEFORE_BALANCE"
@@ -433,6 +490,22 @@ ZERO_ROW_CHECK="$(psql_exec "$LEDGER_DB_NAME" -c "SELECT count(*) FROM fn_verify
 	exit 1
 }
 echo "dr-drill.sh: fn_verify_ledger_balance reports zero discrepancies"
+
+if [ "$MODE" = "latest" ]; then
+	restored_privacy_state="$(psql_exec "$AUTH_DB_NAME" -c "SELECT status||'|'||encode(email_ciphertext,'hex') FROM auth_users WHERE id='$PRIVACY_USER_ID';")"
+	[ "$restored_privacy_state" = "closed|$PRIVACY_POST_CIPHERTEXT" ] || {
+		echo "dr-drill.sh: restored privacy state is not the post-closure tombstone: $restored_privacy_state" >&2
+		exit 1
+	}
+	privacy_login_code="$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$AUTH_APP_PORT/api/v1/auth/login" \
+		-H "Content-Type: application/json" \
+		-d "{\"email\":\"$PRIVACY_EMAIL\",\"password\":\"$PRIVACY_PASSWORD\"}")"
+	[ "$privacy_login_code" = "401" ] || {
+		echo "dr-drill.sh: original privacy sentinel identity survived latest restore (HTTP $privacy_login_code)" >&2
+		exit 1
+	}
+	echo "dr-drill.sh: latest restore contains only the post-closure tombstone; old backup chain was not accelerated"
+fi
 
 # T4/T6 acceptance: "a clean assurance backfill has zero unresolved critical
 # findings." internal/assurance's Module.Start (internal/assurance/module.go)

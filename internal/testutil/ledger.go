@@ -27,11 +27,11 @@ type LedgerHarness struct {
 
 func NewLedgerHarness(db database.DatabaseSQL) *LedgerHarness {
 	return &LedgerHarness{module: ledger.NewModule(
-		db, nil, nil, ledger.WorkerConfig{}, nil, decimal.Zero, nil, nil, 0, testDigestRing(),
+		db, nil, nil, ledger.WorkerConfig{}, nil, decimal.Zero, nil, nil, 0, testDigestRing(), testCryptoxRing(),
 	)}
 }
 
-// testDigestRing is docs/roadmap/active/51-a8-data-lifecycle-privacy.md T3's (K7) fixed test key
+// testDigestRing is docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T3's (K7) fixed test key
 // for every integration test that reaches ledger through this shared
 // harness — ledger.NewModule requires a real, non-nil ring (money-safety
 // deduplication, unlike T2's optional field-encryption rings), so this
@@ -44,6 +44,20 @@ func testDigestRing() *cryptox.DigestRing {
 		key[i] = byte(i + 17)
 	}
 	ring, err := cryptox.NewDigestRing(map[int][]byte{1: key}, 1)
+	if err != nil {
+		panic(err)
+	}
+	return ring
+}
+
+// testCryptoxRing keeps the shared ledger harness usable after A8's
+// encryption contract removed the reconciliation plaintext columns.
+func testCryptoxRing() *cryptox.Ring {
+	key := make([]byte, 32)
+	for i := range key {
+		key[i] = byte(i + 43)
+	}
+	ring, err := cryptox.NewRing(map[int][]byte{1: key}, 1)
 	if err != nil {
 		panic(err)
 	}
@@ -84,7 +98,7 @@ func translateLedgerErr(err error) error {
 
 // Module exposes the underlying in-process *ledger.Module — for tests that
 // need surface this thin client-shaped harness doesn't re-expose (e.g.
-// docs/roadmap/active/51-a8-data-lifecycle-privacy.md T5's closure saga tests, which wrap
+// docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T5's closure saga tests, which wrap
 // Module().ClosureRouter() in an httptest.Server to exercise auth's real
 // HTTP closure client against a real handler instead of an in-process
 // bypass).

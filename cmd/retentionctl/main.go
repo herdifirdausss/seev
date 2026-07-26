@@ -1,4 +1,4 @@
-// Command retentionctl is the internal admin CLI docs/roadmap/active/51-a8-data-lifecycle-privacy.md
+// Command retentionctl is the internal admin CLI docs/roadmap/archive/51-a8-data-lifecycle-privacy.md
 // T1.6 (item 5) requires: status, dry-run, run-now, hold create, and
 // maker/checker hold release, generic across every owner service rather
 // than one endpoint per service. It connects directly to one owner's

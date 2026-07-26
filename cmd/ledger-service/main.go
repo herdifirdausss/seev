@@ -39,19 +39,11 @@ import (
 
 func main() {
 	healthcheck := flag.Bool("healthcheck", false, "probe the ledger-service liveness endpoint")
-	backfillCryptox := flag.Bool("backfill-cryptox", false, "docs/roadmap/active/51-a8-data-lifecycle-privacy.md T2.5: run bounded cryptox backfill for recon_batches/recon_items and exit")
-	backfillIdempotencyDigest := flag.Bool("backfill-idempotency-digest", false, "docs/roadmap/active/51-a8-data-lifecycle-privacy.md T3: run bounded idempotency-digest backfill for ledger_transactions and exit")
+	backfillIdempotencyDigest := flag.Bool("backfill-idempotency-digest", false, "docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T3: run bounded idempotency-digest backfill for ledger_transactions and exit")
 	flag.Parse()
 	if *healthcheck {
 		if err := probeHealth(os.Getenv); err != nil {
 			slog.Error("healthcheck failed", "error", err)
-			os.Exit(1)
-		}
-		return
-	}
-	if *backfillCryptox {
-		if err := runCryptoxBackfill(context.Background()); err != nil {
-			slog.Error("cryptox backfill failed", "error", err)
 			os.Exit(1)
 		}
 		return
@@ -69,49 +61,7 @@ func main() {
 	}
 }
 
-// runCryptoxBackfill is docs/roadmap/active/51-a8-data-lifecycle-privacy.md T2.5's bounded
-// backfill entrypoint — see cmd/auth-service/main.go's own runCryptoxBackfill
-// doc comment for why this lives inside each owning service's main.go
-// rather than a shared cross-service CLI.
-func runCryptoxBackfill(ctx context.Context) error {
-	cfg, err := config.Load()
-	if err != nil {
-		return fmt.Errorf("load config: %w", err)
-	}
-	if len(cfg.Cryptox.Keys) == 0 {
-		return fmt.Errorf("no CRYPTOX_KEY_V* configured, nothing to backfill against")
-	}
-	ring, err := cfg.Cryptox.Ring()
-	if err != nil {
-		return fmt.Errorf("build cryptox ring: %w", err)
-	}
-	db, err := database.New(ctx, cfg.Postgres.Pkg())
-	if err != nil {
-		return fmt.Errorf("connect postgres: %w", err)
-	}
-	defer db.Close()
-
-	repo := ledgerrepository.NewReconRepository(db, ring)
-	const batchSize = 500
-	total := 0
-	for {
-		n, err := repo.BackfillOnce(ctx, batchSize)
-		if err != nil {
-			return fmt.Errorf("backfill recon_batches/recon_items (processed %d so far): %w", total, err)
-		}
-		total += n
-		if n > 0 {
-			slog.Info("cryptox backfill progress", "target", "ledger_recon", "batch", n, "total", total)
-		}
-		if n == 0 {
-			break
-		}
-	}
-	slog.Info("cryptox backfill done", "target", "ledger_recon", "total", total)
-	return nil
-}
-
-// runIdempotencyDigestBackfill is docs/roadmap/active/51-a8-data-lifecycle-privacy.md T3's bounded
+// runIdempotencyDigestBackfill is docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T3's bounded
 // backfill entrypoint (work item 3) — same one-shot, Postgres-only,
 // loop-until-0 shape as runCryptoxBackfill above, applied to
 // ledger_transactions.idempotency_key_digest instead.
@@ -292,25 +242,19 @@ func run(parent context.Context) error {
 		fraudClient = fraudcheck.New(fraudv1.NewFraudServiceClient(fraudConn), "ledger")
 	}
 
+	cryptoxRing, err := cfg.Cryptox.Ring()
+	if err != nil {
+		closeDependencies(log, nil, mq, redisCache, db, shutdownTracing)
+		return fmt.Errorf("build cryptox ring: %w", err)
+	}
+
 	module := ledger.NewModule(db, mq, redisClient, ledger.WorkerConfig{
 		Enabled: cfg.Worker.Enabled, OutboxPollInterval: cfg.Worker.OutboxPollInterval,
 		OutboxBatchSize: cfg.Worker.OutboxBatchSize, AlertWebhookURL: cfg.Worker.AlertWebhookURL,
-	}, log, decimal.NewFromInt(cfg.Ledger.MaxAmountPerTx), policyEngine, fraudClient, cfg.Ledger.FeeQuoteTTL, digestRing)
+	}, log, decimal.NewFromInt(cfg.Ledger.MaxAmountPerTx), policyEngine, fraudClient, cfg.Ledger.FeeQuoteTTL, digestRing, cryptoxRing)
 	if err := module.LoadCurrencies(ctx); err != nil {
 		closeDependencies(log, module, mq, redisCache, db, shutdownTracing)
 		return err
-	}
-	// docs/roadmap/active/51 T2.4: shared cluster-wide cryptox key ring (K2) for
-	// recon_batches.source_filename and recon_items.raw — a
-	// missing/unconfigured ring is not an error (stays optional outside
-	// production); a malformed one is.
-	if len(cfg.Cryptox.Keys) > 0 {
-		ring, err := cfg.Cryptox.Ring()
-		if err != nil {
-			closeDependencies(log, module, mq, redisCache, db, shutdownTracing)
-			return fmt.Errorf("build cryptox ring: %w", err)
-		}
-		module.SetCryptoxRing(ring)
 	}
 	module.StartWorkers(ctx)
 
@@ -396,7 +340,7 @@ func internalRouter(cfg *config.Config, module *ledger.Module, policyHandler *po
 	// auth-service's own saga worker, never by an end-user JWT — gated by
 	// the shared internal token (not `authed`'s JWT check) plus this
 	// listener's own mTLS identity allowlist above.
-	api.Handle("/api/v1/ledger/privacy/closure/", middleware.WithInternalToken(cfg.InternalGRPCToken)(http.StripPrefix("/api/v1/ledger", module.ClosureRouter())))
+	api.Handle("/privacy/", middleware.WithInternalToken(cfg.InternalGRPCToken)(module.ClosureRouter()))
 	root.Handle("/", middleware.Chain(
 		middleware.WithRequestID(), middleware.WithRoutePattern(api), middleware.WithTracing(log), middleware.WithHTTPMetrics(), middleware.WithLogger(log), middleware.WithRecovery(),
 		middleware.WithSecurityHeaders(middleware.DefaultSecurityHeadersConfig()), middleware.WithTimeout(30*time.Second),

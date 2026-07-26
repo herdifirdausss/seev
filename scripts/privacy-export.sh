@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# docs/roadmap/active/51-a8-data-lifecycle-privacy.md T4 (K9, work item 6): exercises the
+# docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T4 (K9, work item 6): exercises the
 # authenticated user export flow end to end against an ALREADY-RUNNING
 # auth-service (this script does not manage the stack's lifecycle itself —
 # unlike scripts/business-e2e.sh, it's an operator/local convenience tool,
@@ -21,12 +21,27 @@
 set -euo pipefail
 
 AUTH_URL="${AUTH_URL:-http://localhost:8082}"
+TLS_CERT_DIR="${TLS_CERT_DIR:-deploy/certs}"
 WORKDIR="$(mktemp -d)"
 trap 'rm -rf "$WORKDIR"' EXIT
 
 log()  { printf '\033[1;34m[privacy-export]\033[0m %s\n' "$*"; }
 ok()   { printf '\033[1;32m[ pass]\033[0m %s\n' "$*"; }
 fail() { printf '\033[1;31m[ FAIL]\033[0m %s\n' "$*"; exit 1; }
+
+# App-profile HTTP listeners are mTLS-protected. Keep an explicit HTTP
+# escape hatch for callers that intentionally run a non-mTLS local binary.
+CURL_AUTH_ARGS=()
+if [[ "$AUTH_URL" == https://* ]]; then
+	CURL_AUTH_ARGS=(-k --cacert "$TLS_CERT_DIR/ca.pem" --cert "$TLS_CERT_DIR/dev-operator.pem" --key "$TLS_CERT_DIR/dev-operator-key.pem")
+fi
+curl_auth() {
+	if [ "${#CURL_AUTH_ARGS[@]}" -gt 0 ]; then
+		curl "${CURL_AUTH_ARGS[@]}" "$@"
+	else
+		curl "$@"
+	fi
+}
 
 json_field() {
 	if command -v jq >/dev/null 2>&1; then
@@ -40,7 +55,7 @@ EMAIL="privacy-export-$(date +%s)-$RANDOM@example.test"
 PASSWORD="hunter22-$(openssl rand -hex 8)"
 
 log "registering throwaway user $EMAIL"
-register_resp="$(curl -sf -X POST "$AUTH_URL/api/v1/auth/register" \
+register_resp="$(curl_auth -sf -X POST "$AUTH_URL/api/v1/auth/register" \
 	-H 'Content-Type: application/json' \
 	-d "{\"email\":\"$EMAIL\",\"password\":\"$PASSWORD\",\"full_name\":\"Privacy Export Drill\"}")"
 TOKEN="$(echo "$register_resp" | json_field data.tokens.access_token)"
@@ -48,7 +63,7 @@ TOKEN="$(echo "$register_resp" | json_field data.tokens.access_token)"
 ok "registered and received a real JWT"
 
 log "requesting export (password re-verified)"
-create_resp="$(curl -sf -X POST "$AUTH_URL/api/v1/users/me/privacy/exports" \
+create_resp="$(curl_auth -sf -X POST "$AUTH_URL/api/v1/users/me/privacy/exports" \
 	-H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
 	-d "{\"password\":\"$PASSWORD\"}")"
 REQUEST_ID="$(echo "$create_resp" | json_field data.id)"
@@ -56,7 +71,7 @@ REQUEST_ID="$(echo "$create_resp" | json_field data.id)"
 ok "export request created: $REQUEST_ID"
 
 log "confirming a duplicate request returns the SAME id (K9 idempotency)"
-dup_resp="$(curl -sf -X POST "$AUTH_URL/api/v1/users/me/privacy/exports" \
+dup_resp="$(curl_auth -sf -X POST "$AUTH_URL/api/v1/users/me/privacy/exports" \
 	-H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
 	-d "{\"password\":\"$PASSWORD\"}")"
 DUP_ID="$(echo "$dup_resp" | json_field data.id)"
@@ -66,7 +81,7 @@ ok "duplicate request correctly returned the same active export"
 log "polling export status until ready (worker poll interval ~15s)"
 STATUS=""
 for _ in $(seq 1 40); do
-	status_resp="$(curl -sf "$AUTH_URL/api/v1/users/me/privacy/requests/$REQUEST_ID" -H "Authorization: Bearer $TOKEN")"
+	status_resp="$(curl_auth -sf "$AUTH_URL/api/v1/users/me/privacy/requests/$REQUEST_ID" -H "Authorization: Bearer $TOKEN")"
 	STATUS="$(echo "$status_resp" | json_field data.status)"
 	[ "$STATUS" = "ready" ] && break
 	[ "$STATUS" = "failed" ] && fail "export assembly failed: $status_resp"
@@ -77,14 +92,14 @@ ok "export is ready"
 
 log "downloading (password re-verified again)"
 ARCHIVE="$WORKDIR/export.zip"
-curl -sf "$AUTH_URL/api/v1/users/me/privacy/exports/$REQUEST_ID/download" \
+curl_auth -sf "$AUTH_URL/api/v1/users/me/privacy/exports/$REQUEST_ID/download" \
 	-H "Authorization: Bearer $TOKEN" -H "X-Export-Password: $PASSWORD" \
 	-o "$ARCHIVE"
 [ -s "$ARCHIVE" ] || fail "downloaded archive is empty"
 ok "downloaded $(du -h "$ARCHIVE" | cut -f1) archive"
 
 log "confirming a second download attempt is refused (one-time download)"
-second_status="$(curl -s -o /dev/null -w '%{http_code}' "$AUTH_URL/api/v1/users/me/privacy/exports/$REQUEST_ID/download" \
+second_status="$(curl_auth -s -o /dev/null -w '%{http_code}' "$AUTH_URL/api/v1/users/me/privacy/exports/$REQUEST_ID/download" \
 	-H "Authorization: Bearer $TOKEN" -H "X-Export-Password: $PASSWORD")"
 [ "$second_status" = "409" ] || fail "second download attempt returned $second_status, expected 409"
 ok "second download attempt correctly refused (409)"

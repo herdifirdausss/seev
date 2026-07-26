@@ -1,6 +1,6 @@
 //go:build integration
 
-// Proves docs/roadmap/active/51-a8-data-lifecycle-privacy.md T2.4's K2/K3 expand-phase
+// Proves docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T2.4's K2/K3 expand-phase
 // encryption for sessions.email, and K2's one-way masking for
 // audit_log.email, end to end against a real Postgres. Reuses
 // setupAdminBFFOnlyDB (retention_integration_test.go, same package).
@@ -8,7 +8,6 @@ package adminbff_test
 
 import (
 	"context"
-	"fmt"
 	"testing"
 	"time"
 
@@ -53,24 +52,14 @@ func TestSessionRepository_RoundTripsThroughCiphertext(t *testing.T) {
 	require.Equal(t, "operator-do-not-leak@example.com", got.Email)
 }
 
-// TestSessionRepository_DualRead_PreMigrationRowStillWorks is T2's own
-// required test: "dual-read/write compatibility during backfill."
-func TestSessionRepository_DualRead_PreMigrationRowStillWorks(t *testing.T) {
+func TestSessionRepository_PlaintextColumnIsAbsent(t *testing.T) {
 	db := setupAdminBFFOnlyDB(t)
 	ctx := context.Background()
-
-	id := uuid.NewString()
-	now := time.Now().UTC()
-	_, err := db.ExecContext(ctx, `
-		INSERT INTO sessions (id, user_id, email, role, csrf_token, created_at, last_seen_at, expires_at, absolute_expires_at)
-		VALUES ($1, $2, 'legacy@example.com', 'admin', $3, $4, $4, $5, $6)`,
-		id, uuid.New(), uuid.NewString(), now, now.Add(time.Hour), now.Add(24*time.Hour))
-	require.NoError(t, err)
-
-	repo := adminbff.NewSessionRepository(db, sessionTestRing(t))
-	got, err := repo.GetSession(ctx, id)
-	require.NoError(t, err, "a session with no email_ciphertext must still be readable via the plaintext fallback")
-	require.Equal(t, "legacy@example.com", got.Email)
+	var count int
+	require.NoError(t, db.QueryRowContext(ctx, `
+		SELECT count(*) FROM information_schema.columns
+		WHERE table_schema=current_schema() AND table_name='sessions' AND column_name='email'`).Scan(&count))
+	require.Zero(t, count)
 }
 
 // TestAuditLog_EmailIsMaskedNotEncrypted proves K2's literal wording for
@@ -100,51 +89,12 @@ func TestAuditLog_EmailIsMaskedNotEncrypted(t *testing.T) {
 	require.Equal(t, 1, matched, "searching by the real email, masked the same deterministic way, must still find the row")
 }
 
-// TestSessionRepository_BackfillOnce_RestartableEqualTimestamps is
-// docs/roadmap/active/51 T2.5's own required test: pre-migration rows sharing an
-// identical created_at all get backfilled exactly once across many small,
-// restart-simulating BackfillOnce calls.
-func TestSessionRepository_BackfillOnce_RestartableEqualTimestamps(t *testing.T) {
+func TestSessionRepository_CiphertextColumnsAreRequired(t *testing.T) {
 	db := setupAdminBFFOnlyDB(t)
 	ctx := context.Background()
-
-	const rowCount = 20
-	sharedCreatedAt := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
-	now := time.Now().UTC()
-	ids := make([]string, rowCount)
-	for i := 0; i < rowCount; i++ {
-		ids[i] = uuid.NewString()
-		_, err := db.ExecContext(ctx, `
-			INSERT INTO sessions (id, user_id, email, role, csrf_token, created_at, last_seen_at, expires_at, absolute_expires_at)
-			VALUES ($1, $2, $3, 'admin', $4, $5, $5, $6, $7)`,
-			ids[i], uuid.New(), fmt.Sprintf("legacy-%d@example.test", i), uuid.NewString(), sharedCreatedAt,
-			now.Add(time.Hour), now.Add(24*time.Hour))
-		require.NoError(t, err)
-	}
-
-	repo := adminbff.NewSessionRepository(db, sessionTestRing(t))
-	total := 0
-	for i := 0; i < rowCount+5; i++ {
-		n, err := repo.BackfillOnce(ctx, 3)
-		require.NoError(t, err)
-		total += n
-		if n == 0 {
-			break
-		}
-	}
-	require.Equal(t, rowCount, total)
-
-	var remaining int
-	require.NoError(t, db.QueryRowContext(ctx, `SELECT count(*) FROM sessions WHERE email_ciphertext IS NULL`).Scan(&remaining))
-	require.Zero(t, remaining, "no sessions row may still be missing ciphertext after backfill completes")
-
-	for i, id := range ids {
-		got, err := repo.GetSession(ctx, id)
-		require.NoError(t, err)
-		require.Equal(t, fmt.Sprintf("legacy-%d@example.test", i), got.Email)
-	}
-
-	n, err := repo.BackfillOnce(ctx, 100)
-	require.NoError(t, err)
-	require.Equal(t, 0, n)
+	_, err := db.ExecContext(ctx, `
+		INSERT INTO sessions (id,user_id,role,csrf_token,expires_at,absolute_expires_at)
+		VALUES($1,$2,'admin',$3,now()+interval '1 hour',now()+interval '1 day')`,
+		uuid.NewString(), uuid.New(), uuid.NewString())
+	require.Error(t, err, "contract schema must reject sessions without ciphertext")
 }

@@ -1,7 +1,7 @@
 // Package retentionpolicy loads, validates, and renders
 // config/data-retention.yaml — the single version-controlled source of
 // truth for data retention, classification, and purge/redact behavior
-// (docs/roadmap/active/51-a8-data-lifecycle-privacy.md K1). It is imported by
+// (docs/roadmap/archive/51-a8-data-lifecycle-privacy.md K1). It is imported by
 // cmd/retentioncheck (CI enforcement) and, from T1 onward, by each owner
 // service's own retention worker to read its own section at runtime.
 package retentionpolicy

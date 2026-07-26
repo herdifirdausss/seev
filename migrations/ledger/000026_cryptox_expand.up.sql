@@ -1,4 +1,4 @@
--- docs/roadmap/active/51-a8-data-lifecycle-privacy.md T2.4 (K2/K3 expand phase): nullable
+-- docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T2.4 (K2/K3 expand phase): nullable
 -- ciphertext/key-version columns for recon_batches.source_filename and
 -- recon_items.raw. Plaintext columns stay in place and required/nullable
 -- as before — application code dual-writes both during this phase (K3

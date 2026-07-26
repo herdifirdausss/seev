@@ -1,4 +1,4 @@
-// Package objectoutbox is the shared primitive docs/roadmap/active/51-a8-data-lifecycle-privacy.md
+// Package objectoutbox is the shared primitive docs/roadmap/archive/51-a8-data-lifecycle-privacy.md
 // T1.6 (K6) requires before any KYC/export object cleanup: a transactional
 // outbox for deleting objects from an object store. K6's contract:
 // "Object deletion uses an outbox: first persist a delete intent, then

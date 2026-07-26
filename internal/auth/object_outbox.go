@@ -14,7 +14,7 @@ import (
 // full day just because this poll interval is generous.
 const defaultObjectOutboxPollInterval = 30 * time.Second
 
-// StartObjectOutboxWorker wires and starts auth's docs/roadmap/active/51-a8-data-lifecycle-privacy.md
+// StartObjectOutboxWorker wires and starts auth's docs/roadmap/archive/51-a8-data-lifecycle-privacy.md
 // T1.6 (K6) object-delete outbox: draining auth_object_delete_outbox
 // against m.documentStore (set via SetDocumentStore) and marking
 // kyc_documents.deleted_at once the store confirms the object is gone.

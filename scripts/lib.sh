@@ -118,6 +118,7 @@ if [ -n "${SEEV_WORK_DIR:-}" ]; then
 else
 	WORK_DIR="$(mktemp -d "/tmp/seev-${LIB_WORK_DIR_PREFIX:-run}.XXXXXX")"
 fi
+OBJECT_STORE_DIR="${OBJECT_STORE_DIR:-$WORK_DIR/encrypted-objects}"
 GATEWAY_BIN="$WORK_DIR/gateway"
 LEDGER_BIN="$WORK_DIR/ledger-service"
 AUTH_BIN="$WORK_DIR/auth-service"
@@ -128,6 +129,7 @@ ADMINBFF_BIN="$WORK_DIR/admin-bff-service"
 ASSURANCE_BIN="$WORK_DIR/assurance-service"
 GENTOKEN_BIN="$WORK_DIR/gentoken"
 CERTGEN_BIN="$WORK_DIR/certgen"
+CRYPTOX_FIXTURE_BIN="$WORK_DIR/cryptox-fixture"
 # docs/roadmap/archive/49 K3: every service loads its own identity + the shared CA
 # from one directory (cmd/certgen's output layout) — generated fresh into
 # this run's own WORK_DIR, never committed, never reused across runs.
@@ -333,6 +335,14 @@ ensure_app_role() {
 # ─── Server lifecycle ───────────────────────────────────────────────────────
 
 build_server() {
+	if [ -x "$GATEWAY_BIN" ] && [ -x "$LEDGER_BIN" ] && [ -x "$AUTH_BIN" ] &&
+		[ -x "$PAYIN_BIN" ] && [ -x "$PAYOUT_BIN" ] && [ -x "$FRAUD_BIN" ] &&
+		[ -x "$ADMINBFF_BIN" ] && [ -x "$ASSURANCE_BIN" ] &&
+		[ -x "$GENTOKEN_BIN" ] && [ -x "$CERTGEN_BIN" ] && [ -x "$CRYPTOX_FIXTURE_BIN" ]; then
+		log "reusing binaries already built for this test run..."
+		generate_certs
+		return
+	fi
 	log "building gateway + ledger-service + auth-service + payin-service + payout-service + fraud-service + admin-bff-service + assurance-service + gentoken + certgen binaries..."
 	go build -o "$GATEWAY_BIN" ./cmd/gateway
 	go build -o "$LEDGER_BIN" ./cmd/ledger-service
@@ -344,6 +354,7 @@ build_server() {
 	go build -o "$ASSURANCE_BIN" ./cmd/assurance-service
 	go build -o "$GENTOKEN_BIN" ./cmd/gentoken
 	go build -o "$CERTGEN_BIN" ./cmd/certgen
+	go build -o "$CRYPTOX_FIXTURE_BIN" ./cmd/cryptox-fixture
 	generate_certs
 }
 
@@ -576,6 +587,7 @@ start_ledger_service() {
 		export RATE_LIMIT_BURST=$RATE_LIMIT_BURST
 		export TLS_CERT_DIR=$CERT_DIR
 		export INTERNAL_GRPC_TOKEN=$INTERNAL_GRPC_TOKEN
+		export CRYPTOX_KEY_V1=$CRYPTOX_KEY_V1
 		export LEDGER_IDEMPOTENCY_KEY_V1=$LEDGER_IDEMPOTENCY_KEY_V1
 		export LOG_FORMAT=json
 		nohup "$LEDGER_BIN" >>"$LEDGER_LOG" 2>&1 &
@@ -629,6 +641,7 @@ start_gateway() {
 
 start_auth_service() {
 	log "starting auth-service (http $AUTH_APP_PORT / internal $AUTH_INTERNAL_PORT)..."
+	mkdir -p "$OBJECT_STORE_DIR"
 	(
 		export APP_NAME=auth-service
 		export APP_PORT=$AUTH_APP_PORT
@@ -645,6 +658,10 @@ start_auth_service() {
 		# docs/roadmap/active/51 T5 (K10): where the closure saga calls ledger's
 		# ClosureRouter — the internal (:$LEDGER_INTERNAL_PORT-class) port.
 		export LEDGER_INTERNAL_API_URL=https://localhost:$LEDGER_INTERNAL_PORT
+		export PAYIN_INTERNAL_API_URL=https://localhost:$PAYIN_ADMIN_PORT
+		export PAYOUT_INTERNAL_API_URL=https://localhost:$PAYOUT_ADMIN_PORT
+		export FRAUD_INTERNAL_API_URL=https://localhost:$FRAUD_ADMIN_PORT
+		export GATEWAY_INTERNAL_API_URL=https://localhost:$INTERNAL_PORT
 		export FRAUD_GRPC_ADDR=localhost:$FRAUD_GRPC_PORT
 		export JWT_SECRET=$JWT_SECRET
 		export JWT_ISSUER=$JWT_ISSUER
@@ -657,6 +674,7 @@ start_auth_service() {
 		export CRYPTOX_LOOKUP_KEY=$CRYPTOX_LOOKUP_KEY
 		export EXPORT_KEK_V1=$EXPORT_KEK_V1
 		export CLOSURE_KEK_V1=$CLOSURE_KEK_V1
+		export OBJECT_STORE_DIR=$OBJECT_STORE_DIR
 		export LOG_FORMAT=json
 		nohup "$AUTH_BIN" >>"$AUTH_LOG" 2>&1 &
 		echo $! >"$AUTH_PID_FILE"
@@ -715,6 +733,7 @@ start_adminbff_service() {
 		export POSTGRES_PASSWORD=adminbff_app
 		export POSTGRES_DB=$ADMINBFF_DB_NAME
 		export POSTGRES_SSL_MODE=disable
+		export CRYPTOX_KEY_V1=$CRYPTOX_KEY_V1
 		export JWT_SECRET=$JWT_SECRET
 		export JWT_ISSUER=$JWT_ISSUER
 		export RATE_LIMIT_REQUESTS=$RATE_LIMIT_REQUESTS

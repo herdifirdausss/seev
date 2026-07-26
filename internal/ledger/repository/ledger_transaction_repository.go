@@ -67,7 +67,7 @@ type TransactionRepository interface {
 		errorMessage *string,
 	) error
 
-	// FindConflictOrDuplicate is docs/roadmap/active/51-a8-data-lifecycle-privacy.md T3's (K7)
+	// FindConflictOrDuplicate is docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T3's (K7)
 	// digest-first replacement for the old GetStatusByIdempotency: called
 	// only after Insert has already hit a unique-key violation for
 	// (key, scope), so a matching row is known to exist — this just needs
@@ -102,7 +102,7 @@ type TransactionRepository interface {
 		currency string,
 	) (status string, conflict bool, err error)
 
-	// BackfillOnce is docs/roadmap/active/51-a8-data-lifecycle-privacy.md T3's bounded backfill
+	// BackfillOnce is docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T3's bounded backfill
 	// (work item 3): one batch of pre-T3 rows (idempotency_key_digest IS
 	// NULL) gets a digest + conflict_fingerprint computed from their
 	// still-present raw key/scope/type/amount/currency and written in
@@ -176,7 +176,7 @@ type transactionRepo struct {
 
 // NewTransactionRepository requires a DB handle (outside any ledger
 // transaction) for read-only lookups such as GetAccountIDs, and a
-// docs/roadmap/active/51-a8-data-lifecycle-privacy.md T3 (K7) digest ring — unlike every T2
+// docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T3 (K7) digest ring — unlike every T2
 // repository's OPTIONAL nil-safe ring (privacy fields degrade gracefully
 // without one), digestRing is REQUIRED here: idempotency deduplication is
 // a money-safety invariant, not a confidentiality one, and K7 is explicit
@@ -185,7 +185,7 @@ type transactionRepo struct {
 // without ever computing a digest.
 func NewTransactionRepository(db database.DatabaseSQL, digestRing *cryptox.DigestRing) TransactionRepository {
 	if digestRing == nil {
-		panic("ledger: digest ring is required (docs/roadmap/active/51-a8-data-lifecycle-privacy.md K7)")
+		panic("ledger: digest ring is required (docs/roadmap/archive/51-a8-data-lifecycle-privacy.md K7)")
 	}
 	return &transactionRepo{db: db, digestRing: digestRing}
 }

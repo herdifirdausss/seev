@@ -32,7 +32,7 @@ type kycHandlers interface {
 	AdminDownloadKYCDocumentHandler() http.HandlerFunc
 }
 
-// privacyHandlers is docs/roadmap/active/51-a8-data-lifecycle-privacy.md T4's (K9) export
+// privacyHandlers is docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T4's (K9) export
 // route set — a separate interface (not folded into authHandlers), same
 // optional-type-assertion convention as kycHandlers, so a test harness
 // that only implements a subset of *Module's surface still compiles.
@@ -42,7 +42,7 @@ type privacyHandlers interface {
 	DownloadExportHandler() http.HandlerFunc
 }
 
-// closureHandlers is docs/roadmap/active/51-a8-data-lifecycle-privacy.md T5's (K10) account
+// closureHandlers is docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T5's (K10) account
 // closure route set — its own interface, same optional-type-assertion
 // convention as privacyHandlers/kycHandlers above.
 type closureHandlers interface {
@@ -50,14 +50,14 @@ type closureHandlers interface {
 	ClosureStatusHandler() http.HandlerFunc
 }
 
-// privacyAdminHandlers is docs/roadmap/active/51-a8-data-lifecycle-privacy.md T6's own admin
+// privacyAdminHandlers is docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T6's own admin
 // BFF status panel — internal-router-only, same optional-type-assertion
 // convention as the other handler interfaces above.
 type privacyAdminHandlers interface {
 	AdminPrivacyRequestsHandler() http.HandlerFunc
 }
 
-// operatorOffboardingHandlers is docs/roadmap/active/51-a8-data-lifecycle-privacy.md
+// operatorOffboardingHandlers is docs/roadmap/archive/51-a8-data-lifecycle-privacy.md
 // T5's own work item 2 (K10, A8 T5b) — maker/checker approval for
 // admin/operator account closure, internal-router-only like
 // privacyAdminHandlers above.

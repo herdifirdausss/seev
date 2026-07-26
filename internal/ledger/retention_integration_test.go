@@ -1,6 +1,6 @@
 //go:build integration
 
-// Proves docs/roadmap/active/51-a8-data-lifecycle-privacy.md T1's ledger retention
+// Proves docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T1's ledger retention
 // classes end to end against a real Postgres (same throwaway-container
 // pattern as schema_contract_test.go): the SECURITY DEFINER functions
 // themselves (eligibility boundary, K8 proof-awareness, hold exclusion,

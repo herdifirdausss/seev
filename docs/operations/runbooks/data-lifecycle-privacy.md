@@ -3,7 +3,7 @@
 > [Documentation home](../../README.md) · [Operations](../README.md) · [Runbooks](README.md)
 
 > **Status: Current. Audience: operators.** This is an engineering privacy
-> baseline (docs/roadmap/active/51-a8-data-lifecycle-privacy.md), not a claim of GDPR, Indonesian
+> baseline (docs/roadmap/archive/51-a8-data-lifecycle-privacy.md), not a claim of GDPR, Indonesian
 > regulatory, or any other formal legal compliance. Follow this procedure
 > only in an environment where you are authorized to touch identity,
 > credential, or financial-reference data.
@@ -18,7 +18,7 @@ backup may still contain after a redaction/closure, K12) are covered by
 [dr-restore-drill.md](dr-restore-drill.md)/[backup-failure.md](backup-failure.md)/
 [repository-corruption.md](repository-corruption.md), not duplicated here.
 See
-[docs/roadmap/active/51-a8-data-lifecycle-privacy.md](../../roadmap/active/51-a8-data-lifecycle-privacy.md)
+[docs/roadmap/archive/51-a8-data-lifecycle-privacy.md](../../roadmap/archive/51-a8-data-lifecycle-privacy.md)
 for the full design (K1–K13) — this runbook is the "what to do when it
 fires" companion, not the design reference.
 
@@ -243,7 +243,7 @@ the store.
 
 ## Related
 
-- [docs/roadmap/active/51-a8-data-lifecycle-privacy.md](../../roadmap/active/51-a8-data-lifecycle-privacy.md) — the full track design (K1–K13) and every task's Result section.
+- [docs/roadmap/archive/51-a8-data-lifecycle-privacy.md](../../roadmap/archive/51-a8-data-lifecycle-privacy.md) — the full track design (K1–K13) and every task's Result section.
 - [cryptox-key-rotation.md](cryptox-key-rotation.md) — the shared field-encryption ring; the expand/backfill/contract model this runbook's Situation 5 reuses.
 - [internal/auth/privacy.go](../../../internal/auth/privacy.go), [privacy_worker.go](../../../internal/auth/privacy_worker.go) — export request/assembly/download.
 - [internal/auth/closure.go](../../../internal/auth/closure.go), [closure_worker.go](../../../internal/auth/closure_worker.go) — closure request/saga.

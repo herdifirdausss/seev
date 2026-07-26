@@ -1,4 +1,4 @@
--- docs/roadmap/active/51-a8-data-lifecycle-privacy.md T1.7: SECURITY DEFINER retention
+-- docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T1.7: SECURITY DEFINER retention
 -- functions for assurance's runs.succeeded and alert_deliveries classes
 -- (config/data-retention.yaml, §4.2 "Assurance successful run" /
 -- "failed alert delivery"). Both entries have hold_scope: none (T0's own

@@ -12,7 +12,7 @@ import (
 	"github.com/herdifirdausss/seev/pkg/scheduler"
 )
 
-// StartRetentionRunner wires and starts auth's docs/roadmap/active/51-a8-data-lifecycle-privacy.md
+// StartRetentionRunner wires and starts auth's docs/roadmap/archive/51-a8-data-lifecycle-privacy.md
 // T1 retention classes (config/data-retention.yaml) on their own dedicated
 // scheduler — same lock-construction convention as NewKYCApplyRetryJob/
 // NewKYCRescreenJob above, but this job type needs a *scheduler.Scheduler
@@ -33,6 +33,10 @@ func (m *Module) StartRetentionRunner(redisClient *redis.Client, logger *slog.Lo
 
 	runner, err := retentionworker.NewRunner("auth", m.db, []retentionworker.Class{
 		{Name: "auth.refresh_tokens", Action: "delete", FunctionName: "fn_retention_purge_refresh_tokens"},
+		{Name: "auth.kyc_apply_retries.succeeded", Action: "delete", FunctionName: "fn_retention_purge_kyc_apply_retries_succeeded"},
+		{Name: "auth.kyc_apply_retries.dead", Action: "delete", FunctionName: "fn_retention_purge_kyc_apply_retries_dead"},
+		{Name: "auth.kyc_documents", Action: "delete", FunctionName: "fn_retention_purge_kyc_documents"},
+		{Name: "auth.kyc_submissions", Action: "delete", FunctionName: "fn_retention_purge_kyc_submissions"},
 	})
 	if err != nil {
 		return nil, err

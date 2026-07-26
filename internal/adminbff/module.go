@@ -39,7 +39,7 @@ type Module struct {
 // internal — gets its own mTLS client keyed to ITS identity, since one
 // shared client can't satisfy six different expected-server-identity
 // checks.
-func NewModule(db database.DatabaseSQL, cfg config.AdminBFFConfig, logger *slog.Logger, certSrc *tlsx.CertSource) *Module {
+func NewModule(db database.DatabaseSQL, cfg config.AdminBFFConfig, logger *slog.Logger, certSrc *tlsx.CertSource, ring *cryptox.Ring) *Module {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -60,22 +60,12 @@ func NewModule(db database.DatabaseSQL, cfg config.AdminBFFConfig, logger *slog.
 		Fraud:     client.New("fraud", cfg.FraudServiceURL, internalClient(tlsx.IdentityFraud)),
 		Gateway:   client.New("gateway", cfg.GatewayServiceURL, internalClient(tlsx.IdentityGateway)),
 	}
-	return &Module{db: db, repo: NewSessionRepository(db, nil), auth: NewAuthClient(cfg.AuthServiceURL), clients: clients, cfg: cfg, logger: logger,
+	return &Module{db: db, repo: NewSessionRepository(db, ring), auth: NewAuthClient(cfg.AuthServiceURL), clients: clients, cfg: cfg, logger: logger,
 		audit: auditRepo, auditRead: auditRepo,
 		lock: lock, scheduler: scheduler.NewScheduler(lock, scheduler.NewPrometheusMetrics(), scheduler.WithLocation(retentionworker.JakartaLocation))}
 }
 
-// SetCryptoxRing wires docs/roadmap/active/51-a8-data-lifecycle-privacy.md T2.4's K2/K3
-// field encryption for sessions.email — same nil-safe optionality as
-// internal/auth.Module.SetCryptoxRing: a nil ring leaves every read/write
-// exactly as it behaved before this task. audit_log.email's masking
-// (cryptox.MaskEmail) needs no key at all and is always active
-// regardless of whether this is ever called — see audit.go's own comment.
-func (m *Module) SetCryptoxRing(ring *cryptox.Ring) {
-	m.repo = NewSessionRepository(m.db, ring)
-}
-
-// Start registers the docs/roadmap/active/51-a8-data-lifecycle-privacy.md T1 data-retention
+// Start registers the docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T1 data-retention
 // job on this module's own scheduler (reused directly — adminbff already
 // runs exactly one shared scheduler for all its cron jobs, unlike ledger's
 // one-scheduler-per-job convention). Replaces the old
@@ -90,6 +80,7 @@ func (m *Module) Start() error {
 		var runner *retentionworker.Runner
 		runner, startErr = retentionworker.NewRunner("adminbff", m.db, []retentionworker.Class{
 			{Name: "adminbff.sessions", Action: "delete", FunctionName: "fn_retention_purge_sessions"},
+			{Name: "adminbff.audit_log", Action: "delete", FunctionName: "fn_retention_purge_audit_log"},
 		})
 		if startErr != nil {
 			return

@@ -1,4 +1,4 @@
--- docs/roadmap/active/51-a8-data-lifecycle-privacy.md T1: SECURITY DEFINER retention
+-- docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T1: SECURITY DEFINER retention
 -- function for adminbff's sessions class (config/data-retention.yaml).
 -- Fixed (p_job_id UUID, p_batch_size INT, p_dry_run BOOLEAN) RETURNS INT
 -- signature (pkg/retentionworker.Class), excludes rows an adminbff_retention_holds

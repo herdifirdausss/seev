@@ -4,7 +4,7 @@
 
 > **Generated from [config/data-retention.yaml](../../config/data-retention.yaml) — do not hand-edit this file.** Regenerate with `make retention-docs` after changing the policy. `cmd/retentioncheck` fails CI if this file and the policy ever disagree.
 
-Policy version: **1**. See [docs/roadmap/active/51-a8-data-lifecycle-privacy.md](../roadmap/active/51-a8-data-lifecycle-privacy.md) for the locked design decisions (K1–K13) this matrix implements.
+Policy version: **1**. See [docs/roadmap/archive/51-a8-data-lifecycle-privacy.md](../roadmap/archive/51-a8-data-lifecycle-privacy.md) for the locked design decisions (K1–K13) this matrix implements.
 
 These are conservative engineering defaults for this learning repository, not an approved jurisdiction/product policy — see that document's §3 "Out of scope."
 
@@ -47,6 +47,7 @@ No entry may fully delete a row from these tables — only `retain_permanent`, `
 | `assurance.cursors` | assurance.assurance_cursors | internal | — | — | retain_state | — | none |
 | `assurance.findings.active` | assurance.assurance_findings | financial | — | — | retain_permanent | — | none |
 | `assurance.findings.resolved` | assurance.assurance_findings | financial | resolved_at | 365d | delete | 500 | resource |
+| `assurance.incident_summaries` | assurance.assurance_incident_summaries | internal | — | — | retain_permanent | — | none |
 | `assurance.intake_commands` | assurance.intake_control_commands | personal | applied_at | 365d | delete | 500 | none |
 | `assurance.retention_audit` | assurance.assurance_retention_audit | internal | — | — | retain_permanent | — | none |
 | `assurance.retention_holds` | assurance.assurance_retention_holds | internal | — | — | retain_state | — | none |
@@ -60,6 +61,8 @@ No entry may fully delete a row from these tables — only `retain_permanent`, `
 **`assurance.findings.active`** — docs/roadmap/active/51 §4.1: retained while status IN ('open','acknowledged'). Never age-purged regardless of policy version.
 
 **`assurance.findings.resolved`** — docs/roadmap/active/51 §4.2 'Assurance resolved finding'. Only status='resolved' rows are ever eligible.
+
+**`assurance.incident_summaries`** — Durable, hashed successor proof for a deleted failed run; intentionally survives assurance.runs.failed retention.
 
 **`assurance.intake_commands`** — docs/roadmap/active/51 §4.2 'Applied/rejected intake command'; pending/applying rows are never eligible. Same rule applied to payin/payout's equivalent intake_commands tables below for consistency across the three services that share this control-plane pattern.
 
@@ -81,6 +84,7 @@ No entry may fully delete a row from these tables — only `retain_permanent`, `
 | `auth.kyc_document_object` | kyc document bytes (object store) | sensitive | paired auth.kyc_documents row's own terminal_timestamp | 365d | delete | 100 | subject |
 | `auth.kyc_documents` | auth.kyc_documents | sensitive | auth_users closure time (join on kyc_documents.user_id = auth_users.id) | 365d | delete | 500 | subject |
 | `auth.kyc_level_changes` | auth.kyc_level_changes | personal | — | — | pseudonymize_on_closure | — | subject |
+| `auth.kyc_retry_summaries` | auth.auth_kyc_retry_summaries | internal | — | — | retain_permanent | — | none |
 | `auth.kyc_submissions` | auth.kyc_submissions | sensitive | auth_users closure time (join on kyc_submissions.user_id = auth_users.id) | 365d | delete | 500 | subject |
 | `auth.object_delete_outbox` | auth.auth_object_delete_outbox | internal | — | — | retain_permanent | — | none |
 | `auth.operator_offboarding_requests` | auth.auth_operator_offboarding_requests | internal | — | — | retain_permanent | — | none |
@@ -101,6 +105,8 @@ No entry may fully delete a row from these tables — only `retain_permanent`, `
 **`auth.kyc_documents`** — Same closure-gated rule as auth.kyc_submissions (grouped together in §4.2). Document object storage is currently unwired in this codebase (internal/auth.Module.SetDocumentStore has no caller and DocumentKEK-only configuration makes UploadKYCDocument/DownloadKYCDocument return ErrDocumentStorageUnavailable) — T2 must land the K2 opaque object-key change and a real store before this row's paired object can ever actually be deleted.
 
 **`auth.kyc_level_changes`** — docs/roadmap/active/51 §4.2: retained as 'pseudonymous level-change audit' even after the owning KYC submission is deleted — never age-deleted, only pseudonymized on closure (K11).
+
+**`auth.kyc_retry_summaries`** — Durable hashed successor proof retained after a dead KYC retry is removed.
 
 **`auth.kyc_submissions`** — docs/roadmap/active/51 §4.2 'KYC submission and document': eligible only when the owning account has been closed more than 365 days and no hold applies — this is a closure-gated rule, not a standalone age rule on created_at/decided_at. `payload` becomes K2 ciphertext before this ever runs. T0 finding: auth.auth_users has no closure-timestamp column today (only a status flag per T0's inventory) — T5 must add one (e.g. closed_at) as part of the K10 closure saga so this rule has a real anchor to join against.
 
@@ -126,6 +132,7 @@ No entry may fully delete a row from these tables — only `retain_permanent`, `
 | `fraud.retention_audit` | fraud.fraud_retention_audit | internal | — | — | retain_permanent | — | none |
 | `fraud.retention_holds` | fraud.fraud_retention_holds | internal | — | — | retain_state | — | none |
 | `fraud.sanctions_entries` | fraud.sanctions_entries | personal | — | — | self_replacing | — | none |
+| `fraud.screening_event_summaries` | fraud.fraud_screening_event_summaries | financial | — | — | retain_permanent | — | none |
 | `fraud.screening_events` | fraud.screening_events | financial | created_at | 365d | delete | 500 | subject |
 | `fraud.screening_rule_modes` | fraud.screening_rule_modes | internal | — | — | retain_state | — | none |
 
@@ -136,6 +143,8 @@ No entry may fully delete a row from these tables — only `retain_permanent`, `
 **`fraud.retention_holds`** — docs/roadmap/active/51 K5. Same shape/rationale as adminbff.retention_holds.
 
 **`fraud.sanctions_entries`** — Third-party (non-platform-user) sanctions/watchlist data from an external dataset. internal/fraud/repository/sanctions_repository.go already fully replaces the table on every dataset load (DELETE-all + re-INSERT) — no independent age-based job needed or wanted; a stale entry must not silently persist past its dataset version.
+
+**`fraud.screening_event_summaries`** — Non-identifying daily/rule/verdict aggregate successor proof, persisted atomically before screening event deletion.
 
 **`fraud.screening_events`** — docs/roadmap/active/51 §4.2 'Fraud screening event'. Requires aggregate audit metrics to already be recorded (§4.3) before deletion.
 

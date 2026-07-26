@@ -182,6 +182,14 @@ func run(parent context.Context) error {
 	// unconfigured, matching UploadKYCDocument's own existing "storage is
 	// optional in this binary" convention.
 	module.SetDocumentKeyRing(cryptoxRing)
+	if objectDir := os.Getenv("OBJECT_STORE_DIR"); objectDir != "" {
+		objectStore, err := auth.NewFileDocumentStore(objectDir)
+		if err != nil {
+			closeAuthDependencies(log, ledgerConn.Close, closeFraud, redisCache, db, shutdownTracing)
+			return fmt.Errorf("configure encrypted object store: %w", err)
+		}
+		module.SetDocumentStore(objectStore)
+	}
 	var startRescreen func() error
 	var stopRescreen func()
 	if fraudConn != nil {

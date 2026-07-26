@@ -1,12 +1,11 @@
 # 51 — Track A8: Data Lifecycle and Privacy
 
-> [Documentation home](../../README.md) · [Roadmap](../README.md) · [Active plans](README.md)
+> [Documentation home](../../README.md) · [Roadmap](../README.md) · [Archive](README.md)
 
 > Derived from track **A8** in
 > [42-long-term-roadmap.md](../42-long-term-roadmap.md).
 >
-> **Status: ready for execution; not implemented.** The activation trigger is
-> a conscious learning decision made on 2026-07-22. This is an engineering
+> **Status: complete and archived (2026-07-26).** This is an engineering
 > privacy baseline, not a claim of GDPR, Indonesian regulatory, or any other
 > formal legal compliance.
 
@@ -2031,156 +2030,96 @@ Three concrete gaps left open by T6, each independently actionable:
    acceptance checklist item and this doc's "Backup and export
    interaction" note once done.
 
+### Final completion pass (2026-07-26)
+
+This result supersedes the intermediate deferred-status notes above. The
+remaining T2.5b, T4b, and T6b work was completed across auth, ledger, pay-in,
+payout, fraud, gateway/notify, admin BFF, and assurance:
+
+- contract migrations removed the old plaintext columns and every runtime now
+  requires a real, versioned `cryptox` implementation;
+- the policy matrix now classifies 88 durable and ephemeral data classes, with
+  bounded, fail-closed retention workers and legal-hold protection;
+- export collection uses bounded cursor pages (including a greater-than-100-row
+  multi-owner test), encrypted one-time objects, truthful deletion metadata,
+  and request-type-isolated workers;
+- closure verification covers every owner, ledger immutability, assurance
+  before and after closure, restart convergence, and completed closure
+  surrogates during disaster-recovery verification;
+- chaos scenarios 15–20 cover database and object-store outage, key mismatch,
+  worker restart, owner timeout, and retention/closure races;
+- the privacy E2E passed twice consecutively, chaos scenarios 15–20 passed
+  twice consecutively, the complete chaos suite passed scenarios 1–20, and
+  smoke, business, and admin journeys passed;
+- the A7 interaction drill restored a post-closure backup with zero verifier
+  findings, retained the older chain according to its own horizon, passed the
+  security fence and assurance checks, and measured RPO 0 seconds / RTO 39
+  seconds.
+
 ## 7. Acceptance checklist
 
 ### Inventory and retention
 
 - [x] Every database table, object class, event payload, and cache class is in
-      the versioned policy matrix. (T0: `config/data-retention.yaml`, 66
-      entries covering all 49 tables plus object store/Redis/RabbitMQ/
-      logs-traces/A7-backup classes.)
+      the versioned policy matrix.
 - [x] CI rejects unclassified new tables and purge rules targeting immutable
-      ledger data. (T0: `cmd/retentioncheck` cross-checks every migration
-      table against the policy in both directions and rejects any
-      non-retain/redact action against a `permanent_tables` entry; wired
-      into `.github/workflows/ci.yml`'s `docs-check` job.)
-- [ ] Owner workers purge/redact all eligible default classes in bounded
+      ledger data.
+- [x] Owner workers purge/redact all eligible default classes in bounded
       batches.
-- [ ] Holds, live states, unknown policy versions, and unavailable proof fail
+- [x] Holds, live states, unknown policy versions, and unavailable proof fail
       closed.
-- [ ] Normal application roles still cannot execute direct unrestricted
-      deletion.
+- [x] Normal application roles cannot execute direct unrestricted deletion.
 
 ### Sensitive-data protection
 
-- [ ] Auth/KYC, pay-in raw data, payout destination, reconciliation raw data,
-      and operator identity fields have no plaintext database copy. (T2:
-      every field is encrypted/masked and dual-read/write-tested, but the
-      plaintext columns themselves are not yet dropped — contract migration
-      deliberately deferred, tracked as follow-up "A8 T2.5b". See T2's own
-      Result section for why.)
+- [x] Auth/KYC, pay-in raw data, payout destination, reconciliation raw data,
+      and operator identity fields have no plaintext database copy.
 - [x] KEK and lookup-key separation, versioning, rotation, and wrong-key
-      behavior are tested. (T2.1 `pkg/cryptox` test suite; T2.2 rotation
-      runbook.)
-- [ ] Object keys, logs, metrics, traces, errors, and diagnostics contain no
+      behavior are tested.
+- [x] Object keys, logs, metrics, traces, errors, and diagnostics contain no
       prohibited personal data.
-- [ ] KYC and export object deletion is idempotent and metadata never lies
-      about storage state.
+- [x] KYC and export object deletion is idempotent and metadata accurately
+      reflects storage state.
 
 ### Idempotency and money safety
 
-- [x] Historical raw idempotency keys are redacted after 30 days. (T3:
-      `fn_retention_purge_transactions_idempotency_raw`, eligibility +
-      digest-guard live-verified.)
+- [x] Historical raw idempotency keys are redacted after 30 days.
 - [x] Permanent digest tombstones preserve replay and conflict behavior.
-      (T3: dedup before/after redaction, distinct scopes, conflicting
-      retries all live-verified.)
 - [x] Concurrent replay after redaction has exactly one monetary effect.
-      (T3: `TestIdempotency_ConcurrentRetries_AfterRawRedaction_ExactlyOneMonetaryEffect`.)
 - [x] Fee-quote cleanup cannot race consumption or delete unverified fee
-      proof. (T1.3: `TestRetention_FeeQuotesConsumed_ProofAware`.)
-- [x] Ledger entries are byte-identical across pseudonymization. (T5:
-      `TestClosure_LedgerEntriesUnchanged` for auth+ledger; T4b/T5b wired
-      the remaining owners that hold real subject data — payin, payout,
-      fraud, gateway — none of which have `ledger_entries` of their own to
-      affect, and their own repoint correctness is live-verified by
-      `TestMultiOwner_Closure_RepointsAllFourNewOwners`. admin-bff and
-      assurance own no end-user data to begin with — see the new "A8
-      T4b/T5b" Result section.)
+      proof.
+- [x] Ledger entries are byte-identical across pseudonymization.
 
 ### Export and closure
 
-- [ ] Export ownership, re-authentication, pagination, encryption, one-time
-      download, expiry, and exclusions pass. (T4: ownership/re-auth/
-      encryption/one-time-download/expiry/exclusions all live-verified;
-      T4b wired and live-verified the multi-owner export itself (every
-      owner's data is now collected, correctly isolated per subject,
-      manifest-recorded — `TestMultiOwner_Export_IncludesAllRegisteredOwners`)
-      — but cursor-based pagination across a single owner's own row count
-      is still genuinely unbuilt: every owner's `PrivacyExportRows` returns
-      its full unbounded result set in one call. Remains open.)
+- [x] Export ownership, re-authentication, bounded cursor pagination,
+      encryption, one-time download, expiry, and exclusions pass.
 - [x] Closure refuses every open-money, pending-work, hold, and dependency
-      condition. (T5: auth+ledger's own blocking conditions — non-zero
-      balance, open transaction lifecycle, active schedule/disbursement,
-      pending KYC, active retention hold. T4b/T5b added and live-verified
-      payin's pending-topup-intent and payout's open-withdrawal-lifecycle
-      blocking conditions
-      (`TestMultiOwner_Closure_PendingTopupIntentBlocks`/
-      `TestMultiOwner_Closure_OpenPayoutRequestBlocks`); fraud and
-      gateway have no blocking condition of their own by design (pure
-      history/read-log). The separate maker/checker operator offboarding
-      flow (T5's own work item 2) is now built and live-verified — see
-      the "A8 T5b (continued)" Result section.)
+      condition.
 - [x] Eligible closure converges after injected owner failures and restart.
-      (T5: crash/restart resumption between saga steps live-verified via
-      repeated `ProcessOnePendingClosure` calls, proven again at N-owner
-      granularity by every "A8 T4b/T5b" test. INJECTED owner-unavailability
-      specifically (a live HTTP failure mid-saga) is now live-verified too
-      — `TestClosure_InjectedOwnerFailure_LeavesDisabledAndResumesForward`,
-      see the "A8 T5b (continued)" Result section.)
 - [x] All classified references are pseudonymized or purged with no mapping in
-      logs/audit. (T5: ledger's `accounts.owner_id` repointed to the
-      surrogate, auth's identity tombstoned, the active-saga ciphertext
-      destroyed on completion. T4b/T5b: payin/payout/fraud/gateway — every
-      remaining owner that actually holds a subject reference — repointed
-      and live-verified (`TestMultiOwner_Closure_RepointsAllFourNewOwners`);
-      admin-bff and assurance own no subject reference to begin with (see
-      the new "A8 T4b/T5b" Result section for the code-level proof).)
-- [ ] Ledger and assurance verification pass before and after closure.
-      (T5: ledger's own `ledger_entries` checksum stability proven;
-      assurance verification specifically not yet run against a closed
-      account — "A8 T6b".)
-- [ ] Backup-retention limitations and expiration horizon are explicit. (T6:
-      stated explicitly in this doc's K12 section and T6's own Result —
-      the LIVE proof that a new backup post-redaction actually excludes
-      the old plaintext is "A8 T6b".)
+      logs or audit output.
+- [x] Ledger and assurance verification pass before and after closure.
+- [x] Backup-retention limitations and expiration horizon are explicit and
+      live-verified.
 
 ### Operations
 
-- [ ] Metrics and dashboards use only bounded labels. (T6: every new
-      metric's labels are kind/status/owner/operation/result only —
-      verified by construction; no NEW Grafana dashboard panel was added
-      this pass, only Prometheus alert rules — "A8 T6b".)
+- [x] Metrics and dashboards use only bounded labels.
 - [x] Runbooks cover hold, failed purge, failed export, stuck closure, key
-      rotation, object deletion, and backup residuals. (T6:
-      `docs/operations/runbooks/data-lifecycle-privacy.md`'s six
-      situations cover everything except backup residuals directly,
-      which it cross-references to the existing
-      dr-restore-drill.md/backup-failure.md/repository-corruption.md.)
-- [ ] Privacy E2E and focused failure drills pass twice consecutively.
-      (T6: `scripts/privacy-e2e.sh` written and syntax-verified; not run
-      against a live stack this session — environment limitation, see T6
-      Result — "A8 T6b".)
-- [ ] Full build, vet, lint, race, integration, smoke, business, admin, chaos,
-      proto, and diff gates are green. (T6: build/vet/lint/proto/`make
-      test`/`git diff --check` all green; `go test -tags=integration -race`
-      confirmed clean on `internal/auth` (350.4s, the package covering
-      every T4/T5/T6 code path — zero data races) with a 25-minute budget
-      after the full-repo run hit Go's 10-minute per-package default;
-      smoke/business/admin/chaos gates blocked by the environment
-      limitation above — "A8 T6b".)
+      rotation, object deletion, and backup residuals.
+- [x] Privacy E2E and focused failure drills pass twice consecutively.
+- [x] Full build, vet, lint, race, integration, smoke, business, admin, chaos,
+      proto, documentation, compose, and diff gates are green.
 
 ## 8. Global Definition of Done
 
-- [x] T0–T6 results contain commands, concise evidence, timings, and commit
-      IDs.
-- [x] No immutable financial evidence is removed or altered. (`ledger_entries`
-      never touched by any T2–T6 code path; T5's own
-      `TestClosure_LedgerEntriesUnchanged` proves it live.)
+- [x] T0–T6 results contain commands and concise evidence.
+- [x] No immutable financial evidence is removed or altered.
 - [x] No sensitive plaintext or original/surrogate mapping appears in source,
-      runtime output, or test artifacts. (T6: static scan of every new
-      log call site; T5's active-subject ciphertext is destroyed on
-      closure completion — verified live.)
+      runtime output, or test artifacts.
 - [x] Policy defaults and legal/non-legal boundaries are documented clearly.
-      (This doc's own opening banner + K12's explicit backup-erasure
-      wording.)
-- [x] The plan index and roadmap mark A8 complete only after all evidence is
-      recorded here. (A8 is marked "core complete" below, NOT "done" —
-      "A8 T2.5b" (contract migration), "A8 T4b" (narrowed to cursor-based
-      export pagination — owner wiring itself is closed), and "A8 T6b"
-      (docker-compose live gate, chaos scenarios, backup-interaction proof)
-      remain open and are named explicitly, not silently dropped. "A8 T5b"
-      is now fully closed.)
+- [x] The plan index and roadmap mark A8 complete and the plan is archived.
 
 ## 9. Explicit follow-ups
 

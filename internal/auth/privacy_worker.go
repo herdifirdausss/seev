@@ -35,7 +35,7 @@ const (
 	exportRetentionPolicyVersion = 1
 )
 
-// exportUserProfileRow and exportKYCSubmissionRow are docs/roadmap/active/51-a8-data-lifecycle-privacy.md
+// exportUserProfileRow and exportKYCSubmissionRow are docs/roadmap/archive/51-a8-data-lifecycle-privacy.md
 // T4's (work item 3) deterministic, explicitly-versioned export DTOs —
 // hand-written, never a struct reused from another layer, so a future
 // unrelated field added to model.User/model.KYCSubmission can never leak
@@ -97,7 +97,7 @@ var exportExclusions = []string{
 	"admin-bff and assurance own no end-user data — never present in an export (K11)",
 }
 
-// StartPrivacyExportWorker wires and starts docs/roadmap/active/51-a8-data-lifecycle-privacy.md T4's
+// StartPrivacyExportWorker wires and starts docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T4's
 // (K9) export assembly + TTL-expiry sweep. Returns (nil, nil) when no
 // document store or export ring is configured — matches
 // StartObjectOutboxWorker's own "storage is optional in this binary"
@@ -149,7 +149,7 @@ func (m *Module) AssembleOnePendingExport(ctx context.Context) error {
 	err := m.db.WithTx(ctx, nil, func(tx *sql.Tx) error {
 		err := tx.QueryRowContext(ctx, `
 			SELECT id, user_id, cutoff, requested_at FROM privacy_requests
-			WHERE status = 'pending'
+			WHERE request_type = 'export' AND status = 'pending'
 			ORDER BY requested_at
 			LIMIT 1
 			FOR UPDATE SKIP LOCKED`).Scan(&id, &userID, &cutoff, &requestedAt)
@@ -263,9 +263,21 @@ func (m *Module) buildAndUploadExport(ctx context.Context, requestID, userID uui
 	totalRows := len(authRows)
 
 	for _, owner := range m.closureOwners {
-		ownerRows, err := owner.client.Export(ctx, userID, cutoff)
-		if err != nil {
-			return "", "", 0, fmt.Errorf("collect %s owner data: %w", owner.name, err)
+		var ownerRows []json.RawMessage
+		cursor := ""
+		for {
+			page, next, err := owner.client.ExportPage(ctx, userID, cutoff, cursor, 100)
+			if err != nil {
+				return "", "", 0, fmt.Errorf("collect %s owner data: %w", owner.name, err)
+			}
+			ownerRows = append(ownerRows, page...)
+			if next == "" {
+				break
+			}
+			if next == cursor {
+				return "", "", 0, fmt.Errorf("collect %s owner data: non-advancing cursor", owner.name)
+			}
+			cursor = next
 		}
 		ownerNDJSON := rawRowsToNDJSON(ownerRows)
 		ownerHash := sha256.Sum256(ownerNDJSON)
@@ -344,35 +356,44 @@ func (m *Module) collectAuthOwnerRows(ctx context.Context, userID uuid.UUID, cut
 		Role: u.Role, Status: u.Status, KYCLevel: u.KYCLevel, CreatedAt: u.CreatedAt,
 	})
 
-	subRows, err := m.db.QueryContext(ctx, `
-		SELECT id, level_requested, status, provider, COALESCE(decision_reason,''), created_at, decided_at
-		FROM kyc_submissions WHERE user_id = $1 AND created_at <= $2
-		ORDER BY created_at, id`, userID, cutoff)
-	if err != nil {
-		return nil, err
-	}
-	defer subRows.Close()
-	for subRows.Next() {
-		var id uuid.UUID
-		var levelRequested int
-		var status, provider, reason string
-		var createdAt time.Time
-		var decidedAt sql.NullTime
-		if err := subRows.Scan(&id, &levelRequested, &status, &provider, &reason, &createdAt, &decidedAt); err != nil {
+	for offset := 0; ; offset += 100 {
+		subRows, err := m.db.QueryContext(ctx, `
+			SELECT id, level_requested, status, provider, COALESCE(decision_reason,''), created_at, decided_at
+			FROM kyc_submissions WHERE user_id = $1 AND created_at <= $2
+			ORDER BY created_at, id LIMIT 100 OFFSET $3`, userID, cutoff, offset)
+		if err != nil {
 			return nil, err
 		}
-		row := exportKYCSubmissionRow{
-			Type: "kyc_submission", ID: id.String(), LevelRequested: levelRequested,
-			Status: status, Provider: provider, DecisionReason: reason, CreatedAt: createdAt,
+		pageCount := 0
+		for subRows.Next() {
+			var id uuid.UUID
+			var levelRequested int
+			var status, provider, reason string
+			var createdAt time.Time
+			var decidedAt sql.NullTime
+			if err := subRows.Scan(&id, &levelRequested, &status, &provider, &reason, &createdAt, &decidedAt); err != nil {
+				subRows.Close()
+				return nil, err
+			}
+			row := exportKYCSubmissionRow{
+				Type: "kyc_submission", ID: id.String(), LevelRequested: levelRequested,
+				Status: status, Provider: provider, DecisionReason: reason, CreatedAt: createdAt,
+			}
+			if decidedAt.Valid {
+				t := decidedAt.Time
+				row.DecidedAt = &t
+			}
+			rows = append(rows, row)
+			pageCount++
 		}
-		if decidedAt.Valid {
-			t := decidedAt.Time
-			row.DecidedAt = &t
+		if err := subRows.Err(); err != nil {
+			subRows.Close()
+			return nil, err
 		}
-		rows = append(rows, row)
-	}
-	if err := subRows.Err(); err != nil {
-		return nil, err
+		subRows.Close()
+		if pageCount < 100 {
+			break
+		}
 	}
 	return rows, nil
 }
@@ -392,7 +413,7 @@ func (m *Module) ExpireOneStaleExport(ctx context.Context) error {
 	err := m.db.WithTx(ctx, nil, func(tx *sql.Tx) error {
 		err := tx.QueryRowContext(ctx, `
 			SELECT id, object_key, requested_at FROM privacy_requests
-			WHERE status = 'ready' AND downloaded_at IS NULL AND expires_at < now()
+			WHERE request_type = 'export' AND status = 'ready' AND downloaded_at IS NULL AND expires_at < now()
 			ORDER BY expires_at
 			LIMIT 1
 			FOR UPDATE SKIP LOCKED`).Scan(&id, &objectKey, &requestedAt)

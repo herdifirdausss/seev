@@ -83,7 +83,7 @@ type Module struct {
 // NewModule wires the payin module. Vendor and gateway selection comes
 // from the routing repository; topupTTL <=0 defaults to 24h. fraudClient
 // may be nil to disable pre-posting fraud screening entirely. ring is
-// REQUIRED — docs/roadmap/active/51-a8-data-lifecycle-privacy.md "A8 T2.5b"
+// REQUIRED — docs/roadmap/archive/51-a8-data-lifecycle-privacy.md "A8 T2.5b"
 // (the contract migration) removed payin_webhook_events.raw's plaintext
 // fallback, so there is no longer a valid "cryptox unconfigured" mode to
 // construct; repository.NewRepository itself panics on a nil ring as the

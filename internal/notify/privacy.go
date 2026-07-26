@@ -1,4 +1,4 @@
-// Package notify's own owner-side of docs/roadmap/active/51-a8-data-lifecycle-privacy.md T4b/T5b
+// Package notify's own owner-side of docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T4b/T5b
 // (K9, K10, K11) — this is K11's own "Gateway" row (gateway has no
 // internal/gateway package of its own; notify is the module that owns
 // notif_notifications, the table K11 means). Mirrors internal/payin's
@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/herdifirdausss/seev/pkg/privacyexport"
 )
 
 // PrivacyPrepareClosure: notifications are a read-log of already-posted
@@ -72,11 +74,27 @@ type privacyExportNotificationRow struct {
 
 // PrivacyExportRows returns the subject's own notifications as of cutoff.
 func (m *Module) PrivacyExportRows(ctx context.Context, subjectID uuid.UUID, cutoff time.Time) ([]json.RawMessage, error) {
+	var all []json.RawMessage
+	for offset := 0; ; {
+		page, next, err := m.PrivacyExportPage(ctx, subjectID, cutoff, offset, privacyexport.DefaultPageSize)
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, page...)
+		if next == "" {
+			return all, nil
+		}
+		offset += len(page)
+	}
+}
+
+func (m *Module) PrivacyExportPage(ctx context.Context, subjectID uuid.UUID, cutoff time.Time, offset, pageSize int) ([]json.RawMessage, string, error) {
 	rows, err := m.db.QueryContext(ctx, `
 		SELECT id, type, title, body, read_at, created_at FROM notif_notifications
-		WHERE user_id = $1 AND created_at <= $2 ORDER BY created_at, id`, subjectID, cutoff)
+		WHERE user_id = $1 AND created_at <= $2 ORDER BY created_at, id
+		LIMIT $3 OFFSET $4`, subjectID, cutoff, pageSize+1, offset)
 	if err != nil {
-		return nil, fmt.Errorf("notify export: notifications: %w", err)
+		return nil, "", fmt.Errorf("notify export: notifications: %w", err)
 	}
 	defer rows.Close()
 
@@ -86,17 +104,21 @@ func (m *Module) PrivacyExportRows(ctx context.Context, subjectID uuid.UUID, cut
 		row.Type = "notification"
 		var readAt *time.Time
 		if err := rows.Scan(&row.ID, &row.NotifType, &row.Title, &row.Body, &readAt, &row.CreatedAt); err != nil {
-			return nil, fmt.Errorf("notify export: scan notifications: %w", err)
+			return nil, "", fmt.Errorf("notify export: scan notifications: %w", err)
 		}
 		row.ReadAt = readAt
 		encoded, err := json.Marshal(row)
 		if err != nil {
-			return nil, fmt.Errorf("notify export: encode notification: %w", err)
+			return nil, "", fmt.Errorf("notify export: encode notification: %w", err)
 		}
 		out = append(out, encoded)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("notify export: iterate notifications: %w", err)
+		return nil, "", fmt.Errorf("notify export: iterate notifications: %w", err)
 	}
-	return out, nil
+	hasMore := len(out) > pageSize
+	if hasMore {
+		out = out[:pageSize]
+	}
+	return out, privacyexport.Next(offset, len(out), hasMore), nil
 }

@@ -32,7 +32,7 @@ When a trigger is met:
 | A5 | Admin console | H1 | Manual operations become painful or BFF learning is desired | Complete via [47](archive/47-a5-admin-console.md) |
 | A6 | Internal security and service identity | H1 | After MVP; mandatory before B2B | Complete via [49](archive/49-a6-internal-security.md) |
 | A7 | Backup, PITR, and disaster recovery | H1 | Any time after MVP | Complete via [50](archive/50-a7-backup-pitr-disaster-recovery.md) |
-| A8 | Data lifecycle and privacy | H1 | After MVP; quote cleanup can start earlier | Core complete via [51](active/51-a8-data-lifecycle-privacy.md) — T2.5b/T4b/T5b/T6b follow-ups tracked |
+| A8 | Data lifecycle and privacy | H1 | After MVP; quote cleanup can start earlier | Complete via [51](archive/51-a8-data-lifecycle-privacy.md) |
 | A9 | API contracts and schema evolution | H1 | First silent consumer-breaking payload change; mandatory before B2B | Planned via [52](active/52-a9-api-contracts-schema-evolution.md) |
 | A10 | Product assurance and emergency intake control | H1 | Prove consistency across payin, payout, and ledger | Complete via [48](archive/48-a10-product-assurance.md) |
 | B0 | Load harness and capacity model | H2 gate | Before any measured scale work | Planned via [53](active/53-b0-load-capacity-gate.md) |
@@ -83,7 +83,7 @@ Automate backups, point-in-time restore, integrity verification, cross-database 
 
 ### A8 — Data lifecycle and privacy
 
-Define retention by table, purge expired fee quotes and privacy-sensitive idempotency data, protect sensitive auth/KYC fields, provide user exports, and pseudonymize user references without modifying immutable ledger entries. Formal legal GDPR certification is out of scope. Execution is defined in [plan 51](active/51-a8-data-lifecycle-privacy.md).
+Define retention by table, purge expired fee quotes and privacy-sensitive idempotency data, protect sensitive auth/KYC fields, provide user exports, and pseudonymize user references without modifying immutable ledger entries. Formal legal GDPR certification is out of scope. Execution is recorded in [plan 51](archive/51-a8-data-lifecycle-privacy.md).
 
 ### A9 — Contracts and schema evolution
 

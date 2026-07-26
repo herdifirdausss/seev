@@ -1,6 +1,6 @@
 //go:build integration
 
-// Proves docs/roadmap/active/51-a8-data-lifecycle-privacy.md T1.7's gateway.notifications
+// Proves docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T1.7's gateway.notifications
 // classes end to end against a real Postgres: eligibility boundary (read
 // notifications need read_at set and 180d old; the .any backstop only
 // needs 365d old regardless of read_at), dry-run parity, retention-hold

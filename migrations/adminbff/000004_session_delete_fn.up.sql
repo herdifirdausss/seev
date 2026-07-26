@@ -5,7 +5,7 @@
 -- "permission denied for table sessions" on every real deployment path and
 -- discarded the error, so a session row silently outlived every logout.
 --
--- Rather than widen the blanket DELETE grant (docs/roadmap/active/51-a8-data-lifecycle-privacy.md
+-- Rather than widen the blanket DELETE grant (docs/roadmap/archive/51-a8-data-lifecycle-privacy.md
 -- K4 establishes narrowly scoped SECURITY DEFINER functions as the intended
 -- pattern for this repo), add a single-purpose function that deletes exactly
 -- one session by id. It does not accept arbitrary SQL or unbounded criteria.

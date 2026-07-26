@@ -1,6 +1,6 @@
 //go:build integration
 
-// Proves docs/roadmap/active/51-a8-data-lifecycle-privacy.md T2.6's
+// Proves docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T2.6's
 // fn_retention_purge_webhook_events_raw end to end against a real
 // Postgres: eligibility boundary (terminal status + 30 days), redaction
 // clears BOTH the plaintext `raw` column and the ciphertext/key_version

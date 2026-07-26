@@ -1,6 +1,6 @@
 package cryptox
 
-// docs/roadmap/active/51-a8-data-lifecycle-privacy.md K2's "key metrics" / K13's low-cardinality
+// docs/roadmap/archive/51-a8-data-lifecycle-privacy.md K2's "key metrics" / K13's low-cardinality
 // convention: key_version is a small, bounded, operator-assigned integer
 // (never a table primary key, row ID, or any value derived from
 // plaintext) — safe as a label the same way owner/class/action already

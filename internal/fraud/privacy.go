@@ -1,4 +1,4 @@
-// Package fraud's own owner-side of docs/roadmap/active/51-a8-data-lifecycle-privacy.md T4b/T5b
+// Package fraud's own owner-side of docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T4b/T5b
 // (K9, K10, K11) — mirrors internal/payin's own privacy.go shape.
 package fraud
 
@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/herdifirdausss/seev/pkg/privacyexport"
 )
 
 // PrivacyPrepareClosure: screening_events are purely historical (a
@@ -72,11 +74,27 @@ type privacyExportScreeningEventRow struct {
 
 // PrivacyExportRows returns the subject's own screening events as of cutoff.
 func (m *Module) PrivacyExportRows(ctx context.Context, subjectID uuid.UUID, cutoff time.Time) ([]json.RawMessage, error) {
+	var all []json.RawMessage
+	for offset := 0; ; {
+		page, next, err := m.PrivacyExportPage(ctx, subjectID, cutoff, offset, privacyexport.DefaultPageSize)
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, page...)
+		if next == "" {
+			return all, nil
+		}
+		offset += len(page)
+	}
+}
+
+func (m *Module) PrivacyExportPage(ctx context.Context, subjectID uuid.UUID, cutoff time.Time, offset, pageSize int) ([]json.RawMessage, string, error) {
 	rows, err := m.db.QueryContext(ctx, `
 		SELECT id, tx_type, amount, currency, verdict, reason, created_at FROM screening_events
-		WHERE user_id = $1 AND created_at <= $2 ORDER BY created_at, id`, subjectID, cutoff)
+		WHERE user_id = $1 AND created_at <= $2 ORDER BY created_at, id
+		LIMIT $3 OFFSET $4`, subjectID, cutoff, pageSize+1, offset)
 	if err != nil {
-		return nil, fmt.Errorf("fraud export: screening_events: %w", err)
+		return nil, "", fmt.Errorf("fraud export: screening_events: %w", err)
 	}
 	defer rows.Close()
 
@@ -85,16 +103,20 @@ func (m *Module) PrivacyExportRows(ctx context.Context, subjectID uuid.UUID, cut
 		var row privacyExportScreeningEventRow
 		row.Type = "screening_event"
 		if err := rows.Scan(&row.ID, &row.TxType, &row.Amount, &row.Currency, &row.Verdict, &row.Reason, &row.CreatedAt); err != nil {
-			return nil, fmt.Errorf("fraud export: scan screening_events: %w", err)
+			return nil, "", fmt.Errorf("fraud export: scan screening_events: %w", err)
 		}
 		encoded, err := json.Marshal(row)
 		if err != nil {
-			return nil, fmt.Errorf("fraud export: encode screening_event: %w", err)
+			return nil, "", fmt.Errorf("fraud export: encode screening_event: %w", err)
 		}
 		out = append(out, encoded)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("fraud export: iterate screening_events: %w", err)
+		return nil, "", fmt.Errorf("fraud export: iterate screening_events: %w", err)
 	}
-	return out, nil
+	hasMore := len(out) > pageSize
+	if hasMore {
+		out = out[:pageSize]
+	}
+	return out, privacyexport.Next(offset, len(out), hasMore), nil
 }

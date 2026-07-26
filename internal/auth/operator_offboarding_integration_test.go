@@ -1,6 +1,6 @@
 //go:build integration
 
-// Proves docs/roadmap/active/51-a8-data-lifecycle-privacy.md T5's own work
+// Proves docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T5's own work
 // item 2 (K10, A8 T5b): admin/operator accounts cannot use self-service
 // closure (already proven by TestClosure_RequestClosure_AdminRejected) but
 // CAN be closed through this separate maker/checker-approved path — and

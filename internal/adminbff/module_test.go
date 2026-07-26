@@ -11,8 +11,20 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herdifirdausss/seev/internal/config"
+	"github.com/herdifirdausss/seev/pkg/cryptox"
 	"github.com/herdifirdausss/seev/pkg/database"
 )
+
+func moduleTestRing(t *testing.T) *cryptox.Ring {
+	t.Helper()
+	key := make([]byte, 32)
+	for i := range key {
+		key[i] = byte(i + 61)
+	}
+	ring, err := cryptox.NewRing(map[int][]byte{1: key}, 1)
+	require.NoError(t, err)
+	return ring
+}
 
 type sessionRepoFake struct {
 	sessions map[string]Session
@@ -68,7 +80,7 @@ func TestLoginAcceptsOnlyAdminRoles(t *testing.T) {
 	defer authServer.Close()
 
 	db := &database.MockDatabaseSQL{}
-	m := NewModule(db, config.AdminBFFConfig{AuthServiceURL: authServer.URL, SecureCookie: false, SessionIdleTTL: 30 * time.Minute, SessionAbsoluteTTL: 8 * time.Hour, JWTSecret: "secret"}, nil, nil)
+	m := NewModule(db, config.AdminBFFConfig{AuthServiceURL: authServer.URL, SecureCookie: false, SessionIdleTTL: 30 * time.Minute, SessionAbsoluteTTL: 8 * time.Hour, JWTSecret: "secret"}, nil, nil, moduleTestRing(t))
 	fake := &sessionRepoFake{}
 	m.repo = fake
 	req := httptest.NewRequest(http.MethodPost, "/login", nil)

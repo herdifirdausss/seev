@@ -1,6 +1,6 @@
 //go:build integration
 
-// Proves docs/roadmap/active/51-a8-data-lifecycle-privacy.md T2.6's
+// Proves docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T2.6's
 // fn_retention_purge_recon_batches and fn_retention_purge_recon_items end
 // to end against a real Postgres: eligibility boundary (terminal status +
 // 90 days), recon_items' eligibility being driven by its PARENT
@@ -26,9 +26,9 @@ func TestRetention_ReconBatches_EligibilityBoundary(t *testing.T) {
 	insert := func(status string, createdAt time.Time) uuid.UUID {
 		id := uuid.New()
 		_, err := db.ExecContext(ctx, `
-			INSERT INTO recon_batches (id, gateway, report_date, source_filename, row_count, status, created_by, created_at,
+			INSERT INTO recon_batches (id, gateway, report_date, row_count, status, created_by, created_at,
 				source_filename_ciphertext, source_filename_key_version)
-			VALUES ($1, 'mockgateway', $2, 'settlement.csv', 1, $3, 'test', $4, $5, 1)`,
+			VALUES ($1, 'mockgateway', $2, 1, $3, 'test', $4, $5, 1)`,
 			id, createdAt, status, createdAt, []byte("ciphertext-stand-in"))
 		require.NoError(t, err)
 		return id
@@ -48,14 +48,11 @@ func TestRetention_ReconBatches_EligibilityBoundary(t *testing.T) {
 	require.Equal(t, dryRunCount, realCount)
 
 	assertRedacted := func(id uuid.UUID, wantRedacted bool) {
-		var sourceFilename string
 		var ciphertext []byte
-		require.NoError(t, db.QueryRowContext(ctx, `SELECT source_filename, source_filename_ciphertext FROM recon_batches WHERE id = $1`, id).Scan(&sourceFilename, &ciphertext))
+		require.NoError(t, db.QueryRowContext(ctx, `SELECT source_filename_ciphertext FROM recon_batches WHERE id = $1`, id).Scan(&ciphertext))
 		if wantRedacted {
-			require.Equal(t, "REDACTED", sourceFilename)
 			require.Nil(t, ciphertext)
 		} else {
-			require.Equal(t, "settlement.csv", sourceFilename)
 			require.NotNil(t, ciphertext)
 		}
 	}
@@ -75,8 +72,8 @@ func TestRetention_ReconBatches_RetentionHoldExcludesRow(t *testing.T) {
 	id := uuid.New()
 	createdAt := time.Now().UTC().Add(-91 * 24 * time.Hour)
 	_, err := db.ExecContext(ctx, `
-		INSERT INTO recon_batches (id, gateway, report_date, source_filename, row_count, status, created_by, created_at, source_filename_ciphertext, source_filename_key_version)
-		VALUES ($1, 'mockgateway', $2, 'settlement.csv', 1, 'completed', 'test', $3, $4, 1)`,
+		INSERT INTO recon_batches (id, gateway, report_date, row_count, status, created_by, created_at, source_filename_ciphertext, source_filename_key_version)
+		VALUES ($1, 'mockgateway', $2, 1, 'completed', 'test', $3, $4, 1)`,
 		id, createdAt, createdAt, []byte("ciphertext-stand-in"))
 	require.NoError(t, err)
 
@@ -99,8 +96,8 @@ func TestRetention_ReconItems_EligibilityFollowsParentBatch(t *testing.T) {
 	insertBatch := func(status string, createdAt time.Time) uuid.UUID {
 		id := uuid.New()
 		_, err := db.ExecContext(ctx, `
-			INSERT INTO recon_batches (id, gateway, report_date, source_filename, row_count, status, created_by, created_at)
-			VALUES ($1, 'mockgateway', $2, 'settlement.csv', 1, $3, 'test', $4)`,
+			INSERT INTO recon_batches (id, gateway, report_date, row_count, status, created_by, created_at)
+			VALUES ($1, 'mockgateway', $2, 1, $3, 'test', $4)`,
 			id, createdAt, status, createdAt)
 		require.NoError(t, err)
 		return id
@@ -108,8 +105,8 @@ func TestRetention_ReconItems_EligibilityFollowsParentBatch(t *testing.T) {
 	insertItem := func(batchID uuid.UUID) uuid.UUID {
 		id := uuid.New()
 		_, err := db.ExecContext(ctx, `
-			INSERT INTO recon_items (id, batch_id, external_ref, amount, raw, match_status, created_at, raw_ciphertext, raw_key_version)
-			VALUES ($1, $2, 'ext-1', 500, '{"secret":"x"}'::jsonb, 'matched', now(), $3, 1)`,
+			INSERT INTO recon_items (id, batch_id, external_ref, amount, match_status, created_at, raw_ciphertext, raw_key_version)
+			VALUES ($1, $2, 'ext-1', 500, 'matched', now(), $3, 1)`,
 			id, batchID, []byte("ciphertext-stand-in"))
 		require.NoError(t, err)
 		return id
@@ -133,14 +130,11 @@ func TestRetention_ReconItems_EligibilityFollowsParentBatch(t *testing.T) {
 	require.Equal(t, dryRunCount, realCount)
 
 	assertRedacted := func(id uuid.UUID, wantRedacted bool) {
-		var raw []byte
 		var ciphertext []byte
-		require.NoError(t, db.QueryRowContext(ctx, `SELECT raw, raw_ciphertext FROM recon_items WHERE id = $1`, id).Scan(&raw, &ciphertext))
+		require.NoError(t, db.QueryRowContext(ctx, `SELECT raw_ciphertext FROM recon_items WHERE id = $1`, id).Scan(&ciphertext))
 		if wantRedacted {
-			require.Nil(t, raw)
 			require.Nil(t, ciphertext)
 		} else {
-			require.JSONEq(t, `{"secret":"x"}`, string(raw))
 			require.NotNil(t, ciphertext)
 		}
 	}

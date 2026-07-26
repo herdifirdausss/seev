@@ -1,4 +1,4 @@
--- docs/roadmap/active/51-a8-data-lifecycle-privacy.md T5b (K10, K11): screening_events only
+-- docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T5b (K10, K11): screening_events only
 -- grants app_service SELECT+INSERT (000001) — deliberately no UPDATE,
 -- since this table is meant to stay append-only historical audit. Rather
 -- than widen that grant for one narrow use case, this is a SECURITY

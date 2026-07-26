@@ -1,4 +1,4 @@
--- docs/roadmap/active/51-a8-data-lifecycle-privacy.md T3 (K7): idempotency-key digest
+-- docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T3 (K7): idempotency-key digest
 -- tombstone. idempotency_key_digest is a keyed HMAC-SHA256 over a
 -- canonical, length-delimited (scope, key) value (pkg/cryptox.DigestRing) —
 -- unlike idempotency_key/idempotency_scope themselves (raw, purgeable

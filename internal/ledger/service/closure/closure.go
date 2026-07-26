@@ -1,4 +1,4 @@
-// Package closure implements ledger's own owner-side of docs/roadmap/active/51-a8-data-lifecycle-privacy.md
+// Package closure implements ledger's own owner-side of docs/roadmap/archive/51-a8-data-lifecycle-privacy.md
 // T5's (K10, K11) account-closure/pseudonymization saga: "Ledger: account
 // owner... references; no entry mutation." Deliberately does not touch
 // ledger_entries/ledger_transactions at all — those stay byte-for-byte
@@ -17,6 +17,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/herdifirdausss/seev/pkg/database"
+	"github.com/herdifirdausss/seev/pkg/privacyexport"
 )
 
 type Service struct {
@@ -150,6 +151,21 @@ type exportTransactionRow struct {
 // transaction header is already the user-facing summary) for every
 // transaction touching an account the subject owns, as of cutoff.
 func (s *Service) Export(ctx context.Context, subjectID uuid.UUID, cutoff time.Time) ([]json.RawMessage, error) {
+	var all []json.RawMessage
+	for offset := 0; ; {
+		page, next, err := s.ExportPage(ctx, subjectID, cutoff, offset, privacyexport.DefaultPageSize)
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, page...)
+		if next == "" {
+			return all, nil
+		}
+		offset += len(page)
+	}
+}
+
+func (s *Service) ExportPage(ctx context.Context, subjectID uuid.UUID, cutoff time.Time, offset, pageSize int) ([]json.RawMessage, string, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT DISTINCT t.id, t.type, t.status, t.amount, t.currency, t.created_at
 		FROM ledger_transactions t
@@ -157,9 +173,9 @@ func (s *Service) Export(ctx context.Context, subjectID uuid.UUID, cutoff time.T
 			t.source_account_id IN (SELECT id FROM accounts WHERE owner_id = $1 AND owner_type = 'user') OR
 			t.destination_account_id IN (SELECT id FROM accounts WHERE owner_id = $1 AND owner_type = 'user')
 		)
-		ORDER BY t.created_at, t.id`, subjectID, cutoff)
+		ORDER BY t.created_at, t.id LIMIT $3 OFFSET $4`, subjectID, cutoff, pageSize+1, offset)
 	if err != nil {
-		return nil, fmt.Errorf("ledger export: transactions: %w", err)
+		return nil, "", fmt.Errorf("ledger export: transactions: %w", err)
 	}
 	defer rows.Close()
 
@@ -168,16 +184,20 @@ func (s *Service) Export(ctx context.Context, subjectID uuid.UUID, cutoff time.T
 		var row exportTransactionRow
 		row.Type = "ledger_transaction"
 		if err := rows.Scan(&row.ID, &row.TxType, &row.Status, &row.Amount, &row.Currency, &row.CreatedAt); err != nil {
-			return nil, fmt.Errorf("ledger export: scan transactions: %w", err)
+			return nil, "", fmt.Errorf("ledger export: scan transactions: %w", err)
 		}
 		encoded, err := json.Marshal(row)
 		if err != nil {
-			return nil, fmt.Errorf("ledger export: encode transaction: %w", err)
+			return nil, "", fmt.Errorf("ledger export: encode transaction: %w", err)
 		}
 		out = append(out, encoded)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("ledger export: iterate transactions: %w", err)
+		return nil, "", fmt.Errorf("ledger export: iterate transactions: %w", err)
 	}
-	return out, nil
+	hasMore := len(out) > pageSize
+	if hasMore {
+		out = out[:pageSize]
+	}
+	return out, privacyexport.Next(offset, len(out), hasMore), nil
 }

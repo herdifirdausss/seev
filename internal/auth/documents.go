@@ -23,7 +23,7 @@ type DocumentStore interface {
 	Put(context.Context, string, []byte, string) error
 	Get(context.Context, string) ([]byte, error)
 	// Delete must be idempotent: deleting an already-absent key is
-	// success, not an error (docs/roadmap/active/51-a8-data-lifecycle-privacy.md K6 —
+	// success, not an error (docs/roadmap/archive/51-a8-data-lifecycle-privacy.md K6 —
 	// pkg/objectoutbox.Worker relies on this for safe retry after a
 	// partial failure).
 	Delete(context.Context, string) error
@@ -35,7 +35,7 @@ type DocumentStore interface {
 func (m *Module) SetDocumentStore(store DocumentStore) { m.documentStore = store }
 
 // SetDocumentKeyRing wires the pkg/cryptox.Ring KYC document encryption
-// uses (docs/roadmap/active/51-a8-data-lifecycle-privacy.md T2.2 — cmd/auth-service/main.go
+// uses (docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T2.2 — cmd/auth-service/main.go
 // constructs this from cfg.Cryptox.Ring(), backed by CRYPTOX_KEY_V1_FILE/
 // CRYPTOX_KEY_CURRENT_VERSION). A nil ring disables document encryption
 // (UploadKYCDocument/DownloadKYCDocument return ErrDocumentStorageUnavailable),

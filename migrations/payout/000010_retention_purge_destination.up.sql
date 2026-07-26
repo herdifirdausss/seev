@@ -1,4 +1,4 @@
--- docs/roadmap/active/51-a8-data-lifecycle-privacy.md T2.6: SECURITY DEFINER redact
+-- docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T2.6: SECURITY DEFINER redact
 -- function for payout.requests.destination_and_error (config/data-retention.yaml)
 -- — same "declared in T0, implemented here" gap and "redact ciphertext
 -- without decrypting" reasoning as payin's own fn_retention_purge_webhook_events_raw

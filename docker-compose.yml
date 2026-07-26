@@ -17,6 +17,14 @@ x-cert-volume: &cert-volume
   - ./deploy/certs:/certs:ro
 
 services:
+  object-store-init:
+    profiles: ["app"]
+    image: busybox:1.37
+    command: ["sh", "-c", "chown 65532:65532 /objects && chmod 700 /objects"]
+    volumes:
+      - seev_object_store:/objects
+    restart: "no"
+
   postgres:
     image: seev/postgres-backup:${SEEV_IMAGE_TAG:-dev}
     build:
@@ -323,6 +331,10 @@ services:
       # ledger's internal ClosureRouter — the internal (:8091-class) port,
       # deliberately NOT LEDGER_USER_API_URL's public :8090.
       LEDGER_INTERNAL_API_URL: https://ledger-service:8091
+      PAYIN_INTERNAL_API_URL: https://payin-service:8092
+      PAYOUT_INTERNAL_API_URL: https://payout-service:8093
+      FRAUD_INTERNAL_API_URL: https://fraud-service:8094
+      GATEWAY_INTERNAL_API_URL: https://gateway:8081
       FRAUD_GRPC_ADDR: fraud-service:9094
       INTERNAL_GRPC_TOKEN: ${INTERNAL_GRPC_TOKEN:-change-me-to-a-random-32-plus-character-token}
       TLS_CERT_DIR: /certs
@@ -340,12 +352,15 @@ services:
       # scripts/privacy-export.sh and scripts/privacy-e2e.sh.
       EXPORT_KEK_V1_FILE: /run/secrets/export_kek_v1
       CLOSURE_KEK_V1_FILE: /run/secrets/closure_kek_v1
+      OBJECT_STORE_DIR: /var/lib/seev-objects
     secrets:
       - cryptox_key_v1
       - cryptox_lookup_key
       - export_kek_v1
       - closure_kek_v1
-    volumes: *cert-volume
+    volumes:
+      - ./deploy/certs:/certs:ro
+      - seev_object_store:/var/lib/seev-objects
     ports:
       - "127.0.0.1:8082:8082"
       - "127.0.0.1:8083:8083"
@@ -356,6 +371,8 @@ services:
         condition: service_healthy
       ledger-service:
         condition: service_healthy
+      object-store-init:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "/app/service", "-healthcheck"]
       interval: 5s
@@ -963,3 +980,4 @@ volumes:
   seev_loki_data:
   seev_tempo_data:
   seev_alloy_data:
+  seev_object_store:

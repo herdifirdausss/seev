@@ -96,7 +96,7 @@ type Module struct {
 	documentStore DocumentStore
 	documentRing  *cryptox.Ring
 	exportRing    *cryptox.Ring
-	// closureRing/closureOwners back docs/roadmap/active/51-a8-data-lifecycle-privacy.md T5's
+	// closureRing/closureOwners back docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T5's
 	// (K10) account-closure saga — both optional/nil-safe like exportRing
 	// above (RequestClosure returns ErrClosureUnavailable until the ring
 	// and at least one owner are wired), never required at NewModule
@@ -118,7 +118,7 @@ func (m *Module) SetSanctionsChecker(checker interface {
 }
 
 // NewModule wires the auth module. ring/lookup are REQUIRED —
-// docs/roadmap/active/51-a8-data-lifecycle-privacy.md "A8 T2.5b" (the
+// docs/roadmap/archive/51-a8-data-lifecycle-privacy.md "A8 T2.5b" (the
 // contract migration) removed the plaintext fallback for
 // auth_users.email/full_name and kyc_submissions.payload, so there is no
 // longer a valid "cryptox unconfigured" mode to construct: the caller
@@ -305,7 +305,7 @@ func (m *Module) Me(ctx context.Context, userID uuid.UUID) (User, error) {
 	if err != nil {
 		return User{}, err
 	}
-	// docs/roadmap/active/51-a8-data-lifecycle-privacy.md T5 (K10): a still-valid (unexpired)
+	// docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T5 (K10): a still-valid (unexpired)
 	// access token issued before closure would otherwise keep working here
 	// — Login/Refresh already reject on status, but a live access token
 	// never round-trips through either of those, so this route needs its

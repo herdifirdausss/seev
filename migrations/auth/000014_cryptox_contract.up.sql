@@ -1,4 +1,4 @@
--- docs/roadmap/active/51-a8-data-lifecycle-privacy.md T2.5's own follow-up
+-- docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T2.5's own follow-up
 -- "A8 T2.5b" (contract migration): the expand-phase backfill
 -- (migrations/auth/000010_cryptox_expand.up.sql) has had its bake period —
 -- every auth_users/kyc_submissions row now carries ciphertext. This

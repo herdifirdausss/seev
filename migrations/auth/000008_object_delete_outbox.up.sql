@@ -1,4 +1,4 @@
--- docs/roadmap/active/51-a8-data-lifecycle-privacy.md T1.6 (K6): a generic
+-- docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T1.6 (K6): a generic
 -- object-delete outbox, ahead of any real KYC/export object cleanup policy
 -- (T2/T4 own that). K6: "Object deletion uses an outbox: first persist a
 -- delete intent, then delete the encrypted object idempotently, then mark

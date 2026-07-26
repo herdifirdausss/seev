@@ -7,10 +7,11 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/herdifirdausss/seev/pkg/privacyexport"
 	"github.com/herdifirdausss/seev/pkg/response"
 )
 
-// PrivacyRouter returns docs/roadmap/active/51-a8-data-lifecycle-privacy.md T4b/T5b's own
+// PrivacyRouter returns docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T4b/T5b's own
 // export + closure endpoints — mirrors internal/payin's own PrivacyRouter.
 // Unlike every other owner (which mount this directly on their own
 // AdminRouter-adjacent listener), gateway has no admin surface of its own
@@ -34,12 +35,17 @@ func (m *Module) handlePrivacyExport(w http.ResponseWriter, r *http.Request) {
 		response.BadRequest(w, "invalid or missing cutoff")
 		return
 	}
-	rows, err := m.PrivacyExportRows(r.Context(), subjectID, cutoff)
+	offset, pageSize, err := privacyexport.Parse(r.URL.Query())
+	if err != nil {
+		response.BadRequest(w, err.Error())
+		return
+	}
+	rows, next, err := m.PrivacyExportPage(r.Context(), subjectID, cutoff, offset, pageSize)
 	if err != nil {
 		response.InternalServerError(w, err)
 		return
 	}
-	response.OK(w, map[string]any{"rows": rows})
+	response.OK(w, map[string]any{"rows": rows, "next_cursor": next})
 }
 
 type closurePrepareRequest struct {

@@ -7,7 +7,7 @@ import (
 	"github.com/herdifirdausss/seev/pkg/cryptox"
 )
 
-// ExportConfig is docs/roadmap/active/51-a8-data-lifecycle-privacy.md T4's (K9) dedicated,
+// ExportConfig is docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T4's (K9) dedicated,
 // versioned KEK for user-export ZIP archives — same shape as CryptoxConfig
 // (current version + version->hex-key map), but its own key namespace.
 // Owned by auth-service only (the export coordinator); unlike

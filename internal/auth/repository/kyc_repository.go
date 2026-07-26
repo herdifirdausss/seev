@@ -44,7 +44,6 @@ type KYCRepository interface {
 	DowngradeKYCLevel(ctx context.Context, userID uuid.UUID, level int, decidedBy, reason string, applyTier func(context.Context, uuid.UUID, int) error) error
 	CreateKYCDocument(context.Context, model.KYCDocument) error
 	GetKYCDocument(context.Context, uuid.UUID) (model.KYCDocument, error)
-
 }
 
 type kycRepo struct {
@@ -52,7 +51,7 @@ type kycRepo struct {
 	ring *cryptox.Ring
 }
 
-// NewKYCRepository's ring is REQUIRED — docs/roadmap/active/51-a8-data-lifecycle-privacy.md
+// NewKYCRepository's ring is REQUIRED — docs/roadmap/archive/51-a8-data-lifecycle-privacy.md
 // "A8 T2.5b" (the contract migration): kyc_submissions.payload has no
 // plaintext column anymore (migrations/auth/000014_cryptox_contract), so
 // every read/write here needs the ring to function at all. No separate
@@ -69,7 +68,7 @@ func payloadAAD(submissionID uuid.UUID) cryptox.AAD {
 }
 
 // extractRescreenFields mirrors the exact SQL this replaced —
-// COALESCE(NULLIF(payload->>'name',''), NULLIF(payload->>'full_name',''))
+// COALESCE(NULLIF(payload->>'name',”), NULLIF(payload->>'full_name',”))
 // and payload->>'birth_date' — so ListKYCRescreenSubjects's own filter
 // semantics (a submission with neither field is not rescreen-eligible)
 // carry over unchanged; only the fields' storage moved from a live JSONB
@@ -127,7 +126,7 @@ func (r *kycRepo) CreateKYCSubmission(ctx context.Context, s model.KYCSubmission
 	if err != nil {
 		return fmt.Errorf("auth: encode kyc payload: %w", err)
 	}
-	rescreenName, rescreenBirthDate := extractRescreenFields(s.Payload)
+	rescreenName, _ := extractRescreenFields(s.Payload)
 
 	payloadCiphertext, err := r.ring.Seal(payloadAAD(s.ID), payload)
 	if err != nil {
@@ -137,10 +136,10 @@ func (r *kycRepo) CreateKYCSubmission(ctx context.Context, s model.KYCSubmission
 
 	_, err = r.db.ExecContext(ctx, `
 		INSERT INTO kyc_submissions (id, user_id, level_requested, status, provider,
-			payload_ciphertext, payload_key_version, rescreen_name, rescreen_birth_date)
-		VALUES ($1, $2, $3, 'pending', $4, $5, $6, $7, $8)`,
+			payload_ciphertext, payload_key_version, rescreen_eligible)
+		VALUES ($1, $2, $3, 'pending', $4, $5, $6, $7)`,
 		s.ID, s.UserID, s.LevelRequested, s.Provider,
-		payloadCiphertext, v, rescreenName, rescreenBirthDate)
+		payloadCiphertext, v, rescreenName != nil)
 	if err != nil {
 		if generalerror.IsDuplicateKey(err) {
 			return ErrKYCSubmissionNotPending
@@ -180,20 +179,18 @@ func (r *kycRepo) ListKYCSubmissions(ctx context.Context, status string) ([]mode
 
 // ListKYCRescreenSubjects returns the latest approved subject projection per
 // user. Only the fields required by the sanctions rule are selected; the
-// original KYC payload remains inside auth-service. docs/roadmap/active/51 T2.3:
-// reads rescreen_name/rescreen_birth_date (populated at CreateKYCSubmission
-// time from the same payload, see extractRescreenFields) instead of a
-// live payload->>'...' JSONB path query — payload itself is now
-// encrypted and can no longer be queried that way.
+// original KYC payload remains inside auth-service. The database exposes
+// only a non-sensitive rescreen_eligible boolean; name and birth date are
+// decrypted from payload_ciphertext inside this repository.
 func (r *kycRepo) ListKYCRescreenSubjects(ctx context.Context, limit int) ([]model.KYCRescreenSubject, error) {
 	if limit <= 0 {
 		limit = 100
 	}
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT DISTINCT ON (user_id) user_id, rescreen_name, COALESCE(rescreen_birth_date, '')
+		SELECT DISTINCT ON (user_id) id,user_id,payload_ciphertext
 		FROM kyc_submissions
 		WHERE status = 'approved'
-		  AND rescreen_name IS NOT NULL
+		  AND rescreen_eligible
 		ORDER BY user_id, decided_at DESC NULLS LAST, created_at DESC, id DESC
 		LIMIT $1`, limit)
 	if err != nil {
@@ -202,10 +199,26 @@ func (r *kycRepo) ListKYCRescreenSubjects(ctx context.Context, limit int) ([]mod
 	defer rows.Close()
 	var subjects []model.KYCRescreenSubject
 	for rows.Next() {
+		var submissionID uuid.UUID
 		var subject model.KYCRescreenSubject
-		if err := rows.Scan(&subject.UserID, &subject.Name, &subject.BirthDate); err != nil {
+		var ciphertext []byte
+		if err := rows.Scan(&submissionID, &subject.UserID, &ciphertext); err != nil {
 			return nil, fmt.Errorf("auth: scan kyc rescreen subject: %w", err)
 		}
+		payloadJSON, err := r.ring.Open(payloadAAD(submissionID), ciphertext)
+		if err != nil {
+			return nil, fmt.Errorf("auth: decrypt kyc rescreen payload: %w", err)
+		}
+		var payload map[string]any
+		if err := json.Unmarshal(payloadJSON, &payload); err != nil {
+			return nil, fmt.Errorf("auth: decode kyc rescreen payload: %w", err)
+		}
+		name, birthDate := extractRescreenFields(payload)
+		if name == nil {
+			return nil, errors.New("auth: rescreen-eligible payload has no name")
+		}
+		subject.Name = *name
+		subject.BirthDate = birthDate
 		subjects = append(subjects, subject)
 	}
 	if err := rows.Err(); err != nil {

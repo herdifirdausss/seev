@@ -1,4 +1,4 @@
--- docs/roadmap/active/51-a8-data-lifecycle-privacy.md T1.7: SECURITY DEFINER retention
+-- docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T1.7: SECURITY DEFINER retention
 -- functions for gateway's notif_notifications classes (config/data-retention.yaml,
 -- §4.2 "Read notification" / "Any notification"). Two functions share one
 -- physical table with disjoint eligibility windows:

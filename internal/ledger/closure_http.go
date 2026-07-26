@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/herdifirdausss/seev/pkg/privacyexport"
 	"github.com/herdifirdausss/seev/pkg/response"
 )
 
@@ -71,7 +72,7 @@ func (m *Module) handleClosureCommit(w http.ResponseWriter, r *http.Request) {
 	response.OK(w, closureCommitResponse{ResultHash: resultHash, AffectedCount: affected})
 }
 
-// handlePrivacyExport is docs/roadmap/active/51-a8-data-lifecycle-privacy.md T4b's own
+// handlePrivacyExport is docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T4b's own
 // export contract — same router, same token gate as the closure
 // endpoints above (ClosureRouter serves both; only auth-service's own
 // export/closure sagas ever call this, both machine-to-machine).
@@ -86,10 +87,15 @@ func (m *Module) handlePrivacyExport(w http.ResponseWriter, r *http.Request) {
 		response.BadRequest(w, "invalid or missing cutoff")
 		return
 	}
-	rows, err := m.closureSvc.Export(r.Context(), subjectID, cutoff)
+	offset, pageSize, err := privacyexport.Parse(r.URL.Query())
+	if err != nil {
+		response.BadRequest(w, err.Error())
+		return
+	}
+	rows, next, err := m.closureSvc.ExportPage(r.Context(), subjectID, cutoff, offset, pageSize)
 	if err != nil {
 		response.InternalServerError(w, err)
 		return
 	}
-	response.OK(w, map[string]any{"rows": rows})
+	response.OK(w, map[string]any{"rows": rows, "next_cursor": next})
 }

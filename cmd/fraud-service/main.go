@@ -135,6 +135,16 @@ func run(parent context.Context) error {
 		_ = db.Close()
 		return err
 	}
+	stopRetention, err := module.StartRetentionRunner(redisClient, log)
+	if err != nil {
+		module.Stop()
+		store.Stop()
+		_ = broker.Close()
+		_ = redisClient.Close()
+		_ = db.Close()
+		return fmt.Errorf("start retention runner: %w", err)
+	}
+	defer stopRetention()
 
 	// docs/roadmap/archive/49 K4: fraud's gRPC listener only accepts the three
 	// services that legitimately call it.

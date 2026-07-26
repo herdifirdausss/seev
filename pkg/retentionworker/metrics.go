@@ -1,6 +1,6 @@
 package retentionworker
 
-// docs/roadmap/active/51-a8-data-lifecycle-privacy.md K13's fixed, low-cardinality metric
+// docs/roadmap/archive/51-a8-data-lifecycle-privacy.md K13's fixed, low-cardinality metric
 // set — package-level so it registers once regardless of how many Runners
 // a process constructs (mirrors internal/payout/worker's own convention).
 // Labels are owner/class/action/result only: never a user ID, table

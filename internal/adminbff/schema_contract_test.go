@@ -24,8 +24,20 @@ import (
 
 	"github.com/herdifirdausss/seev/internal/config"
 	"github.com/herdifirdausss/seev/internal/testutil"
+	"github.com/herdifirdausss/seev/pkg/cryptox"
 	"github.com/herdifirdausss/seev/pkg/database"
 )
+
+func schemaTestCryptoxRing(t *testing.T) *cryptox.Ring {
+	t.Helper()
+	key := make([]byte, 32)
+	for i := range key {
+		key[i] = byte(i + 71)
+	}
+	ring, err := cryptox.NewRing(map[int][]byte{1: key}, 1)
+	require.NoError(t, err)
+	return ring
+}
 
 func migrationsSourceURL(t *testing.T) string {
 	t.Helper()
@@ -117,7 +129,7 @@ func TestSchemaContract_AppServiceRole_CannotDeleteSessionDirectly(t *testing.T)
 	dbs := setupAppServiceSessionTestDB(t)
 	ctx := context.Background()
 
-	repo := NewSessionRepository(dbs.appDB, nil)
+	repo := NewSessionRepository(dbs.appDB, schemaTestCryptoxRing(t))
 	seedSession(t, repo, "direct-delete-session")
 
 	_, err := dbs.appDB.ExecContext(ctx, `DELETE FROM sessions WHERE id = $1`, "direct-delete-session")
@@ -132,7 +144,7 @@ func TestSchemaContract_AppServiceRole_DeleteSessionRemovesRow(t *testing.T) {
 	dbs := setupAppServiceSessionTestDB(t)
 	ctx := context.Background()
 
-	repo := NewSessionRepository(dbs.appDB, nil)
+	repo := NewSessionRepository(dbs.appDB, schemaTestCryptoxRing(t))
 	seedSession(t, repo, "logout-session")
 
 	require.NoError(t, repo.DeleteSession(ctx, "logout-session"))

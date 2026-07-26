@@ -6,7 +6,7 @@
 #
 # This file is generated evidence, not a legal claim: retention periods here
 # are conservative engineering defaults for this learning repository, not an
-# approved jurisdiction/product policy (see docs/roadmap/active/51-a8-data-lifecycle-privacy.md
+# approved jurisdiction/product policy (see docs/roadmap/archive/51-a8-data-lifecycle-privacy.md
 # §3 "Out of scope"). `docs/data/retention.md` is generated from this file —
 # do not hand-edit that file; regenerate it (T0.4) after any change here.
 #
@@ -42,7 +42,7 @@ actions:
 # Tables where every row is retained forever — no entry below may ever
 # fully DELETE a row from one of these (redact is fine: it nulls a specific
 # non-financial column and keeps the row). This is a stricter, row-uniform
-# subset of docs/roadmap/active/51-a8-data-lifecycle-privacy.md §4.1's "permanent
+# subset of docs/roadmap/archive/51-a8-data-lifecycle-privacy.md §4.1's "permanent
 # financial evidence" — assurance_findings is deliberately excluded here even
 # though §4.1 covers it, because permanence there applies only to the
 # active/acknowledged subset (§4.2 explicitly allows deleting a *resolved*
@@ -118,6 +118,18 @@ entries:
     hold_scope: none
     policy_version: 1
     notes: "docs/roadmap/active/51 §4.2 'Assurance failed run'. Requires status='failed' and an incident/audit summary to already exist (§4.3)."
+
+  - owner: assurance
+    class: assurance.incident_summaries
+    table: assurance.assurance_incident_summaries
+    classification: internal
+    terminal_timestamp: null
+    duration: null
+    action: retain_permanent
+    batch_size: 0
+    hold_scope: none
+    policy_version: 1
+    notes: "Durable, hashed successor proof for a deleted failed run; intentionally survives assurance.runs.failed retention."
 
   - owner: assurance
     class: assurance.cursors
@@ -271,6 +283,18 @@ entries:
     notes: "docs/roadmap/active/51 §4.2 'Dead KYC apply retry'. Requires status='dead' and an audit summary to already exist (§4.3)."
 
   - owner: auth
+    class: auth.kyc_retry_summaries
+    table: auth.auth_kyc_retry_summaries
+    classification: internal
+    terminal_timestamp: null
+    duration: null
+    action: retain_permanent
+    batch_size: 0
+    hold_scope: none
+    policy_version: 1
+    notes: "Durable hashed successor proof retained after a dead KYC retry is removed."
+
+  - owner: auth
     class: auth.kyc_level_changes
     table: auth.kyc_level_changes
     classification: personal
@@ -335,6 +359,18 @@ entries:
     hold_scope: subject
     policy_version: 1
     notes: "docs/roadmap/active/51 §4.2 'Fraud screening event'. Requires aggregate audit metrics to already be recorded (§4.3) before deletion."
+
+  - owner: fraud
+    class: fraud.screening_event_summaries
+    table: fraud.fraud_screening_event_summaries
+    classification: financial
+    terminal_timestamp: null
+    duration: null
+    action: retain_permanent
+    batch_size: 0
+    hold_scope: none
+    policy_version: 1
+    notes: "Non-identifying daily/rule/verdict aggregate successor proof, persisted atomically before screening event deletion."
 
   - owner: fraud
     class: fraud.screening_rule_modes

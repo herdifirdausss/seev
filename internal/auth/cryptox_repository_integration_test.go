@@ -1,6 +1,6 @@
 //go:build integration
 
-// Proves docs/roadmap/active/51-a8-data-lifecycle-privacy.md T2.3's K2/K3
+// Proves docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T2.3's K2/K3
 // encryption (contract-migrated by "A8 T2.5b" — no plaintext fallback
 // remains) for auth_users.email/full_name and kyc_submissions.payload end
 // to end against a real Postgres: ciphertext round-trip, normalized email
@@ -137,7 +137,7 @@ func TestKYCRepository_NilRing_PanicsAtConstruction(t *testing.T) {
 	require.Panics(t, func() { repository.NewKYCRepository(db, nil) })
 }
 
-func TestKYCRepository_CreateSubmission_EncryptsPayloadAndProjectsRescreenFields(t *testing.T) {
+func TestKYCRepository_CreateSubmission_EncryptsPayloadWithoutPlaintextProjection(t *testing.T) {
 	db := setupAuthTestDB(t)
 	ctx := context.Background()
 
@@ -161,17 +161,15 @@ func TestKYCRepository_CreateSubmission_EncryptsPayloadAndProjectsRescreenFields
 	require.Equal(t, "Mia Wallace", got.Payload["name"])
 	require.Equal(t, "1990-01-01", got.Payload["birth_date"])
 
-	var rescreenName, rescreenBirthDate string
-	require.NoError(t, db.QueryRowContext(ctx, `SELECT rescreen_name, rescreen_birth_date FROM kyc_submissions WHERE id = $1`, sub.ID).Scan(&rescreenName, &rescreenBirthDate))
-	require.Equal(t, "Mia Wallace", rescreenName)
-	require.Equal(t, "1990-01-01", rescreenBirthDate)
+	var eligible bool
+	require.NoError(t, db.QueryRowContext(ctx, `SELECT rescreen_eligible FROM kyc_submissions WHERE id = $1`, sub.ID).Scan(&eligible))
+	require.True(t, eligible)
 }
 
 // TestKYCRepository_ListRescreenSubjects_WorksAgainstEncryptedPayload proves
 // docs/roadmap/active/51 T2.3's own required test: "existing business, KYC ... behavior
 // remains correct" — specifically the sanctions rescreen job's own list
-// query, which used to read live out of payload's plaintext JSONB and now
-// reads the rescreen_name/rescreen_birth_date projection instead.
+// query, which now decrypts the allowlisted fields from payload_ciphertext.
 func TestKYCRepository_ListRescreenSubjects_WorksAgainstEncryptedPayload(t *testing.T) {
 	db := setupAuthTestDB(t)
 	ctx := context.Background()

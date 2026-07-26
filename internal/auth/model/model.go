@@ -16,7 +16,7 @@ const (
 
 	StatusActive   = "active"
 	StatusDisabled = "disabled"
-	// StatusClosing/StatusClosed are docs/roadmap/active/51-a8-data-lifecycle-privacy.md T5's
+	// StatusClosing/StatusClosed are docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T5's
 	// (K10) account-closure saga states. Login/Refresh already reject any
 	// status != StatusActive generically, so both get that enforcement for
 	// free with no new code at those call sites — see auth.go.

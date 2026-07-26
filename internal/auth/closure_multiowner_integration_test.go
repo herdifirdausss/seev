@@ -1,6 +1,6 @@
 //go:build integration
 
-// Proves docs/roadmap/active/51-a8-data-lifecycle-privacy.md "A8 T4b"/"A8 T5b" (K9, K10, K11) —
+// Proves docs/roadmap/archive/51-a8-data-lifecycle-privacy.md "A8 T4b"/"A8 T5b" (K9, K10, K11) —
 // the export and closure contracts built for the four owners deferred at
 // T4/T5 (payin, payout, fraud, gateway/notify) — against a real Postgres
 // and real in-process owner modules, each reached over a genuine HTTP
@@ -13,6 +13,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -90,7 +91,6 @@ func TestMultiOwner_Closure_RepointsAllFourNewOwners(t *testing.T) {
 		INSERT INTO payin_webhook_events (id, vendor, vendor_event_id, external_ref, user_id, amount, currency, status)
 		VALUES ($1, 'mockvendor', 'evt-1', 'ref-1', $2, 50000, 'IDR', 'posted')`, webhookEventID, userID)
 	require.NoError(t, err)
-
 	payoutRequestID := uuid.New()
 	_, err = db.ExecContext(ctx, `
 		INSERT INTO payout_requests (id, user_id, amount, currency, vendor, status, created_by)
@@ -193,6 +193,24 @@ func TestMultiOwner_Closure_OpenPayoutRequestBlocks(t *testing.T) {
 	require.Contains(t, lastError, "open withdrawal lifecycle")
 }
 
+func TestPrivacyExportWorkerDoesNotClaimPendingClosure(t *testing.T) {
+	m, db, _ := setupMultiOwnerModule(t)
+	ctx := context.Background()
+	const password = "hunter22!"
+	userID := registerTestUser(t, m, "closure-not-export@example.test", password)
+
+	req, err := m.RequestClosure(ctx, userID, password)
+	require.NoError(t, err)
+	require.NoError(t, m.AssembleOnePendingExport(ctx))
+
+	var requestType, status string
+	require.NoError(t, db.QueryRowContext(ctx,
+		`SELECT request_type, status FROM privacy_requests WHERE id = $1`, req.ID,
+	).Scan(&requestType, &status))
+	require.Equal(t, "closure", requestType)
+	require.Equal(t, "pending", status, "the export worker must never claim a closure request")
+}
+
 // TestMultiOwner_Export_IncludesAllRegisteredOwners is T4b's own required
 // test: the manifest lists every registered owner (not just auth), and
 // each owner's NDJSON contains ONLY the subject's own row.
@@ -208,6 +226,15 @@ func TestMultiOwner_Export_IncludesAllRegisteredOwners(t *testing.T) {
 		INSERT INTO payin_webhook_events (id, vendor, vendor_event_id, external_ref, user_id, amount, currency, status)
 		VALUES ($1, 'mockvendor', 'evt-export', 'ref-export', $2, 75000, 'IDR', 'posted')`, ownEventID, userID)
 	require.NoError(t, err)
+	// Cross the coordinator's 100-row page boundary. This proves it follows
+	// next_cursor until exhaustion instead of silently truncating one owner.
+	for i := 0; i < 105; i++ {
+		_, err = db.ExecContext(ctx, `
+			INSERT INTO payin_webhook_events (id, vendor, vendor_event_id, external_ref, user_id, amount, currency, status)
+			VALUES ($1, 'mockvendor', $2, $3, $4, 75000, 'IDR', 'posted')`,
+			uuid.New(), fmt.Sprintf("evt-page-%03d", i), fmt.Sprintf("ref-page-%03d", i), userID)
+		require.NoError(t, err)
+	}
 	// Another user's row must never leak into the subject's own export.
 	otherEventID := uuid.New()
 	_, err = db.ExecContext(ctx, `
@@ -253,7 +280,7 @@ func TestMultiOwner_Export_IncludesAllRegisteredOwners(t *testing.T) {
 		_, present := rowCounts[owner]
 		require.True(t, present, "manifest must list every registered owner, missing %s", owner)
 	}
-	require.Equal(t, 1, rowCounts["payin"], "payin's own row must be present in the manifest's row count")
+	require.Equal(t, 106, rowCounts["payin"], "all payin rows across two pages must be present")
 
 	require.Contains(t, files, "payin.ndjson")
 	payinNDJSON := string(files["payin.ndjson"])

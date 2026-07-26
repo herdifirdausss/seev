@@ -8,7 +8,7 @@ import (
 	"github.com/herdifirdausss/seev/pkg/scheduler"
 )
 
-// StartRetentionRunner wires and starts assurance's docs/roadmap/active/51-a8-data-lifecycle-privacy.md
+// StartRetentionRunner wires and starts assurance's docs/roadmap/archive/51-a8-data-lifecycle-privacy.md
 // T1.7 retention classes (config/data-retention.yaml) on their own
 // dedicated scheduler. Unlike internal/auth/internal/notify's own
 // StartRetentionRunner, this always uses an in-memory lock: this service
@@ -18,7 +18,10 @@ import (
 func (m *Module) StartRetentionRunner(logger *slog.Logger) (stop func(), err error) {
 	runner, err := retentionworker.NewRunner("assurance", m.db, []retentionworker.Class{
 		{Name: "assurance.runs.succeeded", Action: "delete", FunctionName: "fn_retention_purge_runs_succeeded"},
+		{Name: "assurance.runs.failed", Action: "delete", FunctionName: "fn_retention_purge_runs_failed"},
+		{Name: "assurance.findings.resolved", Action: "delete", FunctionName: "fn_retention_purge_findings_resolved"},
 		{Name: "assurance.alert_deliveries", Action: "delete", FunctionName: "fn_retention_purge_alert_deliveries"},
+		{Name: "assurance.intake_commands", Action: "delete", FunctionName: "fn_retention_purge_intake_commands"},
 	}, retentionworker.WithLogger(logger))
 	if err != nil {
 		return nil, err

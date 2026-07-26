@@ -12,7 +12,7 @@ import (
 	"github.com/herdifirdausss/seev/pkg/scheduler"
 )
 
-// StartRetentionRunner wires and starts payin's docs/roadmap/active/51-a8-data-lifecycle-privacy.md
+// StartRetentionRunner wires and starts payin's docs/roadmap/archive/51-a8-data-lifecycle-privacy.md
 // T2.6 retention class (config/data-retention.yaml) on its own dedicated
 // scheduler — same construction as internal/notify.Module's own
 // StartRetentionRunner. Only one class: payin.webhook_events.raw was
@@ -32,6 +32,7 @@ func (m *Module) StartRetentionRunner(redisClient *redis.Client, logger *slog.Lo
 
 	runner, err := retentionworker.NewRunner("payin", m.db, []retentionworker.Class{
 		{Name: "payin.webhook_events.raw", Action: "redact", FunctionName: "fn_retention_purge_webhook_events_raw"},
+		{Name: "payin.intake_commands", Action: "delete", FunctionName: "fn_retention_purge_intake_commands"},
 	})
 	if err != nil {
 		return nil, err

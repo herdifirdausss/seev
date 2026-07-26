@@ -22,7 +22,7 @@ import (
 
 func main() {
 	healthcheck := flag.Bool("healthcheck", false, "probe admin-bff-service liveness endpoint")
-	backfillCryptox := flag.Bool("backfill-cryptox", false, "docs/roadmap/active/51-a8-data-lifecycle-privacy.md T2.5: run bounded cryptox backfill for sessions.email and exit")
+	backfillCryptox := flag.Bool("backfill-cryptox", false, "docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T2.5: run bounded cryptox backfill for sessions.email and exit")
 	flag.Parse()
 	if *healthcheck {
 		if err := probeHealth(os.Getenv); err != nil {
@@ -44,7 +44,7 @@ func main() {
 	}
 }
 
-// runCryptoxBackfill is docs/roadmap/active/51-a8-data-lifecycle-privacy.md T2.5's bounded
+// runCryptoxBackfill is docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T2.5's bounded
 // backfill entrypoint — see cmd/auth-service/main.go's own runCryptoxBackfill
 // doc comment for why this lives inside each owning service's main.go
 // rather than a shared cross-service CLI.
@@ -152,17 +152,11 @@ func run(parent context.Context) error {
 		}
 	}()
 
-	module := adminbff.NewModule(db, cfg.AdminBFF, log, certSrc)
-	// docs/roadmap/active/51 T2.4: shared cluster-wide cryptox key ring (K2) for
-	// sessions.email — a missing/unconfigured ring is not an error (stays
-	// optional outside production); a malformed one is.
-	if len(cfg.Cryptox.Keys) > 0 {
-		ring, err := cfg.Cryptox.Ring()
-		if err != nil {
-			return fmt.Errorf("build cryptox ring: %w", err)
-		}
-		module.SetCryptoxRing(ring)
+	ring, err := cfg.Cryptox.Ring()
+	if err != nil {
+		return fmt.Errorf("build cryptox ring: %w", err)
 	}
+	module := adminbff.NewModule(db, cfg.AdminBFF, log, certSrc, ring)
 	if err := module.Start(); err != nil {
 		return fmt.Errorf("start admin-bff jobs: %w", err)
 	}

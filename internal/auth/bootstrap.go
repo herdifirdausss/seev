@@ -11,6 +11,7 @@ import (
 
 	"github.com/herdifirdausss/seev/internal/auth/model"
 	"github.com/herdifirdausss/seev/internal/auth/repository"
+	"github.com/herdifirdausss/seev/pkg/cryptox"
 )
 
 // EnsureBootstrapAdmin idempotently creates the first admin account from
@@ -52,6 +53,6 @@ func (m *Module) ensureBootstrapOperator(ctx context.Context, email, password, r
 		}
 		return err
 	}
-	m.logger.Info("auth: bootstrap operator created", slog.String("email", email), slog.String("role", role))
+	m.logger.Info("auth: bootstrap operator created", slog.String("email", cryptox.MaskEmail(email)), slog.String("role", role))
 	return nil
 }

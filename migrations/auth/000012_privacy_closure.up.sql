@@ -1,4 +1,4 @@
--- docs/roadmap/active/51-a8-data-lifecycle-privacy.md T5 (K10, K11): extends
+-- docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T5 (K10, K11): extends
 -- privacy_requests (built for T4's export flow) with the state an account
 -- closure saga needs, and lets auth_users represent a user mid-closure.
 --

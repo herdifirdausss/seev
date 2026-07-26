@@ -13,7 +13,7 @@ import (
 	"github.com/herdifirdausss/seev/pkg/generalerror"
 )
 
-// Package-level errors for docs/roadmap/active/51-a8-data-lifecycle-privacy.md
+// Package-level errors for docs/roadmap/archive/51-a8-data-lifecycle-privacy.md
 // T5's own work item 2 (K10): "Admin/operator accounts... require the
 // operator offboarding runbook and maker/checker approval" — the gap
 // ErrClosureNotSelfService's own doc comment named as A8 T5b.

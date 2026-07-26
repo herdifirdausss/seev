@@ -20,7 +20,7 @@ groups:
       service: retention
     annotations:
       summary: "a data-retention class run is failing for owner={{ $labels.owner }} action={{ $labels.action }}"
-      runbook: docs/roadmap/active/51-a8-data-lifecycle-privacy.md
+      runbook: docs/roadmap/archive/51-a8-data-lifecycle-privacy.md
 
   - alert: SeevRetentionRunStale
     # K6's default schedule is daily 01:30 Asia/Jakarta with deterministic
@@ -38,7 +38,7 @@ groups:
       service: retention
     annotations:
       summary: "no successful data-retention run for owner={{ $labels.owner }} action={{ $labels.action }} in over 26 hours"
-      runbook: docs/roadmap/active/51-a8-data-lifecycle-privacy.md
+      runbook: docs/roadmap/archive/51-a8-data-lifecycle-privacy.md
 
   - alert: SeevObjectOutboxDeleteFailing
     # K6's object-delete outbox: a storage outage must never let metadata
@@ -52,7 +52,7 @@ groups:
       service: retention
     annotations:
       summary: "object-store deletes are failing for owner={{ $labels.owner }} ref_table={{ $labels.ref_table }} — objects are retried, not lost, but the backlog is growing"
-      runbook: docs/roadmap/active/51-a8-data-lifecycle-privacy.md
+      runbook: docs/roadmap/archive/51-a8-data-lifecycle-privacy.md
 
 # docs/roadmap/active/51 T6 (K13) — alerts on T4/T5's privacy-request metrics
 # (internal/auth/privacy_metrics.go). Same low-cardinality-only constraint:
@@ -73,7 +73,7 @@ groups:
       service: privacy
     annotations:
       summary: "a privacy export request has been stuck in 'collecting' for over 15 minutes"
-      runbook: docs/roadmap/active/51-a8-data-lifecycle-privacy.md
+      runbook: docs/roadmap/archive/51-a8-data-lifecycle-privacy.md
 
   - alert: SeevPrivacyClosureStuck
     # closureBaseBackoff is 30s with up to 5 retries (~8 minutes of
@@ -88,7 +88,7 @@ groups:
       service: privacy
     annotations:
       summary: "an account-closure request has been stuck in status={{ $labels.status }} for over 30 minutes"
-      runbook: docs/roadmap/active/51-a8-data-lifecycle-privacy.md
+      runbook: docs/roadmap/archive/51-a8-data-lifecycle-privacy.md
 
   - alert: SeevPrivacyClosureDead
     # A closure request only reaches 'dead' after closureMaxRetries (5)
@@ -103,7 +103,7 @@ groups:
       service: privacy
     annotations:
       summary: "an account-closure request is dead-lettered and needs operator replay"
-      runbook: docs/roadmap/active/51-a8-data-lifecycle-privacy.md
+      runbook: docs/roadmap/archive/51-a8-data-lifecycle-privacy.md
 
   - alert: SeevPrivacyOwnerCallsFailing
     # Any owner (ledger, in this pass's scope) prepare/commit call
@@ -116,4 +116,4 @@ groups:
       service: privacy
     annotations:
       summary: "closure saga owner calls are failing for owner={{ $labels.owner }} operation={{ $labels.operation }}"
-      runbook: docs/roadmap/active/51-a8-data-lifecycle-privacy.md
+      runbook: docs/roadmap/archive/51-a8-data-lifecycle-privacy.md

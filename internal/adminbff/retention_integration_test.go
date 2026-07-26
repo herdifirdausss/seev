@@ -1,6 +1,6 @@
 //go:build integration
 
-// Proves docs/roadmap/active/51-a8-data-lifecycle-privacy.md T1.5's
+// Proves docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T1.5's
 // adminbff.sessions class end to end against a real Postgres: eligibility
 // boundary (7-day grace past GREATEST(expires_at, absolute_expires_at)),
 // dry-run parity, retention-hold exclusion, and that app_service still
@@ -29,6 +29,7 @@ import (
 
 	"github.com/herdifirdausss/seev/internal/config"
 	"github.com/herdifirdausss/seev/internal/testutil"
+	"github.com/herdifirdausss/seev/pkg/cryptox"
 	"github.com/herdifirdausss/seev/pkg/database"
 	"github.com/herdifirdausss/seev/pkg/retentionworker"
 )
@@ -82,10 +83,13 @@ func setupAdminBFFOnlyDBWithConfig(t *testing.T) (*database.DBSQL, config.Postgr
 
 func insertTestSession(t *testing.T, db *database.DBSQL, id string, userID uuid.UUID, expiresAt, absoluteExpiresAt time.Time) {
 	t.Helper()
-	_, err := db.ExecContext(context.Background(), `
-		INSERT INTO sessions (id, user_id, email, role, csrf_token, created_at, last_seen_at, expires_at, absolute_expires_at)
-		VALUES ($1, $2, $3, 'admin', 'csrf', now(), now(), $4, $5)`,
-		id, userID, id+"@example.test", expiresAt, absoluteExpiresAt)
+	ring := sessionTestRing(t)
+	ciphertext, err := ring.Seal(cryptox.AAD{Service: "adminbff", Table: "sessions", Column: "email", RowID: id}, []byte(id+"@example.test"))
+	require.NoError(t, err)
+	_, err = db.ExecContext(context.Background(), `
+		INSERT INTO sessions (id, user_id, role, csrf_token, created_at, last_seen_at, expires_at, absolute_expires_at,email_ciphertext,email_key_version)
+		VALUES ($1, $2, 'admin', 'csrf', now(), now(), $3, $4,$5,1)`,
+		id, userID, expiresAt, absoluteExpiresAt, ciphertext)
 	require.NoError(t, err)
 }
 

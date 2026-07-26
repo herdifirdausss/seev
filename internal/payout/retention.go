@@ -12,7 +12,7 @@ import (
 	"github.com/herdifirdausss/seev/pkg/scheduler"
 )
 
-// StartRetentionRunner wires and starts payout's docs/roadmap/active/51-a8-data-lifecycle-privacy.md
+// StartRetentionRunner wires and starts payout's docs/roadmap/archive/51-a8-data-lifecycle-privacy.md
 // T2.6 retention class (config/data-retention.yaml) on its own dedicated
 // scheduler — same construction as internal/notify.Module's own
 // StartRetentionRunner. Only one class: payout.requests.destination_and_error
@@ -33,6 +33,8 @@ func (m *Module) StartRetentionRunner(redisClient *redis.Client, logger *slog.Lo
 
 	runner, err := retentionworker.NewRunner("payout", m.db, []retentionworker.Class{
 		{Name: "payout.requests.destination_and_error", Action: "redact", FunctionName: "fn_retention_purge_requests_destination_and_error"},
+		{Name: "payout.intake_commands", Action: "delete", FunctionName: "fn_retention_purge_intake_commands"},
+		{Name: "payout.vendor_commands", Action: "delete", FunctionName: "fn_retention_purge_vendor_commands"},
 	})
 	if err != nil {
 		return nil, err

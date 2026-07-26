@@ -7,7 +7,7 @@ import (
 	"github.com/herdifirdausss/seev/pkg/cryptox"
 )
 
-// ClosureConfig is docs/roadmap/active/51-a8-data-lifecycle-privacy.md T5's (K10) dedicated,
+// ClosureConfig is docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T5's (K10) dedicated,
 // versioned KEK for the account-closure saga's active-subject ciphertext —
 // same shape as ExportConfig, its own key namespace. Owned by auth-service
 // only. Optional like ExportConfig (a privacy-saga convenience key, not a

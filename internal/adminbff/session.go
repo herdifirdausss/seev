@@ -34,14 +34,9 @@ type SessionRepository interface {
 	GetSession(context.Context, string) (Session, error)
 	TouchSession(context.Context, string, time.Time) error
 	DeleteSession(context.Context, string) error
-
-	// BackfillOnce is docs/roadmap/active/51-a8-data-lifecycle-privacy.md T2.5's bounded backfill
-	// for sessions.email — same shape as every other repository's own
-	// BackfillOnce. In practice sessions have a short TTL and the
-	// existing retention job already purges expired ones (docs/roadmap/active/51 T1.5),
-	// so this only ever has to catch currently-active pre-expand-phase
-	// rows, never the full historical volume the other targets do.
-	BackfillOnce(ctx context.Context, batchSize int) (int, error)
+	// BackfillOnce is retained only for pre-contract rollout tooling. Normal
+	// module construction always requires a real ring.
+	BackfillOnce(context.Context, int) (int, error)
 }
 
 type sessionRepo struct {
@@ -49,11 +44,12 @@ type sessionRepo struct {
 	ring *cryptox.Ring
 }
 
-// NewSessionRepository's ring is docs/roadmap/active/51-a8-data-lifecycle-privacy.md T2.4's
-// K2/K3 expand-phase encryption for sessions.email — same nil-safe
-// optionality as internal/auth/repository's own ring parameters: nil
-// means every read/write behaves exactly as before this task.
+// NewSessionRepository requires a ring because the A8 contract migration
+// removes sessions.email; there is no plaintext read/write fallback.
 func NewSessionRepository(db database.DatabaseSQL, ring *cryptox.Ring) SessionRepository {
+	if ring == nil {
+		panic("adminbff: NewSessionRepository requires a non-nil cryptox ring")
+	}
 	return &sessionRepo{db: db, ring: ring}
 }
 
@@ -73,23 +69,18 @@ func NewOpaqueToken(size int) (string, error) {
 }
 
 func (r *sessionRepo) CreateSession(ctx context.Context, s Session) error {
-	var emailCiphertext []byte
-	var emailKeyVersion *int
-	if r.ring != nil {
-		var err error
-		if emailCiphertext, err = r.ring.Seal(sessionEmailAAD(s.ID), []byte(s.Email)); err != nil {
-			return fmt.Errorf("adminbff: encrypt session email: %w", err)
-		}
-		v := r.ring.CurrentVersion()
-		emailKeyVersion = &v
+	emailCiphertext, err := r.ring.Seal(sessionEmailAAD(s.ID), []byte(s.Email))
+	if err != nil {
+		return fmt.Errorf("adminbff: encrypt session email: %w", err)
 	}
-	_, err := r.db.ExecContext(ctx, `
+	v := r.ring.CurrentVersion()
+	_, err = r.db.ExecContext(ctx, `
 		INSERT INTO sessions
-			(id, user_id, email, role, csrf_token, created_at, last_seen_at, expires_at, absolute_expires_at,
+			(id, user_id, role, csrf_token, created_at, last_seen_at, expires_at, absolute_expires_at,
 			 email_ciphertext, email_key_version)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-		s.ID, s.UserID, s.Email, s.Role, s.CSRFToken, s.CreatedAt, s.LastSeenAt, s.ExpiresAt, s.AbsoluteExpiresAt,
-		emailCiphertext, emailKeyVersion)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+		s.ID, s.UserID, s.Role, s.CSRFToken, s.CreatedAt, s.LastSeenAt, s.ExpiresAt, s.AbsoluteExpiresAt,
+		emailCiphertext, v)
 	if err != nil {
 		return fmt.Errorf("adminbff: create session: %w", err)
 	}
@@ -99,29 +90,24 @@ func (r *sessionRepo) CreateSession(ctx context.Context, s Session) error {
 func (r *sessionRepo) GetSession(ctx context.Context, id string) (Session, error) {
 	var s Session
 	var emailCiphertext []byte
-	var emailKeyVersion *int
 	err := r.db.QueryRowContext(ctx, `
-		SELECT id, user_id, email, role, csrf_token, created_at, last_seen_at, expires_at, absolute_expires_at,
-		       email_ciphertext, email_key_version
+		SELECT id, user_id, role, csrf_token, created_at, last_seen_at, expires_at, absolute_expires_at,
+		       email_ciphertext
 		FROM sessions
 		WHERE id = $1 AND expires_at > now() AND absolute_expires_at > now()`, id).
-		Scan(&s.ID, &s.UserID, &s.Email, &s.Role, &s.CSRFToken, &s.CreatedAt, &s.LastSeenAt, &s.ExpiresAt, &s.AbsoluteExpiresAt,
-			&emailCiphertext, &emailKeyVersion)
+		Scan(&s.ID, &s.UserID, &s.Role, &s.CSRFToken, &s.CreatedAt, &s.LastSeenAt, &s.ExpiresAt, &s.AbsoluteExpiresAt,
+			&emailCiphertext)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Session{}, ErrSessionNotFound
 	}
 	if err != nil {
 		return Session{}, fmt.Errorf("adminbff: get session: %w", err)
 	}
-	// Dual-read (K3): ciphertext wins when present (already backfilled);
-	// otherwise the plaintext email column already scanned above stands.
-	if r.ring != nil && emailCiphertext != nil {
-		plain, err := r.ring.Open(sessionEmailAAD(s.ID), emailCiphertext)
-		if err != nil {
-			return Session{}, fmt.Errorf("adminbff: decrypt session email: %w", err)
-		}
-		s.Email = string(plain)
+	plain, err := r.ring.Open(sessionEmailAAD(s.ID), emailCiphertext)
+	if err != nil {
+		return Session{}, fmt.Errorf("adminbff: decrypt session email: %w", err)
 	}
+	s.Email = string(plain)
 	return s, nil
 }
 

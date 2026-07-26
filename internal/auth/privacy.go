@@ -48,7 +48,7 @@ type PrivacyRequest struct {
 	DownloadedAt  *time.Time
 }
 
-// SetExportKeyRing wires the pkg/cryptox.Ring docs/roadmap/active/51-a8-data-lifecycle-privacy.md
+// SetExportKeyRing wires the pkg/cryptox.Ring docs/roadmap/archive/51-a8-data-lifecycle-privacy.md
 // T4 (K9) export archives are encrypted with — dedicated key material,
 // never the same ring as SetDocumentKeyRing (K2's own separate-key-material
 // principle). A nil ring disables export creation
@@ -102,8 +102,8 @@ func (m *Module) RequestExport(ctx context.Context, userID uuid.UUID, password s
 	id := uuid.New()
 	cutoff := time.Now().UTC()
 	_, err = m.db.ExecContext(ctx, `
-		INSERT INTO privacy_requests (id, user_id, status, schema_version, cutoff)
-		VALUES ($1, $2, 'pending', 1, $3)`,
+		INSERT INTO privacy_requests (id, user_id, status, request_type, schema_version, cutoff)
+		VALUES ($1, $2, 'pending', 'export', 1, $3)`,
 		id, userID, cutoff)
 	if err != nil {
 		if generalerror.IsDuplicateKey(err) {
@@ -118,7 +118,7 @@ func (m *Module) activeExport(ctx context.Context, userID uuid.UUID) (PrivacyReq
 	row := m.db.QueryRowContext(ctx, `
 		SELECT id, user_id, status, schema_version, cutoff, COALESCE(row_count,0), COALESCE(error_message,''),
 		       requested_at, ready_at, expires_at, downloaded_at
-		FROM privacy_requests WHERE user_id = $1 AND status IN ('pending','collecting')
+		FROM privacy_requests WHERE user_id = $1 AND request_type = 'export' AND status IN ('pending','collecting')
 		ORDER BY requested_at DESC LIMIT 1`, userID)
 	return scanPrivacyRequest(row)
 }
@@ -133,7 +133,7 @@ func (m *Module) GetExportStatus(ctx context.Context, userID, requestID uuid.UUI
 	row := m.db.QueryRowContext(ctx, `
 		SELECT id, user_id, status, schema_version, cutoff, COALESCE(row_count,0), COALESCE(error_message,''),
 		       requested_at, ready_at, expires_at, downloaded_at
-		FROM privacy_requests WHERE id = $1 AND user_id = $2`, requestID, userID)
+		FROM privacy_requests WHERE id = $1 AND user_id = $2 AND request_type = 'export'`, requestID, userID)
 	return scanPrivacyRequest(row)
 }
 
@@ -170,7 +170,7 @@ func (m *Module) DownloadExport(ctx context.Context, userID, requestID uuid.UUID
 	var downloadedAt sql.NullTime
 	err := m.db.QueryRowContext(ctx, `
 		SELECT status, COALESCE(object_key,''), expires_at, downloaded_at
-		FROM privacy_requests WHERE id = $1 AND user_id = $2`, requestID, userID,
+		FROM privacy_requests WHERE id = $1 AND user_id = $2 AND request_type = 'export'`, requestID, userID,
 	).Scan(&status, &objectKey, &expiresAt, &downloadedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrExportNotFound

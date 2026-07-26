@@ -40,7 +40,7 @@ import (
 	"github.com/herdifirdausss/seev/pkg/messaging"
 )
 
-// notifyTestDigestRing is docs/roadmap/active/51-a8-data-lifecycle-privacy.md T3's (K7) fixed test
+// notifyTestDigestRing is docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T3's (K7) fixed test
 // key — ledger.NewModule requires a real, non-nil idempotency digest ring.
 func notifyTestDigestRing(t *testing.T) *cryptox.DigestRing {
 	t.Helper()
@@ -49,6 +49,17 @@ func notifyTestDigestRing(t *testing.T) *cryptox.DigestRing {
 		key[i] = byte(i + 29)
 	}
 	ring, err := cryptox.NewDigestRing(map[int][]byte{1: key}, 1)
+	require.NoError(t, err)
+	return ring
+}
+
+func notifyTestCryptoxRing(t *testing.T) *cryptox.Ring {
+	t.Helper()
+	key := make([]byte, 32)
+	for i := range key {
+		key[i] = byte(i + 59)
+	}
+	ring, err := cryptox.NewRing(map[int][]byte{1: key}, 1)
 	require.NoError(t, err)
 	return ring
 }
@@ -257,7 +268,7 @@ func TestNotify_MoneyIn_RealStack_NotificationRowAppears_DuplicateDeliveryDedup(
 		Enabled:            true,
 		OutboxPollInterval: 200 * time.Millisecond,
 		OutboxBatchSize:    10,
-	}, nil, decimal.NewFromInt(1_000_000_000), nil, nil, 0, notifyTestDigestRing(t))
+	}, nil, decimal.NewFromInt(1_000_000_000), nil, nil, 0, notifyTestDigestRing(t), notifyTestCryptoxRing(t))
 	ledgerModule.StartWorkers(ctx)
 	t.Cleanup(ledgerModule.StopWorkers)
 

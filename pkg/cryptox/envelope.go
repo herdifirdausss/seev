@@ -1,5 +1,5 @@
 // Package cryptox is the domain-neutral envelope-encryption primitive
-// docs/roadmap/active/51-a8-data-lifecycle-privacy.md K2 requires: extracted and hardened
+// docs/roadmap/archive/51-a8-data-lifecycle-privacy.md K2 requires: extracted and hardened
 // from internal/auth/documents.go's original KYC-document-only AES-GCM
 // envelope (that file's own EncryptDocument/DecryptDocument had no AAD at
 // all — a ciphertext copied into a different row or column would still

@@ -27,7 +27,7 @@ type Config struct {
 }
 
 type Module struct {
-	// db is retained only for docs/roadmap/active/51-a8-data-lifecycle-privacy.md T4b/T5b's
+	// db is retained only for docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T4b/T5b's
 	// own export/closure contract (privacy.go) — every other query in this
 	// module goes through repo/modeRepo, not raw SQL.
 	db           database.DatabaseSQL

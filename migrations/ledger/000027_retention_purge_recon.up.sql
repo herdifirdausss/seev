@@ -1,4 +1,4 @@
--- docs/roadmap/active/51-a8-data-lifecycle-privacy.md T2.6: SECURITY DEFINER redact
+-- docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T2.6: SECURITY DEFINER redact
 -- functions for ledger.recon_batches and ledger.recon_items
 -- (config/data-retention.yaml) — same "declared in T0, implemented here"
 -- gap as payin/payout's own redact functions (migrations/payin/000009,

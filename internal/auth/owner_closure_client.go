@@ -13,7 +13,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// OwnerClosureClient is the outbound side of docs/roadmap/active/51-a8-data-lifecycle-privacy.md
+// OwnerClosureClient is the outbound side of docs/roadmap/archive/51-a8-data-lifecycle-privacy.md
 // K9/K10/K11's per-owner privacy contract — auth calls each registered
 // owner's own endpoints (`POST <base>/privacy/closure/prepare`,
 // `POST <base>/privacy/closure/commit`, `GET <base>/privacy/export`) over
@@ -31,7 +31,7 @@ type OwnerClosureClient interface {
 	// Export returns the owner's own rows for subjectID as of cutoff,
 	// each already a complete JSON object (with its own "type" field) —
 	// K9's own owner-composed export contract.
-	Export(ctx context.Context, subjectID uuid.UUID, cutoff time.Time) ([]json.RawMessage, error)
+	ExportPage(ctx context.Context, subjectID uuid.UUID, cutoff time.Time, cursor string, pageSize int) ([]json.RawMessage, string, error)
 }
 
 type httpOwnerClosureClient struct {
@@ -102,14 +102,15 @@ func (c *httpOwnerClosureClient) Commit(ctx context.Context, subjectID, surrogat
 type exportWireResponse struct {
 	Success bool `json:"success"`
 	Data    struct {
-		Rows []json.RawMessage `json:"rows"`
+		Rows       []json.RawMessage `json:"rows"`
+		NextCursor string            `json:"next_cursor,omitempty"`
 	} `json:"data"`
 	Error *struct {
 		Message string `json:"message"`
 	} `json:"error,omitempty"`
 }
 
-func (c *httpOwnerClosureClient) Export(ctx context.Context, subjectID uuid.UUID, cutoff time.Time) ([]json.RawMessage, error) {
+func (c *httpOwnerClosureClient) ExportPage(ctx context.Context, subjectID uuid.UUID, cutoff time.Time, cursor string, pageSize int) ([]json.RawMessage, string, error) {
 	// RFC3339Nano (not RFC3339) preserves sub-second precision on the wire —
 	// RFC3339's Format drops fractional seconds entirely, which would make
 	// every owner's cutoff silently earlier than the one privacy_requests
@@ -117,32 +118,34 @@ func (c *httpOwnerClosureClient) Export(ctx context.Context, subjectID uuid.UUID
 	// collectAuthOwnerRows uses), excluding rows created in that
 	// truncated sub-second gap from owner exports only.
 	path := "/privacy/export?" + url.Values{
-		"user_id": {subjectID.String()},
-		"cutoff":  {cutoff.UTC().Format(time.RFC3339Nano)},
+		"user_id":   {subjectID.String()},
+		"cutoff":    {cutoff.UTC().Format(time.RFC3339Nano)},
+		"cursor":    {cursor},
+		"page_size": {fmt.Sprintf("%d", pageSize)},
 	}.Encode()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
 	if err != nil {
-		return nil, fmt.Errorf("auth: build owner export request: %w", err)
+		return nil, "", fmt.Errorf("auth: build owner export request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+c.token)
 
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrClosureOwnerUnavailable, err)
+		return nil, "", fmt.Errorf("%w: %v", ErrClosureOwnerUnavailable, err)
 	}
 	defer resp.Body.Close()
 	data, err := io.ReadAll(io.LimitReader(resp.Body, 32<<20))
 	if err != nil {
-		return nil, fmt.Errorf("auth: read owner export response: %w", err)
+		return nil, "", fmt.Errorf("auth: read owner export response: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("%w: owner returned %d: %s", ErrClosureOwnerUnavailable, resp.StatusCode, string(data))
+		return nil, "", fmt.Errorf("%w: owner returned %d: %s", ErrClosureOwnerUnavailable, resp.StatusCode, string(data))
 	}
 	var wire exportWireResponse
 	if err := json.Unmarshal(data, &wire); err != nil {
-		return nil, fmt.Errorf("auth: decode owner export response: %w", err)
+		return nil, "", fmt.Errorf("auth: decode owner export response: %w", err)
 	}
-	return wire.Data.Rows, nil
+	return wire.Data.Rows, wire.Data.NextCursor, nil
 }
 
 func (c *httpOwnerClosureClient) doJSON(ctx context.Context, path string, reqBody, respBody any) error {

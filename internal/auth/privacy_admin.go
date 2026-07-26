@@ -11,7 +11,7 @@ import (
 	"github.com/herdifirdausss/seev/pkg/response"
 )
 
-// AdminPrivacyRequest is docs/roadmap/active/51-a8-data-lifecycle-privacy.md T6's own
+// AdminPrivacyRequest is docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T6's own
 // "admin BFF status panels without exposing subject data" — deliberately
 // carries UserID (an opaque reference an operator needs to act on a stuck
 // request, e.g. to cross-check a hold or KYC submission) but NEVER email,

@@ -1,4 +1,4 @@
--- docs/roadmap/active/51-a8-data-lifecycle-privacy.md "A8 T2.5b" (contract migration):
+-- docs/roadmap/archive/51-a8-data-lifecycle-privacy.md "A8 T2.5b" (contract migration):
 -- drops the plaintext raw column now that the expand-phase backfill has
 -- baked. Deliberately does NOT make raw_ciphertext/raw_key_version
 -- NOT NULL — unlike auth_users.email/full_name (migrations/auth/000014,

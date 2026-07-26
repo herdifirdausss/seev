@@ -1,6 +1,6 @@
 //go:build integration
 
-// Proves docs/roadmap/active/51-a8-data-lifecycle-privacy.md T5's (K10, K11) account-closure
+// Proves docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T5's (K10, K11) account-closure
 // saga end to end against a real Postgres and a real in-process
 // ledger.Module reached over a real HTTP round trip (ledgerHarness's
 // ClosureRouter wrapped in httptest.Server, exactly the same transport
@@ -14,7 +14,9 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
@@ -316,6 +318,50 @@ func TestClosure_LedgerEntriesUnchanged(t *testing.T) {
 
 	after := closureTestEntriesChecksum(t, db, accountIDs)
 	require.Equal(t, before, after, "ledger_entries for the closed user's accounts must be byte-for-byte unchanged by closure")
+}
+
+func TestClosure_RacingRetentionFailsClosedUntilClosureHorizon(t *testing.T) {
+	m, db, _ := setupClosureModule(t)
+	ctx := context.Background()
+	const password = "hunter22!"
+	userID := registerTestUser(t, m, "retention-race@example.test", password)
+	submissionID := uuid.New()
+	_, err := db.ExecContext(ctx, `
+		INSERT INTO kyc_submissions
+		  (id,user_id,level_requested,status,provider,created_at,decided_at,payload_ciphertext,payload_key_version)
+		VALUES($1,$2,1,'rejected','test',now()-interval '400 days',now()-interval '400 days',$3,1)`,
+		submissionID, userID, []byte("encrypted-payload"))
+	require.NoError(t, err)
+	req, err := m.RequestClosure(ctx, userID, password)
+	require.NoError(t, err)
+
+	var wg sync.WaitGroup
+	errs := make(chan error, 2)
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		errs <- m.ProcessOnePendingClosure(ctx)
+	}()
+	go func() {
+		defer wg.Done()
+		var affected int
+		err := db.QueryRowContext(ctx,
+			`SELECT fn_retention_purge_kyc_submissions($1,500,false)`, uuid.New()).Scan(&affected)
+		if err == nil && affected != 0 {
+			err = fmt.Errorf("retention affected %d row(s) before closure horizon", affected)
+		}
+		errs <- err
+	}()
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		require.NoError(t, err)
+	}
+
+	require.Equal(t, "completed", driveClosureToCompletion(t, m, db, req.ID, 8))
+	var count int
+	require.NoError(t, db.QueryRowContext(ctx, `SELECT count(*) FROM kyc_submissions WHERE id=$1`, submissionID).Scan(&count))
+	require.Equal(t, 1, count, "a concurrent purge must not use row age instead of the 365-day closure horizon")
 }
 
 func closureTestAccountIDs(t *testing.T, db *database.DBSQL, userID uuid.UUID) []uuid.UUID {

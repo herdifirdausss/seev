@@ -64,7 +64,16 @@ func checkUserReferences(ctx context.Context, dbs map[string]*sql.DB, cfg Config
 		return fmt.Errorf("auth database connection unavailable")
 	}
 	return readOnlyQuery(ctx, authDB, cfg, func(ctx context.Context, tx *sql.Tx) error {
-		rows, err := tx.QueryContext(ctx, `SELECT id::text FROM auth_users WHERE id = ANY($1::uuid[])`, ids)
+		rows, err := tx.QueryContext(ctx, `
+			SELECT id::text
+			FROM auth_users
+			WHERE id = ANY($1::uuid[])
+			UNION
+			SELECT surrogate_id::text
+			FROM privacy_requests
+			WHERE request_type = 'closure'
+			  AND status = 'completed'
+			  AND surrogate_id = ANY($1::uuid[])`, ids)
 		if err != nil {
 			return fmt.Errorf("check user existence: %w", err)
 		}
@@ -88,7 +97,7 @@ func checkUserReferences(ctx context.Context, dbs map[string]*sql.DB, cfg Config
 				report.addFinding(Finding{
 					Code: "OWNER_REFERENCE_INVALID", Severity: SeverityFatal, Service: service,
 					ResourceID: id,
-					Message:    "referenced user_id/owner_id does not exist in seev_auth.auth_users",
+					Message:    "referenced user_id/owner_id is neither an auth user nor a completed-closure surrogate",
 				})
 			}
 		}

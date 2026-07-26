@@ -29,7 +29,7 @@ import (
 	"github.com/herdifirdausss/seev/pkg/messaging"
 )
 
-// testDigestRing is docs/roadmap/active/51-a8-data-lifecycle-privacy.md T3's (K7) fixed test
+// testDigestRing is docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T3's (K7) fixed test
 // key — ledger.NewModule requires a real, non-nil idempotency digest ring
 // (money-safety deduplication, unlike T2's optional field-encryption
 // rings). Shared by every test in this package that constructs a Module
@@ -41,6 +41,17 @@ func testDigestRing(t *testing.T) *cryptox.DigestRing {
 		key[i] = byte(i + 23)
 	}
 	ring, err := cryptox.NewDigestRing(map[int][]byte{1: key}, 1)
+	require.NoError(t, err)
+	return ring
+}
+
+func testCryptoxRing(t *testing.T) *cryptox.Ring {
+	t.Helper()
+	key := make([]byte, 32)
+	for i := range key {
+		key[i] = byte(i + 47)
+	}
+	ring, err := cryptox.NewRing(map[int][]byte{1: key}, 1)
 	require.NoError(t, err)
 	return ring
 }
@@ -69,7 +80,7 @@ func TestPostMoneyInEndToEndOverGRPC(t *testing.T) {
 	})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
-	module := ledger.NewModule(db, &messaging.MockBroker{}, nil, ledger.WorkerConfig{}, slog.Default(), decimal.Zero, nil, nil, 0, testDigestRing(t))
+	module := ledger.NewModule(db, &messaging.MockBroker{}, nil, ledger.WorkerConfig{}, slog.Default(), decimal.Zero, nil, nil, 0, testDigestRing(t), testCryptoxRing(t))
 	require.NoError(t, module.LoadCurrencies(ctx))
 	userID := uuid.New()
 	_, err = module.ProvisionUser(ctx, userID, "IDR")

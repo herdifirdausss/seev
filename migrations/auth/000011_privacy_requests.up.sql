@@ -1,4 +1,4 @@
--- docs/roadmap/active/51-a8-data-lifecycle-privacy.md T4 (K9): auth-owned coordination
+-- docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T4 (K9): auth-owned coordination
 -- table for the authenticated user export flow. `cutoff` is fixed at
 -- creation time and passed unchanged to every owner's export query, so a
 -- slow multi-owner assembly never captures a moving target — two owners

@@ -1,6 +1,6 @@
 package objectoutbox
 
-// docs/roadmap/active/51-a8-data-lifecycle-privacy.md K13's metric set for the object-delete
+// docs/roadmap/archive/51-a8-data-lifecycle-privacy.md K13's metric set for the object-delete
 // outbox — package-level so it registers once regardless of how many
 // Workers a process constructs, mirroring pkg/retentionworker's own
 // convention. Labels are owner/ref_table only: never an object key or row

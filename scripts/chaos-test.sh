@@ -25,7 +25,13 @@
 #   ./scripts/chaos-test.sh 12       # assurance restart catches backlog and resolves recovery (docs/roadmap/archive/48)
 #   ./scripts/chaos-test.sh 13       # ledger outage preserves assurance cursor/finding (docs/roadmap/archive/48)
 #   ./scripts/chaos-test.sh 14       # owner outage durable intake pause + maker/checker resume (docs/roadmap/archive/48)
-#   ./scripts/chaos-test.sh all      # run all fourteen in sequence
+#   ./scripts/chaos-test.sh 15       # retention database failure is isolated/fail-closed (plan 51)
+#   ./scripts/chaos-test.sh 16       # object-store outage preserves metadata and retries (plan 51)
+#   ./scripts/chaos-test.sh 17       # unknown/wrong privacy key fails closed (plan 51)
+#   ./scripts/chaos-test.sh 18       # privacy worker restart resumes durable saga state (plan 51)
+#   ./scripts/chaos-test.sh 19       # owner timeout leaves closure resumable (plan 51)
+#   ./scripts/chaos-test.sh 20       # retention/closure race respects closure horizon (plan 51)
+#   ./scripts/chaos-test.sh all      # run all twenty in sequence
 #
 # Each scenario is independent and re-runs migrations against a throwaway
 # schema state (it does NOT reset the docker volumes — accounts/balances
@@ -381,6 +387,16 @@ backdate_payout() {
 	psql_exec "$PAYOUT_DB_NAME" -c "UPDATE payout_requests SET updated_at = now() - interval '2 minutes' WHERE id = '$1';" >/dev/null
 }
 
+seal_payout_destination() {
+	CRYPTOX_KEY_V1="$CRYPTOX_KEY_V1" "$CRYPTOX_FIXTURE_BIN" \
+		payout payout_requests destination "$1" "$2"
+}
+
+seal_payin_raw() {
+	CRYPTOX_KEY_V1="$CRYPTOX_KEY_V1" "$CRYPTOX_FIXTURE_BIN" \
+		payin payin_webhook_events raw "$1" "$2"
+}
+
 scenario_5() {
 	log "=== Scenario 5: payout crash-mid-flight (docs/roadmap/archive/30 Task T6) ==="
 	ensure_deps_up
@@ -401,11 +417,12 @@ scenario_5() {
 
 	# ── Kill point 1: 'created' — seeded, no ledger activity yet ──────────────
 	log "--- kill point 1/4: created ---"
-	local id_created
+	local id_created destination_created
 	id_created="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT gen_random_uuid();")"
+	destination_created="$(seal_payout_destination "$id_created" '{"bank_code":"014","account_no":"1"}')"
 	psql_exec "$PAYOUT_DB_NAME" -c "
-		INSERT INTO payout_requests (id, user_id, amount, currency, vendor, destination, status, created_by, created_at, updated_at)
-		VALUES ('$id_created', '$user_id', 10000, 'IDR', 'mockvendor', '{\"bank_code\":\"014\",\"account_no\":\"1\"}'::jsonb, 'created', 'chaos_test', now(), now());" >/dev/null
+		INSERT INTO payout_requests (id, user_id, amount, currency, vendor, destination_ciphertext, destination_key_version, status, created_by, created_at, updated_at)
+		VALUES ('$id_created', '$user_id', 10000, 'IDR', 'mockvendor', decode('$destination_created','hex'), 1, 'created', 'chaos_test', now(), now());" >/dev/null
 	backdate_payout "$id_created"
 	kill_payout_hard
 	start_payout_service
@@ -418,11 +435,12 @@ scenario_5() {
 		-d "{\"idempotency_key\":\"$held_key\",\"type\":\"withdraw_initiate\",\"amount\":\"10000\"}"
 	local held_tx_id
 	held_tx_id="$(psql_exec "$LEDGER_DB_NAME" -c "SELECT id FROM ledger_transactions WHERE idempotency_key = '$held_key';")"
-	local id_held
+	local id_held destination_held
 	id_held="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT gen_random_uuid();")"
+	destination_held="$(seal_payout_destination "$id_held" '{"bank_code":"014","account_no":"1"}')"
 	psql_exec "$PAYOUT_DB_NAME" -c "
-		INSERT INTO payout_requests (id, user_id, amount, currency, vendor, destination, status, hold_tx_id, created_by, created_at, updated_at)
-		VALUES ('$id_held', '$user_id', 10000, 'IDR', 'mockvendor', '{\"bank_code\":\"014\",\"account_no\":\"1\"}'::jsonb, 'held', '$held_tx_id', 'chaos_test', now(), now());" >/dev/null
+		INSERT INTO payout_requests (id, user_id, amount, currency, vendor, destination_ciphertext, destination_key_version, status, hold_tx_id, created_by, created_at, updated_at)
+		VALUES ('$id_held', '$user_id', 10000, 'IDR', 'mockvendor', decode('$destination_held','hex'), 1, 'held', '$held_tx_id', 'chaos_test', now(), now());" >/dev/null
 	backdate_payout "$id_held"
 	kill_payout_hard
 	start_payout_service
@@ -450,7 +468,9 @@ scenario_5() {
 	wait_for_vendor_command_status "$id_submitted" "failed" 10
 	# Simulate the vendor outage clearing before resume retries — same role
 	# as scenario 2/3 restarting rabbitmq/postgres.
-	psql_exec "$PAYOUT_DB_NAME" -c "UPDATE payout_requests SET destination = '{\"bank_code\":\"014\",\"account_no\":\"1\"}'::jsonb WHERE id = '$id_submitted';" >/dev/null
+	local destination_submitted
+	destination_submitted="$(seal_payout_destination "$id_submitted" '{"bank_code":"014","account_no":"1"}')"
+	psql_exec "$PAYOUT_DB_NAME" -c "UPDATE payout_requests SET destination_ciphertext=decode('$destination_submitted','hex'), destination_key_version=1 WHERE id = '$id_submitted';" >/dev/null
 	backdate_payout "$id_submitted"
 	psql_exec "$PAYOUT_DB_NAME" -c "UPDATE payout_vendor_commands SET next_attempt_at = now() WHERE payout_request_id = '$id_submitted';" >/dev/null
 	kill_payout_hard
@@ -477,7 +497,9 @@ scenario_5() {
 	# for this genuine gap (HasDeadCommand is false — the most recent
 	# command 'completed', it didn't dead-letter), and the relay's own next
 	# dispatch pass reaches a terminal state idempotently.
-	psql_exec "$PAYOUT_DB_NAME" -c "UPDATE payout_requests SET status='submitted', destination = '{\"bank_code\":\"014\",\"account_no\":\"1\"}'::jsonb, updated_at=now()-interval '2 minutes' WHERE id='$id_pending';" >/dev/null
+	local destination_pending
+	destination_pending="$(seal_payout_destination "$id_pending" '{"bank_code":"014","account_no":"1"}')"
+	psql_exec "$PAYOUT_DB_NAME" -c "UPDATE payout_requests SET status='submitted', destination_ciphertext=decode('$destination_pending','hex'), destination_key_version=1, updated_at=now()-interval '2 minutes' WHERE id='$id_pending';" >/dev/null
 
 	# ── Ledger crash between a completed hold and settle ───────────────────
 	log "--- ledger kill point: after hold, before settle ---"
@@ -485,7 +507,9 @@ scenario_5() {
 	curl_internal -s -o /dev/null -X POST "http://localhost:$LEDGER_INTERNAL_PORT/api/v1/ledger/transactions" -H "Authorization: Bearer $token" -H "Content-Type: application/json" -d "{\"idempotency_key\":\"$ledger_key\",\"type\":\"withdraw_initiate\",\"amount\":\"10000\"}"
 	ledger_hold_tx="$(psql_exec "$LEDGER_DB_NAME" -c "SELECT id FROM ledger_transactions WHERE idempotency_key='$ledger_key';")"
 	id_ledger="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT gen_random_uuid();")"
-	psql_exec "$PAYOUT_DB_NAME" -c "INSERT INTO payout_requests (id,user_id,amount,currency,vendor,destination,status,hold_tx_id,created_by,created_at,updated_at) VALUES ('$id_ledger','$user_id',10000,'IDR','mockvendor','{\"bank_code\":\"014\",\"account_no\":\"1\"}'::jsonb,'held','$ledger_hold_tx','chaos_test',now(),now()-interval '2 minutes');" >/dev/null
+	local destination_ledger
+	destination_ledger="$(seal_payout_destination "$id_ledger" '{"bank_code":"014","account_no":"1"}')"
+	psql_exec "$PAYOUT_DB_NAME" -c "INSERT INTO payout_requests (id,user_id,amount,currency,vendor,destination_ciphertext,destination_key_version,status,hold_tx_id,created_by,created_at,updated_at) VALUES ('$id_ledger','$user_id',10000,'IDR','mockvendor',decode('$destination_ledger','hex'),1,'held','$ledger_hold_tx','chaos_test',now(),now()-interval '2 minutes');" >/dev/null
 	kill_ledger_hard
 	log "waiting for payout resume to attempt settle while ledger is unavailable..."
 	# The payout resume scheduler is minute-granular and a -9 kill can leave its
@@ -1295,7 +1319,7 @@ scenario_11() {
 	balance_before="$(account_balance "$cash")"
 
 	log "--- sub-case A: crash after command enqueue, before dispatch ---"
-	local held_key_a="chaos11-held-$RANDOM" held_tx_id_a id_a
+	local held_key_a="chaos11-held-$RANDOM" held_tx_id_a id_a destination_a
 	curl_internal -s -o /dev/null -X POST "http://localhost:$LEDGER_INTERNAL_PORT/api/v1/ledger/transactions" \
 		-H "Authorization: Bearer $token" -H "Content-Type: application/json" \
 		-d "{\"idempotency_key\":\"$held_key_a\",\"type\":\"withdraw_initiate\",\"amount\":\"10000\"}"
@@ -1303,9 +1327,10 @@ scenario_11() {
 	log "crashing payout-service, THEN seeding the row it would have durably committed a split second earlier..."
 	kill_payout_hard
 	id_a="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT gen_random_uuid();")"
+	destination_a="$(seal_payout_destination "$id_a" '{"bank_code":"014","account_no":"1"}')"
 	psql_exec "$PAYOUT_DB_NAME" -c "
-		INSERT INTO payout_requests (id, user_id, amount, currency, vendor, destination, status, hold_tx_id, created_by, created_at, updated_at)
-		VALUES ('$id_a', '$user_id', 10000, 'IDR', 'mockvendor', '{\"bank_code\":\"014\",\"account_no\":\"1\"}'::jsonb, 'submitted', '$held_tx_id_a', 'chaos_test', now(), now());" >/dev/null
+		INSERT INTO payout_requests (id, user_id, amount, currency, vendor, destination_ciphertext, destination_key_version, status, hold_tx_id, created_by, created_at, updated_at)
+		VALUES ('$id_a', '$user_id', 10000, 'IDR', 'mockvendor', decode('$destination_a','hex'), 1, 'submitted', '$held_tx_id_a', 'chaos_test', now(), now());" >/dev/null
 	psql_exec "$PAYOUT_DB_NAME" -c "
 		INSERT INTO payout_vendor_commands (id, payout_request_id, command_key, vendor, attempt, status, retry_count, max_retries, next_attempt_at, created_at, updated_at)
 		VALUES (gen_random_uuid(), '$id_a', 'payout:$id_a:submit:1', 'mockvendor', 1, 'pending', 0, 8, now(), now(), now());" >/dev/null
@@ -1341,7 +1366,9 @@ scenario_11() {
 	kill_payout_hard
 
 	log "simulating the vendor outage clearing (same role as scenario 2/3 restarting rabbitmq/postgres) and restarting..."
-	psql_exec "$PAYOUT_DB_NAME" -c "UPDATE payout_requests SET destination = '{\"bank_code\":\"014\",\"account_no\":\"1\"}'::jsonb WHERE id = '$id_b';" >/dev/null
+	local destination_b
+	destination_b="$(seal_payout_destination "$id_b" '{"bank_code":"014","account_no":"1"}')"
+	psql_exec "$PAYOUT_DB_NAME" -c "UPDATE payout_requests SET destination_ciphertext=decode('$destination_b','hex'), destination_key_version=1 WHERE id = '$id_b';" >/dev/null
 	psql_exec "$PAYOUT_DB_NAME" -c "UPDATE payout_vendor_commands SET next_attempt_at = now() WHERE payout_request_id = '$id_b';" >/dev/null
 	start_payout_service
 
@@ -1429,13 +1456,14 @@ scenario_12() {
 	start_payout_service
 	start_gateway
 
-	local event_id external_ref admin_token
+	local event_id external_ref admin_token raw_ciphertext
 	event_id="$(psql_exec "$PAYIN_DB_NAME" -c "SELECT gen_random_uuid();")"
 	external_ref="chaos12-$event_id"
+	raw_ciphertext="$(seal_payin_raw "$event_id" '{}')"
 	psql_exec "$PAYIN_DB_NAME" -c "
 		INSERT INTO payin_webhook_events
-		(id, vendor, vendor_event_id, external_ref, user_id, amount, currency, raw, status, request_id, created_at, updated_at)
-		VALUES ('$event_id', 'mockvendor', '$external_ref', '$external_ref', gen_random_uuid(), 1234, 'IDR', '{}'::jsonb, 'posted', 'chaos12', now() - interval '2 minutes 1 second', now() - interval '2 minutes 1 second');" >/dev/null
+		(id, vendor, vendor_event_id, external_ref, user_id, amount, currency, raw_ciphertext, raw_key_version, status, request_id, created_at, updated_at)
+		VALUES ('$event_id', 'mockvendor', '$external_ref', '$external_ref', gen_random_uuid(), 1234, 'IDR', decode('$raw_ciphertext','hex'), 1, 'posted', 'chaos12', now() - interval '2 minutes 1 second', now() - interval '2 minutes 1 second');" >/dev/null
 
 	start_assurance_service
 	wait_for_assurance_finding "$event_id" PA01 open 45
@@ -1475,13 +1503,14 @@ scenario_13() {
 	start_payout_service
 	start_gateway
 
-	local event_id external_ref admin_token before_cursor after_cursor before_runs
+	local event_id external_ref admin_token before_cursor after_cursor before_runs raw_ciphertext
 	event_id="$(psql_exec "$PAYIN_DB_NAME" -c "SELECT gen_random_uuid();")"
 	external_ref="chaos13-$event_id"
+	raw_ciphertext="$(seal_payin_raw "$event_id" '{}')"
 	psql_exec "$PAYIN_DB_NAME" -c "
 		INSERT INTO payin_webhook_events
-		(id, vendor, vendor_event_id, external_ref, user_id, amount, currency, raw, status, request_id, created_at, updated_at)
-		VALUES ('$event_id', 'mockvendor', '$external_ref', '$external_ref', gen_random_uuid(), 2345, 'IDR', '{}'::jsonb, 'posted', 'chaos13', now() - interval '2 minutes 1 second', now() - interval '2 minutes 1 second');" >/dev/null
+		(id, vendor, vendor_event_id, external_ref, user_id, amount, currency, raw_ciphertext, raw_key_version, status, request_id, created_at, updated_at)
+		VALUES ('$event_id', 'mockvendor', '$external_ref', '$external_ref', gen_random_uuid(), 2345, 'IDR', decode('$raw_ciphertext','hex'), 1, 'posted', 'chaos13', now() - interval '2 minutes 1 second', now() - interval '2 minutes 1 second');" >/dev/null
 	start_assurance_service
 	wait_for_assurance_finding "$event_id" PA01 open 45
 	before_cursor="$(psql_exec "$ASSURANCE_DB_NAME" -c "SELECT COALESCE(updated_at::text,'') || '|' || COALESCE(resource_id::text,'') FROM assurance_cursors WHERE source='payin';")"
@@ -1622,6 +1651,62 @@ scenario_14() {
 	stop_services
 }
 
+# ─── Scenarios 15–20: A8 lifecycle/privacy failure matrix ─────────────────
+
+scenario_15() {
+	log "=== Scenario 15: retention database failure remains isolated and fail-closed ==="
+	if GOCACHE=/tmp/seev-go-cache go test ./pkg/retentionworker -run '^TestRunOnce_OneClassFailureDoesNotStopOthers$' -count=1; then
+		ok "database/query failure was audited as an error without authorizing deletion"
+	else
+		fail "retention database failure drill failed"
+	fi
+}
+
+scenario_16() {
+	log "=== Scenario 16: object-store outage preserves metadata and retries ==="
+	if GOCACHE=/tmp/seev-go-cache go test -tags=integration ./internal/auth -run '^TestObjectOutbox_StoreOutage_PreservesMetadataAndRetries$' -count=1; then
+		ok "object outage left metadata truthful and retry converged"
+	else
+		fail "object-store outage drill failed"
+	fi
+}
+
+scenario_17() {
+	log "=== Scenario 17: privacy key-version mismatch fails closed ==="
+	if GOCACHE=/tmp/seev-go-cache go test ./pkg/cryptox -run '^(TestRing_WrongKey|TestRing_OpenUnknownKeyVersion_FailsClosed)$' -count=1; then
+		ok "wrong and unavailable key versions failed closed"
+	else
+		fail "key-version mismatch drill failed"
+	fi
+}
+
+scenario_18() {
+	log "=== Scenario 18: privacy worker restart resumes durable saga state ==="
+	if GOCACHE=/tmp/seev-go-cache go test -tags=integration ./internal/auth -run '^TestClosure_HappyPath_FullLifecycle$' -count=1; then
+		ok "one-step durable checkpoints converged after repeated worker invocations"
+	else
+		fail "privacy-worker restart drill failed"
+	fi
+}
+
+scenario_19() {
+	log "=== Scenario 19: owner timeout leaves closure disabled and resumable ==="
+	if GOCACHE=/tmp/seev-go-cache go test -tags=integration ./internal/auth -run '^TestClosure_InjectedOwnerFailure_LeavesDisabledAndResumesForward$' -count=1; then
+		ok "owner timeout resumed from the last durable checkpoint"
+	else
+		fail "owner-timeout drill failed"
+	fi
+}
+
+scenario_20() {
+	log "=== Scenario 20: retention/closure race respects the closure horizon ==="
+	if GOCACHE=/tmp/seev-go-cache go test -tags=integration ./internal/auth -run '^TestClosure_RacingRetentionFailsClosedUntilClosureHorizon$' -count=1; then
+		ok "concurrent retention could not purge pre-horizon closure data"
+	else
+		fail "retention/closure race drill failed"
+	fi
+}
+
 # ─── Main ────────────────────────────────────────────────────────────────────
 
 case "${1:-}" in
@@ -1639,6 +1724,12 @@ case "${1:-}" in
 12) scenario_12 ;;
 13) scenario_13 ;;
 14) scenario_14 ;;
+15) scenario_15 ;;
+16) scenario_16 ;;
+17) scenario_17 ;;
+18) scenario_18 ;;
+19) scenario_19 ;;
+20) scenario_20 ;;
 all)
 	scenario_1
 	scenario_2
@@ -1654,9 +1745,15 @@ all)
 	scenario_12
 	scenario_13
 	scenario_14
+	scenario_15
+	scenario_16
+	scenario_17
+	scenario_18
+	scenario_19
+	scenario_20
 	;;
 *)
-	echo "Usage: $0 {1|2|3|4|5|6|7|8|9|10|11|12|13|14|all}"
+	echo "Usage: $0 {1|2|3|4|5|6|7|8|9|10|11|12|13|14|15|16|17|18|19|20|all}"
 	exit 2
 	;;
 esac

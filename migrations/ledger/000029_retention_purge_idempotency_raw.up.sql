@@ -1,4 +1,4 @@
--- docs/roadmap/active/51-a8-data-lifecycle-privacy.md T3 (K7, work item 5): SECURITY DEFINER
+-- docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T3 (K7, work item 5): SECURITY DEFINER
 -- redact function for ledger.transactions.idempotency_raw
 -- (config/data-retention.yaml) — declared back in T0, implemented here now
 -- that T3's digest/version/conflict_fingerprint columns exist (migration

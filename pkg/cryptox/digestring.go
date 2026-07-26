@@ -7,7 +7,7 @@ import (
 )
 
 // DigestRing is a versioned HMAC-SHA256 key set for deterministic,
-// permanent-uniqueness digests (docs/roadmap/active/51-a8-data-lifecycle-privacy.md K7 —
+// permanent-uniqueness digests (docs/roadmap/archive/51-a8-data-lifecycle-privacy.md K7 —
 // ledger idempotency-key tombstones). Distinct from both Ring (encrypts
 // reversible ciphertext) and LookupKey (single, unversioned key): a digest
 // used to enforce a PERMANENT unique constraint must survive key rotation

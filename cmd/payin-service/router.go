@@ -14,7 +14,7 @@ import (
 
 type adminHandlers interface{ AdminRouter() http.Handler }
 
-// privacyHandlers is docs/roadmap/active/51-a8-data-lifecycle-privacy.md T4b/T5b's own
+// privacyHandlers is docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T4b/T5b's own
 // export+closure route set — same optional-type-assertion convention as
 // every other handler interface in this codebase.
 type privacyHandlers interface{ PrivacyRouter() http.Handler }

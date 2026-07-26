@@ -15,7 +15,7 @@ import (
 	"github.com/herdifirdausss/seev/pkg/cryptox"
 )
 
-// mockDigestRingForTest is docs/roadmap/active/51-a8-data-lifecycle-privacy.md T3's (K7) fixed test
+// mockDigestRingForTest is docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T3's (K7) fixed test
 // key for this file's sqlmock-based unit tests — none of them exercise
 // Insert/FindConflictOrDuplicate (those need a real Postgres unique
 // constraint to race against, covered by schema_contract_test.go's own

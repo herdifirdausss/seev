@@ -1,4 +1,4 @@
--- docs/roadmap/active/51-a8-data-lifecycle-privacy.md K5: local retention holds. Auth
+-- docs/roadmap/archive/51-a8-data-lifecycle-privacy.md K5: local retention holds. Auth
 -- coordinates a hold command, but every affected owner service persists its
 -- own copy before acknowledging it — this table IS that local copy, and it
 -- is what a purge/redact function (see the next K4 migration) checks before

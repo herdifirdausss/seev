@@ -1,6 +1,6 @@
 //go:build integration
 
-// Proves docs/roadmap/active/51-a8-data-lifecycle-privacy.md T2.6's
+// Proves docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T2.6's
 // fn_retention_purge_requests_destination_and_error end to end against a
 // real Postgres: eligibility boundary (terminal status + 30 days),
 // redaction clears the plaintext `destination`/`error_message` columns AND

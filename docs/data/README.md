@@ -4,7 +4,7 @@
 
 > **Status: Current.** Generated evidence and policy for Track A8 (data
 > lifecycle and privacy) — see
-> [docs/roadmap/active/51-a8-data-lifecycle-privacy.md](../roadmap/active/51-a8-data-lifecycle-privacy.md)
+> [docs/roadmap/archive/51-a8-data-lifecycle-privacy.md](../roadmap/archive/51-a8-data-lifecycle-privacy.md)
 > for the locked design decisions this directory implements.
 
 | Page | Use it for |

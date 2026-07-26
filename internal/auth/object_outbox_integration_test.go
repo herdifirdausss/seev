@@ -1,6 +1,6 @@
 //go:build integration
 
-// Proves docs/roadmap/active/51-a8-data-lifecycle-privacy.md T1.6's object-delete outbox
+// Proves docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T1.6's object-delete outbox
 // (pkg/objectoutbox) end to end against real Postgres, using kyc_documents
 // as the concrete ref_table: enqueue is idempotent, a successful drain
 // marks both the outbox row 'done' and kyc_documents.deleted_at, a store

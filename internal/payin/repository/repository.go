@@ -70,7 +70,7 @@ type repo struct {
 	ring *cryptox.Ring
 }
 
-// NewRepository's ring is REQUIRED — docs/roadmap/active/51-a8-data-lifecycle-privacy.md
+// NewRepository's ring is REQUIRED — docs/roadmap/archive/51-a8-data-lifecycle-privacy.md
 // "A8 T2.5b" (the contract migration): payin_webhook_events.raw has no
 // plaintext column anymore (migrations/payin/000010), so every write
 // needs the ring to function at all. A NULL raw_ciphertext on an existing

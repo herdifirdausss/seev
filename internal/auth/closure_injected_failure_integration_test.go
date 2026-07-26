@@ -1,6 +1,6 @@
 //go:build integration
 
-// Proves docs/roadmap/active/51-a8-data-lifecycle-privacy.md T5's own
+// Proves docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T5's own
 // required test, explicitly flagged as not yet live-verified in T5's and
 // T4b/T5b's own Result sections: "one unavailable owner leaves the user
 // disabled and resumes forward later." Every other closure test drives the

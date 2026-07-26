@@ -1,4 +1,4 @@
--- docs/roadmap/active/51-a8-data-lifecycle-privacy.md T2.4 (K2/K3 expand phase): nullable
+-- docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T2.4 (K2/K3 expand phase): nullable
 -- ciphertext/key-version columns for payin_webhook_events.raw. Plaintext
 -- `raw` stays in place and required — application code dual-writes both
 -- during this phase (K3 step 2); the contract phase (making ciphertext

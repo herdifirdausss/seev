@@ -1,6 +1,6 @@
 //go:build integration
 
-// Proves docs/roadmap/active/51-a8-data-lifecycle-privacy.md T1's auth.refresh_tokens
+// Proves docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T1's auth.refresh_tokens
 // class end to end against a real Postgres: eligibility boundary, dry-run
 // parity, retention-hold exclusion, and that app_service still cannot
 // DELETE auth_refresh_tokens directly. Reuses setupAuthTestDB

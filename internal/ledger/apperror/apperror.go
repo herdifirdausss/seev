@@ -165,7 +165,7 @@ var (
 	ErrAlreadyPosted   = errors.New("ALREADY_POSTED")
 	ErrPreviousFailed  = errors.New("PREVIOUS_ATTEMPT_FAILED")
 	ErrStillProcessing = errors.New("STILL_PROCESSING")
-	// ErrIdempotencyConflict is docs/roadmap/active/51-a8-data-lifecycle-privacy.md T3's (K7)
+	// ErrIdempotencyConflict is docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T3's (K7)
 	// new outcome: the SAME idempotency key/scope was reused with a
 	// DIFFERENT type/amount/currency than the original request — distinct
 	// from ErrAlreadyPosted (a legitimate retry of the identical request),

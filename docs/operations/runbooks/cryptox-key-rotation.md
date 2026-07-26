@@ -5,7 +5,7 @@
 > **Status: Current. Audience: operators.** Follow this procedure only in an
 > environment where you are authorized to change encryption key material.
 
-Covers rotating the shared, cluster-wide `pkg/cryptox` KEK ring (docs/roadmap/active/51-a8-data-lifecycle-privacy.md
+Covers rotating the shared, cluster-wide `pkg/cryptox` KEK ring (docs/roadmap/archive/51-a8-data-lifecycle-privacy.md
 K2/K3/T2.2) — the versioned AES-256 key set every service that encrypts a
 sensitive field (auth email/full name/KYC payload/KYC documents, pay-in raw
 webhooks, payout destinations, ledger reconciliation raw data, admin BFF

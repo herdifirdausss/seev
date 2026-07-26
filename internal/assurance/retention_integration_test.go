@@ -1,6 +1,6 @@
 //go:build integration
 
-// Proves docs/roadmap/active/51-a8-data-lifecycle-privacy.md T1.7's assurance.runs.succeeded
+// Proves docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T1.7's assurance.runs.succeeded
 // and assurance.alert_deliveries classes end to end against a real
 // Postgres: eligibility boundary, dry-run parity, and direct DELETE still
 // forbidden. Neither class has hold_scope (T0's own classification — a

@@ -1,4 +1,4 @@
-// Package payin's own owner-side of docs/roadmap/active/51-a8-data-lifecycle-privacy.md T4b/T5b
+// Package payin's own owner-side of docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T4b/T5b
 // (K9, K10, K11) — the export and closure contracts auth-service calls
 // into. Mirrors internal/ledger/service/closure's own Prepare/Commit
 // shape (docs/roadmap/active/51 T5) and internal/auth's own export DTO
@@ -9,12 +9,15 @@ package payin
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/herdifirdausss/seev/pkg/privacyexport"
 )
 
 // PrivacyPrepareClosure checks K10's payin-owned blocking condition: a
@@ -108,55 +111,61 @@ type privacyExportTopupIntentRow struct {
 // K9's own owner-composed export contract. Ordered deterministically
 // (created_at, id), same as auth's own collectAuthOwnerRows.
 func (m *Module) PrivacyExportRows(ctx context.Context, subjectID uuid.UUID, cutoff time.Time) ([]json.RawMessage, error) {
+	var all []json.RawMessage
+	for offset := 0; ; {
+		page, next, err := m.PrivacyExportPage(ctx, subjectID, cutoff, offset, privacyexport.DefaultPageSize)
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, page...)
+		if next == "" {
+			return all, nil
+		}
+		offset += len(page)
+	}
+}
+
+func (m *Module) PrivacyExportPage(ctx context.Context, subjectID uuid.UUID, cutoff time.Time, offset, pageSize int) ([]json.RawMessage, string, error) {
+	rows, err := m.db.QueryContext(ctx, `
+		SELECT kind,id,reference,vendor,amount,currency,status,created_at FROM (
+		  SELECT 'payin_webhook_event' kind,id,NULL::text reference,vendor,amount,currency,status,created_at
+		  FROM payin_webhook_events WHERE user_id=$1 AND created_at<=$2
+		  UNION ALL
+		  SELECT 'payin_topup_intent' kind,id,reference,vendor,amount,currency,status,created_at
+		  FROM payin_topup_intents WHERE user_id=$1 AND created_at<=$2
+		) exported ORDER BY created_at,id,kind LIMIT $3 OFFSET $4`,
+		subjectID, cutoff, pageSize+1, offset)
+	if err != nil {
+		return nil, "", fmt.Errorf("payin export: page: %w", err)
+	}
+	defer rows.Close()
 	var out []json.RawMessage
-
-	eventRows, err := m.db.QueryContext(ctx, `
-		SELECT id, vendor, amount, currency, status, created_at FROM payin_webhook_events
-		WHERE user_id = $1 AND created_at <= $2 ORDER BY created_at, id`, subjectID, cutoff)
-	if err != nil {
-		return nil, fmt.Errorf("payin export: webhook_events: %w", err)
-	}
-	for eventRows.Next() {
-		var row privacyExportWebhookEventRow
-		row.Type = "payin_webhook_event"
-		if err := eventRows.Scan(&row.ID, &row.Vendor, &row.Amount, &row.Currency, &row.Status, &row.CreatedAt); err != nil {
-			eventRows.Close()
-			return nil, fmt.Errorf("payin export: scan webhook_events: %w", err)
+	for rows.Next() {
+		var kind, id, vendor, currency, status string
+		var reference sql.NullString
+		var amount int64
+		var createdAt time.Time
+		if err := rows.Scan(&kind, &id, &reference, &vendor, &amount, &currency, &status, &createdAt); err != nil {
+			return nil, "", fmt.Errorf("payin export: scan page: %w", err)
 		}
-		encoded, err := json.Marshal(row)
+		var value any
+		if kind == "payin_topup_intent" {
+			value = privacyExportTopupIntentRow{Type: kind, ID: id, Reference: reference.String, Vendor: vendor, Amount: amount, Currency: currency, Status: status, CreatedAt: createdAt}
+		} else {
+			value = privacyExportWebhookEventRow{Type: kind, ID: id, Vendor: vendor, Amount: amount, Currency: currency, Status: status, CreatedAt: createdAt}
+		}
+		encoded, err := json.Marshal(value)
 		if err != nil {
-			eventRows.Close()
-			return nil, fmt.Errorf("payin export: encode webhook_event: %w", err)
+			return nil, "", fmt.Errorf("payin export: encode page: %w", err)
 		}
 		out = append(out, encoded)
 	}
-	if err := eventRows.Err(); err != nil {
-		eventRows.Close()
-		return nil, fmt.Errorf("payin export: iterate webhook_events: %w", err)
+	if err := rows.Err(); err != nil {
+		return nil, "", fmt.Errorf("payin export: iterate page: %w", err)
 	}
-	eventRows.Close()
-
-	intentRows, err := m.db.QueryContext(ctx, `
-		SELECT id, reference, amount, currency, vendor, status, created_at FROM payin_topup_intents
-		WHERE user_id = $1 AND created_at <= $2 ORDER BY created_at, id`, subjectID, cutoff)
-	if err != nil {
-		return nil, fmt.Errorf("payin export: topup_intents: %w", err)
+	hasMore := len(out) > pageSize
+	if hasMore {
+		out = out[:pageSize]
 	}
-	defer intentRows.Close()
-	for intentRows.Next() {
-		var row privacyExportTopupIntentRow
-		row.Type = "payin_topup_intent"
-		if err := intentRows.Scan(&row.ID, &row.Reference, &row.Amount, &row.Currency, &row.Vendor, &row.Status, &row.CreatedAt); err != nil {
-			return nil, fmt.Errorf("payin export: scan topup_intents: %w", err)
-		}
-		encoded, err := json.Marshal(row)
-		if err != nil {
-			return nil, fmt.Errorf("payin export: encode topup_intent: %w", err)
-		}
-		out = append(out, encoded)
-	}
-	if err := intentRows.Err(); err != nil {
-		return nil, fmt.Errorf("payin export: iterate topup_intents: %w", err)
-	}
-	return out, nil
+	return out, privacyexport.Next(offset, len(out), hasMore), nil
 }

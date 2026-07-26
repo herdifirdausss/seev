@@ -12,7 +12,7 @@ import (
 	"github.com/herdifirdausss/seev/pkg/scheduler"
 )
 
-// StartRetentionRunner wires and starts gateway's docs/roadmap/active/51-a8-data-lifecycle-privacy.md
+// StartRetentionRunner wires and starts gateway's docs/roadmap/archive/51-a8-data-lifecycle-privacy.md
 // T1.7 retention classes (config/data-retention.yaml) on their own
 // dedicated scheduler — same construction as internal/auth.Module's own
 // StartRetentionRunner.

@@ -113,7 +113,7 @@ type repo struct {
 	ring *cryptox.Ring
 }
 
-// NewRepository's ring is REQUIRED — docs/roadmap/active/51-a8-data-lifecycle-privacy.md
+// NewRepository's ring is REQUIRED — docs/roadmap/archive/51-a8-data-lifecycle-privacy.md
 // "A8 T2.5b" (the contract migration): payout_requests.destination has no
 // plaintext column anymore (migrations/payout/000011), so every write
 // needs the ring to function at all. A NULL destination_ciphertext on an

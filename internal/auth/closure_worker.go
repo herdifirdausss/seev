@@ -26,7 +26,7 @@ const (
 	closureBaseBackoff = 30 * time.Second
 )
 
-// StartClosureWorker wires and starts docs/roadmap/active/51-a8-data-lifecycle-privacy.md
+// StartClosureWorker wires and starts docs/roadmap/archive/51-a8-data-lifecycle-privacy.md
 // T5's (K10) closure saga driver. Returns (nil, nil) when no closure ring
 // or registered owner is configured — matches StartPrivacyExportWorker's
 // own "storage/dependencies are optional in this binary" convention.

@@ -1,4 +1,4 @@
--- docs/roadmap/active/51-a8-data-lifecycle-privacy.md T2.6: SECURITY DEFINER redact
+-- docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T2.6: SECURITY DEFINER redact
 -- function for payin.webhook_events.raw (config/data-retention.yaml) — the
 -- class was already declared in T0's policy but never implemented (T1's
 -- own scope explicitly listed only its DELETE classes). Redacts BOTH the

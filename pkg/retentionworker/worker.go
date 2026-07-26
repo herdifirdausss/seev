@@ -1,5 +1,5 @@
 // Package retentionworker is the shared runtime every owner service uses to
-// execute its own docs/roadmap/active/51-a8-data-lifecycle-privacy.md K4/K6 retention
+// execute its own docs/roadmap/archive/51-a8-data-lifecycle-privacy.md K4/K6 retention
 // classes: a bounded batch loop calling one SECURITY DEFINER Postgres
 // function per class, on a daily K6 schedule, with dry-run support and
 // Prometheus metrics. Each owner service constructs its own Runner with its
