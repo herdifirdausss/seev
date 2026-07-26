@@ -804,7 +804,7 @@ services:
           memory: 512M
 
   loki:
-    image: grafana/loki@sha256:70b9f699fc9bb868b62f1cfd4f787dfa50242f1fd92e6089787d5d7daea75fe8 # 3.7.3
+    image: grafana/loki@sha256:87f0a067673756a3cede1bcbf0c74875f7df9b09fddb53e399d0c576f756cfcc # 3.7.3
     profiles: ["observability"]
     command:
       - -config.file=/etc/loki/loki.yaml
