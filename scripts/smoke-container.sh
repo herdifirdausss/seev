@@ -181,8 +181,10 @@ fi
 # whatever else happens to be running in the same Compose project — and is
 # exactly what "the app profile defines precisely these eleven services"
 # means; each service's own runtime health was already verified above,
-# individually, by name.
-defined_services="$(docker compose --profile app config --services | sort)"
+# individually, by name. `object-store-init` is a one-shot volume-permission
+# helper in the app profile, not a runtime service, so exclude it from this
+# eleven-service contract (it is expected to exit successfully).
+defined_services="$(docker compose --profile app config --services | grep -vx 'object-store-init' | sort)"
 expected_sorted="$(printf '%s\n' "${EXPECTED_SERVICES[@]}" | sort)"
 if [ "$defined_services" = "$expected_sorted" ]; then
 	ok "'app' profile defines exactly the expected eleven services"
