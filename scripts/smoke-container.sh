@@ -124,6 +124,12 @@ docker compose --profile app down -v --remove-orphans >/dev/null 2>&1 || true
 log "generating local backup secrets..."
 make backup-secret >/dev/null
 
+# The app profile also mounts the Cryptox and idempotency key files. They are
+# gitignored runtime material, so a fresh CI runner needs the same idempotent
+# generation step before Compose validates its file-backed secrets.
+log "generating Cryptox secrets..."
+make cryptox-secret >/dev/null
+
 # docs/roadmap/archive/49 K3: every app-profile container now mounts ./deploy/certs
 # read-only (x-cert-volume in docker-compose.yml) — `make certs` writes the
 # CA + per-service leaves there before compose ever starts a container.

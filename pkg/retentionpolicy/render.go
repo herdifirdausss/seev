@@ -20,9 +20,9 @@ func RenderMarkdown(p *Policy) string {
 		" — do not hand-edit this file.** Regenerate with `make retention-docs`" +
 		" after changing the policy. `cmd/retentioncheck` fails CI if this file" +
 		" and the policy ever disagree.\n\n")
-	b.WriteString(fmt.Sprintf("Policy version: **%d**. See "+
+	fmt.Fprintf(&b, "Policy version: **%d**. See "+
 		"[docs/roadmap/archive/51-a8-data-lifecycle-privacy.md](../roadmap/archive/51-a8-data-lifecycle-privacy.md)"+
-		" for the locked design decisions (K1–K13) this matrix implements.\n\n", p.PolicyVersion))
+		" for the locked design decisions (K1–K13) this matrix implements.\n\n", p.PolicyVersion)
 
 	b.WriteString("These are conservative engineering defaults for this learning " +
 		"repository, not an approved jurisdiction/product policy — see that " +
@@ -35,13 +35,13 @@ func RenderMarkdown(p *Policy) string {
 	permanent := append([]string(nil), p.PermanentTables...)
 	sort.Strings(permanent)
 	for _, t := range permanent {
-		b.WriteString(fmt.Sprintf("- `%s`\n", t))
+		fmt.Fprintf(&b, "- `%s`\n", t)
 	}
 	b.WriteString("\n")
 
 	owners := ownerOrder(p.Entries)
 	for _, owner := range owners {
-		b.WriteString(fmt.Sprintf("## %s\n\n", owner))
+		fmt.Fprintf(&b, "## %s\n\n", owner)
 		b.WriteString("| Class | Table / object | Classification | Terminal timestamp | Duration | Action | Batch | Hold scope |\n")
 		b.WriteString("|---|---|---|---|---|---|---|---|\n")
 		entries := entriesForOwner(p.Entries, owner)
@@ -50,7 +50,7 @@ func RenderMarkdown(p *Policy) string {
 			if target == "" {
 				target = e.ObjectClass
 			}
-			b.WriteString(fmt.Sprintf("| `%s` | %s | %s | %s | %s | %s | %s | %s |\n",
+			fmt.Fprintf(&b, "| `%s` | %s | %s | %s | %s | %s | %s | %s |\n",
 				e.Class,
 				mdEscape(target),
 				e.Classification,
@@ -59,11 +59,11 @@ func RenderMarkdown(p *Policy) string {
 				e.Action,
 				mdCell(intOrDash(e.BatchSize)),
 				e.HoldScope,
-			))
+			)
 		}
 		b.WriteString("\n")
 		for _, e := range entries {
-			b.WriteString(fmt.Sprintf("**`%s`** — %s\n\n", e.Class, strings.TrimSpace(collapseWhitespace(e.Notes))))
+			fmt.Fprintf(&b, "**`%s`** — %s\n\n", e.Class, strings.TrimSpace(collapseWhitespace(e.Notes)))
 		}
 	}
 

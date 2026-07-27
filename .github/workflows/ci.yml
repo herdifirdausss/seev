@@ -197,7 +197,10 @@ jobs:
       # Postgres container against the Docker daemon already available on
       # GitHub-hosted runners — no separate `services:` container needed.
       - name: Integration tests
-        run: go test -tags=integration -race ./...
+        # internal/auth exercises many testcontainers-backed lifecycle cases;
+        # under -race it can legitimately exceed Go's 10-minute default test
+        # timeout (the job itself remains bounded by timeout-minutes: 30).
+        run: go test -tags=integration -race -timeout 25m ./...
 
   # ─── smoke-container: full-container round-trip (docs/roadmap/archive/44 K4/K5) ───────
   # Nine images built ONCE via a single Bake invocation (reads the build
