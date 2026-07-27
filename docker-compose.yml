@@ -827,7 +827,7 @@ services:
     # curl 127.0.0.1:3100/ready.
 
   tempo:
-    image: grafana/tempo@sha256:ee21727732c7a7199cb71c3eee9153bbf23f9b0b87619f0555a0cf21a67f1a33 # 2.10.5
+    image: grafana/tempo@sha256:1ce31d6d7ffab62189685e8c47881d4a561c5d38bd0dbd66e40ca83cef07923d # 2.10.5
     profiles: ["observability"]
     command:
       - -config.file=/etc/tempo/tempo.yaml
