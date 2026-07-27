@@ -190,7 +190,7 @@ services:
       retries: 10
 
   rabbitmq:
-    image: rabbitmq:4.3.3-management-alpine
+    image: rabbitmq:4.3.4-management-alpine
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME:-seev}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-seev}
