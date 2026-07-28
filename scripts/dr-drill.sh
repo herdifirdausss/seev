@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# docs/roadmap/active/50 T6: full game-day disaster-recovery drill. Builds a
+# docs/roadmap/archive/50 T6: full game-day disaster-recovery drill. Builds a
 # throwaway "gameday" environment from scratch (fresh Postgres/Redis/
 # RabbitMQ under an isolated Compose project, real pgBackRest backups
 # against an isolated repository — never deploy/backup/repo, the real

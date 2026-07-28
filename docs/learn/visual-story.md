@@ -102,9 +102,9 @@ A genuine message can still be duplicated, old, malformed, or connected to
 the wrong expectation. This is why a signature alone is not enough.
 
 This diagram shows the active safety rule. VendorService proves the transport
-message and Payin/Payout correlate it against owner-domain state; the old raw
-callback compatibility path remains only in code and is not an active Gateway
-route. The remaining live acceptance is described in [plan 54](../roadmap/active/54-vendor-service-boundary.md).
+message and Payin/Payout correlate it against owner-domain state; neither
+service exposes a raw callback contract. The remaining live acceptance is
+described in [archived plan 54](../roadmap/archive/54-vendor-service-boundary.md).
 
 ## Scene 4: the accounting book makes the money real
 
@@ -216,7 +216,7 @@ different promises. If an app calls all three “success,” Mia cannot know
 whether she can spend the money or safely try again.
 
 The top-up and withdrawal rows describe the safer notification target in
-[plan 54](../roadmap/active/54-vendor-service-boundary.md). Today, Ledger can announce its
+[archived plan 54](../roadmap/archive/54-vendor-service-boundary.md). Today, Ledger can announce its
 completed money record before the workflow owner has saved its own final
 state. Current code must therefore not be presented as already meeting that
 target.
@@ -328,10 +328,10 @@ VendorService authenticates and translates vendor communication. Payin and
 Payout still check their own intent or request before changing business state.
 VendorService does not choose a user or move Ledger money.
 
-The old raw callback compatibility path remains in code, but it is not an
-active Gateway route. The active path does not accept a vendor payload's user
-id when no intent matches. Final live integration and chaos acceptance remain
-in [plan 54](../roadmap/active/54-vendor-service-boundary.md).
+There is no active raw callback path in Payin; the deprecated v1 wire method is
+unimplemented. The active path does not accept a vendor payload's user id when
+no intent matches. Final live integration and chaos acceptance remain in
+[archived plan 54](../roadmap/archive/54-vendor-service-boundary.md).
 
 ## Tell the story back in five answers
 

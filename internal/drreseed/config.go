@@ -1,4 +1,4 @@
-// Package drreseed implements docs/roadmap/active/50 T5 (K10): deterministic
+// Package drreseed implements docs/roadmap/archive/50 T5 (K10): deterministic
 // reconstruction of Redis state that is not itself backed up — policy
 // counters and fraud velocity/dedup keys — from the PostgreSQL data a
 // restore (T3) already brought back. Redis and RabbitMQ start with fresh,

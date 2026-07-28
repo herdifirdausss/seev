@@ -1,4 +1,4 @@
-// Command retentioncheck validates config/data-retention.yaml (docs/roadmap/active/51
+// Command retentioncheck validates config/data-retention.yaml (docs/roadmap/archive/51
 // K1) against its own schema rules, cross-checks it against every real
 // migrated table, and verifies docs/data/retention.md is the file's current
 // rendering. Run with -write to regenerate docs/data/retention.md instead

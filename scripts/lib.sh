@@ -36,7 +36,7 @@ JWT_ISSUER="${JWT_ISSUER:-seev}"
 # behavior that silently accepted every call is gone), so this can no
 # longer default to empty the way it used to across this whole harness.
 INTERNAL_GRPC_TOKEN="${INTERNAL_GRPC_TOKEN:-change-me-to-a-random-32-plus-character-token}"
-# docs/roadmap/active/51 "A8 T2.5b" (the contract migration): auth-service now
+# docs/roadmap/archive/51 "A8 T2.5b" (the contract migration): auth-service now
 # REFUSES to boot without both of these — auth_users.email/full_name and
 # kyc_submissions.payload have no plaintext column left to fall back to,
 # so this pair is no longer the "optional outside production" ring T2.2
@@ -44,13 +44,13 @@ INTERNAL_GRPC_TOKEN="${INTERNAL_GRPC_TOKEN:-change-me-to-a-random-32-plus-charac
 # other fixed secret in this file.
 CRYPTOX_KEY_V1="${CRYPTOX_KEY_V1:-4444444444444444444444444444444444444444444444444444444444444444}"
 CRYPTOX_LOOKUP_KEY="${CRYPTOX_LOOKUP_KEY:-5555555555555555555555555555555555555555555555555555555555555555}"
-# docs/roadmap/active/51 T3 (K7): ledger-service now REFUSES to boot without this
+# docs/roadmap/archive/51 T3 (K7): ledger-service now REFUSES to boot without this
 # (money-safety idempotency-key digest ring, required unconditionally,
 # never optional the way the field-encryption/export/closure rings
 # below are) — fixed 32-byte test value, this harness's own convention
 # for every other fixed secret above.
 LEDGER_IDEMPOTENCY_KEY_V1="${LEDGER_IDEMPOTENCY_KEY_V1:-1111111111111111111111111111111111111111111111111111111111111111}"
-# docs/roadmap/active/51 T4/T5 (K9/K10): optional — export/closure requests simply
+# docs/roadmap/archive/51 T4/T5 (K9/K10): optional — export/closure requests simply
 # return 503 when unset, never a boot failure — but this harness's own
 # privacy-e2e.sh needs both actually configured to exercise those flows.
 EXPORT_KEK_V1="${EXPORT_KEK_V1:-2222222222222222222222222222222222222222222222222222222222222222}"
@@ -701,7 +701,7 @@ start_auth_service() {
 		export REDIS_ENABLED="${REDIS_ENABLED:-true}"
 		export REDIS_ADDR=localhost:$REDIS_HOST_PORT
 		export LEDGER_GRPC_ADDR=localhost:$LEDGER_GRPC_PORT
-		# docs/roadmap/active/51 T5 (K10): where the closure saga calls ledger's
+		# docs/roadmap/archive/51 T5 (K10): where the closure saga calls ledger's
 		# ClosureRouter — the internal (:$LEDGER_INTERNAL_PORT-class) port.
 		export LEDGER_INTERNAL_API_URL=https://localhost:$LEDGER_INTERNAL_PORT
 		export PAYIN_INTERNAL_API_URL=https://localhost:$PAYIN_ADMIN_PORT

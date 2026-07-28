@@ -2,124 +2,60 @@ package grpcserver
 
 import (
 	"context"
-	"errors"
 	"net"
-	"net/http"
 	"testing"
 
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 
 	payinv1 "github.com/herdifirdausss/seev/gen/payin/v1"
 	"github.com/herdifirdausss/seev/internal/payin/model"
-	"github.com/herdifirdausss/seev/internal/vendorgw"
 )
 
 type fakeService struct {
-	outcome string
-	err     error
-	vendor  string
-	headers http.Header
-	body    []byte
+	callback func(context.Context, string, string, string, string, string, string, string, string, string, string) (string, error)
 }
 
-func (f *fakeService) HandleWebhookResult(_ context.Context, vendor string, headers http.Header, body []byte) (string, error) {
-	f.vendor, f.headers, f.body = vendor, headers, append([]byte(nil), body...)
-	return f.outcome, f.err
-}
-
-func (*fakeService) CreateTopupIntent(context.Context, uuid.UUID, decimal.Decimal) (model.TopupIntent, error) {
+func (f *fakeService) CreateTopupIntent(context.Context, uuid.UUID, decimal.Decimal) (model.TopupIntent, error) {
 	return model.TopupIntent{}, nil
 }
 
-func (*fakeService) GetTopupIntent(context.Context, uuid.UUID) (model.TopupIntent, error) {
+func (f *fakeService) GetTopupIntent(context.Context, uuid.UUID) (model.TopupIntent, error) {
 	return model.TopupIntent{}, nil
 }
 
-func startServer(t *testing.T, service Service) payinv1.PayinServiceClient {
-	t.Helper()
-	listener := bufconn.Listen(1024 * 1024)
-	server := grpc.NewServer()
-	payinv1.RegisterPayinServiceServer(server, New(service, errors.New("not found"), errors.New("no route"), errors.New("no vendor available"), errors.New("screening dependency unavailable")))
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(func() { server.Stop(); _ = listener.Close() })
-	connection, err := grpc.NewClient("passthrough:///bufnet",
-		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return listener.Dial() }),
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-	)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = connection.Close() })
-	return payinv1.NewPayinServiceClient(connection)
+func (f *fakeService) HandleVendorCallback(ctx context.Context, vendor, eventID, reference, amount, currency, callbackStatus, occurredAt, inboxID, requestID, unknownStatus string) (string, error) {
+	return f.callback(ctx, vendor, eventID, reference, amount, currency, callbackStatus, occurredAt, inboxID, requestID, unknownStatus)
 }
 
-func TestHandleWebhook_AllOutcomes(t *testing.T) {
-	tests := []struct {
-		name       string
-		outcome    string
-		err        error
-		wantCode   codes.Code
-		wantResult payinv1.WebhookResult
-	}{
-		{name: "ok", outcome: "ok", wantCode: codes.OK, wantResult: payinv1.WebhookResult_WEBHOOK_RESULT_OK},
-		{name: "ignored", outcome: "ignored", wantCode: codes.OK, wantResult: payinv1.WebhookResult_WEBHOOK_RESULT_IGNORED},
-		{name: "unknown vendor", err: vendorgw.ErrUnknownPayinVendor, wantCode: codes.NotFound},
-		{name: "bad signature", err: vendorgw.ErrInvalidSignature, wantCode: codes.Unauthenticated},
-		{name: "business failure", outcome: "business_failure", err: errors.New("account suspended"), wantCode: codes.OK, wantResult: payinv1.WebhookResult_WEBHOOK_RESULT_BUSINESS_FAILURE},
-		{name: "infrastructure failure", err: errors.New("database unavailable"), wantCode: codes.Internal},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			service := &fakeService{outcome: test.outcome, err: test.err}
-			client := startServer(t, service)
-			raw := []byte("\x00exact\nraw-body")
-			response, err := client.HandleWebhook(context.Background(), &payinv1.HandleWebhookRequest{
-				Vendor: "mockvendor", Headers: map[string]string{"X-Signature": "abc"}, RawBody: raw,
-			})
-			assert.Equal(t, test.wantCode, status.Code(err))
-			if test.wantCode == codes.OK {
-				require.NoError(t, err)
-				assert.Equal(t, test.wantResult, response.GetResult())
-			}
-			assert.Equal(t, "mockvendor", service.vendor)
-			assert.Equal(t, "abc", service.headers.Get("X-Signature"))
-			assert.Equal(t, raw, service.body, "raw webhook bytes must cross the wire unchanged")
-		})
-	}
-}
-
-// TestHandleWebhook_ScreeningDependencyUnavailable_MapsToUnavailable
-// proves docs/roadmap/archive/45 Task T3/K4: the service returning the configured
-// screeningDependencyUnavailable sentinel maps to codes.Unavailable with a
-// message distinguishable from noVendorAvailable's own codes.Unavailable
-// use elsewhere in this contract.
-func TestHandleWebhook_ScreeningDependencyUnavailable_MapsToUnavailable(t *testing.T) {
-	depUnavailable := errors.New("screening dependency unavailable")
-	service := &fakeService{err: depUnavailable}
-
+func TestHandleVendorCallback_DeliversNormalizedContract(t *testing.T) {
 	listener := bufconn.Listen(1024 * 1024)
+	service := &fakeService{callback: func(_ context.Context, vendor, eventID, reference, amount, currency, callbackStatus, occurredAt, inboxID, requestID, unknownStatus string) (string, error) {
+		require.Equal(t, "mockvendor", vendor)
+		require.Equal(t, "evt-1", eventID)
+		require.Equal(t, "TOP-1", reference)
+		require.Equal(t, "50000", amount)
+		require.Equal(t, "IDR", currency)
+		require.Equal(t, "settled", callbackStatus)
+		require.Equal(t, "inbox-1", inboxID)
+		require.Equal(t, "req-1", requestID)
+		require.Empty(t, unknownStatus)
+		return "finalized", nil
+	}}
 	server := grpc.NewServer()
-	payinv1.RegisterPayinServiceServer(server, New(service, errors.New("not found"), errors.New("no route"), errors.New("no vendor available"), depUnavailable))
+	payinv1.RegisterPayinServiceServer(server, New(service, nil, nil, nil, nil))
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(func() { server.Stop(); _ = listener.Close() })
-	connection, err := grpc.NewClient("passthrough:///bufnet",
-		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return listener.Dial() }),
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-	)
+
+	connection, err := grpc.NewClient("passthrough:///bufnet", grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return listener.Dial() }), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = connection.Close() })
 	client := payinv1.NewPayinServiceClient(connection)
-
-	_, callErr := client.HandleWebhook(context.Background(), &payinv1.HandleWebhookRequest{
-		Vendor: "mockvendor", Headers: map[string]string{"X-Signature": "abc"}, RawBody: []byte("{}"),
-	})
-	require.Error(t, callErr)
-	assert.Equal(t, codes.Unavailable, status.Code(callErr))
-	assert.Equal(t, "screening dependency unavailable", status.Convert(callErr).Message())
+	response, err := client.HandleVendorCallback(context.Background(), &payinv1.HandleVendorCallbackRequest{Vendor: "mockvendor", VendorEventId: "evt-1", ExternalReference: "TOP-1", Amount: "50000", Currency: "IDR", Status: "settled", VendorInboxId: "inbox-1", RequestId: "req-1"})
+	require.NoError(t, err)
+	require.Equal(t, payinv1.VendorCallbackResult_VENDOR_CALLBACK_RESULT_FINALIZED, response.GetResult())
 }

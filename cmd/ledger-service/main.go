@@ -138,7 +138,7 @@ func run(parent context.Context) error {
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
-	// docs/roadmap/active/51 T3 (K7): unlike Cryptox (optional outside production),
+	// docs/roadmap/archive/51 T3 (K7): unlike Cryptox (optional outside production),
 	// this is required in EVERY environment — a missing/malformed
 	// idempotency digest key must never let posting silently run without
 	// ever computing a digest. Checked as early as possible, before any
@@ -286,7 +286,7 @@ func run(parent context.Context) error {
 	}))
 	internalServer := newHTTPServer(cfg.App, cfg.App.InternalBindAddr+":"+cfg.App.InternalPort, internalRouter(cfg, module, policyHandler, log), tlsx.ServerConfig(certSrc, []string{
 		tlsx.IdentityDevOperator, tlsx.IdentityPrometheus, tlsx.IdentityAdminBFF,
-		// docs/roadmap/active/51 T5 (K10): auth-service calls ClosureRouter's two
+		// docs/roadmap/archive/51 T5 (K10): auth-service calls ClosureRouter's two
 		// prepare/commit endpoints as the closure saga's coordinator.
 		tlsx.IdentityAuth,
 	}))
@@ -337,7 +337,7 @@ func internalRouter(cfg *config.Config, module *ledger.Module, policyHandler *po
 	api.Handle("/api/v1/ledger/", authed(http.StripPrefix("/api/v1/ledger", module.InternalRouter())))
 	api.Handle("/api/v1/admin/ledger/", authed(http.StripPrefix("/api/v1", module.InternalRouter())))
 	api.Handle("/api/v1/admin/policy/", authed(http.StripPrefix("/api/v1", policyHandler.Mux())))
-	// docs/roadmap/active/51 T5 (K10): closure prepare/commit are called by
+	// docs/roadmap/archive/51 T5 (K10): closure prepare/commit are called by
 	// auth-service's own saga worker, never by an end-user JWT — gated by
 	// the shared internal token (not `authed`'s JWT check) plus this
 	// listener's own mTLS identity allowlist above.

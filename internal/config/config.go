@@ -79,7 +79,7 @@ type Config struct {
 	// proxies to; closure/prepare/commit must never be reachable there).
 	LedgerInternalAPIURL string
 	// PayinInternalAPIURL/PayoutInternalAPIURL/FraudInternalAPIURL/
-	// GatewayInternalAPIURL are docs/roadmap/active/51 T5b's (K10/K11) base URLs
+	// GatewayInternalAPIURL are docs/roadmap/archive/51 T5b's (K10/K11) base URLs
 	// auth-service's closure saga worker calls each owner's own
 	// /privacy/closure/{prepare,commit} and /privacy/export routes on.
 	// Unlike ledger, these four owners have only ONE HTTP listener each
@@ -756,7 +756,7 @@ func loadFromEnvMode(getenv func(string) string, requireRabbitMQ bool) (*Config,
 // history — K3's own rotation runbook retires old versions once nothing
 // still references them, so a real deployment is never expected to
 // approach this. Shared by both CryptoxConfig and LedgerIdempotencyConfig
-// (docs/roadmap/active/51 T3) — same scanning rule, different key namespace.
+// (docs/roadmap/archive/51 T3) — same scanning rule, different key namespace.
 const maxVersionedKeys = 8
 
 // loadVersionedKeys scans "<prefix>1".."<prefix>8" (e.g. CRYPTOX_KEY_V or
@@ -764,7 +764,7 @@ const maxVersionedKeys = 8
 // missing version is simply absent from the map, never an error at this
 // stage (each config type's own Ring() and validate's own checks are what
 // enforce "current version must be present"). Each version also accepts
-// "<prefix><N>_FILE" (docs/roadmap/active/51 T2.2's Docker secrets mount — same
+// "<prefix><N>_FILE" (docs/roadmap/archive/51 T2.2's Docker secrets mount — same
 // BACKUP_PASSWORD_FILE convention internal/backupagent/config.go already
 // established): the file wins when both are set, since a compose
 // deployment mounting a real secret file should never be silently
@@ -911,7 +911,7 @@ func validate(cfg *Config, requireRabbitMQ bool, errs *[]string) error {
 		*errs = append(*errs, "JWT_SECRET must be at least 32 characters long")
 	}
 
-	// docs/roadmap/active/51 K3: "service boot fails when a required current key is
+	// docs/roadmap/archive/51 K3: "service boot fails when a required current key is
 	// missing." Only enforced in production — development/staging may run
 	// with cryptox entirely unconfigured (every writer that needs it fails
 	// its own operation via CryptoxConfig.Ring's own error, not the whole

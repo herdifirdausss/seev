@@ -62,7 +62,7 @@ func (r *auditRepo) WriteAudit(ctx context.Context, entry AuditEntry) error {
 	if err != nil {
 		return fmt.Errorf("adminbff: encode audit summary: %w", err)
 	}
-	// docs/roadmap/active/51 T2.4 (K2): "masked ... audit identity" — the audit
+	// docs/roadmap/archive/51 T2.4 (K2): "masked ... audit identity" — the audit
 	// trail never stores the real operator email, only a one-way masked
 	// form. Unlike sessions.email (pkg/cryptox.Ring, fully decryptable),
 	// there is no ciphertext column and no key version here: masking has

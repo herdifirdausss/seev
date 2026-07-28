@@ -263,7 +263,7 @@ func issueLeaf(out, service, identity string, ca *x509.Certificate, caKey *ecdsa
 	if err != nil {
 		return fmt.Errorf("marshal %s key: %w", service, err)
 	}
-	// 0o644, not 0o600 (docs/roadmap/active/50 T6 fix, same root cause as
+	// 0o644, not 0o600 (docs/roadmap/archive/50 T6 fix, same root cause as
 	// backup-secret's own fix): deploy/certs is bind-mounted read-only
 	// into every app container (x-cert-volume), and this leaf key is
 	// exactly what that service's own process loads at boot

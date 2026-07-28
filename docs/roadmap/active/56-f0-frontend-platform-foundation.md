@@ -243,7 +243,7 @@ Before implementation, recheck:
 
 A stale plan is not permission to overwrite newer repository behavior.
 
-### P2 — Plan 52 controls live HTTP integration
+### P2 — Archived Plan 52 controls live HTTP integration
 
 Tasks that create the workspace, design system, domain primitives, fixtures, and
 application shells may proceed before plan 52 is complete.

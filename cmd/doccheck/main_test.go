@@ -96,7 +96,7 @@ func TestRequiredDocumentationFailuresReportsMissingMarkers(t *testing.T) {
 		"SERVICES.md",
 		"docs/learn/beginner-guide.md",
 		"docs/README.md",
-		"docs/roadmap/active/54-vendor-service-boundary.md",
+		"docs/roadmap/archive/54-vendor-service-boundary.md",
 		"docs/roadmap/README.md",
 	}
 	for _, name := range files {

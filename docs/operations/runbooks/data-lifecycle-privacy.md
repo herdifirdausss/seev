@@ -22,12 +22,14 @@ See
 for the full design (K1–K13) — this runbook is the "what to do when it
 fires" companion, not the design reference.
 
-**Current scope note:** the account-closure saga (T5) is implemented for
-**auth + ledger only** — the other six K11 owners (pay-in, payout, fraud,
-gateway, admin BFF, assurance) and the separate maker/checker operator
-offboarding flow are tracked as follow-up "A8 T5b", not yet built. A closure
-request only ever touches those two services' data; nothing in this
-runbook's closure section applies to the other six.
+**Current scope note:** the account-closure saga is implemented for Auth and
+the five end-user data owners registered by `auth-service`: Ledger, Payin,
+Payout, Fraud, and Gateway/Notify. Admin BFF owns operator-session/audit data,
+not ordinary user records; Assurance stores resource evidence rather than a
+user identity, so neither is a closure owner. Maker/checker operator
+offboarding is available through Auth's admin privacy endpoints and reuses the
+same closure saga. Final multi-service/chaos evidence remains an operator
+release gate.
 
 ## Situation 1 — An active retention hold is blocking cleanup or closure
 

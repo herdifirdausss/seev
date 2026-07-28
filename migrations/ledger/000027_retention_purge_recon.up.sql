@@ -62,7 +62,7 @@ END;
 $$;
 
 -- recon_items' own eligibility is its PARENT recon_batches row's terminal
--- window, not any column on recon_items itself (docs/roadmap/active/51 §4.2, and
+-- window, not any column on recon_items itself (docs/roadmap/archive/51 §4.2, and
 -- the policy's own terminal_timestamp note: "parent recon_batches row's
 -- own terminal_timestamp"). Joins rather than duplicating recon_batches'
 -- WHERE clause so the two functions can never disagree about which batch

@@ -75,7 +75,7 @@ components: {schemas: {Order: {type: object, required: [id], properties: {id: {t
 func TestCompatibilityRequiresExactApprovedCutover(t *testing.T) {
 	baseline := strings.Replace(compatibilityFixture, "operationId: createOrder", "operationId: gatewayVendorWebhookV1", 1)
 	current := strings.Replace(compatibilityFixture, "operationId: createOrder", "operationId: vendorServiceVendorWebhookV1", 1)
-	approval := approvedBreaking{Method: "POST", Path: "/orders", PredecessorOperationID: "gatewayVendorWebhookV1", SuccessorOperationID: "vendorServiceVendorWebhookV1", Reason: "planned cutover", Plan: "docs/roadmap/active/54-vendor-service-boundary.md"}
+	approval := approvedBreaking{Method: "POST", Path: "/orders", PredecessorOperationID: "gatewayVendorWebhookV1", SuccessorOperationID: "vendorServiceVendorWebhookV1", Reason: "planned cutover", Plan: "docs/roadmap/archive/54-vendor-service-boundary.md"}
 	if err := compatible([]byte(baseline), []byte(current), approval); err != nil {
 		t.Fatalf("approved cutover rejected: %v", err)
 	}

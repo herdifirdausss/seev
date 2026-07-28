@@ -40,17 +40,17 @@ services:
       # to provision the app's restricted login role at first boot.
       APP_DB_USER: ${POSTGRES_USER:-seev_app}
       APP_DB_PASSWORD: ${POSTGRES_PASSWORD:-seev_app}
-      # docs/roadmap/active/50 K2: --data-checksums only takes effect on a FRESH
+      # docs/roadmap/archive/50 K2: --data-checksums only takes effect on a FRESH
       # initdb — an already-initialized volume (like this repo's own dev
       # volume, seev_postgres_data, created before Track A7) needs the
       # separate offline `make backup-checksums-enable` procedure instead;
-      # see docs/roadmap/active/50 T1 Result for that procedure and its evidence.
+      # see docs/roadmap/archive/50 T1 Result for that procedure and its evidence.
       POSTGRES_INITDB_ARGS: "--data-checksums"
       BACKUP_PASSWORD_FILE: /run/secrets/seev_backup_password
     secrets:
       - seev_backup_password
       - pgbackrest_repo_passphrase
-    # docs/roadmap/active/50 K2/K4: continuous WAL archiving via pgBackRest, a 60s
+    # docs/roadmap/archive/50 K2/K4: continuous WAL archiving via pgBackRest, a 60s
     # archive_timeout so an idle workload still closes the RPO window
     # (K4), and wal_level=replica (pgBackRest's baseline requirement —
     # logical is not needed here and costs more WAL volume for no benefit
@@ -79,18 +79,18 @@ services:
       - ./scripts/postgres-init:/docker-entrypoint-initdb.d:ro
       - ./migrations:/migrations:ro
       - ./deploy/backup/pgbackrest.conf:/etc/pgbackrest/pgbackrest.conf:ro
-      # docs/roadmap/active/50 K3: the backup repository is a HOST PATH, deliberately
+      # docs/roadmap/archive/50 K3: the backup repository is a HOST PATH, deliberately
       # separate from seev_postgres_data — a destructive drill cleanup may
       # remove only an isolated restore target volume, never this path.
       - ${BACKUP_REPO_PATH:-./deploy/backup/repo}:/backup-repo
-      # docs/roadmap/active/50 T2: shared with backup-agent so pgBackRest's own
+      # docs/roadmap/archive/50 T2: shared with backup-agent so pgBackRest's own
       # libpq control connection (pg_backup_start/stop) can reach this
       # server over a plain Unix socket — a named volume makes a Unix
       # socket file reachable across the container boundary without any
       # network/SSH/TLS-remote protocol on pgBackRest's side.
       - seev_backup_socket:/var/run/postgresql
     healthcheck:
-      # -h 127.0.0.1, not the default Unix socket (docs/roadmap/active/50 T6 fix): the
+      # -h 127.0.0.1, not the default Unix socket (docs/roadmap/archive/50 T6 fix): the
       # official postgres image's entrypoint runs every
       # /docker-entrypoint-initdb.d/*.sh script (including 04-backup-role.sh,
       # which iterates all 8 databases and can take several seconds)
@@ -110,7 +110,7 @@ services:
       timeout: 5s
       retries: 10
 
-  # docs/roadmap/active/50 T2 (K13): the opt-in operational backup agent — owns the
+  # docs/roadmap/archive/50 T2 (K13): the opt-in operational backup agent — owns the
   # weekly-full/daily-differential pgBackRest schedule and exposes
   # mTLS-protected /health, /ready, /metrics. Not part of the "app"
   # profile: it is an ops component, started explicitly
@@ -132,7 +132,7 @@ services:
       # variable (that's how the real PGBACKREST_REPO1_CIPHER_PASS below
       # reaches it) and a name like PGBACKREST_CONFIG_PATH collides with
       # its own config-path option, corrupting config resolution — found
-      # live in docs/roadmap/active/50 T2 execution.
+      # live in docs/roadmap/archive/50 T2 execution.
       BACKUP_PGBACKREST_CONF: /etc/pgbackrest/pgbackrest.conf
       BACKUP_REPO_PASSPHRASE_FILE: /run/secrets/pgbackrest_repo_passphrase
       BACKUP_PASSWORD_FILE: /run/secrets/seev_backup_password
@@ -140,7 +140,7 @@ services:
       # K4's weekly-full/daily-diff Asia/Jakarta schedule is the default
       # (internal/backupagent/config.go) — these overrides exist for an
       # operator who needs a different window, and were exercised
-      # directly to verify the scheduled path in docs/roadmap/active/50 T2 Result.
+      # directly to verify the scheduled path in docs/roadmap/archive/50 T2 Result.
       BACKUP_FULL_CRON: "${BACKUP_FULL_CRON:-}"
       BACKUP_DIFF_CRON: "${BACKUP_DIFF_CRON:-}"
       POSTGRES_HOST: postgres
@@ -275,7 +275,7 @@ services:
       JWT_SECRET: ${JWT_SECRET:-change-me-to-a-random-32-plus-character-secret}
       JWT_ISSUER: ${JWT_ISSUER:-seev}
       CRYPTOX_KEY_V1_FILE: /run/secrets/cryptox_key_v1
-      # docs/roadmap/active/51 T3 (K7): required unconditionally — ledger-service
+      # docs/roadmap/archive/51 T3 (K7): required unconditionally — ledger-service
       # fails to boot without this (money-safety dedup, never optional
       # like the field-encryption ring above).
       LEDGER_IDEMPOTENCY_KEY_V1_FILE: /run/secrets/ledger_idempotency_key_v1
@@ -327,7 +327,7 @@ services:
       REDIS_ENABLED: "true"
       REDIS_ADDR: redis:6379
       LEDGER_GRPC_ADDR: ledger-service:9091
-      # docs/roadmap/active/51 T5 (K10): the closure saga's outbound HTTP client to
+      # docs/roadmap/archive/51 T5 (K10): the closure saga's outbound HTTP client to
       # ledger's internal ClosureRouter — the internal (:8091-class) port,
       # deliberately NOT LEDGER_USER_API_URL's public :8090.
       LEDGER_INTERNAL_API_URL: https://ledger-service:8091
@@ -340,13 +340,13 @@ services:
       TLS_CERT_DIR: /certs
       JWT_SECRET: ${JWT_SECRET:-change-me-to-a-random-32-plus-character-secret}
       JWT_ISSUER: ${JWT_ISSUER:-seev}
-      # docs/roadmap/active/51 T2.2: auth is the only service that needs the
+      # docs/roadmap/archive/51 T2.2: auth is the only service that needs the
       # lookup key (K2's normalized-email HMAC digest) — every other
       # cryptox-using service only ever seals/opens, never looks up by
       # equality.
       CRYPTOX_KEY_V1_FILE: /run/secrets/cryptox_key_v1
       CRYPTOX_LOOKUP_KEY_FILE: /run/secrets/cryptox_lookup_key
-      # docs/roadmap/active/51 T4/T5 (K9/K10): dedicated export/closure KEKs — both
+      # docs/roadmap/archive/51 T4/T5 (K9/K10): dedicated export/closure KEKs — both
       # optional (a missing key simply disables the feature, never a boot
       # failure), wired here so the dev/compose stack can actually exercise
       # scripts/privacy-export.sh and scripts/privacy-e2e.sh.
@@ -996,20 +996,20 @@ secrets:
   # never a default/committed password — docs/roadmap/archive/43 K1).
   grafana_admin_password:
     file: ./deploy/observability/secrets/grafana_admin_password
-  # docs/roadmap/active/50 K3/K5: generated locally by `make backup-secret`, mode
+  # docs/roadmap/archive/50 K3/K5: generated locally by `make backup-secret`, mode
   # 0600, gitignored — never a default/committed credential.
   seev_backup_password:
     file: ./deploy/backup/secrets/seev_backup_password
   pgbackrest_repo_passphrase:
     file: ./deploy/backup/secrets/pgbackrest_repo_passphrase
-  # docs/roadmap/active/51 T2.2: generated locally by `make cryptox-secret`, mode
+  # docs/roadmap/archive/51 T2.2: generated locally by `make cryptox-secret`, mode
   # 0644 (same as backup-secret's own — see that target's own comment on
   # why 0600 isn't required for a local/CI-ephemeral dev secret), gitignored.
   cryptox_key_v1:
     file: ./deploy/cryptox/secrets/cryptox_key_v1
   cryptox_lookup_key:
     file: ./deploy/cryptox/secrets/cryptox_lookup_key
-  # docs/roadmap/active/51 T3/T4/T5: generated locally by `make cryptox-secret`
+  # docs/roadmap/archive/51 T3/T4/T5: generated locally by `make cryptox-secret`
   # (same target, extended), mode 0644, gitignored — separate key
   # namespaces from cryptox_key_v1 above (K2's own separate-key-material
   # principle: ledger idempotency digests, export archives, and closure
@@ -1024,7 +1024,7 @@ secrets:
 
 volumes:
   seev_postgres_data:
-  # docs/roadmap/active/50 T2: shares the Postgres Unix socket directory between the
+  # docs/roadmap/archive/50 T2: shares the Postgres Unix socket directory between the
   # postgres and backup-agent containers (see the postgres service's own
   # volumes comment) — never mounted anywhere else.
   seev_backup_socket:

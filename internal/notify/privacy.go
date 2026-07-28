@@ -58,7 +58,7 @@ func (m *Module) PrivacyCommitClosure(ctx context.Context, subjectID, surrogateI
 	return hex.EncodeToString(h.Sum(nil)), affectedCount, nil
 }
 
-// privacyExportNotificationRow is docs/roadmap/active/51 T4b's own hand-written
+// privacyExportNotificationRow is docs/roadmap/archive/51 T4b's own hand-written
 // export DTO. `payload` is excluded — it's an internal rendering aid
 // (TransactionPosted-derived), `title`/`body` already carry the
 // user-facing content.

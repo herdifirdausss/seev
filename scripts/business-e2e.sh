@@ -201,7 +201,7 @@ topup() {
 	body="{\"event_id\":\"e2e-topup-$RUN_ID\",\"external_ref\":\"$reference\",\"user_id\":\"$(uuidgen | tr '[:upper:]' '[:lower:]')\",\"amount\":\"500000\",\"currency\":\"IDR\",\"occurred_at\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"type\":\"payment.settled\"}"
 	local sig
 	sig="$(printf '%s' "$body" | openssl dgst -sha256 -hmac "$MOCKVENDOR_SECRET" -r | awk '{print $1}')"
-	log "webhook payload deliberately carries a RANDOM user_id — the intent's OWN user_id must win, proving the vendor never learns it..."
+	log "webhook payload carries an ignored user_id field; VendorService normalizes it away and Payin uses the intent owner..."
 	local code
 	code=$(curl_internal -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$VENDOR_APP_PORT/webhooks/mockvendor" \
 		-H "X-Mock-Signature: $sig" -H "Content-Type: application/json" -d "$body")

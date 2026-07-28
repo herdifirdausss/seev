@@ -1,10 +1,11 @@
 # 54 — VendorService Boundary and Trusted Callback Flow
 
-> [Documentation home](../../README.md) · [Roadmap](../README.md) · [Active plans](README.md)
+> [Documentation home](../../README.md) · [Roadmap](../README.md) · [Archive](README.md)
 
-> **Status: In progress.** The VendorService foundation and active callback
-> boundary are implemented. Final live integration and chaos acceptance remain
-> open; use the implementation log and checklist below for exact state.
+> **Status: Core done.** The VendorService foundation and
+> callback boundary are implemented. Final live integration and chaos
+> acceptance remain explicit operator/release gates; use the checklist below
+> for the exact state.
 
 ## Why this change exists
 
@@ -79,9 +80,9 @@ mTLS remains mandatory in either case; an IP address alone is not identity.
 - Fraud screening, Ledger posting, final top-up status, reconciliation state,
   and the final `payin.topup.settled.v1` event.
 
-Payin must remove the compatibility fallback that credits `user_id` supplied
-by an unmatched vendor callback. A vendor payload can never choose the Seev
-user who receives money.
+Payin has no raw callback fallback. A vendor payload can never choose the Seev
+user who receives money; VendorService drops any vendor-supplied identity and
+Payin requires a matching Payin-owned intent.
 
 ### Payout owns
 
@@ -233,6 +234,10 @@ event; and the full race, integration, business, and chaos suites pass.
 
 ## Acceptance checklist
 
+The implementation checklist is complete. The only unchecked items below are
+release evidence that requires the multi-service environment and the manual
+chaos run; they are intentionally not claimed from unit or repository checks.
+
 - [x] VendorService is the only runtime owner of vendor adapters, callback
       ingress, signatures, and callback evidence.
 - [x] Payin and Payout use normalized mTLS callback RPCs without an
@@ -244,13 +249,16 @@ event; and the full race, integration, business, and chaos suites pass.
       test proving the route returns 404.
 - [x] Payin duplicate/ownership and Payout callback-versus-polling race tests
       cover exactly-once money effects.
+- [x] Payin raw `HandleWebhook` implementation and payload-user fallback were
+      removed. The v1 wire symbol remains deprecated/unimplemented per Plan 52;
+      normalized VendorService callbacks are the only active Payin contract.
 - [x] Manual chaos script exists for VendorService restart, duplicate delivery,
       and lost-response retry.
-- [ ] Full live VendorService → owner → Ledger → outbox → RabbitMQ →
+- [ ] Release evidence: full live VendorService → owner → Ledger → outbox → RabbitMQ →
       notification trace has been run and recorded.
-- [ ] Failure injection, owner outage, RabbitMQ outage, and chaos script have
+- [ ] Release evidence: failure injection, owner outage, RabbitMQ outage, and chaos script have
       passed in the current checkout.
-- [ ] Metrics and alert thresholds have live evidence from the multi-service
+- [ ] Release evidence: metrics and alert thresholds have live evidence from the multi-service
       acceptance run.
 
 ## Implementation log

@@ -133,17 +133,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	// ─── Payin module (docs/roadmap/archive/22 Task T2/T3, decision K-T2/K-T6) ────────────
-	// vendorRegistry starts empty and gains one entry per enabled vendor —
-	// zero vendors enabled (the default) means every /webhooks/{vendor}
-	// request 404s, byte-identical to before this feature existed. Adding a
-	// real vendor later is one more `if cfg.Vendor.X.Enabled { ... }` block
-	// here; internal/payin never changes (docs/roadmap/archive/21 K-T6).
 	// ─── Payout module (docs/roadmap/archive/23 Task T3/T5, decision K-T3/K-T6) ──────────
-	// Shares vendorRegistry with payin above — the same enabled vendor can
-	// (and for mockvendor, does) implement both PayinVerifier and
-	// PayoutProvider; the registry keeps the two lookups separate
-	// internally. StartWorkers launches the resume/polling job (Task T3
+	// StartWorkers launches the resume/polling job (Task T3
 	// step 3) that re-drives crashed/stalled requests.
 	// ─── Notify module (docs/roadmap/archive/25 Task T4) ──────────────────────────────────
 	// The first RabbitMQ CONSUMER in this codebase — mq (messaging.Broker)
@@ -195,7 +186,7 @@ func main() {
 	publicSrv := server.New(cfg.App, publicRouter)
 	internalSrv := server.NewWithAddrTLS(cfg.App, cfg.App.InternalBindAddr+":"+cfg.App.InternalPort, internalRouter, tlsx.ServerConfig(certSrc, []string{
 		tlsx.IdentityDevOperator, tlsx.IdentityPrometheus, tlsx.IdentityAdminBFF,
-		// docs/roadmap/active/51 T4b/T5b: auth-service calls the new /privacy/
+		// docs/roadmap/archive/51 T4b/T5b: auth-service calls the new /privacy/
 		// export+closure routes as the export/closure saga's coordinator.
 		tlsx.IdentityAuth,
 	}))

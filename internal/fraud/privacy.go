@@ -57,7 +57,7 @@ func (m *Module) PrivacyCommitClosure(ctx context.Context, subjectID, surrogateI
 	return hex.EncodeToString(h.Sum(nil)), affectedCount, nil
 }
 
-// privacyExportScreeningEventRow is docs/roadmap/active/51 T4b's own hand-written
+// privacyExportScreeningEventRow is docs/roadmap/archive/51 T4b's own hand-written
 // export DTO. `reason` is a short rule-generated string (e.g.
 // "amount exceeds threshold"), never vendor/free-text user input, so it's
 // safe to include unlike payin/payout's own excluded free-text fields.

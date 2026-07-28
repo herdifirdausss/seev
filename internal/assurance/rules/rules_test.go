@@ -37,7 +37,7 @@ func TestEvaluatePayin(t *testing.T) {
 	}
 }
 
-// TestEvaluatePayinVendorGatewayMapping is docs/roadmap/active/50 T6's regression for a
+// TestEvaluatePayinVendorGatewayMapping is docs/roadmap/archive/50 T6's regression for a
 // real, non-identity payin_vendor_gateways mapping (e.g. the system's own
 // default seed, "mockvendor" -> "bca") — record.Vendor stays the raw
 // vendor id while the ledger proof's own Gateway is the resolved

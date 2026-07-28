@@ -7,7 +7,7 @@
 
 Covers restoring the ledger database from a backup and proving it's usable again — restore, rebuild the balance projection, verify integrity, smoke test. Run this **periodically against staging** (not production) to keep the procedure and its RTO honest. Every drill's timing goes in the table at the bottom of this file — this is the whole point of drilling: an untimed, never-executed runbook is a guess, not a plan.
 
-> **Scope note (docs/roadmap/active/50 Track A7):** for a real incident affecting the
+> **Scope note (docs/roadmap/archive/50 Track A7):** for a real incident affecting the
 > shared Postgres cluster, use
 > [**Cluster-wide restore (scripts/restore-cluster.sh)**](#cluster-wide-restore-scriptsrestore-clustersh)
 > below first — it restores all nine authoritative service databases

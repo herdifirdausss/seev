@@ -7,7 +7,7 @@
 -- retention_holds row covers via fn_ledger_retention_hold_covers (000024), and
 -- writes its own ledger_retention_audit row in the same transaction (K4).
 
--- ── fee_quotes.unconsumed — docs/roadmap/active/51 §4.2, 24h after expiry ──────────
+-- ── fee_quotes.unconsumed — docs/roadmap/archive/51 §4.2, 24h after expiry ──────────
 CREATE OR REPLACE FUNCTION fn_retention_purge_fee_quotes_unconsumed(
     p_job_id UUID, p_batch_size INT, p_dry_run BOOLEAN
 ) RETURNS INT
@@ -50,7 +50,7 @@ BEGIN
 END;
 $$;
 
--- ── fee_quotes.consumed — docs/roadmap/active/51 §4.2/K8, 365d, proof-aware ────────
+-- ── fee_quotes.consumed — docs/roadmap/archive/51 §4.2/K8, 365d, proof-aware ────────
 -- K8 requires consumed_by_ref to point to the expected transaction/payout,
 -- with booked-fee proof matching, before an old consumed quote is
 -- eligible. consumed_by_ref is 'tx:<uuid>' | 'payout:<uuid>'
@@ -121,8 +121,8 @@ BEGIN
 END;
 $$;
 
--- ── outbox_events.published — docs/roadmap/active/51 §4.2, 30d after publish ───────
--- No user_id column exists on outbox_events itself (docs/roadmap/active/51 T0's own
+-- ── outbox_events.published — docs/roadmap/archive/51 §4.2, 30d after publish ───────
+-- No user_id column exists on outbox_events itself (docs/roadmap/archive/51 T0's own
 -- finding) — subject-scope hold checking best-effort-extracts it from the
 -- JSONB payload (present for TransactionPosted, absent for
 -- TransactionReversed/AdjustmentDecided, in which case it simply never

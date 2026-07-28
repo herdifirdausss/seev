@@ -158,7 +158,7 @@ func NewInternalRouter(cfg *config.Config, deps *Dependencies, logger *slog.Logg
 	// reachable from the public-facing port (docs/roadmap/archive/10 Task T6).
 	root.Handle("GET /metrics", promhttp.Handler())
 
-	// docs/roadmap/active/51 T4b/T5b (K9/K10/K11): auth-service's own export/closure
+	// docs/roadmap/archive/51 T4b/T5b (K9/K10/K11): auth-service's own export/closure
 	// saga calls gateway's notif_notifications owner contract here — same
 	// bare "/privacy/..." path every other owner mounts at (the client is
 	// one generic type, internal/auth.httpOwnerClosureClient, that assumes

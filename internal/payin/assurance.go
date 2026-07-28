@@ -17,8 +17,8 @@ import (
 // selects only correlation fields; raw webhook JSON and vendor error bodies
 // remain inside payin-service.
 //
-// ledger_gateway is resolved through payin_vendor_gateways (docs/roadmap/active/50
-// T6 fix), not the raw vendor id: HandleWebhook posts money_in with the
+// ledger_gateway is resolved through payin_vendor_gateways (docs/roadmap/archive/50
+// T6 fix), not the raw vendor id: the normalized VendorService callback posts money_in with the
 // MAPPED gateway (e.g. "bca") in metadata, which is what
 // internal/ledger/processors/money_in.go books into ledger_transactions.gateway
 // — but payin_webhook_events.vendor stores the raw internal vendor id

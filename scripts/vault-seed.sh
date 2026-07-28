@@ -9,7 +9,7 @@
 # independently of anything else already provisioned. JWT_SECRET,
 # INTERNAL_GRPC_TOKEN, and CRYPTOX_KEY_V1 are shared cluster-wide (every
 # service must agree on the SAME value — issuer/verifier or client/server
-# pairs, or in cryptox's case docs/roadmap/active/51 K2's own deliberate
+# pairs, or in cryptox's case docs/roadmap/archive/51 K2's own deliberate
 # one-key-set-per-cluster design), so each is generated once and written
 # identically into every service's own KV v2 entry. CRYPTOX_LOOKUP_KEY is
 # also shared but only auth actually reads it (K2's normalized-email HMAC

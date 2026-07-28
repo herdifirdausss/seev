@@ -18,7 +18,7 @@ import (
 // machine-to-machine calls from auth-service's own saga/export workers,
 // never an end-user JWT. The caller (cmd/payin-service's own router) MUST
 // wrap this in pkg/middleware.WithInternalToken, mirroring ledger's own
-// ClosureRouter (docs/roadmap/active/51 T5).
+// ClosureRouter (docs/roadmap/archive/51 T5).
 func (m *Module) PrivacyRouter() http.Handler {
 	mux := httpcontract.New(httpcontract.Options{Owner: "payin", Audience: "internal", Contract: "internal-v1"})
 	mux.HandleFunc("GET /privacy/export", m.handlePrivacyExport)

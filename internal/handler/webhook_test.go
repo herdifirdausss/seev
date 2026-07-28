@@ -19,7 +19,7 @@ type fakePayinClient struct {
 }
 
 func (f fakePayinClient) HandleWebhook(context.Context, *payinv1.HandleWebhookRequest, ...grpc.CallOption) (*payinv1.HandleWebhookResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "legacy Gateway webhook route removed")
+	return nil, status.Error(codes.Unimplemented, "raw Payin callbacks are owned by VendorService")
 }
 
 func (f fakePayinClient) HandleVendorCallback(context.Context, *payinv1.HandleVendorCallbackRequest, ...grpc.CallOption) (*payinv1.HandleVendorCallbackResponse, error) {

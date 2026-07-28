@@ -127,10 +127,9 @@ You do not need to read the code yet:
 
 ## One honest warning
 
-The current learning code has an old top-up path that may continue without
-finding the matching ticket. That is a known limitation. The planned fix
-requires a matching money-in or money-out record before telling the user that
-the process is complete.
+The active top-up path requires a signed VendorService callback matching
+Payin's ticket before completion. Payin exposes no raw callback compatibility
+RPC; final live and chaos acceptance is an operator gate.
 
 ## A quick check
 

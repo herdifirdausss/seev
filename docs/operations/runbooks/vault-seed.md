@@ -42,7 +42,7 @@ Seeded, one shared value written identically into every service's own KV v2 entr
 
 - `JWT_SECRET`
 - `INTERNAL_GRPC_TOKEN`
-- `CRYPTOX_KEY_V1` — docs/roadmap/active/51 T2.2's shared pkg/cryptox KEK; see [cryptox-key-rotation.md](cryptox-key-rotation.md).
+- `CRYPTOX_KEY_V1` — docs/roadmap/archive/51 T2.2's shared pkg/cryptox KEK; see [cryptox-key-rotation.md](cryptox-key-rotation.md).
 - `CRYPTOX_LOOKUP_KEY` — only auth actually reads this (normalized-email HMAC digest), seeded into every service anyway rather than special-casing one out.
 - `AUTH_BOOTSTRAP_ADMIN_PASSWORD` — auth-service only, safe to randomize independently.
 

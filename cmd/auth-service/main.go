@@ -147,7 +147,7 @@ func run(parent context.Context) error {
 		}
 		kycProvider = configuredProvider
 	}
-	// docs/roadmap/active/51 "A8 T2.5b" (the contract migration): cryptox is no
+	// docs/roadmap/archive/51 "A8 T2.5b" (the contract migration): cryptox is no
 	// longer optional in any environment — auth_users.email/full_name and
 	// kyc_submissions.payload have no plaintext column left to fall back
 	// to, so a missing/malformed ring or lookup key fails boot here,
@@ -175,7 +175,7 @@ func run(parent context.Context) error {
 		AccessExpiry: cfg.JWT.AccessExpiry, RefreshExpiry: cfg.JWT.RefreshExpiry,
 		DefaultCurrency: cfg.Auth.DefaultCurrency,
 	}, log, cryptoxRing, cryptoxLookup, kycProvider)
-	// docs/roadmap/active/51 T2.2: KYC document object encryption is a SEPARATE
+	// docs/roadmap/archive/51 T2.2: KYC document object encryption is a SEPARATE
 	// concern from the field-level ring above (document blobs, not
 	// database columns) and stays optional outside production — the
 	// document store itself already fails closed at upload time when
@@ -212,7 +212,7 @@ func run(parent context.Context) error {
 		startRescreen = func() error { return rescreenJob.Start(ctx) }
 		stopRescreen = rescreenJob.Stop
 	}
-	// docs/roadmap/active/51 T4 (K9): a dedicated export KEK, deliberately its own
+	// docs/roadmap/archive/51 T4 (K9): a dedicated export KEK, deliberately its own
 	// key namespace (never Cryptox above) — a missing/unconfigured ring
 	// is not an error (export creation stays optional outside
 	// production, same "storage is optional in this binary" convention
@@ -225,7 +225,7 @@ func run(parent context.Context) error {
 		}
 		module.SetExportKeyRing(exportRing)
 	}
-	// docs/roadmap/active/51 T5 (K10): a dedicated closure KEK, same optionality as
+	// docs/roadmap/archive/51 T5 (K10): a dedicated closure KEK, same optionality as
 	// Export above.
 	if len(cfg.Closure.Keys) > 0 {
 		closureRing, err := cfg.Closure.Ring()
@@ -235,7 +235,7 @@ func run(parent context.Context) error {
 		}
 		module.SetClosureKeyRing(closureRing)
 	}
-	// docs/roadmap/active/51 T4b/T5b: owner clients are registered UNCONDITIONALLY
+	// docs/roadmap/archive/51 T4b/T5b: owner clients are registered UNCONDITIONALLY
 	// (not gated on cfg.Closure.Keys) — the SAME registry backs both the
 	// export saga (buildAndUploadExport, gated independently by
 	// EXPORT_KEK above) and the closure saga (gated independently by
@@ -283,7 +283,7 @@ func run(parent context.Context) error {
 		closeAuthDependencies(log, ledgerConn.Close, closeFraud, redisCache, db, shutdownTracing)
 		return fmt.Errorf("start data retention worker: %w", err)
 	}
-	// docs/roadmap/active/51 T1.6 (K6): stopObjectOutbox is nil when no
+	// docs/roadmap/archive/51 T1.6 (K6): stopObjectOutbox is nil when no
 	// document store is configured (matches UploadKYCDocument's own
 	// "storage is optional in this binary" convention) — never nil
 	// otherwise, so calling it unconditionally at shutdown below is safe.
@@ -301,7 +301,7 @@ func run(parent context.Context) error {
 			return fmt.Errorf("start kyc sanctions rescreen worker: %w", err)
 		}
 	}
-	// docs/roadmap/active/51 T4 (K9): stopPrivacyExport is nil when no document
+	// docs/roadmap/archive/51 T4 (K9): stopPrivacyExport is nil when no document
 	// store or export ring is configured — same optionality as
 	// stopObjectOutbox above, never nil otherwise.
 	stopPrivacyExport, err := module.StartPrivacyExportWorker(ctx, log)
@@ -310,7 +310,7 @@ func run(parent context.Context) error {
 		closeAuthDependencies(log, ledgerConn.Close, closeFraud, redisCache, db, shutdownTracing)
 		return fmt.Errorf("start privacy export worker: %w", err)
 	}
-	// docs/roadmap/active/51 T5 (K10): stopClosureWorker is nil when no closure ring
+	// docs/roadmap/archive/51 T5 (K10): stopClosureWorker is nil when no closure ring
 	// or ledger client is configured — same optionality as stopPrivacyExport.
 	stopClosureWorker, err := module.StartClosureWorker(ctx, log)
 	if err != nil {

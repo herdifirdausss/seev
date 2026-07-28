@@ -5,7 +5,7 @@
 -- row covers via fn_auth_retention_hold_covers (000006), and writes its own
 -- auth_retention_audit row in the same transaction (K4).
 
--- ── auth_refresh_tokens — docs/roadmap/active/51 §4.2, 30d after revoke/expiry ─────
+-- ── auth_refresh_tokens — docs/roadmap/archive/51 §4.2, 30d after revoke/expiry ─────
 CREATE OR REPLACE FUNCTION fn_retention_purge_refresh_tokens(
     p_job_id UUID, p_batch_size INT, p_dry_run BOOLEAN
 ) RETURNS INT

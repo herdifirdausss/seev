@@ -42,7 +42,7 @@ CREATE TABLE payout_retention_holds (
 CREATE INDEX idx_payout_retention_holds_scope  ON payout_retention_holds(scope, scope_value) WHERE status = 'active';
 CREATE INDEX idx_payout_retention_holds_expiry ON payout_retention_holds(expires_at) WHERE status = 'active' AND expires_at IS NOT NULL;
 
--- docs/roadmap/active/51 K4: append-only audit row, written in the SAME transaction as
+-- docs/roadmap/archive/51 K4: append-only audit row, written in the SAME transaction as
 -- every purge/redact a SECURITY DEFINER retention function performs — never
 -- a best-effort side write. No sensitive values (row IDs, field contents),
 -- only counts and the policy version that authorized the run.
@@ -77,7 +77,7 @@ CREATE POLICY payout_retention_holds_readonly ON payout_retention_holds FOR SELE
 CREATE POLICY payout_retention_audit_service  ON payout_retention_audit FOR ALL    TO app_service  USING (true) WITH CHECK (true);
 CREATE POLICY payout_retention_audit_readonly ON payout_retention_audit FOR SELECT TO app_readonly USING (true);
 
--- docs/roadmap/active/51 K5: shared eligibility helper every purge/redact function
+-- docs/roadmap/archive/51 K5: shared eligibility helper every purge/redact function
 -- (fn_retention_purge_*) calls in its own WHERE clause, so a row's hold
 -- coverage is checked atomically inside the same statement that would
 -- otherwise delete/redact it — never a separate, race-prone Go-side check.

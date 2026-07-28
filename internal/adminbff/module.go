@@ -119,7 +119,7 @@ func (m *Module) AdminRouter() http.Handler {
 	mux.Handle("/api/v1/admin/payout/", m.proxy("payout", m.clients.Payout, "/api/v1/admin/payout/", "/admin/payout/"))
 	mux.Handle("/api/v1/admin/fraud/", m.proxy("fraud", m.clients.Fraud, "/api/v1/admin/fraud/", "/api/v1/admin/fraud/"))
 	mux.Handle("/api/v1/admin/kyc/", m.proxy("auth", m.clients.AuthAdmin, "/api/v1/admin/kyc/", "/api/v1/admin/kyc/"))
-	// docs/roadmap/active/51 T6: read-only status panel for export/closure requests
+	// docs/roadmap/archive/51 T6: read-only status panel for export/closure requests
 	// (never subject data — see internal/auth.AdminPrivacyRequest's own doc comment).
 	mux.Handle("/api/v1/admin/privacy/", m.proxy("auth", m.clients.AuthAdmin, "/api/v1/admin/privacy/", "/api/v1/admin/privacy/"))
 	mux.Handle("/api/v1/admin/gateway/", m.proxy("gateway", m.clients.Gateway, "/api/v1/admin/gateway/", "/api/v1/admin/gateway/"))

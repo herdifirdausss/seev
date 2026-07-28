@@ -1,6 +1,6 @@
 // Package payin is the public facade for the payin module (docs/roadmap/archive/22
-// Task T2, decision K-T2) — verifies vendor webhook deliveries, dedups
-// them, and posts them as money_in to the ledger. This is the ONLY package
+// Task T2, decision K-T2) — consumes normalized VendorService callbacks,
+// dedups them, and posts them as money_in to the ledger. This is the ONLY package
 // other code may import from internal/payin — importing
 // internal/payin/repository or internal/payin/model directly from outside
 // this module is a boundary violation (docs/roadmap/archive/01-target-architecture.md,
@@ -12,7 +12,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"time"
 
 	"github.com/google/uuid"
@@ -30,19 +29,10 @@ import (
 	"github.com/herdifirdausss/seev/pkg/generalutil"
 	"github.com/herdifirdausss/seev/pkg/ledgerclient"
 	"github.com/herdifirdausss/seev/pkg/ledgererr"
-	"github.com/herdifirdausss/seev/pkg/middleware"
 )
 
 // Re-exported types so callers never need to import internal/payin/model.
 type WebhookEvent = model.WebhookEvent
-
-type WebhookOutcome = string
-
-const (
-	WebhookOutcomeOK              WebhookOutcome = "ok"
-	WebhookOutcomeIgnored         WebhookOutcome = "ignored"
-	WebhookOutcomeBusinessFailure WebhookOutcome = "business_failure"
-)
 
 const (
 	VendorCallbackFinalized         = "finalized"
@@ -123,131 +113,6 @@ func NewModule(db database.DatabaseSQL, poster Poster, registry *vendorgw.Regist
 		fraudClient: fraudClient,
 		breaker:     breaker,
 	}
-}
-
-// HandleWebhook processes one webhook delivery end to end (docs/roadmap/archive/22
-// Task T2 step 3): verify -> dedup -> post to ledger -> record outcome.
-//
-// Return value contract for the HTTP layer (docs/roadmap/archive/22 Task T3):
-//   - ErrUnknownVendor: no verifier registered for this vendor -> 404.
-//   - errors.Is(err, vendorgw.ErrInvalidSignature): bad signature,
-//     NOTHING was written -> 401.
-//   - nil: acknowledged (event ignored, already posted, or freshly
-//     posted) -> 200.
-//   - errors.As(err, *ledgererr.LedgerError): business failure (e.g. account
-//     suspended) — WON'T heal on redelivery, but the event is durably
-//     recorded 'failed' for admin replay -> caller still returns 200 so
-//     the vendor stops retrying (docs/roadmap/archive/22 Task T2 step 3.5 note).
-//   - any other error: infra failure, event left 'received' -> 503 so the
-//     vendor redelivers.
-func (m *Module) HandleWebhook(ctx context.Context, vendor string, headers http.Header, rawBody []byte) error {
-	_, err := m.HandleWebhookResult(ctx, vendor, headers, rawBody)
-	return err
-}
-
-// HandleWebhookResult preserves the outcome distinction needed by the gRPC
-// boundary while HandleWebhook retains the legacy error-only HTTP contract.
-func (m *Module) HandleWebhookResult(ctx context.Context, vendor string, headers http.Header, rawBody []byte) (WebhookOutcome, error) {
-	verifier, ok := m.registry.Payin(vendor)
-	if !ok {
-		return "", ErrUnknownVendor
-	}
-
-	ev, err := verifier.VerifyAndParse(headers, rawBody)
-	if err != nil {
-		return "", err // includes vendorgw.ErrInvalidSignature — no side effect
-	}
-	if ev == nil {
-		return WebhookOutcomeIgnored, nil
-	}
-
-	mapping, found, mapErr := m.routing.GetVendorGateway(ctx, vendor)
-	if mapErr != nil {
-		return "", mapErr
-	}
-	if !found {
-		// A registered verifier with no gateway mapping is a config bug
-		// (docs/roadmap/archive/22 Task T2 step 4 requires every registered vendor to
-		// have one) — fail loudly rather than posting with a gateway that
-		// isn't in constant.ValidGateways and would fail downstream anyway
-		// with a much more confusing error.
-		return "", fmt.Errorf("payin: vendor %q has no gateway mapping configured", vendor)
-	}
-	gateway := mapping.Gateway
-
-	// Topup intent resolution (docs/roadmap/archive/25 Task T3): the reference travels
-	// in the existing ExternalRef field, so a vendor never needs to learn
-	// the internal user_id. Resolved BEFORE persisting the event so the
-	// stored row itself carries the correct user_id either way. No intent
-	// found for this reference (or ExternalRef is empty) falls back to the
-	// webhook payload's own user_id — backward compatible with every
-	// pre-existing payin flow/test.
-	userID := ev.UserID
-	var intentErr error
-	if ev.ExternalRef != "" {
-		intent, found, lookupErr := m.repo.GetTopupIntentByReference(ctx, ev.ExternalRef)
-		if lookupErr != nil {
-			return "", fmt.Errorf("payin: lookup topup intent: %w", lookupErr)
-		}
-		if found {
-			switch {
-			case intent.Status != model.TopupStatusPending:
-				// Catches BOTH 'settled' (reference already consumed —
-				// posting again under intent.UserID would double-credit
-				// under a different vendor_event_id, which the ledger's
-				// own idempotency key can't catch since it's keyed by
-				// vendor_event_id, not by reference) and 'expired'.
-				intentErr = fmt.Errorf("%w: intent %s is not pending (status=%s)",
-					ErrTopupIntentMismatch, intent.Reference, intent.Status)
-			case !intent.ExpiresAt.After(time.Now()):
-				intentErr = fmt.Errorf("%w: intent %s expired at %s",
-					ErrTopupIntentExpired, intent.Reference, intent.ExpiresAt)
-			case !intent.Amount.Equal(ev.Amount) || intent.Currency != ev.Currency:
-				intentErr = fmt.Errorf("%w: intent %s expects %s %s, webhook carries %s %s",
-					ErrTopupIntentMismatch, intent.Reference, intent.Amount, intent.Currency, ev.Amount, ev.Currency)
-			default:
-				userID = intent.UserID
-			}
-		}
-	}
-
-	stored, err := m.repo.GetOrInsert(ctx, model.WebhookEvent{
-		ID:            generalutil.NewV7(),
-		Vendor:        vendor,
-		VendorEventID: ev.VendorEventID,
-		ExternalRef:   ev.ExternalRef,
-		UserID:        userID,
-		Amount:        ev.Amount,
-		Currency:      ev.Currency,
-		Raw:           rawBody,
-		RequestID:     middleware.RequestIDFromCtx(ctx),
-	})
-	if err != nil {
-		return "", fmt.Errorf("payin: persist webhook event: %w", err)
-	}
-	if stored.Status == "posted" {
-		return WebhookOutcomeOK, nil
-	}
-
-	if intentErr != nil {
-		// A business failure discovered before ever attempting to post —
-		// never retryable (the exact same mismatch/expiry recurs on every
-		// redelivery), so the event is marked 'failed' directly rather
-		// than going through postAndFinalize's ledger-error classification.
-		if markErr := m.repo.MarkFailed(ctx, stored.ID, intentErr.Error()); markErr != nil {
-			m.logger.Error("payin: mark failed failed", slog.Any("error", markErr), slog.String("event_id", stored.ID.String()))
-		}
-		return WebhookOutcomeBusinessFailure, &businessError{err: intentErr}
-	}
-
-	err = m.postAndFinalize(ctx, stored, gateway)
-	if IsBusinessFailure(err) {
-		return WebhookOutcomeBusinessFailure, err
-	}
-	if err != nil {
-		return "", err
-	}
-	return WebhookOutcomeOK, nil
 }
 
 // HandleVendorCallback processes the normalized callback delivered by
@@ -333,8 +198,8 @@ func (m *Module) HandleVendorCallback(ctx context.Context, vendor, vendorEventID
 }
 
 // postAndFinalize posts stored to the ledger and updates its status
-// accordingly. Called both from HandleWebhook (fresh/retried delivery) and
-// ReplayEvent (admin-triggered retry) — identical logic either way.
+// accordingly. Called both from the normalized callback path and ReplayEvent
+// (admin-triggered retry) — identical logic either way.
 func (m *Module) postAndFinalize(ctx context.Context, ev model.WebhookEvent, gateway string) error {
 	if m.fraudClient != nil {
 		verdict, ferr := m.fraudClient.Check(ctx, "topup", "money_in", ev.UserID, ev.Amount, ev.Currency)
@@ -395,7 +260,7 @@ func (m *Module) postAndFinalize(ctx context.Context, ev model.WebhookEvent, gat
 		// points at, if any (docs/roadmap/archive/25 Task T3 step 4). A conditional
 		// UPDATE, safe no-op if ExternalRef isn't a topup reference at
 		// all, or the intent is already settled — called from both
-		// HandleWebhook (fresh delivery) and ReplayEvent (admin retry)
+		// normalized callback delivery and ReplayEvent (admin retry)
 		// via this single shared path, so redelivery/replay always heals
 		// a crash that landed between Post succeeding and this running.
 		if ev.ExternalRef != "" {
@@ -432,8 +297,8 @@ type businessError struct{ err error }
 func (e *businessError) Error() string { return e.err.Error() }
 func (e *businessError) Unwrap() error { return e.err }
 
-// IsBusinessFailure reports whether err (as returned by HandleWebhook or
-// ReplayEvent) is a business failure that won't heal on retry — the HTTP
+// IsBusinessFailure reports whether err (as returned by the normalized callback
+// path or ReplayEvent) is a business failure that won't heal on retry — the HTTP
 // layer uses this to decide 200-vs-503 (docs/roadmap/archive/22 Task T2 step 3.5).
 func IsBusinessFailure(err error) bool {
 	var be *businessError
@@ -453,7 +318,7 @@ func isBusinessFailure(err error) bool {
 
 // ReplayEvent re-runs the post step for a received/failed event
 // (docs/roadmap/archive/22 Task T4) — idempotent via the same ledger idempotency key
-// HandleWebhook uses, so replaying an already-posted event is rejected
+// The same idempotency key is used by callback processing, so replaying an already-posted event is rejected
 // outright (ErrAlreadyPosted) rather than relying on that idempotency as
 // the only guard.
 func (m *Module) ReplayEvent(ctx context.Context, id uuid.UUID) error {

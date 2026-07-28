@@ -180,7 +180,7 @@ func run(parent context.Context) error {
 		fraudClient = fraudcheck.New(fraudv1.NewFraudServiceClient(fraudConn), "payin")
 	}
 
-	// docs/roadmap/active/51 "A8 T2.5b" (the contract migration): cryptox is no
+	// docs/roadmap/archive/51 "A8 T2.5b" (the contract migration): cryptox is no
 	// longer optional — payin_webhook_events.raw has no plaintext column
 	// left to fall back to, so a missing/malformed ring fails boot here,
 	// unconditionally, the same "money-safety, never optional" posture
@@ -195,7 +195,7 @@ func run(parent context.Context) error {
 	}
 	module := payin.NewModule(db, ledgerclient.New(ledgerConn), registry, cfg.Vendor.TopupIntentTTL, log, fraudClient, breaker, cryptoxRing)
 	module.SetVendorSession(vendorboundary.NewClient(vendorv1.NewVendorServiceClient(vendorConn)))
-	// docs/roadmap/active/51 T2.6: redacts payin_webhook_events.raw once terminal
+	// docs/roadmap/archive/51 T2.6: redacts payin_webhook_events.raw once terminal
 	// for 30+ days — same fire-and-continue convention as every other
 	// StartRetentionRunner caller in this codebase (a failed retention
 	// worker degrades to "no cleanup," never blocks startup).
@@ -231,7 +231,7 @@ func run(parent context.Context) error {
 	// docs/roadmap/archive/49 K6: payin's admin listener is internal-only mTLS.
 	httpServer := &http.Server{Addr: ":" + cfg.App.Port, Handler: adminRouter(cfg, module, log), ReadTimeout: cfg.App.ReadTimeout, WriteTimeout: cfg.App.WriteTimeout, IdleTimeout: cfg.App.IdleTimeout, ReadHeaderTimeout: 5 * time.Second, MaxHeaderBytes: 1 << 20, TLSConfig: tlsx.ServerConfig(certSrc, []string{
 		tlsx.IdentityDevOperator, tlsx.IdentityPrometheus, tlsx.IdentityAdminBFF,
-		// docs/roadmap/active/51 T4b/T5b: auth-service calls the new /privacy/
+		// docs/roadmap/archive/51 T4b/T5b: auth-service calls the new /privacy/
 		// export+closure routes as the export/closure saga's coordinator.
 		tlsx.IdentityAuth,
 	})}

@@ -11,7 +11,7 @@ Triggered by: `deploy/observability/prometheus/rules/backup.yml` —
 `severity: warning`) or `SeevBackupDiffStale` (no successful backup, full
 or differential, in over thirty hours; `severity: warning`). Both read
 only `backup-agent`'s own `seev_backup_last_success_timestamp_seconds{type}`
-metric (docs/roadmap/active/50 K13) — no filename, LSN, backup ID, or
+metric (docs/roadmap/archive/50 K13) — no filename, LSN, backup ID, or
 secret path is ever a label.
 
 Distinct from [WAL archive lag](wal-archive-lag.md) (RPO risk on an
@@ -44,7 +44,7 @@ liveness.
 ## Step 2 — Read the agent's own logs
 
 `backup-agent` emits structured JSON logs for every run, including a
-failed one (docs/roadmap/active/50 T2, Work item 1 — "bounded execution
+failed one (docs/roadmap/archive/50 T2, Work item 1 — "bounded execution
 time... JSON logs"). Find the most recent failed attempt and read its
 error verbatim before guessing:
 

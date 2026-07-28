@@ -177,7 +177,7 @@ func run(parent context.Context) error {
 		MaxHeaderBytes: 1 << 20,
 		TLSConfig: tlsx.ServerConfig(certSrc, []string{
 			tlsx.IdentityDevOperator, tlsx.IdentityPrometheus, tlsx.IdentityAdminBFF,
-			// docs/roadmap/active/51 T4b/T5b: auth-service calls the new /privacy/
+			// docs/roadmap/archive/51 T4b/T5b: auth-service calls the new /privacy/
 			// export+closure routes as the export/closure saga's coordinator.
 			tlsx.IdentityAuth,
 		}),

@@ -71,7 +71,7 @@ func (m *Module) PrivacyCommitClosure(ctx context.Context, subjectID, surrogateI
 	return hex.EncodeToString(h.Sum(nil)), affectedCount, nil
 }
 
-// privacyExportPayoutRequestRow is docs/roadmap/active/51 T4b's own hand-written
+// privacyExportPayoutRequestRow is docs/roadmap/archive/51 T4b's own hand-written
 // export DTO — excludes `destination`/`destination_ciphertext` (T2.4's
 // own encrypted bank/account destination, never fit for export) and
 // `error_message`/`vendor_ref` (may echo vendor-sent text/internal

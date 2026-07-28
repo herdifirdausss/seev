@@ -1,6 +1,6 @@
 name: DR Game Day
 
-# docs/roadmap/active/50 (Track A7) T6: the scripted end-to-end disaster-recovery
+# docs/roadmap/archive/50 (Track A7) T6: the scripted end-to-end disaster-recovery
 # rehearsal (scripts/dr-drill.sh) run on a schedule so a future regression in
 # backup, restore, cross-database verification, or the session fence is
 # caught automatically instead of only being discovered during a real
@@ -68,7 +68,7 @@ jobs:
           go-version: ${{ steps.goversion.outputs.version }}
           cache: true
 
-      # docs/roadmap/active/50 K6: generated fresh per run, masked BEFORE landing in
+      # docs/roadmap/archive/50 K6: generated fresh per run, masked BEFORE landing in
       # $GITHUB_ENV — same pattern nightly.yml already established. The
       # drill's own scripts fall back to a fixed dev placeholder when these
       # are unset, so this step exists for defense in depth, not because

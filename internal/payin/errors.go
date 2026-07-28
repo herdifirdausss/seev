@@ -2,15 +2,7 @@ package payin
 
 import (
 	"errors"
-
-	"github.com/herdifirdausss/seev/internal/vendorgw"
 )
-
-// ErrUnknownVendor means no verifier is registered for the requested
-// vendor name — the caller (webhook receiver, docs/roadmap/archive/22 Task T3) maps
-// this to HTTP 404. Includes "registered but disabled", which never made
-// it into the registry in the first place (docs/roadmap/archive/22 Task T1).
-var ErrUnknownVendor = vendorgw.ErrUnknownPayinVendor
 
 // ErrAlreadyPosted is returned by ReplayEvent when the event is already
 // posted — replay is for received/failed events only, never a duplicate

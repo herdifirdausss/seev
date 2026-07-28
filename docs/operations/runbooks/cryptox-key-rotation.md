@@ -59,12 +59,12 @@ rotation is inherently gradual:
    new version)** — a service-owned re-encrypt-in-place job: read each row
    under its recorded version, re-`Seal` under current, write back. No such
    job exists in this codebase yet; K3's backfill machinery
-   (docs/roadmap/active/51 T2.5) is what a real migration reuses for this, the same
+   (docs/roadmap/archive/51 T2.5) is what a real migration reuses for this, the same
    restartable-keyset-batch approach used for the original plaintext→ciphertext
    migration.
 4. **Retire the old version** — only once nothing still references it (no
    un-backfilled row, confirmed by a query against every table's own
-   key-version column — docs/roadmap/active/51 T2.5's own verification step). Removing
+   key-version column — docs/roadmap/archive/51 T2.5's own verification step). Removing
    a version from the ring while any row still needs it makes that row
    permanently undecryptable — there is no recovery path short of an A7
    backup restore predating the removal.
@@ -129,7 +129,7 @@ still decrypting correctly under the retired version, exactly as designed.
 
 Do not remove `CRYPTOX_KEY_V<old>` from any service's environment until a
 direct query confirms no row anywhere still carries that version (per
-Step 1.4 and docs/roadmap/active/51 T2.5's own verification gate). Once confirmed, remove
+Step 1.4 and docs/roadmap/archive/51 T2.5's own verification gate). Once confirmed, remove
 the old version's env var/secret file/Vault field from every service and
 restart once more — `pkg/cryptox.NewRing` only requires `CurrentVersion` be
 present, so dropping a retired version is safe once nothing needs it.

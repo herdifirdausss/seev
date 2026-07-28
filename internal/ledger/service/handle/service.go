@@ -702,7 +702,7 @@ func (s *Service) handleDuplicate(ctx context.Context, tx *sql.Tx, cmd processor
 	if status == "" {
 		return fmt.Errorf("idempotency record vanished after duplicate error (race)")
 	}
-	// docs/roadmap/active/51 T3 (K7): the SAME idempotency key/scope reused with a
+	// docs/roadmap/archive/51 T3 (K7): the SAME idempotency key/scope reused with a
 	// DIFFERENT type/amount/currency is a conflict, never treated as a
 	// legitimate retry — checked before the status switch below so a
 	// mismatched retry against an already-posted original never silently

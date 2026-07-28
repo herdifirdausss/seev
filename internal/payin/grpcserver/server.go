@@ -3,7 +3,6 @@ package grpcserver
 import (
 	"context"
 	"errors"
-	"net/http"
 	"strings"
 	"time"
 
@@ -15,12 +14,9 @@ import (
 
 	payinv1 "github.com/herdifirdausss/seev/gen/payin/v1"
 	"github.com/herdifirdausss/seev/internal/payin/model"
-	"github.com/herdifirdausss/seev/internal/vendorgw"
 )
 
 type Service interface {
-	HandleWebhookResult(context.Context, string, http.Header, []byte) (string, error)
-	// The vendor argument is transitional until routing becomes DB-driven in T2.
 	CreateTopupIntent(context.Context, uuid.UUID, decimal.Decimal) (model.TopupIntent, error)
 	GetTopupIntent(context.Context, uuid.UUID) (model.TopupIntent, error)
 }
@@ -39,38 +35,6 @@ func New(service Service, notFound, noRoute, noVendorAvailable, screeningDepende
 		service: service, notFound: notFound, noRoute: noRoute, noVendorAvailable: noVendorAvailable,
 		screeningDependencyUnavailable: screeningDependencyUnavailable,
 	}
-}
-
-func (s *Server) HandleWebhook(ctx context.Context, request *payinv1.HandleWebhookRequest) (*payinv1.HandleWebhookResponse, error) {
-	headers := make(http.Header, len(request.GetHeaders()))
-	for key, value := range request.GetHeaders() {
-		headers.Set(key, value)
-	}
-	outcome, err := s.service.HandleWebhookResult(ctx, request.GetVendor(), headers, request.GetRawBody())
-	if outcome == "business_failure" {
-		return &payinv1.HandleWebhookResponse{Result: payinv1.WebhookResult_WEBHOOK_RESULT_BUSINESS_FAILURE}, nil
-	}
-	if err != nil {
-		switch {
-		case errors.Is(err, vendorgw.ErrUnknownPayinVendor):
-			return nil, status.Error(codes.NotFound, "unknown vendor")
-		case errors.Is(err, vendorgw.ErrInvalidSignature):
-			return nil, status.Error(codes.Unauthenticated, "invalid webhook signature")
-		case errors.Is(err, s.screeningDependencyUnavailable):
-			// docs/roadmap/archive/45 Task T3/K4 — fraud-service is reachable but its
-			// velocity dependency is down; distinct message from
-			// noVendorAvailable's own codes.Unavailable use elsewhere so
-			// the gateway can tell them apart.
-			return nil, status.Error(codes.Unavailable, "screening dependency unavailable")
-		default:
-			return nil, status.Error(codes.Internal, "payin webhook processing failed")
-		}
-	}
-	result := payinv1.WebhookResult_WEBHOOK_RESULT_OK
-	if outcome == "ignored" {
-		result = payinv1.WebhookResult_WEBHOOK_RESULT_IGNORED
-	}
-	return &payinv1.HandleWebhookResponse{Result: result}, nil
 }
 
 func (s *Server) HandleVendorCallback(ctx context.Context, request *payinv1.HandleVendorCallbackRequest) (*payinv1.HandleVendorCallbackResponse, error) {

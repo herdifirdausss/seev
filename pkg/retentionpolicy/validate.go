@@ -30,7 +30,7 @@ var validOwners = map[string]bool{
 	"gateway": true, "ledger": true, "payin": true, "payout": true, "shared": true, "vendor": true,
 }
 
-// actionsRequiringAge is the set of actions docs/roadmap/active/51 K1 defines an
+// actionsRequiringAge is the set of actions docs/roadmap/archive/51 K1 defines an
 // eligibility age for — an entry using one of these must set both
 // TerminalTimestamp and Duration, matching the JSON schema's own
 // conditional requirement (config/data-retention.schema.json).
@@ -38,7 +38,7 @@ var actionsRequiringAge = map[Action]bool{
 	ActionDelete: true, ActionRedact: true,
 }
 
-// Validate runs every schema-level and cross-reference rule docs/roadmap/active/51
+// Validate runs every schema-level and cross-reference rule docs/roadmap/archive/51
 // T0 requires: valid enums, no duplicate class ids, required fields present,
 // permanent_tables entries never fully deleted, and (when migrationsRoot is
 // non-empty) that every real migrated table is covered and no unclassified
@@ -113,7 +113,7 @@ func Validate(p *Policy, migrationsRoot string) []string {
 			errs = append(errs, fmt.Sprintf("%s: unknown hold_scope %q", loc, e.HoldScope))
 		}
 		if e.BatchSize < 0 || e.BatchSize > 500 {
-			errs = append(errs, fmt.Sprintf("%s: batch_size %d must be between 0 and 500 (docs/roadmap/active/51 K6)", loc, e.BatchSize))
+			errs = append(errs, fmt.Sprintf("%s: batch_size %d must be between 0 and 500 (docs/roadmap/archive/51 K6)", loc, e.BatchSize))
 		}
 		if e.PolicyVersion < 1 || e.PolicyVersion > p.PolicyVersion {
 			errs = append(errs, fmt.Sprintf("%s: policy_version %d must be between 1 and the document's policy_version (%d)", loc, e.PolicyVersion, p.PolicyVersion))

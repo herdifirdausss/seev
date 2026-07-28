@@ -27,7 +27,7 @@ CREATE UNIQUE INDEX uq_ltx_idempotency_digest
     WHERE idempotency_key_digest IS NOT NULL;
 
 -- Ahead of a later retention class nulling idempotency_key/idempotency_scope
--- after 30 days (docs/roadmap/active/51 T3 item 5) — the existing
+-- after 30 days (docs/roadmap/archive/51 T3 item 5) — the existing
 -- uq_ltx_idempotency (idempotency_key, COALESCE(idempotency_scope,'')) index
 -- is deliberately left in place, not dropped: during the window before
 -- rotation backfill has caught every row up to the current digest key

@@ -28,7 +28,7 @@ func adminRouter(cfg *config.Config, h adminHandlers, log *slog.Logger) http.Han
 	root.Handle("GET /metrics", promhttp.Handler())
 	authed := middleware.Chain(middleware.WithAuth(cfg.JWT.Secret, cfg.JWT.Issuer), middleware.RequireJSON())
 	root.Handle("/admin/payout/", authed(h.AdminRouter()))
-	// docs/roadmap/active/51 T4b/T5b: called by auth-service's own saga/export
+	// docs/roadmap/archive/51 T4b/T5b: called by auth-service's own saga/export
 	// workers, never by an end-user JWT.
 	if privacy, ok := h.(privacyHandlers); ok {
 		root.Handle("/privacy/", middleware.WithInternalToken(cfg.InternalGRPCToken)(privacy.PrivacyRouter()))

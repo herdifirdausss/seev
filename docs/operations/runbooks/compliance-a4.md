@@ -31,7 +31,7 @@ workflow; record the version and checksum in the change ticket.
 
 ## KYC documents
 
-Without a configured object-store adapter or `CRYPTOX_KEY_V1` (docs/roadmap/active/51
+Without a configured object-store adapter or `CRYPTOX_KEY_V1` (docs/roadmap/archive/51
 T2.2's shared cluster-wide `pkg/cryptox` key ring — see
 [cryptox-key-rotation.md](cryptox-key-rotation.md)), uploads return `503
 DOCUMENT_STORAGE_UNAVAILABLE`; this is intentional. Never log the key,

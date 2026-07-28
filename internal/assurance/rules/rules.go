@@ -94,10 +94,10 @@ func EvaluatePayin(record PayinRecord) []Finding {
 }
 
 // matchingMoneyIn does not compare proof.Gateway against record.Vendor
-// (docs/roadmap/active/50 T6 fix) — record.Vendor is the payin-internal vendor id
+// (docs/roadmap/archive/50 T6 fix) — record.Vendor is the payin-internal vendor id
 // (e.g. "mockvendor"), while a ledger transaction's own gateway column is
 // the MAPPED settlement name (e.g. "bca", via payin_vendor_gateways) that
-// HandleWebhook actually posts. That comparison was always false for any
+// The normalized VendorService callback actually posts. That comparison was always false for any
 // vendor with a non-identity mapping, which is the system's own default
 // seed. Every caller already fetches record.Ledger by querying the ledger
 // for exactly the resolved gateway value (both internal/assurance's own
@@ -124,7 +124,7 @@ func hasMoneyIn(proofs []LedgerProof) bool {
 }
 
 // samePayin compares intent.Reference against event.ExternalRef, not
-// event.Reference (docs/roadmap/active/50 T6 fix) — a webhook_event PayinRecord's own
+// event.Reference (docs/roadmap/archive/50 T6 fix) — a webhook_event PayinRecord's own
 // Reference field is always blank (payin_webhook_events has no
 // "reference" column of its own), while its ExternalRef is exactly the
 // vendor payment reference the LATERAL correlation join that found this

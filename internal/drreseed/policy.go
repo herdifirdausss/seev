@@ -40,7 +40,7 @@ const (
 )
 
 // ReconstructPolicyCounters rebuilds today's and this month's policy
-// counters (docs/roadmap/active/50 K10 item 2: "rebuild current policy counters
+// counters (docs/roadmap/archive/50 K10 item 2: "rebuild current policy counters
 // from posted ledger transactions within the active daily/monthly
 // windows") for every (user, type) pair with a qualifying posted
 // transaction. loc must be Asia/Jakarta — the same location

@@ -11,7 +11,7 @@ import (
 )
 
 // TestLoadFromEnv_CryptoxKeyFile_WinsOverPlainEnv proves the Docker
-// secrets mount path (CRYPTOX_KEY_V1_FILE) — docs/roadmap/active/51 T2.2's
+// secrets mount path (CRYPTOX_KEY_V1_FILE) — docs/roadmap/archive/51 T2.2's
 // compose-secrets requirement — takes precedence over a plain
 // CRYPTOX_KEY_V1 env var, matching internal/backupagent's own
 // BACKUP_PASSWORD_FILE convention.

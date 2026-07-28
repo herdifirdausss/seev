@@ -50,8 +50,9 @@ type Repository interface {
 	InsertTopupIntent(ctx context.Context, intent model.TopupIntent) error
 	GetTopupIntent(ctx context.Context, id uuid.UUID) (model.TopupIntent, error)
 	// GetTopupIntentByReference reports found=false (not an error) when no
-	// intent exists for reference — HandleWebhook falls back to the
-	// payload's own user_id in that case (backward compatible).
+	// intent exists for reference. VendorService callbacks fail closed when
+	// correlation cannot be established; the callback payload never supplies a
+	// fallback user_id.
 	GetTopupIntentByReference(ctx context.Context, reference string) (intent model.TopupIntent, found bool, err error)
 	// MarkTopupIntentSettled is a conditional UPDATE
 	// (WHERE reference = $1 AND status = 'pending') — a safe no-op
@@ -62,7 +63,6 @@ type Repository interface {
 	// MarkTopupIntentExpired flips a lazily-discovered stale 'pending' row
 	// (GetTopupIntent's own read path) to 'expired'.
 	MarkTopupIntentExpired(ctx context.Context, id uuid.UUID) error
-
 }
 
 type repo struct {

@@ -9,7 +9,6 @@
 | Plan | Scope |
 |---|---|
 | [35](35-phase6j-kubernetes.md) | Optional local Kubernetes learning |
-| [54](54-vendor-service-boundary.md) | VendorService boundary |
 | [56 · F0](56-f0-frontend-platform-foundation.md) | Frontend platform foundation |
 
 Read the [roadmap strategy](../42-long-term-roadmap.md) and each plan's trigger

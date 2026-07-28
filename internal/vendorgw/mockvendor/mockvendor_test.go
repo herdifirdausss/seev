@@ -40,7 +40,8 @@ func TestVerifyAndParse_ValidSignature_ReturnsNormalizedEvent(t *testing.T) {
 	assert.Equal(t, "mockvendor", ev.Vendor)
 	assert.Equal(t, "evt-1", ev.VendorEventID)
 	assert.Equal(t, "ref-1", ev.ExternalRef)
-	assert.Equal(t, userID, ev.UserID)
+	// The adapter deliberately drops the vendor-supplied user_id. Payin
+	// receives identity only from its own intent correlation.
 	assert.True(t, ev.Amount.Equal(decimal.NewFromInt(100_000)), "amount must be exact decimal, not float — got %s", ev.Amount)
 	assert.Equal(t, "IDR", ev.Currency)
 	assert.False(t, ev.OccurredAt.IsZero())

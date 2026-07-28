@@ -5,7 +5,9 @@ package seev.payin.v1;
 import "google/protobuf/timestamp.proto";
 
 service PayinService {
-  rpc HandleWebhook(HandleWebhookRequest) returns (HandleWebhookResponse);
+  rpc HandleWebhook(HandleWebhookRequest) returns (HandleWebhookResponse) {
+    option deprecated = true;
+  }
   rpc HandleVendorCallback(HandleVendorCallbackRequest) returns (HandleVendorCallbackResponse);
   rpc CreateTopupIntent(CreateTopupIntentRequest) returns (CreateTopupIntentResponse);
   rpc GetTopupIntent(GetTopupIntentRequest) returns (GetTopupIntentResponse);
@@ -17,12 +19,14 @@ service PayinService {
 }
 
 message HandleWebhookRequest {
+  option deprecated = true;
   string vendor = 1;
   map<string, string> headers = 2;
   bytes raw_body = 3;
 }
 
 enum WebhookResult {
+  option deprecated = true;
   WEBHOOK_RESULT_UNSPECIFIED = 0;
   WEBHOOK_RESULT_OK = 1;
   WEBHOOK_RESULT_IGNORED = 2;
@@ -30,6 +34,7 @@ enum WebhookResult {
 }
 
 message HandleWebhookResponse {
+  option deprecated = true;
   WebhookResult result = 1;
 }
 

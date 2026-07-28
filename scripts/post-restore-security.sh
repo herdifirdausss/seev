@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Post-restore session/token revocation fence (docs/roadmap/active/50 T5, decision
+# Post-restore session/token revocation fence (docs/roadmap/archive/50 T5, decision
 # K11) — PITR can resurrect refresh tokens and admin sessions that were
 # legitimately revoked AFTER the recovery target. Run this after
 # scripts/restore-cluster.sh + cmd/drverify pass and cmd/drreseed has
@@ -18,7 +18,7 @@
 # Runtime secrets (JWT_SECRET, INTERNAL_GRPC_TOKEN, Vault-sourced values)
 # are never read from or written to any table this script touches —
 # confirmed by reading internal/config's actual loader
-# (docs/roadmap/active/50 T5 Result item 6): they come from the environment/Vault
+# (docs/roadmap/archive/50 T5 Result item 6): they come from the environment/Vault
 # at process startup, independent of any PostgreSQL backup.
 #
 # Usage:
@@ -54,7 +54,7 @@ ok() { printf '\033[1;32m[ pass]\033[0m %s\n' "$*"; }
 fail() { printf '\033[1;31m[ FAIL]\033[0m %s\n' "$*"; }
 
 # run_psql <database> <sql...> — connects as the schema-owner role, which
-# is the actual Postgres bootstrap superuser (docs/roadmap/active/50 T1 Result) and
+# is the actual Postgres bootstrap superuser (docs/roadmap/archive/50 T1 Result) and
 # therefore bypasses RLS unconditionally, unlike app_service under FORCE
 # ROW LEVEL SECURITY — this script must act across every user's rows, not
 # as any one restricted app role.

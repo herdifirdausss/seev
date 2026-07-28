@@ -6,4 +6,4 @@ changes:
     predecessor_operation_id: gatewayVendorWebhookV1
     successor_operation_id: vendorServiceVendorWebhookV1
     reason: VendorService owns the restricted callback edge; Gateway no longer accepts vendor callbacks.
-    plan: docs/roadmap/active/54-vendor-service-boundary.md
+    plan: docs/roadmap/archive/54-vendor-service-boundary.md

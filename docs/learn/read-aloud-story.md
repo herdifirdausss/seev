@@ -80,8 +80,9 @@ Neither one may secretly change the big money book.
 
 ## One honest note for the grown-up
 
-The learning code still has an old top-up shortcut that may continue without
-finding the matching ticket. The safer planned design removes that shortcut.
+The active top-up path now asks the dedicated VendorService to check the
+message and find the matching ticket before the big book changes. Payin has no
+active raw callback path; the deprecated v1 wire method is unimplemented.
 
 ## Ask the child
 

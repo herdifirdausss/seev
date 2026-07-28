@@ -52,7 +52,7 @@ go.work.sum
 /deploy/certs/*
 !/deploy/certs/.gitkeep
 
-# docs/roadmap/active/50 K3/K5: pgBackRest repository passphrase and the seev_backup
+# docs/roadmap/archive/50 K3/K5: pgBackRest repository passphrase and the seev_backup
 # role password generated locally by `make backup-secret` — never
 # committed, mirrors the observability-secret pattern above. The backup
 # repository itself (encrypted physical backups + WAL) is host-path data,
@@ -64,13 +64,13 @@ go.work.sum
 /deploy/backup/manifests/*
 !/deploy/backup/manifests/.gitkeep
 
-# docs/roadmap/active/51 T2.2: pkg/cryptox dev KEK + lookup key generated locally
+# docs/roadmap/archive/51 T2.2: pkg/cryptox dev KEK + lookup key generated locally
 # by `make cryptox-secret` — never committed, mirrors the
 # observability-secret pattern above.
 /deploy/cryptox/secrets/*
 !/deploy/cryptox/secrets/.gitkeep
 
-# docs/roadmap/active/53 B0: raw load manifests, time series, dumps, and logs
+# Plan 53 B0: raw load manifests, time series, dumps, and logs
 # are disposable evidence and must never enter Git. Commit only redacted,
 # deterministic summaries under docs/performance/.
 /artifacts/load/*

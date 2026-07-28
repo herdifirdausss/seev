@@ -9,7 +9,7 @@ import (
 
 // realRepoPolicy loads the actual, committed config/data-retention.yaml and
 // validates it against the actual, committed migrations/ tree — this is
-// the test docs/roadmap/active/51 T0's "Required checks" describes ("all eight
+// the test docs/roadmap/archive/51 T0's "Required checks" describes ("all eight
 // migration directories are covered", "policy schema rejects invalid and
 // ambiguous rules" applied to the real file, not just a synthetic one).
 func realRepoPolicy(t *testing.T) *Policy {
@@ -60,7 +60,7 @@ func TestValidate_AllOwnerMigrationDirectoriesCovered(t *testing.T) {
 	}
 }
 
-// TestValidate_NonPostgresClassesAreClassified proves docs/roadmap/active/51 T0's
+// TestValidate_NonPostgresClassesAreClassified proves docs/roadmap/archive/51 T0's
 // "object store, Redis, RabbitMQ, logs, traces, and A7 backups are
 // classified" required check against the real policy — every one of these
 // six classes must exist with a non-empty object_class.
@@ -262,7 +262,7 @@ func TestValidate_AcceptsMinimalValidPolicy(t *testing.T) {
 	}
 }
 
-// TestValidate_MigrationCrossCheck proves the CI requirement docs/roadmap/active/51
+// TestValidate_MigrationCrossCheck proves the CI requirement docs/roadmap/archive/51
 // T0 Work item 4 describes: a migration table absent from the policy fails,
 // and a policy entry pointing at a table no migration creates also fails.
 func TestValidate_MigrationCrossCheck(t *testing.T) {

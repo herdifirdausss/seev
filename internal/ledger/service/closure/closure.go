@@ -130,7 +130,7 @@ func (s *Service) Commit(ctx context.Context, subjectID, surrogateID uuid.UUID) 
 	return hex.EncodeToString(h.Sum(nil)), affectedCount, nil
 }
 
-// exportTransactionRow is docs/roadmap/active/51 T4b's own hand-written export
+// exportTransactionRow is docs/roadmap/archive/51 T4b's own hand-written export
 // DTO — deliberately excludes idempotency_key (T3's own digest tombstone
 // already governs that separately) and error_message (may echo internal
 // diagnostic text). amount is minor units, same convention every other

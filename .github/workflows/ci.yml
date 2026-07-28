@@ -98,7 +98,7 @@ jobs:
       - name: Validate documentation links
         run: make docs-check
 
-      # docs/roadmap/active/51 K1: config/data-retention.yaml must stay in sync with
+      # docs/roadmap/archive/51 K1: config/data-retention.yaml must stay in sync with
       # every migrated table, and docs/data/retention.md must stay in sync
       # with the policy — this is the CI enforcement that closes the loop.
       - name: Validate data retention policy

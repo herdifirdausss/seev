@@ -32,6 +32,7 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type PayinServiceClient interface {
+	// Deprecated: Do not use.
 	HandleWebhook(ctx context.Context, in *HandleWebhookRequest, opts ...grpc.CallOption) (*HandleWebhookResponse, error)
 	HandleVendorCallback(ctx context.Context, in *HandleVendorCallbackRequest, opts ...grpc.CallOption) (*HandleVendorCallbackResponse, error)
 	CreateTopupIntent(ctx context.Context, in *CreateTopupIntentRequest, opts ...grpc.CallOption) (*CreateTopupIntentResponse, error)
@@ -51,6 +52,7 @@ func NewPayinServiceClient(cc grpc.ClientConnInterface) PayinServiceClient {
 	return &payinServiceClient{cc}
 }
 
+// Deprecated: Do not use.
 func (c *payinServiceClient) HandleWebhook(ctx context.Context, in *HandleWebhookRequest, opts ...grpc.CallOption) (*HandleWebhookResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(HandleWebhookResponse)
@@ -125,6 +127,7 @@ func (c *payinServiceClient) ApplyIntakeControl(ctx context.Context, in *ApplyIn
 // All implementations must embed UnimplementedPayinServiceServer
 // for forward compatibility.
 type PayinServiceServer interface {
+	// Deprecated: Do not use.
 	HandleWebhook(context.Context, *HandleWebhookRequest) (*HandleWebhookResponse, error)
 	HandleVendorCallback(context.Context, *HandleVendorCallbackRequest) (*HandleVendorCallbackResponse, error)
 	CreateTopupIntent(context.Context, *CreateTopupIntentRequest) (*CreateTopupIntentResponse, error)

@@ -26,7 +26,7 @@ type payinRow struct {
 // state across runs. Each round-trip fetches at most cfg.PageSize rows
 // (K9 "bounded batches"); the returned slice accumulates every page, since
 // correlating an intent against its settled webhook (possibly on a
-// different page) needs the full set in memory. docs/roadmap/active/50 §8
+// different page) needs the full set in memory. docs/roadmap/archive/50 §8
 // explicitly disclaims any production-scale guarantee for this track —
 // this is the concrete place that trade-off is made.
 func fetchPayinRows(ctx context.Context, tx *sql.Tx, pageSize int) ([]payinRow, error) {

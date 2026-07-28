@@ -174,7 +174,7 @@ func run(parent context.Context) error {
 		fraudClient = fraudcheck.New(fraudv1.NewFraudServiceClient(fraudConn), "payout")
 	}
 
-	// docs/roadmap/active/51 "A8 T2.5b" (the contract migration): cryptox is no
+	// docs/roadmap/archive/51 "A8 T2.5b" (the contract migration): cryptox is no
 	// longer optional — payout_requests.destination has no plaintext
 	// column left to fall back to, so a missing/malformed ring fails boot
 	// here, unconditionally, the same "money-safety, never optional"
@@ -184,7 +184,7 @@ func run(parent context.Context) error {
 		return fmt.Errorf("build cryptox ring: %w", err)
 	}
 	module := payout.NewModule(db, ledgerclient.New(ledgerConn), registry, redisClient, log, fraudClient, breaker, cryptoxRing)
-	// docs/roadmap/active/51 T2.6: redacts payout_requests.destination/error_message
+	// docs/roadmap/archive/51 T2.6: redacts payout_requests.destination/error_message
 	// once terminal for 30+ days — same fire-and-continue convention as
 	// every other StartRetentionRunner caller in this codebase.
 	var stopRetention func()
@@ -222,7 +222,7 @@ func run(parent context.Context) error {
 	// both replicas (docs/roadmap/archive/45 T4) share the same "payout" identity.
 	httpServer := &http.Server{Addr: ":" + cfg.App.Port, Handler: adminRouter(cfg, module, log), ReadTimeout: cfg.App.ReadTimeout, WriteTimeout: cfg.App.WriteTimeout, IdleTimeout: cfg.App.IdleTimeout, ReadHeaderTimeout: 5 * time.Second, MaxHeaderBytes: 1 << 20, TLSConfig: tlsx.ServerConfig(certSrc, []string{
 		tlsx.IdentityDevOperator, tlsx.IdentityPrometheus, tlsx.IdentityAdminBFF,
-		// docs/roadmap/active/51 T4b/T5b: auth-service calls the new /privacy/
+		// docs/roadmap/archive/51 T4b/T5b: auth-service calls the new /privacy/
 		// export+closure routes as the export/closure saga's coordinator.
 		tlsx.IdentityAuth,
 	})}

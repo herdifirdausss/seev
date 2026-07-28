@@ -22,6 +22,7 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// Deprecated: Marked as deprecated in seev/payin/v1/payin.proto.
 type WebhookResult int32
 
 const (
@@ -129,6 +130,7 @@ func (VendorCallbackResult) EnumDescriptor() ([]byte, []int) {
 	return file_seev_payin_v1_payin_proto_rawDescGZIP(), []int{1}
 }
 
+// Deprecated: Marked as deprecated in seev/payin/v1/payin.proto.
 type HandleWebhookRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Vendor        string                 `protobuf:"bytes,1,opt,name=vendor,proto3" json:"vendor,omitempty"`
@@ -189,6 +191,7 @@ func (x *HandleWebhookRequest) GetRawBody() []byte {
 	return nil
 }
 
+// Deprecated: Marked as deprecated in seev/payin/v1/payin.proto.
 type HandleWebhookResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Result        WebhookResult          `protobuf:"varint,1,opt,name=result,proto3,enum=seev.payin.v1.WebhookResult" json:"result,omitempty"`
@@ -1261,16 +1264,16 @@ var File_seev_payin_v1_payin_proto protoreflect.FileDescriptor
 
 const file_seev_payin_v1_payin_proto_rawDesc = "" +
 	"\n" +
-	"\x19seev/payin/v1/payin.proto\x12\rseev.payin.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xd1\x01\n" +
+	"\x19seev/payin/v1/payin.proto\x12\rseev.payin.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xd5\x01\n" +
 	"\x14HandleWebhookRequest\x12\x16\n" +
 	"\x06vendor\x18\x01 \x01(\tR\x06vendor\x12J\n" +
 	"\aheaders\x18\x02 \x03(\v20.seev.payin.v1.HandleWebhookRequest.HeadersEntryR\aheaders\x12\x19\n" +
 	"\braw_body\x18\x03 \x01(\fR\arawBody\x1a:\n" +
 	"\fHeadersEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"M\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01:\x02\x18\x01\"Q\n" +
 	"\x15HandleWebhookResponse\x124\n" +
-	"\x06result\x18\x01 \x01(\x0e2\x1c.seev.payin.v1.WebhookResultR\x06result\"\x90\x03\n" +
+	"\x06result\x18\x01 \x01(\x0e2\x1c.seev.payin.v1.WebhookResultR\x06result:\x02\x18\x01\"\x90\x03\n" +
 	"\x1bHandleVendorCallbackRequest\x12\x16\n" +
 	"\x06vendor\x18\x01 \x01(\tR\x06vendor\x12&\n" +
 	"\x0fvendor_event_id\x18\x02 \x01(\tR\rvendorEventId\x12-\n" +
@@ -1364,20 +1367,20 @@ const file_seev_payin_v1_payin_proto_rawDesc = "" +
 	"\x1aApplyIntakeControlResponse\x12\x18\n" +
 	"\aapplied\x18\x01 \x01(\bR\aapplied\x12\x16\n" +
 	"\x06paused\x18\x02 \x01(\bR\x06paused\x12\x1a\n" +
-	"\brevision\x18\x03 \x01(\x03R\brevision*\x87\x01\n" +
+	"\brevision\x18\x03 \x01(\x03R\brevision*\x8b\x01\n" +
 	"\rWebhookResult\x12\x1e\n" +
 	"\x1aWEBHOOK_RESULT_UNSPECIFIED\x10\x00\x12\x15\n" +
 	"\x11WEBHOOK_RESULT_OK\x10\x01\x12\x1a\n" +
 	"\x16WEBHOOK_RESULT_IGNORED\x10\x02\x12#\n" +
-	"\x1fWEBHOOK_RESULT_BUSINESS_FAILURE\x10\x03*\xf2\x01\n" +
+	"\x1fWEBHOOK_RESULT_BUSINESS_FAILURE\x10\x03\x1a\x02\x18\x01*\xf2\x01\n" +
 	"\x14VendorCallbackResult\x12&\n" +
 	"\"VENDOR_CALLBACK_RESULT_UNSPECIFIED\x10\x00\x12$\n" +
 	" VENDOR_CALLBACK_RESULT_FINALIZED\x10\x01\x12,\n" +
 	"(VENDOR_CALLBACK_RESULT_ALREADY_FINALIZED\x10\x02\x12/\n" +
 	"+VENDOR_CALLBACK_RESULT_IGNORED_NON_TERMINAL\x10\x03\x12-\n" +
-	")VENDOR_CALLBACK_RESULT_RECORDED_UNMATCHED\x10\x042\xe3\x05\n" +
-	"\fPayinService\x12Z\n" +
-	"\rHandleWebhook\x12#.seev.payin.v1.HandleWebhookRequest\x1a$.seev.payin.v1.HandleWebhookResponse\x12o\n" +
+	")VENDOR_CALLBACK_RESULT_RECORDED_UNMATCHED\x10\x042\xe8\x05\n" +
+	"\fPayinService\x12_\n" +
+	"\rHandleWebhook\x12#.seev.payin.v1.HandleWebhookRequest\x1a$.seev.payin.v1.HandleWebhookResponse\"\x03\x88\x02\x01\x12o\n" +
 	"\x14HandleVendorCallback\x12*.seev.payin.v1.HandleVendorCallbackRequest\x1a+.seev.payin.v1.HandleVendorCallbackResponse\x12f\n" +
 	"\x11CreateTopupIntent\x12'.seev.payin.v1.CreateTopupIntentRequest\x1a(.seev.payin.v1.CreateTopupIntentResponse\x12]\n" +
 	"\x0eGetTopupIntent\x12$.seev.payin.v1.GetTopupIntentRequest\x1a%.seev.payin.v1.GetTopupIntentResponse\x12o\n" +

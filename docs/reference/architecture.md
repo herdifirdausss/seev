@@ -4,7 +4,7 @@
 
 > **Status: Current.** This document describes the runtime implemented in the
 > repository. The VendorService boundary is implemented; its final live
-> integration and chaos acceptance remains tracked in [plan 54](../roadmap/active/54-vendor-service-boundary.md).
+> integration and chaos acceptance remain tracked in [archived plan 54](../roadmap/archive/54-vendor-service-boundary.md).
 
 This document explains **why Seev exists, what problem it solves, and how
 it's built to solve it** — for both a business reader and a technical
@@ -221,8 +221,10 @@ record; it is not proof by itself that money moved.
 
 The diagram below is current behavior. VendorService authenticates and stores
 the raw callback before delivering a normalized, owner-neutral event over mTLS;
-Payin/Payout then correlate it against their own state. A legacy raw callback
-RPC remains only for compatibility tests and is not an active Gateway route.
+Payin/Payout then correlate it against their own state. Payin and Payout's
+active surfaces use only the normalized callback contract; the old Payin v1
+wire method is retained only as a deprecated, unimplemented compatibility
+symbol until the version-retirement gate is satisfied.
 
 A user topping up their wallet touches almost every architectural idea in
 the system:

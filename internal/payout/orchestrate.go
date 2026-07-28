@@ -34,7 +34,7 @@ func cancelIdempotencyKey(id uuid.UUID) string { return "payout:" + id.String() 
 // Create starts a new payout request (docs/roadmap/archive/23 Task T3 step 1):
 // created -> held (blocking withdraw_initiate) -> submitted -> vendor
 // Submit. The request ID is returned even if hold or the initial submit
-// attempt fails partway — HandleWebhook/the resume job (Task T3 step 3)
+// attempt fails partway — the VendorService callback/resume job (Task T3 step 3)
 // continues the SAME request from wherever it stopped, using the request
 // ID as every subsequent ledger idempotency key; nothing here is a "start
 // over from scratch" operation.

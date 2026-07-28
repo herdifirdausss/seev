@@ -317,12 +317,12 @@ func NewModule(db database.DatabaseSQL, broker messaging.Broker, redisClient *re
 		{Name: "ledger.fee_quotes.unconsumed", Action: "delete", FunctionName: "fn_retention_purge_fee_quotes_unconsumed"},
 		{Name: "ledger.fee_quotes.consumed", Action: "delete", FunctionName: "fn_retention_purge_fee_quotes_consumed"},
 		{Name: "ledger.outbox_events.published", Action: "delete", FunctionName: "fn_retention_purge_outbox_events_published"},
-		// docs/roadmap/active/51 T2.6: redacts recon_batches.source_filename /
+		// docs/roadmap/archive/51 T2.6: redacts recon_batches.source_filename /
 		// recon_items.raw (both plaintext AND T2.4 ciphertext columns)
 		// without ever decrypting them.
 		{Name: "ledger.recon_batches", Action: "redact", FunctionName: "fn_retention_purge_recon_batches"},
 		{Name: "ledger.recon_items", Action: "redact", FunctionName: "fn_retention_purge_recon_items"},
-		// docs/roadmap/active/51 T3 (K7): nulls idempotency_key/idempotency_scope 30
+		// docs/roadmap/archive/51 T3 (K7): nulls idempotency_key/idempotency_scope 30
 		// days after a transaction reaches a terminal status — the
 		// SECURITY DEFINER function's own idempotency_key_digest IS NOT
 		// NULL guard is what makes this safe (never redacts a row whose
@@ -436,7 +436,7 @@ func (m *Module) ClosureRouter() http.Handler {
 	mux := httpcontract.New(httpcontract.Options{Owner: "ledger", Audience: "internal", Contract: "internal-v1"})
 	mux.HandleFunc("POST /privacy/closure/prepare", m.handleClosurePrepare)
 	mux.HandleFunc("POST /privacy/closure/commit", m.handleClosureCommit)
-	// docs/roadmap/active/51 T4b (K9): same router, same token gate — auth's
+	// docs/roadmap/archive/51 T4b (K9): same router, same token gate — auth's
 	// export saga's own owner-composed export contract for ledger.
 	mux.HandleFunc("GET /privacy/export", m.handlePrivacyExport)
 	return mux

@@ -31,7 +31,7 @@ import (
 // tracked per service but physically merged — see that function's own
 // comment: "the remaining monolith-era migrations"). retention_holds and
 // retention_audit are intentionally named identically in all eight owner
-// databases (docs/roadmap/active/51 K5 — one shape, one production database each),
+// databases (docs/roadmap/archive/51 K5 — one shape, one production database each),
 // which collides in that shared single-database harness the moment a
 // second service's copy tries to CREATE TABLE. Real per-service-database
 // deployment (production and every other live verification in this task)

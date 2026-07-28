@@ -43,7 +43,7 @@ const (
 // entry no hold can ever cover (e.g. a static reference table).
 type HoldScope = string
 
-// Entry is one row of the policy: docs/roadmap/active/51 K1's "owner,
+// Entry is one row of the policy: docs/roadmap/archive/51 K1's "owner,
 // table/object class, classification, terminal timestamp, duration,
 // action, batch size, hold scope, and policy version."
 type Entry struct {
@@ -74,7 +74,7 @@ type Policy struct {
 	Entries         []Entry  `yaml:"entries"`
 }
 
-// classPattern matches docs/roadmap/active/51 K1's required "owner.subclass[.subclass...]"
+// classPattern matches docs/roadmap/archive/51 K1's required "owner.subclass[.subclass...]"
 // shape for Entry.Class, and the plain "owner.table" shape for
 // Entry.Table/Policy.PermanentTables.
 var (

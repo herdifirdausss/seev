@@ -80,10 +80,10 @@ modern. It is useful only when its benefit justifies its cost.
 - **Cost:** top-ups have a multi-step lifecycle with expiry, unmatched events,
   and reconciliation instead of one immediate request.
 
-> **Compatibility note:** an old raw callback RPC remains in Payin for
-> transition tests, but it is not exposed by Gateway and the active
-> VendorService path requires strict owner-domain intent correlation. Final
-> live integration and chaos acceptance remain in [plan 54](../roadmap/active/54-vendor-service-boundary.md).
+> The raw v1 callback RPC is deprecated and unimplemented. VendorService is the
+> callback ingress and Payin's active surface accepts only normalized
+> owner-domain callbacks;
+> final live integration and chaos acceptance remain in [archived plan 54](../roadmap/archive/54-vendor-service-boundary.md).
 
 ## Why authenticate a callback and still validate its business data?
 
@@ -148,9 +148,10 @@ modern. It is useful only when its benefit justifies its cost.
 - **Cost:** the user interface must tolerate eventual delivery and obtain
   authoritative status from the owning service when needed.
 
-> **Target improvement:** plan 54 changes Payin/Payout terminal notifications
-> from generic Ledger events to owner-domain final events, preventing a success
-> message while local workflow finalization is incomplete.
+> **Remaining target:** the implemented Plan 54 boundary moves vendor transport
+> behind VendorService, but Payin/Payout terminal notifications still consume
+> generic Ledger events today. A future owner-domain event cutover should
+> prevent a success message while local workflow finalization is incomplete.
 
 ## Why does each service own a separate database?
 

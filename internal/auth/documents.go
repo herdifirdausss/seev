@@ -71,7 +71,7 @@ func (m *Module) UploadKYCDocument(ctx context.Context, userID uuid.UUID, conten
 	if err != nil {
 		return model.KYCDocument{}, fmt.Errorf("%w: %w", ErrDocumentInvalid, err)
 	}
-	// docs/roadmap/active/51 K2: "opaque random path with no user UUID" — the
+	// docs/roadmap/archive/51 K2: "opaque random path with no user UUID" — the
 	// document/user relationship lives only in the encrypted kyc_documents
 	// row, never derivable from the object store's own path. documentID is
 	// already a fresh, unique random UUID minted above; reusing it here

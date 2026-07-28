@@ -144,7 +144,7 @@ func TestRetention_ReconItems_EligibilityFollowsParentBatch(t *testing.T) {
 }
 
 // TestRetention_TransactionsIdempotencyRaw_RequiresDigestFirst is
-// docs/roadmap/active/51 T3's own required test for its own work item 5:
+// docs/roadmap/archive/51 T3's own required test for its own work item 5:
 // "add retention redaction of raw key/scope after 30 days" — plus the
 // load-bearing guard fn_retention_purge_transactions_idempotency_raw adds
 // on top of the generic pattern: a terminal, 30+ day old row with NO

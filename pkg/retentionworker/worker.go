@@ -28,7 +28,7 @@ type dbQuerier interface {
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
 
-// DefaultBatchSize is docs/roadmap/active/51 K6's per-transaction cap.
+// DefaultBatchSize is docs/roadmap/archive/51 K6's per-transaction cap.
 const DefaultBatchSize = 500
 
 // holdScopes and holdStatuses are K5's fixed, closed sets (the same CHECK
@@ -59,7 +59,7 @@ var ownerPattern = regexp.MustCompile(`^[a-z][a-z0-9]*$`)
 // — every value in this package's own callers is a compile-time constant,
 // never user input, but this still guards against a future call site
 // accidentally interpolating something dynamic into the query string built
-// in RunOnce (docs/roadmap/active/51 K4: "not arbitrary SQL").
+// in RunOnce (docs/roadmap/archive/51 K4: "not arbitrary SQL").
 var functionNamePattern = regexp.MustCompile(`^fn_retention_purge_[a-z0-9_]+$`)
 
 // Class binds one config/data-retention.yaml policy entry to the Postgres
@@ -113,7 +113,7 @@ type ClassResult struct {
 
 // Runner executes every registered Class's retention function on a bounded
 // batch loop. One Runner belongs to exactly one owner service and one
-// Postgres database — docs/roadmap/active/51 K6 "each service owns its scheduler,
+// Postgres database — docs/roadmap/archive/51 K6 "each service owns its scheduler,
 // repository call, and metrics for its tables."
 type Runner struct {
 	owner      string

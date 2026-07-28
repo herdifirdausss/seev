@@ -206,13 +206,13 @@ The intent connects an external reference to Seev's own user, amount,
 currency, and expected vendor. A callback should confirm that expectation; it
 should not invent ownership.
 
-### Known current limitation
+### Current callback contract
 
-The old raw Payin callback compatibility path still exists in code, but it is
-not exposed by Gateway. The active VendorService path requires strict
-owner-domain correlation and does not accept vendor-supplied user ownership;
-final live integration and chaos acceptance remain in
-[plan 54](../roadmap/active/54-vendor-service-boundary.md).
+Payin has no active raw callback path. The deprecated v1 wire method is
+unimplemented, and VendorService requires
+strict owner-domain correlation and does not accept vendor-supplied user
+ownership; final live integration and chaos acceptance remain in
+[archived plan 54](../roadmap/archive/54-vendor-service-boundary.md).
 
 ### Source of truth
 
@@ -291,9 +291,10 @@ RabbitMQ can be unavailable without erasing an already committed posting. The
 outbox retries. Because delivery is at least once, each consumer deduplicates
 the message id.
 
-Current top-up and payout notifications are derived from generic Ledger
-events. Plan 54 moves terminal notifications to owner-domain events so a user
-is not told “complete” while Payin or Payout still needs local finalization.
+Current top-up and payout notifications are still derived from generic Ledger
+events. Archived Plan 54 records the intended owner-domain terminal-event
+migration; its VendorService boundary is implemented, but notification
+cutover remains a separate live-acceptance/follow-up gate.
 
 ## Journey 7: operator actions
 

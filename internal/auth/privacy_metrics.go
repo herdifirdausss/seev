@@ -22,14 +22,14 @@ var privacyRequestsGauge = promauto.NewGaugeVec(prometheus.GaugeOpts{
 	Namespace: "seev",
 	Subsystem: "privacy",
 	Name:      "requests",
-	Help:      "Current privacy_requests row count, by kind (export|closure) and status (docs/roadmap/active/51 K13). Refreshed once per worker tick.",
+	Help:      "Current privacy_requests row count, by kind (export|closure) and status (docs/roadmap/archive/51 K13). Refreshed once per worker tick.",
 }, []string{"kind", "status"})
 
 var privacyRequestDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
 	Namespace: "seev",
 	Subsystem: "privacy",
 	Name:      "request_duration_seconds",
-	Help:      "Time from requested_at to a terminal status, by kind and result (docs/roadmap/active/51 K13).",
+	Help:      "Time from requested_at to a terminal status, by kind and result (docs/roadmap/archive/51 K13).",
 	Buckets:   []float64{1, 5, 15, 30, 60, 300, 900, 3600},
 }, []string{"kind", "result"})
 
@@ -37,12 +37,12 @@ var privacyOwnerCallsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
 	Namespace: "seev",
 	Subsystem: "privacy",
 	Name:      "owner_calls_total",
-	Help:      "Cross-service owner prepare/commit calls made by the closure saga, by owner, operation, and result (docs/roadmap/active/51 K13).",
+	Help:      "Cross-service owner prepare/commit calls made by the closure saga, by owner, operation, and result (docs/roadmap/archive/51 K13).",
 }, []string{"owner", "operation", "result"})
 
 var privacyObjectDeleteTotal = promauto.NewCounterVec(prometheus.CounterOpts{
 	Namespace: "seev",
 	Subsystem: "privacy",
 	Name:      "object_delete_total",
-	Help:      "Export archive object-delete enqueue attempts, by kind and result (docs/roadmap/active/51 K13) — a privacy-flow-scoped view of the generic seev_object_outbox_* metrics.",
+	Help:      "Export archive object-delete enqueue attempts, by kind and result (docs/roadmap/archive/51 K13) — a privacy-flow-scoped view of the generic seev_object_outbox_* metrics.",
 }, []string{"kind", "result"})

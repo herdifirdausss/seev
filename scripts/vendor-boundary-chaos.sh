@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Focused VendorService boundary drill for docs/roadmap/active/54.
+# Focused VendorService boundary drill for docs/roadmap/archive/54.
 #
 # This is intentionally separate from the broad chaos suite: it exercises the
 # vendor callback edge with a real top-up intent and asserts the monetary effect

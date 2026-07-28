@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"sync/atomic"
 
 	"github.com/shopspring/decimal"
@@ -30,18 +29,13 @@ func NewClient(rpc vendorv1.VendorServiceClient) *Client {
 	return &Client{rpc: rpc}
 }
 
-// PayinAvailability is a transitional routing marker. It lets Payin select a
-// vendor while making the old raw webhook path unusable; verification now
-// lives only in VendorService.
+// PayinAvailability is a routing marker. It lets Payin select a configured
+// vendor without giving Payin access to callback verification.
 type PayinAvailability struct{ name string }
 
-func NewPayinAvailability(name string) vendorgw.PayinVerifier { return PayinAvailability{name: name} }
+func NewPayinAvailability(name string) vendorgw.PayinVendor { return PayinAvailability{name: name} }
 
 func (a PayinAvailability) Vendor() string { return a.name }
-
-func (a PayinAvailability) VerifyAndParse(http.Header, []byte) (*vendorgw.PayinEvent, error) {
-	return nil, fmt.Errorf("vendorboundary: raw payin callback is owned by VendorService")
-}
 
 func (c *Client) CreatePayinSession(ctx context.Context, vendor, intentID string, amount decimal.Decimal, currency, requestID string) error {
 	if c == nil || c.rpc == nil {

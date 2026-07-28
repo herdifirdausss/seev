@@ -293,7 +293,7 @@ certs:
 		$(BUILD_DIR)/certgen issue --service $$service --out deploy/certs || exit $$?; \
 	done
 
-# docs/roadmap/active/50 K3/K5: two independent secrets — the pgBackRest repository
+# docs/roadmap/archive/50 K3/K5: two independent secrets — the pgBackRest repository
 # encryption passphrase and the seev_backup role's own password — generated
 # locally, gitignored, mirrors the observability-secret pattern.
 # Idempotent: does nothing to a secret that already exists.
@@ -331,13 +331,13 @@ backup-secret:
 		echo "deploy/backup/secrets/seev_backup_password already exists, leaving it alone"; \
 	fi
 
-# docs/roadmap/active/50 K5: 04-backup-role.sh only runs automatically via
+# docs/roadmap/archive/50 K5: 04-backup-role.sh only runs automatically via
 # /docker-entrypoint-initdb.d on a FRESH volume's first boot. An existing
 # volume (like this repo's own dev seev_postgres_data, provisioned before
 # Track A7 existed) never re-runs first-boot scripts, so this target
 # re-invokes the EXACT SAME script inside the running container — never a
 # hand-copied variant that could drift from the first-boot behavior.
-# docs/roadmap/active/51 T2.2: dev-only pkg/cryptox key material — shared
+# docs/roadmap/archive/51 T2.2: dev-only pkg/cryptox key material — shared
 # cluster-wide (K2's own deliberate choice, same as JWT_SECRET/
 # INTERNAL_GRPC_TOKEN, see scripts/vault-seed.sh's own comment), so ONE
 # key pair is generated here, not one per service. 32-byte keys hex-encoded
@@ -386,7 +386,7 @@ cryptox-secret:
 backup-role-bootstrap:
 	docker compose exec postgres sh /docker-entrypoint-initdb.d/04-backup-role.sh
 
-# docs/roadmap/active/50 K2: --data-checksums (POSTGRES_INITDB_ARGS) only takes effect
+# docs/roadmap/archive/50 K2: --data-checksums (POSTGRES_INITDB_ARGS) only takes effect
 # on a fresh initdb. An existing volume needs Postgres fully STOPPED and
 # pg_checksums run offline directly against the data directory — this
 # target does exactly that, then restarts and verifies. Never run this
@@ -400,7 +400,7 @@ backup-checksums-enable:
 		sh -c 'pg_checksums --enable --pgdata=/var/lib/postgresql/data && pg_checksums --check --pgdata=/var/lib/postgresql/data'
 	docker compose up -d postgres
 
-# docs/roadmap/active/50 K3: `docker compose exec` starts a fresh process attached to
+# docs/roadmap/archive/50 K3: `docker compose exec` starts a fresh process attached to
 # the container, NOT a child of the entrypoint's own shell — it does not
 # inherit the PGBACKREST_REPO1_CIPHER_PASS the entrypoint exported for
 # archive_command's benefit (that export only reaches the postgres server

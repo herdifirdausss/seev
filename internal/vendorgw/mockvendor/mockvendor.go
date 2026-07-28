@@ -1,9 +1,9 @@
 // Package mockvendor is a stand-in payment vendor (docs/roadmap/archive/22 Task T1,
 // decision K-T6) — used until a real vendor account exists. Its webhook
 // shape and HMAC-SHA256 signature scheme are made up (not modeled on any
-// real vendor); the point is to exercise internal/vendorgw's contract and
-// internal/payin's dedup/posting logic end-to-end. A real vendor is added
-// later as a sibling subpackage — internal/payin never changes.
+// real vendor); the point is to exercise VendorService's adapter contract and
+// normalized owner callback flow end-to-end. A real vendor is added later as
+// a sibling adapter — Payin never sees this wire format.
 package mockvendor
 
 import (
@@ -16,7 +16,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 
 	"github.com/herdifirdausss/seev/internal/vendorgw"
@@ -33,7 +32,7 @@ const settledEventType = "payment.settled"
 // SignatureHeader is where mockvendor expects its HMAC signature.
 const SignatureHeader = "X-Mock-Signature"
 
-// Verifier implements vendorgw.PayinVerifier for mockvendor.
+// Verifier implements the VendorService-side vendorgw.PayinVerifier contract.
 type Verifier struct {
 	name   string
 	secret string
@@ -59,7 +58,6 @@ func (v *Verifier) Vendor() string { return v.name }
 type webhookPayload struct {
 	EventID     string    `json:"event_id"`
 	ExternalRef string    `json:"external_ref"`
-	UserID      string    `json:"user_id"`
 	Amount      string    `json:"amount"`
 	Currency    string    `json:"currency"`
 	OccurredAt  time.Time `json:"occurred_at"`
@@ -93,16 +91,10 @@ func (v *Verifier) VerifyAndParse(headers http.Header, rawBody []byte) (*vendorg
 	if err != nil {
 		return nil, fmt.Errorf("mockvendor: parse amount: %w", err)
 	}
-	userID, err := uuid.Parse(payload.UserID)
-	if err != nil {
-		return nil, fmt.Errorf("mockvendor: parse user_id: %w", err)
-	}
-
 	return &vendorgw.PayinEvent{
 		Vendor:        v.name,
 		VendorEventID: payload.EventID,
 		ExternalRef:   payload.ExternalRef,
-		UserID:        userID,
 		Amount:        amount,
 		Currency:      payload.Currency,
 		OccurredAt:    payload.OccurredAt,

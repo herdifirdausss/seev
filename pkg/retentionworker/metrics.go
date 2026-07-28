@@ -15,19 +15,19 @@ var runsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
 	Namespace: "seev",
 	Subsystem: "retention",
 	Name:      "runs_total",
-	Help:      "Retention class runs, by owner, action, and result (docs/roadmap/active/51 K13).",
+	Help:      "Retention class runs, by owner, action, and result (docs/roadmap/archive/51 K13).",
 }, []string{"owner", "action", "result"})
 
 var rowsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
 	Namespace: "seev",
 	Subsystem: "retention",
 	Name:      "rows_total",
-	Help:      "Rows purged or redacted, by owner, class, and action (docs/roadmap/active/51 K13). Dry runs never increment this.",
+	Help:      "Rows purged or redacted, by owner, class, and action (docs/roadmap/archive/51 K13). Dry runs never increment this.",
 }, []string{"owner", "class", "action"})
 
 var holdsGauge = promauto.NewGaugeVec(prometheus.GaugeOpts{
 	Namespace: "seev",
 	Subsystem: "retention",
 	Name:      "holds",
-	Help:      "Current retention hold count, by owner, scope, and status (docs/roadmap/active/51 K13). Refreshed once per RunOnce call.",
+	Help:      "Current retention hold count, by owner, scope, and status (docs/roadmap/archive/51 K13). Refreshed once per RunOnce call.",
 }, []string{"owner", "scope", "status"})

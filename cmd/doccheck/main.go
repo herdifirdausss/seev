@@ -180,11 +180,11 @@ func requiredDocumentationFailures(root string) []string {
 		},
 		"docs/reference/architecture.md": {
 			"Status: Current",
-			"roadmap/active/54-vendor-service-boundary.md",
+			"roadmap/archive/54-vendor-service-boundary.md",
 		},
 		"docs/reference/services.md": {
 			"Status: Current",
-			"roadmap/active/54-vendor-service-boundary.md",
+			"roadmap/archive/54-vendor-service-boundary.md",
 		},
 		"docs/learn/README.md": {
 			"Realistic time by age",
@@ -210,7 +210,7 @@ func requiredDocumentationFailures(root string) []string {
 		},
 		"docs/roadmap/active/README.md": {
 			"Status: Active work index",
-			"54-vendor-service-boundary.md",
+			"56-f0-frontend-platform-foundation.md",
 		},
 		"docs/roadmap/archive/README.md": {
 			"Status: Historical index",
@@ -306,13 +306,13 @@ func requiredDocumentationFailures(root string) []string {
 		"docs/learn/beginner-guide.md": {
 			"Status: Current",
 			"Known current limitation",
-			"roadmap/active/54-vendor-service-boundary.md",
+			"roadmap/archive/54-vendor-service-boundary.md",
 			"24,500 entering Noah",
 			"18,000 goes to the settlement path",
 		},
 		"docs/learn/visual-story.md": {
 			"Status: Current concept guide",
-			"roadmap/active/54-vendor-service-boundary.md",
+			"roadmap/archive/54-vendor-service-boundary.md",
 			"Tell the story back in five answers",
 			"What Mia may safely be told",
 			"Mia has 55,000 available",
@@ -320,7 +320,7 @@ func requiredDocumentationFailures(root string) []string {
 		"docs/learn/product-tour.md": {
 			"Status: Current",
 			"One map of every journey",
-			"roadmap/active/54-vendor-service-boundary.md",
+			"roadmap/archive/54-vendor-service-boundary.md",
 			"scripts/business-e2e.sh",
 			"| Mia transfers 25,000 with a 500 fee | 75,000 | 24,500 | 500 |",
 			"| Mia withdraws 20,000 with a 2,000 fee | 55,000 | 24,500 | 2,500 |",
@@ -328,12 +328,12 @@ func requiredDocumentationFailures(root string) []string {
 		},
 		"docs/reference/rationale.md": {
 			"Status: Current rationale",
-			"roadmap/active/54-vendor-service-boundary.md",
+			"roadmap/archive/54-vendor-service-boundary.md",
 			"Check your understanding",
 		},
 		"docs/reference/traceability.md": {
 			"Status: Current",
-			"roadmap/active/54-vendor-service-boundary.md",
+			"roadmap/archive/54-vendor-service-boundary.md",
 			"scripts/business-e2e.sh",
 			"internal/ledger/service/handle/service.go",
 		},
@@ -364,8 +364,8 @@ func requiredDocumentationFailures(root string) []string {
 			"digital proof, not a handwritten signature",
 			"Repository",
 		},
-		"docs/roadmap/active/54-vendor-service-boundary.md": {
-			"Status: In progress",
+		"docs/roadmap/archive/54-vendor-service-boundary.md": {
+			"Status: Core done",
 		},
 		"docs/roadmap/README.md": {
 			"54-vendor-service-boundary.md",

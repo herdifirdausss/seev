@@ -9,7 +9,7 @@
 #
 # Reuses scripts/privacy-export.sh unchanged for the export leg rather
 # than duplicating it. Reaches Postgres DIRECTLY (via cmd/retentionctl,
-# the same admin CLI docs/roadmap/active/51 T1.6 built) for the retention/hold legs — those
+# the same admin CLI docs/roadmap/archive/51 T1.6 built) for the retention/hold legs — those
 # have no HTTP surface by design (K5's own "generic across every owner
 # service rather than one endpoint per service").
 #

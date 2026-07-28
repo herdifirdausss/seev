@@ -204,13 +204,12 @@ the center of the dependency graph.
 pending top-up is only an expectation; Payin must validate confirmation before
 asking Ledger to record money.
 
-**Compatibility note**: the active VendorService callback path does not accept
-an authoritative `user_id` from the vendor. Payin correlates the normalized
-callback against its own intent, vendor, amount, and currency before posting.
-The old raw `HandleWebhook` RPC remains only as a compatibility surface for
-transition tests; Gateway no longer exposes a webhook route. See
-[plan 54](../roadmap/active/54-vendor-service-boundary.md) for the remaining
-live acceptance gate.
+The active VendorService callback path does not accept an authoritative
+`user_id` from the vendor. Payin correlates the normalized callback against
+its own intent, vendor, amount, and currency before posting. The deprecated v1
+raw callback RPC is unimplemented; VendorService is the only callback ingress.
+See [archived plan 54](../roadmap/archive/54-vendor-service-boundary.md) for the
+remaining live acceptance gate.
 
 **Problem it solves**: getting money *into* the system from a payment
 gateway vendor — an untrusted, asynchronous, sometimes-duplicate,
@@ -224,8 +223,9 @@ gateway handles which top-up, and failover between them), `intake.go`
 `assurance.go` (the read-only projection Assurance is allowed to read),
 `repository/` (topup + routing, split per
 [Onboarding](../development/onboarding.md#naming-conventions)'s repository rule),
-`grpcserver/` (internal RPC), and the VendorService boundary client. The
-legacy `internal/vendorgw` adapter remains for compatibility tests. Owns
+`grpcserver/` (internal RPC), and the VendorService boundary client. Payin
+uses only the `internal/vendorgw` routing/provider contracts; concrete
+callback verification is composed by VendorService. Owns
 `seev_payin`: `payin_topup_intents`,
 `payin_webhook_events`, `payin_routing_rules`, `payin_vendor_gateways`,
 `payin_intake_control`, `payin_intake_commands`.

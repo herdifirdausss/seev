@@ -258,7 +258,7 @@ func TestLoadFromEnv_ProductionWithSSL(t *testing.T) {
 }
 
 func TestLoadFromEnv_ProductionMissingCryptoxKey(t *testing.T) {
-	// docs/roadmap/active/51 K3: "service boot fails when a required current key is
+	// docs/roadmap/archive/51 K3: "service boot fails when a required current key is
 	// missing" — production must refuse to start without CRYPTOX_KEY_V1
 	// matching CRYPTOX_KEY_CURRENT_VERSION's default of 1.
 	_, err := loadFromEnv(validEnv(map[string]string{

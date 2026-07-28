@@ -15,7 +15,7 @@ var ErrKeyVersionUnavailable = fmt.Errorf("cryptox: key version unavailable")
 // remains available to Open so rows encrypted under an older key keep
 // decrypting during rotation. A Ring holds no knowledge of Vault,
 // environment variables, or any other source — construction from those is
-// the composition root's job (docs/roadmap/active/51 T2.2), keeping this
+// the composition root's job (docs/roadmap/archive/51 T2.2), keeping this
 // package testable with plain byte slices.
 type Ring struct {
 	keys    map[int][]byte

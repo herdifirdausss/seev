@@ -1,4 +1,4 @@
-# docs/roadmap/active/51 T1.8 (K13) — alerts on pkg/retentionworker's and
+# docs/roadmap/archive/51 T1.8 (K13) — alerts on pkg/retentionworker's and
 # pkg/objectoutbox's own metrics (pkg/retentionworker/metrics.go,
 # pkg/objectoutbox/metrics.go). Every expression below reads only the
 # fixed, low-cardinality metric set those packages expose — owner, class,
@@ -54,7 +54,7 @@ groups:
       summary: "object-store deletes are failing for owner={{ $labels.owner }} ref_table={{ $labels.ref_table }} — objects are retried, not lost, but the backlog is growing"
       runbook: docs/roadmap/archive/51-a8-data-lifecycle-privacy.md
 
-# docs/roadmap/active/51 T6 (K13) — alerts on T4/T5's privacy-request metrics
+# docs/roadmap/archive/51 T6 (K13) — alerts on T4/T5's privacy-request metrics
 # (internal/auth/privacy_metrics.go). Same low-cardinality-only constraint:
 # kind/status/owner/operation/result labels only, never a request id, user
 # id, or free-text error.

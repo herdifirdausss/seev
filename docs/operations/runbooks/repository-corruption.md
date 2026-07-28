@@ -11,7 +11,7 @@ Triggered by: `deploy/observability/prometheus/rules/backup.yml` —
 `SeevBackupRepositoryCheckFailing`
 (`increase(seev_backup_repository_check_total{result="error"}[1h]) > 0`;
 `severity: critical`). The `check` step runs automatically after every
-successful backup (docs/roadmap/active/50 K4 — "expire old backup/WAL data
+successful backup (docs/roadmap/archive/50 K4 — "expire old backup/WAL data
 only after the new backup and repository check succeed"), so this alert
 means pgBackRest's own checksum/consistency validation found a real
 problem, not a transient network blip.

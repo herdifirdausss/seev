@@ -10,10 +10,10 @@
 Triggered by: `deploy/observability/prometheus/rules/backup.yml` —
 `SeevBackupWALArchiveStale` (`seev_backup_wal_archive_age_seconds > 300`
 for 2 minutes; `severity: critical`). Reads only
-`backup-agent`'s own fixed metric (docs/roadmap/active/50 K13) — never a
+`backup-agent`'s own fixed metric (docs/roadmap/archive/50 K13) — never a
 filename, LSN, or secret path label.
 
-`archive_timeout = 60s` (docs/roadmap/active/50 K4) means a healthy cluster
+`archive_timeout = 60s` (docs/roadmap/archive/50 K4) means a healthy cluster
 archives at least once a minute even when completely idle — this alert
 firing means archiving is genuinely stuck, not merely quiet. Every minute
 this stays unresolved directly widens the real recovery point (RPO

@@ -8,7 +8,7 @@ import (
 	"github.com/herdifirdausss/seev/pkg/scheduler"
 )
 
-// JakartaLocation is docs/roadmap/active/50 and docs/roadmap/active/51's shared reference
+// JakartaLocation is docs/roadmap/archive/50 and docs/roadmap/archive/51's shared reference
 // timezone for every daily job's cron spec. Exported so each owner service
 // can pass it to its own scheduler.WithLocation(...) when constructing the
 // *scheduler.Scheduler it hands to Runner.Start — loaded once here rather
@@ -24,13 +24,13 @@ func loadJakarta() *time.Location {
 	return time.FixedZone("WIB", 7*60*60)
 }
 
-// serviceJitterMinutes is docs/roadmap/active/51 K6's "deterministic service
+// serviceJitterMinutes is docs/roadmap/archive/51 K6's "deterministic service
 // jitter" — a fixed, distinct per-owner minute offset from 01:30 WIB so all
 // eight services' daily retention runs don't all hit their own Postgres at
 // the exact same instant. Deterministic (not random) so a run's exact
 // scheduled time is reproducible from the owner name alone, matching this
 // repository's existing fixed-offset convention for scheduled jobs (e.g.
-// docs/roadmap/active/50 K4's backup schedule).
+// docs/roadmap/archive/50 K4's backup schedule).
 var serviceJitterMinutes = map[string]int{
 	"ledger":    0,
 	"auth":      1,

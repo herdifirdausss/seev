@@ -167,7 +167,7 @@ func TestKYCRepository_CreateSubmission_EncryptsPayloadWithoutPlaintextProjectio
 }
 
 // TestKYCRepository_ListRescreenSubjects_WorksAgainstEncryptedPayload proves
-// docs/roadmap/active/51 T2.3's own required test: "existing business, KYC ... behavior
+// docs/roadmap/archive/51 T2.3's own required test: "existing business, KYC ... behavior
 // remains correct" — specifically the sanctions rescreen job's own list
 // query, which now decrypts the allowlisted fields from payload_ciphertext.
 func TestKYCRepository_ListRescreenSubjects_WorksAgainstEncryptedPayload(t *testing.T) {

@@ -1,9 +1,10 @@
 // Package vendorgw is the vendor-adapter contract (docs/roadmap/archive/22 Task T1,
 // decision K-T6): a normalized event/verifier shape that lets the payin
 // module talk to any payment vendor without ever seeing that vendor's raw
-// wire format. It is deliberately a library, not a service — internal/payin
-// and internal/payout are its only intended callers (docs/roadmap/archive/21 topology
-// map). It must never import internal/ledger or internal/payin: an adapter
+// wire format. It is deliberately a library, not a service — VendorService
+// owns callback verification and outbound adapter composition, while Payin
+// and Payout consume only the routing/provider contracts. It must never import
+// internal/ledger or internal/payin: an adapter
 // that could reach into either would defeat the point of the seam.
 package vendorgw
 
@@ -12,32 +13,26 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 )
 
-// PayinEvent is one normalized, verified payin webhook delivery — payin
-// module code never sees a vendor's raw wire format, only this shape.
+// PayinEvent is the vendor adapter's verified data before VendorService maps
+// it to its owner-neutral callback contract. It intentionally contains no
+// Seev user identity.
 type PayinEvent struct {
 	Vendor        string
-	VendorEventID string // vendor's own event id — the dedup key
-	ExternalRef   string // vendor's transaction ref — becomes ledger metadata external_ref
-	UserID        uuid.UUID
+	VendorEventID string          // vendor's own event id — the dedup key
+	ExternalRef   string          // vendor's transaction ref — becomes ledger metadata external_ref
 	Amount        decimal.Decimal // minor units, integral
 	Currency      string
 	OccurredAt    time.Time
 }
 
 // ErrInvalidSignature is returned by PayinVerifier.VerifyAndParse when a
-// delivery's signature doesn't match. Callers map this to HTTP 401 with no
-// side effect (docs/roadmap/archive/22 Task T2 step 2) — never persisted, never
-// retried automatically (a bad signature won't become valid on redelivery).
+// VendorService delivery's signature doesn't match. VendorService maps this
+// to HTTP 401 with no side effect — never persisted, never retried
+// automatically (a bad signature won't become valid on redelivery).
 var ErrInvalidSignature = errors.New("vendorgw: invalid signature")
-
-// ErrUnknownPayinVendor means no enabled payin verifier is registered.
-// It lives in the shared vendor boundary so payin's gRPC transport can map
-// it without importing the root payin facade and creating an import cycle.
-var ErrUnknownPayinVendor = errors.New("vendorgw: unknown payin vendor")
 
 // PayinVerifier verifies and parses one webhook delivery from a single
 // vendor.
@@ -56,4 +51,11 @@ type PayinVerifier interface {
 	// match the name it's registered under (see Registry.AddPayin).
 	Vendor() string
 	VerifyAndParse(headers http.Header, rawBody []byte) (*PayinEvent, error)
+}
+
+// PayinVendor is the routing/catalogue contract used by Payin. Callback
+// verification is intentionally not part of it: raw vendor callbacks belong
+// to VendorService and are delivered to Payin only after normalization.
+type PayinVendor interface {
+	Vendor() string
 }

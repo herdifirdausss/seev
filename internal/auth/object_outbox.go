@@ -28,7 +28,7 @@ func (m *Module) StartObjectOutboxWorker(ctx context.Context, logger *slog.Logge
 	}
 	worker, err := objectoutbox.NewWorker("auth", m.db, m.documentStore, []objectoutbox.Target{
 		{RefTable: "kyc_documents", MetadataUpdateSQL: `UPDATE kyc_documents SET deleted_at = now() WHERE id = $1`},
-		// docs/roadmap/active/51 T4 (K9): drains export-archive deletes enqueued by
+		// docs/roadmap/archive/51 T4 (K9): drains export-archive deletes enqueued by
 		// both DownloadExport (successful one-time download) and
 		// expireOneStaleExport (24h TTL) — object_key is already cleared
 		// to NULL-equivalent by neither path; the row itself keeps its

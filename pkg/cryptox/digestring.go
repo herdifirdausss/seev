@@ -53,7 +53,7 @@ func (r *DigestRing) CurrentVersion() int { return r.current }
 
 // Digest computes the HMAC-SHA256 digest of input under the ring's current
 // key version, returning both the digest and the version used — callers
-// store both alongside the row (docs/roadmap/active/51 K7: "store digest and key
+// store both alongside the row (docs/roadmap/archive/51 K7: "store digest and key
 // version under a permanent unique constraint").
 func (r *DigestRing) Digest(input []byte) (digest []byte, version int) {
 	mac := hmac.New(sha256.New, r.keys[r.current])

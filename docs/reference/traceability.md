@@ -83,9 +83,10 @@ new policy tier before Auth exposes the upgraded KYC claim in refreshed tokens.
 | Complete proof | Top-up section in [`scripts/business-e2e.sh`](../../scripts/business-e2e.sh) |
 
 The active callback path uses owner-domain correlation without an authoritative
-vendor-supplied user identifier. The legacy raw callback compatibility path is
-not exposed by Gateway; final live integration/chaos acceptance remains in
-[plan 54](../roadmap/active/54-vendor-service-boundary.md).
+vendor-supplied user identifier. Payin and Payout use only normalized
+VendorService callbacks; the deprecated Payin v1 raw method is unimplemented.
+Final live integration/chaos acceptance remains in
+[archived plan 54](../roadmap/archive/54-vendor-service-boundary.md).
 
 ## Fee quote and user-to-user transfer
 
@@ -132,8 +133,10 @@ and pinned request prove why an uncertain result cannot blindly fail over.
 | Focused proof | [`internal/notify/notify_integration_test.go`](../../internal/notify/notify_integration_test.go), [`internal/ledger/worker/outbox_relay_test.go`](../../internal/ledger/worker/outbox_relay_test.go) |
 | Complete proof | Notification checks in [`scripts/business-e2e.sh`](../../scripts/business-e2e.sh) |
 
-Current notification behavior consumes generic Ledger events. Plan 54 defines
-the target owner-domain terminal events for Payin and Payout.
+Current notification behavior consumes generic Ledger events. Archived Plan 54
+defines the target owner-domain terminal events for Payin and Payout; the
+VendorService transport boundary is implemented, while this notification
+cutover remains a separate live-acceptance/follow-up gate.
 
 ## Fraud and sanctions screening
 

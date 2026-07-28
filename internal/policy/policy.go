@@ -271,7 +271,7 @@ func (e *Engine) getLimit(ctx context.Context, userID uuid.UUID, txType string) 
 	return limit, found, nil
 }
 
-// DailyAmountKey/DailyCountKey/MonthlyAmountKey are exported (docs/roadmap/active/50
+// DailyAmountKey/DailyCountKey/MonthlyAmountKey are exported (docs/roadmap/archive/50
 // T5) so cmd/drreseed can reconstruct these exact Redis keys from
 // restored PostgreSQL data after a disaster-recovery restore — a
 // hand-copied re-derivation of this format in a second package would

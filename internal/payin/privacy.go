@@ -1,7 +1,7 @@
 // Package payin's own owner-side of docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T4b/T5b
 // (K9, K10, K11) — the export and closure contracts auth-service calls
 // into. Mirrors internal/ledger/service/closure's own Prepare/Commit
-// shape (docs/roadmap/active/51 T5) and internal/auth's own export DTO
+// shape (docs/roadmap/archive/51 T5) and internal/auth's own export DTO
 // convention (hand-written row types, explicit type/exclusions), applied
 // to payin's three user-referencing tables.
 package payin
@@ -80,7 +80,7 @@ func (m *Module) PrivacyCommitClosure(ctx context.Context, subjectID, surrogateI
 	return hex.EncodeToString(h.Sum(nil)), affectedCount, nil
 }
 
-// privacyExportWebhookEventRow/privacyExportTopupIntentRow are docs/roadmap/active/51
+// privacyExportWebhookEventRow/privacyExportTopupIntentRow are docs/roadmap/archive/51
 // T4b's own hand-written export DTOs (never a struct reused from another
 // layer, matching internal/auth's own T4 convention) — deliberately
 // excludes `raw`/`raw_ciphertext` (T2.4's own encrypted vendor payload,

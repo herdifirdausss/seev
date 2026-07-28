@@ -1,4 +1,4 @@
-# Track A8 (docs/roadmap/active/51) K1 — the single, version-controlled source of
+# Track A8 (docs/roadmap/archive/51) K1 — the single, version-controlled source of
 # truth for data retention, classification, and purge/redact behavior. Each
 # service loads only its own `owner: <service>` entries at runtime and
 # rejects unknown actions, negative durations, duplicate `class` ids, and any
@@ -37,7 +37,7 @@ actions:
   - self_replacing        # already has its own full-dataset-replace lifecycle; not an age-based job
   - not_persisted         # in-flight message only; nothing at this layer to retain
   - protected_by_masking  # protected by existing log/trace field masking, not a database retention action
-  - expiration_based      # governed by docs/roadmap/active/50 (A7) backup-chain expiration, not an independent action
+  - expiration_based      # governed by docs/roadmap/archive/50 (A7) backup-chain expiration, not an independent action
 
 # Tables where every row is retained forever — no entry below may ever
 # fully DELETE a row from one of these (redact is fine: it nulls a specific
@@ -102,11 +102,10 @@ entries:
     hold_scope: subject
     policy_version: 1
     notes: >
-      Matches docs/roadmap/active/51 §4.2 "Expired admin session". Today's
-      adminbff-session-cleanup cron (internal/adminbff/module.go, every 5
-      minutes) deletes the moment a session expires — T1 must change that
-      cutoff to "expired more than 7 days ago" so a just-terminated session
-      stays available for a short investigation window before purge.
+      Matches docs/roadmap/archive/51 §4.2 "Expired admin session". The
+      current retention runner invokes fn_retention_purge_sessions every five
+      minutes; the database function deletes sessions only after the effective
+      expiry is older than seven days.
 
   - owner: adminbff
     class: adminbff.audit_log
@@ -118,7 +117,7 @@ entries:
     batch_size: 500
     hold_scope: subject
     policy_version: 1
-    notes: "docs/roadmap/active/51 §4.2 'Admin audit row'. Never eligible while a hold applies."
+    notes: "docs/roadmap/archive/51 §4.2 'Admin audit row'. Never eligible while a hold applies."
 
   # ── assurance ─────────────────────────────────────────────────────────────
   - owner: assurance
@@ -131,7 +130,7 @@ entries:
     batch_size: 500
     hold_scope: none
     policy_version: 1
-    notes: "docs/roadmap/active/51 §4.2 'Assurance successful run'. Eligibility requires status='succeeded'."
+    notes: "docs/roadmap/archive/51 §4.2 'Assurance successful run'. Eligibility requires status='succeeded'."
 
   - owner: assurance
     class: assurance.runs.failed
@@ -143,7 +142,7 @@ entries:
     batch_size: 500
     hold_scope: none
     policy_version: 1
-    notes: "docs/roadmap/active/51 §4.2 'Assurance failed run'. Requires status='failed' and an incident/audit summary to already exist (§4.3)."
+    notes: "docs/roadmap/archive/51 §4.2 'Assurance failed run'. Requires status='failed' and an incident/audit summary to already exist (§4.3)."
 
   - owner: assurance
     class: assurance.incident_summaries
@@ -179,7 +178,7 @@ entries:
     batch_size: 0
     hold_scope: none
     policy_version: 1
-    notes: "docs/roadmap/active/51 §4.1: retained while status IN ('open','acknowledged'). Never age-purged regardless of policy version."
+    notes: "docs/roadmap/archive/51 §4.1: retained while status IN ('open','acknowledged'). Never age-purged regardless of policy version."
 
   - owner: assurance
     class: assurance.findings.resolved
@@ -191,7 +190,7 @@ entries:
     batch_size: 500
     hold_scope: resource
     policy_version: 1
-    notes: "docs/roadmap/active/51 §4.2 'Assurance resolved finding'. Only status='resolved' rows are ever eligible."
+    notes: "docs/roadmap/archive/51 §4.2 'Assurance resolved finding'. Only status='resolved' rows are ever eligible."
 
   - owner: assurance
     class: assurance.alert_deliveries
@@ -204,7 +203,7 @@ entries:
     hold_scope: none
     policy_version: 1
     notes: >
-      docs/roadmap/active/51 §4.2 explicitly covers "failed alert delivery" at 180d;
+      docs/roadmap/archive/51 §4.2 explicitly covers "failed alert delivery" at 180d;
       extended here to delivered rows too for one consistent rule across the
       table (T0 judgment call — not separately itemized in §4.2).
 
@@ -219,7 +218,7 @@ entries:
     hold_scope: none
     policy_version: 1
     notes: >
-      docs/roadmap/active/51 §4.2 'Applied/rejected intake command'; pending/applying
+      docs/roadmap/archive/51 §4.2 'Applied/rejected intake command'; pending/applying
       rows are never eligible. Same rule applied to payin/payout's equivalent
       intake_commands tables below for consistency across the three services
       that share this control-plane pattern.
@@ -262,7 +261,7 @@ entries:
     batch_size: 500
     hold_scope: subject
     policy_version: 1
-    notes: "docs/roadmap/active/51 §4.2 'Expired/revoked refresh token'. Live (non-revoked, non-expired) tokens are never eligible."
+    notes: "docs/roadmap/archive/51 §4.2 'Expired/revoked refresh token'. Live (non-revoked, non-expired) tokens are never eligible."
 
   - owner: auth
     class: auth.kyc_submissions
@@ -275,14 +274,12 @@ entries:
     hold_scope: subject
     policy_version: 1
     notes: >
-      docs/roadmap/active/51 §4.2 'KYC submission and document': eligible only when
+      docs/roadmap/archive/51 §4.2 'KYC submission and document': eligible only when
       the owning account has been closed more than 365 days and no hold
       applies — this is a closure-gated rule, not a standalone age rule on
       created_at/decided_at. `payload` becomes K2 ciphertext before this ever
-      runs. T0 finding: auth.auth_users has no closure-timestamp column
-      today (only a status flag per T0's inventory) — T5 must add one (e.g.
-      closed_at) as part of the K10 closure saga so this rule has a real
-      anchor to join against.
+      runs. The current schema uses the completed closure request's ready_at
+      as the retention horizon rather than a separate closed_at column.
 
   - owner: auth
     class: auth.kyc_apply_retries.succeeded
@@ -294,7 +291,7 @@ entries:
     batch_size: 500
     hold_scope: subject
     policy_version: 1
-    notes: "docs/roadmap/active/51 §4.2 'Successful KYC apply retry'. Requires status='succeeded'."
+    notes: "docs/roadmap/archive/51 §4.2 'Successful KYC apply retry'. Requires status='succeeded'."
 
   - owner: auth
     class: auth.kyc_apply_retries.dead
@@ -306,7 +303,7 @@ entries:
     batch_size: 500
     hold_scope: subject
     policy_version: 1
-    notes: "docs/roadmap/active/51 §4.2 'Dead KYC apply retry'. Requires status='dead' and an audit summary to already exist (§4.3)."
+    notes: "docs/roadmap/archive/51 §4.2 'Dead KYC apply retry'. Requires status='dead' and an audit summary to already exist (§4.3)."
 
   - owner: auth
     class: auth.kyc_retry_summaries
@@ -330,7 +327,7 @@ entries:
     batch_size: 0
     hold_scope: subject
     policy_version: 1
-    notes: "docs/roadmap/active/51 §4.2: retained as 'pseudonymous level-change audit' even after the owning KYC submission is deleted — never age-deleted, only pseudonymized on closure (K11)."
+    notes: "docs/roadmap/archive/51 §4.2: retained as 'pseudonymous level-change audit' even after the owning KYC submission is deleted — never age-deleted, only pseudonymized on closure (K11)."
 
   - owner: auth
     class: auth.kyc_documents
@@ -344,12 +341,10 @@ entries:
     policy_version: 1
     notes: >
       Same closure-gated rule as auth.kyc_submissions (grouped together in
-      §4.2). Document object storage is currently unwired in this codebase
-      (internal/auth.Module.SetDocumentStore has no caller and
-      DocumentKEK-only configuration makes UploadKYCDocument/DownloadKYCDocument
-      return ErrDocumentStorageUnavailable) — T2 must land the K2 opaque
-      object-key change and a real store before this row's paired object can
-      ever actually be deleted.
+      §4.2). auth-service wires FileDocumentStore when OBJECT_STORE_DIR is
+      configured; Upload/Download fail closed without the store or document
+      key ring. The paired object is deleted through
+      auth_object_delete_outbox before metadata removal.
 
   # ── auth: KYC document object store (not a Postgres table) ────────────────
   - owner: auth
@@ -365,13 +360,13 @@ entries:
     policy_version: 1
     notes: >
       Object key is "kyc/<document_uuid>" (internal/auth/documents.go,
-      docs/roadmap/active/51 T2.3) — opaque, carries no user reference; the
+      docs/roadmap/archive/51 T2.3) — opaque, carries no user reference; the
       document/user relationship lives only in the encrypted
       auth.kyc_documents row. Deletion must use K6's
       delete-intent-then-delete-then-mark outbox pattern, paired 1:1 with
-      that metadata row. No object store is wired in this repository yet
-      (see notes above) — this class is real but currently unreachable in
-      code.
+      that metadata row. The Compose auth service wires the local file-backed
+      object store; host binaries require OBJECT_STORE_DIR, and the feature
+      fails closed when it is absent.
 
   # ── fraud ─────────────────────────────────────────────────────────────────
   - owner: fraud
@@ -384,7 +379,7 @@ entries:
     batch_size: 500
     hold_scope: subject
     policy_version: 1
-    notes: "docs/roadmap/active/51 §4.2 'Fraud screening event'. Requires aggregate audit metrics to already be recorded (§4.3) before deletion."
+    notes: "docs/roadmap/archive/51 §4.2 'Fraud screening event'. Requires aggregate audit metrics to already be recorded (§4.3) before deletion."
 
   - owner: fraud
     class: fraud.screening_event_summaries
@@ -439,7 +434,7 @@ entries:
     batch_size: 500
     hold_scope: subject
     policy_version: 1
-    notes: "docs/roadmap/active/51 §4.2 'Read notification'. Requires read_at IS NOT NULL."
+    notes: "docs/roadmap/archive/51 §4.2 'Read notification'. Requires read_at IS NOT NULL."
 
   - owner: gateway
     class: gateway.notifications.any
@@ -451,7 +446,7 @@ entries:
     batch_size: 500
     hold_scope: subject
     policy_version: 1
-    notes: "docs/roadmap/active/51 §4.2 'Any notification' — backstop rule for unread notifications regardless of read_at."
+    notes: "docs/roadmap/archive/51 §4.2 'Any notification' — backstop rule for unread notifications regardless of read_at."
 
   # ── ledger ────────────────────────────────────────────────────────────────
   - owner: ledger
@@ -464,7 +459,7 @@ entries:
     batch_size: 0
     hold_scope: none
     policy_version: 1
-    notes: "docs/roadmap/active/51 §4.1. DB trigger fn_prevent_entry_mutation rejects UPDATE/DELETE regardless of caller — structurally, not just policy, immutable."
+    notes: "docs/roadmap/archive/51 §4.1. DB trigger fn_prevent_entry_mutation rejects UPDATE/DELETE regardless of caller — structurally, not just policy, immutable."
 
   - owner: ledger
     class: ledger.ledger_transactions
@@ -476,7 +471,7 @@ entries:
     batch_size: 0
     hold_scope: none
     policy_version: 1
-    notes: "docs/roadmap/active/51 §4.1 'posted transaction headers, lifecycle closers'. idempotency_key/idempotency_scope become K7 digest tombstones in T3, handled by a separate class below — this class covers everything else in the row."
+    notes: "docs/roadmap/archive/51 §4.1 'posted transaction headers, lifecycle closers'. idempotency_key/idempotency_scope become K7 digest tombstones in T3, handled by a separate class below — this class covers everything else in the row."
 
   - owner: ledger
     class: ledger.transactions.idempotency_raw
@@ -489,7 +484,7 @@ entries:
     hold_scope: none
     policy_version: 1
     notes: >
-      docs/roadmap/active/51 K7: nulls idempotency_key/idempotency_scope 30 days after
+      docs/roadmap/archive/51 K7: nulls idempotency_key/idempotency_scope 30 days after
       the transaction reaches a terminal status, once T3's digest/version/
       conflict-fingerprint columns exist and are backfilled. Requires
       status IN ('posted','failed','reversed'). Never touches the row's
@@ -541,7 +536,7 @@ entries:
     batch_size: 500
     hold_scope: none
     policy_version: 1
-    notes: "docs/roadmap/active/51 §4.2 'Published ledger outbox event'. Requires status='published'."
+    notes: "docs/roadmap/archive/51 §4.2 'Published ledger outbox event'. Requires status='published'."
 
   - owner: ledger
     class: ledger.outbox_events.dead
@@ -553,7 +548,7 @@ entries:
     batch_size: 0
     hold_scope: none
     policy_version: 1
-    notes: "docs/roadmap/active/51 §4.2 'Dead ledger outbox event' — never automatic at any age; an operator must resolve or replay it first."
+    notes: "docs/roadmap/archive/51 §4.2 'Dead ledger outbox event' — never automatic at any age; an operator must resolve or replay it first."
 
   - owner: ledger
     class: ledger.pending_adjustments
@@ -565,7 +560,7 @@ entries:
     batch_size: 0
     hold_scope: none
     policy_version: 1
-    notes: "docs/roadmap/active/51 §4.1 'pending adjustments and executed reconciliation decisions'. cmd_payload is a governance/maker-checker audit record, retained indefinitely."
+    notes: "docs/roadmap/archive/51 §4.1 'pending adjustments and executed reconciliation decisions'. cmd_payload is a governance/maker-checker audit record, retained indefinitely."
 
   - owner: ledger
     class: ledger.recon_batches
@@ -578,7 +573,7 @@ entries:
     hold_scope: resource
     policy_version: 1
     notes: >
-      docs/roadmap/active/51 §4.2 'Reconciliation raw row/source filename': redacts
+      docs/roadmap/archive/51 §4.2 'Reconciliation raw row/source filename': redacts
       source_filename only, once the batch is terminal for 90+ days.
       row_count/status/gateway/report_date remain. T0 finding: recon_batches
       has no updated_at/completed_at column to mark the terminal-status
@@ -597,7 +592,7 @@ entries:
     batch_size: 500
     hold_scope: resource
     policy_version: 1
-    notes: "docs/roadmap/active/51 §4.2. Redacts `raw` only, once the parent recon_batches row is terminal for 90+ days. amount/match_status/matched_tx_id remain, matching 'retain match result and totals'."
+    notes: "docs/roadmap/archive/51 §4.2. Redacts `raw` only, once the parent recon_batches row is terminal for 90+ days. amount/match_status/matched_tx_id remain, matching 'retain match result and totals'."
 
   - owner: ledger
     class: ledger.policy_limits
@@ -645,7 +640,7 @@ entries:
     batch_size: 0
     hold_scope: none
     policy_version: 1
-    notes: "Live pricing configuration, not event history. A disabled/superseded rule needs its own explicit future policy per docs/roadmap/active/51 §4.2's closing note, not a generic age rule."
+    notes: "Live pricing configuration, not event history. A disabled/superseded rule needs its own explicit future policy per docs/roadmap/archive/51 §4.2's closing note, not a generic age rule."
 
   - owner: ledger
     class: ledger.fee_quotes.unconsumed
@@ -657,7 +652,7 @@ entries:
     batch_size: 500
     hold_scope: none
     policy_version: 1
-    notes: "docs/roadmap/active/51 §4.2/K8. Requires consumed_at IS NULL. A quote a concurrent consumer is locking is skipped this run, never deleted underneath consumption (K8)."
+    notes: "docs/roadmap/archive/51 §4.2/K8. Requires consumed_at IS NULL. A quote a concurrent consumer is locking is skipped this run, never deleted underneath consumption (K8)."
 
   - owner: ledger
     class: ledger.fee_quotes.consumed
@@ -669,7 +664,7 @@ entries:
     batch_size: 500
     hold_scope: none
     policy_version: 1
-    notes: "docs/roadmap/active/51 §4.2/K8. Requires consumed_by_ref to still point at a terminal transaction/payout with matching booked-fee proof — K8's proof-aware gate, not a bare age check."
+    notes: "docs/roadmap/archive/51 §4.2/K8. Requires consumed_by_ref to still point at a terminal transaction/payout with matching booked-fee proof — K8's proof-aware gate, not a bare age check."
 
   - owner: ledger
     class: ledger.scheduled_transactions
@@ -682,7 +677,7 @@ entries:
     hold_scope: subject
     policy_version: 1
     notes: >
-      Not itemized in docs/roadmap/active/51 §4.2 — a T0 judgment call, by analogy to
+      Not itemized in docs/roadmap/archive/51 §4.2 — a T0 judgment call, by analogy to
       the 365-day "terminal operational row" pattern used for
       payout_vendor_commands and intake_control_commands. Requires
       status IN ('finished','failed'). cmd_payload carries the scheduled
@@ -741,7 +736,7 @@ entries:
       internal/policy.DailyAmountKey/DailyCountKey/MonthlyAmountKey. Self-
       expiring counters (Redis key TTL, not a Postgres retention job) — daily
       keys naturally roll off within ~48h, monthly within ~35d, matching
-      docs/roadmap/active/50 T5's own drreseed reconstruction assumptions.
+      docs/roadmap/archive/50 T5's own drreseed reconstruction assumptions.
       Reconstructable from posted ledger transactions at any time (A7 K10),
       so a lost/expired key is never a data-loss event.
 
@@ -756,7 +751,7 @@ entries:
     batch_size: 500
     hold_scope: subject
     policy_version: 1
-    notes: "docs/roadmap/active/51 §4.2 'Pay-in raw webhook body'. Requires status IN ('posted','failed','blocked'). Redacts `raw` only; vendor/vendor_event_id/external_ref/amount/currency/status remain (the 'allowlisted correlation columns')."
+    notes: "docs/roadmap/archive/51 §4.2 'Pay-in raw webhook body'. Requires status IN ('posted','failed','blocked'). Redacts `raw` only; vendor/vendor_event_id/external_ref/amount/currency/status remain (the 'allowlisted correlation columns')."
 
   - owner: payin
     class: payin.topup_intents
@@ -768,7 +763,7 @@ entries:
     batch_size: 0
     hold_scope: none
     policy_version: 1
-    notes: "docs/roadmap/active/51 §4.1 'posted event and settled-intent correlation fields'. An expired-and-unresolved intent is not itemized in §4.2 — left as retain_permanent (T0 judgment call) since it is small, low-sensitivity, and directly correlates to a real or attempted top-up."
+    notes: "docs/roadmap/archive/51 §4.1 'posted event and settled-intent correlation fields'. An expired-and-unresolved intent is not itemized in §4.2 — left as retain_permanent (T0 judgment call) since it is small, low-sensitivity, and directly correlates to a real or attempted top-up."
 
   - owner: payin
     class: payin.vendor_gateways
@@ -816,7 +811,7 @@ entries:
     batch_size: 500
     hold_scope: none
     policy_version: 1
-    notes: "docs/roadmap/active/51 §4.2 'Applied/rejected intake command'. Requires applied=true; a pending command is never eligible."
+    notes: "docs/roadmap/archive/51 §4.2 'Applied/rejected intake command'. Requires applied=true; a pending command is never eligible."
 
   # ── payout ────────────────────────────────────────────────────────────────
   - owner: payout
@@ -829,7 +824,7 @@ entries:
     batch_size: 0
     hold_scope: none
     policy_version: 1
-    notes: "docs/roadmap/active/51 §4.1 'amount, currency, vendor, state, hold/closer IDs, fee proof'. `destination`/`error_message` are handled by the separate redact class below."
+    notes: "docs/roadmap/archive/51 §4.1 'amount, currency, vendor, state, hold/closer IDs, fee proof'. `destination`/`error_message` are handled by the separate redact class below."
 
   - owner: payout
     class: payout.requests.destination_and_error
@@ -841,7 +836,7 @@ entries:
     batch_size: 500
     hold_scope: subject
     policy_version: 1
-    notes: "docs/roadmap/active/51 §4.1/§4.2 'Payout destination and raw error'. Requires status IN ('settled','failed','cancelled','rejected'). Redacts destination+error_message only."
+    notes: "docs/roadmap/archive/51 §4.1/§4.2 'Payout destination and raw error'. Requires status IN ('settled','failed','cancelled','rejected'). Redacts destination+error_message only."
 
   - owner: payout
     class: payout.vendor_calls
@@ -901,7 +896,7 @@ entries:
     batch_size: 500
     hold_scope: none
     policy_version: 1
-    notes: "docs/roadmap/active/51 §4.2 'Applied/rejected intake command'. Requires applied=true."
+    notes: "docs/roadmap/archive/51 §4.2 'Applied/rejected intake command'. Requires applied=true."
 
   - owner: payout
     class: payout.vendor_commands
@@ -913,7 +908,7 @@ entries:
     batch_size: 500
     hold_scope: none
     policy_version: 1
-    notes: "docs/roadmap/active/51 §4.2 'Payout vendor call/command'. Requires status IN ('completed','dead'); dead commands additionally require the operator to have already reviewed them (§4.3 'successor/audit summary')."
+    notes: "docs/roadmap/archive/51 §4.2 'Payout vendor call/command'. Requires status IN ('completed','dead'); dead commands additionally require the operator to have already reviewed them (§4.3 'successor/audit summary')."
 
   # ── fraud: velocity state (Redis, not Postgres) ────────────────────────────
   - owner: fraud
@@ -1006,19 +1001,19 @@ entries:
     hold_scope: none
     policy_version: 1
     notes: >
-      docs/roadmap/active/51 §2.4: passwords, tokens, authorization values, documents,
+      docs/roadmap/archive/51 §2.4: passwords, tokens, authorization values, documents,
       raw webhook fields, payout destinations, and full idempotency keys are
       masked at the point of logging (pkg/logger), not retained-then-purged.
       Loki/Tempo's own configured retention window governs storage duration
       for whatever remains (deploy/observability/); this class documents the
       protection mechanism rather than defining a new database-style purge
-      job, satisfying docs/roadmap/active/51 §6 T0's "logs, traces... are classified"
+      job, satisfying docs/roadmap/archive/51 §6 T0's "logs, traces... are classified"
       requirement.
 
   - owner: shared
     class: shared.a7_backups
     table: null
-    object_class: "pgBackRest encrypted backup chains (docs/roadmap/active/50)"
+    object_class: "pgBackRest encrypted backup chains (docs/roadmap/archive/50)"
     classification: financial
     terminal_timestamp: null
     duration: null
@@ -1027,7 +1022,7 @@ entries:
     hold_scope: none
     policy_version: 1
     notes: >
-      docs/roadmap/active/51 K12: active-database redaction/deletion does not rewrite
+      docs/roadmap/archive/51 K12: active-database redaction/deletion does not rewrite
       already-taken backups. A redacted/deleted value may still be readable
       from an encrypted backup chain until that chain expires per A7 K4 (two
       retained full chains + their WAL). Privacy status responses and
@@ -1046,7 +1041,7 @@ entries:
     batch_size: 0
     hold_scope: none
     policy_version: 1
-    notes: "docs/roadmap/active/51 K5. A hold's own lifecycle (create/release) is managed by the closure/hold API, not a generic age rule — released holds are not itemized for independent purge in the locked matrix."
+    notes: "docs/roadmap/archive/51 K5. A hold's own lifecycle (create/release) is managed by the closure/hold API, not a generic age rule — released holds are not itemized for independent purge in the locked matrix."
 
   - owner: adminbff
     class: adminbff.retention_audit
@@ -1058,7 +1053,7 @@ entries:
     batch_size: 0
     hold_scope: none
     policy_version: 1
-    notes: "docs/roadmap/active/51 K4: the append-only proof that every purge/redact ran correctly. Purging this table would defeat its own purpose — never age-purged."
+    notes: "docs/roadmap/archive/51 K4: the append-only proof that every purge/redact ran correctly. Purging this table would defeat its own purpose — never age-purged."
 
   - owner: assurance
     class: assurance.retention_holds
@@ -1070,7 +1065,7 @@ entries:
     batch_size: 0
     hold_scope: none
     policy_version: 1
-    notes: "docs/roadmap/active/51 K5. Same shape/rationale as adminbff.retention_holds."
+    notes: "docs/roadmap/archive/51 K5. Same shape/rationale as adminbff.retention_holds."
 
   - owner: assurance
     class: assurance.retention_audit
@@ -1082,7 +1077,7 @@ entries:
     batch_size: 0
     hold_scope: none
     policy_version: 1
-    notes: "docs/roadmap/active/51 K4. Same shape/rationale as adminbff.retention_audit."
+    notes: "docs/roadmap/archive/51 K4. Same shape/rationale as adminbff.retention_audit."
 
   - owner: auth
     class: auth.retention_holds
@@ -1094,7 +1089,7 @@ entries:
     batch_size: 0
     hold_scope: none
     policy_version: 1
-    notes: "docs/roadmap/active/51 K5. Auth coordinates hold commands across owners but still persists its own local copy here, same as every other owner."
+    notes: "docs/roadmap/archive/51 K5. Auth coordinates hold commands across owners but still persists its own local copy here, same as every other owner."
 
   - owner: auth
     class: auth.retention_audit
@@ -1106,7 +1101,7 @@ entries:
     batch_size: 0
     hold_scope: none
     policy_version: 1
-    notes: "docs/roadmap/active/51 K4. Same shape/rationale as adminbff.retention_audit."
+    notes: "docs/roadmap/archive/51 K4. Same shape/rationale as adminbff.retention_audit."
 
   - owner: auth
     class: auth.object_delete_outbox
@@ -1118,7 +1113,7 @@ entries:
     batch_size: 0
     hold_scope: none
     policy_version: 1
-    notes: "docs/roadmap/active/51 K6 (T1.6). pkg/objectoutbox's transactional outbox for object-store deletes — 'done' rows are the permanent proof an object-delete intent was actually carried out, same append-only rationale as auth.retention_audit. Never age-purged."
+    notes: "docs/roadmap/archive/51 K6 (T1.6). pkg/objectoutbox's transactional outbox for object-store deletes — 'done' rows are the permanent proof an object-delete intent was actually carried out, same append-only rationale as auth.retention_audit. Never age-purged."
 
   - owner: auth
     class: auth.privacy_requests
@@ -1130,7 +1125,7 @@ entries:
     batch_size: 0
     hold_scope: none
     policy_version: 1
-    notes: "docs/roadmap/active/51 K9 (T4). The ROW is the minimal audit tombstone K9's own wording requires: id/user_id/status/requested_at/ready_at/expires_at/downloaded_at/row_count — never the archive itself (that lives in the object store and is deleted via the auth object-delete outbox on download or 24h TTL expiry, both already covered by auth.object_delete_outbox above). No email/name/financial data ever lands in this table; object_key/manifest_hash are opaque storage/integrity pointers, not personal data. Retained permanently as the operator-visible record of 'this user requested an export on this date,' same append-only rationale as auth.retention_audit."
+    notes: "docs/roadmap/archive/51 K9 (T4). The ROW is the minimal audit tombstone K9's own wording requires: id/user_id/status/requested_at/ready_at/expires_at/downloaded_at/row_count — never the archive itself (that lives in the object store and is deleted via the auth object-delete outbox on download or 24h TTL expiry, both already covered by auth.object_delete_outbox above). No email/name/financial data ever lands in this table; object_key/manifest_hash are opaque storage/integrity pointers, not personal data. Retained permanently as the operator-visible record of 'this user requested an export on this date,' same append-only rationale as auth.retention_audit."
 
   - owner: auth
     class: auth.operator_offboarding_requests
@@ -1142,7 +1137,7 @@ entries:
     batch_size: 0
     hold_scope: none
     policy_version: 1
-    notes: "docs/roadmap/active/51 K10 (A8 T5b). Maker-checker record for operator/admin account offboarding — same shape and rationale as ledger.pending_adjustments: requested_by/approved_by are operator identities (never the offboarded subject's own PII), reason is an operator-authored justification, and the row is the permanent two-person-control audit trail proving who proposed and who approved each operator closure. Retained permanently, same append-only rationale as auth.retention_audit."
+    notes: "docs/roadmap/archive/51 K10 (A8 T5b). Maker-checker record for operator/admin account offboarding — same shape and rationale as ledger.pending_adjustments: requested_by/approved_by are operator identities (never the offboarded subject's own PII), reason is an operator-authored justification, and the row is the permanent two-person-control audit trail proving who proposed and who approved each operator closure. Retained permanently, same append-only rationale as auth.retention_audit."
 
   - owner: fraud
     class: fraud.retention_holds
@@ -1154,7 +1149,7 @@ entries:
     batch_size: 0
     hold_scope: none
     policy_version: 1
-    notes: "docs/roadmap/active/51 K5. Same shape/rationale as adminbff.retention_holds."
+    notes: "docs/roadmap/archive/51 K5. Same shape/rationale as adminbff.retention_holds."
 
   - owner: fraud
     class: fraud.retention_audit
@@ -1166,7 +1161,7 @@ entries:
     batch_size: 0
     hold_scope: none
     policy_version: 1
-    notes: "docs/roadmap/active/51 K4. Same shape/rationale as adminbff.retention_audit."
+    notes: "docs/roadmap/archive/51 K4. Same shape/rationale as adminbff.retention_audit."
 
   - owner: gateway
     class: gateway.retention_holds
@@ -1178,7 +1173,7 @@ entries:
     batch_size: 0
     hold_scope: none
     policy_version: 1
-    notes: "docs/roadmap/active/51 K5. Same shape/rationale as adminbff.retention_holds."
+    notes: "docs/roadmap/archive/51 K5. Same shape/rationale as adminbff.retention_holds."
 
   - owner: gateway
     class: gateway.retention_audit
@@ -1190,7 +1185,7 @@ entries:
     batch_size: 0
     hold_scope: none
     policy_version: 1
-    notes: "docs/roadmap/active/51 K4. Same shape/rationale as adminbff.retention_audit."
+    notes: "docs/roadmap/archive/51 K4. Same shape/rationale as adminbff.retention_audit."
 
   - owner: ledger
     class: ledger.retention_holds
@@ -1202,7 +1197,7 @@ entries:
     batch_size: 0
     hold_scope: none
     policy_version: 1
-    notes: "docs/roadmap/active/51 K5. Same shape/rationale as adminbff.retention_holds."
+    notes: "docs/roadmap/archive/51 K5. Same shape/rationale as adminbff.retention_holds."
 
   - owner: ledger
     class: ledger.retention_audit
@@ -1214,7 +1209,7 @@ entries:
     batch_size: 0
     hold_scope: none
     policy_version: 1
-    notes: "docs/roadmap/active/51 K4. Same shape/rationale as adminbff.retention_audit."
+    notes: "docs/roadmap/archive/51 K4. Same shape/rationale as adminbff.retention_audit."
 
   - owner: payin
     class: payin.retention_holds
@@ -1226,7 +1221,7 @@ entries:
     batch_size: 0
     hold_scope: none
     policy_version: 1
-    notes: "docs/roadmap/active/51 K5. Same shape/rationale as adminbff.retention_holds."
+    notes: "docs/roadmap/archive/51 K5. Same shape/rationale as adminbff.retention_holds."
 
   - owner: payin
     class: payin.retention_audit
@@ -1238,7 +1233,7 @@ entries:
     batch_size: 0
     hold_scope: none
     policy_version: 1
-    notes: "docs/roadmap/active/51 K4. Same shape/rationale as adminbff.retention_audit."
+    notes: "docs/roadmap/archive/51 K4. Same shape/rationale as adminbff.retention_audit."
 
   - owner: payout
     class: payout.retention_holds
@@ -1250,7 +1245,7 @@ entries:
     batch_size: 0
     hold_scope: none
     policy_version: 1
-    notes: "docs/roadmap/active/51 K5. Same shape/rationale as adminbff.retention_holds."
+    notes: "docs/roadmap/archive/51 K5. Same shape/rationale as adminbff.retention_holds."
 
   - owner: payout
     class: payout.retention_audit
@@ -1262,4 +1257,4 @@ entries:
     batch_size: 0
     hold_scope: none
     policy_version: 1
-    notes: "docs/roadmap/active/51 K4. Same shape/rationale as adminbff.retention_audit."
+    notes: "docs/roadmap/archive/51 K4. Same shape/rationale as adminbff.retention_audit."
