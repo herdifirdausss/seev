@@ -5,9 +5,11 @@
 > Derived from track **B0** in
 > [42-long-term-roadmap.md](../42-long-term-roadmap.md).
 >
-> **Status: In progress.** The load harness, safety boundaries, and disposable
-> runbook foundation are implemented; canonical capacity evidence remains
-> open. The activation trigger is
+> **Status: Core done — archived 2026-07-28.** The load harness, safety
+> boundaries, disposable runbook, scenarios, report tooling, and PR/manual
+> workflow are implemented. Canonical capacity evidence and B1–B3 decisions
+> remain operator-controlled because they require a Docker load environment and
+> valid seeded business state. The activation trigger is
 > a conscious learning decision made on 2026-07-22 after the MVP and its
 > observability foundation. Completing B0 does not activate B1, B2, or B3 by
 > itself; only the locked evidence gates in this plan may do that.
@@ -606,7 +608,7 @@ fixed before instrumentation or load is added.
 
 ### Result
 
-Implemented 2026-07-28 as the safety/reproducibility foundation. Added the
+Core foundation complete 2026-07-28. Added the
 `local-small` profile, strict profile/run schemas, pinned Grafana k6 image,
 load-only Compose override with isolated `seev_load_*` databases and
 `pg_stat_statements`/I/O timing, synthetic load secrets, baseline inventory,
@@ -647,7 +649,7 @@ exposing data or materially changing the baseline.
 
 ### Result
 
-In progress 2026-07-28. Added bounded `sql.DBStats` pool metrics with duplicate
+Core foundation complete 2026-07-28. Added bounded `sql.DBStats` pool metrics with duplicate
 registration protection, fee/pay-in/payout resolution metrics, the ledger
 oldest-pending-outbox-age gauge, read-only `cmd/loadprobe` sampling for
 activity, locks, normalized statement IDs, database size, and transaction age,
@@ -690,7 +692,7 @@ state and obtain a validated, redacted result bundle from one command.
 
 ### Result
 
-In progress 2026-07-28. Added deterministic synthetic journey/ledger seed
+Core foundation complete 2026-07-28. Added deterministic synthetic journey/ledger seed
 material generation with hash manifests, strict output/database boundaries,
 compressed per-database snapshot/restore with checksum verification,
 signal-safe disposable lifecycle cleanup, and `pkg/loadreport`
@@ -734,7 +736,7 @@ detects semantic corruption even when HTTP status codes look successful.
 
 ### Result
 
-In progress 2026-07-28. Added shared k6 helpers for deterministic keys,
+Core foundation complete 2026-07-28. Added shared k6 helpers for deterministic keys,
 semantic response checks, HMAC webhook signing, bounded arrival-rate options,
 and W1–W7 scenario scaffolds with static no-sleep/synthetic-data tests. W2 now
 targets the real VendorService callback listener in the disposable Compose
@@ -744,7 +746,7 @@ business scenarios now refuse to run without a disposable token/seed context
 and reject 4xx responses by default.
 Canonical business seed integration, duplicate-effect verification, payout
 terminal checks, and 10,000-WU distribution evidence still require the
-canonical workload runs.
+canonical workload runs; these are not inferred from the smoke scaffold.
 
 ### T4 — Measure capacity, recovery, soak, and ledger-size curves (K9–K14)
 
@@ -865,7 +867,7 @@ manual/scheduled runs rather than noisy PR hardware.
 
 ### Result
 
-In progress 2026-07-28. Added load Make targets, safety/schema/helper tests,
+Core foundation complete 2026-07-28. Added load Make targets, safety/schema/helper tests,
 disposable runbooks, root/project-guide policy boundaries, ignored raw
 artifact handling, the pinned-k6 smoke path, actual k6 execution for
 `load-smoke`/`load-run`, exact-run cleanup protection, and VendorService/W7
@@ -885,8 +887,9 @@ Prometheus use load-only host ports, and partial startup is cleaned safely.
 protobuf, load, CI-script lint, retention, race, integration, container-smoke,
 host smoke, business, admin, and load-smoke gates. `make verify-chaos` is the
 separate operator-controlled recovery gate.
-The full final gate and canonical capacity evidence remain before B0 can be
-marked complete.
+`SEEV_LOAD_ACK=disposable-only ./scripts/load-test.sh validate` passes on the
+current tree. The full final gate and canonical capacity evidence remain before
+B0 can be marked fully measured; this record is archived as Core done.
 
 ## 10. Acceptance checklist
 

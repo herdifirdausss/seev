@@ -36,7 +36,7 @@ When a trigger is met:
 | A8 | Data lifecycle and privacy | H1 | After MVP; quote cleanup can start earlier | Complete via [51](archive/51-a8-data-lifecycle-privacy.md) |
 | A9 | API contracts and schema evolution | H1 | First silent consumer-breaking payload change; mandatory before B2B | Core done via [52](archive/52-a9-api-contracts-schema-evolution.md); manual chaos gate pending |
 | A10 | Product assurance and emergency intake control | H1 | Prove consistency across payin, payout, and ledger | Complete via [48](archive/48-a10-product-assurance.md) |
-| B0 | Load harness and capacity model | H2 gate | Before any measured scale work | In progress via [53](active/53-b0-load-capacity-gate.md); harness/safety foundation exists, measurements open |
+| B0 | Load harness and capacity model | H2 gate | Before any measured scale work | Core done via [53](archive/53-b0-load-capacity-gate.md); canonical measurements and decisions pending |
 | B1 | Hot-account sub-sharding | H2 | B0 proves lock contention in delta application | Future |
 | B2 | Ledger-entry partitioning and archival | H2 | Approximately 50 million ledger entries or equivalent forecast | Future |
 | B3 | Fee and routing resolution cache | H2 | B0 proves per-call resolution is a hotspot | Future |
@@ -99,7 +99,7 @@ Continuously compare payin and payout lifecycle state with ledger evidence witho
 
 ### B0 — Load and capacity gate
 
-Build k6 scenarios for P2P posting, webhook bursts, payout batches, and mixed MVP journeys. Measure throughput, latency, outbox lag, database pool saturation, and lock waits. Produce numerical thresholds that either activate or reject B1–B3. Execution is defined in [plan 53](active/53-b0-load-capacity-gate.md).
+Build k6 scenarios for P2P posting, webhook bursts, payout batches, and mixed MVP journeys. Measure throughput, latency, outbox lag, database pool saturation, and lock waits. Produce numerical thresholds that either activate or reject B1–B3. Execution is recorded in [archived plan 53](archive/53-b0-load-capacity-gate.md).
 
 ### B1 — Hot-account sub-sharding
 

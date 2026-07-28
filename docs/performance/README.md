@@ -7,5 +7,6 @@ belong in Git. Only small redacted summaries may be committed under
 bundle. Capacity numbers are valid only for the named profile and Git/data
 hashes.
 
-Start with the [B0 protocol](../roadmap/active/53-b0-load-capacity-gate.md) and
-the [baseline inventory](baseline/b0-inventory.yaml).
+Start with the [archived B0 protocol](../roadmap/archive/53-b0-load-capacity-gate.md),
+the [baseline inventory](baseline/b0-inventory.yaml), and the
+[capacity model](capacity-model.md).
