@@ -204,7 +204,12 @@ jobs:
             echo "no usable event base SHA; protobuf compatibility is not safely comparable"
             exit 1
           fi
+          MERGE_BASE=""
           MERGE_BASE="$(git merge-base HEAD "$BASE")"
+          make tools
+          GO_BIN=""
+          GO_BIN="$(go env GOPATH)/bin"
+          export PATH="$GO_BIN:$PATH"
           make proto proto-lint
           PROTO_MERGE_BASE_REF="$MERGE_BASE" make proto-breaking
 

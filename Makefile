@@ -189,6 +189,7 @@ verify-full:
 	go vet -tags=integration ./...
 	go mod verify
 	$(MAKE) contracts
+	$(MAKE) tools
 	$(MAKE) proto
 	$(MAKE) proto-lint
 	$(MAKE) proto-breaking

@@ -297,6 +297,8 @@ a clone of the repo builds without the protobuf toolchain installed.
 
 - `make proto` regenerates bindings from the `.proto` source — the
   single command that keeps `gen/` and `api/proto/` from drifting apart.
+- `make tools` installs the pinned Buf and Go protobuf compiler versions
+  before running the protobuf commands on a fresh checkout.
 - `make proto-lint` (`buf.yaml`'s `STANDARD` lint rules, with two
   explicit, documented exceptions for the locked ledger contract's
   existing wire names) catches inconsistent contract style before it

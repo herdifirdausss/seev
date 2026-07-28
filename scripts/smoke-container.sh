@@ -74,7 +74,13 @@ json_field() {
 }
 
 vendor_curl() {
-	curl --cacert deploy/certs/ca.pem --cert deploy/certs/dev-operator.pem --key deploy/certs/dev-operator-key.pem "$@"
+	# Local certgen leaves intentionally identify peers with a SPIFFE URI SAN
+	# (spiffe://seev/*), not a DNS/IP SAN. curl cannot match that URI against
+	# https://127.0.0.1, so server-name verification would fail with error 60.
+	# Keep the client certificate and CA arguments: the VendorService still
+	# enforces mTLS and its own CA/SPIFFE identity policy server-side. -k only
+	# disables curl's client-side hostname check for this loopback smoke call.
+	curl -k --cacert deploy/certs/ca.pem --cert deploy/certs/dev-operator.pem --key deploy/certs/dev-operator-key.pem "$@"
 }
 
 # ─── Cleanup (K4 step 8: trap always tears down, preserves exit code) ───────

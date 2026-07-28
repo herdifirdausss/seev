@@ -92,9 +92,14 @@ git diff --check
 When protobuf contracts change, also run:
 
 ~~~bash
+make tools
 make proto
 make proto-breaking
 ~~~
+
+`make tools` installs the repository's pinned Buf and Go protobuf compiler
+versions. CI bootstraps the same toolchain before its protobuf contract gate;
+generated bindings remain committed so ordinary builds do not require Buf.
 
 Integration tests require Docker:
 
