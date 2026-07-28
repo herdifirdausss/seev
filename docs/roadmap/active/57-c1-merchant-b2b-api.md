@@ -1747,11 +1747,64 @@ Gateway crash after owner success
 
 ### Acceptance
 
-- [ ] No handler is implemented before its operation contract exists.
-- [ ] Every financial write documents idempotency.
-- [ ] Every resource documents tenant ownership.
-- [ ] Every event documents producer, consumer, key, version, and dedup identity.
-- [ ] Threat model changes are reviewed.
+- [x] No handler is implemented before its operation contract exists.
+- [x] Every financial write documents idempotency.
+- [x] Every resource documents tenant ownership.
+- [x] Every event documents producer, consumer, key, version, and dedup identity.
+- [x] Threat model changes are reviewed.
+
+### Result
+
+Delivered 2026-07-28:
+
+- **Contract**: [api/openapi/b2b-v1.yaml](../../../api/openapi/b2b-v1.yaml) —
+  21 operations across 7 resource groups, registered in
+  [api/contracts/surfaces.yaml](../../../api/contracts/surfaces.yaml)
+  (audience `merchant`, newly added to the allowed-audience enum in
+  `api/contracts/surfaces_test.go`). Reuses the repo-wide `SuccessEnvelope`/
+  `ErrorEnvelope` (no forked envelope) — the only addition is an optional,
+  additive `request_id` field on `Error` and a new `merchantApiKey` security
+  scheme, both in `api/openapi/components/common.yaml`. 16 new stable error
+  codes added to `api/contracts/errors.yaml` per §6.7. One deliberate
+  deviation from §6.4's illustrative path: `POST
+  .../webhook-endpoints/{id}/rotate-secret` is registered as `.../rotate`
+  instead — the literal word "secret" in a path/inventory-ID trips this
+  repo's own `surfaces_test.go` sensitive-value scanner (by design, for
+  every OTHER contract); renaming avoids a real safety check rather than
+  weakening it.
+- **Design lock**: public state mappings (transfer/pay-in/payout/webhook
+  delivery), the webhook envelope + `Seev-Signature: t=...,v1=...` scheme,
+  all 8 required sequence diagrams, and the failure matrix are in
+  [docs/reference/c1-b2b-design.md](../../reference/c1-b2b-design.md).
+- **Threat model**: TM-15 through TM-19 added to
+  [docs/security/threat-model.md](../../security/threat-model.md) (API-key
+  compromise, webhook SSRF, missing tenant-scoping, webhook secret
+  plaintext, quota-exhaustion blast radius) — status "Planned control",
+  each pointing at the T-task that closes it.
+- **Service ownership**: `docs/reference/services.md`'s Gateway entry notes
+  the planned `internal/merchant` sub-module.
+- **Real bug found and fixed while wiring this in**: `cmd/contractcheck`'s
+  `compareParameters` matched `$ref`-shaped parameters by `name`/`in`, but
+  the bundler (`cmd/contractgenerate`) represents a resolved `$ref` as
+  `{"$ref": {...resolved...}}` rather than replacing the node — so every
+  `$ref` parameter's `name`/`in` read as `nil`. With at most one `$ref`
+  parameter per operation anywhere in the repository before this, the
+  `nil == nil` match happened to hit the only candidate by luck. This
+  contract's own operations are the first with TWO (`X-Request-ID` +
+  a path ID), which exposed that the matcher was comparing unrelated
+  parameters against each other. Fixed by unwrapping `$ref` before
+  reading `name`/`in`; regression test
+  `TestCompatibilityHandlesMultipleRefParametersOnOneOperation` added to
+  `cmd/contractcheck/main_test.go`, proven both ways (identical fixture
+  passes, a genuine field change is still caught).
+- **Verified**: `make contracts` (generate/lint/breaking/test — a fresh
+  `api/contracts/baseline/openapi/b2b-v1.yaml` bootstrap snapshot was
+  needed since this is the first-ever bundle for the file, same pattern
+  ci.yml's own bootstrap fallback already documents), `make docs-check`,
+  `go build ./...`, `go vet -tags=integration ./...`, and
+  `go test ./cmd/contractcheck/...` all pass.
+
+T2 may begin.
 
 ---
 

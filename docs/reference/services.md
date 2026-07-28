@@ -54,6 +54,13 @@ Gateway owns `seev_gateway`, containing exactly one table:
 `notif_notifications`. It holds almost no business logic of its own —
 everything it does is validate/compose/forward.
 
+Planned (Plan 57 / track C1, contract locked in T1, not yet implemented):
+`internal/merchant` — a bounded module for the tenant-isolated Merchant/B2B
+API (API-key auth, quota, idempotency, outbound webhook relay, all
+Gateway-owned persistence — no cross-service database access). See
+[C1 design](c1-b2b-design.md) and
+[docs/roadmap/active/57-c1-merchant-b2b-api.md](../roadmap/active/57-c1-merchant-b2b-api.md).
+
 **What it can do**:
 
 | Surface | Endpoint | Behind |

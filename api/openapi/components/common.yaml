@@ -52,12 +52,26 @@ components:
       type: apiKey
       in: header
       name: X-Mock-Signature
+    merchantApiKey:
+      type: http
+      scheme: bearer
+      description: >-
+        Merchant/B2B API key (Plan 57 §3.2 — a distinct machine identity, not
+        an AuthService user/JWT). Wire format is a bearer token
+        (`sk_test_<prefix>_<secret>` / `sk_live_<prefix>_<secret>`) but the
+        scheme is named separately from bearerAuth so contract tooling and
+        code review can tell the two principals apart at a glance.
   parameters:
     RequestID:
       name: X-Request-ID
       in: header
       required: false
       schema: {type: string, minLength: 1, maxLength: 128}
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: {type: string, minLength: 8, maxLength: 128}
     UUID:
       name: id
       in: path
@@ -118,6 +132,15 @@ components:
       properties:
         code: {type: string, pattern: '^[A-Z][A-Z0-9_]{2,63}$'}
         message: {type: string, minLength: 1, maxLength: 512}
+        request_id:
+          type: string
+          maxLength: 128
+          description: >-
+            Optional, additive (Plan 57 §6.7) — duplicates the X-Request-ID
+            response header inside the error body itself, for programmatic
+            B2B clients that don't always have header access. Every
+            consumer of the pre-existing ErrorEnvelope/Error shape keeps
+            working unchanged since this field is optional.
         details:
           type: object
           additionalProperties: true

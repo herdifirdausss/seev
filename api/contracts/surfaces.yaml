@@ -1597,6 +1597,307 @@ http:
     contract_version: v1
     source: internal/auth/privacy_http.go
 
+  # Plan 57 / C1 Merchant/B2B API — T1 contract lock. Source paths point at
+  # internal/merchant/api/... (Plan 57 §3.1's package layout), built in T2+;
+  # surfaces.yaml's own `source` field is not file-existence-checked (unlike
+  # leaf-registrations.yaml's), which is exactly why the contract can be
+  # locked here before the handler code exists (T1 acceptance: "no handler
+  # is implemented before its operation contract exists").
+  - id: gateway.b2b.merchant.get
+    service: gateway
+    method: GET
+    path: /api/v1/b2b/merchant
+    kind: operation
+    owner: gateway
+    behavior_owner: gateway
+    audience: merchant
+    artifact: api/openapi/b2b-v1.yaml
+    auth: merchant-api-key
+    consumers: [merchant]
+    lifecycle: active
+    contract_version: v1
+    source: internal/merchant/api/merchant_handler.go
+  - id: gateway.b2b.accounts.list
+    service: gateway
+    method: GET
+    path: /api/v1/b2b/accounts
+    kind: operation
+    owner: gateway
+    behavior_owner: ledger
+    audience: merchant
+    artifact: api/openapi/b2b-v1.yaml
+    auth: merchant-api-key
+    consumers: [merchant]
+    lifecycle: active
+    contract_version: v1
+    source: internal/merchant/api/accounts_handler.go
+  - id: gateway.b2b.accounts.get
+    service: gateway
+    method: GET
+    path: /api/v1/b2b/accounts/{account_id}
+    kind: operation
+    owner: gateway
+    behavior_owner: ledger
+    audience: merchant
+    artifact: api/openapi/b2b-v1.yaml
+    auth: merchant-api-key
+    consumers: [merchant]
+    lifecycle: active
+    contract_version: v1
+    source: internal/merchant/api/accounts_handler.go
+  - id: gateway.b2b.accounts.balance
+    service: gateway
+    method: GET
+    path: /api/v1/b2b/accounts/{account_id}/balance
+    kind: operation
+    owner: gateway
+    behavior_owner: ledger
+    audience: merchant
+    artifact: api/openapi/b2b-v1.yaml
+    auth: merchant-api-key
+    consumers: [merchant]
+    lifecycle: active
+    contract_version: v1
+    source: internal/merchant/api/accounts_handler.go
+  - id: gateway.b2b.transactions.list
+    service: gateway
+    method: GET
+    path: /api/v1/b2b/transactions
+    kind: operation
+    owner: gateway
+    behavior_owner: ledger
+    audience: merchant
+    artifact: api/openapi/b2b-v1.yaml
+    auth: merchant-api-key
+    consumers: [merchant]
+    lifecycle: active
+    contract_version: v1
+    source: internal/merchant/api/transactions_handler.go
+  - id: gateway.b2b.transactions.get
+    service: gateway
+    method: GET
+    path: /api/v1/b2b/transactions/{transaction_id}
+    kind: operation
+    owner: gateway
+    behavior_owner: ledger
+    audience: merchant
+    artifact: api/openapi/b2b-v1.yaml
+    auth: merchant-api-key
+    consumers: [merchant]
+    lifecycle: active
+    contract_version: v1
+    source: internal/merchant/api/transactions_handler.go
+  - id: gateway.b2b.transfers.create
+    service: gateway
+    method: POST
+    path: /api/v1/b2b/transfers
+    kind: operation
+    owner: gateway
+    behavior_owner: ledger
+    audience: merchant
+    artifact: api/openapi/b2b-v1.yaml
+    auth: merchant-api-key
+    consumers: [merchant]
+    lifecycle: active
+    contract_version: v1
+    source: internal/merchant/api/transfers_handler.go
+  - id: gateway.b2b.transfers.get
+    service: gateway
+    method: GET
+    path: /api/v1/b2b/transfers/{transaction_id}
+    kind: operation
+    owner: gateway
+    behavior_owner: ledger
+    audience: merchant
+    artifact: api/openapi/b2b-v1.yaml
+    auth: merchant-api-key
+    consumers: [merchant]
+    lifecycle: active
+    contract_version: v1
+    source: internal/merchant/api/transfers_handler.go
+  - id: gateway.b2b.payins.create
+    service: gateway
+    method: POST
+    path: /api/v1/b2b/payins
+    kind: operation
+    owner: gateway
+    behavior_owner: payin
+    audience: merchant
+    artifact: api/openapi/b2b-v1.yaml
+    auth: merchant-api-key
+    consumers: [merchant]
+    lifecycle: active
+    contract_version: v1
+    source: internal/merchant/api/payins_handler.go
+  - id: gateway.b2b.payins.get
+    service: gateway
+    method: GET
+    path: /api/v1/b2b/payins/{payin_id}
+    kind: operation
+    owner: gateway
+    behavior_owner: payin
+    audience: merchant
+    artifact: api/openapi/b2b-v1.yaml
+    auth: merchant-api-key
+    consumers: [merchant]
+    lifecycle: active
+    contract_version: v1
+    source: internal/merchant/api/payins_handler.go
+  - id: gateway.b2b.payouts.create
+    service: gateway
+    method: POST
+    path: /api/v1/b2b/payouts
+    kind: operation
+    owner: gateway
+    behavior_owner: payout
+    audience: merchant
+    artifact: api/openapi/b2b-v1.yaml
+    auth: merchant-api-key
+    consumers: [merchant]
+    lifecycle: active
+    contract_version: v1
+    source: internal/merchant/api/payouts_handler.go
+  - id: gateway.b2b.payouts.get
+    service: gateway
+    method: GET
+    path: /api/v1/b2b/payouts/{payout_id}
+    kind: operation
+    owner: gateway
+    behavior_owner: payout
+    audience: merchant
+    artifact: api/openapi/b2b-v1.yaml
+    auth: merchant-api-key
+    consumers: [merchant]
+    lifecycle: active
+    contract_version: v1
+    source: internal/merchant/api/payouts_handler.go
+  - id: gateway.b2b.webhookEndpoints.list
+    service: gateway
+    method: GET
+    path: /api/v1/b2b/webhook-endpoints
+    kind: operation
+    owner: gateway
+    behavior_owner: gateway
+    audience: merchant
+    artifact: api/openapi/b2b-v1.yaml
+    auth: merchant-api-key
+    consumers: [merchant]
+    lifecycle: active
+    contract_version: v1
+    source: internal/merchant/api/webhooks_handler.go
+  - id: gateway.b2b.webhookEndpoints.create
+    service: gateway
+    method: POST
+    path: /api/v1/b2b/webhook-endpoints
+    kind: operation
+    owner: gateway
+    behavior_owner: gateway
+    audience: merchant
+    artifact: api/openapi/b2b-v1.yaml
+    auth: merchant-api-key
+    consumers: [merchant]
+    lifecycle: active
+    contract_version: v1
+    source: internal/merchant/api/webhooks_handler.go
+  - id: gateway.b2b.webhookEndpoints.get
+    service: gateway
+    method: GET
+    path: /api/v1/b2b/webhook-endpoints/{endpoint_id}
+    kind: operation
+    owner: gateway
+    behavior_owner: gateway
+    audience: merchant
+    artifact: api/openapi/b2b-v1.yaml
+    auth: merchant-api-key
+    consumers: [merchant]
+    lifecycle: active
+    contract_version: v1
+    source: internal/merchant/api/webhooks_handler.go
+  - id: gateway.b2b.webhookEndpoints.update
+    service: gateway
+    method: PATCH
+    path: /api/v1/b2b/webhook-endpoints/{endpoint_id}
+    kind: operation
+    owner: gateway
+    behavior_owner: gateway
+    audience: merchant
+    artifact: api/openapi/b2b-v1.yaml
+    auth: merchant-api-key
+    consumers: [merchant]
+    lifecycle: active
+    contract_version: v1
+    source: internal/merchant/api/webhooks_handler.go
+  - id: gateway.b2b.webhookEndpoints.delete
+    service: gateway
+    method: DELETE
+    path: /api/v1/b2b/webhook-endpoints/{endpoint_id}
+    kind: operation
+    owner: gateway
+    behavior_owner: gateway
+    audience: merchant
+    artifact: api/openapi/b2b-v1.yaml
+    auth: merchant-api-key
+    consumers: [merchant]
+    lifecycle: active
+    contract_version: v1
+    source: internal/merchant/api/webhooks_handler.go
+  - id: gateway.b2b.webhookEndpoints.rotate
+    service: gateway
+    method: POST
+    path: /api/v1/b2b/webhook-endpoints/{endpoint_id}/rotate
+    kind: operation
+    owner: gateway
+    behavior_owner: gateway
+    audience: merchant
+    artifact: api/openapi/b2b-v1.yaml
+    auth: merchant-api-key
+    consumers: [merchant]
+    lifecycle: active
+    contract_version: v1
+    source: internal/merchant/api/webhooks_handler.go
+  - id: gateway.b2b.webhookDeliveries.list
+    service: gateway
+    method: GET
+    path: /api/v1/b2b/webhook-deliveries
+    kind: operation
+    owner: gateway
+    behavior_owner: gateway
+    audience: merchant
+    artifact: api/openapi/b2b-v1.yaml
+    auth: merchant-api-key
+    consumers: [merchant]
+    lifecycle: active
+    contract_version: v1
+    source: internal/merchant/api/webhooks_handler.go
+  - id: gateway.b2b.webhookDeliveries.get
+    service: gateway
+    method: GET
+    path: /api/v1/b2b/webhook-deliveries/{delivery_id}
+    kind: operation
+    owner: gateway
+    behavior_owner: gateway
+    audience: merchant
+    artifact: api/openapi/b2b-v1.yaml
+    auth: merchant-api-key
+    consumers: [merchant]
+    lifecycle: active
+    contract_version: v1
+    source: internal/merchant/api/webhooks_handler.go
+  - id: gateway.b2b.webhookDeliveries.replay
+    service: gateway
+    method: POST
+    path: /api/v1/b2b/webhook-deliveries/{delivery_id}/replay
+    kind: operation
+    owner: gateway
+    behavior_owner: gateway
+    audience: merchant
+    artifact: api/openapi/b2b-v1.yaml
+    auth: merchant-api-key
+    consumers: [merchant]
+    lifecycle: active
+    contract_version: v1
+    source: internal/merchant/api/webhooks_handler.go
+
 leaf_registrations_file: api/contracts/leaf-registrations.yaml
 
 rpc:
