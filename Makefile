@@ -1,39 +1,50 @@
-BINARY    := gateway
-BUILD_DIR := bin
-CMD_DIR   := ./cmd/gateway
-GOFLAGS   := -trimpath -ldflags="-s -w"
+BINARY          := gateway
+BUILD_DIR       := bin
+CMD_DIR         := ./cmd/gateway
+GO_BUILD_FLAGS  := -trimpath -ldflags="-s -w"
+SERVICE_NAMES   := gateway auth-service ledger-service payin-service payout-service fraud-service admin-bff-service assurance-service vendor-service
+CERT_IDENTITIES := gateway auth ledger payin payout fraud admin-bff assurance vendor dev-operator prometheus backup-agent
 
-.PHONY: build build-all run dev test lint ci-lint docs-check tidy tools proto proto-lint proto-breaking contract-generate contract-lint contract-breaking contract-test contracts load-lint load-test load-seed load-snapshot load-restore load-smoke load-run load-capacity load-report-check load-clean docker-up docker-down smoke-container migrate-up migrate-up-all migrate-down grant-app-role verify-full verify-chaos chaos-debug observability-secret observability-up observability-down certs backup-secret backup-role-bootstrap backup-checksums-enable backup-stanza-init backup-full backup-diff backup-check backup-status backup-expire cryptox-secret retention-docs retention-check
+.DEFAULT_GOAL := help
+SHELL := /bin/sh
+.DELETE_ON_ERROR:
 
 BUF_VERSION                := v1.72.0
 PROTOC_GEN_GO_VERSION      := v1.36.11
 PROTOC_GEN_GO_GRPC_VERSION := v1.6.2
 PROTO_MERGE_BASE_REF       ?= main
+GOLANGCI_LINT_VERSION      ?= v2.12.2
+GOVULNCHECK_VERSION        ?= v1.6.0
+
+TOOLS_DIR := $(abspath $(BUILD_DIR)/tools)
+PROTO_TOOLS_DIR := $(TOOLS_DIR)/proto-$(BUF_VERSION)-$(PROTOC_GEN_GO_VERSION)-$(PROTOC_GEN_GO_GRPC_VERSION)
+BUF := $(PROTO_TOOLS_DIR)/buf
+PROTOC_GEN_GO := $(PROTO_TOOLS_DIR)/protoc-gen-go
+PROTOC_GEN_GO_GRPC := $(PROTO_TOOLS_DIR)/protoc-gen-go-grpc
+GOLANGCI_LINT_DIR := $(TOOLS_DIR)/golangci-lint-$(GOLANGCI_LINT_VERSION)
+GOLANGCI_LINT := $(GOLANGCI_LINT_DIR)/golangci-lint
+GOVULNCHECK_DIR := $(TOOLS_DIR)/govulncheck-$(GOVULNCHECK_VERSION)
+GOVULNCHECK := $(GOVULNCHECK_DIR)/govulncheck
+
+.PHONY: build build-all run dev test test/cover clean lint modernize-check ci-lint docs-check tidy tools tools-lint tools-security security-vuln proto proto-lint proto-breaking contract-generate contract-lint contract-breaking contract-test contracts load-lint load-test load-seed load-snapshot load-restore load-smoke load-run load-capacity load-report-check load-clean vet docker-up docker-down smoke-container smoke-test business-e2e admin-e2e privacy-e2e verify-static verify-full verify-chaos chaos-debug migrate-up migrate-up-all migrate-down grant-app-role observability-secret observability-up observability-down certs backup-secret backup-role-bootstrap backup-checksums-enable backup-stanza-init backup-full backup-diff backup-check backup-status backup-expire cryptox-secret retention-docs retention-check help
 
 ## build: Compile the binary
 build:
-	mkdir -p $(BUILD_DIR)
-	go build $(GOFLAGS) -o $(BUILD_DIR)/$(BINARY) $(CMD_DIR)
+	@mkdir -p "$(BUILD_DIR)"
+	go build $(GO_BUILD_FLAGS) -o "$(BUILD_DIR)/$(BINARY)" "$(CMD_DIR)"
 
 ## build-all: Compile all nine deployable service binaries
 build-all:
-	mkdir -p $(BUILD_DIR)
-	go build $(GOFLAGS) -o $(BUILD_DIR)/gateway ./cmd/gateway
-	go build $(GOFLAGS) -o $(BUILD_DIR)/auth-service ./cmd/auth-service
-	go build $(GOFLAGS) -o $(BUILD_DIR)/ledger-service ./cmd/ledger-service
-	go build $(GOFLAGS) -o $(BUILD_DIR)/payin-service ./cmd/payin-service
-	go build $(GOFLAGS) -o $(BUILD_DIR)/payout-service ./cmd/payout-service
-	go build $(GOFLAGS) -o $(BUILD_DIR)/fraud-service ./cmd/fraud-service
-	go build $(GOFLAGS) -o $(BUILD_DIR)/admin-bff-service ./cmd/admin-bff-service
-	go build $(GOFLAGS) -o $(BUILD_DIR)/assurance-service ./cmd/assurance-service
-	go build $(GOFLAGS) -o $(BUILD_DIR)/vendor-service ./cmd/vendor-service
+	@mkdir -p "$(BUILD_DIR)"
+	go build $(GO_BUILD_FLAGS) -o "$(BUILD_DIR)/" $(addprefix ./cmd/,$(SERVICE_NAMES))
 
 ## run: Run the compiled binary
 run: build
 	./$(BUILD_DIR)/$(BINARY)
 
-## dev: Run with live reload (requires air: go install github.com/cosmtrek/air@latest)
+## dev: Run with live reload (requires a pinned air binary in PATH)
 dev:
+	@command -v air >/dev/null 2>&1 || { echo "air is required; install a pinned version separately" >&2; exit 2; }
 	air
 
 ## test: Run all tests with race detector
@@ -45,12 +56,29 @@ test/cover:
 	go test -race -coverprofile=coverage.out ./...
 	go tool cover -html=coverage.out
 
-## lint: Run golangci-lint (requires golangci-lint installed)
-lint:
-	golangci-lint run ./...
+## clean: Remove only repository-local build and test artifacts
+clean:
+	@case "$(BUILD_DIR)" in \
+		bin) rm -rf -- bin ;; \
+		*) echo "clean: refusing non-default BUILD_DIR=$(BUILD_DIR)" >&2; exit 2 ;; \
+	esac
+	rm -f -- coverage.out
+	rm -rf -- .smoke-container-artifacts
+
+## lint: Install and run the repository-pinned golangci-lint
+lint: tools-lint modernize-check
+	"$(GOLANGCI_LINT)" run ./...
+
+## modernize-check: Ensure Go 1.26's safe modernizers have no pending changes
+modernize-check:
+	# omitzero changes JSON wire behavior; apply it only with an explicit
+	# contract decision, so this gate checks the safe modernizers by default.
+	go fix -omitzero=false -diff ./...
 
 ## ci-lint: Validate workflow syntax, shell scripts, and action pin policy
 ci-lint:
+	@command -v actionlint >/dev/null 2>&1 || { echo "actionlint is required" >&2; exit 2; }
+	@command -v shellcheck >/dev/null 2>&1 || { echo "shellcheck is required" >&2; exit 2; }
 	actionlint -shellcheck "$$(command -v shellcheck)"
 	shellcheck --severity=error scripts/*.sh
 	./scripts/ci/check-action-pins.sh
@@ -72,23 +100,52 @@ tidy:
 	go mod tidy
 	go mod verify
 
-## tools: Install pinned protobuf toolchain versions
-tools:
-	go install github.com/bufbuild/buf/cmd/buf@$(BUF_VERSION)
-	go install google.golang.org/protobuf/cmd/protoc-gen-go@$(PROTOC_GEN_GO_VERSION)
-	go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@$(PROTOC_GEN_GO_GRPC_VERSION)
+## tools: Install pinned toolchain versions into the repository-local bin/tools directory
+tools: $(BUF) $(PROTOC_GEN_GO) $(PROTOC_GEN_GO_GRPC)
+
+## tools-lint: Install the exact linter version used by the repository
+tools-lint: $(GOLANGCI_LINT)
+
+## tools-security: Install the pinned Go vulnerability scanner
+tools-security: $(GOVULNCHECK)
+
+## security-vuln: Scan reachable Go dependencies and standard-library calls
+security-vuln: tools-security
+	"$(GOVULNCHECK)" ./...
+
+$(BUF):
+	@mkdir -p "$(@D)"
+	GOBIN="$(@D)" go install "github.com/bufbuild/buf/cmd/buf@$(BUF_VERSION)"
+
+$(PROTOC_GEN_GO):
+	@mkdir -p "$(@D)"
+	GOBIN="$(@D)" go install "google.golang.org/protobuf/cmd/protoc-gen-go@$(PROTOC_GEN_GO_VERSION)"
+
+$(PROTOC_GEN_GO_GRPC):
+	@mkdir -p "$(@D)"
+	GOBIN="$(@D)" go install "google.golang.org/grpc/cmd/protoc-gen-go-grpc@$(PROTOC_GEN_GO_GRPC_VERSION)"
+
+$(GOLANGCI_LINT):
+	@mkdir -p "$(@D)"
+	GOBIN="$(@D)" go install "github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)"
+
+$(GOVULNCHECK):
+	@mkdir -p "$(@D)"
+	GOBIN="$(@D)" go install "golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION)"
 
 ## proto: Generate committed Go protobuf bindings
+proto proto-lint proto-breaking: tools
+
 proto:
-	buf generate
+	"$(BUF)" generate
 
 ## proto-lint: Lint protobuf contracts
 proto-lint:
-	buf lint
+	"$(BUF)" lint
 
 ## proto-breaking: Check protobuf compatibility against an explicit merge-base ref
 proto-breaking:
-	buf breaking --against ".git#ref=$(PROTO_MERGE_BASE_REF)"
+	"$(BUF)" breaking --against ".git#ref=$(PROTO_MERGE_BASE_REF)"
 
 ## contract-generate: Resolve checked-in relative OpenAPI references deterministically
 contract-generate:
@@ -107,7 +164,9 @@ contract-test:
 	go test ./pkg/httpcontract ./api/contracts
 
 ## contracts: Run the local A9 contract gate without installing tools
-contracts: contract-generate contract-lint contract-breaking contract-test
+contract-lint contract-breaking contract-test: contract-generate
+
+contracts: contract-lint contract-breaking contract-test
 
 ## load-lint: Validate B0 profiles, safety schemas, and helper/scenario tests without Docker mutation
 load-lint:
@@ -121,9 +180,10 @@ load-test: load-lint
 LOAD_SEED_KIND ?= journey
 LOAD_SEED_COUNT ?= 100
 LOAD_SEED_OUTPUT ?= artifacts/load/seed/seed.jsonl
+export LOAD_SEED_KIND LOAD_SEED_COUNT LOAD_SEED_OUTPUT SEEV_LOAD_ACK SEEV_LOAD_RUN_ID
 ## load-seed: Generate synthetic deterministic seed material; requires an explicit disposable acknowledgement
 load-seed:
-	go run ./cmd/loadseed -kind $(LOAD_SEED_KIND) -count $(LOAD_SEED_COUNT) -out $(LOAD_SEED_OUTPUT) -ack "$(SEEV_LOAD_ACK)"
+	@./scripts/load-seed.sh
 
 ## load-snapshot/load-restore: compressed state lifecycle inside one disposable project
 load-snapshot:
@@ -141,37 +201,66 @@ load-run:
 	SEEV_LOAD_ACK=disposable-only ./scripts/load-test.sh run
 
 ## load-capacity: Explicitly manual; runs must provide scenario/rate and retain raw artifacts outside Git
+export LOAD_SCENARIO LOAD_RATE
 load-capacity:
-	@test -n "$(LOAD_SCENARIO)" || (echo 'set LOAD_SCENARIO' >&2; exit 1)
-	@test -n "$(LOAD_RATE)" || (echo 'set LOAD_RATE in WU/s' >&2; exit 1)
-	SEEV_LOAD_ACK=disposable-only SEEV_LOAD_SCENARIO=$(LOAD_SCENARIO) SEEV_LOAD_WORKLOAD=$(LOAD_SCENARIO) SEEV_LOAD_RATE=$(LOAD_RATE) ./scripts/load-test.sh run
+	@./scripts/load-capacity.sh
 
 LOAD_RUNS ?=
+export LOAD_RUNS LOAD_REPORT_OUT
 ## load-report-check: Validate and aggregate committed-size run summaries without averaging percentiles
 load-report-check:
-	@test -n "$(LOAD_RUNS)" || (echo 'set LOAD_RUNS=path1.json,path2.json' >&2; exit 1)
-	go run ./cmd/loadreport -runs "$(LOAD_RUNS)" -out "$(LOAD_REPORT_OUT)"
+	@./scripts/load-report-check.sh
 
 ## load-clean: Remove only the exact disposable Compose project and its run artifact path
 load-clean:
-	@test -n "$(SEEV_LOAD_RUN_ID)" || (echo 'set SEEV_LOAD_RUN_ID to the exact run id' >&2; exit 1)
 	SEEV_LOAD_ACK=disposable-only ./scripts/load-test.sh clean
 
 ## vet: Run go vet
 vet:
-	go vet ./...
+	go vet $(GO_BUILD_FLAGS) ./...
 
 ## docker-up: Start infrastructure (postgres, redis, rabbitmq)
 docker-up:
-	docker compose up -d
+	docker compose up -d --wait
 
 ## docker-down: Stop infrastructure
 docker-down:
-	docker compose down
+	docker compose down --remove-orphans
 
 ## smoke-container: Full-container round-trip (docs/roadmap/archive/44 K4) — real Docker images via `docker compose --profile app`, not host binaries
 smoke-container:
 	./scripts/smoke-container.sh
+
+## smoke-test: Core host-binary smoke journey (ledger, payin, payout)
+smoke-test:
+	./scripts/smoke-test.sh all
+
+## business-e2e: Full end-user and operator business journey
+business-e2e:
+	./scripts/business-e2e.sh
+
+## admin-e2e: Admin BFF session, CSRF, mutation, and audit journey
+admin-e2e:
+	./scripts/admin-e2e.sh
+
+## privacy-e2e: Privacy export, retention hold, and closure journey with managed host stack
+privacy-e2e:
+	./scripts/privacy-e2e-host.sh
+
+## verify-static: Repeatable non-Docker build, static, contract, security, and safety gate
+verify-static:
+	go build $(GO_BUILD_FLAGS) ./...
+	go vet ./...
+	go mod verify
+	$(MAKE) ci-lint
+	$(MAKE) lint
+	$(MAKE) security-vuln
+	$(MAKE) docs-check
+	$(MAKE) retention-check
+	$(MAKE) contracts
+	$(MAKE) load-test
+	go test -tags=loadtest ./...
+	git diff --check
 
 # This is what docs/development/project-guide.md's "Build and verification"
 # section means by "the full gate" — run this instead of chaining the steps by
@@ -181,34 +270,30 @@ smoke-container:
 # repeatable non-chaos gate from a clean environment; chaos is deliberately
 # isolated in verify-chaos because it kills dependencies and is an
 # operator-controlled recovery drill.
-## verify-full: Complete repeatable gate from clean volumes (build/vet/lint/race/integration/contracts/proto/load/docs/container+business/admin)
+## verify-full: Complete repeatable gate from clean volumes (build/vet/lint/race/integration/contracts/proto/load/docs/container+business/admin/privacy)
 verify-full:
-	docker compose down -v --remove-orphans
-	go build ./...
-	go vet ./...
-	go vet -tags=integration ./...
-	go mod verify
-	$(MAKE) contracts
-	$(MAKE) tools
-	$(MAKE) proto
-	$(MAKE) proto-lint
-	$(MAKE) proto-breaking
-	$(MAKE) load-test
-	go test -tags=loadtest ./...
-	$(MAKE) ci-lint
-	$(MAKE) lint
-	$(MAKE) docs-check
-	$(MAKE) retention-check
-	$(MAKE) test
-	go test -tags=integration -race -timeout 25m ./...
-	$(MAKE) smoke-container
-	./scripts/smoke-test.sh
-	./scripts/business-e2e.sh
-	./scripts/admin-e2e.sh
-	docker compose down -v --remove-orphans
-	SEEV_LOAD_ACK=disposable-only $(MAKE) load-smoke
+	@set -eu; \
+	project=seev-verify; \
+	export COMPOSE_PROJECT_NAME="$$project"; \
+	cleanup() { status=$$?; trap - EXIT INT TERM; docker compose --profile app down -v --remove-orphans >/dev/null 2>&1 || true; exit "$$status"; }; \
+	trap cleanup EXIT INT TERM; \
+	docker compose --profile app down -v --remove-orphans; \
+	$(MAKE) --no-print-directory verify-static; \
+	go vet -tags=integration ./...; \
+	$(MAKE) --no-print-directory tools; \
+	$(MAKE) --no-print-directory proto; \
+	$(MAKE) --no-print-directory proto-lint; \
+	$(MAKE) --no-print-directory proto-breaking; \
+	$(MAKE) --no-print-directory test; \
+	go test -tags=integration -race -timeout 25m ./...; \
+	$(MAKE) --no-print-directory smoke-container; \
+	$(MAKE) --no-print-directory smoke-test; \
+	$(MAKE) --no-print-directory business-e2e; \
+	$(MAKE) --no-print-directory admin-e2e; \
+	$(MAKE) --no-print-directory privacy-e2e; \
+	docker compose --profile app down -v --remove-orphans; \
+	SEEV_LOAD_ACK=disposable-only $(MAKE) --no-print-directory load-smoke; \
 	git diff --check
-	docker compose down -v --remove-orphans
 
 ## verify-chaos: Operator-controlled recovery gate; intentionally separate from verify-full
 verify-chaos:
@@ -219,8 +304,13 @@ verify-chaos:
 #   make chaos-debug SCENARIO=8
 ## chaos-debug: Re-run one chaos scenario (SCENARIO=1..20, default all) with logs preserved after exit
 SCENARIO ?= all
+export SCENARIO
 chaos-debug:
-	KEEP_WORK_DIR=1 ./scripts/chaos-test.sh $(SCENARIO)
+	@case "$${SCENARIO}" in \
+		all|1|2|3|4|5|6|7|8|9|10|11|12|13|14|15|16|17|18|19|20) ;; \
+		*) echo "chaos-debug: SCENARIO must be all or 1..20" >&2; exit 2 ;; \
+	esac; \
+	KEEP_WORK_DIR=1 ./scripts/chaos-test.sh "$${SCENARIO}"
 
 # Migrations run as the schema OWNER (POSTGRES_MIGRATE_USER), never as the
 # app's restricted POSTGRES_USER (docs/roadmap/archive/16 Task T3) — DDL and DML
@@ -228,32 +318,34 @@ chaos-debug:
 # Port default (5433) matches docker-compose.yml's own default — see its
 # comment on the postgres service's `ports:` mapping.
 SERVICE ?= ledger
-SERVICE_DATABASE = seev_$(SERVICE)
-POSTGRES_MIGRATE_BASE := postgres://$(or $(POSTGRES_MIGRATE_USER),seev):$(or $(POSTGRES_MIGRATE_PASSWORD),seev)@$(or $(POSTGRES_HOST),localhost):$(or $(POSTGRES_PORT),5433)
-SERVICE_OWNER_DSN = $(POSTGRES_MIGRATE_BASE)/$(SERVICE_DATABASE)?sslmode=$(or $(POSTGRES_SSL_MODE),disable)
-SERVICE_MIGRATE_DSN = $(SERVICE_OWNER_DSN)&x-migrations-table=schema_migrations_$(SERVICE)
+POSTGRES_MIGRATE_USER ?= seev
+POSTGRES_MIGRATE_PASSWORD ?= seev
+POSTGRES_HOST ?= localhost
+POSTGRES_PORT ?= 5433
+POSTGRES_SSL_MODE ?= disable
+export SERVICE POSTGRES_USER POSTGRES_MIGRATE_USER POSTGRES_MIGRATE_PASSWORD POSTGRES_HOST POSTGRES_PORT POSTGRES_SSL_MODE
 
 ## migrate-up: Run one service's pending migrations (default SERVICE=ledger)
 migrate-up:
-	migrate -path migrations/$(SERVICE) -database "$(SERVICE_MIGRATE_DSN)" up
+	@./scripts/migrate.sh up
 
 ## migrate-up-all: Run every service migration folder against the current database
 migrate-up-all:
-	$(MAKE) migrate-up SERVICE=ledger
+	$(MAKE) --no-print-directory migrate-up SERVICE=ledger || exit $$?
 	@for path in migrations/*; do \
 		[ -d "$$path" ] || continue; \
 		service=$${path##*/}; \
 		[ "$$service" = ledger ] && continue; \
-		$(MAKE) migrate-up SERVICE="$$service" || exit $$?; \
+		$(MAKE) --no-print-directory migrate-up SERVICE="$$service" || exit $$?; \
 	done
 
 ## migrate-down: Roll back the selected service's last migration
 migrate-down:
-	migrate -path migrations/$(SERVICE) -database "$(SERVICE_MIGRATE_DSN)" down 1
+	@./scripts/migrate.sh down
 
 ## grant-app-role: Grant the app_service DB role to POSTGRES_USER (run once per environment, after the first migrate-up creates app_service — docs/roadmap/archive/16 Task T3)
 grant-app-role:
-	psql "$(SERVICE_OWNER_DSN)" -c "GRANT app_service TO $(POSTGRES_USER);"
+	@./scripts/grant-app-role.sh
 
 # docs/roadmap/archive/43 K1: a strong Grafana admin password generated locally, mode
 # 0600, gitignored — never a default/committed credential. Idempotent: does
@@ -286,11 +378,11 @@ observability-down:
 # leaf that's still fresh), so re-running this is always safe.
 ## certs: Generate the local mTLS CA + per-service leaf certs (run before `docker compose --profile app up`)
 certs:
-	mkdir -p $(BUILD_DIR)
-	go build $(GOFLAGS) -o $(BUILD_DIR)/certgen ./cmd/certgen
-	$(BUILD_DIR)/certgen init-ca --out deploy/certs
-	@for service in gateway auth ledger payin payout fraud admin-bff assurance vendor dev-operator prometheus backup-agent; do \
-		$(BUILD_DIR)/certgen issue --service $$service --out deploy/certs || exit $$?; \
+	@mkdir -p "$(BUILD_DIR)"
+	go build $(GO_BUILD_FLAGS) -o "$(BUILD_DIR)/certgen" ./cmd/certgen
+	"$(BUILD_DIR)/certgen" init-ca --out deploy/certs
+	@for service in $(CERT_IDENTITIES); do \
+		"$(BUILD_DIR)/certgen" issue --service "$$service" --out deploy/certs || exit $$?; \
 	done
 
 # docs/roadmap/archive/50 K3/K5: two independent secrets — the pgBackRest repository
@@ -384,7 +476,7 @@ cryptox-secret:
 
 ## backup-role-bootstrap: Create/refresh the seev_backup role on an ALREADY-INITIALIZED volume (run once per environment after `make backup-secret`)
 backup-role-bootstrap:
-	docker compose exec postgres sh /docker-entrypoint-initdb.d/04-backup-role.sh
+	docker compose exec -T postgres sh /docker-entrypoint-initdb.d/04-backup-role.sh
 
 # docs/roadmap/archive/50 K2: --data-checksums (POSTGRES_INITDB_ARGS) only takes effect
 # on a fresh initdb. An existing volume needs Postgres fully STOPPED and
@@ -395,44 +487,34 @@ backup-role-bootstrap:
 # that up rather than relying on the refusal alone.
 ## backup-checksums-enable: Enable data page checksums on the EXISTING seev_postgres_data volume (postgres must be stopped first)
 backup-checksums-enable:
-	docker compose stop postgres
-	docker compose run --rm --no-deps -v seev_postgres_data:/var/lib/postgresql/data postgres \
-		sh -c 'pg_checksums --enable --pgdata=/var/lib/postgresql/data && pg_checksums --check --pgdata=/var/lib/postgresql/data'
-	docker compose up -d postgres
+	@./scripts/backup-checksums-enable.sh
 
-# docs/roadmap/archive/50 K3: `docker compose exec` starts a fresh process attached to
-# the container, NOT a child of the entrypoint's own shell — it does not
-# inherit the PGBACKREST_REPO1_CIPHER_PASS the entrypoint exported for
-# archive_command's benefit (that export only reaches the postgres server
-# process's own children). Every manual pgbackrest invocation below reads
-# the passphrase from the host-side secret file (the Makefile always runs
-# on the host) and passes it via `exec -e` instead — never printed, never
-# passed as a CLI argument (which would leak into `ps`/process listings).
-PGBACKREST_ENV = -e PGBACKREST_REPO1_CIPHER_PASS="$$(cat deploy/backup/secrets/pgbackrest_repo_passphrase)"
-
+# docs/roadmap/archive/50 K3: pgBackRest commands use scripts/pgbackrest.sh.
+# The wrapper reads the mounted secret inside the postgres container, so the
+# passphrase never appears in Make output or host-side process arguments.
 ## backup-stanza-init: Create the pgBackRest stanza (run once, after backup-secret and backup-role-bootstrap)
 backup-stanza-init:
-	docker compose exec $(PGBACKREST_ENV) postgres pgbackrest --stanza=seev --config=/etc/pgbackrest/pgbackrest.conf stanza-create
+	@./scripts/pgbackrest.sh stanza-create
 
 ## backup-full: Run a full backup
 backup-full:
-	docker compose exec $(PGBACKREST_ENV) postgres pgbackrest --stanza=seev --config=/etc/pgbackrest/pgbackrest.conf --type=full backup
+	@./scripts/pgbackrest.sh --type=full backup
 
 ## backup-diff: Run a differential backup
 backup-diff:
-	docker compose exec $(PGBACKREST_ENV) postgres pgbackrest --stanza=seev --config=/etc/pgbackrest/pgbackrest.conf --type=diff backup
+	@./scripts/pgbackrest.sh --type=diff backup
 
 ## backup-check: Verify the backup repository and WAL archive are consistent
 backup-check:
-	docker compose exec $(PGBACKREST_ENV) postgres pgbackrest --stanza=seev --config=/etc/pgbackrest/pgbackrest.conf check
+	@./scripts/pgbackrest.sh check
 
 ## backup-status: Show backup/repository info (oldest/latest restorable point, backup set list)
 backup-status:
-	docker compose exec $(PGBACKREST_ENV) postgres pgbackrest --stanza=seev --config=/etc/pgbackrest/pgbackrest.conf info --output=json
+	@./scripts/pgbackrest.sh info --output=json
 
-## backup-expire: Expire backups/WAL outside the retention policy (K4: run only after a successful backup + check)
+## backup-expire: Expire backups/WAL outside the retention policy (K4; run only after a successful backup + check)
 backup-expire:
-	docker compose exec $(PGBACKREST_ENV) postgres pgbackrest --stanza=seev --config=/etc/pgbackrest/pgbackrest.conf expire
+	@./scripts/pgbackrest.sh expire
 
 ## help: Print this help message
 help:

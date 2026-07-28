@@ -80,7 +80,7 @@ func TestScreenSpillsWriteFailureAndFlushesAfterRecovery(t *testing.T) {
 
 func TestEventSpillDropsOldestOnOverflow(t *testing.T) {
 	spill := newEventSpill()
-	for i := 0; i < maxSpillEvents+1; i++ {
+	for i := range maxSpillEvents + 1 {
 		spill.enqueue(model.ScreeningEvent{Reason: fmt.Sprintf("%d", i)})
 	}
 	assert.Equal(t, maxSpillEvents, spill.depth())

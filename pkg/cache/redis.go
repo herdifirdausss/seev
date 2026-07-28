@@ -147,7 +147,7 @@ func (c *Cache) SetNX(ctx context.Context, key string, v any, ttl time.Duration)
 	if err != nil {
 		return false, fmt.Errorf("cache setnx: marshal: %w", err)
 	}
-	ok, err := c.client.SetNX(ctx, key, b, ttl).Result() //nolint:staticcheck // go-redis keeps this atomic helper for compatibility.
+	ok, err := c.client.SetNX(ctx, key, b, ttl).Result()
 	if err != nil {
 		return false, fmt.Errorf("cache setnx: %w", err)
 	}

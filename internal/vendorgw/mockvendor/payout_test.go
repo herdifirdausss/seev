@@ -97,7 +97,7 @@ func TestPayoutProvider_Submit_ConcurrentSameKey_ExactlyOneEffectiveSubmission(t
 	errs := make([]error, concurrency)
 
 	var wg sync.WaitGroup
-	for i := 0; i < concurrency; i++ {
+	for i := range concurrency {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()

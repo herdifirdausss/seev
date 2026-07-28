@@ -76,7 +76,7 @@ func TestGetByID_MalformedStoredSourceAccountID_ReturnsErrorNotPanic(t *testing.
 			AddRow(txID, "idem-1", "scope-1", "money_in", "posted", "1000", "IDR",
 				"not-a-valid-uuid", nil, nil, nil, nil, now, now))
 
-	var tx interface{}
+	var tx any
 	var err error
 	require.NotPanics(t, func() {
 		tx, err = repo.GetByID(ctx, txID)

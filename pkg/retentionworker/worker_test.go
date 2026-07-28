@@ -27,7 +27,7 @@ func newMock(t *testing.T) (*sql.DB, sqlmock.Sqlmock) {
 func expectHoldsGaugeQueries(mock sqlmock.Sqlmock, table string) {
 	for _, scope := range holdScopes {
 		for _, status := range holdStatuses {
-			mock.ExpectQuery(`SELECT count\(\*\) FROM ` + table + ` WHERE scope = \$1 AND status = \$2`).
+			mock.ExpectQuery(`SELECT count\(\*\) FROM `+table+` WHERE scope = \$1 AND status = \$2`).
 				WithArgs(scope, status).
 				WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
 		}
@@ -115,7 +115,7 @@ func TestRunOnce_StopsAtPerRunCap(t *testing.T) {
 	// Every call returns a full batch (10) — an unbounded backlog. The
 	// per-run cap (25) must still stop the loop after 3 calls (30 >= 25),
 	// not run forever.
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		mock.ExpectQuery(`SELECT fn_retention_purge_fee_quotes_unconsumed\(\$1, \$2, \$3\)`).
 			WithArgs(sqlmock.AnyArg(), 10, false).
 			WillReturnRows(sqlmock.NewRows([]string{"fn_retention_purge_fee_quotes_unconsumed"}).AddRow(10))

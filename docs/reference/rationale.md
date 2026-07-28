@@ -82,8 +82,10 @@ modern. It is useful only when its benefit justifies its cost.
 
 > The raw v1 callback RPC is deprecated and unimplemented. VendorService is the
 > callback ingress and Payin's active surface accepts only normalized
-> owner-domain callbacks;
-> final live integration and chaos acceptance remain in [archived plan 54](../roadmap/archive/54-vendor-service-boundary.md).
+> owner-domain callbacks. Host, container, and business journeys exercise this
+> boundary; the manual chaos recovery gate remains pending as recorded in the
+> [operations status](../operations/README.md#standalone-drills-and-operator-tools--not-part-of-verify-full).
+> The historical boundary decisions are preserved in [archived Plan 54](../roadmap/archive/54-vendor-service-boundary.md).
 
 ## Why authenticate a callback and still validate its business data?
 
@@ -280,8 +282,10 @@ modern. It is useful only when its benefit justifies its cost.
 
 ## Why is vendor traffic isolated in VendorService?
 
-This is a current boundary; the final live integration and chaos evidence is
-still tracked in plan 54.
+This is the current runtime boundary. The repeatable host/container/business
+journeys cover normal callback delivery; the manual crash-recovery evidence is
+tracked separately in the [operations status](../operations/README.md#standalone-drills-and-operator-tools--not-part-of-verify-full)
+and is not currently green.
 
 - **Reason:** vendor APIs and callbacks share machine-to-machine secrets,
   allowlists, adapters, retries, and audit needs that differ from user Gateway

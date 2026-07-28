@@ -314,5 +314,7 @@ often recorded inside one database transaction.
 
 The service that owns direct vendor connectivity, callback authentication,
 durable vendor evidence, and normalized delivery to Payin/Payout. It does not
-choose a wallet owner or post Ledger money. Its foundation is implemented;
-final live integration and chaos acceptance remain in plan 54.
+choose a wallet owner or post Ledger money. The normal callback path is
+implemented and exercised by host, container, and business journeys. Manual
+crash-recovery acceptance is a separate operational gate and is currently
+pending; see the [operations status](../operations/README.md#standalone-drills-and-operator-tools--not-part-of-verify-full).

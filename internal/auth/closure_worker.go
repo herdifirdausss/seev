@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"strings"
 	"time"
 
@@ -318,9 +319,7 @@ func (m *Module) closureCheckpointOwner(ctx context.Context, id uuid.UUID, owner
 		return err
 	}
 	entry := map[string]any{"phase": phase}
-	for k, v := range extra {
-		entry[k] = v
-	}
+	maps.Copy(entry, extra)
 	checkpoints[owner] = entry
 	encoded, err := json.Marshal(checkpoints)
 	if err != nil {

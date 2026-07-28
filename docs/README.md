@@ -129,6 +129,8 @@ plan status.
   [runbooks](operations/runbooks/README.md), and
   [performance](performance/README.md).
 - Security: [threat model](security/threat-model.md).
+- Roadmap: [roadmap index](roadmap/README.md), [long-term strategy](roadmap/42-long-term-roadmap.md),
+  and the [active plans](roadmap/active/README.md).
 
 ## Maintenance
 

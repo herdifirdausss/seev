@@ -256,7 +256,7 @@ func TestBrutal_SchedulerRaceConditions(t *testing.T) {
 		defer sched.Stop()
 
 		var wg sync.WaitGroup
-		for i := 0; i < 100; i++ {
+		for i := range 100 {
 			wg.Add(1)
 			go func(id int) {
 				defer wg.Done()
@@ -431,7 +431,7 @@ func TestBrutal_MemoryLockGC(t *testing.T) {
 	lock := NewMemoryLock(time.Second)
 
 	// Acquire many locks with short TTL
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		ok, err := lock.TryLock(context.Background(), fmt.Sprintf("key-%d", i), 10*time.Millisecond)
 		if err != nil || !ok {
 			t.Fatalf("TryLock failed: ok=%v, err=%v", ok, err)
@@ -536,7 +536,7 @@ func TestBrutal_ComplexSchedules(t *testing.T) {
 
 			// Get next 10 occurrences and ensure they're monotonically increasing
 			prev := now
-			for i := 0; i < 10; i++ {
+			for i := range 10 {
 				next, err := cron.Next(prev, loc)
 				if err != nil {
 					t.Fatalf("Next() iteration %d error = %v", i, err)

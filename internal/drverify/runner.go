@@ -46,7 +46,6 @@ func Run(ctx context.Context, cfg Config) *Report {
 		}
 		results := make(chan inventoryResult, len(dbs))
 		for service, db := range dbs {
-			service, db := service, db
 			g.Go(func() error {
 				results <- inventoryResult{service: service, ok: checkInventory(gctx, db, cfg, service, report)}
 				return nil
@@ -125,7 +124,6 @@ func connectAll(ctx context.Context, cfg Config, report *Report) (map[string]*sq
 	}
 	results := make(chan result, len(Services))
 	for _, service := range Services {
-		service := service
 		g.Go(func() error {
 			db, err := connect(gctx, cfg.DSN[service])
 			results <- result{service: service, db: db, err: err}

@@ -3,8 +3,11 @@
 > [Documentation home](../README.md) · [Reference](README.md)
 
 > **Status: Current.** This document describes the runtime implemented in the
-> repository. The VendorService boundary is implemented; its final live
-> integration and chaos acceptance remain tracked in [archived plan 54](../roadmap/archive/54-vendor-service-boundary.md).
+> repository. VendorService is the only vendor callback ingress and the host,
+> container, and business journeys exercise that boundary. The manual chaos
+> recovery gate is not yet green; the latest Scenario 5 residual and rerun
+> requirement are recorded in the [operations status](../operations/README.md#standalone-drills-and-operator-tools--not-part-of-verify-full).
+> The historical boundary decisions are preserved in [archived Plan 54](../roadmap/archive/54-vendor-service-boundary.md).
 
 This document explains **why Seev exists, what problem it solves, and how
 it's built to solve it** — for both a business reader and a technical

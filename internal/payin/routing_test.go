@@ -48,16 +48,13 @@ func (matrixRouting) ListVendorGateways(context.Context) ([]model.VendorGateway,
 }
 func (matrixRouting) UpsertVendorGateway(context.Context, model.VendorGateway) error { return nil }
 
-func stringPtr(v string) *string { return &v }
-func int64Ptr(v int64) *int64    { return &v }
-
 func TestResolveTopupRoute_Matrix(t *testing.T) {
 	userID := uuid.New()
 	otherUser := uuid.New()
 	rules := []model.RoutingRule{
 		{Flow: "topup", Priority: 1, Enabled: false, Vendor: "disabled"},
-		{Flow: "topup", Priority: 10, Enabled: true, Currency: stringPtr("USD"), Vendor: "usd"},
-		{Flow: "topup", Priority: 20, Enabled: true, MinAmount: int64Ptr(100), MaxAmount: int64Ptr(200), Vendor: "range"},
+		{Flow: "topup", Priority: 10, Enabled: true, Currency: new("USD"), Vendor: "usd"},
+		{Flow: "topup", Priority: 20, Enabled: true, MinAmount: new(int64(100)), MaxAmount: new(int64(200)), Vendor: "range"},
 		{Flow: "topup", Priority: 999, Enabled: true, UserID: &userID, Vendor: "user"},
 		{Flow: "topup", Priority: 1000, Enabled: true, Vendor: "fallback"},
 	}

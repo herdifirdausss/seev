@@ -21,7 +21,6 @@ func TestSlugMatchesGitHubStyleHeadingsUsedByRepository(t *testing.T) {
 	}
 
 	for input, want := range tests {
-		input, want := input, want
 		t.Run(input, func(t *testing.T) {
 			t.Parallel()
 			if got := slug(input); got != want {

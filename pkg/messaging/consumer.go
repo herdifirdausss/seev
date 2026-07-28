@@ -102,12 +102,8 @@ func (r *RabbitMQ) Consume(
 				"error", err,
 			)
 			delay := backoffDelay(attempt, r.cfg.ReconnectBaseDelay)
-			select {
-			case <-ctx.Done():
+			if !waitForDelay(ctx, r.done, delay) {
 				return nil
-			case <-r.done:
-				return nil
-			case <-time.After(delay):
 			}
 			continue
 		}
@@ -308,7 +304,7 @@ func (r *RabbitMQ) handleDelivery(
 // from a different queue. Reading only [0] (as v1 did) under-counts messages
 // that cycle through multiple queues — a correctness bug at high retry depth.
 func totalDeathCount(d amqp.Delivery) int64 {
-	xDeath, ok := d.Headers["x-death"].([]interface{})
+	xDeath, ok := d.Headers["x-death"].([]any)
 	if !ok {
 		return 0
 	}

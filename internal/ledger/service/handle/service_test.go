@@ -647,7 +647,7 @@ func TestDecimalArithmetic_Precision(t *testing.T) {
 
 	// Cumulative addition
 	total := decimal.Zero
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		total = total.Add(d("0.10"))
 	}
 	assert.True(t, total.Equal(d("1.00")))

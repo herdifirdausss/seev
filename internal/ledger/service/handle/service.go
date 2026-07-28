@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"math/rand"
+	"maps"
+	randv2 "math/rand/v2"
+	"slices"
 	"strings"
 	"time"
 
@@ -270,14 +272,18 @@ const (
 
 func (s *Service) transfer(ctx context.Context, cmd processors.ResolvedCommand, p processors.TxProcessor) error {
 	var lastErr error
-	for attempt := 0; attempt < maxRetry; attempt++ {
+	for attempt := range maxRetry {
 		if attempt > 0 {
 			// [FIX #9] Add jitter to avoid thundering herd on concurrent retries
-			delay := time.Duration(baseDelayMS+rand.Intn(jitterRangeMS)) * time.Millisecond * time.Duration(attempt)
+			delay := time.Duration(baseDelayMS+randv2.IntN(jitterRangeMS)) * time.Millisecond * time.Duration(attempt)
+			timer := time.NewTimer(delay)
 			select {
 			case <-ctx.Done():
+				if !timer.Stop() {
+					<-timer.C
+				}
 				return fmt.Errorf("cancelled during retry backoff: %w", ctx.Err())
-			case <-time.After(delay):
+			case <-timer.C:
 			}
 			s.logger.Warn("retrying", slog.Int("attempt", attempt+1), slog.Any("error", lastErr))
 		}
@@ -442,9 +448,7 @@ func (s *Service) execTransfer(ctx context.Context, cmd processors.ResolvedComma
 			// to the processor interface unchanged, so no processor code
 			// needs to know about this split at all.
 			merged := make(map[uuid.UUID]model.AccountBalance, len(cmd.AccountIDs))
-			for id, ab := range userBalances {
-				merged[id] = ab
-			}
+			maps.Copy(merged, userBalances)
 			for _, id := range systemIDs {
 				merged[id] = flags[id]
 			}
@@ -524,12 +528,8 @@ func (s *Service) execTransfer(ctx context.Context, cmd processors.ResolvedComma
 			}
 
 			allNewBalances := make(map[uuid.UUID]decimal.Decimal, len(userNewBalances)+len(systemNewBalances))
-			for id, bal := range userNewBalances {
-				allNewBalances[id] = bal
-			}
-			for id, bal := range systemNewBalances {
-				allNewBalances[id] = bal
-			}
+			maps.Copy(allNewBalances, userNewBalances)
+			maps.Copy(allNewBalances, systemNewBalances)
 
 			// ── 8. INSERT LEDGER ENTRIES ─────────────────────────────────────
 			// entries still contains BOTH user and system account entries —
@@ -579,12 +579,7 @@ func truncatedIdemKey(key string) string {
 }
 
 func accountIDIn(ids []uuid.UUID, id uuid.UUID) bool {
-	for _, x := range ids {
-		if x == id {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(ids, id)
 }
 
 // =============================================================================

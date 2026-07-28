@@ -18,6 +18,7 @@ type fakePayinClient struct {
 	get    func(context.Context, *payinv1.GetTopupIntentRequest) (*payinv1.GetTopupIntentResponse, error)
 }
 
+//nolint:staticcheck // The generated v1 client retains this deprecated method for wire compatibility.
 func (f fakePayinClient) HandleWebhook(context.Context, *payinv1.HandleWebhookRequest, ...grpc.CallOption) (*payinv1.HandleWebhookResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "raw Payin callbacks are owned by VendorService")
 }

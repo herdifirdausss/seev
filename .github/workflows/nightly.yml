@@ -4,7 +4,7 @@ name: Scheduled Full-Stack
 # but the AUTOMATIC schedule is weekly, not nightly — K1's cost budget
 # forbids a daily 90-minute gate on a private repo. `workflow_dispatch`
 # lets an operator run any subset on demand; the schedule always runs the
-# full "all" (business E2E then chaos-all, one job, one runner — GitHub-
+# full "all" (business E2E, privacy E2E, then chaos-all, one job, one runner — GitHub-
 # hosted jobs never share a VM, so splitting this across `needs:` jobs
 # would silently lose Docker/process state between them, per K7).
 on:
@@ -20,6 +20,7 @@ on:
         options:
           - all
           - business
+          - privacy
           - chaos
         default: all
 
@@ -66,6 +67,7 @@ jobs:
         run: |
           {
             echo "BUSINESS_WORK_DIR=$RUNNER_TEMP/seev-business-e2e"
+            echo "PRIVACY_WORK_DIR=$RUNNER_TEMP/seev-privacy-e2e"
             echo "CHAOS_WORK_DIR=$RUNNER_TEMP/seev-chaos"
           } >> "$GITHUB_ENV"
 
@@ -105,6 +107,18 @@ jobs:
           ./scripts/business-e2e.sh
 
       - name: Reset volume between suites
+        if: always() && (env.SUITE == 'privacy' || env.SUITE == 'chaos' || env.SUITE == 'all')
+        run: docker compose down -v --remove-orphans
+
+      - name: Privacy E2E
+        id: privacy
+        if: env.SUITE == 'privacy' || env.SUITE == 'all'
+        continue-on-error: true
+        env:
+          SEEV_WORK_DIR: ${{ env.PRIVACY_WORK_DIR }}
+        run: make privacy-e2e
+
+      - name: Reset volume before chaos
         if: always() && (env.SUITE == 'chaos' || env.SUITE == 'all')
         run: docker compose down -v --remove-orphans
 
@@ -128,6 +142,7 @@ jobs:
             echo "| Suite | Outcome |"
             echo "|---|---|"
             echo "| business-e2e | ${{ steps.business.outcome || '_skipped_' }} |"
+            echo "| privacy-e2e | ${{ steps.privacy.outcome || '_skipped_' }} |"
             echo "| chaos-all | ${{ steps.chaos.outcome || '_skipped_' }} |"
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -140,18 +155,19 @@ jobs:
       # glob — SEEV_WORK_DIR (T1) is what makes these two paths exact and
       # predictable instead of a fresh, unguessable mktemp path per suite.
       - name: Upload failure diagnostics
-        if: steps.business.outcome == 'failure' || steps.chaos.outcome == 'failure'
+        if: steps.business.outcome == 'failure' || steps.privacy.outcome == 'failure' || steps.chaos.outcome == 'failure'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: scheduled-full-stack-diagnostics
           path: |
             ${{ env.BUSINESS_WORK_DIR }}
+            ${{ env.PRIVACY_WORK_DIR }}
             ${{ env.CHAOS_WORK_DIR }}
           retention-days: 7
           if-no-files-found: ignore
 
       - name: Fail the job if a selected suite failed
-        if: steps.business.outcome == 'failure' || steps.chaos.outcome == 'failure'
+        if: steps.business.outcome == 'failure' || steps.privacy.outcome == 'failure' || steps.chaos.outcome == 'failure'
         run: |
           echo "::error::one or more selected suites failed — see summary and diagnostics artifact"
           exit 1

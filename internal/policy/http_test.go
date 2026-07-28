@@ -89,7 +89,7 @@ func TestUpsertLimit_Valid_Succeeds(t *testing.T) {
 	h, repo, ctrl := newTestHandler(t)
 	defer ctrl.Finish()
 
-	repo.EXPECT().Upsert(gomock.Any(), gomock.Any()).DoAndReturn(func(_ interface{}, l Limit) (Limit, error) {
+	repo.EXPECT().Upsert(gomock.Any(), gomock.Any()).DoAndReturn(func(_ any, l Limit) (Limit, error) {
 		l.ID = uuid.New()
 		return l, nil
 	})
@@ -107,7 +107,7 @@ func TestUpsertLimit_UserSpecific_Succeeds(t *testing.T) {
 	defer ctrl.Finish()
 	userID := uuid.New()
 
-	repo.EXPECT().Upsert(gomock.Any(), gomock.Any()).DoAndReturn(func(_ interface{}, l Limit) (Limit, error) {
+	repo.EXPECT().Upsert(gomock.Any(), gomock.Any()).DoAndReturn(func(_ any, l Limit) (Limit, error) {
 		require.NotNil(t, l.UserID)
 		assert.Equal(t, userID, *l.UserID)
 		l.ID = uuid.New()

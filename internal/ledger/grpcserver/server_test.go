@@ -81,10 +81,8 @@ func newTestClient(t *testing.T, service Service) ledgerv1.LedgerServiceClient {
 	t.Cleanup(server.Stop)
 	t.Cleanup(func() { _ = listener.Close() })
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	t.Cleanup(cancel)
-	conn, err := grpc.DialContext(ctx, "bufnet", //nolint:staticcheck // bufconn test requires a blocking custom dialer.
-		grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock(), //nolint:staticcheck
+	conn, err := grpc.NewClient("passthrough:///bufnet",
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return listener.Dial() }))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })

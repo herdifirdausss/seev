@@ -83,6 +83,7 @@ The normal pre-commit gate is:
 go build ./...
 go vet ./...
 make lint
+make security-vuln
 make ci-lint
 make test
 make docs-check
@@ -102,9 +103,11 @@ PROTO_MERGE_BASE_REF=main make proto-breaking
 ~~~
 
 `make tools` installs the repository's pinned Buf (`v1.72.0`, compatible with
-Go 1.26.5) and Go protobuf compiler
-versions. CI bootstraps the same toolchain before its protobuf contract gate;
-generated bindings remain committed so ordinary builds do not require Buf.
+Go 1.26.5) and Go protobuf compiler versions under `bin/tools/`. The `lint`
+and `security-vuln` targets install their own pinned tools in the same local
+directory. The protobuf targets depend on the local toolchain automatically,
+so `buf` does not need to be installed globally. Generated bindings remain
+committed so ordinary builds do not require Buf.
 
 Integration tests require Docker:
 
@@ -115,8 +118,8 @@ go test -tags=integration -race ./...
 The complete repeatable verification target resets Docker volumes before
 executing the repository's build, static checks, unit and integration tests,
 contract/protobuf/load checks, container smoke, smoke journey, business journey,
-admin-console journey, and disposable load smoke. Chaos is a separate
-operator-controlled recovery drill:
+admin-console journey, privacy journey, and disposable load smoke. Chaos is a
+separate operator-controlled recovery drill:
 
 ~~~bash
 make verify-full
@@ -137,6 +140,9 @@ documentation check without starting the heavy runtime jobs.
 - scripts/business-e2e.sh verifies the end-user and operator business journey.
 - scripts/admin-e2e.sh verifies the admin BFF session, CSRF, proxy mutation,
   and audit row journey.
+- scripts/privacy-e2e-host.sh runs the privacy export, retention-hold, and
+  closure journey with an isolated host-binary stack; it delegates assertions
+  to scripts/privacy-e2e.sh.
 - scripts/chaos-test.sh {1..20|all} verifies crash, dependency-failure,
   assurance/intake-control, and privacy-lifecycle recovery behavior.
 - scripts/smoke-container.sh verifies freshly built Compose application images

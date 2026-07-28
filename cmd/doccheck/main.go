@@ -482,7 +482,7 @@ func interactiveAssetFailures(root string) []string {
 	}
 	storyConnections := 0
 	if storyStart >= 0 && storyEnd > storyStart {
-		for _, line := range strings.Split(text[storyStart:storyEnd], "\n") {
+		for line := range strings.SplitSeq(text[storyStart:storyEnd], "\n") {
 			trimmed := strings.TrimSpace(line)
 			if strings.HasPrefix(trimmed, `"`) &&
 				(strings.HasSuffix(trimmed, `",`) || strings.HasSuffix(trimmed, `"`)) {
@@ -645,8 +645,8 @@ func validateLink(root, source, destination string, anchors map[string]map[strin
 
 	target := source
 	if decodedPath != "" {
-		if strings.HasPrefix(decodedPath, "/") {
-			target = filepath.Join(root, filepath.FromSlash(strings.TrimPrefix(decodedPath, "/")))
+		if after, ok := strings.CutPrefix(decodedPath, "/"); ok {
+			target = filepath.Join(root, filepath.FromSlash(after))
 		} else {
 			target = filepath.Join(filepath.Dir(source), filepath.FromSlash(decodedPath))
 		}

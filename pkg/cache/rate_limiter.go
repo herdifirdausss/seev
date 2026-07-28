@@ -178,10 +178,7 @@ func (l *MemoryRateLimiter) Allow(_ context.Context, key string) (bool, int64, e
 		b = bucketState{tokens: l.capacity, lastMs: now}
 	}
 
-	delta := now - b.lastMs
-	if delta < 0 {
-		delta = 0
-	}
+	delta := max(now-b.lastMs, 0)
 	tokens := math.Min(l.capacity, b.tokens+float64(delta)*l.rate)
 
 	allowed := tokens >= 1

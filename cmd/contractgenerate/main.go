@@ -137,7 +137,7 @@ func selectFragment(document *yaml.Node, fragment string) (*yaml.Node, error) {
 		return nil, fmt.Errorf("unsupported fragment %q", fragment)
 	}
 	current := document.Content[0]
-	for _, segment := range strings.Split(strings.TrimPrefix(fragment, "/"), "/") {
+	for segment := range strings.SplitSeq(strings.TrimPrefix(fragment, "/"), "/") {
 		segment = strings.ReplaceAll(strings.ReplaceAll(segment, "~1", "/"), "~0", "~")
 		if current.Kind != yaml.MappingNode {
 			return nil, fmt.Errorf("segment %q is not in a mapping", segment)

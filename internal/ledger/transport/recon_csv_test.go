@@ -66,7 +66,7 @@ func TestParseReconCSV_NonNumericAmount_Rejected(t *testing.T) {
 func TestParseReconCSV_TooManyRows_Rejected(t *testing.T) {
 	var b strings.Builder
 	b.WriteString("external_ref,amount,settled_at\n")
-	for i := 0; i < maxReconCSVRows+1; i++ {
+	for range maxReconCSVRows + 1 {
 		b.WriteString("ref,100,2026-07-12\n")
 	}
 

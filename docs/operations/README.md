@@ -86,14 +86,15 @@ and what CI actually runs.
 | Group | Targets |
 |---|---|
 | Build | `build`, `build-all`, `run`, `dev` |
+| Workspace cleanup | `clean` (repository-local `bin/`, coverage, and smoke diagnostics only) |
 | Database | `docker-up`, `docker-down`, `migrate-up`, `migrate-up-all`, `migrate-down`, `grant-app-role` |
-| Static checks | `vet`, `lint`, `ci-lint`, `tidy`, `docs-check`, `git diff --check` |
-| Tests | `test`, `smoke-container`, `chaos-debug` |
-| Full verification | `verify-full`, `verify-chaos` |
+| Static/security checks | `vet`, `lint`, `tools-lint`, `tools-security`, `modernize-check`, `security-vuln`, `ci-lint`, `tidy`, `docs-check`, `git diff --check` |
+| Verification bundles | `verify-static`, `verify-full`, `verify-chaos` |
+| Tests and journeys | `test`, `smoke-container`, `smoke-test`, `business-e2e`, `admin-e2e`, `privacy-e2e`, `chaos-debug` |
 | Contracts | `contracts`, `contract-generate`, `contract-lint`, `contract-breaking`, `contract-test` |
 | Protobuf | `proto`, `proto-lint`, `proto-breaking`, `tools` |
 | Load safety | `load-lint`, `load-test`, `load-seed`, `load-smoke`, `load-run`, `load-capacity`, `load-report-check`, `load-clean` |
-| Security | `certs` |
+| Security and recovery | `certs`, `cryptox-secret`, `backup-secret`, `backup-role-bootstrap`, `backup-checksums-enable`, `backup-stanza-init`, `backup-full`, `backup-diff`, `backup-check`, `backup-status`, `backup-expire` |
 | Observability | `observability-up`, `observability-down`, `observability-secret` |
 | Meta | `help` |
 
@@ -101,7 +102,8 @@ and what CI actually runs.
 "is this repo actually correct" — it chains a Docker volume reset, build,
 static checks, unit and integration tests, contract/protobuf/load checks, the
 container smoke, the host smoke journey, the business journey, the
-admin-console journey, and disposable load smoke, in the order that
+admin-console journey, the privacy lifecycle journey, and disposable load
+smoke, in the order that
 actually catches the volume-reset-skipped false-regression class of bug
 documented in [Onboarding](../development/onboarding.md#gotchas-that-cost-people-real-time).
 Chaos is exposed separately as `verify-chaos` because it kills dependencies and
@@ -148,6 +150,7 @@ re-sourcing mid-session silently breaks helpers like `gen_token`.
 | `smoke-container.sh` | The same, but against **real Docker images** (`docker compose --profile app up`) | Register → login → topup intent → signed mockvendor callback through VendorService → poll until settled → assert balance via `docker exec psql` — the container counterpart to `smoke-test.sh`, because "it works as a host binary" doesn't prove "the container image is correct" |
 | `business-e2e.sh` | The MVP can be run **end-to-end as a business**, not just as a technical system | Two real users register and log in with real JWTs (not `gentoken`); one tops up via a signed VendorService callback, transfers to the other for a fee, withdraws for a fee, both get notified, and an operator confirms the books balance AND the platform earned the expected revenue |
 | `admin-e2e.sh` | The operator console works end-to-end | Starts the BFF separately from the user-money gateway path, exercises the real admin session/CSRF/maker-checker/audit journey |
+| `privacy-e2e-host.sh` + `privacy-e2e.sh` | Export, retention holds, and closure work against a clean host-binary stack | The wrapper owns dependencies, migrations, binaries, certificates, and cleanup; the underlying journey verifies export metadata, hold blocking/release, and closure completion |
 | `chaos-test.sh {1..20\|all}` | The system survives real failure, dependency outage, privacy-lifecycle failure, and recovery — not just handles errors in tests | 20 scenarios (below); scenarios 1–14 are multi-service drills, while 15–20 invoke focused lifecycle tests and retain the same pass/fail evidence |
 
 The local Compose default for `VENDOR_CALLBACK_CIDRS` includes the private
@@ -215,7 +218,7 @@ Action becoming a supply-chain hole.
 |---|---|---|
 | `changes` | Classifies the diff as docs-only vs. runtime (anything outside `docs/**`/`*.md` counts as runtime) | Always |
 | `docs-check` | Uses the repository's standard-library Go checker to validate the required learning-path markers plus every local Markdown file link and heading anchor | Always |
-| `lint-and-test` | `actionlint` + `ShellCheck` on the workflows/scripts, the SHA-pin policy check, `golangci-lint`, `go test -race -cover ./...`, HTTP/protobuf contract gates, and the disposable B0 load-harness safety gate | Only if `runtime == true` |
+| `lint-and-test` | Go build/vet/module verification, `actionlint` + `ShellCheck`, SHA-pin policy, `golangci-lint`, Go 1.26 modernizer check, `govulncheck`, race/coverage tests, load-tag safety tests, HTTP/protobuf contract gates, and the disposable B0 load-harness safety gate | Only if `runtime == true` |
 | `integration` | `go test -tags=integration -race ./...` against testcontainers-provisioned Postgres | Only if `runtime == true` |
 | `smoke-container` | Builds all 9 service images via a single Bake invocation, verifies each image's revision label actually matches the commit (never a stale cache hit), runs `smoke-container.sh` against them | Only if `runtime == true` |
 | `ci-gate` | The one required check — requires `docs-check`, then asserts the three heavy jobs are `skipped` for a docs-only change or `success` for a runtime change; never silently green from an absent job | Always |
@@ -229,11 +232,11 @@ can never be mistaken for a job that passed.
 
 Despite the filename (kept for grep-ability), the automatic schedule is
 **weekly**, not nightly — a daily 90-minute gate doesn't fit this repo's
-cost budget. Runs `business-e2e.sh` then `chaos-test.sh all`, generates
-fresh per-run credentials that are masked before they ever land in a log,
-and uploads the work directories as a diagnostics artifact only on
+cost budget. Runs `business-e2e.sh`, `privacy-e2e`, then `chaos-test.sh all`,
+generates fresh per-run credentials that are masked before they ever land in a
+log, and uploads the work directories as a diagnostics artifact only on
 failure. `workflow_dispatch` lets an operator run any subset (`all`,
-`business`, or `chaos`) on demand between scheduled runs.
+`business`, `privacy`, or `chaos`) on demand between scheduled runs.
 
 ### `dependabot.yml` — supply-chain freshness
 
@@ -269,6 +272,7 @@ to run or to pass any test.
 | Component | Role |
 |---|---|
 | **Prometheus** (`prometheus/prometheus.yml`, `rules/slo.yml`) | Scrapes `/metrics` on each service's *internal* admin listener only — never the public one — and now over mTLS with its own `prometheus` client identity, matching what every other internal caller needs (docs/roadmap/archive/49 K6). `rules/slo.yml` defines the SLO alerting rules; `slo_test.yml` proves them against synthetic data. |
+| **Go runtime signals** | Each service that opens its owned PostgreSQL pool exports scheduler goroutine/thread gauges and a goroutine-created counter from `runtime/metrics`, alongside the standard Go collector. These labels contain no request, user, account, or run identifiers, so they remain safe for shared dashboards. |
 | **Grafana** (`grafana/dashboards/*.json`, `provisioning/`) | Six purpose-built dashboards: `money-flow`, `service-red` (rate/errors/duration), `mtls-security`, `slo-alerts`, `compliance-a4`, `product-assurance` — each mapped to a specific operational question rather than being a generic catch-all. Datasources and alert rules are provisioned as code (`provisioning/`), not clicked together by hand. |
 | **Loki** (`loki/loki.yaml`) | Log aggregation with a 48h retention window — bounded on purpose, working together with Compose's own bounded container logging (§1) rather than assuming either one alone is sufficient. |
 | **Tempo** (`tempo/tempo.yaml`) | Distributed trace storage — the backend for the request-ID/tracing work described in `docs/roadmap/archive/36`. |
@@ -303,8 +307,10 @@ a clone of the repo builds without the protobuf toolchain installed.
 
 - `make proto` regenerates bindings from the `.proto` source — the
   single command that keeps `gen/` and `api/proto/` from drifting apart.
-- `make tools` installs the pinned Buf and Go protobuf compiler versions
-  before running the protobuf commands on a fresh checkout.
+- `make tools` installs the pinned Buf and Go protobuf compiler versions under
+  `bin/tools/`; `make proto`, `make proto-lint`, and `make proto-breaking`
+  depend on that local toolchain automatically, so a fresh checkout does not
+  require `buf` in `PATH`.
 - `make proto-lint` (`buf.yaml`'s `STANDARD` lint rules, with two
   explicit, documented exceptions for the locked ledger contract's
   existing wire names) catches inconsistent contract style before it

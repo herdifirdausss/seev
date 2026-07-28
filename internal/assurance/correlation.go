@@ -314,10 +314,7 @@ func (m *Module) provePayout(ctx context.Context, records []*payoutv1.AssuranceR
 func (m *Module) batchLedger(ctx context.Context, selectors []*ledgerv1.AssuranceSelector) (*ledgerv1.BatchGetAssuranceTransactionsResponse, error) {
 	combined := &ledgerv1.BatchGetAssuranceTransactionsResponse{}
 	for start := 0; start < len(selectors); start += 500 {
-		end := start + 500
-		if end > len(selectors) {
-			end = len(selectors)
-		}
+		end := min(start+500, len(selectors))
 		rpcCtx, cancel := context.WithTimeout(ctx, m.cfg.RPCTimeout)
 		response, err := m.ledger.BatchGetAssuranceTransactions(rpcCtx, &ledgerv1.BatchGetAssuranceTransactionsRequest{Selectors: selectors[start:end]})
 		cancel()
@@ -332,10 +329,7 @@ func (m *Module) batchLedger(ctx context.Context, selectors []*ledgerv1.Assuranc
 func (m *Module) batchLedgerFeeQuotes(ctx context.Context, quoteIDs []string) (map[string]*ledgerv1.FeeQuoteProof, error) {
 	result := make(map[string]*ledgerv1.FeeQuoteProof)
 	for start := 0; start < len(quoteIDs); start += 500 {
-		end := start + 500
-		if end > len(quoteIDs) {
-			end = len(quoteIDs)
-		}
+		end := min(start+500, len(quoteIDs))
 		rpcCtx, cancel := context.WithTimeout(ctx, m.cfg.RPCTimeout)
 		response, err := m.ledger.BatchGetAssuranceTransactions(rpcCtx, &ledgerv1.BatchGetAssuranceTransactionsRequest{FeeQuoteIds: quoteIDs[start:end]})
 		cancel()

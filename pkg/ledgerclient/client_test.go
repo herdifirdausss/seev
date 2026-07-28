@@ -60,10 +60,8 @@ func newClient(t *testing.T, serverImpl ledgerv1.LedgerServiceServer) *Client {
 	ledgerv1.RegisterLedgerServiceServer(server, serverImpl)
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(server.Stop)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	t.Cleanup(cancel)
-	conn, err := grpc.DialContext(ctx, "bufnet", //nolint:staticcheck // bufconn requires blocking custom dialing.
-		grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock(), //nolint:staticcheck
+	conn, err := grpc.NewClient("passthrough:///bufnet",
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return listener.Dial() }))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })

@@ -7,7 +7,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"math/rand"
+	randv2 "math/rand/v2"
 	"sync"
 	"time"
 
@@ -159,7 +159,7 @@ func retryBackoff(retryCount int) time.Duration {
 	}
 	// Add bounded jitter so several replicas recovering together do not form
 	// a thundering herd.  The cap keeps a retry within the operational window.
-	return base + time.Duration(rand.Int63n(int64(base/4)+1))
+	return base + time.Duration(randv2.Int64N(int64(base/4)+1))
 }
 
 func truncateError(err error) string {

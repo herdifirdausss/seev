@@ -16,8 +16,7 @@ package messaging
 
 import (
 	"context"
-	"math/rand"
-	"sync"
+	randv2 "math/rand/v2"
 	"time"
 
 	"github.com/herdifirdausss/seev/pkg/middleware"
@@ -32,35 +31,46 @@ const (
 	maxBackoffMultiplier = 1 << maxBackoffShift // 64
 )
 
-// jitterRand is a package-level RNG seeded at startup.
-// Dedicated source avoids contention with other packages' global rand usage.
-// A mutex makes concurrent calls safe without atomic overhead.
-// Cryptographic quality is unnecessary for backoff jitter. #nosec G404
-var (
-	jitterMu   sync.Mutex
-	jitterRand = rand.New(rand.NewSource(time.Now().UnixNano()))
-)
-
 func randInt63n(n int64) int64 {
-	jitterMu.Lock()
-	v := jitterRand.Int63n(n)
-	jitterMu.Unlock()
-	return v
+	// Backoff jitter is deliberately non-cryptographic. rand/v2's top-level
+	// functions are safe for concurrent use and avoid a package-level mutex.
+	return randv2.Int64N(n)
 }
 
 func backoffDelay(attempt int, base time.Duration) time.Duration {
 	if base <= 0 {
 		base = time.Second
 	}
-	shift := attempt - 1
-	if shift > maxBackoffShift {
-		shift = maxBackoffShift
-	}
+	shift := min(attempt-1, maxBackoffShift)
 	ceiling := base * time.Duration(1<<shift)
 	if ceiling <= 0 || ceiling > base*maxBackoffMultiplier {
 		ceiling = base * maxBackoffMultiplier
 	}
 	return time.Duration(randInt63n(int64(ceiling)))
+}
+
+// waitForDelay waits for a retry delay without allocating a new timer channel
+// on every loop iteration. It returns false when shutdown or cancellation
+// wins the race.
+func waitForDelay(ctx context.Context, done <-chan struct{}, delay time.Duration) bool {
+	timer := time.NewTimer(delay)
+	defer func() {
+		if !timer.Stop() {
+			select {
+			case <-timer.C:
+			default:
+			}
+		}
+	}()
+
+	select {
+	case <-done:
+		return false
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
+	}
 }
 
 // ─── OTel Header Carrier ─────────────────────────────────────────────────────

@@ -78,10 +78,3 @@ func (m *Module) refreshMetrics(ctx context.Context) error {
 	}
 	return rows.Err()
 }
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}

@@ -174,7 +174,7 @@ func (m *Module) DowngradeKYC(ctx context.Context, userID uuid.UUID, level int, 
 		return err
 	}
 	retry := model.KYCApplyRetry{
-		ID:             uuid.NewSHA1(uuid.Nil, []byte(fmt.Sprintf("kyc-downgrade:%s:%d", userID, level))),
+		ID:             uuid.NewSHA1(uuid.Nil, fmt.Appendf(nil, "kyc-downgrade:%s:%d", userID, level)),
 		UserID:         userID,
 		Level:          level,
 		Direction:      "downgrade",

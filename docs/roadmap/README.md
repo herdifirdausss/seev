@@ -15,7 +15,13 @@ trigger, prerequisites, and owner decision are satisfied.
 | # | Plan | Purpose | Status |
 |---|---|---|---|
 | 35 | [Optional local Kubernetes](active/35-phase6j-kubernetes.md) | Learn local orchestration with kind | Todo |
-| 56 · F0 | [Frontend platform foundation](active/56-f0-frontend-platform-foundation.md) | Establish the browser product and shared frontend rules | In progress — design baseline; implementation not started |
+| 56 · F0 | [Frontend platform foundation](active/56-f0-frontend-platform-foundation.md) | Establish the browser product and shared frontend rules | Active — ready for execution; implementation not started |
+| 57 · C1 | [Merchant/B2B API](active/57-c1-merchant-b2b-api.md) | Add tenant-isolated merchant access on the existing Gateway and money-owner contracts | Active — ready for execution; implementation not started |
+| 58 · C2 | [Data platform and revenue analytics](active/58-c2-data-platform-revenue-analytics.md) | Build an optional CDC-to-OLAP projection and reconciliation path | Active — ready for execution; implementation not started |
+| 59 · C3 | [Multi-channel notifications](active/59-c3-multi-channel-notifications.md) | Extend Gateway notifications with durable email, push, preferences, and replay | Active — ready for execution; implementation not started |
+| 60 · C4 | [End-to-end multi-currency](active/60-c4-end-to-end-multi-currency.md) | Activate existing currency primitives across the full money journey | Active — ready for execution; implementation not started |
+| 61 · C5 | [Advanced financial products and period close](active/61-c5-advanced-financial-products-period-close.md) | Add controlled accrual, scheduled-failure policy, and top-up fees | Active — ready for execution; implementation not started |
+| 62 · C6 | [Zero-downtime migration engine](active/62-c6-zero-downtime-migration-engine.md) | Build evidence-driven expand/contract and cutover machinery | Active — ready for execution; implementation not started |
 
 The same list is available in the [active-plan folder](active/README.md).
 
@@ -62,3 +68,6 @@ say “current” while describing an older system shape; use the
 
 The engineering requirements in the
 [project guide](../development/project-guide.md) apply to every plan.
+
+The frontend-specific strategy is recorded separately in [plan 55](55-frontend-long-term-roadmap.md);
+its first executable foundation is active as [plan 56](active/56-f0-frontend-platform-foundation.md).

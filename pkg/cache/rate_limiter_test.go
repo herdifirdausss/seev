@@ -20,7 +20,7 @@ func TestMemoryRateLimiter_AllowsWithinBurst(t *testing.T) {
 	defer l.Stop()
 	ctx := context.Background()
 
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		allowed, _, err := l.Allow(ctx, "k")
 		assert.NoError(t, err)
 		assert.True(t, allowed, "request %d should be allowed within burst", i)
@@ -32,7 +32,7 @@ func TestMemoryRateLimiter_RejectsOverBurst(t *testing.T) {
 	defer l.Stop()
 	ctx := context.Background()
 
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		allowed, _, err := l.Allow(ctx, "k")
 		assert.NoError(t, err)
 		assert.True(t, allowed)
@@ -86,14 +86,12 @@ func TestMemoryRateLimiter_ConcurrentAccess_NoRace(t *testing.T) {
 	ctx := context.Background()
 
 	var wg sync.WaitGroup
-	for i := 0; i < 50; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for j := 0; j < 20; j++ {
+	for range 50 {
+		wg.Go(func() {
+			for range 20 {
 				_, _, _ = l.Allow(ctx, "shared-key")
 			}
-		}()
+		})
 	}
 	wg.Wait()
 }

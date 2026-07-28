@@ -26,9 +26,6 @@ func (failingCounter) Get(context.Context, string) (int64, error) {
 	return 0, errors.New("counter unavailable")
 }
 
-func int64Ptr(v int64) *int64 { return &v }
-func int32Ptr(v int32) *int32 { return &v }
-
 func newEngine(t *testing.T, repo Repository) (*Engine, *cache.MemoryCounter) {
 	t.Helper()
 	counter := cache.NewMemoryCounter()
@@ -57,7 +54,7 @@ func TestCheck_DisabledLimit_Allowed(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	repo := NewMockRepository(ctrl)
 	repo.EXPECT().GetEffective(gomock.Any(), gomock.Any(), "transfer_p2p").Return(Limit{
-		TransactionType: "transfer_p2p", MaxPerTx: int64Ptr(100), Enabled: false,
+		TransactionType: "transfer_p2p", MaxPerTx: new(int64(100)), Enabled: false,
 	}, true, nil)
 
 	e, _ := newEngine(t, repo)
@@ -73,7 +70,7 @@ func TestCheck_MaxPerTx_WithinLimit_Allowed(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	repo := NewMockRepository(ctrl)
 	repo.EXPECT().GetEffective(gomock.Any(), gomock.Any(), "transfer_p2p").Return(Limit{
-		TransactionType: "transfer_p2p", MaxPerTx: int64Ptr(10000), Enabled: true,
+		TransactionType: "transfer_p2p", MaxPerTx: new(int64(10000)), Enabled: true,
 	}, true, nil)
 
 	e, _ := newEngine(t, repo)
@@ -87,7 +84,7 @@ func TestCheck_MaxPerTx_Exceeded_Rejected(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	repo := NewMockRepository(ctrl)
 	repo.EXPECT().GetEffective(gomock.Any(), gomock.Any(), "transfer_p2p").Return(Limit{
-		TransactionType: "transfer_p2p", MaxPerTx: int64Ptr(10000), Enabled: true,
+		TransactionType: "transfer_p2p", MaxPerTx: new(int64(10000)), Enabled: true,
 	}, true, nil)
 
 	e, _ := newEngine(t, repo)
@@ -106,7 +103,7 @@ func TestCheck_MaxDailyAmount_AccountsForPriorUsage(t *testing.T) {
 	repo := NewMockRepository(ctrl)
 	userID := uuid.New()
 	repo.EXPECT().GetEffective(gomock.Any(), userID, "transfer_p2p").Return(Limit{
-		TransactionType: "transfer_p2p", MaxDailyAmount: int64Ptr(10000), Enabled: true,
+		TransactionType: "transfer_p2p", MaxDailyAmount: new(int64(10000)), Enabled: true,
 	}, true, nil).AnyTimes()
 
 	e, counter := newEngine(t, repo)
@@ -132,7 +129,7 @@ func TestCheck_MaxDailyCount_AccountsForPriorUsage(t *testing.T) {
 	repo := NewMockRepository(ctrl)
 	userID := uuid.New()
 	repo.EXPECT().GetEffective(gomock.Any(), userID, "withdraw_initiate").Return(Limit{
-		TransactionType: "withdraw_initiate", MaxDailyCount: int32Ptr(3), Enabled: true,
+		TransactionType: "withdraw_initiate", MaxDailyCount: new(int32(3)), Enabled: true,
 	}, true, nil).AnyTimes()
 
 	e, counter := newEngine(t, repo)
@@ -153,7 +150,7 @@ func TestCheck_MaxMonthlyAmount_AccountsForPriorUsage(t *testing.T) {
 	repo := NewMockRepository(ctrl)
 	userID := uuid.New()
 	repo.EXPECT().GetEffective(gomock.Any(), userID, "transfer_p2p").Return(Limit{
-		TransactionType: "transfer_p2p", MaxMonthlyAmount: int64Ptr(100000), Enabled: true,
+		TransactionType: "transfer_p2p", MaxMonthlyAmount: new(int64(100000)), Enabled: true,
 	}, true, nil).AnyTimes()
 
 	e, counter := newEngine(t, repo)
@@ -180,7 +177,7 @@ func TestCheck_UserOverride_TakesPrecedenceOverDefault(t *testing.T) {
 	repo := NewMockRepository(ctrl)
 	userID := uuid.New()
 	repo.EXPECT().GetEffective(gomock.Any(), userID, "transfer_p2p").Return(Limit{
-		UserID: &userID, TransactionType: "transfer_p2p", MaxPerTx: int64Ptr(500), Enabled: true,
+		UserID: &userID, TransactionType: "transfer_p2p", MaxPerTx: new(int64(500)), Enabled: true,
 	}, true, nil)
 
 	e, _ := newEngine(t, repo)
@@ -200,7 +197,7 @@ func TestGetLimit_CachesWithinTTL(t *testing.T) {
 	// Exactly ONE call expected — a second Check within the TTL window must
 	// be served from cache, not hit the repository again.
 	repo.EXPECT().GetEffective(gomock.Any(), userID, "transfer_p2p").Return(Limit{
-		TransactionType: "transfer_p2p", MaxPerTx: int64Ptr(100), Enabled: true,
+		TransactionType: "transfer_p2p", MaxPerTx: new(int64(100)), Enabled: true,
 	}, true, nil).Times(1)
 
 	counter := cache.NewMemoryCounter()
@@ -220,7 +217,7 @@ func TestGetLimit_RefetchesAfterTTLExpires(t *testing.T) {
 	// TWO calls expected — the cache TTL is tiny, so the second Check must
 	// miss the cache and hit the repository again.
 	repo.EXPECT().GetEffective(gomock.Any(), userID, "transfer_p2p").Return(Limit{
-		TransactionType: "transfer_p2p", MaxPerTx: int64Ptr(100), Enabled: true,
+		TransactionType: "transfer_p2p", MaxPerTx: new(int64(100)), Enabled: true,
 	}, true, nil).Times(2)
 
 	counter := cache.NewMemoryCounter()
@@ -281,7 +278,7 @@ func TestCheck_CounterError_FailsOpen(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	repo := NewMockRepository(ctrl)
 	repo.EXPECT().GetEffective(gomock.Any(), gomock.Any(), "transfer_p2p").Return(Limit{
-		TransactionType: "transfer_p2p", MaxDailyAmount: int64Ptr(1000), Enabled: true,
+		TransactionType: "transfer_p2p", MaxDailyAmount: new(int64(1000)), Enabled: true,
 	}, true, nil)
 
 	loc, err := time.LoadLocation("Asia/Jakarta")
@@ -301,7 +298,7 @@ func TestCheck_MaxPerTxAlone_NeverTouchesCounter(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	repo := NewMockRepository(ctrl)
 	repo.EXPECT().GetEffective(gomock.Any(), gomock.Any(), "transfer_p2p").Return(Limit{
-		TransactionType: "transfer_p2p", MaxPerTx: int64Ptr(100), Enabled: true,
+		TransactionType: "transfer_p2p", MaxPerTx: new(int64(100)), Enabled: true,
 	}, true, nil)
 
 	loc, err := time.LoadLocation("Asia/Jakarta")

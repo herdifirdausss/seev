@@ -208,8 +208,9 @@ The active VendorService callback path does not accept an authoritative
 `user_id` from the vendor. Payin correlates the normalized callback against
 its own intent, vendor, amount, and currency before posting. The deprecated v1
 raw callback RPC is unimplemented; VendorService is the only callback ingress.
-See [archived plan 54](../roadmap/archive/54-vendor-service-boundary.md) for the
-remaining live acceptance gate.
+Normal delivery is covered by the host, container, and business journeys. The
+manual crash-recovery gate is tracked in the [operations status](../operations/README.md#standalone-drills-and-operator-tools--not-part-of-verify-full).
+The historical boundary decisions are preserved in [archived Plan 54](../roadmap/archive/54-vendor-service-boundary.md).
 
 **Problem it solves**: getting money *into* the system from a payment
 gateway vendor — an untrusted, asynchronous, sometimes-duplicate,

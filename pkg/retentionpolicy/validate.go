@@ -224,8 +224,8 @@ func validateAgainstMigrations(root string, tablesInPolicy map[string]bool) []st
 func stripSQLLineComments(sql string) string {
 	lines := strings.Split(sql, "\n")
 	for i, line := range lines {
-		if idx := strings.Index(line, "--"); idx >= 0 {
-			lines[i] = line[:idx]
+		if before, _, ok := strings.Cut(line, "--"); ok {
+			lines[i] = before
 		}
 	}
 	return strings.Join(lines, "\n")

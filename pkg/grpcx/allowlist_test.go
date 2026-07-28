@@ -52,9 +52,8 @@ func TestServerRejectsClientOutsideAllowlist(t *testing.T) {
 	defer server.Stop()
 	defer listener.Close()
 
-	// dial() uses grpc.WithBlock(), so a handshake the server keeps
-	// rejecting never completes — the rejection surfaces here as the
-	// bounded dial itself failing, not as a later RPC error.
+	// dial() performs an explicit bounded readiness check, so a handshake the
+	// server keeps rejecting surfaces here rather than as a later RPC error.
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	_, err = dial(ctx, "bufnet", "token", outsiderClientTLS, grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {

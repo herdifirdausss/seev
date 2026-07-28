@@ -209,10 +209,11 @@ should not invent ownership.
 ### Current callback contract
 
 Payin has no active raw callback path. The deprecated v1 wire method is
-unimplemented, and VendorService requires
-strict owner-domain correlation and does not accept vendor-supplied user
-ownership; final live integration and chaos acceptance remain in
-[archived plan 54](../roadmap/archive/54-vendor-service-boundary.md).
+unimplemented, and VendorService requires strict owner-domain correlation and
+does not accept vendor-supplied user ownership. The normal path is covered by
+the host, container, and business journeys; manual crash-recovery acceptance is
+tracked separately in the [operations status](../operations/README.md#standalone-drills-and-operator-tools--not-part-of-verify-full).
+The historical boundary decisions are preserved in [archived Plan 54](../roadmap/archive/54-vendor-service-boundary.md).
 
 ### Source of truth
 
@@ -393,9 +394,11 @@ journeys prove business outcomes and invariants.
 - Local secrets, certificates, and plain public HTTP are development choices.
 - The project is not certified for a regulator, country, or production
   deployment.
-- Kubernetes, advanced privacy lifecycle work, and load-based scaling remain
-  target plans. VendorService is implemented, with its final live acceptance
-  gate still open.
+- Kubernetes and measured load-based scaling remain target work. The privacy
+  lifecycle, contract, load-harness, and VendorService foundations are
+  implemented and archived, while their remaining operator evidence is kept
+  explicit in the relevant archive records. Active frontend and C1–C6 plans
+  are designs only; they are not current runtime behavior.
 - Historical plans may describe an older architecture and are not runtime
   documentation.
 

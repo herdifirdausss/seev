@@ -21,7 +21,7 @@ func TestHealthTracker_ClosedByDefault_AlwaysAllows(t *testing.T) {
 
 func TestHealthTracker_ThresholdTripsToOpen(t *testing.T) {
 	tr := NewHealthTracker(3, 30*time.Second, nil)
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		tr.RecordFailure(context.Background(), "v1")
 		assert.True(t, tr.Allow(context.Background(), "v1"), "must stay closed before threshold is reached")
 	}
@@ -84,7 +84,7 @@ func TestHealthTracker_HalfOpenSingleProbe_RaceSafe(t *testing.T) {
 	var allowedCount atomic.Int32
 	var wg sync.WaitGroup
 	wg.Add(goroutines)
-	for i := 0; i < goroutines; i++ {
+	for range goroutines {
 		go func() {
 			defer wg.Done()
 			if tr.Allow(context.Background(), "v1") {
@@ -105,7 +105,7 @@ func TestHealthTracker_HalfOpenSingleProbe_RaceSafe(t *testing.T) {
 // rejections" they represent) must never open the circuit.
 func TestHealthTracker_RecordSuccess_NeverTrips(t *testing.T) {
 	tr := NewHealthTracker(2, 30*time.Second, nil)
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		tr.RecordSuccess(context.Background(), "v1")
 	}
 	assert.True(t, tr.Allow(context.Background(), "v1"))

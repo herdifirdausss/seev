@@ -281,8 +281,12 @@ user owns the money. That relationship belongs to Seev's money-in domain.
 
 > The old Payin v1 raw callback RPC is deprecated and unimplemented. VendorService
 > uses strict owner-domain correlation and Payin never accepts vendor-supplied
-> user ownership. Final live integration and chaos acceptance remain in
-> [archived plan 54](../roadmap/archive/54-vendor-service-boundary.md).
+> user ownership. The normal path is exercised by the host, container, and
+> business journeys; manual crash-recovery acceptance remains a separate
+> operational gate documented in the [operations status](../operations/README.md#standalone-drills-and-operator-tools--not-part-of-verify-full).
+>
+> Historical boundary decisions and their original acceptance wording remain
+> in [archived Plan 54](../roadmap/archive/54-vendor-service-boundary.md).
 
 ## Story 3: sending money to another user
 

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"maps"
 	"strings"
 	"testing"
 	"time"
@@ -28,9 +29,7 @@ func validEnv(overrides map[string]string) func(string) string {
 		"JWT_SECRET": "supersecretkeythatisatleast32chars!",
 		"JWT_ISSUER": "seev",
 	}
-	for k, v := range overrides {
-		base[k] = v
-	}
+	maps.Copy(base, overrides)
 	return func(key string) string {
 		return base[key]
 	}

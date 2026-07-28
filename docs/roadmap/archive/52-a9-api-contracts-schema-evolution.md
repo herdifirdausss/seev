@@ -1,6 +1,6 @@
 # 52 — Track A9: API Contracts and Schema Evolution
 
-> [Documentation home](../../README.md) · [Roadmap](../README.md) · [Active plans](README.md)
+> [Documentation home](../../README.md) · [Roadmap](../README.md) · [Archive](README.md)
 
 > Derived from track **A9** in
 > [42-long-term-roadmap.md](../42-long-term-roadmap.md).

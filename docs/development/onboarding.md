@@ -131,7 +131,7 @@ flag, not a new pattern to copy:
   strictly numbered, one pair per change, both directions always written
   together. Never edit a migration that's already merged — write a new one.
 - **Scripts**: `scripts/<purpose>.sh` (`smoke-test.sh`, `business-e2e.sh`,
-  `admin-e2e.sh`, `chaos-test.sh`), all sourcing shared bootstrap logic from
+  `admin-e2e.sh`, `privacy-e2e-host.sh`, `chaos-test.sh`), all sourcing shared bootstrap logic from
   `scripts/lib.sh` — never copy-paste startup logic between them.
 - **Docs**: `docs/roadmap/NN-description.md` is chronological *implementation*
   history (what was built and when) — the number is a sequence, not a

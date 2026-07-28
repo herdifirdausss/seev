@@ -17,7 +17,7 @@ func TestNewV7_ReturnsValidVersion7UUID(t *testing.T) {
 
 func TestNewV7_Unique(t *testing.T) {
 	seen := make(map[uuid.UUID]bool)
-	for i := 0; i < 1000; i++ {
+	for range 1000 {
 		id := NewV7()
 		assert.False(t, seen[id], "duplicate UUID generated")
 		seen[id] = true
@@ -29,7 +29,7 @@ func TestNewV7_MonotonicallyIncreasing(t *testing.T) {
 	// generation order — the entire point of using v7 for insert-heavy
 	// tables (docs/roadmap/archive/11 Task T4: keeps the btree insert-clustered).
 	prev := NewV7()
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		next := NewV7()
 		assert.True(t, prev.String() < next.String(),
 			"expected %s < %s (v7 IDs generated in sequence must sort in generation order)", prev, next)

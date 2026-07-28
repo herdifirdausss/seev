@@ -58,7 +58,7 @@ func TestToMajor_UnknownCurrency_NoOpRatherThanPanic(t *testing.T) {
 
 func TestLoad_ConcurrentReadWrite_NoRace(t *testing.T) {
 	var wg sync.WaitGroup
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		wg.Add(2)
 		go func() {
 			defer wg.Done()

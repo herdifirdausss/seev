@@ -826,7 +826,7 @@ func parseTLSConfig(s string, serverName string) *tls.Config {
 		ServerName: serverName,
 	}
 
-	for _, pair := range strings.Split(s, ",") {
+	for pair := range strings.SplitSeq(s, ",") {
 		kv := strings.SplitN(pair, "=", 2)
 		if len(kv) != 2 {
 			panic(fmt.Sprintf("invalid TLS option: %s", pair))

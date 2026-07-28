@@ -565,17 +565,15 @@ func TestMemoryLock_Concurrent(t *testing.T) {
 	var wg sync.WaitGroup
 
 	// Multiple goroutines try to acquire same lock
-	for i := 0; i < 10; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 10 {
+		wg.Go(func() {
 			ok, err := lock.TryLock(ctx, "shared", 100*time.Millisecond)
 			if err == nil && ok {
 				counter.Add(1)
 				time.Sleep(50 * time.Millisecond)
 				_ = lock.Unlock(ctx, "shared")
 			}
-		}()
+		})
 	}
 
 	wg.Wait()

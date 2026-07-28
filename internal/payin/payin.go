@@ -132,7 +132,7 @@ func (m *Module) HandleVendorCallback(ctx context.Context, vendor, vendorEventID
 	event := model.WebhookEvent{
 		ID: generalutil.NewV7(), Vendor: vendor, VendorEventID: vendorEventID,
 		ExternalRef: externalReference, Amount: amount, Currency: currency,
-		Raw: []byte(fmt.Sprintf(`{"vendor_inbox_id":%q}`, inboxID)), RequestID: requestID,
+		Raw: fmt.Appendf(nil, `{"vendor_inbox_id":%q}`, inboxID), RequestID: requestID,
 	}
 	unmatchedReason := ""
 	var intent model.TopupIntent

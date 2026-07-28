@@ -104,7 +104,7 @@ jobs:
       - name: Validate data retention policy
         run: make retention-check
 
-  # ─── lint-and-test: actionlint, ShellCheck, SHA-pin policy, golangci-lint, unit ──
+  # ─── lint-and-test: build/vet, actionlint, ShellCheck, lint, security, unit ──
   lint-and-test:
     name: lint-and-test
     needs: changes
@@ -128,6 +128,15 @@ jobs:
         with:
           go-version: ${{ steps.goversion.outputs.version }}
           cache: true
+
+      - name: Build all Go packages
+        run: go build ./...
+
+      - name: Go vet
+        run: go vet ./...
+
+      - name: Verify Go modules
+        run: go mod verify
 
       # Downloaded as a pinned release tarball, never `curl | sh` (K2).
       - name: Install actionlint (pinned)
@@ -165,8 +174,20 @@ jobs:
         with:
           version: v2.12.2
 
+      - name: Go modernizer check
+        run: make modernize-check
+
+      - name: Install govulncheck (pinned)
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.6.0
+
+      - name: Go vulnerability scan
+        run: govulncheck ./...
+
       - name: Test
         run: go test -race -cover ./...
+
+      - name: Load-tag safety tests
+        run: go test -tags=loadtest ./...
 
       # A9: generate/lint/test the checked-in HTTP contract artifacts in PR CI.
       # Once the base branch contains the bundle baseline, compare against the
@@ -319,7 +340,7 @@ jobs:
       - name: Verify image revision labels
         run: |
           set -euo pipefail
-          for svc in auth-service fraud-service gateway-service ledger-service payin-service payout-service admin-bff-service assurance-service; do
+          for svc in auth-service fraud-service gateway-service ledger-service payin-service payout-service admin-bff-service assurance-service vendor-service; do
             image="seev/${svc}:ci"
             id="$(docker image inspect "$image" --format '{{.Id}}')"
             rev="$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')"

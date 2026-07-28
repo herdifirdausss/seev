@@ -2,6 +2,7 @@ package drverify
 
 import (
 	"fmt"
+	"maps"
 
 	"github.com/herdifirdausss/seev/internal/assurance/rules"
 )
@@ -40,9 +41,7 @@ func classifyAssuranceFinding(f rules.Finding, service string) Finding {
 		code = "UNCLASSIFIED_ASSURANCE_FINDING"
 	}
 	evidence := make(map[string]string, len(f.Evidence)+1)
-	for k, v := range f.Evidence {
-		evidence[k] = v
-	}
+	maps.Copy(evidence, f.Evidence)
 	evidence["assurance_rule_code"] = f.RuleCode
 	return Finding{
 		Code: code, Severity: severity, Service: service, ResourceID: f.ResourceID,

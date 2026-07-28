@@ -4,11 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"github.com/prometheus/client_golang/prometheus"
 	"log/slog"
 	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 // DBSQL is the production implementation of the Database interface.
@@ -24,6 +24,7 @@ var _ DatabaseSQL = (*DBSQL)(nil)
 // New opens a PostgreSQL connection pool and validates connectivity.
 // Pool is configured from cfg; returns an error if the database is unreachable.
 func New(ctx context.Context, cfg Config) (*DBSQL, error) {
+	registerRuntimeMetrics()
 	sqlDB, err := sql.Open("pgx", cfg.DSN())
 	if err != nil {
 		return nil, fmt.Errorf("postgres: open: %w", err)

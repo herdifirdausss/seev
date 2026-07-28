@@ -61,7 +61,7 @@ func TestCronSpecScheduleAndTimezone(t *testing.T) {
 	// the 1-6 day-of-week range holds across a full week, not just the
 	// first occurrence.
 	cursor := time.Date(2026, 7, 19, 0, 0, 0, 0, loc) // a Sunday
-	for i := 0; i < 6; i++ {
+	for i := range 6 {
 		cursor, err = diffCron.Next(cursor, loc)
 		if err != nil {
 			t.Fatalf("diff backup next run iteration %d: %v", i, err)

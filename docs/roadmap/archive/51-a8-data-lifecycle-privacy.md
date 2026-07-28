@@ -7,7 +7,9 @@
 >
 > **Status: complete and archived (2026-07-26).** This is an engineering
 > privacy baseline, not a claim of GDPR, Indonesian regulatory, or any other
-> formal legal compliance.
+> formal legal compliance. Its original owner/backup matrix predates the
+> VendorService extraction in Plan 54; current service ownership and the
+> nine-database topology are documented in the current reference pages.
 
 ## 1. Trigger and objective
 

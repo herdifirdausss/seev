@@ -206,7 +206,7 @@ func (h *CallbackHandler) sourceAllowed(r *http.Request) bool {
 		return false
 	}
 	if containsIP(h.trusted, peerIP) {
-		for _, forwarded := range strings.Split(r.Header.Get("X-Forwarded-For"), ",") {
+		for forwarded := range strings.SplitSeq(r.Header.Get("X-Forwarded-For"), ",") {
 			if ip := net.ParseIP(strings.TrimSpace(forwarded)); ip != nil && containsIP(h.allowed, ip) {
 				return true
 			}

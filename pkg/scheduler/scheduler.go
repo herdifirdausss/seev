@@ -162,7 +162,7 @@ func parseCronField(field string, min, max int) (cronField, error) {
 		return cf, nil
 	}
 
-	for _, part := range strings.Split(field, ",") {
+	for part := range strings.SplitSeq(field, ",") {
 		part = strings.TrimSpace(part)
 
 		if strings.Contains(part, "-") {
@@ -273,7 +273,7 @@ func parseDOMField(field string) (*domField, error) {
 		return df, nil
 	}
 
-	for _, token := range strings.Split(field, ",") {
+	for token := range strings.SplitSeq(field, ",") {
 		token = strings.TrimSpace(token)
 
 		switch {
@@ -422,7 +422,7 @@ func parseDOWField(field string) (*dowField, error) {
 		return df, nil
 	}
 
-	for _, token := range strings.Split(field, ",") {
+	for token := range strings.SplitSeq(field, ",") {
 		token = strings.TrimSpace(token)
 
 		switch {
@@ -598,7 +598,7 @@ func (c *Cron) Next(t time.Time, loc *time.Location) (time.Time, error) {
 	// Start from next minute (truncate seconds)
 	t = t.Add(time.Minute).Truncate(time.Minute)
 
-	for i := 0; i < maxNextIter; i++ {
+	for range maxNextIter {
 		// ── Month ────────────────────────────────────────────────
 		if !c.month.matches(int(t.Month())) {
 			// Jump to 1st of next month
@@ -1093,7 +1093,7 @@ func NewRedisLock(rdb *redis.Client, instanceID string) *RedisLock {
 }
 
 func (r *RedisLock) TryLock(ctx context.Context, key string, ttl time.Duration) (bool, error) {
-	return r.rdb.SetNX(ctx, key, r.id, ttl).Result() //nolint:staticcheck // atomic lock acquisition on supported Redis versions.
+	return r.rdb.SetNX(ctx, key, r.id, ttl).Result()
 }
 
 func (r *RedisLock) Unlock(ctx context.Context, key string) error {

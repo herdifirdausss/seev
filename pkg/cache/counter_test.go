@@ -92,12 +92,10 @@ func TestMemoryCounter_ConcurrentIncrBy(t *testing.T) {
 
 	const goroutines = 50
 	var wg sync.WaitGroup
-	for i := 0; i < goroutines; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range goroutines {
+		wg.Go(func() {
 			_, _ = c.IncrBy(ctx, "shared", 1, time.Minute)
-		}()
+		})
 	}
 	wg.Wait()
 

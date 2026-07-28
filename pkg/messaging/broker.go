@@ -177,12 +177,8 @@ func (r *RabbitMQ) attemptReconnect(ctx context.Context) {
 
 		r.log.Info("rabbitmq: reconnecting", "attempt", attempt, "delay", delay)
 
-		select {
-		case <-r.done:
+		if !waitForDelay(ctx, r.done, delay) {
 			return
-		case <-ctx.Done():
-			return
-		case <-time.After(delay):
 		}
 
 		if err := r.connect(ctx); err != nil {

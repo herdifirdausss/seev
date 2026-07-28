@@ -44,13 +44,11 @@ func (matrixRouting) GetVendorGateway(context.Context, string) (model.VendorGate
 	return model.VendorGateway{}, false, nil
 }
 func (matrixRouting) UpsertVendorGateway(context.Context, model.VendorGateway) error { return nil }
-func payoutString(v string) *string                                                  { return &v }
-func payoutInt(v int64) *int64                                                       { return &v }
 
 func TestResolvePayoutRouteMatrix(t *testing.T) {
 	user := uuid.New()
 	other := uuid.New()
-	rules := []model.RoutingRule{{Flow: "payout", Priority: 1, Enabled: false, Vendor: "disabled"}, {Flow: "payout", Priority: 10, Enabled: true, Currency: payoutString("USD"), Vendor: "usd"}, {Flow: "payout", Priority: 20, Enabled: true, MinAmount: payoutInt(100), MaxAmount: payoutInt(200), Vendor: "range"}, {Flow: "payout", Priority: 999, Enabled: true, UserID: &user, Vendor: "user"}, {Flow: "payout", Priority: 1000, Enabled: true, Vendor: "fallback"}}
+	rules := []model.RoutingRule{{Flow: "payout", Priority: 1, Enabled: false, Vendor: "disabled"}, {Flow: "payout", Priority: 10, Enabled: true, Currency: new("USD"), Vendor: "usd"}, {Flow: "payout", Priority: 20, Enabled: true, MinAmount: new(int64(100)), MaxAmount: new(int64(200)), Vendor: "range"}, {Flow: "payout", Priority: 999, Enabled: true, UserID: &user, Vendor: "user"}, {Flow: "payout", Priority: 1000, Enabled: true, Vendor: "fallback"}}
 	registry := vendorgw.NewRegistry()
 	for _, v := range []string{"usd", "range", "user", "fallback"} {
 		registry.AddPayout(&stubPayoutProvider{name: v})

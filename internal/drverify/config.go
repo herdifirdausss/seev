@@ -3,6 +3,7 @@ package drverify
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -68,14 +69,14 @@ func envKey(service string) string {
 	case "adminbff":
 		return "ADMINBFF_DSN"
 	default:
-		upper := ""
+		var upper strings.Builder
 		for _, r := range service {
 			if r >= 'a' && r <= 'z' {
 				r -= 'a' - 'A'
 			}
-			upper += string(r)
+			upper.WriteString(string(r))
 		}
-		return upper + "_DSN"
+		return upper.String() + "_DSN"
 	}
 }
 

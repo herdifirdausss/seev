@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"runtime/debug"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -14,6 +15,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
@@ -80,7 +82,7 @@ func Dial(ctx context.Context, addr, token string, tlsConfig *tls.Config) (*grpc
 
 // DialLazy creates a reconnecting client without requiring the remote service
 // to be available during startup. RPC-level deadlines bound each call.
-func DialLazy(ctx context.Context, addr, token string, tlsConfig *tls.Config) (*grpc.ClientConn, error) {
+func DialLazy(_ context.Context, addr, token string, tlsConfig *tls.Config) (*grpc.ClientConn, error) {
 	if err := requireCredentials(token, tlsConfig); err != nil {
 		return nil, err
 	}
@@ -92,7 +94,7 @@ func DialLazy(ctx context.Context, addr, token string, tlsConfig *tls.Config) (*
 		}),
 		grpc.WithChainUnaryInterceptor(clientAuthInterceptor(token), requestIDClientInterceptor()),
 	}
-	return grpc.DialContext(ctx, addr, base...) //nolint:staticcheck // Lazy reconnect behavior is intentional.
+	return grpc.NewClient(newClientTarget(addr), base...)
 }
 
 func dial(ctx context.Context, addr, token string, tlsConfig *tls.Config, opts ...grpc.DialOption) (*grpc.ClientConn, error) {
@@ -107,13 +109,55 @@ func dial(ctx context.Context, addr, token string, tlsConfig *tls.Config, opts .
 	base := []grpc.DialOption{
 		grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)),
 		grpc.WithStatsHandler(otelgrpc.NewClientHandler()),
-		grpc.WithBlock(), //nolint:staticcheck // Dial must honor the bounded connection timeout in this API.
 		grpc.WithKeepaliveParams(keepalive.ClientParameters{
 			Time: 30 * time.Second, Timeout: 10 * time.Second, PermitWithoutStream: true,
 		}),
 		grpc.WithChainUnaryInterceptor(clientAuthInterceptor(token), requestIDClientInterceptor()),
 	}
-	return grpc.DialContext(ctx, addr, append(base, opts...)...) //nolint:staticcheck // See WithBlock rationale above.
+	conn, err := grpc.NewClient(newClientTarget(addr), append(base, opts...)...)
+	if err != nil {
+		return nil, err
+	}
+	conn.Connect()
+	if err := waitForReady(ctx, conn); err != nil {
+		_ = conn.Close()
+		return nil, fmt.Errorf("grpcx: connect to %s: %w", addr, err)
+	}
+	return conn, nil
+}
+
+// newClientTarget preserves the legacy Dial/DialContext passthrough behavior
+// for bare host:port targets while allowing callers to provide an explicit
+// resolver target such as dns:/// or passthrough:///. NewClient defaults to
+// DNS resolution, whereas DialContext historically passed bare targets through
+// unchanged to the dialer.
+func newClientTarget(addr string) string {
+	if strings.Contains(addr, "://") {
+		return addr
+	}
+	return "passthrough:///" + addr
+}
+
+// waitForReady retains Dial's bounded-startup contract without the deprecated
+// blocking-dial option. NewClient is intentionally lazy; callers that use Dial
+// need an explicit readiness check because their service startup path treats an
+// unavailable mandatory dependency as fatal.
+func waitForReady(ctx context.Context, conn *grpc.ClientConn) error {
+	for {
+		state := conn.GetState()
+		switch state {
+		case connectivity.Ready:
+			return nil
+		case connectivity.Shutdown:
+			return fmt.Errorf("connection entered shutdown")
+		}
+		if !conn.WaitForStateChange(ctx, state) {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			return fmt.Errorf("connection state did not change")
+		}
+	}
 }
 
 func requireCredentials(token string, tlsConfig *tls.Config) error {

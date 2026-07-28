@@ -77,7 +77,7 @@ func TestCheck_CounterError_FailsOpen_FiresAlert(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	repo := NewMockRepository(ctrl)
 	repo.EXPECT().GetEffective(gomock.Any(), gomock.Any(), "transfer_p2p").Return(Limit{
-		TransactionType: "transfer_p2p", MaxDailyAmount: int64Ptr(1000), Enabled: true,
+		TransactionType: "transfer_p2p", MaxDailyAmount: new(int64(1000)), Enabled: true,
 	}, true, nil)
 
 	loc, err := time.LoadLocation("Asia/Jakarta")
@@ -124,7 +124,7 @@ func TestFireFailOpenAlert_ThrottledWithinWindow_FiresOnceOnly(t *testing.T) {
 	e := New(repo, cache.NewMemoryCounter(), loc, nil, WithAlertFunc(stub.fn), WithAlertThrottle(time.Minute))
 	t.Cleanup(func() { e.counter.(*cache.MemoryCounter).Stop() })
 
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		_, _, _, err := e.Check(context.Background(), uuid.New(), "transfer_p2p", decimal.NewFromInt(1000))
 		require.NoError(t, err)
 	}

@@ -40,12 +40,12 @@ When a trigger is met:
 | B1 | Hot-account sub-sharding | H2 | B0 proves lock contention in delta application | Future |
 | B2 | Ledger-entry partitioning and archival | H2 | Approximately 50 million ledger entries or equivalent forecast | Future |
 | B3 | Fee and routing resolution cache | H2 | B0 proves per-call resolution is a hotspot | Future |
-| C1 | Merchant/B2B API | H3 | A6 and A9 complete | Future |
-| C2 | Data platform and revenue analytics | H3 | Analytics queries affect OLTP or CDC learning is desired | Future |
-| C3 | Multi-channel notifications | H3 | User-facing delivery pipeline learning is desired | Future |
-| C4 | End-to-end multi-currency activation | H3 | FX learning is desired; currency primitives are ready | Future |
-| C5 | Advanced financial products | H3 | Accrual and fee quotes are complete; period-close learning is desired | Future |
-| C6 | Zero-downtime migration engine | H3 | A large live migration or migration practice is needed | Future |
+| C1 | Merchant/B2B API | H3 | A6 and A9 complete | Active via [plan 57](active/57-c1-merchant-b2b-api.md); implementation not started |
+| C2 | Data platform and revenue analytics | H3 | Analytics queries affect OLTP or CDC learning is desired | Active via [plan 58](active/58-c2-data-platform-revenue-analytics.md); implementation not started |
+| C3 | Multi-channel notifications | H3 | User-facing delivery pipeline learning is desired | Active via [plan 59](active/59-c3-multi-channel-notifications.md); implementation not started |
+| C4 | End-to-end multi-currency activation | H3 | FX learning is desired; currency primitives are ready | Active via [plan 60](active/60-c4-end-to-end-multi-currency.md); implementation not started |
+| C5 | Advanced financial products | H3 | Accrual and fee quotes are complete; period-close learning is desired | Active via [plan 61](active/61-c5-advanced-financial-products-period-close.md); implementation not started |
+| C6 | Zero-downtime migration engine | H3 | A large live migration or migration practice is needed | Active via [plan 62](active/62-c6-zero-downtime-migration-engine.md); implementation not started |
 
 ## Horizon 1 — Operational foundations
 
@@ -125,10 +125,13 @@ Measure first. If resolution is a proven hotspot, add a short-lived cache with e
 ## Recommended next sequence
 
 The original learning-value ranking included A1 and A3, which are now
-complete. Among prepared but unfinished work, the recommended sequence is A7
-→ A8 → A9 → B0. After B0, create B1, B2, or B3 execution plans only for gates
-whose measured result is `ACTIVATE`; a `REJECT` result closes that candidate
-without implementation.
+complete. A7, A8, A9, B0, and the VendorService boundary now have archived
+core foundations, with their remaining live evidence explicitly tracked in
+those records. F0 and C1–C6 have active execution documents; each still
+requires its own entry gate and implementation evidence before it becomes
+current runtime behavior. B1, B2, and B3 remain conditional: create an
+execution plan only for a gate whose measured result is `ACTIVATE`; a
+`REJECT` result closes that candidate without implementation.
 
 ## Global anti-goals
 

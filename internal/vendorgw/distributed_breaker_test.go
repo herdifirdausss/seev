@@ -34,7 +34,7 @@ func TestDistributedBreaker_ClosedByDefault(t *testing.T) {
 func TestDistributedBreaker_OpensAtThreshold(t *testing.T) {
 	d, _ := newTestDistributedBreaker(t, 3, 30*time.Second, 0)
 	ctx := context.Background()
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		d.RecordFailure(ctx, "v1")
 		assert.True(t, d.Allow(ctx, "v1"), "must stay closed before threshold is reached")
 	}
@@ -101,14 +101,12 @@ func TestDistributedBreaker_ConcurrentHalfOpenCallers_ExactlyOneProbeWins(t *tes
 	const concurrency = 20
 	var wonCount int64
 	var wg sync.WaitGroup
-	for i := 0; i < concurrency; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range concurrency {
+		wg.Go(func() {
 			if d.Allow(ctx, "v1") {
 				atomic.AddInt64(&wonCount, 1)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 
@@ -165,7 +163,7 @@ func TestDistributedBreaker_TwoInstancesConcurrentHalfOpen_ExactlyOneProbeWins(t
 			atomic.AddInt64(&wonCount, 1)
 		}
 	}
-	for i := 0; i < perInstance; i++ {
+	for range perInstance {
 		wg.Add(2)
 		go fire(a)
 		go fire(b)

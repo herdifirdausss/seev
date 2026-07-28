@@ -74,6 +74,7 @@ cheap checks that are useful before opening a pull request:
 go build ./...
 go vet ./...
 make lint
+make security-vuln
 make ci-lint
 make test
 make docs-check
@@ -104,10 +105,13 @@ where that line is drawn.
 Every push and PR runs `.github/workflows/ci.yml`: documentation link checks,
 `actionlint` +
 `ShellCheck` on the workflows/scripts themselves, an external-action
-SHA-pin policy check, `golangci-lint`, unit tests, the `integration` suite
+SHA-pin policy check, pinned `golangci-lint`, the Go 1.26 modernizer check,
+`govulncheck`, unit tests, the `integration` suite
 (testcontainers-backed, no external services needed), HTTP/protobuf contract
 gates, the disposable load-harness safety gate, and a full smoke-container run
-building and exercising all nine service images.
+building and exercising all nine service images. The scheduled/manual
+full-stack workflow additionally runs the business and privacy journeys before
+the operator-controlled chaos suite.
 Documentation-only changes run the documentation check and skip the three
 heavy jobs automatically — you don't need to do anything special for a docs
 PR to stay fast. The

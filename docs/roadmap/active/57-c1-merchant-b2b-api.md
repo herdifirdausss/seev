@@ -1,0 +1,2663 @@
+# Plan 57 — C1 Merchant/B2B API
+
+**Created:** 2026-07-28
+**Status:** Ready for execution after the C1 entry gate
+**Roadmap track:** C1 — Merchant/B2B API
+**Depends on:** Plan 49 / A6 Internal Security, Plan 52 / A9 Contract Evolution
+**Primary runtime owners:** Gateway, LedgerService, PayinService, PayoutService, Admin BFF
+**No new service extraction is authorized by this plan.**
+
+---
+
+## 1. Purpose
+
+Build a secure, tenant-isolated Merchant/B2B API on top of Seev's existing
+money-movement architecture.
+
+The track must add:
+
+- merchant tenants;
+- sandbox and live-mode credentials;
+- API keys and scopes;
+- per-tenant quotas;
+- durable write idempotency;
+- merchant account and transaction reads;
+- merchant transfer, pay-in, and payout journeys;
+- signed outbound webhooks;
+- durable retry, dead-letter, and replay;
+- operator management through the existing Admin BFF;
+- contract, security, observability, and failure evidence.
+
+The implementation must preserve the existing architectural rules:
+
+1. Gateway remains the public HTTP edge.
+2. LedgerService remains the source of truth for money.
+3. PayinService and PayoutService remain owners of their lifecycles.
+4. VendorService remains the vendor boundary and callback ingress owner.
+5. Services may not read another service's database.
+6. Every financial mutation must be exactly represented by balanced ledger
+   entries.
+7. Duplicate HTTP, AMQP, callback, and webhook delivery must never duplicate
+   money movement.
+8. All money values remain exact integer minor units.
+9. Existing consumer and admin contracts must remain compatible.
+10. A new service may not be introduced without independent evidence and a new
+    roadmap decision.
+
+---
+
+## 2. Activation and entry gate
+
+### 2.1 Activation decision
+
+This execution plan is created from the C1 roadmap trigger on 2026-07-28.
+
+A6 is complete. A9's core contract-governance foundation is archived as done,
+while some broader fixture expansion and manual chaos evidence remain follow-up
+work.
+
+C1 implementation may begin only after T0 records a fresh entry-gate result.
+
+### 2.2 Required entry-gate evidence
+
+The C1 entry gate is `PASS` only when all of the following are true:
+
+- [ ] `make contracts` passes from a clean tree.
+- [ ] The generated HTTP operation inventory has no unresolved drift.
+- [ ] Current event schemas and Protobuf semantic checks pass.
+- [ ] Every existing operation that C1 will call or extend has a canonical
+      contract entry.
+- [ ] Every C1-touched existing HTTP operation has at least one live fixture or
+      a recorded task that must land in the same PR as the C1 change.
+- [ ] The A6 internal-auth and mTLS verification commands pass.
+- [ ] Existing business, admin, callback, and smoke journeys remain green.
+- [ ] The working branch contains no unrelated schema or topology migration.
+- [ ] The exact baseline commit is recorded in this plan's evidence log.
+
+### 2.3 Gate policy
+
+The following work may start before the gate is fully green:
+
+- documentation;
+- threat modeling;
+- OpenAPI design;
+- package scaffolding;
+- isolated schema drafts;
+- test fixture design.
+
+The following may not merge before the gate is green:
+
+- a public B2B financial write endpoint;
+- merchant account provisioning;
+- owner-neutral Payin/Payout schema changes;
+- outbound merchant webhook delivery;
+- any change that alters an existing public contract.
+
+---
+
+## 3. Locked architecture decisions
+
+### 3.1 No MerchantService in C1
+
+C1 does **not** create a tenth service.
+
+Merchant edge concerns belong in a bounded Gateway module because Gateway
+already owns public HTTP ingress, request authentication middleware, request
+IDs, rate limiting, security headers, timeouts, tracing, and calls into the
+money owner services.
+
+Initial package boundary:
+
+```text
+internal/merchant/
+├── api/                 # HTTP handlers and DTO mapping
+├── application/         # use cases and orchestration
+├── auth/                # API-key verification and scopes
+├── quota/               # policy loading and distributed enforcement
+├── idempotency/         # request fingerprint and response replay
+├── webhook/             # endpoint, event, delivery, signing, retry
+├── repository/          # Gateway-owned persistence only
+├── client/              # typed clients to Ledger/Payin/Payout
+├── model/               # internal domain types
+└── observability/       # metrics and trace helpers
+```
+
+This module may use the Gateway database only for edge-owned state. It may not
+read or write Ledger, Payin, Payout, Auth, Vendor, or Admin BFF tables.
+
+### 3.2 Identity split
+
+Human and machine identities remain separate:
+
+- human users continue to use AuthService and JWT/session flows;
+- merchants use API keys issued for a merchant tenant;
+- an API key is not an Auth user;
+- a merchant request does not fabricate a user JWT;
+- internal service calls continue to use the existing internal service identity
+  and mTLS controls;
+- the merchant tenant and key identity are propagated as explicit actor
+  metadata.
+
+### 3.3 Financial ownership
+
+- LedgerService owns merchant accounts, balances, entries, statements, and
+  transfer posting.
+- PayinService owns merchant pay-in intent lifecycle.
+- PayoutService owns merchant payout lifecycle.
+- VendorService owns vendor dispatch and callback normalization.
+- Gateway owns external B2B authentication, authorization, quota,
+  idempotency-response replay, and outbound webhook delivery.
+
+### 3.4 Sandbox definition
+
+For C1, `sandbox` is a local learning environment mode, not a claim of
+production-grade environmental isolation.
+
+Sandbox rules:
+
+- sandbox keys use a different prefix from live-mode keys;
+- sandbox tenants may call only mock adapters;
+- sandbox requests can never select a real vendor route;
+- sandbox and live-mode keys cannot access each other's tenant resources;
+- every public response and webhook envelope exposes `livemode`;
+- C1 does not host a public internet sandbox;
+- production legal, KYB, AML, settlement, and regulatory isolation are out of
+  scope.
+
+### 3.5 Exact money
+
+All public money amounts are decimal strings containing integer minor units.
+
+Example:
+
+```json
+{
+  "amount": "125000",
+  "currency": "IDR"
+}
+```
+
+The API must not accept or emit floating-point money.
+
+### 3.6 At-least-once delivery
+
+Outbound webhooks are at-least-once.
+
+C1 does not promise exactly-once delivery. Receivers must deduplicate using the
+stable event ID.
+
+---
+
+## 4. Product scope
+
+### 4.1 Merchant tenant capabilities
+
+A merchant tenant can:
+
+- authenticate using an API key;
+- inspect its own profile;
+- inspect its own accounts and balances;
+- list and retrieve its own transactions;
+- create an idempotent transfer;
+- create and retrieve a pay-in;
+- create and retrieve a payout;
+- create, inspect, rotate, disable, and delete webhook endpoints where policy
+  allows;
+- list webhook deliveries;
+- replay an eligible failed or dead delivery;
+- receive signed lifecycle webhooks.
+
+Initial API-key issuance and live-mode tenant activation remain operator-owned
+through Admin BFF.
+
+### 4.2 Operator capabilities
+
+Authorized operators can:
+
+- create a sandbox or live-mode merchant tenant;
+- provision the tenant's default ledger account;
+- activate, suspend, or close a tenant;
+- create, rotate, expire, and revoke API keys;
+- configure scopes;
+- configure quotas;
+- inspect webhook endpoints and delivery health;
+- disable a compromised endpoint;
+- replay eligible deliveries;
+- inspect non-secret audit evidence.
+
+### 4.3 Initial external event families
+
+C1 exposes the following external event families:
+
+- `transaction.posted.v1`
+- `transaction.reversed.v1`
+- `payin.updated.v1`
+- `payout.updated.v1`
+- `webhook.endpoint.disabled.v1`
+
+Only events relevant to the owning tenant may be delivered.
+
+---
+
+## 5. Explicit non-goals
+
+C1 does not include:
+
+- a new MerchantService;
+- OAuth 2.0 client credentials;
+- public-edge mTLS;
+- client JWT assertions;
+- hosted production infrastructure;
+- real banking or real-money claims;
+- merchant KYB, AML, sanctions, or legal onboarding;
+- pricing plans, invoicing, or billing collection;
+- multi-region deployment;
+- GraphQL;
+- generated public SDK publication;
+- a merchant web portal;
+- arbitrary webhook payload transformations;
+- arbitrary merchant-defined retry schedules;
+- exactly-once HTTP or webhook delivery;
+- cross-service database access;
+- direct merchant access to internal gRPC;
+- per-tenant Prometheus labels;
+- storing plaintext API keys or webhook secrets;
+- exposing vendor credentials or vendor-native callback payloads;
+- multi-currency or FX behavior beyond the currencies already supported by the
+  owner services;
+- automatic service extraction after C1.
+
+---
+
+## 6. Public API contract
+
+### 6.1 Contract source
+
+Add:
+
+```text
+api/openapi/b2b-v1.yaml
+```
+
+Register every operation in:
+
+```text
+api/contracts/surfaces.yaml
+```
+
+Every operation must have:
+
+- a stable `operationId`;
+- authentication and scope requirements;
+- success and error schemas;
+- canonical live fixtures;
+- compatibility classification;
+- explicit idempotency behavior for writes;
+- request and response examples;
+- pagination semantics for lists.
+
+### 6.2 Base path
+
+```text
+/api/v1/b2b
+```
+
+### 6.3 Required and supported headers
+
+#### Authentication
+
+```http
+Authorization: Bearer <merchant_api_key>
+```
+
+API-key prefixes:
+
+```text
+sk_test_<public-prefix>_<secret>
+sk_live_<public-prefix>_<secret>
+```
+
+#### Correlation
+
+```http
+X-Request-ID: <optional-client-request-id>
+```
+
+Gateway returns the accepted or generated request ID.
+
+#### Idempotency
+
+All financial `POST` operations require:
+
+```http
+Idempotency-Key: <merchant-generated-key>
+```
+
+#### Rate-limit response headers
+
+```http
+RateLimit-Limit
+RateLimit-Remaining
+RateLimit-Reset
+Retry-After
+```
+
+`Retry-After` is required on `429`.
+
+### 6.4 Endpoint inventory
+
+#### Merchant profile
+
+```text
+GET /api/v1/b2b/merchant
+```
+
+Required scope:
+
+```text
+merchant:read
+```
+
+#### Accounts
+
+```text
+GET /api/v1/b2b/accounts
+GET /api/v1/b2b/accounts/{account_id}
+GET /api/v1/b2b/accounts/{account_id}/balance
+```
+
+Required scope:
+
+```text
+accounts:read
+```
+
+#### Transactions
+
+```text
+GET /api/v1/b2b/transactions
+GET /api/v1/b2b/transactions/{transaction_id}
+```
+
+Required scope:
+
+```text
+transactions:read
+```
+
+#### Transfers
+
+```text
+POST /api/v1/b2b/transfers
+GET  /api/v1/b2b/transfers/{transaction_id}
+```
+
+Required scopes:
+
+```text
+transfers:write
+transactions:read
+```
+
+The source merchant account is inferred from the authenticated tenant and may
+not be supplied as an arbitrary debit account.
+
+The destination is an owner-service-resolved account identifier accepted by the
+contract. Gateway may not validate destination ownership by querying Ledger's
+database.
+
+#### Pay-ins
+
+```text
+POST /api/v1/b2b/payins
+GET  /api/v1/b2b/payins/{payin_id}
+```
+
+Required scopes:
+
+```text
+payins:write
+payins:read
+```
+
+#### Payouts
+
+```text
+POST /api/v1/b2b/payouts
+GET  /api/v1/b2b/payouts/{payout_id}
+```
+
+Required scopes:
+
+```text
+payouts:write
+payouts:read
+```
+
+#### Webhook endpoints
+
+```text
+GET    /api/v1/b2b/webhook-endpoints
+POST   /api/v1/b2b/webhook-endpoints
+GET    /api/v1/b2b/webhook-endpoints/{endpoint_id}
+PATCH  /api/v1/b2b/webhook-endpoints/{endpoint_id}
+DELETE /api/v1/b2b/webhook-endpoints/{endpoint_id}
+POST   /api/v1/b2b/webhook-endpoints/{endpoint_id}/rotate-secret
+```
+
+Required scopes:
+
+```text
+webhooks:read
+webhooks:write
+```
+
+#### Webhook deliveries
+
+```text
+GET  /api/v1/b2b/webhook-deliveries
+GET  /api/v1/b2b/webhook-deliveries/{delivery_id}
+POST /api/v1/b2b/webhook-deliveries/{delivery_id}/replay
+```
+
+Required scopes:
+
+```text
+webhooks:read
+webhooks:write
+```
+
+### 6.5 Resource identifier policy
+
+Public IDs must be opaque.
+
+Recommended prefixes:
+
+```text
+mrc_  merchant
+key_  API-key record
+evt_  external webhook event
+wh_   webhook endpoint
+wd_   webhook delivery
+```
+
+Existing owner-service resource IDs may remain UUIDs where changing them would
+break established contracts, but new merchant-edge resources should use opaque
+public IDs.
+
+### 6.6 Pagination
+
+Cursor pagination is required for transaction and delivery lists.
+
+Rules:
+
+- maximum page size: `100`;
+- default page size: `25`;
+- cursors are opaque;
+- order is deterministic;
+- cursor payloads are signed or server-side stored;
+- no offset pagination on high-growth tables;
+- invalid or expired cursor returns a stable `400` error.
+
+### 6.7 Error envelope
+
+All B2B errors use one envelope:
+
+```json
+{
+  "error": {
+    "code": "IDEMPOTENCY_KEY_REUSED",
+    "message": "The idempotency key was already used with a different request.",
+    "request_id": "01J...",
+    "details": {}
+  }
+}
+```
+
+Required stable codes include:
+
+```text
+AUTHENTICATION_REQUIRED
+API_KEY_INVALID
+API_KEY_EXPIRED
+API_KEY_REVOKED
+TENANT_SUSPENDED
+SCOPE_DENIED
+RESOURCE_NOT_FOUND
+VALIDATION_FAILED
+RATE_LIMITED
+QUOTA_UNAVAILABLE
+IDEMPOTENCY_KEY_REQUIRED
+IDEMPOTENCY_KEY_REUSED
+IDEMPOTENCY_IN_PROGRESS
+CURRENCY_MISMATCH
+INSUFFICIENT_FUNDS
+OWNER_SERVICE_UNAVAILABLE
+WEBHOOK_ENDPOINT_INVALID
+WEBHOOK_REPLAY_NOT_ALLOWED
+INTERNAL_ERROR
+```
+
+Tenant-ownership failure must not reveal resource existence. Return the same
+`RESOURCE_NOT_FOUND` result for a missing resource and another tenant's
+resource.
+
+---
+
+## 7. Scope model
+
+### 7.1 Initial scopes
+
+```text
+merchant:read
+accounts:read
+transactions:read
+transfers:write
+payins:read
+payins:write
+payouts:read
+payouts:write
+webhooks:read
+webhooks:write
+```
+
+### 7.2 Scope rules
+
+- unknown scopes are rejected at key creation;
+- wildcard scopes are not supported in C1;
+- scopes are stored as normalized rows, not an unchecked comma-separated
+  string;
+- every handler declares its required scope in one central route registry;
+- scope evaluation occurs after key and tenant validation;
+- a key may be read-only;
+- the default key template is least privilege;
+- no handler may perform an inline ad-hoc scope string comparison.
+
+### 7.3 Tenant isolation rule
+
+Every repository query for merchant-owned data must include `tenant_id`.
+
+Every typed owner-service request must include merchant actor metadata.
+
+Code review must reject repository methods such as:
+
+```text
+GetTransaction(ctx, transactionID)
+```
+
+when the resource is tenant-owned.
+
+Required form:
+
+```text
+GetTransaction(ctx, tenantID, transactionID)
+```
+
+---
+
+## 8. API-key security design
+
+### 8.1 Secret handling
+
+API-key plaintext is shown exactly once.
+
+Store:
+
+- key record ID;
+- tenant ID;
+- environment;
+- public prefix;
+- secret digest;
+- scopes;
+- status;
+- expiry;
+- created metadata;
+- revoked metadata;
+- last-used timestamp.
+
+Do not store:
+
+- full plaintext key;
+- reversible full API key;
+- the key in logs, traces, audit details, metrics, or error messages.
+
+### 8.2 Digest
+
+Use an HMAC-SHA-256 digest with an application pepper:
+
+```text
+digest = HMAC-SHA-256(api_key_pepper, full_api_key)
+```
+
+The pepper must come from the existing secret-loading boundary.
+
+Comparison must be constant-time.
+
+### 8.3 Prefix lookup
+
+Lookup flow:
+
+1. Parse and validate the key format and environment prefix.
+2. Extract the non-secret public prefix.
+3. Fetch the active candidate record by unique prefix.
+4. Recompute the digest.
+5. Compare in constant time.
+6. Validate tenant status, key status, expiry, and environment.
+7. Construct a machine principal containing tenant ID, key ID, environment,
+   and scopes.
+
+### 8.4 Rotation
+
+- a tenant may have at most two active keys per environment;
+- new and old keys may overlap for controlled rotation;
+- the old key receives an explicit expiry or revocation;
+- revocation takes effect immediately;
+- C1 starts without a positive authentication cache to avoid stale revocation;
+- any later cache requires a separate measured decision and bounded TTL.
+
+### 8.5 Usage tracking
+
+Do not update `last_used_at` on every request.
+
+Use a sampled or coalesced update no more frequently than once per configured
+interval, initially five minutes per key.
+
+---
+
+## 9. Quota design
+
+### 9.1 Policy ownership
+
+PostgreSQL stores authoritative tenant quota configuration.
+
+Redis stores distributed counters.
+
+Quota classes:
+
+```text
+read
+write
+transfer
+payin
+payout
+webhook_management
+```
+
+Do not use raw URL paths as quota labels.
+
+### 9.2 Initial dimensions
+
+A quota policy may define:
+
+- requests per minute;
+- burst capacity;
+- optional daily financial-operation count;
+- maximum webhook endpoints;
+- maximum active API keys;
+- maximum page size;
+- maximum request body size.
+
+No amount-based financial limit is introduced unless the owner service already
+has an authoritative policy for it.
+
+### 9.3 Redis outage posture
+
+- financial writes fail closed with `503 QUOTA_UNAVAILABLE`;
+- webhook-management writes fail closed;
+- reads may use a bounded in-process emergency limiter at a small fixed
+  fraction of their configured quota;
+- every fallback decision emits a metric and structured warning;
+- the fallback may not silently become the normal path.
+
+### 9.4 Atomic enforcement
+
+Use a Lua script or equivalent atomic Redis operation to:
+
+- refill;
+- consume;
+- return remaining capacity;
+- return reset time.
+
+### 9.5 Label discipline
+
+Metrics may include:
+
+- quota class;
+- decision;
+- backend;
+- environment.
+
+Metrics may not include:
+
+- tenant ID;
+- API-key ID;
+- request ID.
+
+---
+
+## 10. Durable idempotency
+
+### 10.1 Scope
+
+All financial `POST` operations require durable merchant-edge idempotency:
+
+- transfers;
+- pay-ins;
+- payouts.
+
+Webhook endpoint creation and secret rotation should also support idempotency,
+but they are secondary to the financial write gate.
+
+### 10.2 Idempotency identity
+
+Unique identity:
+
+```text
+tenant_id + operation_id + idempotency_key
+```
+
+The request fingerprint is:
+
+```text
+SHA-256(canonical_method + canonical_path + canonical_body)
+```
+
+Canonicalization must be deterministic and covered by fixtures.
+
+### 10.3 States
+
+```text
+processing
+completed
+failed_retryable
+failed_terminal
+```
+
+Persist:
+
+- request hash;
+- downstream idempotency key;
+- state;
+- owner resource ID;
+- HTTP status;
+- response body snapshot;
+- selected response headers;
+- error code;
+- lease owner;
+- lease expiry;
+- created and updated timestamps;
+- expiry timestamp.
+
+### 10.4 Behavior
+
+#### Same key and same request
+
+Return the stored response without creating another money operation.
+
+#### Same key and different request
+
+Return:
+
+```text
+409 IDEMPOTENCY_KEY_REUSED
+```
+
+#### Concurrent duplicate while processing
+
+Return:
+
+```text
+409 IDEMPOTENCY_IN_PROGRESS
+```
+
+with a bounded `Retry-After`.
+
+#### Gateway crash after owner-service success
+
+A retry must reuse a deterministic downstream idempotency key and recover the
+owner resource rather than post money again.
+
+### 10.5 Downstream scope
+
+Derive the owner-service idempotency scope from:
+
+```text
+merchant:<tenant_id>:<operation_id>
+```
+
+The downstream key must be stable across Gateway retries.
+
+### 10.6 Retention
+
+Initial idempotency retention:
+
+```text
+7 days
+```
+
+Purge through a bounded maintenance job with metrics.
+
+---
+
+## 11. Gateway-owned schema
+
+Add additive Gateway migrations starting after the current migration head.
+
+### 11.1 `merchant_tenants`
+
+Minimum columns:
+
+```text
+id UUID PRIMARY KEY
+public_id TEXT UNIQUE NOT NULL
+external_code TEXT UNIQUE NOT NULL
+name TEXT NOT NULL
+environment TEXT NOT NULL CHECK (environment IN ('sandbox', 'live'))
+status TEXT NOT NULL CHECK (status IN ('draft', 'active', 'suspended', 'closed'))
+default_currency TEXT NOT NULL
+primary_account_id UUID NULL
+created_by TEXT NOT NULL
+activated_by TEXT NULL
+suspended_by TEXT NULL
+created_at TIMESTAMPTZ NOT NULL
+updated_at TIMESTAMPTZ NOT NULL
+activated_at TIMESTAMPTZ NULL
+suspended_at TIMESTAMPTZ NULL
+closed_at TIMESTAMPTZ NULL
+```
+
+`primary_account_id` is an application-level reference to LedgerService. It is
+not a cross-database foreign key.
+
+### 11.2 `merchant_api_keys`
+
+Minimum columns:
+
+```text
+id UUID PRIMARY KEY
+public_id TEXT UNIQUE NOT NULL
+tenant_id UUID NOT NULL
+public_prefix TEXT UNIQUE NOT NULL
+secret_digest BYTEA NOT NULL
+environment TEXT NOT NULL
+status TEXT NOT NULL
+expires_at TIMESTAMPTZ NULL
+last_used_at TIMESTAMPTZ NULL
+created_by TEXT NOT NULL
+revoked_by TEXT NULL
+created_at TIMESTAMPTZ NOT NULL
+revoked_at TIMESTAMPTZ NULL
+```
+
+### 11.3 `merchant_api_key_scopes`
+
+```text
+key_id UUID NOT NULL
+scope TEXT NOT NULL
+PRIMARY KEY (key_id, scope)
+```
+
+### 11.4 `merchant_quota_policies`
+
+```text
+id UUID PRIMARY KEY
+tenant_id UUID NOT NULL
+quota_class TEXT NOT NULL
+requests_per_minute INTEGER NOT NULL
+burst INTEGER NOT NULL
+is_enabled BOOLEAN NOT NULL
+created_at TIMESTAMPTZ NOT NULL
+updated_at TIMESTAMPTZ NOT NULL
+UNIQUE (tenant_id, quota_class)
+```
+
+### 11.5 `merchant_idempotency_records`
+
+```text
+id UUID PRIMARY KEY
+tenant_id UUID NOT NULL
+operation_id TEXT NOT NULL
+idempotency_key TEXT NOT NULL
+request_hash BYTEA NOT NULL
+downstream_key TEXT NOT NULL
+state TEXT NOT NULL
+resource_id TEXT NULL
+http_status INTEGER NULL
+response_body JSONB NULL
+response_headers JSONB NULL
+error_code TEXT NULL
+lease_owner TEXT NULL
+lease_expires_at TIMESTAMPTZ NULL
+expires_at TIMESTAMPTZ NOT NULL
+created_at TIMESTAMPTZ NOT NULL
+updated_at TIMESTAMPTZ NOT NULL
+UNIQUE (tenant_id, operation_id, idempotency_key)
+```
+
+### 11.6 `merchant_event_inbox`
+
+Deduplicates internal AMQP events before creating an external event.
+
+```text
+event_id UUID PRIMARY KEY
+event_type TEXT NOT NULL
+source TEXT NOT NULL
+payload_hash BYTEA NOT NULL
+received_at TIMESTAMPTZ NOT NULL
+processed_at TIMESTAMPTZ NULL
+processing_error TEXT NULL
+```
+
+### 11.7 `merchant_webhook_endpoints`
+
+```text
+id UUID PRIMARY KEY
+public_id TEXT UNIQUE NOT NULL
+tenant_id UUID NOT NULL
+url TEXT NOT NULL
+status TEXT NOT NULL
+secret_ciphertext BYTEA NOT NULL
+secret_version INTEGER NOT NULL
+subscribed_events TEXT[] NOT NULL
+description TEXT NULL
+created_at TIMESTAMPTZ NOT NULL
+updated_at TIMESTAMPTZ NOT NULL
+disabled_at TIMESTAMPTZ NULL
+```
+
+Use the existing cryptographic envelope for reversible secret encryption.
+Plaintext webhook secrets are shown only at creation and rotation.
+
+### 11.8 `merchant_webhook_events`
+
+Persist immutable external event bytes once.
+
+```text
+id UUID PRIMARY KEY
+public_id TEXT UNIQUE NOT NULL
+tenant_id UUID NOT NULL
+event_type TEXT NOT NULL
+schema_version INTEGER NOT NULL
+livemode BOOLEAN NOT NULL
+payload JSONB NOT NULL
+payload_bytes BYTEA NOT NULL
+source_event_id UUID NOT NULL
+created_at TIMESTAMPTZ NOT NULL
+UNIQUE (tenant_id, source_event_id, event_type)
+```
+
+`payload_bytes` is the exact serialized body used for signing and retry.
+
+### 11.9 `merchant_webhook_deliveries`
+
+```text
+id UUID PRIMARY KEY
+public_id TEXT UNIQUE NOT NULL
+tenant_id UUID NOT NULL
+endpoint_id UUID NOT NULL
+event_id UUID NOT NULL
+status TEXT NOT NULL
+attempt_count INTEGER NOT NULL
+next_attempt_at TIMESTAMPTZ NULL
+lease_owner TEXT NULL
+lease_expires_at TIMESTAMPTZ NULL
+last_http_status INTEGER NULL
+last_error_code TEXT NULL
+first_attempt_at TIMESTAMPTZ NULL
+delivered_at TIMESTAMPTZ NULL
+dead_at TIMESTAMPTZ NULL
+created_at TIMESTAMPTZ NOT NULL
+updated_at TIMESTAMPTZ NOT NULL
+UNIQUE (endpoint_id, event_id)
+```
+
+### 11.10 `merchant_webhook_attempts`
+
+Append-only attempt evidence:
+
+```text
+id UUID PRIMARY KEY
+delivery_id UUID NOT NULL
+attempt_number INTEGER NOT NULL
+started_at TIMESTAMPTZ NOT NULL
+finished_at TIMESTAMPTZ NOT NULL
+http_status INTEGER NULL
+duration_ms INTEGER NOT NULL
+error_code TEXT NULL
+response_excerpt TEXT NULL
+UNIQUE (delivery_id, attempt_number)
+```
+
+Do not persist sensitive response bodies. Truncate and sanitize excerpts.
+
+### 11.11 Index requirements
+
+Add indexes for:
+
+- active API-key prefix lookup;
+- active key count per tenant;
+- tenant status/environment;
+- idempotency expiry;
+- idempotency processing lease expiry;
+- inbox unprocessed rows;
+- webhook endpoint status per tenant;
+- delivery due time and status;
+- delivery list cursor;
+- event source ID;
+- attempt history.
+
+Every index must have an explained query owner. Avoid speculative indexes.
+
+---
+
+## 12. LedgerService changes
+
+### 12.1 Reuse existing account model
+
+Ledger accounts already support merchant ownership. C1 must reuse the existing
+`owner_type = merchant` model rather than create a parallel balance table.
+
+### 12.2 Additive internal contracts
+
+Add purpose-built additive Protobuf operations:
+
+```text
+ProvisionMerchantAccount
+GetMerchantAccount
+ListMerchantAccounts
+GetMerchantTransaction
+ListMerchantTransactions
+PostMerchantTransfer
+```
+
+Names may be adjusted to match current proto conventions, but semantics must
+remain merchant-specific.
+
+Avoid a dangerously generic public internal operation that lets Gateway debit
+an arbitrary account.
+
+### 12.3 Provisioning behavior
+
+`ProvisionMerchantAccount` must:
+
+- be idempotent for `tenant_id + currency + account_type`;
+- create or return the merchant-owned ledger account;
+- provision required balance rows through the existing Ledger rules;
+- return the same account on retry;
+- reject a conflicting currency or owner mapping;
+- emit audit and tracing evidence;
+- never let Gateway insert Ledger rows directly.
+
+### 12.4 Transfer behavior
+
+`PostMerchantTransfer` must:
+
+- infer and validate the merchant source account from the authenticated tenant
+  actor;
+- resolve the destination through Ledger-owned data;
+- validate currency equality;
+- post balanced entries through the existing posting core;
+- use a deterministic merchant idempotency scope;
+- attach merchant actor metadata;
+- return the existing transaction on retry;
+- emit the canonical ledger event;
+- preserve all existing balance and append-only invariants.
+
+### 12.5 Event enrichment
+
+Add optional, backward-compatible fields to relevant internal event schemas:
+
+```text
+merchant_id
+merchant_environment
+merchant_operation
+```
+
+Only add fields actually needed to route and construct tenant webhooks.
+
+Do not force the webhook relay to query Ledger's database for ownership.
+
+### 12.6 Existing-contract protection
+
+All current user-facing Ledger HTTP and gRPC behavior must remain unchanged.
+
+Every additive proto change must pass:
+
+- generated artifact checks;
+- field-number reuse checks;
+- enum semantic checks;
+- v1/v2 rollout harness;
+- current consumer tests.
+
+---
+
+## 13. PayinService changes
+
+### 13.1 Owner-neutral principal
+
+Current user journeys must remain unchanged.
+
+Introduce an additive principal model where required:
+
+```text
+principal_type = user | merchant
+principal_id
+```
+
+Prefer additive columns and fields with existing rows backfilled to `user`.
+
+### 13.2 Merchant pay-in behavior
+
+A merchant pay-in must:
+
+- be created only for the authenticated merchant tenant;
+- target the tenant's provisioned merchant account;
+- use sandbox adapters for sandbox tenants;
+- preserve PayinService ownership of lifecycle state;
+- preserve VendorService ownership of vendor dispatch and callbacks;
+- post final money movement through LedgerService;
+- use durable idempotency;
+- emit an owner lifecycle event through a transactional outbox;
+- include enough tenant metadata for webhook routing.
+
+### 13.3 State mapping
+
+Public B2B statuses must be stable and owner-neutral.
+
+Map internal states into a documented B2B state machine such as:
+
+```text
+pending
+processing
+succeeded
+failed
+expired
+cancelled
+```
+
+Do not leak vendor-native state names.
+
+### 13.4 Callback behavior
+
+Vendor callbacks continue to enter through VendorService.
+
+Gateway may not accept vendor callbacks under B2B routes.
+
+---
+
+## 14. PayoutService changes
+
+### 14.1 Owner-neutral principal
+
+Introduce the same additive merchant principal model where required.
+
+### 14.2 Merchant payout behavior
+
+A merchant payout must:
+
+- be created only for the authenticated tenant;
+- debit or hold only the tenant's provisioned merchant account;
+- preserve PayoutService ownership of payout state;
+- use VendorService for dispatch and callback normalization;
+- use sandbox adapters for sandbox tenants;
+- preserve hold, success, failure, reversal, and release invariants;
+- use durable idempotency;
+- emit owner lifecycle events through a transactional outbox;
+- include enough tenant metadata for webhook routing.
+
+### 14.3 Failure safety
+
+Required cases:
+
+- vendor timeout after request acceptance;
+- duplicate dispatch;
+- duplicate callback;
+- callback before synchronous response;
+- success callback after client timeout;
+- failed payout releases the correct hold exactly once;
+- repeated status query does not mutate money;
+- Gateway retry does not create a second payout.
+
+---
+
+## 15. Outbound webhook design
+
+### 15.1 External event envelope
+
+Example:
+
+```json
+{
+  "id": "evt_01J...",
+  "type": "payout.updated.v1",
+  "schema_version": 1,
+  "created_at": "2026-07-28T08:00:00Z",
+  "livemode": false,
+  "tenant_id": "mrc_01J...",
+  "data": {
+    "id": "payout-id",
+    "status": "succeeded",
+    "amount": "125000",
+    "currency": "IDR"
+  }
+}
+```
+
+The envelope must not contain:
+
+- API keys;
+- webhook secrets;
+- internal service tokens;
+- vendor credentials;
+- raw vendor callback bodies;
+- another tenant's identifiers;
+- unnecessary PII.
+
+### 15.2 Internal event ingestion
+
+Flow:
+
+```text
+Ledger/Payin/Payout transaction
+    -> owner transactional outbox
+    -> RabbitMQ internal event
+    -> Gateway merchant_event_inbox
+    -> immutable merchant_webhook_event
+    -> one delivery per matching active endpoint
+    -> delivery worker
+```
+
+Inbox insertion and external event/delivery creation must be atomic in the
+Gateway database.
+
+### 15.3 Subscription filtering
+
+An endpoint subscribes to an explicit allowlist.
+
+Rules:
+
+- unknown event types are rejected;
+- empty subscription list is rejected;
+- wildcard subscription is optional only if represented by a known constant;
+- endpoint receives only events for its tenant;
+- changes apply only to future event fan-out unless explicitly replayed.
+
+### 15.4 Signature
+
+Headers:
+
+```http
+Seev-Event-ID: evt_...
+Seev-Delivery-ID: wd_...
+Seev-Signature: t=<unix-seconds>,v1=<hex-hmac>
+User-Agent: Seev-Webhook/1.0
+Content-Type: application/json
+```
+
+Signing input:
+
+```text
+<timestamp>.<exact_raw_body>
+```
+
+Algorithm:
+
+```text
+HMAC-SHA-256(endpoint_secret, signing_input)
+```
+
+The exact body bytes must be persisted once so retries sign and send the same
+payload.
+
+### 15.5 Receiver verification documentation
+
+Reference documentation must explain how a receiver should:
+
+1. parse the timestamp and signatures;
+2. reject an old timestamp outside a recommended tolerance;
+3. construct the signing input from the raw body;
+4. compute HMAC-SHA-256;
+5. compare signatures in constant time;
+6. deduplicate using event ID;
+7. return `2xx` only after durable acceptance.
+
+### 15.6 HTTP client safety
+
+Live-mode endpoint requirements:
+
+- HTTPS only;
+- no embedded user credentials;
+- no loopback, link-local, private, multicast, unspecified, or metadata IP;
+- DNS results validated on every delivery attempt;
+- redirects disabled;
+- response body read is bounded;
+- request timeout is bounded, initially 10 seconds;
+- payload size is bounded, initially 256 KiB;
+- TLS certificate verification may not be disabled.
+
+Sandbox local URLs may be allowed only through an explicit local-development
+allowlist and may never be accepted for live-mode tenants.
+
+### 15.7 Retry policy
+
+Initial retry schedule:
+
+```text
+attempt 1: immediate
+attempt 2: +1 minute
+attempt 3: +5 minutes
+attempt 4: +30 minutes
+attempt 5: +2 hours
+attempt 6: +8 hours
+attempt 7: +24 hours
+```
+
+After the final failed attempt, mark the delivery `dead`.
+
+Response behavior:
+
+- `2xx`: delivered;
+- `410`: disable endpoint and stop automatic retry;
+- `408`, `425`, `429`, `5xx`, timeout, network error: retry;
+- other `4xx`: retry only within the bounded schedule, then dead;
+- redirects: failure, no follow.
+
+### 15.8 Worker leasing
+
+Use PostgreSQL leasing:
+
+```text
+SELECT ... FOR UPDATE SKIP LOCKED
+```
+
+Required controls:
+
+- bounded batch size;
+- lease owner;
+- lease expiry;
+- heartbeat or attempt bounded below the lease duration;
+- recovery of expired leases;
+- no concurrent attempt number reuse;
+- graceful shutdown;
+- worker metrics.
+
+### 15.9 Replay
+
+Replay rules:
+
+- only terminal failed or dead deliveries are eligible;
+- replay is tenant-scoped;
+- replay creates a new delivery ID;
+- replay preserves the same event ID and exact payload;
+- replay records actor, reason, and source delivery;
+- default replay age limit: seven days;
+- replay may not bypass a disabled endpoint without first re-enabling it;
+- repeated replay requests are idempotent.
+
+---
+
+## 16. Admin BFF changes
+
+### 16.1 Maintain existing boundary
+
+Browser operators continue to use Admin BFF.
+
+Admin BFF calls typed Gateway merchant-management endpoints or an internal
+merchant administration contract. It does not read Gateway tables directly.
+
+### 16.2 Operator pages and routes
+
+Add:
+
+- merchant tenant list and detail;
+- create sandbox tenant;
+- create live-mode tenant in draft state;
+- provision account;
+- activate, suspend, and close tenant;
+- create and revoke API key;
+- rotate API key;
+- display a newly created secret exactly once;
+- inspect and update scopes;
+- inspect and update quotas;
+- inspect webhook endpoints;
+- disable an endpoint;
+- inspect delivery attempts;
+- replay eligible delivery;
+- inspect merchant audit history.
+
+### 16.3 Authorization
+
+Use existing admin roles and maker/checker controls.
+
+At minimum:
+
+- sandbox tenant creation: maker;
+- live-mode activation: checker;
+- quota increase above the default baseline: checker;
+- key creation: maker with audit;
+- key revocation: maker with audit;
+- tenant closure: checker;
+- delivery replay: maker with reason;
+- endpoint force-disable: maker with reason.
+
+Exact route-role mapping must be locked in the Admin BFF policy registry and
+tested.
+
+### 16.4 CSRF and secret display
+
+All browser mutations require existing CSRF protection.
+
+Secret plaintext:
+
+- appears only in the immediate create/rotate response;
+- is never re-fetchable;
+- is never stored in audit details;
+- is masked from logs and templates after the response;
+- has a copy warning explaining one-time visibility.
+
+---
+
+## 17. Audit model
+
+Audit all security- and money-relevant merchant actions.
+
+Required events include:
+
+```text
+merchant.tenant.created
+merchant.tenant.activated
+merchant.tenant.suspended
+merchant.tenant.closed
+merchant.account.provisioned
+merchant.api_key.created
+merchant.api_key.rotated
+merchant.api_key.revoked
+merchant.scope.changed
+merchant.quota.changed
+merchant.webhook_endpoint.created
+merchant.webhook_endpoint.updated
+merchant.webhook_endpoint.disabled
+merchant.webhook_secret.rotated
+merchant.webhook_delivery.replayed
+merchant.transfer.requested
+merchant.payin.requested
+merchant.payout.requested
+```
+
+Audit details may contain:
+
+- tenant public ID;
+- key public ID or prefix;
+- endpoint public ID;
+- changed non-secret fields;
+- actor type and actor ID;
+- request ID;
+- reason;
+- before/after policy metadata.
+
+Audit details may not contain:
+
+- API-key plaintext;
+- webhook-secret plaintext;
+- full authorization headers;
+- internal tokens;
+- vendor credentials;
+- raw private payloads.
+
+---
+
+## 18. Observability
+
+### 18.1 API metrics
+
+Add bounded-cardinality metrics:
+
+```text
+seev_b2b_requests_total{operation_id,status_class,environment}
+seev_b2b_request_duration_seconds{operation_id,environment}
+seev_b2b_auth_failures_total{reason,environment}
+seev_b2b_scope_denials_total{scope,environment}
+seev_b2b_quota_decisions_total{quota_class,result,backend,environment}
+seev_b2b_idempotency_total{operation_id,result,environment}
+seev_b2b_owner_calls_total{owner,operation,result}
+seev_b2b_owner_call_duration_seconds{owner,operation}
+```
+
+### 18.2 Webhook metrics
+
+```text
+seev_merchant_webhook_events_total{event_type,environment}
+seev_merchant_webhook_deliveries_total{event_type,result,environment}
+seev_merchant_webhook_attempt_duration_seconds{result,environment}
+seev_merchant_webhook_due_total{status,environment}
+seev_merchant_webhook_oldest_due_age_seconds{environment}
+seev_merchant_webhook_dead_total{event_type,environment}
+seev_merchant_webhook_endpoints_disabled_total{reason,environment}
+seev_merchant_webhook_inbox_duplicates_total{source,event_type}
+```
+
+### 18.3 Forbidden metric labels
+
+Do not label metrics with:
+
+- tenant ID;
+- key ID;
+- account ID;
+- transaction ID;
+- event ID;
+- delivery ID;
+- request ID;
+- webhook host.
+
+### 18.4 Logging
+
+Structured logs must include bounded context:
+
+- operation ID;
+- request ID;
+- trace ID;
+- environment;
+- authenticated actor type;
+- owner service;
+- stable error code.
+
+Tenant and key identifiers may appear only where operationally required and
+must be represented by non-secret public IDs. Never log the full key or
+signature.
+
+### 18.5 Tracing
+
+A merchant write trace must connect:
+
+```text
+B2B HTTP request
+-> Gateway auth/quota/idempotency
+-> owner-service RPC
+-> Ledger posting where applicable
+-> owner outbox publication
+-> Gateway merchant event inbox
+-> external webhook attempt
+```
+
+Async links should use event IDs and trace-link semantics rather than pretending
+the full delivery is one synchronous span.
+
+### 18.6 Alerts
+
+Add actionable alerts for:
+
+- sustained B2B authentication failures;
+- quota backend unavailable;
+- idempotency records stuck in `processing`;
+- owner-service error rate;
+- merchant inbox oldest unprocessed age;
+- webhook oldest due age;
+- dead-delivery growth;
+- endpoint auto-disable spike;
+- merchant event payload creation failures;
+- API-key digest/pepper initialization failure.
+
+Alerts need a runbook link and must avoid noisy per-tenant alert creation.
+
+---
+
+## 19. Security and threat-model updates
+
+Update the threat model with at least:
+
+### 19.1 Credential threats
+
+- API-key leakage;
+- plaintext key persistence;
+- authorization-header logging;
+- brute-force prefix probing;
+- stale-key cache after revocation;
+- over-broad scopes;
+- operator key exfiltration.
+
+### 19.2 Tenant-isolation threats
+
+- IDOR across merchant resources;
+- tenant ID accepted from untrusted request body;
+- source account substitution;
+- cross-tenant idempotency collision;
+- cross-tenant webhook fan-out;
+- list-query scope omission.
+
+### 19.3 Financial threats
+
+- duplicate money from HTTP retry;
+- Gateway crash after downstream success;
+- owner callback duplication;
+- stale payout state;
+- mismatched request reuse under one idempotency key;
+- integer overflow or floating-point conversion;
+- debit from non-owned account.
+
+### 19.4 Webhook threats
+
+- SSRF;
+- DNS rebinding;
+- redirect to private address;
+- signature replay;
+- secret leakage;
+- payload tampering;
+- unbounded response body;
+- slow endpoint resource exhaustion;
+- duplicate delivery;
+- malicious endpoint returning sensitive content.
+
+### 19.5 Administrative threats
+
+- CSRF;
+- privilege escalation;
+- secret exposed in browser history or audit;
+- unauthorized live activation;
+- unsafe quota increase;
+- replay abuse.
+
+Every threat requires:
+
+- prevention;
+- detection;
+- test;
+- residual risk;
+- owner.
+
+---
+
+## 20. Task breakdown
+
+## T0 — Entry-gate re-inventory
+
+### Work
+
+- Re-read current roadmap index and active/archive status.
+- Record exact baseline commit.
+- Run current contract, security, business, callback, admin, and smoke gates.
+- Inventory Gateway, Ledger, Payin, Payout, Vendor, and Admin BFF contracts.
+- Identify every user-specific field that blocks a merchant principal.
+- Confirm migration heads and generated-code commands.
+- Confirm existing encryption, secret-loading, outbox, rate-limit, request-ID,
+  audit, and admin-policy helpers that can be reused.
+- Produce a dependency and blast-radius table.
+
+### Deliverables
+
+```text
+docs/evidence/c1-entry-gate.md
+docs/reference/c1-current-contract-inventory.md
+```
+
+### Acceptance
+
+- [ ] All entry-gate checks are recorded.
+- [ ] Every failed prerequisite has an owner and blocking disposition.
+- [ ] No implementation assumption remains based only on roadmap prose.
+- [ ] Baseline commit and commands are reproducible.
+
+---
+
+## T1 — Lock contracts, states, and trust boundaries
+
+### Work
+
+- Add the initial B2B OpenAPI contract.
+- Register every operation.
+- Lock scope mapping.
+- Lock error envelope.
+- Lock pagination.
+- Lock public state mappings for transfer, pay-in, and payout.
+- Lock the webhook envelope and signature.
+- Update architecture, service ownership, and threat model.
+- Add a sequence diagram for every money journey.
+- Add a failure matrix.
+
+### Required diagrams
+
+```text
+merchant tenant + key provisioning
+B2B request authentication
+merchant transfer
+merchant pay-in
+merchant payout
+owner event to external webhook
+webhook retry and replay
+Gateway crash after owner success
+```
+
+### Acceptance
+
+- [ ] No handler is implemented before its operation contract exists.
+- [ ] Every financial write documents idempotency.
+- [ ] Every resource documents tenant ownership.
+- [ ] Every event documents producer, consumer, key, version, and dedup identity.
+- [ ] Threat model changes are reviewed.
+
+---
+
+## T2 — Gateway merchant module and persistence
+
+### Work
+
+- Add `internal/merchant`.
+- Add configuration with secure defaults.
+- Add additive Gateway migrations.
+- Add repositories with mandatory tenant-scoped methods.
+- Add transaction helper usage.
+- Add retention jobs for idempotency and delivery evidence.
+- Add module health/readiness checks where required.
+- Add migration rollback only where safe; document irreversible steps.
+
+### Acceptance
+
+- [ ] Migration up/down tests pass where supported.
+- [ ] Repository integration tests use real PostgreSQL.
+- [ ] Unique constraints prove race safety.
+- [ ] All timestamps are UTC.
+- [ ] No cross-service foreign key exists.
+- [ ] No secret plaintext column exists.
+- [ ] Existing Gateway notification tables and routes remain green.
+
+---
+
+## T3 — API-key authentication and scopes
+
+### Work
+
+- Implement key generation and one-time display.
+- Implement HMAC digest.
+- Implement prefix lookup and constant-time comparison.
+- Implement tenant and key status checks.
+- Implement expiry.
+- Implement route scope registry.
+- Add machine principal to request context.
+- Propagate actor metadata to typed owner clients.
+- Mask authorization data from logs.
+- Add sampled last-used updates.
+- Add operator create/rotate/revoke application services.
+
+### Acceptance
+
+- [ ] Invalid, expired, revoked, wrong-environment, and suspended-tenant keys fail
+      closed.
+- [ ] Key plaintext is never queryable after creation.
+- [ ] Scope denial returns stable `403`.
+- [ ] Resource existence is not leaked.
+- [ ] Revocation applies immediately.
+- [ ] Authentication unit, integration, fuzz, and race tests pass.
+- [ ] Log-capture tests find no key plaintext.
+
+---
+
+## T4 — Quotas and durable idempotency
+
+### Work
+
+- Add quota policy repository.
+- Add atomic Redis limiter.
+- Add read-only emergency fallback.
+- Add write fail-closed posture.
+- Add rate-limit headers.
+- Add durable idempotency claim, lease, completion, replay, and purge.
+- Add canonical request hashing.
+- Derive deterministic downstream keys.
+- Add recovery query for interrupted `processing` records.
+- Add idempotent management writes where appropriate.
+
+### Acceptance
+
+- [ ] Concurrent same-key same-body requests produce one owner operation.
+- [ ] Same key with different body returns `IDEMPOTENCY_KEY_REUSED`.
+- [ ] Gateway crash after downstream success does not duplicate money.
+- [ ] Redis outage blocks financial writes.
+- [ ] Read fallback is bounded and observable.
+- [ ] Counter updates are atomic.
+- [ ] Idempotency expiry job is bounded.
+- [ ] No tenant can collide with another tenant's idempotency key.
+
+---
+
+## T5 — Ledger merchant account and transfer support
+
+### Work
+
+- Add merchant-specific additive Protobuf contracts.
+- Implement idempotent merchant account provisioning.
+- Implement merchant account and balance reads.
+- Implement tenant-scoped transaction reads.
+- Implement merchant transfer through the existing posting core.
+- Add optional merchant routing fields to event schemas.
+- Generate artifacts.
+- Add compatibility fixtures and rollout tests.
+- Add Admin BFF account-provisioning client.
+
+### Acceptance
+
+- [ ] Merchant account uses the existing ledger account model.
+- [ ] Provision retry returns the same account.
+- [ ] Transfer posts balanced entries.
+- [ ] Source account cannot be substituted by the caller.
+- [ ] Currency mismatch fails before posting.
+- [ ] Duplicate request returns the original transaction.
+- [ ] Cross-tenant read/write tests pass.
+- [ ] Existing user transfer tests remain unchanged and green.
+- [ ] Ledger event remains backward compatible.
+
+---
+
+## T6 — Merchant pay-in and payout journeys
+
+### Work
+
+- Add owner-neutral principal fields where required.
+- Backfill existing rows safely.
+- Extend typed internal contracts additively.
+- Add merchant create/get use cases.
+- Add stable public status mapping.
+- Add merchant metadata to owner outbox events.
+- Enforce sandbox-to-mock routing.
+- Add failure and duplicate handling.
+- Keep callbacks in VendorService.
+- Add B2B Gateway handlers only after owner contracts are green.
+
+### Acceptance
+
+- [ ] Existing user Payin/Payout journeys remain green.
+- [ ] Sandbox merchant cannot invoke a live adapter.
+- [ ] Pay-in credits the correct merchant account once.
+- [ ] Payout holds/debits/releases the correct merchant account once.
+- [ ] Duplicate synchronous request and duplicate callback are safe.
+- [ ] Lost synchronous response is recoverable by idempotent query/retry.
+- [ ] Owner events contain sufficient tenant routing data.
+- [ ] No vendor-native response leaks into the public B2B contract.
+
+---
+
+## T7 — Outbound webhook relay
+
+### Work
+
+- Consume relevant internal events.
+- Deduplicate using logical event ID.
+- Build immutable external event envelopes.
+- Validate endpoint URL and subscriptions.
+- Encrypt endpoint secrets.
+- Implement signing.
+- Implement fan-out.
+- Implement leasing worker and retry schedule.
+- Add attempt evidence.
+- Add dead state.
+- Add endpoint auto-disable on `410`.
+- Add tenant and operator replay.
+- Add SSRF/DNS/redirect defenses.
+- Add retention jobs.
+- Publish receiver verification documentation and examples.
+
+### Acceptance
+
+- [ ] Duplicate internal event creates no duplicate external event.
+- [ ] One endpoint receives at most one automatic delivery record per event.
+- [ ] Retries reuse exact event bytes.
+- [ ] Signature fixtures are deterministic.
+- [ ] Private and metadata IP destinations are rejected for live mode.
+- [ ] Redirects are not followed.
+- [ ] Timeout and response-body limits are enforced.
+- [ ] Failed deliveries become dead after the bounded schedule.
+- [ ] Replay creates a new delivery ID with the same event ID.
+- [ ] Secret plaintext does not appear in DB dumps, logs, traces, or audit.
+- [ ] Worker restart recovers expired leases.
+
+---
+
+## T8 — Admin BFF merchant operations
+
+### Work
+
+- Add typed management client.
+- Add routes, views, CSRF checks, and policy registry entries.
+- Add tenant lifecycle.
+- Add account provisioning.
+- Add key and scope management.
+- Add quota management.
+- Add webhook endpoint and delivery views.
+- Add replay and disable controls.
+- Add one-time secret UI.
+- Add maker/checker flow where required.
+- Add audit events.
+
+### Acceptance
+
+- [ ] Unauthorized roles cannot view or mutate merchant management.
+- [ ] Browser mutations require CSRF.
+- [ ] Live activation and tenant closure require checker approval.
+- [ ] Secret is shown once and never re-rendered.
+- [ ] Every mutation emits a redacted audit event.
+- [ ] Existing Admin BFF routes remain green.
+- [ ] Admin E2E covers the full sandbox onboarding flow.
+
+---
+
+## T9 — Observability, operational controls, and runbooks
+
+### Work
+
+- Add metrics, logs, traces, dashboards, and alerts.
+- Add stuck-idempotency detection.
+- Add webhook queue and dead-letter panels.
+- Add key-compromise and endpoint-compromise runbooks.
+- Add Redis quota outage runbook.
+- Add RabbitMQ outage runbook.
+- Add owner-service outage runbook.
+- Add merchant suspension and global route-disable controls.
+- Document restart and recovery behavior.
+- Validate cardinality.
+
+### Required runbooks
+
+```text
+docs/runbooks/merchant-api-key-compromise.md
+docs/runbooks/merchant-tenant-suspension.md
+docs/runbooks/merchant-quota-backend-outage.md
+docs/runbooks/merchant-idempotency-stuck.md
+docs/runbooks/merchant-webhook-backlog.md
+docs/runbooks/merchant-webhook-secret-compromise.md
+docs/runbooks/merchant-owner-service-outage.md
+```
+
+### Acceptance
+
+- [ ] Every alert has an actionable runbook.
+- [ ] Dashboards avoid tenant-level metric cardinality.
+- [ ] Suspension prevents new writes.
+- [ ] Existing accepted writes remain queryable.
+- [ ] Webhook backlog and oldest age are visible.
+- [ ] Stuck leases and idempotency records are visible.
+- [ ] Trace evidence crosses owner-service and async boundaries.
+
+---
+
+## T10 — Verification, chaos, and release evidence
+
+### Work
+
+- Add unit, integration, contract, E2E, race, fuzz, and chaos tests.
+- Add `scripts/merchant-e2e.sh`.
+- Add `scripts/merchant-chaos.sh`.
+- Add Make targets.
+- Run a clean-tree final gate.
+- Record all commands, outputs, metrics, and known residual risks.
+- Update roadmap indexes and current service reference.
+- Archive the plan only after final acceptance.
+
+### Acceptance
+
+- [ ] All final gates pass from a clean tree.
+- [ ] Chaos evidence demonstrates no duplicate money.
+- [ ] Cross-tenant access attempts all fail.
+- [ ] No secret is found in repository/log/database scans.
+- [ ] All contract artifacts are generated and clean.
+- [ ] Existing user, admin, and callback journeys remain green.
+- [ ] Operational rollback and disable controls are exercised.
+- [ ] Residual risks are documented.
+- [ ] Plan status and roadmap index are updated truthfully.
+
+---
+
+## 21. Recommended PR sequence
+
+Keep pull requests narrow enough to review and revert.
+
+```text
+PR 1  — C1 entry evidence, architecture, threat model, OpenAPI skeleton
+PR 2  — Gateway merchant schema and package scaffold
+PR 3  — API-key authentication, scopes, and redaction
+PR 4  — Quota and durable idempotency
+PR 5  — Ledger merchant provisioning and read contracts
+PR 6  — Merchant transfer endpoint and E2E
+PR 7  — Payin merchant-principal support and endpoint
+PR 8  — Payout merchant-principal support and endpoint
+PR 9  — External webhook event schema and inbox
+PR 10 — Webhook endpoint management, signing, delivery, retry, dead/replay
+PR 11 — Admin BFF management surfaces and audit
+PR 12 — Dashboards, alerts, runbooks, chaos, final evidence
+```
+
+A PR may be split further. Do not combine unrelated owner-service changes merely
+to reduce the PR count.
+
+---
+
+## 22. Dependency graph
+
+```text
+T0 Entry gate
+  |
+  v
+T1 Contracts + threat model
+  |
+  v
+T2 Gateway module + schema
+  |------------------------------|
+  v                              v
+T3 Auth + scopes              T5 Ledger merchant support
+  |                              |
+  v                              |
+T4 Quota + idempotency            |
+  |                              |
+  |------------------------------|
+                 |
+                 v
+         Merchant transfer
+                 |
+        |--------|--------|
+        v                 v
+T6 Payin/Payout       T7 Webhook relay
+        |                 |
+        |--------|--------|
+                 v
+         T8 Admin BFF
+                 |
+                 v
+ T9 Observability + runbooks
+                 |
+                 v
+ T10 Final verification + archive
+```
+
+T7 event-envelope and receiver-documentation work may start earlier, but live
+delivery cannot complete before owner events contain authoritative tenant
+routing data.
+
+---
+
+## 23. Test strategy
+
+### 23.1 Unit tests
+
+Cover:
+
+- key format parser;
+- HMAC digest and constant-time comparison;
+- scope registry;
+- tenant status decisions;
+- quota decision mapping;
+- request canonicalization;
+- request hashing;
+- idempotency state transitions;
+- error-envelope mapping;
+- public state mapping;
+- event envelope construction;
+- webhook HMAC;
+- retry schedule;
+- URL and resolved-IP validation;
+- response-body truncation;
+- cursor encode/decode;
+- redaction.
+
+### 23.2 Fuzz tests
+
+Fuzz:
+
+- API-key parser;
+- authorization header parser;
+- idempotency key validation;
+- JSON canonicalization;
+- cursor parser;
+- webhook URL parser;
+- signature header parser;
+- public error mapping;
+- event envelope deserialization.
+
+### 23.3 PostgreSQL integration tests
+
+Prove:
+
+- unique API-key prefix;
+- active-key limit race safety;
+- tenant-scoped repository behavior;
+- idempotency concurrent claim;
+- lease recovery;
+- inbox dedup;
+- webhook fan-out uniqueness;
+- `SKIP LOCKED` worker concurrency;
+- replay uniqueness;
+- retention batching;
+- migration compatibility.
+
+### 23.4 Redis integration tests
+
+Prove:
+
+- atomic token consumption;
+- burst behavior;
+- reset behavior;
+- independent tenant/key/class buckets;
+- outage posture;
+- local read fallback bound;
+- no write fallback.
+
+### 23.5 Contract tests
+
+For every B2B operation:
+
+- request fixture;
+- success fixture;
+- validation failure;
+- auth failure;
+- scope denial;
+- tenant-isolation result;
+- owner timeout;
+- compatibility mutation.
+
+For every external event:
+
+- JSON Schema;
+- stable event ID;
+- exact money strings;
+- additive-field compatibility;
+- signature fixture;
+- duplicate delivery expectation.
+
+### 23.6 End-to-end journeys
+
+#### Journey A — Sandbox onboarding
+
+```text
+operator creates sandbox tenant
+-> checker not required for sandbox activation
+-> Ledger merchant account provisioned
+-> operator creates scoped test key
+-> secret shown once
+-> merchant retrieves profile and balance
+```
+
+#### Journey B — Merchant transfer
+
+```text
+merchant posts transfer with idempotency key
+-> Gateway authenticates/scopes/limits/claims
+-> Ledger posts balanced entries
+-> Gateway stores response
+-> merchant retries same request
+-> same response returned
+-> transaction webhook delivered
+```
+
+#### Journey C — Merchant pay-in
+
+```text
+merchant creates sandbox pay-in
+-> Payin owns lifecycle
+-> VendorService uses mock adapter
+-> callback normalized
+-> Ledger credits merchant account once
+-> payin.updated webhook delivered
+```
+
+#### Journey D — Merchant payout
+
+```text
+merchant creates sandbox payout
+-> Payout owns lifecycle and hold
+-> VendorService dispatches mock request
+-> callback normalized
+-> Ledger settles or releases once
+-> payout.updated webhook delivered
+```
+
+#### Journey E — Webhook retry
+
+```text
+receiver returns 500
+-> delivery retries
+-> receiver later returns 200
+-> delivery marked delivered
+-> attempt evidence preserved
+```
+
+#### Journey F — Dead and replay
+
+```text
+receiver fails through retry budget
+-> delivery marked dead
+-> endpoint fixed
+-> authorized replay creates new delivery
+-> same event ID delivered successfully
+```
+
+### 23.7 Cross-tenant matrix
+
+For every resource endpoint, test:
+
+```text
+tenant A reads tenant B resource
+tenant A mutates tenant B resource
+tenant A reuses tenant B idempotency key text
+tenant A replays tenant B delivery
+tenant A targets tenant B source account
+test key accesses live tenant
+live key accesses sandbox tenant
+suspended tenant reads
+suspended tenant writes
+```
+
+Default suspension policy:
+
+- new financial writes denied;
+- management writes denied except recovery operations;
+- read access may remain available for reconciliation;
+- webhook delivery continues unless the endpoint or tenant policy explicitly
+  pauses it.
+
+### 23.8 Race tests
+
+Run race tests for:
+
+- concurrent same idempotency key;
+- concurrent key rotation/revocation and request;
+- concurrent webhook workers;
+- concurrent replay;
+- concurrent endpoint disable and delivery;
+- concurrent tenant suspension and financial write;
+- duplicate owner events.
+
+---
+
+## 24. Chaos matrix
+
+### 24.1 Gateway failures
+
+- crash after idempotency claim;
+- crash after owner success but before response persistence;
+- crash after event inbox insert but before fan-out completion;
+- restart during delivery lease.
+
+Expected result: recovery without duplicate money or duplicate automatic event.
+
+### 24.2 Owner-service failures
+
+- Ledger timeout;
+- Payin timeout;
+- Payout timeout;
+- owner returns retryable error;
+- owner commits but response is lost.
+
+Expected result: deterministic retry and query recover the original resource.
+
+### 24.3 RabbitMQ failures
+
+- broker unavailable during owner commit;
+- duplicate delivery after reconnect;
+- consumer restart;
+- delayed backlog drain.
+
+Expected result: owner outbox preserves event; Gateway inbox deduplicates.
+
+### 24.4 Redis failures
+
+- Redis unavailable before request;
+- Redis timeout;
+- Redis restart and counter loss.
+
+Expected result: financial writes fail closed; reads use bounded fallback; all
+decisions are observable.
+
+### 24.5 Webhook receiver failures
+
+- timeout;
+- connection reset;
+- TLS failure;
+- 429;
+- 500;
+- 410;
+- oversized response;
+- redirect;
+- DNS rebinding attempt;
+- private-address resolution.
+
+Expected result: bounded resource use, correct retry/dead/disable behavior, and
+no SSRF.
+
+### 24.6 Database failures
+
+- Gateway DB restart;
+- lease transaction rollback;
+- deadlock;
+- statement timeout;
+- retention job interruption.
+
+Expected result: no lost durable record and safe recovery.
+
+---
+
+## 25. Performance and resource boundaries
+
+C1 does not invent production capacity claims before B0 evidence.
+
+Still enforce these engineering boundaries:
+
+- request bodies are bounded;
+- list page sizes are bounded;
+- webhook payloads and responses are bounded;
+- database statements use timeouts;
+- owner calls use deadlines;
+- worker batches are bounded;
+- retention deletes are bounded;
+- no unbounded goroutine per delivery;
+- no network call inside a database transaction;
+- no API-key plaintext encryption/decryption hot path;
+- no per-request audit DB write for read-only calls;
+- no last-used update per request;
+- no offset scan on growing transaction/delivery lists.
+
+C1 must add a B2B scenario to the load harness, but B0 remains the authority for
+capacity activation decisions.
+
+---
+
+## 26. Configuration
+
+Add explicit configuration with safe defaults.
+
+Example names:
+
+```text
+B2B_ENABLED=false
+B2B_LIVE_ENABLED=false
+B2B_WEBHOOKS_ENABLED=false
+B2B_API_KEY_PEPPER_FILE=
+B2B_MAX_REQUEST_BODY_BYTES=
+B2B_IDEMPOTENCY_RETENTION=
+B2B_IDEMPOTENCY_LEASE_DURATION=
+B2B_QUOTA_REDIS_TIMEOUT=
+B2B_READ_FALLBACK_RATE=
+B2B_WEBHOOK_BATCH_SIZE=
+B2B_WEBHOOK_WORKERS=
+B2B_WEBHOOK_REQUEST_TIMEOUT=
+B2B_WEBHOOK_MAX_PAYLOAD_BYTES=
+B2B_WEBHOOK_MAX_RESPONSE_BYTES=
+B2B_WEBHOOK_LEASE_DURATION=
+B2B_WEBHOOK_REPLAY_MAX_AGE=
+B2B_SANDBOX_LOCAL_WEBHOOK_ALLOWLIST=
+```
+
+Rules:
+
+- missing pepper fails Gateway startup when B2B is enabled;
+- live mode remains disabled by default;
+- webhook worker may be disabled independently;
+- all durations and sizes are validated at startup;
+- unsafe TLS bypass configuration does not exist.
+
+---
+
+## 27. Rollout and rollback
+
+### 27.1 Rollout stages
+
+#### Stage 0 — Disabled
+
+- schema present;
+- code present;
+- routes return not found or feature disabled;
+- no merchant worker active.
+
+#### Stage 1 — Sandbox read-only
+
+- sandbox tenant and key;
+- profile, account, balance, transaction reads;
+- no financial write routes.
+
+#### Stage 2 — Sandbox transfer
+
+- transfer and idempotency enabled;
+- external webhook delivery enabled to approved local receivers;
+- chaos evidence recorded.
+
+#### Stage 3 — Sandbox Payin/Payout
+
+- mock adapters only;
+- complete owner lifecycle;
+- full E2E and callback evidence.
+
+#### Stage 4 — Local live-mode simulation
+
+- `sk_live` credentials;
+- still no real vendor or real-money claim;
+- stricter HTTPS endpoint requirements;
+- operator checker activation exercised.
+
+### 27.2 Kill switches
+
+Required:
+
+- global B2B route enable;
+- live-mode enable;
+- webhook worker enable;
+- tenant suspension;
+- endpoint disable.
+
+A global financial-write pause may be added if it reuses an existing operational
+control pattern. Do not invent a second inconsistent control plane.
+
+### 27.3 Rollback
+
+Code rollback must preserve additive data.
+
+During rollback:
+
+- disable new B2B writes first;
+- allow safe read/reconciliation where possible;
+- keep owner-service data authoritative;
+- do not delete merchant ledger accounts;
+- do not re-run money operations manually;
+- preserve idempotency and webhook evidence;
+- resume delivery only after compatibility is verified.
+
+---
+
+## 28. Documentation deliverables
+
+Add or update:
+
+```text
+docs/roadmap/active/57-c1-merchant-b2b-api.md
+docs/roadmap/README.md
+docs/roadmap/42-long-term-roadmap.md
+docs/reference/current-services.md
+docs/reference/b2b-api.md
+docs/reference/b2b-authentication.md
+docs/reference/b2b-idempotency.md
+docs/reference/b2b-errors.md
+docs/reference/b2b-webhooks.md
+docs/reference/b2b-sandbox.md
+docs/architecture/merchant-b2b-boundary.md
+docs/threat-models/merchant-b2b-api.md
+docs/evidence/c1-entry-gate.md
+docs/evidence/c1-final-acceptance.md
+```
+
+Examples must use fake secrets and clearly synthetic data.
+
+---
+
+## 29. Proposed repository changes
+
+Expected areas:
+
+```text
+api/openapi/b2b-v1.yaml
+api/contracts/surfaces.yaml
+api/events/catalog.yaml
+api/events/schemas/
+api/proto/
+
+internal/merchant/
+internal/handler/router.go
+internal/config/
+pkg/middleware/
+pkg/cryptox/
+
+migrations/gateway/
+migrations/ledger/
+migrations/payin/
+migrations/payout/
+
+services/ledger/
+services/payin/
+services/payout/
+services/adminbff/
+
+scripts/merchant-e2e.sh
+scripts/merchant-chaos.sh
+Makefile
+```
+
+This is a forecast, not permission to modify every listed area. T0 must narrow
+the actual blast radius.
+
+---
+
+## 30. Verification commands
+
+Use the repository's current canonical commands discovered in T0. The final
+gate should include equivalents of:
+
+```bash
+make contracts
+make proto
+make build
+make test
+make lint
+go vet ./...
+go test -race ./...
+go test -tags=integration ./...
+./scripts/smoke-test.sh all
+./scripts/business-e2e.sh
+./scripts/admin-e2e.sh
+./scripts/merchant-e2e.sh
+git diff --check
+git status --short
+```
+
+Chaos remains a separate, explicitly invoked gate:
+
+```bash
+./scripts/merchant-chaos.sh
+```
+
+Do not put destructive chaos behavior inside an ordinary repeatable verification
+target.
+
+---
+
+## 31. Final definition of done
+
+C1 is complete only when:
+
+### Contracts
+
+- [ ] B2B OpenAPI is complete and generated checks pass.
+- [ ] Every operation has canonical fixtures.
+- [ ] Error, pagination, idempotency, and scope semantics are documented.
+- [ ] Internal event and proto changes are backward compatible.
+- [ ] External webhook schemas are versioned and tested.
+
+### Security
+
+- [ ] API keys are one-time visible and digest-only at rest.
+- [ ] Webhook secrets are encrypted at rest.
+- [ ] Revocation is immediate.
+- [ ] Tenant isolation is proven on every resource.
+- [ ] SSRF protections are exercised.
+- [ ] Secret scans across logs, DB evidence, and fixtures are clean.
+- [ ] Admin CSRF and role checks pass.
+- [ ] Threat model is complete.
+
+### Money correctness
+
+- [ ] Merchant accounts use LedgerService.
+- [ ] Every transfer is balanced.
+- [ ] Pay-in credits once.
+- [ ] Payout hold/settle/release occurs once.
+- [ ] Duplicate request, event, and callback cannot duplicate money.
+- [ ] Gateway crash recovery returns the original resource.
+- [ ] Existing user money journeys remain green.
+
+### Reliability
+
+- [ ] Quota outage posture is proven.
+- [ ] Owner outboxes survive RabbitMQ outage.
+- [ ] Merchant event inbox deduplicates.
+- [ ] Webhook retry, dead, replay, and worker recovery are proven.
+- [ ] Retention jobs are bounded.
+- [ ] Kill switches and tenant suspension are exercised.
+
+### Operations
+
+- [ ] Metrics, traces, dashboards, alerts, and runbooks exist.
+- [ ] Cardinality checks pass.
+- [ ] Clean-tree final verification passes.
+- [ ] Chaos evidence is recorded.
+- [ ] Residual risks are explicit.
+- [ ] Roadmap and current-service documentation reflect reality.
+- [ ] The plan is archived only after all required evidence is linked.
+
+---
+
+## 32. Final evidence log
+
+Fill during execution.
+
+| Evidence | Commit / artifact | Result | Notes |
+|---|---|---:|---|
+| C1 entry gate |  |  |  |
+| B2B OpenAPI gate |  |  |  |
+| API-key security |  |  |  |
+| Quota outage |  |  |  |
+| Idempotency concurrency |  |  |  |
+| Merchant account provisioning |  |  |  |
+| Transfer E2E |  |  |  |
+| Payin E2E |  |  |  |
+| Payout E2E |  |  |  |
+| Webhook signature fixtures |  |  |  |
+| Webhook retry/dead/replay |  |  |  |
+| Cross-tenant matrix |  |  |  |
+| Admin BFF E2E |  |  |  |
+| RabbitMQ chaos |  |  |  |
+| Redis chaos |  |  |  |
+| Gateway crash recovery |  |  |  |
+| Final clean-tree gate |  |  |  |
+
+---
+
+## 33. Recommended first implementation cut
+
+The first mergeable vertical slice should be intentionally narrow:
+
+```text
+sandbox tenant creation
+-> merchant account provisioning
+-> one read-only API key
+-> GET merchant profile
+-> GET account balance
+-> tenant-isolation tests
+-> audit + metrics
+```
+
+The first money-writing slice should then be:
+
+```text
+scoped sandbox key
+-> POST merchant transfer
+-> durable Gateway idempotency
+-> Ledger merchant transfer
+-> GET transaction
+-> transaction.posted.v1 webhook
+-> duplicate/retry/crash evidence
+```
+
+Do not start Payin/Payout merchant adaptation before this transfer slice proves
+the core tenant, key, scope, quota, idempotency, Ledger, event, and webhook
+boundaries.

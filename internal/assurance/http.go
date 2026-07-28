@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -50,12 +51,7 @@ func (m *Module) authorized(r *http.Request, roles ...string) bool {
 	if claims == nil {
 		return false
 	}
-	for _, role := range roles {
-		if claims.Role == role {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(roles, claims.Role)
 }
 
 func actorFromRequest(r *http.Request) string {

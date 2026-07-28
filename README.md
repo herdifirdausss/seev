@@ -94,8 +94,10 @@ reference library, not a required reading list.
 </a>
 
 The picture uses small toy amounts, not real pricing. Grown-up readers should
-also know that the current Payin code has a documented old path that may
-continue without a matching top-up ticket; the safer target removes it.
+also know that the active top-up path requires VendorService to authenticate
+and normalize a callback before Payin correlates it with its own intent. The
+deprecated raw Payin callback method remains only as an unimplemented wire
+symbol for compatibility; it is not an active fallback.
 
 ## Choose only one next step
 
@@ -152,7 +154,7 @@ HTTP or gRPC contracts; services must not query another service's database.
 ├── internal/                # Service and domain implementations
 ├── migrations/              # Per-service SQL migrations
 ├── pkg/                     # Shared infrastructure packages
-├── scripts/                 # CI, smoke, business journey, and chaos tests
+├── scripts/                 # CI, operations, smoke, journeys, load, and chaos tools
 ├── LICENSE                  # Apache License 2.0
 ├── docker-compose.yml       # Local infrastructure and opt-in service profiles
 └── Makefile                 # Build, migration, verification, and operations targets
@@ -167,13 +169,11 @@ the [Project guide](docs/development/project-guide.md).
 - Go 1.26.5 or a compatible newer toolchain (the version declared by `go.mod`)
 - Docker with Compose
 - golang-migrate for direct migration targets
-- golangci-lint for make lint
-- buf, protoc-gen-go, and protoc-gen-go-grpc when changing protobufs
 
 Install the pinned protobuf tools with:
 
 ~~~bash
-make tools
+make tools                 # installs pinned tools under bin/tools/
 ~~~
 
 ## Local quick start
@@ -225,13 +225,16 @@ secrets, and TLS-related settings.
 
 ~~~bash
 make build-all       # build all nine deployable services
+make clean            # remove only repository-local build/test artifacts
 make test            # unit tests with race detection and coverage
 make vet             # static checks from the Go toolchain
 make lint            # golangci-lint
 make ci-lint         # actionlint, ShellCheck, and action SHA-pin policy
+make verify-static   # build, vet, lint, security, contracts, docs, and load safety
 make docs-check      # local Markdown links and heading anchors
 make proto-lint      # protobuf lint
 make contracts       # generate, lint, compare, and test A9 contracts
+make verify-full     # complete clean-volume non-chaos gate
 git diff --check     # whitespace validation
 ~~~
 
@@ -253,17 +256,22 @@ go test -tags=integration -race ./...
 Operational verification:
 
 ~~~bash
-./scripts/smoke-test.sh
-./scripts/business-e2e.sh
-./scripts/admin-e2e.sh
+make smoke-test                 # host smoke paths (ledger/pay-in/payout/all)
+make business-e2e               # end-user money journey
+make admin-e2e                  # Admin BFF journey
+make privacy-e2e                # host privacy lifecycle journey
 make verify-chaos                 # manual recovery drill
 make smoke-container              # included in verify-full
 ~~~
 
-`make verify-full` runs the complete repeatable non-chaos repository gate from
-clean Docker volumes. Run `make verify-chaos` separately for the
-dependency-kill recovery drill. Both are intentionally heavier than the normal
-unit-test loop.
+`make verify-static` is the cheap non-Docker gate. `make verify-full` runs the
+complete repeatable non-chaos repository gate from clean Docker volumes,
+including container smoke, host smoke, business, admin, privacy, and
+disposable load smoke. CI runs the relevant static and container gates on code
+changes; the business, privacy, and chaos journeys are scheduled or manually
+dispatched because they are stateful and expensive. Run `make verify-chaos`
+separately for the dependency-kill recovery drill. These targets are
+intentionally heavier than the normal unit-test loop.
 
 ## Protobuf workflow
 

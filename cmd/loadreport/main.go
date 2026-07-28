@@ -28,7 +28,7 @@ func main() {
 		}
 	}
 	var summaries []loadreport.Summary
-	for _, path := range strings.Split(*inputs, ",") {
+	for path := range strings.SplitSeq(*inputs, ",") {
 		summary, err := loadreport.LoadSummary(path)
 		if err != nil {
 			fail(err)

@@ -65,7 +65,7 @@ func main() {
 
 func split(value string) []string {
 	var result []string
-	for _, item := range strings.Split(value, ",") {
+	for item := range strings.SplitSeq(value, ",") {
 		if strings.TrimSpace(item) != "" {
 			result = append(result, strings.TrimSpace(item))
 		}

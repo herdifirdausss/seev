@@ -1,14 +1,16 @@
 # 50 — Track A7: Backup, PITR, and Disaster Recovery
 
-> [Documentation home](../../README.md) · [Roadmap](../README.md) · [Active plans](README.md)
+> [Documentation home](../../README.md) · [Roadmap](../README.md) · [Archive](README.md)
 
 > Derived from track **A7** in
 > [42-long-term-roadmap.md](../42-long-term-roadmap.md).
 >
-> **Status: ready for execution; not implemented.** The activation trigger is
-> a conscious learning decision made on 2026-07-22. This document defines the
-> work and acceptance gates; checked boxes and result sections must not be
-> completed until the corresponding evidence exists.
+> **Status: complete and archived (2026-07-24).** The activation trigger was a
+> conscious learning decision made on 2026-07-22. The backup, PITR, restore,
+> integrity, and game-day evidence recorded below was completed for the
+> eight-service topology that existed at that time. VendorService was added
+> later by Plan 54; use the current architecture and operations references for
+> today's nine-service topology.
 
 ## 1. Trigger and objective
 

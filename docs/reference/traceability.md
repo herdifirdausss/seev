@@ -85,8 +85,10 @@ new policy tier before Auth exposes the upgraded KYC claim in refreshed tokens.
 The active callback path uses owner-domain correlation without an authoritative
 vendor-supplied user identifier. Payin and Payout use only normalized
 VendorService callbacks; the deprecated Payin v1 raw method is unimplemented.
-Final live integration/chaos acceptance remains in
-[archived plan 54](../roadmap/archive/54-vendor-service-boundary.md).
+Host, container, and business journeys exercise this path. Manual crash
+recovery remains a separate operational gate; its current result is recorded in
+the [operations status](../operations/README.md#standalone-drills-and-operator-tools--not-part-of-verify-full).
+The historical boundary decisions are preserved in [archived Plan 54](../roadmap/archive/54-vendor-service-boundary.md).
 
 ## Fee quote and user-to-user transfer
 

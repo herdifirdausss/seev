@@ -69,7 +69,6 @@ type ReconRepository interface {
 	// adjustments for the same discrepancy (docs/roadmap/archive/14 Task T2 K3
 	// pattern). Returns rows affected: 1 on success, 0 if already resolved.
 	MarkItemResolved(ctx context.Context, tx *sql.Tx, itemID, adjustmentID uuid.UUID) (int64, error)
-
 }
 
 type reconRepo struct {
@@ -198,10 +197,7 @@ func (r *reconRepo) ListBatches(ctx context.Context, limit, offset int) ([]model
 func (r *reconRepo) InsertItems(ctx context.Context, tx *sql.Tx, items []model.ReconItem) error {
 	const cols = 7
 	for start := 0; start < len(items); start += insertItemsChunkSize {
-		end := start + insertItemsChunkSize
-		if end > len(items) {
-			end = len(items)
-		}
+		end := min(start+insertItemsChunkSize, len(items))
 		chunk := items[start:end]
 
 		args := make([]any, 0, len(chunk)*cols)

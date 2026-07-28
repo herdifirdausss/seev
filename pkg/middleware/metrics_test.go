@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -101,10 +102,8 @@ func (h *hijackableRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 // absent label value) until this was noticed. See httpBuckets' own doc
 // comment.
 func TestHTTPBuckets_HasExactTwoSecondBoundary(t *testing.T) {
-	for _, b := range httpBuckets {
-		if b == 2 {
-			return
-		}
+	if slices.Contains(httpBuckets, 2) {
+		return
 	}
 	t.Fatalf("httpBuckets must contain an exact 2-second boundary for the le=\"2\" SLO query to match; got %v", httpBuckets)
 }

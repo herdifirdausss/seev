@@ -104,8 +104,10 @@ the wrong expectation. This is why a signature alone is not enough.
 This diagram shows the active safety rule. VendorService proves the transport
 message and Payin/Payout correlate it against owner-domain state. There is no
 active raw callback path; the deprecated v1 wire method is unimplemented. The
-remaining live acceptance is described in
-[archived plan 54](../roadmap/archive/54-vendor-service-boundary.md).
+normal path is exercised by host, container, and business journeys. Manual
+crash-recovery acceptance is a separate operational gate; its current result
+is recorded in the [operations status](../operations/README.md#standalone-drills-and-operator-tools--not-part-of-verify-full).
+Historical boundary decisions remain in [archived Plan 54](../roadmap/archive/54-vendor-service-boundary.md).
 
 ## Scene 4: the accounting book makes the money real
 
@@ -306,8 +308,8 @@ Technical names: **assurance finding** and **reconciliation**.
 | Short-lived shared notes | Redis |
 | Mailroom | RabbitMQ |
 
-<a id="current-behavior-and-the-safer-vendor-target"></a>
-## Current vendor boundary and remaining compatibility note
+<a id="current-vendor-boundary"></a>
+## Current vendor boundary and compatibility status
 
 Today, vendor callbacks first enter VendorService. VendorService authenticates
 and stores them, then sends a normalized event to Payin or Payout. Outbound
@@ -331,8 +333,10 @@ VendorService does not choose a user or move Ledger money.
 
 There is no active raw callback path in Payin; the deprecated v1 wire method is
 unimplemented. The active path does not accept a vendor payload's user id when
-no intent matches. Final live integration and chaos acceptance remain in
-[archived plan 54](../roadmap/archive/54-vendor-service-boundary.md).
+no intent matches. Normal delivery is covered by the host, container, and
+business journeys; manual crash-recovery acceptance remains a separate
+operational gate documented in the [operations status](../operations/README.md#standalone-drills-and-operator-tools--not-part-of-verify-full).
+The historical boundary record is [archived Plan 54](../roadmap/archive/54-vendor-service-boundary.md).
 
 ## Tell the story back in five answers
 

@@ -55,7 +55,7 @@ func SortedDecimalKeys(m map[uuid.UUID]decimal.Decimal) []uuid.UUID {
 		keys = append(keys, k)
 	}
 	sort.Slice(keys, func(i, j int) bool {
-		for k := 0; k < 16; k++ {
+		for k := range 16 {
 			if keys[i][k] != keys[j][k] {
 				return keys[i][k] < keys[j][k]
 			}
