@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -99,4 +100,32 @@ func (r *idempotencyRepository) GetByKey(ctx context.Context, tenantID uuid.UUID
 		return model.IdempotencyRecord{}, fmt.Errorf("merchant: get idempotency record: %w", err)
 	}
 	return rec, nil
+}
+
+func (r *idempotencyRepository) TakeoverExpiredLease(ctx context.Context, tenantID, id uuid.UUID, newLeaseOwner string, newLeaseExpiresAt time.Time) (bool, error) {
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE merchant_idempotency_records
+		SET lease_owner = $1, lease_expires_at = $2, updated_at = now()
+		WHERE tenant_id = $3 AND id = $4 AND state = 'processing' AND lease_expires_at < now()`,
+		newLeaseOwner, newLeaseExpiresAt, tenantID, id,
+	)
+	if err != nil {
+		return false, fmt.Errorf("merchant: takeover expired idempotency lease: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return n == 1, nil
+}
+
+func (r *idempotencyRepository) ReclaimFailed(ctx context.Context, tenantID, id uuid.UUID, newLeaseOwner string, newLeaseExpiresAt time.Time) (bool, error) {
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE merchant_idempotency_records
+		SET state = 'processing', lease_owner = $1, lease_expires_at = $2, error_code = NULL, updated_at = now()
+		WHERE tenant_id = $3 AND id = $4 AND state = 'failed'`,
+		newLeaseOwner, newLeaseExpiresAt, tenantID, id,
+	)
+	if err != nil {
+		return false, fmt.Errorf("merchant: reclaim failed idempotency record: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return n == 1, nil
 }

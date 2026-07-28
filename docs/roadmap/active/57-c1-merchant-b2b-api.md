@@ -1982,14 +1982,80 @@ T4 may begin.
 
 ### Acceptance
 
-- [ ] Concurrent same-key same-body requests produce one owner operation.
-- [ ] Same key with different body returns `IDEMPOTENCY_KEY_REUSED`.
-- [ ] Gateway crash after downstream success does not duplicate money.
-- [ ] Redis outage blocks financial writes.
-- [ ] Read fallback is bounded and observable.
-- [ ] Counter updates are atomic.
-- [ ] Idempotency expiry job is bounded.
-- [ ] No tenant can collide with another tenant's idempotency key.
+- [x] Concurrent same-key same-body requests produce one owner operation.
+- [x] Same key with different body returns `IDEMPOTENCY_KEY_REUSED`.
+- [x] Gateway crash after downstream success does not duplicate money.
+- [x] Redis outage blocks financial writes.
+- [x] Read fallback is bounded and observable.
+- [x] Counter updates are atomic.
+- [x] Idempotency expiry job is bounded.
+- [x] No tenant can collide with another tenant's idempotency key.
+
+### Result
+
+Delivered 2026-07-29:
+
+- **Package `internal/merchant/quota`** — `Enforcer` wraps T2's existing
+  `merchant_quota_policies` repository around `pkg/cache.RedisRateLimiter`'s
+  already-proven atomic Lua token-bucket script (reused, not reimplemented
+  — the only new logic is loading a PER-TENANT policy at request time,
+  since the shared `pkg/cache` type bakes its rate/burst in at
+  construction). Fail-closed on write when Redis is unreachable
+  (`ErrQuotaBackendUnavailable`, bounded by a 200ms `redisPingTimeout` so a
+  half-dead Redis can't eat the caller's whole deadline — same principle
+  as TM-14's fraud-velocity sub-deadline), a bounded and explicitly
+  `Degraded`-flagged allow on read-class checks, and a secure
+  `defaultPolicy` (60 req/min) when a tenant has no configured row.
+  `middleware.go`'s `RequireQuota` sets §6.3's `RateLimit-*`/`Retry-After`
+  headers and returns 429 (over quota) or 503 (backend down).
+- **Package `internal/merchant/idempotency`** — canonical request hashing
+  (`hash.go`: SHA-256 of operationID + raw body), deterministic
+  downstream-key derivation (stable across retries so the owner service
+  sees one logical operation), and `Service.Begin`'s full claim/replay/
+  conflict/in-progress/lease-recovery decision table (`idempotency.go`) on
+  top of T2's `IdempotencyRepository`.
+- **Real concurrency bug found and fixed via self-review, before any test
+  ran**: the first draft of `Begin`'s `"failed"`-state branch returned
+  `OutcomeNew` unconditionally — no compare-and-swap — so two concurrent
+  retries of a failed record would BOTH re-run the downstream operation.
+  Fixed by adding `IdempotencyRepository.ReclaimFailed` (the same
+  `WHERE state = 'failed'`-as-CAS shape as the existing
+  `TakeoverExpiredLease`), and proven with
+  `TestService_Begin_ConcurrentRetryOfFailedRecord` (20 concurrent
+  retries, exactly one `OutcomeNew`).
+- **`go fix`'s modernize-check** replaced the hand-written `strPtr`/
+  `timePtr` helpers with Go 1.26's `new(x)` builtin at the call site,
+  then flagged the now-dead helper functions themselves for removal —
+  applied and deleted.
+- **Idempotency expiry job**: already bounded — T2 built
+  `fn_retention_purge_merchant_idempotency_records` (batched, hold-aware)
+  and wired it into the shared retention worker
+  (`internal/merchant/merchant.go`'s `StartRetentionRunner`); T4 added no
+  new purge path, `make retention-check` confirms the policy is still
+  current.
+- **Verified**: 18 unit tests across `quota`/`idempotency` (miniredis for
+  the Redis-backed quota path; an in-memory fake `IdempotencyRepository`
+  reproducing the same compare-and-swap semantics as the real SQL for the
+  idempotency path — including two dedicated concurrency races: N
+  concurrent first claims and N concurrent retries of a failed record,
+  both proving exactly one winner), 5 HTTP middleware tests
+  (`RequireQuota`: unauthenticated, allow+headers, 429+Retry-After,
+  503-fail-closed-write, degraded-allow-read), 4 real-Postgres
+  integration tests proving T4's own acceptance criteria end-to-end
+  through `Service` (not just the repository, which T2 already covered):
+  25 concurrent same-key-same-body claims → exactly one `OutcomeNew`;
+  `IDEMPOTENCY_KEY_REUSED` on a differing body; a full crash-recovery
+  cycle (claim → simulated crash with no `Complete`/`Fail` → lease
+  expires → a second process reclaims the SAME record and SAME
+  downstream key → completes → every later retry replays); and two
+  tenants using an identical idempotency key claiming independently. All
+  four integration tests, plus T2's/T3's own, pass together in the same
+  run. `-race` on both the plain and `-tags=integration` suites, `go
+  build ./...`, `go vet -tags=integration ./...`, `make lint` (0 issues),
+  `go test -race ./...` (full repo), `make docs-check`, and `make
+  retention-check`.
+
+T5 may begin.
 
 ---
 

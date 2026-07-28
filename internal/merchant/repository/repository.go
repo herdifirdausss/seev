@@ -10,6 +10,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -63,6 +64,20 @@ type IdempotencyRepository interface {
 	Complete(ctx context.Context, tenantID uuid.UUID, id uuid.UUID, httpStatus int, responseBody, responseHeaders []byte, resourceID *string) error
 	Fail(ctx context.Context, tenantID uuid.UUID, id uuid.UUID, errorCode string) error
 	GetByKey(ctx context.Context, tenantID uuid.UUID, operationID, idempotencyKey string) (model.IdempotencyRecord, error)
+	// TakeoverExpiredLease is T4's "recovery query for interrupted
+	// processing records" — a conditional claim: succeeds ONLY if the
+	// record is still 'processing' with an ALREADY-EXPIRED lease (the
+	// original claimant crashed mid-request), atomically reassigning the
+	// lease to newLeaseOwner. Two concurrent retries racing this method
+	// can only have one succeed, by the same WHERE-clause-as-compare-and-swap
+	// pattern Claim's own ON CONFLICT DO NOTHING relies on.
+	TakeoverExpiredLease(ctx context.Context, tenantID, id uuid.UUID, newLeaseOwner string, newLeaseExpiresAt time.Time) (took bool, err error)
+	// ReclaimFailed atomically transitions a 'failed' record back to
+	// 'processing' under a new lease for a fresh retry attempt — the same
+	// compare-and-swap shape as TakeoverExpiredLease, guarding against two
+	// concurrent retries of a previously-failed request both proceeding to
+	// re-run the operation.
+	ReclaimFailed(ctx context.Context, tenantID, id uuid.UUID, newLeaseOwner string, newLeaseExpiresAt time.Time) (reclaimed bool, err error)
 }
 
 // EventInboxRepository persists merchant_event_inbox.
