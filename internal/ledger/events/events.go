@@ -94,6 +94,13 @@ type TransactionPosted struct {
 	// nil for anything that isn't a two-user transfer (transfer_p2p).
 	UserID       *uuid.UUID `json:"user_id,omitempty"`
 	TargetUserID *uuid.UUID `json:"target_user_id,omitempty"`
+	// MerchantTenantID (Plan 57 T5) is the Command's own MerchantTenantID,
+	// added SPECIFICALLY so a consumer (T7's webhook relay) can route this
+	// event to the right merchant tenant without querying the ledger back
+	// — same "new OPTIONAL field, non-breaking" precedent as UserID/
+	// TargetUserID above. nil for every transaction type except
+	// merchant_transfer.
+	MerchantTenantID *uuid.UUID `json:"merchant_tenant_id,omitempty"`
 	// RequestID (docs/roadmap/archive/36 Task T4) is the originating HTTP/gRPC
 	// request_id, added SPECIFICALLY so the outbox relay — a background
 	// worker with no request ctx of its own — can restore it as the AMQP
@@ -135,6 +142,7 @@ func NewTransactionPosted(
 	occurredAt time.Time,
 	userID, targetUserID *uuid.UUID,
 	requestID string,
+	merchantTenantID *uuid.UUID,
 ) TransactionPosted {
 	return TransactionPosted{
 		SchemaVersion:        1,
@@ -151,6 +159,7 @@ func NewTransactionPosted(
 		UserID:               userID,
 		TargetUserID:         targetUserID,
 		RequestID:            requestID,
+		MerchantTenantID:     merchantTenantID,
 	}
 }
 

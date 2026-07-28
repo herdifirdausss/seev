@@ -46,6 +46,18 @@ type AccountRepository interface {
 	// GetOwnerID returns the owner_id of an account, for ownership checks in
 	// read APIs (e.g. does this transaction/account belong to the caller).
 	GetOwnerID(ctx context.Context, accountID uuid.UUID) (uuid.UUID, error)
+
+	// GetMerchantAccountID returns the account_id for a merchant tenant's
+	// account of a given type (Plan 57 T5) — a SEPARATE method from
+	// GetAccountID rather than an owner-type parameter on it, per T0's own
+	// "additive new methods preferred over parameterizing existing ones, to
+	// keep blast radius on existing user paths at zero" finding
+	// (docs/reference/c1-current-contract-inventory.md §4 item 2).
+	GetMerchantAccountID(ctx context.Context, tenantID uuid.UUID, accountType string) (uuid.UUID, error)
+
+	// ListByMerchantTenant returns every account owned by a merchant
+	// tenant, for read APIs — mirrors ListByOwner (Plan 57 T5).
+	ListByMerchantTenant(ctx context.Context, tenantID uuid.UUID) ([]model.Account, error)
 }
 
 type accountRepo struct {
@@ -63,9 +75,10 @@ type accountRepo struct {
 	// real memory concern. Add LRU eviction (e.g. hashicorp/golang-lru)
 	// before scaling past roughly 1M distinct accounts touched; not needed
 	// for the deployment scale this MVP targets.
-	systemAccountCache sync.Map // key: "type:qualifier" -> uuid.UUID
-	userAccountCache   sync.Map // key: "ownerID:type:pocketCode" -> uuid.UUID
-	currencyCache      sync.Map // key: accountID -> currency string
+	systemAccountCache   sync.Map // key: "type:qualifier" -> uuid.UUID
+	userAccountCache     sync.Map // key: "ownerID:type:pocketCode" -> uuid.UUID
+	currencyCache        sync.Map // key: accountID -> currency string
+	merchantAccountCache sync.Map // key: "tenantID:type" -> uuid.UUID; separate from userAccountCache by construction, not just by key prefix
 }
 
 // NewAccountRepository requires a DB handle for read-only lookups outside
@@ -169,6 +182,56 @@ func (r *accountRepo) ListByOwner(ctx context.Context, userID uuid.UUID) ([]mode
 	)
 	if err != nil {
 		return nil, fmt.Errorf("list accounts by owner: %w", err)
+	}
+	defer rows.Close()
+
+	accounts := make([]model.Account, 0)
+	for rows.Next() {
+		var a model.Account
+		if err := rows.Scan(&a.ID, &a.OwnerID, &a.Type, &a.Currency, &a.PocketCode, &a.Status); err != nil {
+			return nil, fmt.Errorf("scan account: %w", err)
+		}
+		accounts = append(accounts, a)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate accounts: %w", err)
+	}
+	return accounts, nil
+}
+
+func (r *accountRepo) GetMerchantAccountID(ctx context.Context, tenantID uuid.UUID, accountType string) (uuid.UUID, error) {
+	key := tenantID.String() + ":" + accountType
+	if v, ok := r.merchantAccountCache.Load(key); ok {
+		return v.(uuid.UUID), nil
+	}
+
+	var id uuid.UUID
+	err := r.db.QueryRowContext(ctx, `
+		SELECT id FROM accounts
+		WHERE owner_type = 'merchant' AND owner_id = $1 AND type = $2
+		  AND pocket_code IS NULL AND status = 'active'`,
+		tenantID, accountType,
+	).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return uuid.Nil, fmt.Errorf("%w: merchant tenant %s type %s", apperror.ErrAccountNotFound, tenantID, accountType)
+	}
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("get merchant account id: %w", err)
+	}
+	r.merchantAccountCache.Store(key, id)
+	return id, nil
+}
+
+func (r *accountRepo) ListByMerchantTenant(ctx context.Context, tenantID uuid.UUID) ([]model.Account, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id, owner_id, type, currency, COALESCE(pocket_code, ''), status
+		FROM accounts
+		WHERE owner_type = 'merchant' AND owner_id = $1
+		ORDER BY type, pocket_code`,
+		tenantID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list accounts by merchant tenant: %w", err)
 	}
 	defer rows.Close()
 

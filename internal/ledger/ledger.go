@@ -657,6 +657,37 @@ func (m *Module) ListEntries(ctx context.Context, accountID uuid.UUID, beforeCre
 	return m.entryRepo.ListByAccount(ctx, accountID, beforeCreatedAt, beforeID, limit)
 }
 
+// ProvisionMerchant creates the standard (single, cash) account for a
+// merchant tenant. Idempotent (Plan 57 T5).
+func (m *Module) ProvisionMerchant(ctx context.Context, tenantID uuid.UUID, currency string) (Account, error) {
+	return m.provisionSvc.ProvisionMerchantAccount(ctx, tenantID, currency)
+}
+
+// GetMerchantAccount resolves a tenant's cash account and its current
+// balance in one call — the account id is NEVER accepted from a caller,
+// only ever resolved server-side from tenantID (Plan 57 T5). Balance
+// already carries AccountID/Currency/Status, so a second ListByOwner-style
+// lookup for the account row itself would be redundant.
+func (m *Module) GetMerchantAccount(ctx context.Context, tenantID uuid.UUID) (Balance, error) {
+	accountID, err := m.accountRepo.GetMerchantAccountID(ctx, tenantID, constant.AccountTypeCash)
+	if err != nil {
+		return Balance{}, err
+	}
+	return m.balanceRepo.GetBalance(ctx, accountID)
+}
+
+// ListMerchantTransactions returns tenantID's own transactions (as either
+// source or destination), newest first — the account id is resolved
+// server-side from tenantID, never accepted as a parameter, so no caller
+// can ever list another tenant's transactions (Plan 57 T5).
+func (m *Module) ListMerchantTransactions(ctx context.Context, tenantID uuid.UUID, beforeCreatedAt time.Time, beforeID uuid.UUID, limit int) ([]Transaction, error) {
+	accountID, err := m.accountRepo.GetMerchantAccountID(ctx, tenantID, constant.AccountTypeCash)
+	if err != nil {
+		return nil, err
+	}
+	return m.txRepo.ListByAccountEitherSide(ctx, accountID, beforeCreatedAt, beforeID, limit)
+}
+
 // CanAccessAccount reports whether userID owns accountID.
 func (m *Module) CanAccessAccount(ctx context.Context, accountID, userID uuid.UUID) (bool, error) {
 	ownerID, err := m.accountRepo.GetOwnerID(ctx, accountID)

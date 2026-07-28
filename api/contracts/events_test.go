@@ -38,7 +38,7 @@ func TestEventCatalogSchemasAndCurrentPayloads(t *testing.T) {
 	}
 
 	byID := map[string]map[string]any{
-		events.TypeTransactionPosted:   events.NewTransactionPosted(uuid.MustParse("00000000-0000-7000-8000-000000000010"), "money_in", "100", "IDR", nil, nil, []events.EntrySummary{}, "", time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC), nil, nil, "").ToPayload(),
+		events.TypeTransactionPosted:   events.NewTransactionPosted(uuid.MustParse("00000000-0000-7000-8000-000000000010"), "money_in", "100", "IDR", nil, nil, []events.EntrySummary{}, "", time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC), nil, nil, "", nil).ToPayload(),
 		events.TypeTransactionReversed: events.NewTransactionReversed(uuid.MustParse("00000000-0000-7000-8000-000000000011"), uuid.MustParse("00000000-0000-7000-8000-000000000012"), "100", "IDR", time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)).ToPayload(),
 		events.TypeAdjustmentDecided:   events.NewAdjustmentDecided(uuid.MustParse("00000000-0000-7000-8000-000000000013"), "synthetic-requester", "synthetic-approver", "rejected", nil, time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)).ToPayload(),
 	}

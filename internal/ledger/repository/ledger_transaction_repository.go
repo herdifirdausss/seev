@@ -10,6 +10,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/herdifirdausss/seev/internal/ledger/apperror"
@@ -132,6 +133,20 @@ type TransactionRepository interface {
 	// GetByID returns the full transaction header for read APIs (GET
 	// /transactions/{id}). Read-only lookup outside any posting transaction.
 	GetByID(ctx context.Context, transactionID uuid.UUID) (model.LedgerTransaction, error)
+
+	// ListByAccountEitherSide returns transactions where accountID is
+	// EITHER the source or the destination, newest first, paginated by
+	// (created_at, id) cursor — same cursor shape as EntryRepository's own
+	// ListByAccount (Plan 57 T5's tenant-scoped transaction reads).
+	// Read-only, outside any posting transaction. Backed by the existing
+	// idx_ltx_src/idx_ltx_dest indexes (migrations/ledger/000001).
+	ListByAccountEitherSide(
+		ctx context.Context,
+		accountID uuid.UUID,
+		beforeCreatedAt time.Time,
+		beforeID uuid.UUID,
+		limit int,
+	) ([]model.LedgerTransaction, error)
 
 	// GetByIdempotencyKey looks up the posted transaction for a known,
 	// deterministic idempotency key — used by the maker-checker adjustment
@@ -537,10 +552,73 @@ func (r *transactionRepo) GetByIdempotencyKey(ctx context.Context, key string, s
 	return t, err
 }
 
-// scanTransaction is the shared row-scanning logic for GetByID and
-// GetByIdempotencyKey — same columns, same NULL/UUID handling, different
-// WHERE clause.
-func scanTransaction(row *sql.Row) (model.LedgerTransaction, error) {
+func (r *transactionRepo) ListByAccountEitherSide(
+	ctx context.Context,
+	accountID uuid.UUID,
+	beforeCreatedAt time.Time,
+	beforeID uuid.UUID,
+	limit int,
+) ([]model.LedgerTransaction, error) {
+	var rows *sql.Rows
+	var err error
+	// [same first-page convention as EntryRepository.ListByAccount] a zero
+	// beforeCreatedAt means "start from the most recent transaction" — an
+	// unconditional (created_at, id) < (zero-time, ...) filter would match
+	// no real row at all, silently returning an empty first page.
+	if beforeCreatedAt.IsZero() {
+		rows, err = r.db.QueryContext(ctx, `
+			SELECT id, idempotency_key, idempotency_scope, type, status, amount, currency,
+			       source_account_id, destination_account_id, error_message,
+			       external_ref, gateway, created_at, updated_at
+			FROM ledger_transactions
+			WHERE source_account_id = $1 OR destination_account_id = $1
+			ORDER BY created_at DESC, id DESC
+			LIMIT $2`,
+			accountID, limit,
+		)
+	} else {
+		rows, err = r.db.QueryContext(ctx, `
+			SELECT id, idempotency_key, idempotency_scope, type, status, amount, currency,
+			       source_account_id, destination_account_id, error_message,
+			       external_ref, gateway, created_at, updated_at
+			FROM ledger_transactions
+			WHERE (source_account_id = $1 OR destination_account_id = $1)
+			  AND (created_at, id) < ($2, $3)
+			ORDER BY created_at DESC, id DESC
+			LIMIT $4`,
+			accountID, beforeCreatedAt, beforeID, limit,
+		)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("list transactions by account: %w", err)
+	}
+	defer rows.Close()
+
+	txs := make([]model.LedgerTransaction, 0)
+	for rows.Next() {
+		t, err := scanTransaction(rows)
+		if err != nil {
+			return nil, err
+		}
+		txs = append(txs, t)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate transactions: %w", err)
+	}
+	return txs, nil
+}
+
+// sqlScanner is implemented identically by *sql.Row and *sql.Rows, letting
+// scanTransaction serve both GetByID/GetByIdempotencyKey (single row) and
+// ListByAccountEitherSide (many rows) without duplicating the column list.
+type sqlScanner interface {
+	Scan(dest ...any) error
+}
+
+// scanTransaction is the shared row-scanning logic for GetByID,
+// GetByIdempotencyKey, and ListByAccountEitherSide — same columns, same
+// NULL/UUID handling, different WHERE clause.
+func scanTransaction(row sqlScanner) (model.LedgerTransaction, error) {
 	var (
 		t                model.LedgerTransaction
 		idempotencyScope sql.NullString

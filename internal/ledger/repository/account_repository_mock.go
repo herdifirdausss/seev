@@ -72,6 +72,21 @@ func (mr *MockAccountRepositoryMockRecorder) GetAccountID(ctx, userID, accountTy
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetAccountID", reflect.TypeOf((*MockAccountRepository)(nil).GetAccountID), ctx, userID, accountType)
 }
 
+// GetMerchantAccountID mocks base method.
+func (m *MockAccountRepository) GetMerchantAccountID(ctx context.Context, tenantID uuid.UUID, accountType string) (uuid.UUID, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetMerchantAccountID", ctx, tenantID, accountType)
+	ret0, _ := ret[0].(uuid.UUID)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetMerchantAccountID indicates an expected call of GetMerchantAccountID.
+func (mr *MockAccountRepositoryMockRecorder) GetMerchantAccountID(ctx, tenantID, accountType any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetMerchantAccountID", reflect.TypeOf((*MockAccountRepository)(nil).GetMerchantAccountID), ctx, tenantID, accountType)
+}
+
 // GetOwnerID mocks base method.
 func (m *MockAccountRepository) GetOwnerID(ctx context.Context, accountID uuid.UUID) (uuid.UUID, error) {
 	m.ctrl.T.Helper()
@@ -115,6 +130,21 @@ func (m *MockAccountRepository) GetSystemAccountID(ctx context.Context, accountT
 func (mr *MockAccountRepositoryMockRecorder) GetSystemAccountID(ctx, accountType, qualifier, currency any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetSystemAccountID", reflect.TypeOf((*MockAccountRepository)(nil).GetSystemAccountID), ctx, accountType, qualifier, currency)
+}
+
+// ListByMerchantTenant mocks base method.
+func (m *MockAccountRepository) ListByMerchantTenant(ctx context.Context, tenantID uuid.UUID) ([]model.Account, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListByMerchantTenant", ctx, tenantID)
+	ret0, _ := ret[0].([]model.Account)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListByMerchantTenant indicates an expected call of ListByMerchantTenant.
+func (mr *MockAccountRepositoryMockRecorder) ListByMerchantTenant(ctx, tenantID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListByMerchantTenant", reflect.TypeOf((*MockAccountRepository)(nil).ListByMerchantTenant), ctx, tenantID)
 }
 
 // ListByOwner mocks base method.

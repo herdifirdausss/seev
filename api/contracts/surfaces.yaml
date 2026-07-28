@@ -1928,6 +1928,9 @@ rpc:
       - ConsumeFeeQuote
       - ApplyKycTier
       - BatchGetAssuranceTransactions
+      - ProvisionMerchant
+      - GetMerchantAccount
+      - ListMerchantTransactions
   - id: payin.v1.PayinService
     owner: payin
     package: seev.payin.v1

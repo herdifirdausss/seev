@@ -56,3 +56,18 @@ func (mr *MockProvisioningRepositoryMockRecorder) UpsertAccount(ctx, tx, params 
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpsertAccount", reflect.TypeOf((*MockProvisioningRepository)(nil).UpsertAccount), ctx, tx, params)
 }
+
+// UpsertMerchantAccount mocks base method.
+func (m *MockProvisioningRepository) UpsertMerchantAccount(ctx context.Context, tx *sql.Tx, params UpsertMerchantAccountParams) (model.Account, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpsertMerchantAccount", ctx, tx, params)
+	ret0, _ := ret[0].(model.Account)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// UpsertMerchantAccount indicates an expected call of UpsertMerchantAccount.
+func (mr *MockProvisioningRepositoryMockRecorder) UpsertMerchantAccount(ctx, tx, params any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpsertMerchantAccount", reflect.TypeOf((*MockProvisioningRepository)(nil).UpsertMerchantAccount), ctx, tx, params)
+}

@@ -2075,15 +2075,111 @@ T5 may begin.
 
 ### Acceptance
 
-- [ ] Merchant account uses the existing ledger account model.
-- [ ] Provision retry returns the same account.
-- [ ] Transfer posts balanced entries.
-- [ ] Source account cannot be substituted by the caller.
-- [ ] Currency mismatch fails before posting.
-- [ ] Duplicate request returns the original transaction.
-- [ ] Cross-tenant read/write tests pass.
-- [ ] Existing user transfer tests remain unchanged and green.
-- [ ] Ledger event remains backward compatible.
+- [x] Merchant account uses the existing ledger account model.
+- [x] Provision retry returns the same account.
+- [x] Transfer posts balanced entries.
+- [x] Source account cannot be substituted by the caller.
+- [x] Currency mismatch fails before posting.
+- [x] Duplicate request returns the original transaction.
+- [x] Cross-tenant read/write tests pass.
+- [x] Existing user transfer tests remain unchanged and green.
+- [x] Ledger event remains backward compatible.
+
+### Result
+
+Delivered 2026-07-29:
+
+- **Schema, zero new migration**: T0 had already found `accounts.owner_type`
+  allows `'merchant'` since migration 000001 — confirmed true; T5 needed no
+  new Ledger migration at all, only new Go code reading/writing that
+  existing column value.
+- **Additive-only, per the plan's own lock**: rather than parameterizing
+  `AccountRepository.GetAccountID`/`ProvisioningRepository.UpsertAccount`
+  (both hardcode `owner_type='user'`), added SEPARATE methods —
+  `GetMerchantAccountID`, `ListByMerchantTenant`, `UpsertMerchantAccount`,
+  `TransactionRepository.ListByAccountEitherSide` — so every existing
+  user-scoped call site is byte-for-byte unchanged.
+- **New processor `merchant_transfer`**
+  (`internal/ledger/processors/merchant_transfer.go`): source is ALWAYS
+  `GetMerchantAccountID(cmd.MerchantTenantID)` — there is no
+  source-account-id input anywhere on the path, so the caller
+  structurally cannot substitute it (proven by
+  `TestMerchantTransferResolveAccounts_SourceNeverCallerSupplied`, which
+  plants decoy `source_account_id`/`account_id` keys in Metadata and
+  confirms they're never read). Destination is a raw account id from
+  `Metadata["destination_account_id"]` — the same established pattern
+  `EscrowRelease` already uses for a caller-supplied target account.
+  Internal-router-only, never added to `publicUserTypes`, matching the
+  existing FxIn/FxOut/Disbursement precedent.
+- **Currency-mismatch check needed zero new code**: `service/handle`'s
+  existing `validateAccounts` already rejects any account in
+  `AccountIDs` whose currency differs from `cmd.Currency`, generically,
+  for every processor — `merchant_transfer` gets this for free by setting
+  `Currency` from the resolved source account.
+- **Provisioning**: `provision.Service.ProvisionMerchantAccount` (single
+  `cash` account per tenant — no hold/pending/frozen, those are
+  end-user-only withdrawal-lifecycle states) — idempotent via the same
+  partial-unique-index `ON CONFLICT DO UPDATE ... RETURNING` shape
+  `UpsertAccount` already uses.
+- **Contracts, additive**: 3 new `LedgerService` RPCs
+  (`ProvisionMerchant`, `GetMerchantAccount`, `ListMerchantTransactions`)
+  and one new `PostRequest.merchant_tenant_id` field —
+  `api/proto/seev/ledger/v1/ledger.proto`, regenerated via `make proto`,
+  registered in `api/contracts/surfaces.yaml`. `GetMerchantAccount`/
+  `ListMerchantTransactions` accept ONLY `tenant_id` — there is no
+  account-id parameter anywhere on these RPCs, so a caller can never read
+  another tenant's data by guessing an account id.
+- **Event backward compatibility**: `events.TransactionPosted` gained one
+  new optional field, `MerchantTenantID *uuid.UUID
+  json:"merchant_tenant_id,omitempty"` — nil (omitted from the wire) for
+  every existing transaction type, following this package's own
+  documented policy ("a new OPTIONAL field is NOT a breaking change").
+  Proven three ways: a golden-JSON test for the new field
+  (`TestTransactionPosted_GoldenJSON_WithMerchantTenantID`), a
+  compatibility fixture proving an EXISTING type's JSON is unaffected
+  (`TestTransactionPosted_ExistingEventShape_UnaffectedByMerchantField`),
+  and a rollout test proving a NEW payload still decodes cleanly into an
+  OLDER consumer struct that has never heard of the field
+  (`TestTransactionPosted_RolloutCompatibility_NewProducerOldConsumer`).
+- **pkg/ledgerclient** (the shared gRPC client every service reuses) got
+  `ProvisionMerchant`/`GetMerchantAccount`/`ListMerchantTransactions`
+  methods and `Command.MerchantTenantID`, so Gateway's `internal/merchant`
+  module (T6+) and Admin BFF can call the new surface without any new
+  boilerplate.
+- **Verified end-to-end against real Postgres, through the actual gRPC
+  surface** (not just the repository or processor in isolation): 5
+  integration tests in
+  `internal/ledger/grpcserver/merchant_transfer_integration_test.go`
+  covering every acceptance line — idempotent provisioning, balanced
+  posting (`fn_verify_ledger_balance` returns zero unbalanced), a
+  currency-mismatch rejection that posts ZERO ledger entries, a
+  duplicate-request replay that posts exactly one transaction and never
+  double-deducts, and cross-tenant isolation (two tenants' balances stay
+  independent, both legitimately see a transaction between them, and an
+  unprovisioned tenant gets a clean error rather than another tenant's
+  data). Plus 12 processor unit tests
+  (`internal/ledger/processors/merchant_transfer_test.go`) with a real
+  `MockAccountRepository`.
+- **Full-repo regression, unaffected**: `go test -race ./...` (whole
+  repo) is green. While investigating an unrelated `-tags=integration`
+  full-suite run, found 3 pre-existing failures in
+  `internal/ledger/schema_contract_test.go`
+  (`TestSchemaContract_Accrual_BasicFlow_IdempotentAcrossRuns`,
+  `..._BasisIsSnapshotNotLiveBalance`,
+  `TestSchemaContract_Reporting_DailyPositionMatchesManualAggregate`) —
+  confirmed via `git stash` to fail IDENTICALLY on a clean checkout with
+  none of this task's changes applied, so not a T5 regression; flagged as
+  a separate follow-up task rather than fixed here (out of T5's scope,
+  and out of caution around silently touching financial accrual logic).
+- **Full sweep**: `go build ./...`, `go vet -tags=integration ./...`,
+  `make lint` (0 issues), `go test -race ./...` (full repo, green),
+  `go test -tags=integration -race` on every touched package
+  (`processors`, `repository`, `events`, `grpcserver`, `ledgerclient`,
+  `api/contracts`), `make docs-check`, `make retention-check` (no new
+  data classes — accounts/ledger_entries/ledger_transactions already
+  covered by existing permanent-ledger rules).
+
+T6 may begin.
 
 ---
 

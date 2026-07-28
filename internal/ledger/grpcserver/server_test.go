@@ -45,6 +45,22 @@ type fakeService struct {
 	kycUserID    uuid.UUID
 	kycLevel     int32
 	kycErr       error
+
+	provisionMerchantTenantID uuid.UUID
+	provisionMerchantCCY      string
+	provisionMerchantAccount  model.Account
+	provisionMerchantErr      error
+
+	merchantAccountTenantID uuid.UUID
+	merchantBalance         model.AccountBalance
+	merchantAccountErr      error
+
+	listMerchantTenantID uuid.UUID
+	listMerchantBefore   time.Time
+	listMerchantBeforeID uuid.UUID
+	listMerchantLimit    int
+	merchantTxs          []model.LedgerTransaction
+	listMerchantErr      error
 }
 
 func (f *fakeService) Post(_ context.Context, command processors.Command) error {
@@ -70,6 +86,18 @@ func (f *fakeService) ConsumeFeeQuote(context.Context, uuid.UUID, uuid.UUID, str
 func (f *fakeService) ApplyKycTier(_ context.Context, userID uuid.UUID, kycLevel int32) error {
 	f.kycUserID, f.kycLevel = userID, kycLevel
 	return f.kycErr
+}
+func (f *fakeService) ProvisionMerchant(_ context.Context, tenantID uuid.UUID, currency string) (model.Account, error) {
+	f.provisionMerchantTenantID, f.provisionMerchantCCY = tenantID, currency
+	return f.provisionMerchantAccount, f.provisionMerchantErr
+}
+func (f *fakeService) GetMerchantAccount(_ context.Context, tenantID uuid.UUID) (model.AccountBalance, error) {
+	f.merchantAccountTenantID = tenantID
+	return f.merchantBalance, f.merchantAccountErr
+}
+func (f *fakeService) ListMerchantTransactions(_ context.Context, tenantID uuid.UUID, beforeCreatedAt time.Time, beforeID uuid.UUID, limit int) ([]model.LedgerTransaction, error) {
+	f.listMerchantTenantID, f.listMerchantBefore, f.listMerchantBeforeID, f.listMerchantLimit = tenantID, beforeCreatedAt, beforeID, limit
+	return f.merchantTxs, f.listMerchantErr
 }
 
 func newTestClient(t *testing.T, service Service) ledgerv1.LedgerServiceClient {
