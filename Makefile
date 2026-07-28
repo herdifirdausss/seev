@@ -88,7 +88,7 @@ proto-lint:
 
 ## proto-breaking: Check protobuf compatibility against an explicit merge-base ref
 proto-breaking:
-	buf breaking --against ".git#branch=$(PROTO_MERGE_BASE_REF)"
+	buf breaking --against ".git#ref=$(PROTO_MERGE_BASE_REF)"
 
 ## contract-generate: Resolve checked-in relative OpenAPI references deterministically
 contract-generate:

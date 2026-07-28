@@ -27,6 +27,17 @@ type Deprecation struct {
 	MigrationURL string
 }
 
+// RetirementEvidence is the operator evidence required before a deprecated
+// operation may be removed. It is separate from Deprecation so a running
+// request path cannot authorize its own removal.
+type RetirementEvidence struct {
+	Now                      time.Time
+	ReplacementOperationID   string
+	MigrationGuideURL        string
+	AllConsumersAcknowledged bool
+	ZeroUseSince             time.Time
+}
+
 type deprecationFile struct {
 	MinimumWindowDays int `yaml:"minimum_window_days"`
 	Entries           []struct {
@@ -89,6 +100,36 @@ func (d Deprecation) Validate(now time.Time) error {
 	}
 	if d.Sunset.Before(now) {
 		return fmt.Errorf("sunset is already in the past for %s", d.OperationID)
+	}
+	return nil
+}
+
+// ValidateRetirement enforces the repository's retirement gates: a
+// replacement and migration guide must exist, every registered consumer must
+// acknowledge the migration, and measured zero use must span the full
+// minimum window. The caller supplies evidence so CI and an operator can
+// review the exact proof.
+func (d Deprecation) ValidateRetirement(e RetirementEvidence, minimumWindow time.Duration) error {
+	if minimumWindow < 30*24*time.Hour {
+		return fmt.Errorf("retirement window must be at least 30 days")
+	}
+	if e.Now.IsZero() {
+		return fmt.Errorf("retirement evidence requires current time")
+	}
+	if d.OperationID == "" || d.MigrationURL == "" {
+		return fmt.Errorf("retirement evidence references an incomplete deprecation")
+	}
+	if e.ReplacementOperationID == "" {
+		return fmt.Errorf("retirement requires a replacement operation")
+	}
+	if !strings.HasPrefix(e.MigrationGuideURL, "https://") {
+		return fmt.Errorf("retirement requires an https migration guide")
+	}
+	if !e.AllConsumersAcknowledged {
+		return fmt.Errorf("retirement requires acknowledgement from every consumer")
+	}
+	if e.ZeroUseSince.IsZero() || e.ZeroUseSince.After(e.Now.Add(-minimumWindow)) {
+		return fmt.Errorf("retirement requires a complete zero-use window")
 	}
 	return nil
 }

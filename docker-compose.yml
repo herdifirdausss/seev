@@ -574,7 +574,11 @@ services:
       JWT_SECRET: ${JWT_SECRET:-change-me-to-a-random-32-plus-character-secret}
       JWT_ISSUER: ${JWT_ISSUER:-seev}
       TLS_CERT_DIR: /certs
-      VENDOR_CALLBACK_CIDRS: 127.0.0.1/32,::1/128
+      # Docker Desktop/Linux exposes host-originated smoke callbacks with a
+      # bridge source address, not 127.0.0.1. Keep the local default bounded
+      # to Docker's private bridge range; production must override this with
+      # the vendor egress CIDRs from its ingress policy.
+      VENDOR_CALLBACK_CIDRS: ${VENDOR_CALLBACK_CIDRS:-127.0.0.1/32,::1/128,172.16.0.0/12}
       VENDOR_MOCKVENDOR_ENABLED: "true"
       VENDOR_MOCKVENDOR_SECRET: ${VENDOR_MOCKVENDOR_SECRET:-change-me-mockvendor-secret}
       MOCKVENDOR2_ENABLED: "true"

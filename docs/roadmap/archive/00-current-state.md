@@ -1,7 +1,7 @@
 # 00 — Current Repository Audit
 
 Snapshot from July 2026, branch `main`, commit `ac7d617`. Module path:
-`github.com/herdifirdausss/seev`, Go 1.25.
+`github.com/herdifirdausss/seev`, Go 1.26.5.
 
 ## Existing foundations
 

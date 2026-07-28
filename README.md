@@ -164,7 +164,7 @@ the [Project guide](docs/development/project-guide.md).
 
 ## Requirements
 
-- Go 1.25.6 or a compatible newer toolchain (the version declared by `go.mod`)
+- Go 1.26.5 or a compatible newer toolchain (the version declared by `go.mod`)
 - Docker with Compose
 - golang-migrate for direct migration targets
 - golangci-lint for make lint

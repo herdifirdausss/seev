@@ -15,7 +15,7 @@
 # (same base image/version, same trimpath+ldflags). Build context must be
 # the repo root (not ./deploy/backup) so this stage can see go.mod/cmd/
 # internal/pkg.
-FROM golang:1.25.12-alpine AS builder
+FROM golang:1.26.5-alpine AS builder
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download

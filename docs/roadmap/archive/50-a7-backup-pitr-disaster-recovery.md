@@ -742,7 +742,7 @@ carrying the Unix socket directory), never a separate SSH/TLS "pg1-host"
 remote-protocol topology; `pg1-host` stays unset in
 `deploy/backup/pgbackrest.conf`, exactly as it already was for T1's
 in-container manual path. `deploy/backup/agent.Dockerfile` is a new
-multi-stage build: a `golang:1.25.12-alpine` builder stage (matching the
+multi-stage build: a `golang:1.26.5-alpine` builder stage (matching the
 root `Dockerfile`'s own build exactly) compiling `./cmd/backup-agent`,
 layered onto the same pinned `postgres:16.14-alpine@sha256:57c72fd2...`
 + `pgbackrest=2.58.0-r0` base T1's own image uses (intentionally

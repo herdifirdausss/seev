@@ -10,6 +10,10 @@ This guide defines the repository-wide constraints for contributors. Read it
 before changing service boundaries, ledger behavior, shared infrastructure, or
 the verification workflow.
 
+The repository baseline is Go **1.26.5**, declared by `go.mod`. Use that
+toolchain (or Go's compatible automatic toolchain download) for local builds;
+CI and container builders read the same version.
+
 ## Service boundaries
 
 - The deployable services are gateway, auth-service, ledger-service,
@@ -94,10 +98,11 @@ When protobuf contracts change, also run:
 ~~~bash
 make tools
 make proto
-make proto-breaking
+PROTO_MERGE_BASE_REF=main make proto-breaking
 ~~~
 
-`make tools` installs the repository's pinned Buf and Go protobuf compiler
+`make tools` installs the repository's pinned Buf (`v1.72.0`, compatible with
+Go 1.26.5) and Go protobuf compiler
 versions. CI bootstraps the same toolchain before its protobuf contract gate;
 generated bindings remain committed so ordinary builds do not require Buf.
 

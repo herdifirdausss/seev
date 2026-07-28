@@ -1,0 +1,28 @@
+schema_version: 1
+description: Bounded contract metrics registry; labels are never request-derived.
+metrics:
+  - name: seev_http_contract_requests_total
+    labels: [audience, api_version, operation_id, status_class]
+    allowed_values:
+      audience: [public, vendor, admin, internal, operational, browser]
+      api_version: [v1, v2]
+      status_class: [2xx, 3xx, 4xx, 5xx]
+  - name: seev_grpc_contract_requests_total
+    labels: [owner, api_version, method, result]
+    allowed_values:
+      api_version: [v1, v2]
+      result: [success, invalid_argument, denied, unavailable, failed]
+  - name: seev_event_contract_messages_total
+    labels: [event_type, schema_version, result]
+    allowed_values:
+      schema_version: [v1, v2]
+      result: [accepted, duplicate, invalid, rejected, retry]
+  - name: seev_event_contract_effects_total
+    labels: [consumer, event_type, schema_version, result]
+    allowed_values:
+      schema_version: [v1, v2]
+      result: [applied, duplicate, invalid, failed]
+  - name: seev_contract_validation_failures_total
+    labels: [family, contract_id, reason]
+  - name: seev_deprecated_contract_requests_total
+    labels: [family, contract_id, version]

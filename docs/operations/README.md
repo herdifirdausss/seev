@@ -150,6 +150,12 @@ re-sourcing mid-session silently breaks helpers like `gen_token`.
 | `admin-e2e.sh` | The operator console works end-to-end | Starts the BFF separately from the user-money gateway path, exercises the real admin session/CSRF/maker-checker/audit journey |
 | `chaos-test.sh {1..20\|all}` | The system survives real failure, dependency outage, privacy-lifecycle failure, and recovery — not just handles errors in tests | 20 scenarios (below); scenarios 1–14 are multi-service drills, while 15–20 invoke focused lifecycle tests and retain the same pass/fail evidence |
 
+The local Compose default for `VENDOR_CALLBACK_CIDRS` includes the private
+Docker bridge range because a host-originated callback reaches the container
+with a bridge source address. Production deployments must override it with
+the vendor's exact egress CIDRs; mTLS and signature verification remain
+mandatory in both environments.
+
 ### Chaos scenarios — what each one actually proves
 
 | # | Scenario | What it proves |
@@ -304,7 +310,9 @@ a clone of the repo builds without the protobuf toolchain installed.
   existing wire names) catches inconsistent contract style before it
   ships.
 - `make proto-breaking` (`buf.yaml`'s breaking-change detector, `FILE`
-  mode) compares the current contract against the local `main` reference
+  mode) compares the current contract against the explicit
+  `PROTO_MERGE_BASE_REF` ref (normally `main` locally, or the computed merge
+  base SHA in CI)
   and fails the build if a change would break an existing caller —
   turning "did I just break every service that calls ledger's `Post`
   RPC" from a runtime surprise into a CI failure with a name attached to
