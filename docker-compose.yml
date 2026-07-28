@@ -190,7 +190,7 @@ services:
       retries: 10
 
   rabbitmq:
-    image: rabbitmq:4.3.3-management-alpine
+    image: rabbitmq:4.3.4-management-alpine
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME:-seev}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-seev}
@@ -855,7 +855,7 @@ services:
           memory: 512M
 
   loki:
-    image: grafana/loki@sha256:70b9f699fc9bb868b62f1cfd4f787dfa50242f1fd92e6089787d5d7daea75fe8 # 3.7.3
+    image: grafana/loki@sha256:87f0a067673756a3cede1bcbf0c74875f7df9b09fddb53e399d0c576f756cfcc # 3.7.3
     profiles: ["observability"]
     command:
       - -config.file=/etc/loki/loki.yaml
@@ -878,7 +878,7 @@ services:
     # curl 127.0.0.1:3100/ready.
 
   tempo:
-    image: grafana/tempo@sha256:ee21727732c7a7199cb71c3eee9153bbf23f9b0b87619f0555a0cf21a67f1a33 # 2.10.5
+    image: grafana/tempo@sha256:1ce31d6d7ffab62189685e8c47881d4a561c5d38bd0dbd66e40ca83cef07923d # 2.10.5
     profiles: ["observability"]
     command:
       - -config.file=/etc/tempo/tempo.yaml
