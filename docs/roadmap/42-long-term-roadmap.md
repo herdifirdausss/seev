@@ -34,7 +34,7 @@ When a trigger is met:
 | A6 | Internal security and service identity | H1 | After MVP; mandatory before B2B | Complete via [49](archive/49-a6-internal-security.md) |
 | A7 | Backup, PITR, and disaster recovery | H1 | Any time after MVP | Complete via [50](archive/50-a7-backup-pitr-disaster-recovery.md) |
 | A8 | Data lifecycle and privacy | H1 | After MVP; quote cleanup can start earlier | Complete via [51](archive/51-a8-data-lifecycle-privacy.md) |
-| A9 | API contracts and schema evolution | H1 | First silent consumer-breaking payload change; mandatory before B2B | In progress via [52](active/52-a9-api-contracts-schema-evolution.md); final compatibility/rollout evidence open |
+| A9 | API contracts and schema evolution | H1 | First silent consumer-breaking payload change; mandatory before B2B | Core done via [52](archive/52-a9-api-contracts-schema-evolution.md); manual chaos gate pending |
 | A10 | Product assurance and emergency intake control | H1 | Prove consistency across payin, payout, and ledger | Complete via [48](archive/48-a10-product-assurance.md) |
 | B0 | Load harness and capacity model | H2 gate | Before any measured scale work | In progress via [53](active/53-b0-load-capacity-gate.md); harness/safety foundation exists, measurements open |
 | B1 | Hot-account sub-sharding | H2 | B0 proves lock contention in delta application | Future |
@@ -89,7 +89,7 @@ Define retention by table, purge expired fee quotes and privacy-sensitive idempo
 
 ### A9 — Contracts and schema evolution
 
-Add HTTP contract tests, OpenAPI linting, event v1/v2 expand-contract rules, tolerant readers, deprecation policy, and sunset headers. gRPC already has Buf checks; do not create a separate schema registry unless evidence requires it. Execution is defined in [plan 52](active/52-a9-api-contracts-schema-evolution.md).
+Add HTTP contract tests, OpenAPI linting, event v1/v2 expand-contract rules, tolerant readers, deprecation policy, and sunset headers. gRPC already has Buf checks; do not create a separate schema registry unless evidence requires it. Execution is recorded in [archived plan 52](archive/52-a9-api-contracts-schema-evolution.md).
 
 ### A10 — Product assurance
 

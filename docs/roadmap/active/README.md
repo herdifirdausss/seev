@@ -9,7 +9,6 @@
 | Plan | Scope |
 |---|---|
 | [35](35-phase6j-kubernetes.md) | Optional local Kubernetes learning |
-| [52 · A9](52-a9-api-contracts-schema-evolution.md) | API contracts and schema evolution |
 | [53 · B0](53-b0-load-capacity-gate.md) | Load and capacity gate |
 | [54](54-vendor-service-boundary.md) | VendorService boundary |
 | [56 · F0](56-f0-frontend-platform-foundation.md) | Frontend platform foundation |

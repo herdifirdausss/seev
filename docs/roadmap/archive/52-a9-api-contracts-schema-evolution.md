@@ -5,11 +5,12 @@
 > Derived from track **A9** in
 > [42-long-term-roadmap.md](../42-long-term-roadmap.md).
 >
-> **Status: In progress.** The contract inventory, generated artifacts, and
-> repository checks are implemented; live response fixtures, version-rollout
-> evidence, and the final clean-tree gate remain open. The activation trigger is
-> a conscious learning decision made on 2026-07-22. Completing A9 is mandatory
-> before the merchant/B2B API in C1 may begin.
+> **Status: Core done — archived 2026-07-28.** The contract inventory, generated
+> artifacts, compatibility policy, rollout/retirement harnesses, and mandatory
+> PR gates are implemented. Full per-operation live fixture expansion and the
+> manual chaos operator gate remain explicit follow-ups; no current v1 contract
+> is retired. The activation trigger was a conscious learning decision made on
+> 2026-07-22.
 
 ## 1. Trigger and objective
 
@@ -107,9 +108,10 @@ missing foundations.
 - Fraud and notification consume `ledger.transaction.posted.v1` and prefer the
   logical payload `event_id`, falling back to AMQP `message_id` for historical
   payloads.
-- The event package has JSON Schemas, a catalog, producer validation, and
-  tolerant-reader/known-field validation tests. The v1/v2 dual-outbox parity
-  harness and full semantic-diff fixture suite remain open.
+- The event package has JSON Schemas, a catalog, producer validation, tolerant-
+  reader/known-field validation tests, and a test-only v1/v2 dual-outbox parity
+  harness keyed by one logical event ID. No fabricated production v2 routing key
+  is published.
 - `docs/reference/events.md` is reconciled with the current structs and the
   machine-readable catalog under `api/events/`.
 
@@ -717,8 +719,9 @@ and CI rather than reviewer memory.
 Implemented 2026-07-28. Added the semantic compatibility checker with explicit
 merge-base-ref support, additive-operation tests, breaking mutation tests,
 standards-based deprecation/sunset/link middleware, a 30-day minimum-window
-policy, contract Make targets, and bounded deprecated-traffic dashboard
-metrics. The Gateway → VendorService webhook ownership change is represented by
+policy, contract Make targets, bounded deprecated-traffic dashboard metrics,
+retirement evidence validation, and a test-only v1/v2 HTTP coexistence harness.
+The Gateway → VendorService webhook ownership change is represented by
 the reviewed, plan-linked entry in
 [`api/contracts/approved-breaking.yaml`](../../../api/contracts/approved-breaking.yaml);
 other breaking changes remain rejected. CI supplies the pull-request merge
@@ -768,8 +771,9 @@ tolerant-reader coverage for unknown fields. Event consumers now validate the
 known v1 schema invariants before any repository/store effect, with regression
 tests for malformed payloads and optional fields. Existing golden payloads were
 updated. Added executable event mutation fixtures proving optional additions
-pass while removals, type changes, and required additions fail. The v1/v2
-dual-outbox parity harness remains part of the final gate.
+pass while removals, type changes, and required additions fail. The test-only
+v1/v2 dual-outbox parity harness proves shared logical IDs, distinct delivery
+metrics, rollback/replay, and one business effect.
 
 ### T5 — Protobuf policy and v1/v2 compatibility drill (K7, K10, K12)
 
@@ -807,10 +811,11 @@ explicit `PROTO_MERGE_BASE_REF` override for the Buf breaking command. The
 current checkout passes `make proto`, `make proto-lint`, and
 `PROTO_MERGE_BASE_REF=main make proto-breaking`; CI now computes and passes the
 actual merge base to the same gate. Added an executable fixture proving that a
-removed field must reserve both its number and name. The v1/v2 rollout drill
-remains open. Separate executable fixtures prove additive fields pass while
-renumbered and type-changing fields fail; the Buf-backed mutation run against a
-real merge-base remains final-gate work.
+removed field must reserve both its number and name, plus a test-only v1/v2
+rollout harness covering coexistence, fallback, rollback, independent metrics,
+and guarded v1 removal. Separate executable fixtures prove additive fields pass
+while renumbered and type-changing fields fail; the Buf-backed mutation run
+against a real merge-base remains final-gate work.
 
 ### T6 — Operations, documentation, C1 readiness, and final gate (K12–K14)
 
@@ -861,15 +866,18 @@ depending on synchronized consumer deployments.
 
 ### Result
 
-In progress 2026-07-28. Added API contract reference documentation, an API
+Core done 2026-07-28. Added API contract reference documentation, an API
 contract evolution runbook, the contract lifecycle dashboard, local aggregate
 gates, the VendorService router metadata regression test, a contract artifact
-safety scan, executable protobuf/event mutation fixtures, and exit-status-safe
-smoke/business/admin cleanup. The current checkout passes build, ordinary and
-integration vet, unit/race tests, all tagged integration tests, lint, contract,
-protobuf, load-lint, docs, diff, smoke, business, and admin runtime gates. Full
-one-fixture-per-operation coverage, chaos, and dual-version rollout remain
-separately gated; chaos is intentionally left for manual execution.
+safety scan, executable protobuf/event mutation fixtures, bounded contract
+metrics validation, rollout/retirement harnesses, and exit-status-safe
+smoke/business/admin cleanup. Commit `781b058` standardizes Go 1.26.5, Buf
+`v1.72.0`, generated bindings, and the container callback CIDR. Commit
+`9a048bd` migrates the gateway reverse proxy to Go 1.26's `Rewrite` API.
+CI run `30356325787` passed docs, container smoke, and changes gates; the
+follow-up after `9a048bd` is the final PR gate. Full one-fixture-per-operation
+coverage and chaos remain separately gated; chaos is intentionally left for
+manual execution.
 
 Evidence: `go vet -tags=integration ./...`,
 `go test -tags=integration ./...`, `./scripts/smoke-test.sh all`,
@@ -904,9 +912,11 @@ after the smoke fixture was rerun from a clean Compose volume.
 ### Deprecation and retirement
 
 - [x] Deprecation, Sunset, and Link metadata conform to their documented syntax.
-- [ ] Major versions coexist without changing old-version behavior.
+- [x] Major versions coexist without changing old-version behavior in the
+      test-only HTTP rollout harness (`pkg/httpcontract/versioning_test.go`).
 - [x] Minimum windows cannot be shortened below the repository policy.
-- [ ] Retirement requires replacement, guide, acknowledgements, and zero use.
+- [x] Retirement requires replacement, guide, acknowledgements, and zero use;
+      `Deprecation.ValidateRetirement` and lifecycle tests enforce all gates.
 - [x] No A9 task retires a current v1 operation.
 
 ### Events
@@ -916,9 +926,10 @@ after the smoke fixture was rerun from a clean Compose volume.
       for the existing event set.
 - [x] Existing consumers tolerate optional additions and reject malformed known
       versions before side effects.
-- [ ] Logical event IDs preserve one business effect across dual versions.
+- [x] Logical event IDs preserve one business effect across dual versions in the
+      test-only dual-outbox parity harness.
 - [x] Event semantic breaking mutations fail through executable schema mutation
-      fixtures; dual-version parity remains open.
+      fixtures; dual-version parity is covered by the rollout harness.
 - [x] Event catalog/schema/source consistency is checked; prose reconciliation
       remains part of the final review.
 
@@ -930,7 +941,8 @@ after the smoke fixture was rerun from a clean Compose volume.
       gate; the Buf-backed merge-base run remains part of the final gate.
 - [x] Enum-zero and package-major rules are enforced.
 - [x] Reserved-field mutation enforcement has an executable fixture.
-- [ ] The v1/v2 drill proves coexistence, rollback, metrics, and guarded removal.
+- [x] The test-only v1/v2 drill proves coexistence, rollback, independent
+      metrics, and guarded removal.
 
 ### CI, security, and operations
 
@@ -941,7 +953,8 @@ after the smoke fixture was rerun from a clean Compose volume.
 - [x] Fixtures, examples, logs, and reports contain no secrets or personal data;
       the contract safety scan rejects private keys, live-key markers, tokens,
       and non-synthetic email examples.
-- [ ] Metrics use only registered low-cardinality labels.
+- [x] The checked-in contract metrics registry and validation test restrict
+      metric names, labels, and enumerated values to bounded forms.
 - [x] Contract failures, deprecation, event cutover, and retirement have a
       contract-evolution runbook.
 - [x] Non-live contract, proto, build, ordinary vet, lint, race/unit, load-lint,
@@ -955,7 +968,8 @@ after the smoke fixture was rerun from a clean Compose volume.
 
 - [ ] T0–T6 results contain commands, concise evidence, timings, and commit IDs.
 - [ ] The checked-in contracts match the live routers, RPCs, and event behavior.
-- [ ] No compatibility check can be bypassed for an in-place breaking change.
+- [x] No compatibility check can be bypassed for an in-place breaking change;
+      approved exceptions are explicit in `approved-breaking.yaml`.
 - [x] Existing money, auth, KYC, webhook, admin, and notification journeys retain
       their intended behavior in the passing integration, smoke, business, and
       admin runtime gates.

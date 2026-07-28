@@ -6,7 +6,7 @@
 > Related context:
 > [42-long-term-roadmap.md](../42-long-term-roadmap.md),
 > [55-frontend-long-term-roadmap.md](../55-frontend-long-term-roadmap.md),
-> [52-a9-api-contracts-schema-evolution.md](52-a9-api-contracts-schema-evolution.md),
+> [archived plan 52](../archive/52-a9-api-contracts-schema-evolution.md),
 > [current architecture](../../reference/architecture.md), and
 > [service reference](../../reference/services.md).
 >
