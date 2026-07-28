@@ -80,7 +80,7 @@ ci-lint:
 	@command -v actionlint >/dev/null 2>&1 || { echo "actionlint is required" >&2; exit 2; }
 	@command -v shellcheck >/dev/null 2>&1 || { echo "shellcheck is required" >&2; exit 2; }
 	actionlint -shellcheck "$$(command -v shellcheck)"
-	shellcheck --severity=error scripts/*.sh
+	find scripts -name '*.sh' -print0 | xargs -0 shellcheck --severity=error
 	./scripts/ci/check-action-pins.sh
 
 ## docs-check: Validate required guides, local Markdown links, and heading anchors
@@ -137,7 +137,7 @@ $(GOVULNCHECK):
 proto proto-lint proto-breaking: tools
 
 proto:
-	"$(BUF)" generate
+	PATH="$(PROTO_TOOLS_DIR):$$PATH" "$(BUF)" generate
 
 ## proto-lint: Lint protobuf contracts
 proto-lint:

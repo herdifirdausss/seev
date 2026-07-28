@@ -33,6 +33,7 @@ import (
 
 	"github.com/herdifirdausss/seev/internal/config"
 	"github.com/herdifirdausss/seev/internal/ledger"
+	"github.com/herdifirdausss/seev/internal/ledger/events"
 	"github.com/herdifirdausss/seev/internal/notify"
 	"github.com/herdifirdausss/seev/internal/testutil"
 	"github.com/herdifirdausss/seev/pkg/cryptox"
@@ -308,8 +309,18 @@ func TestNotify_MoneyIn_RealStack_NotificationRowAppears_DuplicateDeliveryDedup(
 	// MessageID, same routing key) — proves the consumer's
 	// ON CONFLICT (event_id, user_id) DO NOTHING dedup, not just "it
 	// happened to only be delivered once".
+	//
+	// eventID here is notif_notifications.event_id, which internal/notify's
+	// handleDelivery now populates from the payload's own deterministic
+	// events.TransactionPosted.EventID (internal/ledger/events/events.go's
+	// documented "logical event ID" contract), NOT from outbox_events.id —
+	// the two are only equal for legacy payloads with no EventID set. This
+	// test creates exactly one outbox row, so fetch it directly instead of
+	// by id=eventID.
 	var rawPayload []byte
-	require.NoError(t, ledgerDB.QueryRowContext(ctx, `SELECT payload FROM outbox_events WHERE id = $1`, eventID).Scan(&rawPayload))
+	require.NoError(t, ledgerDB.QueryRowContext(ctx,
+		`SELECT payload FROM outbox_events WHERE event_type = $1 ORDER BY created_at DESC LIMIT 1`,
+		events.TypeTransactionPosted).Scan(&rawPayload))
 	var payload map[string]any
 	require.NoError(t, json.Unmarshal(rawPayload, &payload))
 

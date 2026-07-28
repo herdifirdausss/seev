@@ -163,8 +163,8 @@ jobs:
       - name: actionlint
         run: actionlint -shellcheck "$(command -v shellcheck)"
 
-      - name: ShellCheck (scripts/*.sh, severity=error)
-        run: shellcheck --severity=error scripts/*.sh
+      - name: ShellCheck (scripts/**/*.sh, severity=error)
+        run: find scripts -name '*.sh' -print0 | xargs -0 shellcheck --severity=error
 
       - name: External action SHA-pin policy
         run: ./scripts/ci/check-action-pins.sh
@@ -228,9 +228,6 @@ jobs:
           MERGE_BASE=""
           MERGE_BASE="$(git merge-base HEAD "$BASE")"
           make tools
-          GO_BIN=""
-          GO_BIN="$(go env GOPATH)/bin"
-          export PATH="$GO_BIN:$PATH"
           make proto proto-lint
           PROTO_MERGE_BASE_REF="$MERGE_BASE" make proto-breaking
 
