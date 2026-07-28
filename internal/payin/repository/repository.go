@@ -103,10 +103,10 @@ func (r *repo) GetOrInsert(ctx context.Context, ev model.WebhookEvent) (model.We
 	v := r.ring.CurrentVersion()
 	_, err = r.db.ExecContext(ctx, `
 		INSERT INTO payin_webhook_events
-			(id, vendor, vendor_event_id, external_ref, user_id, amount, currency, status, request_id, created_at, updated_at,
+			(id, vendor, vendor_event_id, external_ref, user_id, merchant_tenant_id, amount, currency, status, request_id, created_at, updated_at,
 			 raw_ciphertext, raw_key_version)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, 'received', $8, now(), now(), $9, $10)`,
-		ev.ID, ev.Vendor, ev.VendorEventID, ev.ExternalRef, ev.UserID, ev.Amount.IntPart(), ev.Currency,
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'received', $9, now(), now(), $10, $11)`,
+		ev.ID, ev.Vendor, ev.VendorEventID, ev.ExternalRef, ev.UserID, ev.MerchantTenantID, ev.Amount.IntPart(), ev.Currency,
 		generalutil.NullString(ev.RequestID), rawCiphertext, v,
 	)
 	if err != nil {
@@ -125,7 +125,7 @@ func (r *repo) GetOrInsert(ctx context.Context, ev model.WebhookEvent) (model.We
 
 func (r *repo) getByVendorEventID(ctx context.Context, vendor, vendorEventID string) (model.WebhookEvent, error) {
 	row := r.db.QueryRowContext(ctx, `
-		SELECT id, vendor, vendor_event_id, external_ref, user_id, amount, currency, status,
+		SELECT id, vendor, vendor_event_id, external_ref, user_id, merchant_tenant_id, amount, currency, status,
 		       COALESCE(error_message, ''), COALESCE(request_id, ''), created_at, updated_at,
 		       raw_ciphertext
 		FROM payin_webhook_events WHERE vendor = $1 AND vendor_event_id = $2`,
@@ -135,7 +135,7 @@ func (r *repo) getByVendorEventID(ctx context.Context, vendor, vendorEventID str
 
 func (r *repo) Get(ctx context.Context, id uuid.UUID) (model.WebhookEvent, error) {
 	row := r.db.QueryRowContext(ctx, `
-		SELECT id, vendor, vendor_event_id, external_ref, user_id, amount, currency, status,
+		SELECT id, vendor, vendor_event_id, external_ref, user_id, merchant_tenant_id, amount, currency, status,
 		       COALESCE(error_message, ''), COALESCE(request_id, ''), created_at, updated_at,
 		       raw_ciphertext
 		FROM payin_webhook_events WHERE id = $1`,
@@ -152,7 +152,7 @@ func (r *repo) scanEvent(scanner interface{ Scan(...any) error }) (model.Webhook
 	var amount int64
 	var userID sql.NullString
 	var rawCiphertext []byte
-	if err := scanner.Scan(&ev.ID, &ev.Vendor, &ev.VendorEventID, &ev.ExternalRef, &userID, &amount,
+	if err := scanner.Scan(&ev.ID, &ev.Vendor, &ev.VendorEventID, &ev.ExternalRef, &userID, &ev.MerchantTenantID, &amount,
 		&ev.Currency, &ev.Status, &ev.ErrorMessage, &ev.RequestID, &ev.CreatedAt, &ev.UpdatedAt,
 		&rawCiphertext); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -219,7 +219,7 @@ func (r *repo) MarkBlocked(ctx context.Context, id uuid.UUID, reason string) err
 }
 
 func (r *repo) List(ctx context.Context, vendor, status string, limit, offset int) ([]model.WebhookEvent, error) {
-	query := `SELECT id, vendor, vendor_event_id, external_ref, user_id, amount, currency, status,
+	query := `SELECT id, vendor, vendor_event_id, external_ref, user_id, merchant_tenant_id, amount, currency, status,
 	                 COALESCE(error_message, ''), COALESCE(request_id, ''), created_at, updated_at,
 	                 raw_ciphertext
 	          FROM payin_webhook_events WHERE 1=1`

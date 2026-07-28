@@ -657,9 +657,15 @@ func (m *Module) ListEntries(ctx context.Context, accountID uuid.UUID, beforeCre
 	return m.entryRepo.ListByAccount(ctx, accountID, beforeCreatedAt, beforeID, limit)
 }
 
-// ProvisionMerchant creates the standard (single, cash) account for a
-// merchant tenant. Idempotent (Plan 57 T5).
+// ProvisionMerchant creates the standard account set for a merchant
+// tenant — cash (T5) and hold (T6, required for the merchant payout
+// state machine). Idempotent; returns the cash account as the tenant's
+// primary account id, matching the existing gRPC contract
+// (ProvisionMerchantResponse.account_id).
 func (m *Module) ProvisionMerchant(ctx context.Context, tenantID uuid.UUID, currency string) (Account, error) {
+	if _, err := m.provisionSvc.ProvisionMerchantHoldAccount(ctx, tenantID, currency); err != nil {
+		return Account{}, fmt.Errorf("provision merchant hold account: %w", err)
+	}
 	return m.provisionSvc.ProvisionMerchantAccount(ctx, tenantID, currency)
 }
 

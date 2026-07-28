@@ -47,18 +47,22 @@ const (
 
 // PayoutRequest is one row of payout_requests.
 type PayoutRequest struct {
-	ID           uuid.UUID
-	UserID       uuid.UUID
-	Amount       decimal.Decimal
-	Currency     string
-	Vendor       string
-	Destination  []byte // vendor-shaped JSON, e.g. {"bank_code":"...","account_no":"..."}
-	Status       string
-	HoldTxID     *uuid.UUID
-	SettleTxID   *uuid.UUID
-	VendorRef    string
-	ErrorMessage string
-	CreatedBy    string
+	ID     uuid.UUID
+	UserID uuid.UUID
+	// MerchantTenantID (Plan 57 T6) is set instead of UserID for a
+	// merchant-owned request — exactly one of the two is ever non-zero,
+	// mirroring internal/payin's own MerchantTenantID sentinel convention.
+	MerchantTenantID uuid.UUID
+	Amount           decimal.Decimal
+	Currency         string
+	Vendor           string
+	Destination      []byte // vendor-shaped JSON, e.g. {"bank_code":"...","account_no":"..."}
+	Status           string
+	HoldTxID         *uuid.UUID
+	SettleTxID       *uuid.UUID
+	VendorRef        string
+	ErrorMessage     string
+	CreatedBy        string
 	// RequestID (docs/roadmap/archive/36 Task T5) is the HTTP request_id of the call
 	// that created this payout — end-to-end trace anchor. NOT the same
 	// concept as PayoutVendorCall.PayoutRequestID below (that one is this

@@ -103,13 +103,26 @@ func (s *Service) CreatePocket(ctx context.Context, userID uuid.UUID, currency, 
 	return acc, nil
 }
 
-// ProvisionMerchantAccount creates the single owner_type='merchant' cash
-// account a tenant needs before any merchant transfer can reference it
-// (Plan 57 T5). A merchant gets no hold/pending/frozen accounts — those
-// are end-user withdrawal-lifecycle states, not applicable to a tenant.
-// Idempotent: calling it again for the same tenant returns the existing
-// account without error or duplication.
+// ProvisionMerchantAccount creates the owner_type='merchant' cash account a
+// tenant needs before any merchant transfer or pay-in can reference it
+// (Plan 57 T5). Idempotent: calling it again for the same tenant returns
+// the existing account without error or duplication.
 func (s *Service) ProvisionMerchantAccount(ctx context.Context, tenantID uuid.UUID, currency string) (model.Account, error) {
+	return s.provisionMerchantAccountType(ctx, tenantID, currency, constant.AccountTypeCash)
+}
+
+// ProvisionMerchantHoldAccount creates the owner_type='merchant' hold
+// account a tenant needs before any merchant payout can reference it
+// (Plan 57 T6) — merchant_payout_hold/settle/cancel need the same
+// cash↔hold state machine WithdrawInitiate/Settle/Cancel already use for
+// end users. A merchant does NOT get pending/frozen accounts — those
+// remain end-user-only withdrawal-lifecycle states with no merchant
+// equivalent. Idempotent, same shape as ProvisionMerchantAccount.
+func (s *Service) ProvisionMerchantHoldAccount(ctx context.Context, tenantID uuid.UUID, currency string) (model.Account, error) {
+	return s.provisionMerchantAccountType(ctx, tenantID, currency, constant.AccountTypeHold)
+}
+
+func (s *Service) provisionMerchantAccountType(ctx context.Context, tenantID uuid.UUID, currency, accountType string) (model.Account, error) {
 	if tenantID == uuid.Nil {
 		return model.Account{}, fmt.Errorf("%w: tenantID is required", apperror.ErrValidation)
 	}
@@ -121,7 +134,7 @@ func (s *Service) ProvisionMerchantAccount(ctx context.Context, tenantID uuid.UU
 	err := s.db.WithTx(ctx, nil, func(tx *sql.Tx) error {
 		var err error
 		acc, err = s.repo.UpsertMerchantAccount(ctx, tx, repository.UpsertMerchantAccountParams{
-			TenantID: tenantID, Type: constant.AccountTypeCash, Currency: currency, CreatedBy: "service:ledger-provision",
+			TenantID: tenantID, Type: accountType, Currency: currency, CreatedBy: "service:ledger-provision",
 		})
 		return err
 	})

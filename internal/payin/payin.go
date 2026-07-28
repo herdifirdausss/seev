@@ -156,6 +156,7 @@ func (m *Module) HandleVendorCallback(ctx context.Context, vendor, vendorEventID
 			unmatchedReason = "callback amount or currency does not match payin intent"
 		default:
 			event.UserID = intent.UserID
+			event.MerchantTenantID = intent.MerchantTenantID
 		}
 	}
 
@@ -201,7 +202,15 @@ func (m *Module) HandleVendorCallback(ctx context.Context, vendor, vendorEventID
 // accordingly. Called both from the normalized callback path and ReplayEvent
 // (admin-triggered retry) — identical logic either way.
 func (m *Module) postAndFinalize(ctx context.Context, ev model.WebhookEvent, gateway string) error {
-	if m.fraudClient != nil {
+	isMerchant := ev.MerchantTenantID != uuid.Nil
+	// Fraud screening is deliberately SKIPPED for merchant-owned events
+	// (Plan 57 T6 scope decision): fraudClient.Check is keyed on a single
+	// userID, and every merchant event's UserID is the zero sentinel — running
+	// it unmodified would silently pool every merchant tenant into one
+	// shared "zero user" velocity bucket, a real correctness bug, not a
+	// missing nice-to-have. Merchant-specific fraud/velocity screening is
+	// out of scope for T6.
+	if m.fraudClient != nil && !isMerchant {
 		verdict, ferr := m.fraudClient.Check(ctx, "topup", "money_in", ev.UserID, ev.Amount, ev.Currency)
 		if ferr != nil {
 			if errors.Is(ferr, fraudcheck.ErrDependencyUnavailable) {
@@ -244,6 +253,16 @@ func (m *Module) postAndFinalize(ctx context.Context, ev model.WebhookEvent, gat
 			"gateway":      gateway,
 			"external_ref": ev.ExternalRef,
 		},
+	}
+	if isMerchant {
+		// Plan 57 T6: the merchant-owned counterpart of money_in — same
+		// idempotency key shape (still scoped by vendor+vendor_event_id,
+		// owner-neutral already), different ledger processor type and a
+		// MerchantTenantID instead of UserID so the destination resolves
+		// to the tenant's own cash account, never a caller-supplied one.
+		cmd.Type = "merchant_payin_credit"
+		cmd.UserID = uuid.Nil
+		cmd.MerchantTenantID = ev.MerchantTenantID
 	}
 
 	postErr := m.poster.Post(ctx, cmd)

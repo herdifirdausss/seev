@@ -2200,14 +2200,127 @@ T6 may begin.
 
 ### Acceptance
 
-- [ ] Existing user Payin/Payout journeys remain green.
-- [ ] Sandbox merchant cannot invoke a live adapter.
-- [ ] Pay-in credits the correct merchant account once.
-- [ ] Payout holds/debits/releases the correct merchant account once.
-- [ ] Duplicate synchronous request and duplicate callback are safe.
-- [ ] Lost synchronous response is recoverable by idempotent query/retry.
-- [ ] Owner events contain sufficient tenant routing data.
-- [ ] No vendor-native response leaks into the public B2B contract.
+- [x] Existing user Payin/Payout journeys remain green.
+- [x] Sandbox merchant cannot invoke a live adapter.
+- [x] Pay-in credits the correct merchant account once.
+- [x] Payout holds/debits/releases the correct merchant account once.
+- [x] Duplicate synchronous request and duplicate callback are safe.
+- [x] Lost synchronous response is recoverable by idempotent query/retry.
+- [x] Owner events contain sufficient tenant routing data.
+- [x] No vendor-native response leaks into the public B2B contract.
+
+### Result
+
+Delivered 2026-07-29:
+
+- **Ledger prerequisite, discovered mid-task**: T5's `ProvisionMerchantAccount`
+  doc comment claimed "a merchant gets no hold account" — true for T5's own
+  scope (transfer only), but wrong once payout needs a hold↔cash state
+  machine. Added `ProvisionMerchantHoldAccount` (same idempotent upsert,
+  `AccountTypeHold`) and 4 new internal-router-only ledger processors
+  mirroring the user path exactly: `merchant_payin_credit` (→ MoneyIn),
+  `merchant_payout_hold`/`merchant_payout_settle`/`merchant_payout_cancel`
+  (→ WithdrawInitiate/Settle/Cancel) — same `GetMerchantAccountID`-only
+  resolution T5's `merchant_transfer` established, never a caller-supplied
+  account id. Zero new migration.
+- **Owner identity, additive, no owner_type column**: rather than T0's
+  suggested `owner_type` enum + nullable `merchant_tenant_id`, used a
+  SIMPLER sentinel-zero-UUID convention already established by
+  `Command.MerchantTenantID` (T5): `merchant_tenant_id UUID NOT NULL
+  DEFAULT '0000...'`, exactly one of `user_id`/`merchant_tenant_id` ever
+  non-zero, enforced by a CHECK constraint on `payin_topup_intents` and
+  `payout_requests` (`migrations/payin/000014`, `migrations/payout/000014`).
+  `DEFAULT` backfills every existing row for free — no data migration
+  pass. `payin_webhook_events` gets the column with no CHECK (an
+  unmatched callback legitimately has neither owner yet — pre-existing
+  behavior since migration 000013, not new).
+- **New create use cases**: `CreateMerchantTopupIntent`
+  (`internal/payin/merchant.go`) and `CreateMerchant`
+  (`internal/payout/merchant.go`) — currency is caller-supplied (the B2B
+  contract's own field), unlike the user path's `GetUserCurrency`
+  resolution. Fee-quote consumption is not offered on the merchant payout
+  path (no `quote_id` field on the B2B contract) — settle() falls back to
+  `ResolveFee` exactly as any unquoted user payout already does.
+- **Sandbox-to-mock routing, structural not rule-based**: both modules'
+  `resolveMerchantVendor` route `environment="sandbox"` straight to
+  `sandboxVendor` ("mockvendor") with NO routing-table lookup at all —
+  `ErrSandboxVendorUnavailable` if it isn't registered, never a fallback
+  to rule-based resolution. This means a future routing-rule
+  misconfiguration structurally cannot leak a sandbox tenant onto a live
+  vendor, mirroring `merchant_transfer`'s own "source is never
+  caller-supplied" defense-in-depth philosophy.
+- **Fraud screening deliberately skipped for merchant events** (a
+  documented scope decision, not an oversight): `fraudClient.Check` is
+  keyed on a single `userID`; running it unmodified for merchant events
+  (whose `UserID` is the zero sentinel) would silently pool every
+  merchant tenant into one shared "zero user" velocity bucket — a real
+  correctness bug, not a missing nice-to-have. Merchant-specific
+  fraud/velocity screening is out of scope for T6.
+- **Duplicate handling reuses existing owner-neutral mechanisms
+  unmodified**: payin's `GetOrInsert` dedup on `(vendor, vendor_event_id)`
+  and payout's `TransitionTo*` conditional UPDATEs + the ledger's own
+  idempotency keys already didn't care about owner type — proven directly
+  with merchant-owned redelivery/retry tests, not just inherited by
+  assumption.
+- **Lost synchronous response recovery reuses `ResumeStuck`/`pollVendorPending`
+  unmodified** — proven end to end with a real Postgres test
+  (`TestPayout_CreateMerchant_Async_ResumeJobSettles`): a merchant payout
+  left `vendor_pending`, resolved out of band, gets picked up by the SAME
+  resume job via `Query` (never a duplicate `Submit`) that the user
+  journey already relies on.
+- **Owner event tenant-routing data comes for free**: since the 4 new
+  merchant processors set `cmd.MerchantTenantID`, every merchant
+  money-movement automatically carries `TransactionPosted.MerchantTenantID`
+  (T5's own optional event field) with zero new payin/payout event
+  infrastructure. A genuinely NEW payin/payout-owned outbox (covering the
+  `pending`-at-creation moment, before any ledger posting) was considered
+  and explicitly deferred — T6's own acceptance criterion only requires
+  "sufficient tenant routing data," which the settlement-moment ledger
+  event already satisfies; a full pending-state outbox is better scoped
+  as T7's own prerequisite if the locked webhook envelope turns out to
+  need it.
+- **No vendor-native response leakage — confirmed pre-existing, not built
+  here**: `internal/vendorboundary`'s double normalization (vendor-native →
+  VendorService's own typed proto → `vendorgw.PayoutResult`/normalized
+  payin callback) already made this true before T6 touched anything;
+  merchant requests flow through the exact same normalized surface.
+- **Real pre-existing test-harness bug found and fixed**:
+  `testutil.LedgerHarness.Post` (used by every payin/payout integration
+  test in this repo, including payout's own pre-existing suite) manually
+  copied `ledgerclient.Command` fields into `ledger.Command` and never
+  copied `MerchantTenantID` — a gap left over from T5 that went unnoticed
+  because T5's own integration tests used a real gRPC bufconn harness,
+  not this in-process one. Every merchant-owned integration test in this
+  task failed with `VALIDATION_ERROR: ... requires MerchantTenantID`
+  until this one-line fix landed.
+- **Deferred, tracked separately, NOT silently skipped**: the plan's own
+  Work list item "Add B2B Gateway handlers only after owner contracts are
+  green" — `internal/merchant`'s actual `/api/v1/b2b/payins`/`/payouts`
+  HTTP route wiring (request parsing, T3's API-key auth, T4's
+  quota/idempotency middleware, public status mapping) is real,
+  substantial, distinct work that no T6 acceptance criterion actually
+  requires (all 8 are owner-service-level and are now proven end to end
+  without it existing). Flagged as a separate follow-up task.
+- **Verified end to end against real Postgres**: 3 payin integration
+  tests (`internal/payin/merchant_integration_test.go` — credits once,
+  duplicate callback safe, sandbox routing) + 4 payout integration tests
+  (`internal/payout/merchant_integration_test.go` — instant-settle
+  hold→debit→release, async resume-job recovery, vendor-failure release,
+  sandbox routing), all passing live, plus 8 payin unit tests and 8
+  payout unit tests (processor-type branching, sandbox structural
+  enforcement, fraud-skip proof) and 21 new ledger-side processor unit
+  tests across the 4 new processors.
+- **Full sweep**: `go build ./...`, `go vet -tags=integration ./...`
+  (whole repo, clean), `make lint` (0 issues), `go test -race ./...`
+  (full repo, green — proves "existing user journeys remain green"),
+  `go test -tags=integration -race` on every touched package (`payin`,
+  `payin/grpcserver`, `payout`, `payout/grpcserver`, `payout/repository`,
+  `payout/worker`, `ledger/processors`, `ledger/repository`,
+  `ledger/grpcserver`), `make docs-check`, `make retention-check` (no new
+  data classes — `merchant_tenant_id` is an additive column on
+  already-classified tables).
+
+T7 may begin.
 
 ---
 

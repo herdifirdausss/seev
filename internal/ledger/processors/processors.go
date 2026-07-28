@@ -488,6 +488,13 @@ func NewDefaultRegistry(
 		// Merchant transfer (Plan 57 T5) — internal router only, never
 		// added to publicUserTypes; reachable only via Gateway's B2B path.
 		NewMerchantTransfer(accRepo),
+		// Merchant pay-in/payout (Plan 57 T6) — internal router only,
+		// reachable only via internal/payin and internal/payout's own
+		// merchant-aware use cases.
+		NewMerchantPayinCredit(accRepo),
+		NewMerchantPayoutHold(accRepo),
+		NewMerchantPayoutSettle(accRepo, txRepo),
+		NewMerchantPayoutCancel(accRepo, txRepo),
 		// Merchant / payment
 		NewRefund(accRepo),
 		NewFeeCollect(accRepo),

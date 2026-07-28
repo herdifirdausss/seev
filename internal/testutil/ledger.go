@@ -70,6 +70,7 @@ func (h *LedgerHarness) Post(ctx context.Context, command ledgerclient.Command) 
 		Type: command.Type, Amount: command.Amount, UserID: command.UserID,
 		TargetUserID: command.TargetUserID, PocketCode: command.PocketCode,
 		ReferenceID: command.ReferenceID, Metadata: command.Metadata,
+		MerchantTenantID: command.MerchantTenantID,
 	})
 	return translateLedgerErr(err)
 }

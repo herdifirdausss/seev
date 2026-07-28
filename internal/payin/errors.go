@@ -42,3 +42,9 @@ var ErrNoVendorAvailable = errors.New("payin: no vendor available")
 // redelivers later. The gateway handler maps this to 503
 // DEPENDENCY_UNAVAILABLE.
 var ErrScreeningDependencyUnavailable = errors.New("payin: screening dependency unavailable")
+
+// ErrSandboxVendorUnavailable is returned by CreateMerchantTopupIntent
+// when environment="sandbox" and the mock vendor isn't registered (Plan 57
+// T6) — a sandbox tenant's request MUST fail closed rather than ever
+// fall through to a live-capable vendor.
+var ErrSandboxVendorUnavailable = errors.New("payin: sandbox vendor unavailable")

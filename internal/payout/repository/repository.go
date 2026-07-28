@@ -146,10 +146,10 @@ func (r *repo) Insert(ctx context.Context, req model.PayoutRequest) error {
 	v := r.ring.CurrentVersion()
 	_, err = r.db.ExecContext(ctx, `
 		INSERT INTO payout_requests
-			(id, user_id, amount, currency, vendor, status, created_by, request_id, created_at, updated_at,
+			(id, user_id, merchant_tenant_id, amount, currency, vendor, status, created_by, request_id, created_at, updated_at,
 			 destination_ciphertext, destination_key_version)
-		VALUES ($1, $2, $3, $4, $5, 'created', $6, $7, now(), now(), $8, $9)`,
-		req.ID, req.UserID, req.Amount.IntPart(), req.Currency, req.Vendor, req.CreatedBy,
+		VALUES ($1, $2, $3, $4, $5, $6, 'created', $7, $8, now(), now(), $9, $10)`,
+		req.ID, req.UserID, req.MerchantTenantID, req.Amount.IntPart(), req.Currency, req.Vendor, req.CreatedBy,
 		generalutil.NullString(req.RequestID), destCiphertext, v,
 	)
 	if err != nil {
@@ -267,7 +267,7 @@ func (r *repo) SetVendor(ctx context.Context, id uuid.UUID, vendor string) error
 
 func (r *repo) Get(ctx context.Context, id uuid.UUID) (model.PayoutRequest, error) {
 	row := r.db.QueryRowContext(ctx, `
-		SELECT id, user_id, amount, currency, vendor, status, hold_tx_id, settle_tx_id,
+		SELECT id, user_id, merchant_tenant_id, amount, currency, vendor, status, hold_tx_id, settle_tx_id,
 		       COALESCE(vendor_ref, ''), COALESCE(error_message, ''), created_by, COALESCE(request_id, ''),
 		       fee_quote_id, fee_amount, COALESCE(fee_gateway, ''), created_at, updated_at,
 		       destination_ciphertext
@@ -281,7 +281,7 @@ func (r *repo) Get(ctx context.Context, id uuid.UUID) (model.PayoutRequest, erro
 
 func (r *repo) GetByVendorReference(ctx context.Context, vendor, vendorReference string) (model.PayoutRequest, error) {
 	row := r.db.QueryRowContext(ctx, `
-		SELECT id, user_id, amount, currency, vendor, status, hold_tx_id, settle_tx_id,
+		SELECT id, user_id, merchant_tenant_id, amount, currency, vendor, status, hold_tx_id, settle_tx_id,
 		       COALESCE(vendor_ref, ''), COALESCE(error_message, ''), created_by, COALESCE(request_id, ''),
 		       fee_quote_id, fee_amount, COALESCE(fee_gateway, ''), created_at, updated_at,
 		       destination_ciphertext
@@ -311,7 +311,7 @@ func (r *repo) scanRequest(s rowScanner) (model.PayoutRequest, error) {
 	var holdTxID, settleTxID, feeQuoteID sql.NullString
 	var feeAmount sql.NullInt64
 	var destCiphertext []byte
-	if err := s.Scan(&req.ID, &req.UserID, &amount, &req.Currency, &req.Vendor, &req.Status,
+	if err := s.Scan(&req.ID, &req.UserID, &req.MerchantTenantID, &amount, &req.Currency, &req.Vendor, &req.Status,
 		&holdTxID, &settleTxID, &req.VendorRef, &req.ErrorMessage, &req.CreatedBy, &req.RequestID,
 		&feeQuoteID, &feeAmount, &req.FeeGateway,
 		&req.CreatedAt, &req.UpdatedAt,
@@ -363,7 +363,7 @@ func (r *repo) scanRequest(s rowScanner) (model.PayoutRequest, error) {
 }
 
 func (r *repo) List(ctx context.Context, status, vendor string, limit, offset int) ([]model.PayoutRequest, error) {
-	query := `SELECT id, user_id, amount, currency, vendor, status, hold_tx_id, settle_tx_id,
+	query := `SELECT id, user_id, merchant_tenant_id, amount, currency, vendor, status, hold_tx_id, settle_tx_id,
 	                 COALESCE(vendor_ref, ''), COALESCE(error_message, ''), created_by, COALESCE(request_id, ''),
 	                 fee_quote_id, fee_amount, COALESCE(fee_gateway, ''), created_at, updated_at,
 	                 destination_ciphertext
@@ -388,7 +388,7 @@ func (r *repo) List(ctx context.Context, status, vendor string, limit, offset in
 
 func (r *repo) ListStuck(ctx context.Context, status string, olderThan time.Time, limit int) ([]model.PayoutRequest, error) {
 	return r.queryRequests(ctx, `
-		SELECT id, user_id, amount, currency, vendor, status, hold_tx_id, settle_tx_id,
+		SELECT id, user_id, merchant_tenant_id, amount, currency, vendor, status, hold_tx_id, settle_tx_id,
 		       COALESCE(vendor_ref, ''), COALESCE(error_message, ''), created_by, COALESCE(request_id, ''),
 		       fee_quote_id, fee_amount, COALESCE(fee_gateway, ''), created_at, updated_at,
 		       destination_ciphertext
