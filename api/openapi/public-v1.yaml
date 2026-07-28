@@ -1,0 +1,325 @@
+openapi: 3.1.0
+info:
+  title: Seev public user API
+  version: 1.0.0
+  description: Stable v1 user contract for auth and gateway-owned product journeys.
+servers:
+  - {url: https://api.example.invalid, description: Gateway public edge}
+  - {url: https://auth.example.invalid, description: Auth service public listener}
+tags:
+  - {name: auth, description: Authentication and user profile}
+  - {name: ledger, description: User ledger operations}
+  - {name: payments, description: Top-up and payout operations}
+  - {name: notifications, description: User notification inbox}
+paths:
+  /api/v1/auth/register:
+    post:
+      operationId: authRegisterV1
+      tags: [auth]
+      servers: [{url: https://auth.example.invalid}]
+      x-see-owner: auth
+      x-see-audience: public
+      security: []
+      requestBody: {$ref: './components/common.yaml#/components/requestBodies/JSON'}
+      responses: {'201': {$ref: './components/common.yaml#/components/responses/Success'}, '400': {$ref: './components/common.yaml#/components/responses/BadRequest'}, '409': {$ref: './components/common.yaml#/components/responses/Conflict'}, '429': {$ref: './components/common.yaml#/components/responses/TooManyRequests'}}
+  /api/v1/auth/login:
+    post:
+      operationId: authLoginV1
+      tags: [auth]
+      servers: [{url: https://auth.example.invalid}]
+      x-see-owner: auth
+      x-see-audience: public
+      security: []
+      requestBody: {$ref: './components/common.yaml#/components/requestBodies/JSON'}
+      responses: {'200': {$ref: './components/common.yaml#/components/responses/Success'}, '400': {$ref: './components/common.yaml#/components/responses/BadRequest'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '429': {$ref: './components/common.yaml#/components/responses/TooManyRequests'}}
+  /api/v1/auth/refresh:
+    post:
+      operationId: authRefreshV1
+      tags: [auth]
+      servers: [{url: https://auth.example.invalid}]
+      x-see-owner: auth
+      x-see-audience: public
+      security: []
+      requestBody: {$ref: './components/common.yaml#/components/requestBodies/JSON'}
+      responses: {'200': {$ref: './components/common.yaml#/components/responses/Success'}, '400': {$ref: './components/common.yaml#/components/responses/BadRequest'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}}
+  /api/v1/users/me:
+    get:
+      operationId: authGetMeV1
+      tags: [auth]
+      servers: [{url: https://auth.example.invalid}]
+      x-see-owner: auth
+      x-see-audience: public
+      security: [{bearerAuth: []}]
+      responses: {'200': {$ref: './components/common.yaml#/components/responses/Success'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}}
+    put:
+      operationId: authUpdateMeV1
+      tags: [auth]
+      servers: [{url: https://auth.example.invalid}]
+      x-see-owner: auth
+      x-see-audience: public
+      security: [{bearerAuth: []}]
+      requestBody: {$ref: './components/common.yaml#/components/requestBodies/JSON'}
+      responses: {'200': {$ref: './components/common.yaml#/components/responses/Success'}, '400': {$ref: './components/common.yaml#/components/responses/BadRequest'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}}
+  /api/v1/users/me/kyc:
+    get:
+      operationId: authGetKycV1
+      tags: [auth]
+      x-see-owner: auth
+      x-see-audience: public
+      security: [{bearerAuth: []}]
+      responses: {'200': {$ref: './components/common.yaml#/components/responses/Success'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}}
+    post:
+      operationId: authSubmitKycV1
+      tags: [auth]
+      x-see-owner: auth
+      x-see-audience: public
+      security: [{bearerAuth: []}]
+      requestBody: {$ref: './components/common.yaml#/components/requestBodies/JSON'}
+      responses: {'202': {$ref: './components/common.yaml#/components/responses/Accepted'}, '400': {$ref: './components/common.yaml#/components/responses/BadRequest'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '409': {$ref: './components/common.yaml#/components/responses/Conflict'}}
+  /api/v1/users/me/kyc/documents:
+    post:
+      operationId: authUploadKycDocumentV1
+      tags: [auth]
+      x-see-owner: auth
+      x-see-audience: public
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content: {multipart/form-data: {schema: {type: object, required: [document], additionalProperties: false, properties: {document: {type: string, format: binary}, kind: {type: string, maxLength: 64}}}}}
+      responses: {'201': {$ref: './components/common.yaml#/components/responses/Success'}, '400': {$ref: './components/common.yaml#/components/responses/BadRequest'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '413': {$ref: './components/common.yaml#/components/responses/BadRequest'}}
+  /api/v1/users/me/privacy/exports:
+    post:
+      operationId: authCreatePrivacyExportV1
+      tags: [auth]
+      x-see-owner: auth
+      x-see-audience: public
+      security: [{bearerAuth: []}]
+      requestBody: {$ref: './components/common.yaml#/components/requestBodies/JSON'}
+      responses: {'202': {$ref: './components/common.yaml#/components/responses/Accepted'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '409': {$ref: './components/common.yaml#/components/responses/Conflict'}}
+  /api/v1/users/me/privacy/requests/{id}:
+    get:
+      operationId: authGetPrivacyExportStatusV1
+      tags: [auth]
+      x-see-owner: auth
+      x-see-audience: public
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: './components/common.yaml#/components/parameters/UUID'}]
+      responses: {'200': {$ref: './components/common.yaml#/components/responses/Success'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '404': {$ref: './components/common.yaml#/components/responses/NotFound'}}
+  /api/v1/users/me/privacy/exports/{id}/download:
+    get:
+      operationId: authDownloadPrivacyExportV1
+      tags: [auth]
+      x-see-owner: auth
+      x-see-audience: public
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: './components/common.yaml#/components/parameters/UUID'}]
+      responses: {'200': {$ref: './components/common.yaml#/components/responses/Binary'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '404': {$ref: './components/common.yaml#/components/responses/NotFound'}}
+  /api/v1/users/me/privacy/closure:
+    post:
+      operationId: authCreatePrivacyClosureV1
+      tags: [auth]
+      x-see-owner: auth
+      x-see-audience: public
+      security: [{bearerAuth: []}]
+      requestBody: {$ref: './components/common.yaml#/components/requestBodies/JSON'}
+      responses: {'202': {$ref: './components/common.yaml#/components/responses/Accepted'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '409': {$ref: './components/common.yaml#/components/responses/Conflict'}}
+  /api/v1/users/me/privacy/closure/{id}:
+    get:
+      operationId: authGetPrivacyClosureStatusV1
+      tags: [auth]
+      x-see-owner: auth
+      x-see-audience: public
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: './components/common.yaml#/components/parameters/UUID'}]
+      responses: {'200': {$ref: './components/common.yaml#/components/responses/Success'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '404': {$ref: './components/common.yaml#/components/responses/NotFound'}}
+  /api/v1/topup:
+    post:
+      operationId: gatewayCreateTopupV1
+      tags: [payments]
+      x-see-owner: gateway
+      x-see-behavior-owner: payin
+      x-see-audience: public
+      security: [{bearerAuth: []}]
+      requestBody: {$ref: './components/common.yaml#/components/requestBodies/JSON'}
+      responses: {'201': {$ref: './components/common.yaml#/components/responses/Success'}, '400': {$ref: './components/common.yaml#/components/responses/BadRequest'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '409': {$ref: './components/common.yaml#/components/responses/Conflict'}, '422': {$ref: './components/common.yaml#/components/responses/BadRequest'}}
+  /api/v1/topup/{id}:
+    get:
+      operationId: gatewayGetTopupV1
+      tags: [payments]
+      x-see-owner: gateway
+      x-see-behavior-owner: payin
+      x-see-audience: public
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: './components/common.yaml#/components/parameters/UUID'}]
+      responses: {'200': {$ref: './components/common.yaml#/components/responses/Success'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '404': {$ref: './components/common.yaml#/components/responses/NotFound'}}
+  /api/v1/payout:
+    post:
+      operationId: gatewayCreatePayoutV1
+      tags: [payments]
+      x-see-owner: gateway
+      x-see-behavior-owner: payout
+      x-see-audience: public
+      security: [{bearerAuth: []}]
+      requestBody: {$ref: './components/common.yaml#/components/requestBodies/JSON'}
+      responses: {'201': {$ref: './components/common.yaml#/components/responses/Success'}, '400': {$ref: './components/common.yaml#/components/responses/BadRequest'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '409': {$ref: './components/common.yaml#/components/responses/Conflict'}, '422': {$ref: './components/common.yaml#/components/responses/BadRequest'}}
+  /api/v1/payout/{id}:
+    get:
+      operationId: gatewayGetPayoutV1
+      tags: [payments]
+      x-see-owner: gateway
+      x-see-behavior-owner: payout
+      x-see-audience: public
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: './components/common.yaml#/components/parameters/UUID'}]
+      responses: {'200': {$ref: './components/common.yaml#/components/responses/Success'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '404': {$ref: './components/common.yaml#/components/responses/NotFound'}}
+  /api/v1/notifications:
+    get:
+      operationId: gatewayListNotificationsV1
+      tags: [notifications]
+      x-see-owner: gateway
+      x-see-behavior-owner: notify
+      x-see-audience: public
+      security: [{bearerAuth: []}]
+      parameters: [{name: cursor, in: query, schema: {type: string, maxLength: 512}}, {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100}}]
+      responses: {'200': {$ref: './components/common.yaml#/components/responses/Success'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}}
+  /api/v1/notifications/{id}/read:
+    post:
+      operationId: gatewayMarkNotificationReadV1
+      tags: [notifications]
+      x-see-owner: gateway
+      x-see-behavior-owner: notify
+      x-see-audience: public
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: './components/common.yaml#/components/parameters/UUID'}]
+      responses: {'204': {$ref: './components/common.yaml#/components/responses/NoContent'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '404': {$ref: './components/common.yaml#/components/responses/NotFound'}}
+  /api/v1/ledger/transactions:
+    post:
+      operationId: gatewayPostLedgerTransactionV1
+      tags: [ledger]
+      x-see-owner: gateway
+      x-see-behavior-owner: ledger
+      x-see-audience: public
+      security: [{bearerAuth: []}]
+      requestBody: {$ref: './components/common.yaml#/components/requestBodies/JSON'}
+      responses: {'201': {$ref: './components/common.yaml#/components/responses/Success'}, '400': {$ref: './components/common.yaml#/components/responses/BadRequest'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '403': {$ref: './components/common.yaml#/components/responses/Forbidden'}, '409': {$ref: './components/common.yaml#/components/responses/Conflict'}, '422': {$ref: './components/common.yaml#/components/responses/BadRequest'}, '429': {$ref: './components/common.yaml#/components/responses/TooManyRequests'}, '503': {$ref: './components/common.yaml#/components/responses/Unavailable'}}
+  /api/v1/ledger/transactions/{id}:
+    get:
+      operationId: gatewayGetLedgerTransactionV1
+      tags: [ledger]
+      x-see-owner: gateway
+      x-see-behavior-owner: ledger
+      x-see-audience: public
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: './components/common.yaml#/components/parameters/UUID'}]
+      responses: {'200': {$ref: './components/common.yaml#/components/responses/Success'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '404': {$ref: './components/common.yaml#/components/responses/NotFound'}}
+  /api/v1/ledger/accounts:
+    get:
+      operationId: gatewayListLedgerAccountsV1
+      tags: [ledger]
+      x-see-owner: gateway
+      x-see-behavior-owner: ledger
+      x-see-audience: public
+      security: [{bearerAuth: []}]
+      parameters: [{name: cursor, in: query, schema: {type: string, maxLength: 512}}, {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100}}]
+      responses: {'200': {$ref: './components/common.yaml#/components/responses/Success'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}}
+  /api/v1/ledger/accounts/{id}/balance:
+    get:
+      operationId: gatewayGetLedgerBalanceV1
+      tags: [ledger]
+      x-see-owner: gateway
+      x-see-behavior-owner: ledger
+      x-see-audience: public
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: './components/common.yaml#/components/parameters/UUID'}]
+      responses: {'200': {$ref: './components/common.yaml#/components/responses/Success'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '404': {$ref: './components/common.yaml#/components/responses/NotFound'}}
+  /api/v1/ledger/accounts/{id}/entries:
+    get:
+      operationId: gatewayListLedgerEntriesV1
+      tags: [ledger]
+      x-see-owner: gateway
+      x-see-behavior-owner: ledger
+      x-see-audience: public
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: './components/common.yaml#/components/parameters/UUID'}, {name: cursor, in: query, schema: {type: string, maxLength: 512}}, {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100}}]
+      responses: {'200': {$ref: './components/common.yaml#/components/responses/Success'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '404': {$ref: './components/common.yaml#/components/responses/NotFound'}}
+  /api/v1/ledger/accounts/{id}/statement:
+    get:
+      operationId: gatewayGetLedgerStatementV1
+      tags: [ledger]
+      x-see-owner: gateway
+      x-see-behavior-owner: ledger
+      x-see-audience: public
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: './components/common.yaml#/components/parameters/UUID'}, {name: format, in: query, schema: {type: string, enum: [json, csv]}}]
+      responses: {'200': {$ref: './components/common.yaml#/components/responses/Statement'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '404': {$ref: './components/common.yaml#/components/responses/NotFound'}}
+  /api/v1/ledger/accounts/pockets:
+    post:
+      operationId: gatewayCreateLedgerPocketV1
+      tags: [ledger]
+      x-see-owner: gateway
+      x-see-behavior-owner: ledger
+      x-see-audience: public
+      security: [{bearerAuth: []}]
+      requestBody: {$ref: './components/common.yaml#/components/requestBodies/JSON'}
+      responses: {'201': {$ref: './components/common.yaml#/components/responses/Success'}, '400': {$ref: './components/common.yaml#/components/responses/BadRequest'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '409': {$ref: './components/common.yaml#/components/responses/Conflict'}}
+  /api/v1/ledger/fees/quote:
+    post:
+      operationId: gatewayCreateLedgerFeeQuoteV1
+      tags: [ledger]
+      x-see-owner: gateway
+      x-see-behavior-owner: ledger
+      x-see-audience: public
+      security: [{bearerAuth: []}]
+      requestBody: {$ref: './components/common.yaml#/components/requestBodies/JSON'}
+      responses: {'201': {$ref: './components/common.yaml#/components/responses/Success'}, '400': {$ref: './components/common.yaml#/components/responses/BadRequest'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '422': {$ref: './components/common.yaml#/components/responses/BadRequest'}}
+  /api/v1/ledger/schedules:
+    get:
+      operationId: gatewayListLedgerSchedulesV1
+      tags: [ledger]
+      x-see-owner: gateway
+      x-see-behavior-owner: ledger
+      x-see-audience: public
+      security: [{bearerAuth: []}]
+      responses: {'200': {$ref: './components/common.yaml#/components/responses/Success'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}}
+    post:
+      operationId: gatewayCreateLedgerScheduleV1
+      tags: [ledger]
+      x-see-owner: gateway
+      x-see-behavior-owner: ledger
+      x-see-audience: public
+      security: [{bearerAuth: []}]
+      requestBody: {$ref: './components/common.yaml#/components/requestBodies/JSON'}
+      responses: {'201': {$ref: './components/common.yaml#/components/responses/Success'}, '400': {$ref: './components/common.yaml#/components/responses/BadRequest'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}}
+  /api/v1/ledger/schedules/{id}/pause:
+    post:
+      operationId: gatewayPauseLedgerScheduleV1
+      tags: [ledger]
+      x-see-owner: gateway
+      x-see-behavior-owner: ledger
+      x-see-audience: public
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: './components/common.yaml#/components/parameters/UUID'}]
+      responses: {'204': {$ref: './components/common.yaml#/components/responses/NoContent'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '404': {$ref: './components/common.yaml#/components/responses/NotFound'}, '409': {$ref: './components/common.yaml#/components/responses/Conflict'}}
+  /api/v1/ledger/schedules/{id}/resume:
+    post:
+      operationId: gatewayResumeLedgerScheduleV1
+      tags: [ledger]
+      x-see-owner: gateway
+      x-see-behavior-owner: ledger
+      x-see-audience: public
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: './components/common.yaml#/components/parameters/UUID'}]
+      responses: {'204': {$ref: './components/common.yaml#/components/responses/NoContent'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '404': {$ref: './components/common.yaml#/components/responses/NotFound'}, '409': {$ref: './components/common.yaml#/components/responses/Conflict'}}
+  /api/v1/ledger/schedules/{id}/cancel:
+    post:
+      operationId: gatewayCancelLedgerScheduleV1
+      tags: [ledger]
+      x-see-owner: gateway
+      x-see-behavior-owner: ledger
+      x-see-audience: public
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: './components/common.yaml#/components/parameters/UUID'}]
+      responses: {'204': {$ref: './components/common.yaml#/components/responses/NoContent'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '404': {$ref: './components/common.yaml#/components/responses/NotFound'}, '409': {$ref: './components/common.yaml#/components/responses/Conflict'}}
+components:
+  securitySchemes:
+    bearerAuth: {$ref: './components/common.yaml#/components/securitySchemes/bearerAuth'}

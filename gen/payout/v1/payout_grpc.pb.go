@@ -19,6 +19,7 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
+	PayoutService_HandleVendorCallback_FullMethodName = "/seev.payout.v1.PayoutService/HandleVendorCallback"
 	PayoutService_CreatePayout_FullMethodName         = "/seev.payout.v1.PayoutService/CreatePayout"
 	PayoutService_GetPayout_FullMethodName            = "/seev.payout.v1.PayoutService/GetPayout"
 	PayoutService_ListAssuranceRecords_FullMethodName = "/seev.payout.v1.PayoutService/ListAssuranceRecords"
@@ -30,6 +31,7 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type PayoutServiceClient interface {
+	HandleVendorCallback(ctx context.Context, in *HandleVendorCallbackRequest, opts ...grpc.CallOption) (*HandleVendorCallbackResponse, error)
 	CreatePayout(ctx context.Context, in *CreatePayoutRequest, opts ...grpc.CallOption) (*CreatePayoutResponse, error)
 	GetPayout(ctx context.Context, in *GetPayoutRequest, opts ...grpc.CallOption) (*GetPayoutResponse, error)
 	ListAssuranceRecords(ctx context.Context, in *ListAssuranceRecordsRequest, opts ...grpc.CallOption) (*ListAssuranceRecordsResponse, error)
@@ -43,6 +45,16 @@ type payoutServiceClient struct {
 
 func NewPayoutServiceClient(cc grpc.ClientConnInterface) PayoutServiceClient {
 	return &payoutServiceClient{cc}
+}
+
+func (c *payoutServiceClient) HandleVendorCallback(ctx context.Context, in *HandleVendorCallbackRequest, opts ...grpc.CallOption) (*HandleVendorCallbackResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(HandleVendorCallbackResponse)
+	err := c.cc.Invoke(ctx, PayoutService_HandleVendorCallback_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *payoutServiceClient) CreatePayout(ctx context.Context, in *CreatePayoutRequest, opts ...grpc.CallOption) (*CreatePayoutResponse, error) {
@@ -99,6 +111,7 @@ func (c *payoutServiceClient) ApplyIntakeControl(ctx context.Context, in *ApplyI
 // All implementations must embed UnimplementedPayoutServiceServer
 // for forward compatibility.
 type PayoutServiceServer interface {
+	HandleVendorCallback(context.Context, *HandleVendorCallbackRequest) (*HandleVendorCallbackResponse, error)
 	CreatePayout(context.Context, *CreatePayoutRequest) (*CreatePayoutResponse, error)
 	GetPayout(context.Context, *GetPayoutRequest) (*GetPayoutResponse, error)
 	ListAssuranceRecords(context.Context, *ListAssuranceRecordsRequest) (*ListAssuranceRecordsResponse, error)
@@ -114,6 +127,9 @@ type PayoutServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedPayoutServiceServer struct{}
 
+func (UnimplementedPayoutServiceServer) HandleVendorCallback(context.Context, *HandleVendorCallbackRequest) (*HandleVendorCallbackResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method HandleVendorCallback not implemented")
+}
 func (UnimplementedPayoutServiceServer) CreatePayout(context.Context, *CreatePayoutRequest) (*CreatePayoutResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreatePayout not implemented")
 }
@@ -148,6 +164,24 @@ func RegisterPayoutServiceServer(s grpc.ServiceRegistrar, srv PayoutServiceServe
 		t.testEmbeddedByValue()
 	}
 	s.RegisterService(&PayoutService_ServiceDesc, srv)
+}
+
+func _PayoutService_HandleVendorCallback_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(HandleVendorCallbackRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PayoutServiceServer).HandleVendorCallback(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PayoutService_HandleVendorCallback_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PayoutServiceServer).HandleVendorCallback(ctx, req.(*HandleVendorCallbackRequest))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _PayoutService_CreatePayout_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -247,6 +281,10 @@ var PayoutService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "seev.payout.v1.PayoutService",
 	HandlerType: (*PayoutServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "HandleVendorCallback",
+			Handler:    _PayoutService_HandleVendorCallback_Handler,
+		},
 		{
 			MethodName: "CreatePayout",
 			Handler:    _PayoutService_CreatePayout_Handler,

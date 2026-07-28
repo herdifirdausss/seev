@@ -12,6 +12,7 @@ one according to the question you are answering.
 | What belongs in shared `pkg/` code? | [Shared packages](shared-packages.md) |
 | Why was a safety decision chosen? | [Rationale](rationale.md) |
 | What does an unfamiliar term mean? | [Glossary](glossary.md) |
+| What HTTP, protobuf, and event contracts are current? | [API contracts](api-contracts.md) |
 | What does a ledger event mean on the wire? | [Event contract](events.md) |
 | Which code and test prove a claim? | [Traceability](traceability.md) |
 

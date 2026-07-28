@@ -1,0 +1,88 @@
+name: B0 Load Harness
+
+on:
+  schedule:
+    # The scheduled path is deliberately a non-claiming disposable smoke.
+    - cron: "37 20 * * 6"
+  workflow_dispatch:
+    inputs:
+      scenario:
+        description: "smoke or W1-W7; business scenarios require disposable fixture secrets"
+        type: string
+        default: smoke.js
+        required: true
+      rate:
+        description: "Offered workload units per second"
+        type: string
+        default: "1"
+        required: true
+      duration:
+        description: "k6 duration, for example 1m or 15m"
+        type: string
+        default: 1m
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: b0-load-capacity-local-small
+  cancel-in-progress: false
+
+jobs:
+  load:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      SEEV_LOAD_ACK: disposable-only
+      SEEV_LOAD_PROFILE: local-small
+      SEEV_LOAD_SCENARIO: ${{ github.event_name == 'schedule' && 'smoke.js' || inputs.scenario }}
+      SEEV_LOAD_RATE: ${{ github.event_name == 'schedule' && '1' || inputs.rate }}
+      SEEV_LOAD_DURATION: ${{ github.event_name == 'schedule' && '1s' || inputs.duration }}
+      SEEV_LOAD_ARTIFACT_ROOT: artifacts/load/ci-${{ github.run_id }}
+      SEEV_LOAD_TOKEN: ${{ secrets.SEEV_LOAD_TOKEN }}
+      SEEV_LOAD_USER_ID: ${{ secrets.SEEV_LOAD_USER_ID }}
+      SEEV_LOAD_TARGET_USER_ID: ${{ secrets.SEEV_LOAD_TARGET_USER_ID }}
+      SEEV_LOAD_TOPUP_REFERENCE: ${{ secrets.SEEV_LOAD_TOPUP_REFERENCE }}
+      VENDOR_MOCKVENDOR_SECRET: ${{ secrets.VENDOR_MOCKVENDOR_SECRET }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Validate harness without Docker mutation
+        run: make load-lint
+
+      - name: Run disposable load workload
+        run: ./scripts/load-test.sh run
+
+      - name: Validate summary when produced
+        if: always()
+        run: |
+          if [ -f "${SEEV_LOAD_ARTIFACT_ROOT}/summary.json" ]; then
+            go run ./cmd/loadreport -runs "${SEEV_LOAD_ARTIFACT_ROOT}/summary.json" \
+              -out "${SEEV_LOAD_ARTIFACT_ROOT}/report.md"
+          fi
+
+      - name: Upload redacted load evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: b0-load-${{ github.run_id }}
+          path: |
+            artifacts/load/ci-${{ github.run_id }}/manifest.json
+            artifacts/load/ci-${{ github.run_id }}/summary.json
+            artifacts/load/ci-${{ github.run_id }}/report.md
+            artifacts/load/ci-${{ github.run_id }}/phases.jsonl
+            artifacts/load/ci-${{ github.run_id }}/run-status.json
+          if-no-files-found: ignore
+          retention-days: 14

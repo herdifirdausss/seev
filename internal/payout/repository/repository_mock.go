@@ -68,6 +68,21 @@ func (m *MockRepository) Get(ctx context.Context, id uuid.UUID) (model.PayoutReq
 	return ret0, ret1
 }
 
+// GetByVendorReference mocks base method.
+func (m *MockRepository) GetByVendorReference(ctx context.Context, vendor, vendorReference string) (model.PayoutRequest, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetByVendorReference", ctx, vendor, vendorReference)
+	ret0, _ := ret[0].(model.PayoutRequest)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetByVendorReference indicates an expected call of GetByVendorReference.
+func (mr *MockRepositoryMockRecorder) GetByVendorReference(ctx, vendor, vendorReference any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetByVendorReference", reflect.TypeOf((*MockRepository)(nil).GetByVendorReference), ctx, vendor, vendorReference)
+}
+
 // Get indicates an expected call of Get.
 func (mr *MockRepositoryMockRecorder) Get(ctx, id any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()

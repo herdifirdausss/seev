@@ -32,6 +32,9 @@ func (f fakePayoutClient) GetIntakeControl(context.Context, *payoutv1.GetIntakeC
 func (f fakePayoutClient) ApplyIntakeControl(context.Context, *payoutv1.ApplyIntakeControlRequest, ...grpc.CallOption) (*payoutv1.ApplyIntakeControlResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "")
 }
+func (f fakePayoutClient) HandleVendorCallback(context.Context, *payoutv1.HandleVendorCallbackRequest, ...grpc.CallOption) (*payoutv1.HandleVendorCallbackResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "")
+}
 
 func (f fakePayoutClient) CreatePayout(ctx context.Context, r *payoutv1.CreatePayoutRequest, _ ...grpc.CallOption) (*payoutv1.CreatePayoutResponse, error) {
 	return f.create(ctx, r)

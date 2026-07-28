@@ -8,10 +8,16 @@ import (
 )
 
 const (
-	defaultDispatchPollInterval   = 1 * time.Second
-	defaultDispatchRetryInterval  = 30 * time.Second
-	defaultDispatchReaperInterval = 5 * time.Minute
-	defaultDispatchStuckAfter     = 10 * time.Minute
+	defaultDispatchPollInterval  = 1 * time.Second
+	defaultDispatchRetryInterval = 30 * time.Second
+	// A payout-service crash can leave a command in processing while the
+	// vendor call or the local settle is in flight. Keep the lease recovery
+	// comfortably above the provider call timeout, but below the five-minute
+	// operational recovery window used by the crash drill. The old 5m/10m
+	// pair meant a restarted process could leave a payout submitted for
+	// 10-15 minutes before another worker could claim it.
+	defaultDispatchReaperInterval = 30 * time.Second
+	defaultDispatchStuckAfter     = 2 * time.Minute
 	defaultDispatchBatchSize      = 20
 
 	// dispatchCallTimeout bounds every claim/reap/gauge round trip made
@@ -128,6 +134,12 @@ type dispatchFunc func(ctx context.Context, limit int) (int, error)
 
 func (r *VendorRelay) loop(ctx context.Context, interval time.Duration, dispatch dispatchFunc) {
 	defer r.wg.Done()
+	// Recover durable work immediately after a process restart. Waiting for the
+	// first retry ticker would leave failed commands needlessly dormant after a
+	// crash, and makes recovery depend on the retry interval rather than on the
+	// persisted next_attempt_at eligibility.
+	r.dispatchBatch(ctx, dispatch)
+
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
@@ -136,20 +148,22 @@ func (r *VendorRelay) loop(ctx context.Context, interval time.Duration, dispatch
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			// Unlike the ledger outbox relay's claim step, dispatch itself
-			// makes real vendor network calls per command — no fixed
-			// per-call timeout is applied here (that would abort a
-			// legitimately slow-but-successful vendor round trip); the
-			// vendor provider is expected to enforce its own timeout.
-			// Per-outcome attempt counting (docs/roadmap/archive/45 K6's
-			// payout_vendor_command_attempts_total{outcome}) happens inside
-			// payout.Module.dispatchOne, which is the only place that
-			// actually knows the outcome — this loop only knows how many
-			// commands were claimed.
-			if _, err := dispatch(ctx, r.cfg.BatchSize); err != nil {
-				r.logger.Error("payout-relay: dispatch batch failed", slog.Any("error", err))
-			}
+			r.dispatchBatch(ctx, dispatch)
 		}
+	}
+}
+
+func (r *VendorRelay) dispatchBatch(ctx context.Context, dispatch dispatchFunc) {
+	// Unlike the ledger outbox relay's claim step, dispatch itself makes real
+	// vendor network calls per command — no fixed per-call timeout is applied
+	// here (that would abort a legitimately slow-but-successful vendor round
+	// trip); the vendor provider is expected to enforce its own timeout.
+	// Per-outcome attempt counting (docs/roadmap/archive/45 K6's
+	// payout_vendor_command_attempts_total{outcome}) happens inside
+	// payout.Module.dispatchOne, which is the only place that actually knows
+	// the outcome — this loop only knows how many commands were claimed.
+	if _, err := dispatch(ctx, r.cfg.BatchSize); err != nil {
+		r.logger.Error("payout-relay: dispatch batch failed", slog.Any("error", err))
 	}
 }
 

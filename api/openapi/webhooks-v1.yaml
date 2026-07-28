@@ -1,0 +1,19 @@
+openapi: 3.1.0
+info: {title: Seev vendor callbacks, version: 1.0.0}
+servers: [{url: https://api.example.invalid}]
+paths:
+  /webhooks/{vendor}:
+    post:
+      operationId: vendorServiceVendorWebhookV1
+      x-see-owner: vendor-service
+      x-see-behavior-owner: vendor-service
+      x-see-audience: vendor
+      security: [{vendorSignature: []}]
+      parameters: [{$ref: './components/common.yaml#/components/parameters/Vendor'}, {$ref: './components/common.yaml#/components/parameters/RequestID'}, {name: X-Mock-Signature, in: header, required: true, schema: {type: string, minLength: 64, maxLength: 64}}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: './components/common.yaml#/components/schemas/JSONRequest'}, examples: {settled: {value: {type: payment.settled, reference: synthetic-reference-001, amount_minor: '125000', currency: IDR}}}}}
+      responses: {'200': {$ref: './components/common.yaml#/components/responses/Success'}, '400': {$ref: './components/common.yaml#/components/responses/BadRequest'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '403': {$ref: './components/common.yaml#/components/responses/Forbidden'}, '413': {$ref: './components/common.yaml#/components/responses/BadRequest'}, '503': {$ref: './components/common.yaml#/components/responses/Unavailable'}}
+components:
+  securitySchemes:
+    vendorSignature: {$ref: './components/common.yaml#/components/securitySchemes/vendorSignature'}

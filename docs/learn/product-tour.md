@@ -41,8 +41,11 @@ flowchart TB
     Fraud -. checks .-> Payin
     Fraud -. checks .-> Payout
     Fraud -. checks .-> Ledger
-    Vendor([Outside vendor]) --> Gateway
-    Payout --> Vendor
+    Vendor([Outside vendor]) --> VendorService[VendorService<br/>vendor boundary]
+    Payin --> VendorService
+    Payout --> VendorService
+    VendorService --> Payin
+    VendorService --> Payout
     Ledger --> Queue[Durable events]
     Queue --> Notification[User notifications]
     Queue --> Fraud
@@ -57,9 +60,8 @@ flowchart TB
 ```
 
 Solid arrows represent requests or messages. Dotted arrows represent checking
-or read-only comparison. The vendor callback currently enters through Gateway;
-[plan 54](../roadmap/active/54-vendor-service-boundary.md) proposes a dedicated
-VendorService instead.
+or read-only comparison. Vendor callbacks and outbound vendor calls currently
+pass through VendorService; Payin/Payout retain the business decision.
 
 ## One map of every journey
 
@@ -79,7 +81,7 @@ databases. “Durable” means the evidence remains after a process restarts.
 | Registration | A person creates an account | Auth | User record; empty Ledger accounts | Identity and accounting structure are ready | Login data and money records have different owners |
 | KYC upgrade | A person submits identity evidence | Auth | KYC attempt and retry state | Ledger applies the new limits before Auth issues the higher claim | A token must not promise permission that Ledger will reject |
 | Fee quote | A client asks for an exact price | Ledger | Quote with amount, currency, fee, owner, and expiry | The matching posting consumes it once | The shown price must not silently change |
-| Top-up | A person asks to add money | Payin | Pending intent linked to user, amount, currency, and vendor | Ledger posts the confirmation once; a legacy path may currently proceed without an intent, and Payin finalization may lag | The safe target requires the internal intent—not the vendor—to choose the wallet owner |
+| Top-up | A person asks to add money | Payin | Pending intent linked to user, amount, currency, and vendor | VendorService authenticates the callback; Payin correlates it and Ledger posts the confirmation once | The internal intent—not the vendor—chooses the wallet owner |
 | Transfer | A person sends money to another user | Ledger | One balanced transaction and its outbox event | Sender, receiver, and fee entries commit together | Nobody should lose money while another side is missing |
 | Withdrawal | A person asks to send wallet value outside | Payout | Payout request, Ledger hold, and durable vendor command | The hold is settled after confirmed success or cancelled after confirmed failure | A timeout is not proof of failure and must not cause a second payout |
 | Notification | A committed event becomes available | Gateway notification component | Outbox event and delivery record | Delivery is recorded; retries remain safe | Message delivery must not control whether money is real |
@@ -189,10 +191,11 @@ outside vendor, then waits for confirmation.
 
 1. Gateway authenticates the person and asks Payin to create an intent.
 2. Payin selects an enabled vendor route and stores the pending intent.
-3. The vendor sends a signed callback to Gateway.
-4. Gateway preserves the callback body and headers and forwards them to Payin.
-5. Payin verifies the vendor signature, interprets the event, checks the
-   expected amount and currency when an intent is found, and screens it.
+3. The vendor sends a signed callback to VendorService.
+4. VendorService preserves the callback evidence and sends a normalized event to Payin.
+5. VendorService verifies the vendor signature and normalizes the event.
+   Payin checks the expected amount and currency when an intent is found,
+   correlates it with its own state, and screens it.
 6. Payin asks Ledger to post `money_in` with a stable idempotency reference.
 7. Ledger writes balanced entries and a durable event in one database
    transaction.
@@ -205,11 +208,11 @@ should not invent ownership.
 
 ### Known current limitation
 
-Current Payin still has a legacy path that may use `user_id` from a verified
-vendor payload when no intent matches, and local finalization can lag behind a
-successful Ledger post. These are documented gaps, not the desired trust
-model. Plan 54 removes the fallback, requires strict owner-domain correlation,
-and delays user notification until Payin's final state is durable.
+The old raw Payin callback compatibility path still exists in code, but it is
+not exposed by Gateway. The active VendorService path requires strict
+owner-domain correlation and does not accept vendor-supplied user ownership;
+final live integration and chaos acceptance remain in
+[plan 54](../roadmap/active/54-vendor-service-boundary.md).
 
 ### Source of truth
 
@@ -389,8 +392,9 @@ journeys prove business outcomes and invariants.
 - Local secrets, certificates, and plain public HTTP are development choices.
 - The project is not certified for a regulator, country, or production
   deployment.
-- Kubernetes, advanced privacy lifecycle work, load-based scaling, and
-  VendorService remain target plans until implemented.
+- Kubernetes, advanced privacy lifecycle work, and load-based scaling remain
+  target plans. VendorService is implemented, with its final live acceptance
+  gate still open.
 - Historical plans may describe an older architecture and are not runtime
   documentation.
 

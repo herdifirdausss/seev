@@ -18,6 +18,8 @@ package payout
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"time"
@@ -45,6 +47,58 @@ type PayoutRequest = model.PayoutRequest
 
 func (m *Module) RegisterGRPC(server *grpc.Server) {
 	payoutv1.RegisterPayoutServiceServer(server, grpcserver.New(m, repository.ErrNotFound, ErrNoRoute, ErrNoVendorAvailable, ErrScreeningBlocked, ErrScreeningDependencyUnavailable))
+}
+
+const (
+	VendorCallbackFinalized         = "finalized"
+	VendorCallbackAlreadyFinalized  = "already_finalized"
+	VendorCallbackIgnored           = "ignored_non_terminal"
+	VendorCallbackRecordedUnmatched = "recorded_unmatched"
+)
+
+// HandleVendorCallback applies a normalized terminal callback only when its
+// vendor and vendor reference identify a local payout request. Amount and
+// currency are checked before any Ledger transition.
+func (m *Module) HandleVendorCallback(ctx context.Context, vendor, vendorEventID, externalReference, amountRaw, currency, status, occurredAt, inboxID, requestID, unknownStatus string) (string, error) {
+	amount, err := decimal.NewFromString(amountRaw)
+	if err != nil || !amount.IsPositive() || !amount.Equal(amount.Truncate(0)) {
+		return "", fmt.Errorf("payout: invalid normalized callback amount")
+	}
+	vendorReference := externalReference
+	req, err := m.repo.GetByVendorReference(ctx, vendor, vendorReference)
+	if errors.Is(err, repository.ErrNotFound) {
+		return VendorCallbackRecordedUnmatched, nil
+	}
+	if err != nil {
+		return "", err
+	}
+	if !req.Amount.Equal(amount) || req.Currency != currency {
+		return VendorCallbackRecordedUnmatched, nil
+	}
+	if req.Status == model.StatusSettled || req.Status == model.StatusCancelled || req.Status == model.StatusFailed {
+		return VendorCallbackAlreadyFinalized, nil
+	}
+	if status != "settled" && status != "failed" {
+		return VendorCallbackIgnored, nil
+	}
+	gateway, err := m.gatewayForVendor(ctx, vendor)
+	if err != nil {
+		return "", err
+	}
+	if status == "settled" {
+		if err := m.settle(ctx, req.ID, gateway); err != nil {
+			return "", err
+		}
+	} else {
+		reason := "vendor callback failed"
+		if unknownStatus != "" {
+			reason = unknownStatus
+		}
+		if err := m.cancel(ctx, req.ID, gateway, reason); err != nil {
+			return "", err
+		}
+	}
+	return VendorCallbackFinalized, nil
 }
 
 // Poster is the subset of ledger.Module's behavior payout needs — a local
@@ -143,7 +197,6 @@ func NewModule(db database.DatabaseSQL, poster Poster, registry *vendorgw.Regist
 
 	return m
 }
-
 
 // StartWorkers launches the resume/polling job (docs/roadmap/archive/23 Task T3 step
 // 3) and the vendor-command relay (docs/roadmap/archive/45 Task T1) — the only place

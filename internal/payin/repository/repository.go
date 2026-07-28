@@ -150,14 +150,22 @@ func (r *repo) Get(ctx context.Context, id uuid.UUID) (model.WebhookEvent, error
 func (r *repo) scanEvent(scanner interface{ Scan(...any) error }) (model.WebhookEvent, error) {
 	var ev model.WebhookEvent
 	var amount int64
+	var userID sql.NullString
 	var rawCiphertext []byte
-	if err := scanner.Scan(&ev.ID, &ev.Vendor, &ev.VendorEventID, &ev.ExternalRef, &ev.UserID, &amount,
+	if err := scanner.Scan(&ev.ID, &ev.Vendor, &ev.VendorEventID, &ev.ExternalRef, &userID, &amount,
 		&ev.Currency, &ev.Status, &ev.ErrorMessage, &ev.RequestID, &ev.CreatedAt, &ev.UpdatedAt,
 		&rawCiphertext); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return model.WebhookEvent{}, err
 		}
 		return model.WebhookEvent{}, fmt.Errorf("scan payin webhook event: %w", err)
+	}
+	if userID.Valid {
+		parsed, err := uuid.Parse(userID.String)
+		if err != nil {
+			return model.WebhookEvent{}, fmt.Errorf("parse payin webhook user id: %w", err)
+		}
+		ev.UserID = parsed
 	}
 	ev.Amount = decimal.NewFromInt(amount)
 	if rawCiphertext == nil {

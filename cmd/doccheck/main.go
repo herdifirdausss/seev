@@ -209,7 +209,7 @@ func requiredDocumentationFailures(root string) []string {
 			"LICENSE",
 		},
 		"docs/roadmap/active/README.md": {
-			"Status: Target index",
+			"Status: Active work index",
 			"54-vendor-service-boundary.md",
 		},
 		"docs/roadmap/archive/README.md": {
@@ -365,7 +365,7 @@ func requiredDocumentationFailures(root string) []string {
 			"Repository",
 		},
 		"docs/roadmap/active/54-vendor-service-boundary.md": {
-			"Status: Target / Todo",
+			"Status: In progress",
 		},
 		"docs/roadmap/README.md": {
 			"54-vendor-service-boundary.md",

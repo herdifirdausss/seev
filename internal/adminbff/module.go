@@ -11,6 +11,7 @@ import (
 	"github.com/herdifirdausss/seev/internal/config"
 	"github.com/herdifirdausss/seev/pkg/cryptox"
 	"github.com/herdifirdausss/seev/pkg/database"
+	"github.com/herdifirdausss/seev/pkg/httpcontract"
 	"github.com/herdifirdausss/seev/pkg/retentionworker"
 	"github.com/herdifirdausss/seev/pkg/scheduler"
 	"github.com/herdifirdausss/seev/pkg/tlsx"
@@ -98,7 +99,7 @@ func (m *Module) Stop() {
 }
 
 func (m *Module) AdminRouter() http.Handler {
-	mux := http.NewServeMux()
+	mux := httpcontract.New(httpcontract.Options{Owner: "admin-bff", Audience: "admin", Contract: "admin-v1"})
 	mux.Handle("GET /api/v1/admin/maker", m.consolePage("maker"))
 	mux.Handle("GET /api/v1/admin/payout", m.consolePage("payout"))
 	mux.Handle("GET /api/v1/admin/recon", m.consolePage("recon"))

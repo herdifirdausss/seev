@@ -10,7 +10,7 @@ Covers restoring the ledger database from a backup and proving it's usable again
 > **Scope note (docs/roadmap/active/50 Track A7):** for a real incident affecting the
 > shared Postgres cluster, use
 > [**Cluster-wide restore (scripts/restore-cluster.sh)**](#cluster-wide-restore-scriptsrestore-clustersh)
-> below first — it restores all eight authoritative service databases
+> below first — it restores all nine authoritative service databases
 > together via pgBackRest/WAL PITR, not just the ledger schema. The
 > procedure on this page (below the cluster-wide section) predates that
 > tooling and stays useful for a narrower case: a **ledger projection-only
@@ -22,9 +22,9 @@ Covers restoring the ledger database from a backup and proving it's usable again
 
 ## Cluster-wide restore (scripts/restore-cluster.sh)
 
-Restores all eight authoritative service databases (`seev_ledger`,
+Restores all nine authoritative service databases (`seev_ledger`,
 `seev_auth`, `seev_payin`, `seev_payout`, `seev_fraud`, `seev_gateway`,
-`seev_adminbff`, `seev_assurance`) as one physical unit from the encrypted
+`seev_adminbff`, `seev_assurance`, `seev_vendor`) as one physical unit from the encrypted
 pgBackRest repository (Track A7 K1/K2), to the latest available point or a
 specific point in time / LSN.
 
@@ -149,7 +149,7 @@ guess at:
 
 1. **Prefer `latest`** unless there is a specific reason to go further
    back — every PITR restore discards everything committed after the
-   chosen target, on all eight databases at once.
+   chosen target, on all nine databases at once.
 2. **Determine the target time from evidence, not intuition**: the
    incident timeline (when did the bad write/corruption/compromise
    start?), `docs/operations/runbooks/ledger-integrity-alert.md`'s own
@@ -253,7 +253,7 @@ looking at before choosing a recovery action:
 
 | State class | Examples | Recovery source | Notes |
 |---|---|---|---|
-| **PostgreSQL — authoritative** | `seev_ledger`, `seev_auth`, `seev_payin`, `seev_payout`, `seev_fraud`, `seev_gateway`, `seev_adminbff`, `seev_assurance` (all 8 service databases, one shared cluster) | Physical cluster backup + WAL (Track A7); `pg_dump`/projection rebuild for the ledger-only minimal case covered by this runbook | The only state that is ever wrong to silently regenerate — restore it, don't reconstruct it from inference. |
+| **PostgreSQL — authoritative** | `seev_ledger`, `seev_auth`, `seev_payin`, `seev_payout`, `seev_fraud`, `seev_gateway`, `seev_adminbff`, `seev_assurance`, `seev_vendor` (all 9 service databases, one shared cluster) | Physical cluster backup + WAL (Track A7); `pg_dump`/projection rebuild for the ledger-only minimal case covered by this runbook | The only state that is ever wrong to silently regenerate — restore it, don't reconstruct it from inference. |
 | **Redis — reconstructable/ephemeral** | Rate-limit buckets, policy counters, fraud velocity keys, scheduler locks, circuit-breaker state | Rebuilt from PostgreSQL after a restore (Track A7 `cmd/drreseed`); safe to start empty otherwise | Never a backup target itself. A cold Redis after restore is expected, not a failure — it must be reseeded from durable evidence before production traffic resumes, not left to warm up silently. |
 | **RabbitMQ — delivery-only** | Outbox event deliveries, durable payout vendor commands in flight | Topology (exchanges/queues/bindings) is recreated from service startup code; in-flight-only deliveries are not backed up and must be treated as potentially lost | The event's *fact* lives in PostgreSQL (the outbox row); the broker is a delivery mechanism, not a source of truth. A lost in-flight delivery is recovered by replaying from the durable outbox row, never by trying to back up the broker. |
 | **Vault / certificates — external** | Vault dev-mode secrets, mTLS leaf certificates and the local mini-CA | Re-seeded (`scripts/vault-seed.sh`) / re-issued (`make certs`) from current external configuration, never from a database backup | Runtime secrets and identity material must come from the environment at restore time, not resurrected from backup data — see `docs/security/threat-model.md` for why. |

@@ -44,6 +44,7 @@ var serviceModules = map[string]map[string]bool{
 	"auth-service":      {"auth": true, "kycvendor": true},
 	"payin-service":     {"payin": true},
 	"payout-service":    {"payout": true},
+	"vendor-service":    {"vendorboundary": true},
 	"fraud-service":     {"fraud": true},
 	"sanctions-loader":  {"fraud": true},
 	"admin-bff-service": {"adminbff": true},
@@ -168,8 +169,9 @@ func TestModuleBoundaries(t *testing.T) {
 			// Service composition roots may import only their owned modules plus
 			// internal/config. pkg/* and gen/* were handled before this branch.
 			sharedVendorGateway := impMod == "vendorgw" && (command == "payin-service" || command == "payout-service")
+			sharedVendorBoundary := impMod == "vendorboundary" && (command == "payin-service" || command == "payout-service")
 			sharedInfrastructure := impMod == "config" || impMod == "server"
-			if command != "" && !sharedInfrastructure && !sharedVendorGateway && !serviceModules[command][impMod] {
+			if command != "" && !sharedInfrastructure && !sharedVendorGateway && !sharedVendorBoundary && !serviceModules[command][impMod] {
 				violations = append(violations,
 					rel+" imports "+short+" — cmd/"+command+" does not own internal/"+impMod)
 			}
@@ -186,8 +188,10 @@ func TestModuleBoundaries(t *testing.T) {
 				sameService := moduleOwner(importerMod) != "" && moduleOwner(importerMod) == moduleOwner(impMod)
 				ledgerEvent := impMod == "ledger" && len(segs) >= 2 && segs[1] == "events"
 				sharedVendorGateway := impMod == "vendorgw" && (importerMod == "payin" || importerMod == "payout")
+				sharedVendorBoundary := impMod == "vendorboundary" && (importerMod == "payin" || importerMod == "payout")
+				vendorBoundaryAdapters := importerMod == "vendorboundary" && impMod == "vendorgw"
 				offlineRecovery := offlineRecoveryDependencies[importerMod][impMod]
-				if !sameService && !ledgerEvent && !sharedVendorGateway && !offlineRecovery {
+				if !sameService && !ledgerEvent && !sharedVendorGateway && !sharedVendorBoundary && !vendorBoundaryAdapters && !offlineRecovery {
 					violations = append(violations,
 						rel+" imports "+short+" — cross-service production imports must use internal/ledger/events or gen/*")
 				}
@@ -225,7 +229,8 @@ func TestModuleBoundaries(t *testing.T) {
 				continue
 			}
 			offlineRecovery := offlineRecoveryDependencies[importerMod][impMod]
-			if len(segs) >= 2 && importerMod != impMod && segs[1] != "events" && !offlineRecovery {
+			vendorBoundaryAdapters := importerMod == "vendorboundary" && impMod == "vendorgw"
+			if len(segs) >= 2 && importerMod != impMod && segs[1] != "events" && !offlineRecovery && !vendorBoundaryAdapters {
 				violations = append(violations,
 					rel+" imports "+short+" — only internal/"+impMod+
 						" itself may import its subpackages; import the root facade instead (doc 01 rule 1)")

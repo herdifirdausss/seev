@@ -25,12 +25,8 @@ type Dependencies struct {
 	LedgerProxy *httputil.ReverseProxy
 	// LedgerReady is the gRPC health probe used by monolith readiness.
 	LedgerReady func(context.Context) error
-	// Payin handles vendor webhook deliveries (docs/roadmap/archive/22 Task T2) —
-	// nil-checked at both mount sites: the public listener's
-	// /webhooks/{vendor} receiver and the internal listener's
-	// /admin/payin/ admin surface. Nil (no vendor configured) means every
-	// /webhooks/* request 404s, byte-identical to before this feature
-	// existed.
+	// Payin handles normalized vendor callback deliveries from VendorService over
+	// mTLS. Gateway does not expose a vendor callback route.
 	Payin payinv1.PayinServiceClient
 	// Payout orchestrates user withdrawals (docs/roadmap/archive/23 Task T5) —
 	// nil-checked at both mount sites: the public listener's

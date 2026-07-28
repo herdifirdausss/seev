@@ -9,7 +9,7 @@
 > [glossary](glossary.md) for unfamiliar terms.
 
 [Architecture](architecture.md) covers the system as a whole; this
-document goes one level deeper into **each of the eight services**: the
+document goes one level deeper into **each of the nine services**: the
 specific problem it exists to solve, what data it owns, everything it can
 actually do (every HTTP/gRPC endpoint and background job), and how it
 depends on — or is depended on by — the others. Read this when you need to
@@ -28,9 +28,10 @@ it depends on, and what it deliberately does not do. The opening paragraphs
 are the mental model; endpoint and package tables are implementation
 reference.
 
-One boundary is intentionally easy to misread: `internal/vendorgw` is a shared
-library loaded inside Payin and Payout today. It is not a running
-VendorService. The separate service is a [target design](../roadmap/active/54-vendor-service-boundary.md).
+One boundary is intentionally easy to misread: `internal/vendorgw` is a
+compatibility library used by Payin and Payout tests and transition paths. The
+running `cmd/vendor-service` owns active vendor connectivity and callback
+ingress.
 
 ---
 
@@ -42,7 +43,7 @@ does not own balances, top-up intents, or withdrawal state.
 
 **Problem it solves**: end-user client apps need exactly one place to
 talk to, with one auth story, one rate limiter, and one set of security
-headers — without knowing that "the backend" is actually seven other
+headers — without knowing that "the backend" is actually several other
 services. Gateway is the composition layer that makes the rest of the
 system look like a single API from the outside.
 
@@ -61,7 +62,6 @@ everything it does is validate/compose/forward.
 | HTTP (public) | `POST /api/v1/payout`, `GET /api/v1/payout/{id}` | JWT + KYC tier 1 required — calls Payout over gRPC |
 | HTTP (public) | `/api/v1/ledger/*` | JWT (+ KYC tier for postings) — reverse-proxies the ledger API surface to ledger-service |
 | HTTP (public) | `GET /api/v1/notifications`, `POST /api/v1/notifications/{id}/read` | JWT — served directly by gateway's own `internal/notify` |
-| HTTP (public, unauthenticated) | `POST /webhooks/{vendor}` | HMAC-verified by Payin itself, not by gateway — gateway only forwards raw bytes over gRPC (`HandleWebhook`) |
 | HTTP (public probes) | `GET /health`, `GET /ready` | none |
 | HTTP (internal ops) | `GET /metrics` on `:8081` | mTLS service identity |
 | Background | RabbitMQ consumer in `internal/notify` | consumes `ledger.transaction.posted.v1` to create in-app notifications |
@@ -204,12 +204,13 @@ the center of the dependency graph.
 pending top-up is only an expectation; Payin must validate confirmation before
 asking Ledger to record money.
 
-**Known current limitation**: the implementation retains a backward-
-compatibility fallback that can use `user_id` from a verified vendor payload
-when no top-up intent matches. That behavior is current code, not the intended
-final trust model. [Plan 54](../roadmap/active/54-vendor-service-boundary.md) removes
-it, requires strict intent/vendor correlation, and moves direct vendor traffic
-to VendorService.
+**Compatibility note**: the active VendorService callback path does not accept
+an authoritative `user_id` from the vendor. Payin correlates the normalized
+callback against its own intent, vendor, amount, and currency before posting.
+The old raw `HandleWebhook` RPC remains only as a compatibility surface for
+transition tests; Gateway no longer exposes a webhook route. See
+[plan 54](../roadmap/active/54-vendor-service-boundary.md) for the remaining
+live acceptance gate.
 
 **Problem it solves**: getting money *into* the system from a payment
 gateway vendor — an untrusted, asynchronous, sometimes-duplicate,
@@ -223,9 +224,9 @@ gateway handles which top-up, and failover between them), `intake.go`
 `assurance.go` (the read-only projection Assurance is allowed to read),
 `repository/` (topup + routing, split per
 [Onboarding](../development/onboarding.md#naming-conventions)'s repository rule),
-`grpcserver/` (internal RPC), shares `internal/vendorgw` with Payout for
-the actual vendor adapter interface + circuit breaker + the local
-`mockvendor` test double. Owns `seev_payin`: `payin_topup_intents`,
+`grpcserver/` (internal RPC), and the VendorService boundary client. The
+legacy `internal/vendorgw` adapter remains for compatibility tests. Owns
+`seev_payin`: `payin_topup_intents`,
 `payin_webhook_events`, `payin_routing_rules`, `payin_vendor_gateways`,
 `payin_intake_control`, `payin_intake_commands`.
 
@@ -234,12 +235,12 @@ the actual vendor adapter interface + circuit breaker + the local
 | Surface | Endpoint | Behind |
 |---|---|---|
 | gRPC (internal) | `CreateTopupIntent`, `GetTopupIntent` | called by Gateway |
-| gRPC (internal) | `HandleWebhook` | called by Gateway, forwarding a vendor's raw signed payload |
+| gRPC (internal) | `HandleVendorCallback` | called by VendorService with a normalized callback; Payin performs strict intent/vendor correlation |
 | gRPC (internal) | `ListAssuranceRecords` | called ONLY by Assurance, read-only |
 | gRPC (internal) | `GetIntakeControl`, `ApplyIntakeControl` | called by Assurance (auto) or an admin directly (manual fallback) — pause/resume new intent creation |
 | HTTP (admin) | `GET /admin/payin/events`, `POST .../{id}/replay` | admin — webhook event history + manual replay |
 | HTTP (admin) | `GET/POST/PUT /admin/payin/routing-rules[/{id}]` | admin — which vendor handles which top-up, in what priority order |
-| HTTP (admin) | `GET/PUT /admin/payin/vendor-gateways/{vendor}` | admin — per-vendor credentials/config |
+| HTTP (admin) | `GET/PUT /admin/payin/vendor-gateways/{vendor}` | admin — per-vendor routing gateway mapping; vendor secrets remain in VendorService |
 | HTTP (admin) | `GET /admin/payin/vendors/health` | admin — circuit breaker state per vendor |
 | HTTP (admin) | `POST /admin/payin/intake/pause` | admin — the direct fallback if Assurance itself is down |
 
@@ -248,10 +249,42 @@ the actual vendor adapter interface + circuit breaker + the local
 (`internal/vendorgw`) so a failing gateway degrades gracefully to the next
 one instead of blocking every top-up.
 
-**Depends on**: Ledger (post the confirmed top-up) and Fraud (synchronous
-screening before posting; explicit velocity-backend failure blocks the path).
-**Depended on by**: Gateway (creates intents, forwards webhooks),
-Assurance (reads intents + intake state, can pause intake).
+**Depends on**: Ledger (post the confirmed top-up), Fraud (synchronous
+screening before posting), and VendorService (session creation and normalized
+callbacks).
+**Depended on by**: Gateway (creates intents), Assurance (reads intents +
+intake state, can pause intake), and VendorService (callback delivery).
+
+---
+
+## VendorService
+
+**In plain English**: VendorService is the controlled boundary between Seev
+and external payment/payout vendors. It owns the vendor wire protocol, not the
+wallet decision.
+
+**What's inside**: `cmd/vendor-service`, `internal/vendorboundary`, and the
+configured adapters. It authenticates callback source/signature, caps and
+normalizes the payload, persists `vendor_callback_inbox`, records sanitized
+`vendor_outbound_attempts`, and delivers owner-neutral callbacks over mTLS to
+Payin or Payout. It owns `seev_vendor`.
+
+**What it can do**:
+
+| Surface | Endpoint / RPC | Behind |
+|---|---|---|
+| HTTP (restricted vendor edge) | `POST /webhooks/{vendor}` | source CIDR/proxy checks, HMAC verification, bounded body, durable inbox, duplicate outcome replay |
+| gRPC (internal) | `CreatePayinSession` | called by Payin; routes through the configured payin adapter |
+| gRPC (internal) | `SubmitPayout`, `QueryPayout` | called by Payout; routes through the configured payout adapter |
+| gRPC (internal) | `HandleVendorCallback` on Payin/Payout | normalized callback delivery over mTLS; owner service performs strict correlation |
+
+**Deliberately does NOT do**: choose `user_id`, decide whether a callback
+matches a business intent/request, post Ledger money, or own Payin/Payout
+state. Vendor secrets are configured on VendorService only.
+
+**Depends on**: configured vendor adapters and Payin/Payout callback RPCs.
+**Depended on by**: Payin, Payout, external vendor callbacks, and operators
+through the [boundary runbook](../operations/runbooks/vendor-service-boundary.md).
 
 ---
 
@@ -265,14 +298,16 @@ guessing and risking a second payment.
 harder — money leaving the system has to survive a crash *mid-flight*
 (the vendor call was sent, but did it succeed?) without ever double-paying
 or silently losing the request. Payout is built specifically to survive
-that failure mode, proven with dedicated chaos tests.
+that failure mode, with focused recovery tests and a manual multi-service
+chaos gate. The lease-recovery behavior is implemented, but the next live
+chaos run is the acceptance evidence rather than an assumed passing result.
 
 **What's inside**: `orchestrate.go` (the state machine — hold → dispatch
 → settle/cancel), `http.go`, `routing.go` (database-driven vendor
 selection, mirroring Payin), `intake.go`/`assurance.go` (same pattern as
 Payin), `worker/resume.go` (the crash-recovery job — the single most
 important background job in this service), `repository/`, `grpcserver/`,
-shares `internal/vendorgw` with Payin. Owns `seev_payout`:
+uses the VendorService boundary client. Owns `seev_payout`:
 `payout_requests`, `payout_vendor_calls`, `payout_vendor_commands`,
 `payout_routing_rules`, `payout_vendor_gateways`, `payout_intake_control`,
 `payout_intake_commands`.
@@ -290,12 +325,12 @@ shares `internal/vendorgw` with Payin. Owns `seev_payout`:
 | HTTP (admin) | `GET /admin/payout/vendor-commands/dead`, `POST .../replay-all`, `POST .../{id}/replay` | admin — dead-letter recovery for vendor commands that never got a confirmed outcome |
 | HTTP (admin) | `GET /admin/payout/vendors/health`, `POST /admin/payout/vendors/{vendor}/force-fail` | admin — circuit breaker state + operator-forced failover for a drill or a known-bad vendor |
 | HTTP (admin) | `POST /admin/payout/intake/pause` | admin — direct fallback pause |
-| Background | Resume job (`worker/resume.go`) | on startup and periodically, finds any payout left in an in-flight state after a crash and resumes it from exactly where it left off — this is what the "crash-mid-flight chaos test" in `scripts/chaos-test.sh` proves works |
+| Background | Resume job + vendor relay (`worker/resume.go`, `worker/vendor_relay.go`) | the resume job finds payouts left in an in-flight state after a crash, while the durable command relay dispatches/retries vendor work, performs an immediate retry pass at startup, and reaps abandoned `processing` leases after 2 minutes; focused tests cover the behavior, while the live `scripts/chaos-test.sh 5` gate remains open until it passes in the current environment |
 
 **Depends on**: Ledger (post hold/settle/cancel), Fraud (synchronous screening
-before request and hold creation), and the vendor's actual payout API (via
-`internal/vendorgw`).
-**Depended on by**: Gateway, Assurance.
+before request and hold creation), and VendorService (submit/query plus
+normalized callbacks).
+**Depended on by**: Gateway, Assurance, and VendorService.
 
 ---
 
@@ -463,9 +498,8 @@ as the trust layer over everything else.
 - `pkg/*` — infrastructure with zero business logic (database, cache,
   messaging, middleware, logger, scheduler, tlsx, grpcx). `pkg/` must
   never import `internal/`; dependencies only flow one way.
-- `internal/vendorgw` — shared by Payin and Payout only (the vendor
-  adapter interface, circuit breaker, and `mockvendor` test double);
-  nothing else touches it.
+- `internal/vendorgw` — compatibility adapter code used by Payin/Payout
+  tests and transition paths. Active vendor I/O is owned by VendorService.
 - `internal/testutil` — shared integration-test bootstrap.
 
 See [Project guide](../development/project-guide.md#service-boundaries) for the
@@ -473,7 +507,7 @@ enforced rule behind all of this: a service must never write another
 service's tables, and cross-service communication only ever happens
 through a published HTTP, gRPC, or event contract — never a direct query.
 
-For how these eight services are actually built, verified, run locally,
+For how these nine services are actually built, verified, run locally,
 and observed — Docker Compose, the Makefile, every script under
 `scripts/`, CI, and the observability stack — see
 [Operations](../operations/README.md). For what every `pkg/*` package listed

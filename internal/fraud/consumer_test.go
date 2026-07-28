@@ -46,7 +46,8 @@ func TestHandleDeliveryRecordsPostedUser(t *testing.T) {
 	m := &Module{store: store, logger: discardLogger()}
 	d := delivery(t, event)
 	require.NoError(t, m.handleDelivery(context.Background(), d))
-	assert.Equal(t, d.MessageId, store.eventID)
+	require.NotNil(t, event.EventID)
+	assert.Equal(t, event.EventID.String(), store.eventID)
 	assert.Equal(t, "fraud:velocity:"+userID.String()+":2026-07-15-02", store.key)
 	assert.Equal(t, 2*time.Hour, store.ttl)
 }
@@ -65,4 +66,23 @@ func TestHandleDeliveryDecodeAndStoreErrors(t *testing.T) {
 	userID := uuid.New()
 	event := events.NewTransactionPosted(uuid.New(), "money_in", "1", "IDR", nil, nil, nil, "", time.Now(), &userID, nil, "")
 	require.Error(t, (&Module{store: &storeStub{err: errors.New("redis down")}}).handleDelivery(context.Background(), delivery(t, event)))
+}
+
+func TestHandleDeliveryMalformedKnownVersionHasNoStoreSideEffect(t *testing.T) {
+	userID := uuid.New()
+	event := events.NewTransactionPosted(uuid.New(), "money_in", "1", "IDR", nil, nil, nil, "", time.Now(), &userID, nil, "")
+	event.Amount = "not-minor-units"
+	store := &storeStub{err: errors.New("store must not be called")}
+	assert.Error(t, (&Module{store: store}).handleDelivery(context.Background(), delivery(t, event)))
+	assert.Empty(t, store.eventID)
+}
+
+func TestHandleDeliveryToleratesUnknownFieldsAndLogicalIDWithoutDeliveryID(t *testing.T) {
+	userID := uuid.New()
+	event := events.NewTransactionPosted(uuid.New(), "transfer_p2p", "1", "IDR", nil, nil, nil, "", time.Now(), &userID, nil, "")
+	body, err := json.Marshal(map[string]any{"schema_version": event.SchemaVersion, "event_id": event.EventID, "tx_id": event.TxID, "transaction_type": event.TransactionType, "amount": event.Amount, "currency": event.Currency, "entries": event.Entries, "occurred_at": event.OccurredAt, "user_id": event.UserID, "unknown_optional_field": "ignored"})
+	require.NoError(t, err)
+	store := &storeStub{}
+	require.NoError(t, (&Module{store: store, logger: discardLogger()}).handleDelivery(context.Background(), amqp.Delivery{Body: body}))
+	assert.Equal(t, event.EventID.String(), store.eventID)
 }

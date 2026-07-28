@@ -17,10 +17,11 @@ import (
 	"google.golang.org/grpc"
 
 	fraudv1 "github.com/herdifirdausss/seev/gen/fraud/v1"
+	vendorv1 "github.com/herdifirdausss/seev/gen/vendorservice/v1"
 	"github.com/herdifirdausss/seev/internal/config"
 	"github.com/herdifirdausss/seev/internal/payin"
+	"github.com/herdifirdausss/seev/internal/vendorboundary"
 	"github.com/herdifirdausss/seev/internal/vendorgw"
-	"github.com/herdifirdausss/seev/internal/vendorgw/mockvendor"
 	"github.com/herdifirdausss/seev/pkg/cache"
 	"github.com/herdifirdausss/seev/pkg/database"
 	"github.com/herdifirdausss/seev/pkg/fraudcheck"
@@ -136,14 +137,24 @@ func run(parent context.Context) error {
 		_ = db.Close()
 		return fmt.Errorf("connect ledger-service: %w", err)
 	}
+	vendorConn, err := grpcx.DialLazy(ctx, cfg.VendorGRPCAddr, cfg.InternalGRPCToken, tlsx.ClientConfig(certSrc, tlsx.IdentityVendor))
+	if err != nil {
+		_ = ledgerConn.Close()
+		if redisCache != nil {
+			_ = redisCache.Close()
+		}
+		_ = db.Close()
+		return fmt.Errorf("create vendor-service client: %w", err)
+	}
+	defer func() { _ = vendorConn.Close() }()
 	registry := vendorgw.NewRegistry()
-	if cfg.Vendor.MockvendorEnabled {
-		registry.AddPayin(mockvendor.New(mockvendor.VendorName, cfg.Vendor.MockvendorSecret))
-		log.Warn("vendorgw: mockvendor enabled — test-only vendor")
+	if cfg.Vendor.ServiceEnabled || cfg.Vendor.MockvendorEnabled {
+		registry.AddPayin(vendorboundary.NewPayinAvailability("mockvendor"))
+		log.Warn("vendor routing: mockvendor delegated to VendorService")
 	}
 	if cfg.Vendor.Mockvendor2Enabled {
-		registry.AddPayin(mockvendor.New("mockvendor2", cfg.Vendor.Mockvendor2Secret))
-		log.Warn("vendorgw: mockvendor2 enabled — test-only second vendor for failover demos")
+		registry.AddPayin(vendorboundary.NewPayinAvailability("mockvendor2"))
+		log.Warn("vendor routing: mockvendor2 delegated to VendorService")
 	}
 	var breaker vendorgw.Breaker = vendorgw.NewHealthTracker(cfg.Breaker.FailureThreshold, cfg.Breaker.Cooldown, log)
 	if cfg.Breaker.Distributed && redisClient != nil {
@@ -183,6 +194,7 @@ func run(parent context.Context) error {
 		return fmt.Errorf("build cryptox ring: %w", err)
 	}
 	module := payin.NewModule(db, ledgerclient.New(ledgerConn), registry, cfg.Vendor.TopupIntentTTL, log, fraudClient, breaker, cryptoxRing)
+	module.SetVendorSession(vendorboundary.NewClient(vendorv1.NewVendorServiceClient(vendorConn)))
 	// docs/roadmap/active/51 T2.6: redacts payin_webhook_events.raw once terminal
 	// for 30+ days — same fire-and-continue convention as every other
 	// StartRetentionRunner caller in this codebase (a failed retention
@@ -196,7 +208,7 @@ func run(parent context.Context) error {
 	// see docs/security/threat-model.md §4) reads it for cross-service
 	// correlation. Verified live: no other caller exists.
 	grpcServer, err := grpcx.NewServer(log, cfg.InternalGRPCToken, tlsx.ServerConfig(certSrc, []string{
-		tlsx.IdentityGateway, tlsx.IdentityAssurance,
+		tlsx.IdentityGateway, tlsx.IdentityAssurance, tlsx.IdentityVendor,
 	}))
 	if err != nil {
 		_ = ledgerConn.Close()

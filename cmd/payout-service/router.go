@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/herdifirdausss/seev/internal/config"
+	"github.com/herdifirdausss/seev/pkg/httpcontract"
 	"github.com/herdifirdausss/seev/pkg/middleware"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
@@ -19,7 +20,7 @@ type adminHandlers interface{ AdminRouter() http.Handler }
 type privacyHandlers interface{ PrivacyRouter() http.Handler }
 
 func adminRouter(cfg *config.Config, h adminHandlers, log *slog.Logger) http.Handler {
-	root := http.NewServeMux()
+	root := httpcontract.New(httpcontract.Options{Owner: "payout", Audience: "operational", Contract: "internal-v1"})
 	root.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})

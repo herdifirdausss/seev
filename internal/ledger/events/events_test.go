@@ -41,6 +41,7 @@ func TestTransactionPosted_GoldenJSON_FullFields(t *testing.T) {
 
 	want := `{
 		"schema_version": 1,
+		"event_id": "f2799b13-5f6f-5e0b-aceb-333a5c6cfcd7",
 		"tx_id": "00000000-0000-0000-0000-000000000001",
 		"transaction_type": "money_in",
 		"amount": "100000",
@@ -75,6 +76,7 @@ func TestTransactionPosted_GoldenJSON_NilSourceDest_OmitsExternalRef(t *testing.
 
 	want := `{
 		"schema_version": 1,
+		"event_id": "2575546f-be18-5025-803f-3872c4d0e194",
 		"tx_id": "00000000-0000-0000-0000-000000000009",
 		"transaction_type": "reversal",
 		"amount": "5000",
@@ -122,6 +124,7 @@ func TestTransactionPosted_GoldenJSON_WithUserAndTargetUser(t *testing.T) {
 
 	want := `{
 		"schema_version": 1,
+		"event_id": "b12367d5-21ac-5cad-ad4a-a52fa4d7affa",
 		"tx_id": "00000000-0000-0000-0000-000000000030",
 		"transaction_type": "transfer_p2p",
 		"amount": "10000",
@@ -146,6 +149,7 @@ func TestTransactionReversed_GoldenJSON(t *testing.T) {
 
 	want := `{
 		"schema_version": 1,
+		"event_id": "896fa0d4-9d98-5547-84fb-25c600b0c3e0",
 		"reversal_tx_id": "00000000-0000-0000-0000-000000000010",
 		"original_tx_id": "00000000-0000-0000-0000-000000000020",
 		"amount": "5000",
@@ -169,4 +173,46 @@ func TestToPayload_RoundTripsThroughJSON(t *testing.T) {
 func TestTypeConstants_AreVersioned(t *testing.T) {
 	assert.Equal(t, "ledger.transaction.posted.v1", TypeTransactionPosted)
 	assert.Equal(t, "ledger.transaction.reversed.v1", TypeTransactionReversed)
+}
+
+func TestKnownVersionValidationRejectsMalformedFields(t *testing.T) {
+	event := NewTransactionPosted(uuid.New(), "money_in", "100", "IDR", nil, nil, []EntrySummary{
+		{AccountID: uuid.New(), Direction: "credit", Amount: "100"},
+	}, "", fixedTime(), nil, nil, "")
+	require.NoError(t, event.Validate())
+
+	for name, mutate := range map[string]func(*TransactionPosted){
+		"missing schema version": func(e *TransactionPosted) { e.SchemaVersion = 0 },
+		"missing transaction id": func(e *TransactionPosted) { e.TxID = uuid.Nil },
+		"invalid amount":         func(e *TransactionPosted) { e.Amount = "1.00" },
+		"invalid currency":       func(e *TransactionPosted) { e.Currency = "idr" },
+		"invalid entry":          func(e *TransactionPosted) { e.Entries[0].Direction = "unknown" },
+		"missing timestamp":      func(e *TransactionPosted) { e.OccurredAt = time.Time{} },
+	} {
+		t.Run(name, func(t *testing.T) {
+			candidate := event
+			mutate(&candidate)
+			assert.Error(t, candidate.Validate())
+		})
+	}
+}
+
+func TestKnownVersionValidationToleratesOptionalFields(t *testing.T) {
+	event := NewTransactionPosted(uuid.New(), "money_in", "100", "IDR", nil, nil, []EntrySummary{
+		{AccountID: uuid.New(), Direction: "credit", Amount: "100"},
+	}, "", fixedTime(), nil, nil, "")
+	body, err := json.Marshal(map[string]any{
+		"schema_version":   event.SchemaVersion,
+		"tx_id":            event.TxID,
+		"transaction_type": event.TransactionType,
+		"amount":           event.Amount,
+		"currency":         event.Currency,
+		"entries":          event.Entries,
+		"occurred_at":      event.OccurredAt,
+		"future_optional":  map[string]any{"enabled": true},
+	})
+	require.NoError(t, err)
+	var decoded TransactionPosted
+	require.NoError(t, json.Unmarshal(body, &decoded))
+	assert.NoError(t, decoded.Validate())
 }

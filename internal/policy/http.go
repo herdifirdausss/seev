@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 
+	"github.com/herdifirdausss/seev/pkg/httpcontract"
 	"github.com/herdifirdausss/seev/pkg/middleware"
 	"github.com/herdifirdausss/seev/pkg/response"
 )
@@ -26,7 +27,7 @@ func NewHandler(repo Repository) *Handler {
 // Mux returns the handler's routes, already at their final paths
 // (/admin/policy/limits) — mount directly, no prefix stripping needed.
 func (h *Handler) Mux() http.Handler {
-	mux := http.NewServeMux()
+	mux := httpcontract.New(httpcontract.Options{Owner: "policy", Audience: "admin", Contract: "internal-v1"})
 	mux.HandleFunc("PUT /admin/policy/limits", h.upsertLimit)
 	mux.HandleFunc("GET /admin/policy/limits", h.listLimits)
 	return mux

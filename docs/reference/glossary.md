@@ -235,8 +235,8 @@ chosen checks.
 ### Gateway
 
 The public front door that accepts end-user wallet requests and connects them
-to internal services. In the current implementation it also receives Payin
-vendor callbacks; plan 54 proposes moving that vendor boundary elsewhere.
+to internal services. Vendor callbacks use the separate VendorService edge;
+Gateway does not expose the vendor callback route.
 
 ### gRPC
 
@@ -312,6 +312,7 @@ often recorded inside one database transaction.
 
 ### VendorService
 
-A target service proposed in plan 54. It would own direct vendor connectivity
-while Payin and Payout continue to own intent validation and business state.
-It is not part of the current runtime.
+The service that owns direct vendor connectivity, callback authentication,
+durable vendor evidence, and normalized delivery to Payin/Payout. It does not
+choose a wallet owner or post Ledger money. Its foundation is implemented;
+final live integration and chaos acceptance remain in plan 54.

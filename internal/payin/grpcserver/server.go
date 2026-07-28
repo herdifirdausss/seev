@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
@@ -70,6 +71,37 @@ func (s *Server) HandleWebhook(ctx context.Context, request *payinv1.HandleWebho
 		result = payinv1.WebhookResult_WEBHOOK_RESULT_IGNORED
 	}
 	return &payinv1.HandleWebhookResponse{Result: result}, nil
+}
+
+func (s *Server) HandleVendorCallback(ctx context.Context, request *payinv1.HandleVendorCallbackRequest) (*payinv1.HandleVendorCallbackResponse, error) {
+	handler, ok := s.service.(interface {
+		HandleVendorCallback(context.Context, string, string, string, string, string, string, string, string, string, string) (string, error)
+	})
+	if !ok {
+		return nil, status.Error(codes.Unimplemented, "normalized vendor callback unavailable")
+	}
+	occurredAt := ""
+	if request.GetOccurredAt() != nil {
+		occurredAt = request.GetOccurredAt().AsTime().UTC().Format(time.RFC3339Nano)
+	}
+	outcome, err := handler.HandleVendorCallback(ctx, request.GetVendor(), request.GetVendorEventId(), request.GetExternalReference(), request.GetAmount(), request.GetCurrency(), request.GetStatus(), occurredAt, request.GetVendorInboxId(), request.GetRequestId(), request.GetUnknownVendorStatus())
+	if err != nil {
+		return nil, status.Error(codes.Unavailable, "normalized vendor callback processing failed")
+	}
+	return &payinv1.HandleVendorCallbackResponse{Result: normalizedCallbackResult(outcome)}, nil
+}
+
+func normalizedCallbackResult(outcome string) payinv1.VendorCallbackResult {
+	switch outcome {
+	case "finalized":
+		return payinv1.VendorCallbackResult_VENDOR_CALLBACK_RESULT_FINALIZED
+	case "already_finalized":
+		return payinv1.VendorCallbackResult_VENDOR_CALLBACK_RESULT_ALREADY_FINALIZED
+	case "ignored_non_terminal":
+		return payinv1.VendorCallbackResult_VENDOR_CALLBACK_RESULT_IGNORED_NON_TERMINAL
+	default:
+		return payinv1.VendorCallbackResult_VENDOR_CALLBACK_RESULT_RECORDED_UNMATCHED
+	}
 }
 
 func (s *Server) CreateTopupIntent(ctx context.Context, request *payinv1.CreateTopupIntentRequest) (*payinv1.CreateTopupIntentResponse, error) {

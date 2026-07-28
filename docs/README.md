@@ -36,9 +36,10 @@ Each directory has one purpose and its own index.
 | Directory | Use it for | Do not use it for |
 |---|---|---|
 | [`learn/`](learn/README.md) | Plain-language stories and product journeys | Exact runtime contracts |
-| [`reference/`](reference/README.md) | Current architecture, services, packages, events, glossary, and evidence | Step-by-step incident response |
+| [`reference/`](reference/README.md) | Current architecture, services, packages, API/event contracts, glossary, and evidence | Step-by-step incident response |
 | [`development/`](development/README.md) | Onboarding, engineering rules, and documentation conventions | Product introductions |
 | [`operations/`](operations/README.md) | Runtime tooling, verification, observability, and runbooks | Future architecture claims |
+| [`performance/`](performance/README.md) | Disposable B0 load protocol, baseline, and redacted evidence | Production-capacity claims |
 | [`security/`](security/README.md) | Threat model and trust boundaries | Private vulnerability reports |
 | [`roadmap/`](roadmap/README.md) | Strategy, active plans, and archived decisions | Current runtime truth |
 | [`data/`](data/README.md) | The generated data retention/classification matrix | Hand-written policy — edit `config/data-retention.yaml` instead |
@@ -118,14 +119,16 @@ plan status.
   [architecture](reference/architecture.md),
   [services](reference/services.md),
   [shared packages](reference/shared-packages.md),
-  [event contract](reference/events.md), and
+  [event contract](reference/events.md),
+  [API contracts](reference/api-contracts.md), and
   [traceability](reference/traceability.md).
 - Development: [onboarding](development/onboarding.md),
   [project guide](development/project-guide.md), and
   [documentation style](development/documentation-style.md).
-- Operations and security: [operations](operations/README.md),
+- Operations and performance: [operations](operations/README.md),
   [runbooks](operations/runbooks/README.md), and
-  [threat model](security/threat-model.md).
+  [performance](performance/README.md).
+- Security: [threat model](security/threat-model.md).
 
 ## Maintenance
 

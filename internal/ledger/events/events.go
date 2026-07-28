@@ -6,9 +6,10 @@
 // A consumer that only needs to decode events must not be forced to pull in
 // the whole ledger module's dependency graph.
 //
-// Delivery contract: at-least-once. RabbitMQ message_id = outbox_events.id —
-// consumers MUST dedup by that id. Ordering between events is NOT
-// guaranteed.
+// Delivery contract: at-least-once. Current consumers prefer the payload's
+// deterministic EventID for logical deduplication and fall back to the
+// RabbitMQ message_id (= outbox_events.id) for historical payloads. Ordering
+// between events is NOT guaranteed.
 //
 // Versioning: a new OPTIONAL field on an existing type is NOT a breaking
 // change (bump nothing). A changed or removed field, or a change in what a
@@ -18,9 +19,16 @@ package events
 
 import (
 	"encoding/json"
+	"fmt"
+	"regexp"
 	"time"
 
 	"github.com/google/uuid"
+)
+
+var (
+	minorAmountPattern = regexp.MustCompile(`^[0-9]+$`)
+	currencyPattern    = regexp.MustCompile(`^[A-Z]{3}$`)
 )
 
 const (
@@ -59,8 +67,10 @@ type EntrySummary struct {
 
 // TransactionPosted is the payload for TypeTransactionPosted.
 type TransactionPosted struct {
-	SchemaVersion int       `json:"schema_version"`
-	TxID          uuid.UUID `json:"tx_id"`
+	SchemaVersion int `json:"schema_version"`
+	// EventID is stable across versioned representations of one logical event.
+	EventID *uuid.UUID `json:"event_id,omitempty"`
+	TxID    uuid.UUID  `json:"tx_id"`
 	// TransactionType is the registry key (money_in, transfer_p2p, ...) —
 	// consumers filter on this instead of subscribing to per-type routing
 	// keys.
@@ -93,6 +103,25 @@ type TransactionPosted struct {
 	RequestID string `json:"request_id,omitempty"`
 }
 
+// Validate checks the semantic invariants that JSON decoding alone cannot
+// enforce. Consumers call this before applying any side effect so malformed
+// known-version messages are rejected deterministically while unknown
+// optional fields remain tolerated by encoding/json.
+func (e TransactionPosted) Validate() error {
+	if e.SchemaVersion != 1 {
+		return fmt.Errorf("transaction posted: unsupported schema_version %d", e.SchemaVersion)
+	}
+	if e.TxID == uuid.Nil || e.TransactionType == "" || !minorAmountPattern.MatchString(e.Amount) || !currencyPattern.MatchString(e.Currency) || e.OccurredAt.IsZero() {
+		return fmt.Errorf("transaction posted: required fields are invalid")
+	}
+	for i, entry := range e.Entries {
+		if entry.AccountID == uuid.Nil || (entry.Direction != "debit" && entry.Direction != "credit") || !minorAmountPattern.MatchString(entry.Amount) {
+			return fmt.Errorf("transaction posted: invalid entry %d", i)
+		}
+	}
+	return nil
+}
+
 // NewTransactionPosted builds a TransactionPosted at the current schema
 // version. Takes plain values rather than any internal/ledger type — this
 // package cannot import processors or model without creating an import
@@ -109,6 +138,7 @@ func NewTransactionPosted(
 ) TransactionPosted {
 	return TransactionPosted{
 		SchemaVersion:        1,
+		EventID:              logicalEventID(TypeTransactionPosted, txID.String()),
 		TxID:                 txID,
 		TransactionType:      transactionType,
 		Amount:               amount,
@@ -135,12 +165,21 @@ func (e TransactionPosted) ToPayload() map[string]any { return toPayload(e) }
 // TransactionReversed is the payload for TypeTransactionReversed, routed
 // against the ORIGINAL transaction's AggregateID.
 type TransactionReversed struct {
-	SchemaVersion int       `json:"schema_version"`
-	ReversalTxID  uuid.UUID `json:"reversal_tx_id"`
-	OriginalTxID  uuid.UUID `json:"original_tx_id"`
-	Amount        string    `json:"amount"`
-	Currency      string    `json:"currency"`
-	OccurredAt    time.Time `json:"occurred_at"`
+	SchemaVersion int        `json:"schema_version"`
+	EventID       *uuid.UUID `json:"event_id,omitempty"`
+	ReversalTxID  uuid.UUID  `json:"reversal_tx_id"`
+	OriginalTxID  uuid.UUID  `json:"original_tx_id"`
+	Amount        string     `json:"amount"`
+	Currency      string     `json:"currency"`
+	OccurredAt    time.Time  `json:"occurred_at"`
+}
+
+// Validate applies the v1 wire invariants before a consumer uses a reversal.
+func (e TransactionReversed) Validate() error {
+	if e.SchemaVersion != 1 || e.ReversalTxID == uuid.Nil || e.OriginalTxID == uuid.Nil || !minorAmountPattern.MatchString(e.Amount) || !currencyPattern.MatchString(e.Currency) || e.OccurredAt.IsZero() {
+		return fmt.Errorf("transaction reversed: required fields are invalid")
+	}
+	return nil
 }
 
 // NewTransactionReversed builds a TransactionReversed at the current schema
@@ -148,6 +187,7 @@ type TransactionReversed struct {
 func NewTransactionReversed(reversalTxID, originalTxID uuid.UUID, amount, currency string, occurredAt time.Time) TransactionReversed {
 	return TransactionReversed{
 		SchemaVersion: 1,
+		EventID:       logicalEventID(TypeTransactionReversed, reversalTxID.String()+":"+originalTxID.String()),
 		ReversalTxID:  reversalTxID,
 		OriginalTxID:  originalTxID,
 		Amount:        amount,
@@ -163,10 +203,11 @@ func (e TransactionReversed) ToPayload() map[string]any { return toPayload(e) }
 // AdjustmentDecided is the payload for TypeAdjustmentDecided, routed against
 // the pending_adjustments row's own id as AggregateID.
 type AdjustmentDecided struct {
-	SchemaVersion int       `json:"schema_version"`
-	PendingID     uuid.UUID `json:"pending_id"`
-	RequestedBy   string    `json:"requested_by"`
-	ApprovedBy    string    `json:"approved_by"`
+	SchemaVersion int        `json:"schema_version"`
+	EventID       *uuid.UUID `json:"event_id,omitempty"`
+	PendingID     uuid.UUID  `json:"pending_id"`
+	RequestedBy   string     `json:"requested_by"`
+	ApprovedBy    string     `json:"approved_by"`
 	// Decision is "approved" or "rejected".
 	Decision string `json:"decision"`
 	// ExecutedTxID is nil for a rejection (no money moved).
@@ -174,11 +215,20 @@ type AdjustmentDecided struct {
 	OccurredAt   time.Time  `json:"occurred_at"`
 }
 
+// Validate applies the v1 wire invariants before a consumer uses a decision.
+func (e AdjustmentDecided) Validate() error {
+	if e.SchemaVersion != 1 || e.PendingID == uuid.Nil || e.RequestedBy == "" || e.ApprovedBy == "" || (e.Decision != "approved" && e.Decision != "rejected") || e.OccurredAt.IsZero() {
+		return fmt.Errorf("adjustment decided: required fields are invalid")
+	}
+	return nil
+}
+
 // NewAdjustmentDecided builds an AdjustmentDecided at the current schema
 // version.
 func NewAdjustmentDecided(pendingID uuid.UUID, requestedBy, approvedBy, decision string, executedTxID *uuid.UUID, occurredAt time.Time) AdjustmentDecided {
 	return AdjustmentDecided{
 		SchemaVersion: 1,
+		EventID:       logicalEventID(TypeAdjustmentDecided, pendingID.String()+":"+decision),
 		PendingID:     pendingID,
 		RequestedBy:   requestedBy,
 		ApprovedBy:    approvedBy,
@@ -186,6 +236,14 @@ func NewAdjustmentDecided(pendingID uuid.UUID, requestedBy, approvedBy, decision
 		ExecutedTxID:  executedTxID,
 		OccurredAt:    occurredAt,
 	}
+}
+
+// logicalEventID is deterministic for one logical domain event. A future
+// v1/v2 dual-publish therefore carries the same ID in both outbox rows while
+// each AMQP message keeps its own delivery ID.
+func logicalEventID(eventType, identity string) *uuid.UUID {
+	id := uuid.NewSHA1(uuid.Nil, []byte(eventType+":"+identity))
+	return &id
 }
 
 // ToPayload converts an AdjustmentDecided to the map[string]any shape

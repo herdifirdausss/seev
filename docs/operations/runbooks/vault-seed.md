@@ -49,7 +49,10 @@ Seeded, one shared value written identically into every service's own KV v2 entr
 **Not seeded, on purpose:**
 
 - `POSTGRES_PASSWORD` — `docker-compose.yml` hardcodes the Postgres role passwords and `scripts/postgres-init` provisions the database with those exact values; a Vault-sourced password would authenticate against a role Postgres was never told to expect.
-- Mockvendor webhook secrets — need to stay in sync with whatever signs mock webhooks in the same environment; sourcing them from a third place (Vault) risks a silent mismatch.
+- VendorService mockvendor webhook/API secrets — need to stay in sync with the
+  VendorService instance that signs mock webhooks in the same environment;
+  sourcing them from a third place (Vault) risks a silent mismatch. Payin and
+  Payout no longer own these secrets.
 - `JWT_ISSUER` — not a secret (docs/roadmap/archive/49 TM-07 made it mandatory, but it's a plain identifier, not sensitive). `vaultGetenv` falls through to the underlying env var for any key Vault doesn't have — confirmed by `TestVaultGetenv_FallsThroughToEnvForKeysVaultDoesNotHave` — so a service booting with `VAULT_ADDR`/`VAULT_TOKEN` set still gets `JWT_ISSUER` from its regular env (`.env.example`'s `JWT_ISSUER=seev` default, or whatever Compose/`scripts/lib.sh` set) without needing a Vault entry at all.
 
 ## Step 4 — Consume it

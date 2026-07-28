@@ -1,0 +1,42 @@
+# A9 T0 observations only. These are not desired contract rules and must not
+# be copied into T1 OpenAPI examples or error registries without a decision.
+schema_version: 1
+observed:
+  - id: http-errors.ad-hoc
+    family: http
+    owners: [assurance, admin-bff, middleware]
+    observation: Some paths use http.Error or ad-hoc JSON instead of response.Envelope.
+    evidence: internal/assurance/http.go; internal/adminbff/proxy.go; pkg/middleware
+    target_task: T1
+  - id: http-errors.default-status
+    family: http
+    owners: [all]
+    observation: Default net/http 404 and 405 responses are not consistently JSON envelopes.
+    evidence: net/http ServeMux fallback behavior and router tests
+    target_task: T1
+  - id: http-wire.domain-serialization
+    family: http
+    owners: [ledger, admin-bff]
+    observation: Some handlers serialize domain structs or unbounded map values at the boundary.
+    evidence: internal/ledger/transport; internal/adminbff
+    target_task: T1
+  - id: http-client.tolerance-unasserted
+    family: http
+    owners: [gateway, admin-bff]
+    observation: Internal clients rely on default tolerant JSON decoding without an explicit compatibility test.
+    evidence: internal/adminbff/client; pkg/ledgerclient
+    target_task: T2
+  - id: event.schema-missing
+    family: event
+    owners: [ledger, fraud, notify]
+    status: resolved
+    observation: Historical T0 observation; checked-in JSON Schemas and the event catalog now exist.
+    resolution: api/events/catalog.yaml and api/events/ledger/**/v1.schema.json
+    target_task: T4
+  - id: event.dedup.message-id
+    family: event
+    owners: [fraud, notify]
+    status: resolved
+    observation: Historical T0 observation; current payloads carry logical event_id and consumers retain AMQP message_id fallback for legacy deliveries.
+    resolution: internal/ledger/events/events.go; internal/fraud/consumer.go; internal/notify/notify.go
+    target_task: T4

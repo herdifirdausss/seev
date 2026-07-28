@@ -5,7 +5,7 @@
 > **Status: Current. Audience: operators.** Follow this procedure only in an
 > environment where you are authorized to replace service certificates.
 
-Covers rotating the internal mini-CA and every service's leaf certificate (docs/roadmap/archive/49 K2/K3/K9) — `cmd/certgen`'s SPIFFE-style identities used for every gRPC and internal-HTTP hop across all eight services. Leaves are short-lived by design (72h TTL, docs/roadmap/archive/49 K3) so rotation is a routine, well-exercised operation, not a rare break-glass procedure.
+Covers rotating the internal mini-CA and every service's leaf certificate (docs/roadmap/archive/49 K2/K3/K9) — `cmd/certgen`'s SPIFFE-style identities used for every gRPC and internal-HTTP hop across all nine services. Leaves are short-lived by design (72h TTL, docs/roadmap/archive/49 K3) so rotation is a routine, well-exercised operation, not a rare break-glass procedure.
 
 ## When to run this
 

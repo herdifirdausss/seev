@@ -2,8 +2,9 @@
 
 > [Documentation home](../README.md) · [Reference](README.md)
 
-> **Status: Current. Audience: event producers and consumers.** The Go types
-> are authoritative; this page explains their meaning and wire format.
+> **Status: Current. Audience: event producers and consumers.** The Go types,
+> checked JSON Schemas, and event catalog are authoritative; this page explains
+> their meaning and wire format.
 
 In plain English, Ledger events are receipts announcing facts that Ledger has
 already committed. They let notifications, fraud analysis, and other consumers
@@ -23,7 +24,12 @@ outbox, idempotency, and at-least-once delivery are in the
 ## Delivery guarantees
 
 - **At-least-once.** The outbox relay retries with backoff (docs/roadmap/archive/12 Task T2) until the broker confirms publish. A crash between publish and marking `published` re-delivers the same event.
-- **Dedup by `message_id`.** Every AMQP message's `message_id` equals `outbox_events.id`. Consumers **must** deduplicate on this id — processing the same id twice must be a no-op on the consumer side.
+- **Dedup by logical `event_id`, with legacy fallback.** Current producers put a
+  deterministic `event_id` in the payload so future v1/v2 representations of
+  one business event can share one deduplication key. Consumers prefer that
+  value; historical payloads without it fall back to the AMQP `message_id`,
+  which equals `outbox_events.id`. Processing the same logical event twice
+  must be a no-op on the consumer side.
 - **No ordering guarantee** between events, including events about the same transaction or account. Don't assume a `posted` event for transaction A arrives before a later transaction B's event just because A happened first in the ledger.
 - **Routing key** = the event type string (e.g. `ledger.transaction.posted.v1`).
 
@@ -42,6 +48,7 @@ type EntrySummary struct {
 
 type TransactionPosted struct {
     SchemaVersion        int            `json:"schema_version"` // currently 1
+    EventID              *uuid.UUID     `json:"event_id,omitempty"` // logical event identity
     TxID                 uuid.UUID      `json:"tx_id"`
     TransactionType      string         `json:"transaction_type"`
     Amount               string         `json:"amount"`   // minor units, decimal string
@@ -75,6 +82,7 @@ Emitted **in addition to** a `ledger.transaction.posted.v1` for the reversal tra
 ```go
 type TransactionReversed struct {
     SchemaVersion int       `json:"schema_version"` // currently 1
+    EventID       *uuid.UUID `json:"event_id,omitempty"` // logical event identity
     ReversalTxID  uuid.UUID `json:"reversal_tx_id"`
     OriginalTxID  uuid.UUID `json:"original_tx_id"`
     Amount        string    `json:"amount"`
@@ -91,6 +99,7 @@ no `executed_tx_id` because no money moved.
 ```go
 type AdjustmentDecided struct {
     SchemaVersion int        `json:"schema_version"`
+    EventID       *uuid.UUID `json:"event_id,omitempty"` // logical event identity
     PendingID     uuid.UUID  `json:"pending_id"`
     RequestedBy   string     `json:"requested_by"`
     ApprovedBy    string     `json:"approved_by"`
@@ -131,7 +140,8 @@ type AdjustmentDecided struct {
 
 1. Import `github.com/herdifirdausss/seev/internal/ledger/events` for the types and constants — don't hand-roll a decoder.
 2. Subscribe to the routing keys you care about (`ledger.transaction.posted.v1`, `ledger.transaction.reversed.v1`, `ledger.adjustment.decided.v1`).
-3. Dedup by AMQP `message_id` before processing.
+3. Prefer the payload's logical `event_id` for deduplication. For historical
+   payloads without it, require and use the AMQP `message_id`.
 4. `json.Unmarshal` the message body into `events.TransactionPosted` / `events.TransactionReversed`.
 5. Check `SchemaVersion` if you need to branch on schema evolution.
 

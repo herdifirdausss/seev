@@ -1,0 +1,128 @@
+openapi: 3.1.0
+info:
+  title: Seev Admin BFF API
+  version: 1.0.0
+  description: Operator-facing JSON/form contract at the Admin BFF edge.
+servers: [{url: https://admin.example.invalid}]
+paths:
+  /api/v1/admin/audit:
+    get:
+      operationId: adminListAuditV1
+      x-see-owner: admin-bff
+      x-see-audience: admin
+      security: [{sessionCookie: []}]
+      responses: {'200': {$ref: './components/common.yaml#/components/responses/Success'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '403': {$ref: './components/common.yaml#/components/responses/Forbidden'}}
+  /api/v1/admin/adjustments:
+    get:
+      operationId: adminListAdjustmentsV1
+      x-see-owner: admin-bff
+      x-see-behavior-owner: ledger
+      x-see-audience: admin
+      security: [{sessionCookie: []}]
+      responses: {'200': {$ref: './components/common.yaml#/components/responses/Success'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '403': {$ref: './components/common.yaml#/components/responses/Forbidden'}, '502': {$ref: './components/common.yaml#/components/responses/Unavailable'}}
+    post:
+      operationId: adminCreateAdjustmentV1
+      x-see-owner: admin-bff
+      x-see-behavior-owner: ledger
+      x-see-audience: admin
+      security: [{sessionCookie: []}]
+      requestBody: {$ref: './components/common.yaml#/components/requestBodies/Form'}
+      responses: {'201': {$ref: './components/common.yaml#/components/responses/Success'}, '400': {$ref: './components/common.yaml#/components/responses/BadRequest'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '403': {$ref: './components/common.yaml#/components/responses/Forbidden'}, '409': {$ref: './components/common.yaml#/components/responses/Conflict'}}
+  /api/v1/admin/adjustments/{id}:
+    get:
+      operationId: adminGetAdjustmentV1
+      x-see-owner: admin-bff
+      x-see-behavior-owner: ledger
+      x-see-audience: admin
+      security: [{sessionCookie: []}]
+      parameters: [{$ref: './components/common.yaml#/components/parameters/UUID'}]
+      responses: {'200': {$ref: './components/common.yaml#/components/responses/Success'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '403': {$ref: './components/common.yaml#/components/responses/Forbidden'}, '404': {$ref: './components/common.yaml#/components/responses/NotFound'}}
+  /api/v1/admin/adjustments/approve:
+    post:
+      operationId: adminApproveAdjustmentV1
+      x-see-owner: admin-bff
+      x-see-behavior-owner: ledger
+      x-see-audience: admin
+      security: [{sessionCookie: []}]
+      requestBody: {$ref: './components/common.yaml#/components/requestBodies/Form'}
+      responses: {'200': {$ref: './components/common.yaml#/components/responses/Success'}, '400': {$ref: './components/common.yaml#/components/responses/BadRequest'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '403': {$ref: './components/common.yaml#/components/responses/Forbidden'}, '409': {$ref: './components/common.yaml#/components/responses/Conflict'}}
+  /api/v1/admin/adjustments/reject:
+    post:
+      operationId: adminRejectAdjustmentV1
+      x-see-owner: admin-bff
+      x-see-behavior-owner: ledger
+      x-see-audience: admin
+      security: [{sessionCookie: []}]
+      requestBody: {$ref: './components/common.yaml#/components/requestBodies/Form'}
+      responses: {'200': {$ref: './components/common.yaml#/components/responses/Success'}, '400': {$ref: './components/common.yaml#/components/responses/BadRequest'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '403': {$ref: './components/common.yaml#/components/responses/Forbidden'}, '409': {$ref: './components/common.yaml#/components/responses/Conflict'}}
+  /api/v1/admin/recon/batches:
+    get:
+      operationId: adminListReconBatchesV1
+      x-see-owner: admin-bff
+      x-see-behavior-owner: ledger
+      x-see-audience: admin
+      security: [{sessionCookie: []}]
+      responses: {'200': {$ref: './components/common.yaml#/components/responses/Success'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '403': {$ref: './components/common.yaml#/components/responses/Forbidden'}}
+    post:
+      operationId: adminUploadReconBatchV1
+      x-see-owner: admin-bff
+      x-see-behavior-owner: ledger
+      x-see-audience: admin
+      security: [{sessionCookie: []}]
+      requestBody:
+        required: true
+        content: {multipart/form-data: {schema: {type: object, required: [file], additionalProperties: false, properties: {file: {type: string, format: binary}}}}}
+      responses: {'201': {$ref: './components/common.yaml#/components/responses/Success'}, '400': {$ref: './components/common.yaml#/components/responses/BadRequest'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '403': {$ref: './components/common.yaml#/components/responses/Forbidden'}, '413': {$ref: './components/common.yaml#/components/responses/BadRequest'}}
+  /api/v1/admin/ledger/fee-rules:
+    get:
+      operationId: adminListFeeRulesV1
+      x-see-owner: admin-bff
+      x-see-behavior-owner: ledger
+      x-see-audience: admin
+      security: [{sessionCookie: []}]
+      responses: {'200': {$ref: './components/common.yaml#/components/responses/Success'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '403': {$ref: './components/common.yaml#/components/responses/Forbidden'}}
+    post:
+      operationId: adminCreateFeeRuleV1
+      x-see-owner: admin-bff
+      x-see-behavior-owner: ledger
+      x-see-audience: admin
+      security: [{sessionCookie: []}]
+      requestBody: {$ref: './components/common.yaml#/components/requestBodies/Form'}
+      responses: {'201': {$ref: './components/common.yaml#/components/responses/Success'}, '400': {$ref: './components/common.yaml#/components/responses/BadRequest'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '403': {$ref: './components/common.yaml#/components/responses/Forbidden'}, '409': {$ref: './components/common.yaml#/components/responses/Conflict'}}
+  /api/v1/admin/ledger/fee-rules/{id}:
+    put:
+      operationId: adminUpdateFeeRuleV1
+      x-see-owner: admin-bff
+      x-see-behavior-owner: ledger
+      x-see-audience: admin
+      security: [{sessionCookie: []}]
+      parameters: [{$ref: './components/common.yaml#/components/parameters/UUID'}]
+      requestBody: {$ref: './components/common.yaml#/components/requestBodies/Form'}
+      responses: {'200': {$ref: './components/common.yaml#/components/responses/Success'}, '400': {$ref: './components/common.yaml#/components/responses/BadRequest'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '403': {$ref: './components/common.yaml#/components/responses/Forbidden'}, '404': {$ref: './components/common.yaml#/components/responses/NotFound'}}
+  /api/v1/admin/kyc/submissions:
+    get:
+      operationId: adminListKycSubmissionsV1
+      x-see-owner: admin-bff
+      x-see-behavior-owner: auth
+      x-see-audience: admin
+      security: [{sessionCookie: []}]
+      responses: {'200': {$ref: './components/common.yaml#/components/responses/Success'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '403': {$ref: './components/common.yaml#/components/responses/Forbidden'}}
+  /api/v1/admin/privacy/requests:
+    get:
+      operationId: adminListPrivacyRequestsV1
+      x-see-owner: admin-bff
+      x-see-behavior-owner: auth
+      x-see-audience: admin
+      security: [{sessionCookie: []}]
+      responses: {'200': {$ref: './components/common.yaml#/components/responses/Success'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '403': {$ref: './components/common.yaml#/components/responses/Forbidden'}}
+  /api/v1/admin/gateway/status:
+    get:
+      operationId: adminGetGatewayStatusV1
+      x-see-owner: admin-bff
+      x-see-behavior-owner: gateway
+      x-see-audience: admin
+      security: [{sessionCookie: []}]
+      responses: {'200': {$ref: './components/common.yaml#/components/responses/Success'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '403': {$ref: './components/common.yaml#/components/responses/Forbidden'}, '502': {$ref: './components/common.yaml#/components/responses/Unavailable'}}
+components:
+  securitySchemes:
+    sessionCookie: {$ref: './components/common.yaml#/components/securitySchemes/sessionCookie'}

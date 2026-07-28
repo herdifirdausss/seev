@@ -11,6 +11,7 @@ import (
 
 	"github.com/herdifirdausss/seev/internal/payin/repository"
 	"github.com/herdifirdausss/seev/internal/vendorgw"
+	"github.com/herdifirdausss/seev/pkg/httpcontract"
 	"github.com/herdifirdausss/seev/pkg/middleware"
 	"github.com/herdifirdausss/seev/pkg/response"
 )
@@ -22,7 +23,7 @@ import (
 // also admin-gated inside itself, defense in depth, same pattern as every
 // other /admin/* surface in this codebase.
 func (m *Module) AdminRouter() http.Handler {
-	mux := http.NewServeMux()
+	mux := httpcontract.New(httpcontract.Options{Owner: "payin", Audience: "admin", Contract: "internal-v1"})
 	mux.HandleFunc("GET /admin/payin/events", m.listEventsHandler)
 	mux.HandleFunc("POST /admin/payin/events/{id}/replay", m.replayEventHandler)
 	mux.HandleFunc("GET /admin/payin/routing-rules", m.listRoutingRulesHandler)

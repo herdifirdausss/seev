@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.seev.invalid/events/ledger/transaction-reversed/v1.schema.json",
+  "title": "ledger.transaction.reversed.v1",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["schema_version", "reversal_tx_id", "original_tx_id", "amount", "currency", "occurred_at"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "event_id": {"type": "string", "format": "uuid"},
+    "reversal_tx_id": {"type": "string", "format": "uuid"},
+    "original_tx_id": {"type": "string", "format": "uuid"},
+    "amount": {"type": "string", "pattern": "^[0-9]+$"},
+    "currency": {"type": "string", "pattern": "^[A-Z]{3}$"},
+    "occurred_at": {"type": "string", "format": "date-time"}
+  }
+}

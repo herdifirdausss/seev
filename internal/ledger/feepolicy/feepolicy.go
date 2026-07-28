@@ -6,6 +6,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
@@ -13,6 +14,7 @@ import (
 	"github.com/herdifirdausss/seev/internal/ledger/model"
 	"github.com/herdifirdausss/seev/internal/ledger/repository"
 	"github.com/herdifirdausss/seev/pkg/database"
+	"github.com/herdifirdausss/seev/pkg/loadmetrics"
 )
 
 // Rule and Quote are aliases onto the model package's raw persisted shapes —
@@ -60,6 +62,9 @@ func (p *Policy) Update(ctx context.Context, rule Rule) (Rule, error) {
 // Missing rows and database errors both fail closed to "no fee"; fee pricing
 // must never turn an otherwise valid posting into a malformed command.
 func (p *Policy) Resolve(ctx context.Context, userID uuid.UUID, txType, gateway, currency string, amount decimal.Decimal) (feeAmount decimal.Decimal, feeGateway string, ok bool) {
+	started := time.Now()
+	result := "not_found"
+	defer func() { loadmetrics.ObserveResolution("ledger", "fee", result, started) }()
 	if p == nil || p.repo == nil || currency == "" {
 		return decimal.Zero, "", false
 	}
@@ -69,6 +74,7 @@ func (p *Policy) Resolve(ctx context.Context, userID uuid.UUID, txType, gateway,
 		// sql.ErrNoRows is expected when pricing is disabled. Infrastructure
 		// errors use the same conservative outcome because this API has no
 		// error channel and downstream fee metadata is optional.
+		result = "error"
 		return decimal.Zero, "", false
 	}
 
@@ -84,5 +90,6 @@ func (p *Policy) Resolve(ctx context.Context, userID uuid.UUID, txType, gateway,
 	if ruleFeeGateway == "" {
 		ruleFeeGateway = "platform"
 	}
+	result = "success"
 	return fee, ruleFeeGateway, true
 }

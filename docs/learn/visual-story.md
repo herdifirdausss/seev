@@ -101,9 +101,10 @@ does not prove that the message matches Mia's ticket.
 A genuine message can still be duplicated, old, malformed, or connected to
 the wrong expectation. This is why a signature alone is not enough.
 
-This diagram shows the intended safety rule. The current Payin implementation
-still has a legacy unmatched-intent fallback; the exact gap and target fix are
-stated in [Current behavior and the safer vendor target](#current-behavior-and-the-safer-vendor-target).
+This diagram shows the active safety rule. VendorService proves the transport
+message and Payin/Payout correlate it against owner-domain state; the old raw
+callback compatibility path remains only in code and is not an active Gateway
+route. The remaining live acceptance is described in [plan 54](../roadmap/active/54-vendor-service-boundary.md).
 
 ## Scene 4: the accounting book makes the money real
 
@@ -299,16 +300,19 @@ Technical names: **assurance finding** and **reconciliation**.
 | Safety officer | Fraud |
 | Operator workspace | Admin BFF |
 | Independent inspector | Assurance |
+| Vendor boundary | VendorService |
 | Filing cabinets | Separate PostgreSQL databases |
 | Short-lived shared notes | Redis |
 | Mailroom | RabbitMQ |
 
-## Current behavior and the safer vendor target
+<a id="current-behavior-and-the-safer-vendor-target"></a>
+## Current vendor boundary and remaining compatibility note
 
-Today, Payin vendor callbacks first enter Gateway and then reach Payin. Payout
-contains its vendor adapter and calls the payout vendor directly.
+Today, vendor callbacks first enter VendorService. VendorService authenticates
+and stores them, then sends a normalized event to Payin or Payout. Outbound
+vendor traffic also passes through VendorService.
 
-The target in [plan 54](../roadmap/active/54-vendor-service-boundary.md) changes this to:
+The implemented boundary is:
 
 ```mermaid
 flowchart LR
@@ -320,14 +324,14 @@ flowchart LR
     VendorService --> Payout
 ```
 
-VendorService would authenticate and translate vendor communication. Payin
-and Payout would still check their own intent or request before changing
-business state. VendorService would not choose a user or move Ledger money.
+VendorService authenticates and translates vendor communication. Payin and
+Payout still check their own intent or request before changing business state.
+VendorService does not choose a user or move Ledger money.
 
-This is labeled **target** because that service is not implemented yet. The
-current Payin code also retains a legacy fallback that can use a vendor
-payload's user id when no intent matches. The target removes that unsafe
-compatibility behavior.
+The old raw callback compatibility path remains in code, but it is not an
+active Gateway route. The active path does not accept a vendor payload's user
+id when no intent matches. Final live integration and chaos acceptance remain
+in [plan 54](../roadmap/active/54-vendor-service-boundary.md).
 
 ## Tell the story back in five answers
 

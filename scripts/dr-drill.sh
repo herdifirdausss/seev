@@ -264,7 +264,7 @@ topup_once() {
 	}
 	body="{\"event_id\":\"dr-drill-$RUN_ID-$event_suffix\",\"external_ref\":\"$reference\",\"user_id\":\"$(uuidgen | tr '[:upper:]' '[:lower:]')\",\"amount\":\"$amount\",\"currency\":\"IDR\",\"occurred_at\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"type\":\"payment.settled\"}"
 	sig="$(printf '%s' "$body" | openssl dgst -sha256 -hmac "$MOCKVENDOR_SECRET" -r | awk '{print $1}')"
-	code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$APP_PORT/webhooks/mockvendor" \
+	code=$(curl_internal -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$VENDOR_APP_PORT/webhooks/mockvendor" \
 		-H "X-Mock-Signature: $sig" -H "Content-Type: application/json" -d "$body")
 	[ "${code:0:1}" = "2" ] || {
 		echo "dr-drill.sh: fixture topup webhook got $code, expected 2xx" >&2

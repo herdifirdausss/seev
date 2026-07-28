@@ -70,6 +70,11 @@ go.work.sum
 /deploy/cryptox/secrets/*
 !/deploy/cryptox/secrets/.gitkeep
 
+# docs/roadmap/active/53 B0: raw load manifests, time series, dumps, and logs
+# are disposable evidence and must never enter Git. Commit only redacted,
+# deterministic summaries under docs/performance/.
+/artifacts/load/*
+
 # Editor/IDE
 # .idea/
 # .vscode/

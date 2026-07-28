@@ -2,13 +2,14 @@
 
 > [Documentation home](../../README.md) · [Roadmap](../README.md) · [Active plans](README.md)
 
-> **Status: Target / Todo.** Nothing in this document should be described as
-> current behavior until its implementation and acceptance tests are complete.
+> **Status: In progress.** The VendorService foundation and active callback
+> boundary are implemented. Final live integration and chaos acceptance remain
+> open; use the implementation log and checklist below for exact state.
 
 ## Why this change exists
 
-The current runtime puts vendor adapter code inside Payin and Payout, while a
-Payin callback first enters the public Gateway. That mixes two different
+The original runtime put vendor adapter code inside Payin and Payout, while a
+Payin callback first entered the public Gateway. That mixed two different
 boundaries:
 
 - Gateway is the front door for end-user product requests.
@@ -61,9 +62,8 @@ mTLS remains mandatory in either case; an IP address alone is not identity.
 
 - Vendor API clients, callback decoders, signing secrets, certificate material,
   timeouts, and vendor-specific error mapping.
-- Public callback routes `POST /callbacks/payin/{vendor}` and
-  `POST /callbacks/payout/{vendor}` on a listener separate from admin and
-  internal APIs.
+- Public callback route `POST /webhooks/{vendor}` on a listener separate from
+  admin and internal APIs.
 - Request body limits, source-CIDR policy, trusted-proxy handling, signature
   verification, replay detection, and raw callback inbox records.
 - Durable audit records for outbound calls and delivery attempts from its
@@ -201,8 +201,8 @@ event.
    window. Do not retain a permanent fallback path.
 6. Remove in-process vendor adapters and secrets from Payin/Payout after all
    callers use VendorService.
-7. Update current-state documentation from eight to nine services only after
-   the final acceptance gate passes.
+7. Keep current-state documentation aligned with the nine-service topology;
+   final live acceptance evidence remains a separate release gate.
 
 ## Verification and acceptance
 
@@ -230,3 +230,59 @@ The plan is complete when vendors have no direct route to Gateway, Payin, or
 Payout; Payin/Payout never trust vendor-supplied user ownership; every terminal
 state and user notification is emitted exactly once from an owner-domain
 event; and the full race, integration, business, and chaos suites pass.
+
+## Acceptance checklist
+
+- [x] VendorService is the only runtime owner of vendor adapters, callback
+      ingress, signatures, and callback evidence.
+- [x] Payin and Payout use normalized mTLS callback RPCs without an
+      authoritative vendor-supplied Seev user ID.
+- [x] Callback source policy, trusted-proxy handling, raw-body cap, signature
+      verification, duplicate inbox outcome, and owner correlation guards have
+      unit coverage.
+- [x] Gateway no longer registers `/webhooks/{vendor}` and has a regression
+      test proving the route returns 404.
+- [x] Payin duplicate/ownership and Payout callback-versus-polling race tests
+      cover exactly-once money effects.
+- [x] Manual chaos script exists for VendorService restart, duplicate delivery,
+      and lost-response retry.
+- [ ] Full live VendorService → owner → Ledger → outbox → RabbitMQ →
+      notification trace has been run and recorded.
+- [ ] Failure injection, owner outage, RabbitMQ outage, and chaos script have
+      passed in the current checkout.
+- [ ] Metrics and alert thresholds have live evidence from the multi-service
+      acceptance run.
+
+## Implementation log
+
+- [x] T0: added the versioned VendorService and normalized callback contracts,
+  including explicit owner/caller semantics and no authoritative vendor user id.
+- [x] T1: added the `vendor` mTLS identity, VendorService binary, own database,
+  migrations, retention policy, bounded pool metrics, Compose service, and mock
+  adapter composition.
+- [x] T2: routed Payin session creation and Payout submit/query through the
+  VendorService gRPC client with stable request idempotency keys.
+- [x] T3: added source-CIDR/proxy checks, raw-body cap, signature verification,
+  durable callback inbox, duplicate outcome replay, normalized owner delivery,
+  owner correlation/amount/currency guards, and callback metrics.
+- [x] T4: removed Gateway's `/webhooks/{vendor}` registration and callback
+  middleware; Payin/Payout Compose no longer receive vendor secrets or concrete
+  vendor adapters.
+- [x] T5 foundation: added outbound attempt evidence, contract inventory,
+  retention/runbook documentation, and unit/contract/full-Go verification.
+- [x] 2026-07-28 integration repair: moved the normalized-callback Payin
+  migration to `000013` because `000009` is already the retention migration;
+  made the VendorService grants conditional so lightweight integration
+  databases without a `vendor_app` login role can migrate safely.
+- [x] 2026-07-28 targeted acceptance: object-store outage, privacy-worker
+  restart, owner-timeout, and retention/closure race integration tests pass;
+  the full Go test suite, build, vet, lint, host smoke, business journeys, and
+  contract checks also pass.
+- [x] 2026-07-28 chaos harness preparation: added
+  `scripts/vendor-boundary-chaos.sh` for VendorService restart/redelivery,
+  duplicate callback replay, and lost-response retry checks. The script is
+  manual and has not been run as part of this implementation turn.
+- [x] 2026-07-28 stale Gateway webhook integration fixtures were removed and
+  replaced with a route-ownership regression test in `internal/handler`.
+- [ ] Final acceptance remains: live multi-service integration trace,
+  notification/outbox reconciliation failure injection, and chaos/restart gate.

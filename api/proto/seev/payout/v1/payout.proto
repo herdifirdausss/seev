@@ -5,6 +5,7 @@ package seev.payout.v1;
 import "google/protobuf/timestamp.proto";
 
 service PayoutService {
+  rpc HandleVendorCallback(HandleVendorCallbackRequest) returns (HandleVendorCallbackResponse);
   rpc CreatePayout(CreatePayoutRequest) returns (CreatePayoutResponse);
   rpc GetPayout(GetPayoutRequest) returns (GetPayoutResponse);
   rpc ListAssuranceRecords(ListAssuranceRecordsRequest) returns (ListAssuranceRecordsResponse);
@@ -41,6 +42,31 @@ message Payout {
   string error_message = 7;
   google.protobuf.Timestamp created_at = 8;
   google.protobuf.Timestamp updated_at = 9;
+}
+
+message HandleVendorCallbackRequest {
+  string vendor = 1;
+  string vendor_event_id = 2;
+  string external_reference = 3;
+  string amount = 4;
+  string currency = 5;
+  string status = 6; // pending | settled | failed
+  google.protobuf.Timestamp occurred_at = 7;
+  string vendor_inbox_id = 8;
+  string request_id = 9;
+  string unknown_vendor_status = 10;
+}
+
+enum VendorCallbackResult {
+  VENDOR_CALLBACK_RESULT_UNSPECIFIED = 0;
+  VENDOR_CALLBACK_RESULT_FINALIZED = 1;
+  VENDOR_CALLBACK_RESULT_ALREADY_FINALIZED = 2;
+  VENDOR_CALLBACK_RESULT_IGNORED_NON_TERMINAL = 3;
+  VENDOR_CALLBACK_RESULT_RECORDED_UNMATCHED = 4;
+}
+
+message HandleVendorCallbackResponse {
+  VendorCallbackResult result = 1;
 }
 
 message ListAssuranceRecordsRequest {

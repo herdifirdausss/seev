@@ -1,0 +1,1723 @@
+# A9 T0 contract-surface inventory.
+#
+# This is an inventory of the live registrations, not an OpenAPI document.
+# `kind: mount` records a prefix mounted by a parent router; its leaf
+# operations are listed in the owning module's registration entries. Keeping
+# mounts explicit is important because conditional dependencies and proxies
+# otherwise disappear from a source-only route scan.
+schema_version: 1
+inventory_version: 2026-07-28
+status: baseline-inventory
+
+http:
+  # Public user edge (gateway and auth).
+  - id: gateway.health
+    service: gateway
+    method: GET
+    path: /health
+    kind: operational
+    owner: gateway
+    behavior_owner: gateway
+    audience: operational
+    artifact: api/openapi/public-v1.yaml
+    auth: none
+    consumers: [prometheus, operator]
+    lifecycle: active
+    contract_version: v1
+    source: internal/handler/router.go
+  - id: gateway.ready
+    service: gateway
+    method: GET
+    path: /ready
+    kind: operational
+    owner: gateway
+    behavior_owner: gateway
+    audience: operational
+    artifact: api/openapi/public-v1.yaml
+    auth: none
+    consumers: [prometheus, operator]
+    lifecycle: active
+    contract_version: v1
+    source: internal/handler/router.go
+  - id: vendorservice.webhook.vendor
+    service: vendor-service
+    method: POST
+    path: /webhooks/{vendor}
+    kind: operation
+    owner: vendor
+    behavior_owner: vendor
+    audience: vendor
+    artifact: api/openapi/webhooks-v1.yaml
+    auth: vendor-signature
+    consumers: [vendor, payin]
+    lifecycle: active
+    contract_version: v1
+    source: cmd/vendor-service/main.go
+  - id: gateway.ledger.mount
+    service: gateway
+    method: ANY
+    path: /api/v1/ledger/
+    kind: mount
+    owner: gateway
+    behavior_owner: ledger
+    audience: public
+    artifact: api/openapi/public-v1.yaml
+    auth: user-jwt
+    consumers: [external]
+    lifecycle: active
+    contract_version: v1
+    source: internal/handler/router.go
+  - id: gateway.payout.create
+    service: gateway
+    method: POST
+    path: /api/v1/payout
+    kind: operation
+    owner: gateway
+    behavior_owner: payout
+    audience: public
+    artifact: api/openapi/public-v1.yaml
+    auth: user-jwt
+    consumers: [external]
+    lifecycle: active
+    contract_version: v1
+    source: internal/handler/router.go
+  - id: gateway.payout.get
+    service: gateway
+    method: GET
+    path: /api/v1/payout/{id}
+    kind: operation
+    owner: gateway
+    behavior_owner: payout
+    audience: public
+    artifact: api/openapi/public-v1.yaml
+    auth: user-jwt
+    consumers: [external]
+    lifecycle: active
+    contract_version: v1
+    source: internal/handler/router.go
+  - id: gateway.topup.create
+    service: gateway
+    method: POST
+    path: /api/v1/topup
+    kind: operation
+    owner: gateway
+    behavior_owner: payin
+    audience: public
+    artifact: api/openapi/public-v1.yaml
+    auth: user-jwt
+    consumers: [external]
+    lifecycle: active
+    contract_version: v1
+    source: internal/handler/router.go
+  - id: gateway.topup.get
+    service: gateway
+    method: GET
+    path: /api/v1/topup/{id}
+    kind: operation
+    owner: gateway
+    behavior_owner: payin
+    audience: public
+    artifact: api/openapi/public-v1.yaml
+    auth: user-jwt
+    consumers: [external]
+    lifecycle: active
+    contract_version: v1
+    source: internal/handler/router.go
+  - id: gateway.notifications.list
+    service: gateway
+    method: GET
+    path: /api/v1/notifications
+    kind: operation
+    owner: gateway
+    behavior_owner: notify
+    audience: public
+    artifact: api/openapi/public-v1.yaml
+    auth: user-jwt
+    consumers: [external]
+    lifecycle: active
+    contract_version: v1
+    source: internal/handler/router.go
+  - id: gateway.notifications.read
+    service: gateway
+    method: POST
+    path: /api/v1/notifications/{id}/read
+    kind: operation
+    owner: gateway
+    behavior_owner: notify
+    audience: public
+    artifact: api/openapi/public-v1.yaml
+    auth: user-jwt
+    consumers: [external]
+    lifecycle: active
+    contract_version: v1
+    source: internal/handler/router.go
+
+  - id: auth.health
+    service: auth
+    method: GET
+    path: /health
+    kind: operational
+    owner: auth
+    behavior_owner: auth
+    audience: operational
+    artifact: api/openapi/public-v1.yaml
+    auth: none
+    consumers: [prometheus, operator]
+    lifecycle: active
+    contract_version: v1
+    source: cmd/auth-service/router.go
+  - id: auth.metrics
+    service: auth
+    method: GET
+    path: /metrics
+    kind: operational
+    owner: auth
+    behavior_owner: auth
+    audience: operational
+    artifact: api/openapi/public-v1.yaml
+    auth: none
+    consumers: [prometheus]
+    lifecycle: active
+    contract_version: v1
+    source: cmd/auth-service/router.go
+  - id: auth.register
+    service: auth
+    method: POST
+    path: /api/v1/auth/register
+    kind: operation
+    owner: auth
+    behavior_owner: auth
+    audience: public
+    artifact: api/openapi/public-v1.yaml
+    auth: none
+    consumers: [external]
+    lifecycle: active
+    contract_version: v1
+    source: cmd/auth-service/router.go
+  - id: auth.login
+    service: auth
+    method: POST
+    path: /api/v1/auth/login
+    kind: operation
+    owner: auth
+    behavior_owner: auth
+    audience: public
+    artifact: api/openapi/public-v1.yaml
+    auth: none
+    consumers: [external]
+    lifecycle: active
+    contract_version: v1
+    source: cmd/auth-service/router.go
+  - id: auth.refresh
+    service: auth
+    method: POST
+    path: /api/v1/auth/refresh
+    kind: operation
+    owner: auth
+    behavior_owner: auth
+    audience: public
+    artifact: api/openapi/public-v1.yaml
+    auth: refresh-token
+    consumers: [external]
+    lifecycle: active
+    contract_version: v1
+    source: cmd/auth-service/router.go
+  - id: auth.me.get
+    service: auth
+    method: GET
+    path: /api/v1/users/me
+    kind: operation
+    owner: auth
+    behavior_owner: auth
+    audience: public
+    artifact: api/openapi/public-v1.yaml
+    auth: user-jwt
+    consumers: [external]
+    lifecycle: active
+    contract_version: v1
+    source: cmd/auth-service/router.go
+  - id: auth.me.update
+    service: auth
+    method: PUT
+    path: /api/v1/users/me
+    kind: operation
+    owner: auth
+    behavior_owner: auth
+    audience: public
+    artifact: api/openapi/public-v1.yaml
+    auth: user-jwt
+    consumers: [external]
+    lifecycle: active
+    contract_version: v1
+    source: cmd/auth-service/router.go
+  - id: auth.me.kyc.submit
+    service: auth
+    method: POST
+    path: /api/v1/users/me/kyc
+    kind: operation
+    owner: auth
+    behavior_owner: auth
+    audience: public
+    artifact: api/openapi/public-v1.yaml
+    auth: user-jwt
+    consumers: [external]
+    lifecycle: active
+    contract_version: v1
+    source: cmd/auth-service/router.go
+  - id: auth.me.kyc.status
+    service: auth
+    method: GET
+    path: /api/v1/users/me/kyc
+    kind: operation
+    owner: auth
+    behavior_owner: auth
+    audience: public
+    artifact: api/openapi/public-v1.yaml
+    auth: user-jwt
+    consumers: [external]
+    lifecycle: active
+    contract_version: v1
+    source: cmd/auth-service/router.go
+  - id: auth.me.kyc.document.upload
+    service: auth
+    method: POST
+    path: /api/v1/users/me/kyc/documents
+    kind: operation
+    owner: auth
+    behavior_owner: auth
+    audience: public
+    artifact: api/openapi/public-v1.yaml
+    auth: user-jwt
+    consumers: [external]
+    lifecycle: active
+    contract_version: v1
+    source: cmd/auth-service/router.go
+  - id: auth.me.privacy.export.create
+    service: auth
+    method: POST
+    path: /api/v1/users/me/privacy/exports
+    kind: operation
+    owner: auth
+    behavior_owner: auth
+    audience: public
+    artifact: api/openapi/public-v1.yaml
+    auth: user-jwt
+    consumers: [external]
+    lifecycle: active
+    contract_version: v1
+    source: cmd/auth-service/router.go
+  - id: auth.me.privacy.export.status
+    service: auth
+    method: GET
+    path: /api/v1/users/me/privacy/requests/{id}
+    kind: operation
+    owner: auth
+    behavior_owner: auth
+    audience: public
+    artifact: api/openapi/public-v1.yaml
+    auth: user-jwt
+    consumers: [external]
+    lifecycle: active
+    contract_version: v1
+    source: cmd/auth-service/router.go
+  - id: auth.me.privacy.export.download
+    service: auth
+    method: GET
+    path: /api/v1/users/me/privacy/exports/{id}/download
+    kind: operation
+    owner: auth
+    behavior_owner: auth
+    audience: public
+    artifact: api/openapi/public-v1.yaml
+    auth: user-jwt
+    consumers: [external]
+    lifecycle: active
+    contract_version: v1
+    source: cmd/auth-service/router.go
+  - id: auth.me.privacy.closure.create
+    service: auth
+    method: POST
+    path: /api/v1/users/me/privacy/closure
+    kind: operation
+    owner: auth
+    behavior_owner: auth
+    audience: public
+    artifact: api/openapi/public-v1.yaml
+    auth: user-jwt
+    consumers: [external]
+    lifecycle: active
+    contract_version: v1
+    source: cmd/auth-service/router.go
+  - id: auth.me.privacy.closure.status
+    service: auth
+    method: GET
+    path: /api/v1/users/me/privacy/closure/{id}
+    kind: operation
+    owner: auth
+    behavior_owner: auth
+    audience: public
+    artifact: api/openapi/public-v1.yaml
+    auth: user-jwt
+    consumers: [external]
+    lifecycle: active
+    contract_version: v1
+    source: cmd/auth-service/router.go
+
+  # Direct internal/admin HTTP surfaces. These are intentionally separate from
+  # the public gateway entries even when the leaf path is similar.
+  - id: ledger.public.mount
+    service: ledger
+    method: ANY
+    path: /api/v1/ledger/
+    kind: mount
+    owner: ledger
+    behavior_owner: ledger
+    audience: public
+    artifact: api/openapi/public-v1.yaml
+    auth: user-jwt
+    consumers: [gateway]
+    lifecycle: active
+    contract_version: v1
+    source: cmd/ledger-service/main.go
+  - id: ledger.internal.mount
+    service: ledger
+    method: ANY
+    path: /api/v1/ledger/
+    kind: mount
+    owner: ledger
+    behavior_owner: ledger
+    audience: internal
+    artifact: api/openapi/internal-v1.yaml
+    auth: service-mtls+jwt
+    consumers: [gateway, admin-bff, assurance, payin, payout]
+    lifecycle: active
+    contract_version: v1
+    source: cmd/ledger-service/main.go
+  - id: ledger.admin.mount
+    service: ledger
+    method: ANY
+    path: /api/v1/admin/ledger/
+    kind: mount
+    owner: ledger
+    behavior_owner: ledger
+    audience: admin
+    artifact: api/openapi/admin-v1.yaml
+    auth: service-mtls+admin-jwt
+    consumers: [admin-bff, operator]
+    lifecycle: active
+    contract_version: v1
+    source: cmd/ledger-service/main.go
+  - id: ledger.admin.policy.mount
+    service: ledger
+    method: ANY
+    path: /api/v1/admin/policy/
+    kind: mount
+    owner: ledger
+    behavior_owner: policy
+    audience: admin
+    artifact: api/openapi/admin-v1.yaml
+    auth: service-mtls+admin-jwt
+    consumers: [admin-bff, operator]
+    lifecycle: active
+    contract_version: v1
+    source: cmd/ledger-service/main.go
+  - id: ledger.privacy.mount
+    service: ledger
+    method: ANY
+    path: /privacy/
+    kind: mount
+    owner: ledger
+    behavior_owner: ledger
+    audience: internal
+    artifact: api/openapi/internal-v1.yaml
+    auth: service-mtls+internal-token
+    consumers: [auth]
+    lifecycle: active
+    contract_version: v1
+    source: cmd/ledger-service/main.go
+
+  - id: payin.admin.mount
+    service: payin
+    method: ANY
+    path: /admin/payin/
+    kind: mount
+    owner: payin
+    behavior_owner: payin
+    audience: admin
+    artifact: api/openapi/internal-v1.yaml
+    auth: service-mtls+admin-jwt
+    consumers: [admin-bff, operator]
+    lifecycle: active
+    contract_version: v1
+    source: cmd/payin-service/router.go
+  - id: payin.privacy.mount
+    service: payin
+    method: ANY
+    path: /privacy/
+    kind: mount
+    owner: payin
+    behavior_owner: payin
+    audience: internal
+    artifact: api/openapi/internal-v1.yaml
+    auth: service-mtls+internal-token
+    consumers: [auth]
+    lifecycle: active
+    contract_version: v1
+    source: cmd/payin-service/router.go
+  - id: payout.admin.mount
+    service: payout
+    method: ANY
+    path: /admin/payout/
+    kind: mount
+    owner: payout
+    behavior_owner: payout
+    audience: admin
+    artifact: api/openapi/internal-v1.yaml
+    auth: service-mtls+admin-jwt
+    consumers: [admin-bff, operator]
+    lifecycle: active
+    contract_version: v1
+    source: cmd/payout-service/router.go
+  - id: payout.privacy.mount
+    service: payout
+    method: ANY
+    path: /privacy/
+    kind: mount
+    owner: payout
+    behavior_owner: payout
+    audience: internal
+    artifact: api/openapi/internal-v1.yaml
+    auth: service-mtls+internal-token
+    consumers: [auth]
+    lifecycle: active
+    contract_version: v1
+    source: cmd/payout-service/router.go
+  - id: fraud.admin.mount
+    service: fraud
+    method: ANY
+    path: /api/v1/admin/fraud/
+    kind: mount
+    owner: fraud
+    behavior_owner: fraud
+    audience: admin
+    artifact: api/openapi/internal-v1.yaml
+    auth: service-mtls+admin-jwt
+    consumers: [admin-bff, operator]
+    lifecycle: active
+    contract_version: v1
+    source: cmd/fraud-service/router.go
+  - id: fraud.privacy.mount
+    service: fraud
+    method: ANY
+    path: /privacy/
+    kind: mount
+    owner: fraud
+    behavior_owner: fraud
+    audience: internal
+    artifact: api/openapi/internal-v1.yaml
+    auth: service-mtls+internal-token
+    consumers: [auth]
+    lifecycle: active
+    contract_version: v1
+    source: cmd/fraud-service/router.go
+  - id: assurance.admin.mount
+    service: assurance
+    method: ANY
+    path: /admin/assurance/
+    kind: mount
+    owner: assurance
+    behavior_owner: assurance
+    audience: admin
+    artifact: api/openapi/internal-v1.yaml
+    auth: service-mtls+admin-jwt
+    consumers: [operator]
+    lifecycle: active
+    contract_version: v1
+    source: cmd/assurance-service/main.go
+
+  # Admin BFF owns the browser/session edge. Downstream services remain the
+  # behavior owners for proxied JSON operations.
+  - id: admin-bff.health
+    service: admin-bff
+    method: GET
+    path: /health
+    kind: operational
+    owner: admin-bff
+    behavior_owner: admin-bff
+    audience: operational
+    artifact: api/openapi/admin-v1.yaml
+    auth: none
+    consumers: [prometheus, operator]
+    lifecycle: active
+    contract_version: v1
+    source: cmd/admin-bff-service/router.go
+  - id: admin-bff.metrics
+    service: admin-bff
+    method: GET
+    path: /metrics
+    kind: operational
+    owner: admin-bff
+    behavior_owner: admin-bff
+    audience: operational
+    artifact: api/openapi/admin-v1.yaml
+    auth: none
+    consumers: [prometheus]
+    lifecycle: active
+    contract_version: v1
+    source: cmd/admin-bff-service/router.go
+  - id: admin-bff.assets
+    service: admin-bff
+    method: ANY
+    path: /assets/
+    kind: browser
+    owner: admin-bff
+    behavior_owner: admin-bff
+    audience: browser
+    artifact: none
+    auth: none
+    consumers: [operator]
+    lifecycle: active
+    contract_version: v1
+    source: cmd/admin-bff-service/router.go
+  - id: admin-bff.login.page
+    service: admin-bff
+    method: GET
+    path: /login
+    kind: browser
+    owner: admin-bff
+    behavior_owner: admin-bff
+    audience: browser
+    artifact: none
+    auth: none
+    consumers: [operator]
+    lifecycle: active
+    contract_version: v1
+    source: cmd/admin-bff-service/router.go
+  - id: admin-bff.login.submit
+    service: admin-bff
+    method: POST
+    path: /login
+    kind: browser
+    owner: admin-bff
+    behavior_owner: admin-bff
+    audience: browser
+    artifact: none
+    auth: none
+    consumers: [operator]
+    lifecycle: active
+    contract_version: v1
+    source: cmd/admin-bff-service/router.go
+  - id: admin-bff.logout
+    service: admin-bff
+    method: POST
+    path: /logout
+    kind: browser
+    owner: admin-bff
+    behavior_owner: admin-bff
+    audience: browser
+    artifact: none
+    auth: session+csrf
+    consumers: [operator]
+    lifecycle: active
+    contract_version: v1
+    source: cmd/admin-bff-service/router.go
+  - id: admin-bff.admin.mount
+    service: admin-bff
+    method: ANY
+    path: /api/v1/admin/
+    kind: mount
+    owner: admin-bff
+    behavior_owner: downstream
+    audience: admin
+    artifact: api/openapi/admin-v1.yaml
+    auth: session+csrf
+    consumers: [operator]
+    lifecycle: active
+    contract_version: v1
+    source: cmd/admin-bff-service/router.go
+
+  # Operational-only service endpoints.
+  - id: backup-agent.health
+    service: backup-agent
+    method: GET
+    path: /health
+    kind: operational
+    owner: backup-agent
+    behavior_owner: backup-agent
+    audience: operational
+    artifact: none
+    auth: none
+    consumers: [prometheus, operator]
+    lifecycle: active
+    contract_version: v1
+    source: internal/backupagent/server.go
+  - id: backup-agent.ready
+    service: backup-agent
+    method: GET
+    path: /ready
+    kind: operational
+    owner: backup-agent
+    behavior_owner: backup-agent
+    audience: operational
+    artifact: none
+    auth: none
+    consumers: [prometheus, operator]
+    lifecycle: active
+    contract_version: v1
+    source: internal/backupagent/server.go
+  - id: backup-agent.status
+    service: backup-agent
+    method: GET
+    path: /status
+    kind: operational
+    owner: backup-agent
+    behavior_owner: backup-agent
+    audience: operational
+    artifact: none
+    auth: internal
+    consumers: [operator]
+    lifecycle: active
+    contract_version: v1
+    source: internal/backupagent/server.go
+
+  - id: ledger.health
+    service: ledger
+    method: GET
+    path: /health
+    kind: operational
+    owner: ledger
+    behavior_owner: ledger
+    audience: operational
+    artifact: none
+    auth: none
+    consumers: [prometheus, operator]
+    lifecycle: active
+    contract_version: v1
+    source: cmd/ledger-service/main.go
+  - id: ledger.ready
+    service: ledger
+    method: GET
+    path: /ready
+    kind: operational
+    owner: ledger
+    behavior_owner: ledger
+    audience: operational
+    artifact: none
+    auth: none
+    consumers: [prometheus, operator]
+    lifecycle: active
+    contract_version: v1
+    source: cmd/ledger-service/main.go
+  - id: ledger.metrics
+    service: ledger
+    method: GET
+    path: /metrics
+    kind: operational
+    owner: ledger
+    behavior_owner: ledger
+    audience: operational
+    artifact: none
+    auth: none
+    consumers: [prometheus]
+    lifecycle: active
+    contract_version: v1
+    source: cmd/ledger-service/main.go
+  - id: payin.health
+    service: payin
+    method: GET
+    path: /health
+    kind: operational
+    owner: payin
+    behavior_owner: payin
+    audience: operational
+    artifact: none
+    auth: none
+    consumers: [prometheus, operator]
+    lifecycle: active
+    contract_version: v1
+    source: cmd/payin-service/router.go
+  - id: payin.metrics
+    service: payin
+    method: GET
+    path: /metrics
+    kind: operational
+    owner: payin
+    behavior_owner: payin
+    audience: operational
+    artifact: none
+    auth: none
+    consumers: [prometheus]
+    lifecycle: active
+    contract_version: v1
+    source: cmd/payin-service/router.go
+  - id: payout.health
+    service: payout
+    method: GET
+    path: /health
+    kind: operational
+    owner: payout
+    behavior_owner: payout
+    audience: operational
+    artifact: none
+    auth: none
+    consumers: [prometheus, operator]
+    lifecycle: active
+    contract_version: v1
+    source: cmd/payout-service/router.go
+  - id: payout.metrics
+    service: payout
+    method: GET
+    path: /metrics
+    kind: operational
+    owner: payout
+    behavior_owner: payout
+    audience: operational
+    artifact: none
+    auth: none
+    consumers: [prometheus]
+    lifecycle: active
+    contract_version: v1
+    source: cmd/payout-service/router.go
+  - id: fraud.health
+    service: fraud
+    method: GET
+    path: /health
+    kind: operational
+    owner: fraud
+    behavior_owner: fraud
+    audience: operational
+    artifact: none
+    auth: none
+    consumers: [prometheus, operator]
+    lifecycle: active
+    contract_version: v1
+    source: cmd/fraud-service/router.go
+  - id: fraud.metrics
+    service: fraud
+    method: GET
+    path: /metrics
+    kind: operational
+    owner: fraud
+    behavior_owner: fraud
+    audience: operational
+    artifact: none
+    auth: none
+    consumers: [prometheus]
+    lifecycle: active
+    contract_version: v1
+    source: cmd/fraud-service/router.go
+  - id: assurance.health
+    service: assurance
+    method: GET
+    path: /health
+    kind: operational
+    owner: assurance
+    behavior_owner: assurance
+    audience: operational
+    artifact: none
+    auth: none
+    consumers: [prometheus, operator]
+    lifecycle: active
+    contract_version: v1
+    source: cmd/assurance-service/main.go
+  - id: assurance.ready
+    service: assurance
+    method: GET
+    path: /ready
+    kind: operational
+    owner: assurance
+    behavior_owner: assurance
+    audience: operational
+    artifact: none
+    auth: none
+    consumers: [prometheus, operator]
+    lifecycle: active
+    contract_version: v1
+    source: cmd/assurance-service/main.go
+  - id: assurance.metrics
+    service: assurance
+    method: GET
+    path: /metrics
+    kind: operational
+    owner: assurance
+    behavior_owner: assurance
+    audience: operational
+    artifact: none
+    auth: none
+    consumers: [prometheus]
+    lifecycle: active
+    contract_version: v1
+    source: cmd/assurance-service/main.go
+
+  # OpenAPI operations that are exposed through the ledger and Admin BFF
+  # mounts. They are listed separately from the parent mounts so the
+  # inventory can be checked bidirectionally against the four contracts.
+  - id: gateway.ledger.transactions.create
+    service: gateway
+    method: POST
+    path: /api/v1/ledger/transactions
+    kind: operation
+    owner: gateway
+    behavior_owner: ledger
+    audience: public
+    artifact: api/openapi/public-v1.yaml
+    auth: user-jwt
+    consumers: [external]
+    lifecycle: active
+    contract_version: v1
+    source: internal/handler/router.go
+  - id: gateway.ledger.transactions.get
+    service: gateway
+    method: GET
+    path: /api/v1/ledger/transactions/{id}
+    kind: operation
+    owner: gateway
+    behavior_owner: ledger
+    audience: public
+    artifact: api/openapi/public-v1.yaml
+    auth: user-jwt
+    consumers: [external]
+    lifecycle: active
+    contract_version: v1
+    source: internal/handler/router.go
+  - id: gateway.ledger.accounts.list
+    service: gateway
+    method: GET
+    path: /api/v1/ledger/accounts
+    kind: operation
+    owner: gateway
+    behavior_owner: ledger
+    audience: public
+    artifact: api/openapi/public-v1.yaml
+    auth: user-jwt
+    consumers: [external]
+    lifecycle: active
+    contract_version: v1
+    source: internal/handler/router.go
+  - id: gateway.ledger.accounts.balance
+    service: gateway
+    method: GET
+    path: /api/v1/ledger/accounts/{id}/balance
+    kind: operation
+    owner: gateway
+    behavior_owner: ledger
+    audience: public
+    artifact: api/openapi/public-v1.yaml
+    auth: user-jwt
+    consumers: [external]
+    lifecycle: active
+    contract_version: v1
+    source: internal/handler/router.go
+  - id: gateway.ledger.accounts.entries
+    service: gateway
+    method: GET
+    path: /api/v1/ledger/accounts/{id}/entries
+    kind: operation
+    owner: gateway
+    behavior_owner: ledger
+    audience: public
+    artifact: api/openapi/public-v1.yaml
+    auth: user-jwt
+    consumers: [external]
+    lifecycle: active
+    contract_version: v1
+    source: internal/handler/router.go
+  - id: gateway.ledger.accounts.statement
+    service: gateway
+    method: GET
+    path: /api/v1/ledger/accounts/{id}/statement
+    kind: operation
+    owner: gateway
+    behavior_owner: ledger
+    audience: public
+    artifact: api/openapi/public-v1.yaml
+    auth: user-jwt
+    consumers: [external]
+    lifecycle: active
+    contract_version: v1
+    source: internal/handler/router.go
+  - id: gateway.ledger.accounts.pockets
+    service: gateway
+    method: POST
+    path: /api/v1/ledger/accounts/pockets
+    kind: operation
+    owner: gateway
+    behavior_owner: ledger
+    audience: public
+    artifact: api/openapi/public-v1.yaml
+    auth: user-jwt
+    consumers: [external]
+    lifecycle: active
+    contract_version: v1
+    source: internal/handler/router.go
+  - id: gateway.ledger.fees.quote
+    service: gateway
+    method: POST
+    path: /api/v1/ledger/fees/quote
+    kind: operation
+    owner: gateway
+    behavior_owner: ledger
+    audience: public
+    artifact: api/openapi/public-v1.yaml
+    auth: user-jwt
+    consumers: [external]
+    lifecycle: active
+    contract_version: v1
+    source: internal/handler/router.go
+  - id: gateway.ledger.schedules.list
+    service: gateway
+    method: GET
+    path: /api/v1/ledger/schedules
+    kind: operation
+    owner: gateway
+    behavior_owner: ledger
+    audience: public
+    artifact: api/openapi/public-v1.yaml
+    auth: user-jwt
+    consumers: [external]
+    lifecycle: active
+    contract_version: v1
+    source: internal/handler/router.go
+  - id: gateway.ledger.schedules.create
+    service: gateway
+    method: POST
+    path: /api/v1/ledger/schedules
+    kind: operation
+    owner: gateway
+    behavior_owner: ledger
+    audience: public
+    artifact: api/openapi/public-v1.yaml
+    auth: user-jwt
+    consumers: [external]
+    lifecycle: active
+    contract_version: v1
+    source: internal/handler/router.go
+  - id: gateway.ledger.schedules.pause
+    service: gateway
+    method: POST
+    path: /api/v1/ledger/schedules/{id}/pause
+    kind: operation
+    owner: gateway
+    behavior_owner: ledger
+    audience: public
+    artifact: api/openapi/public-v1.yaml
+    auth: user-jwt
+    consumers: [external]
+    lifecycle: active
+    contract_version: v1
+    source: internal/handler/router.go
+  - id: gateway.ledger.schedules.resume
+    service: gateway
+    method: POST
+    path: /api/v1/ledger/schedules/{id}/resume
+    kind: operation
+    owner: gateway
+    behavior_owner: ledger
+    audience: public
+    artifact: api/openapi/public-v1.yaml
+    auth: user-jwt
+    consumers: [external]
+    lifecycle: active
+    contract_version: v1
+    source: internal/handler/router.go
+  - id: gateway.ledger.schedules.cancel
+    service: gateway
+    method: POST
+    path: /api/v1/ledger/schedules/{id}/cancel
+    kind: operation
+    owner: gateway
+    behavior_owner: ledger
+    audience: public
+    artifact: api/openapi/public-v1.yaml
+    auth: user-jwt
+    consumers: [external]
+    lifecycle: active
+    contract_version: v1
+    source: internal/handler/router.go
+
+  - id: admin-bff.audit.list
+    service: admin-bff
+    method: GET
+    path: /api/v1/admin/audit
+    kind: operation
+    owner: admin-bff
+    behavior_owner: admin-bff
+    audience: admin
+    artifact: api/openapi/admin-v1.yaml
+    auth: session+csrf
+    consumers: [operator]
+    lifecycle: active
+    contract_version: v1
+    source: internal/adminbff/module.go
+  - id: admin-bff.adjustments.create
+    service: admin-bff
+    method: POST
+    path: /api/v1/admin/adjustments
+    kind: operation
+    owner: admin-bff
+    behavior_owner: ledger
+    audience: admin
+    artifact: api/openapi/admin-v1.yaml
+    auth: session+csrf+maker
+    consumers: [operator]
+    lifecycle: active
+    contract_version: v1
+    source: internal/adminbff/module.go
+  - id: admin-bff.adjustments.list
+    service: admin-bff
+    method: GET
+    path: /api/v1/admin/adjustments
+    kind: operation
+    owner: admin-bff
+    behavior_owner: ledger
+    audience: admin
+    artifact: api/openapi/admin-v1.yaml
+    auth: session+csrf
+    consumers: [operator]
+    lifecycle: active
+    contract_version: v1
+    source: internal/adminbff/module.go
+  - id: admin-bff.adjustments.get
+    service: admin-bff
+    method: GET
+    path: /api/v1/admin/adjustments/{id}
+    kind: operation
+    owner: admin-bff
+    behavior_owner: ledger
+    audience: admin
+    artifact: api/openapi/admin-v1.yaml
+    auth: session+csrf
+    consumers: [operator]
+    lifecycle: active
+    contract_version: v1
+    source: internal/adminbff/module.go
+  - id: admin-bff.adjustments.approve
+    service: admin-bff
+    method: POST
+    path: /api/v1/admin/adjustments/approve
+    kind: operation
+    owner: admin-bff
+    behavior_owner: ledger
+    audience: admin
+    artifact: api/openapi/admin-v1.yaml
+    auth: session+csrf+checker
+    consumers: [operator]
+    lifecycle: active
+    contract_version: v1
+    source: internal/adminbff/module.go
+  - id: admin-bff.adjustments.reject
+    service: admin-bff
+    method: POST
+    path: /api/v1/admin/adjustments/reject
+    kind: operation
+    owner: admin-bff
+    behavior_owner: ledger
+    audience: admin
+    artifact: api/openapi/admin-v1.yaml
+    auth: session+csrf+checker
+    consumers: [operator]
+    lifecycle: active
+    contract_version: v1
+    source: internal/adminbff/module.go
+  - id: admin-bff.recon.batches.list
+    service: admin-bff
+    method: GET
+    path: /api/v1/admin/recon/batches
+    kind: operation
+    owner: admin-bff
+    behavior_owner: ledger
+    audience: admin
+    artifact: api/openapi/admin-v1.yaml
+    auth: session+csrf
+    consumers: [operator]
+    lifecycle: active
+    contract_version: v1
+    source: internal/adminbff/module.go
+  - id: admin-bff.recon.batches.create
+    service: admin-bff
+    method: POST
+    path: /api/v1/admin/recon/batches
+    kind: operation
+    owner: admin-bff
+    behavior_owner: ledger
+    audience: admin
+    artifact: api/openapi/admin-v1.yaml
+    auth: session+csrf+maker
+    consumers: [operator]
+    lifecycle: active
+    contract_version: v1
+    source: internal/adminbff/module.go
+  - id: admin-bff.ledger.fee-rules.list
+    service: admin-bff
+    method: GET
+    path: /api/v1/admin/ledger/fee-rules
+    kind: operation
+    owner: admin-bff
+    behavior_owner: ledger
+    audience: admin
+    artifact: api/openapi/admin-v1.yaml
+    auth: session+csrf
+    consumers: [operator]
+    lifecycle: active
+    contract_version: v1
+    source: internal/adminbff/module.go
+  - id: admin-bff.ledger.fee-rules.create
+    service: admin-bff
+    method: POST
+    path: /api/v1/admin/ledger/fee-rules
+    kind: operation
+    owner: admin-bff
+    behavior_owner: ledger
+    audience: admin
+    artifact: api/openapi/admin-v1.yaml
+    auth: session+csrf+maker
+    consumers: [operator]
+    lifecycle: active
+    contract_version: v1
+    source: internal/adminbff/module.go
+  - id: admin-bff.ledger.fee-rules.update
+    service: admin-bff
+    method: PUT
+    path: /api/v1/admin/ledger/fee-rules/{id}
+    kind: operation
+    owner: admin-bff
+    behavior_owner: ledger
+    audience: admin
+    artifact: api/openapi/admin-v1.yaml
+    auth: session+csrf+maker
+    consumers: [operator]
+    lifecycle: active
+    contract_version: v1
+    source: internal/adminbff/module.go
+  - id: admin-bff.kyc.submissions.list
+    service: admin-bff
+    method: GET
+    path: /api/v1/admin/kyc/submissions
+    kind: operation
+    owner: admin-bff
+    behavior_owner: auth
+    audience: admin
+    artifact: api/openapi/admin-v1.yaml
+    auth: session+csrf
+    consumers: [operator]
+    lifecycle: active
+    contract_version: v1
+    source: internal/adminbff/module.go
+  - id: admin-bff.privacy.requests.list
+    service: admin-bff
+    method: GET
+    path: /api/v1/admin/privacy/requests
+    kind: operation
+    owner: admin-bff
+    behavior_owner: auth
+    audience: admin
+    artifact: api/openapi/admin-v1.yaml
+    auth: session+csrf
+    consumers: [operator]
+    lifecycle: active
+    contract_version: v1
+    source: internal/adminbff/module.go
+  - id: admin-bff.gateway.status
+    service: admin-bff
+    method: GET
+    path: /api/v1/admin/gateway/status
+    kind: operation
+    owner: admin-bff
+    behavior_owner: gateway
+    audience: admin
+    artifact: api/openapi/admin-v1.yaml
+    auth: session+csrf
+    consumers: [operator]
+    lifecycle: active
+    contract_version: v1
+    source: internal/adminbff/module.go
+
+  - id: ledger.internal.transactions.create
+    service: ledger
+    method: POST
+    path: /api/v1/ledger/transactions
+    kind: operation
+    owner: ledger
+    behavior_owner: ledger
+    audience: internal
+    artifact: api/openapi/internal-v1.yaml
+    auth: service-mtls+internal-token
+    consumers: [payin, payout, auth, gateway]
+    lifecycle: active
+    contract_version: v1
+    source: internal/ledger/transport/http.go
+  - id: ledger.internal.transactions.get
+    service: ledger
+    method: GET
+    path: /api/v1/ledger/transactions/{id}
+    kind: operation
+    owner: ledger
+    behavior_owner: ledger
+    audience: internal
+    artifact: api/openapi/internal-v1.yaml
+    auth: service-mtls+internal-token
+    consumers: [assurance, auth]
+    lifecycle: active
+    contract_version: v1
+    source: internal/ledger/transport/http.go
+  - id: ledger.internal.accounts.list
+    service: ledger
+    method: GET
+    path: /api/v1/ledger/accounts
+    kind: operation
+    owner: ledger
+    behavior_owner: ledger
+    audience: internal
+    artifact: api/openapi/internal-v1.yaml
+    auth: service-mtls+internal-token
+    consumers: [assurance]
+    lifecycle: active
+    contract_version: v1
+    source: internal/ledger/transport/http.go
+  - id: ledger.internal.accounts.balance
+    service: ledger
+    method: GET
+    path: /api/v1/ledger/accounts/{id}/balance
+    kind: operation
+    owner: ledger
+    behavior_owner: ledger
+    audience: internal
+    artifact: api/openapi/internal-v1.yaml
+    auth: service-mtls+internal-token
+    consumers: [assurance]
+    lifecycle: active
+    contract_version: v1
+    source: internal/ledger/transport/http.go
+  - id: ledger.internal.accounts.entries
+    service: ledger
+    method: GET
+    path: /api/v1/ledger/accounts/{id}/entries
+    kind: operation
+    owner: ledger
+    behavior_owner: ledger
+    audience: internal
+    artifact: api/openapi/internal-v1.yaml
+    auth: service-mtls+internal-token
+    consumers: [assurance]
+    lifecycle: active
+    contract_version: v1
+    source: internal/ledger/transport/http.go
+  - id: ledger.internal.accounts.statement
+    service: ledger
+    method: GET
+    path: /api/v1/ledger/accounts/{id}/statement
+    kind: operation
+    owner: ledger
+    behavior_owner: ledger
+    audience: internal
+    artifact: api/openapi/internal-v1.yaml
+    auth: service-mtls+internal-token
+    consumers: [assurance]
+    lifecycle: active
+    contract_version: v1
+    source: internal/ledger/transport/http.go
+  - id: ledger.internal.accounts.pockets
+    service: ledger
+    method: POST
+    path: /api/v1/ledger/accounts/pockets
+    kind: operation
+    owner: ledger
+    behavior_owner: ledger
+    audience: internal
+    artifact: api/openapi/internal-v1.yaml
+    auth: service-mtls+internal-token
+    consumers: [gateway]
+    lifecycle: active
+    contract_version: v1
+    source: internal/ledger/transport/http.go
+  - id: ledger.internal.schedules.list
+    service: ledger
+    method: GET
+    path: /api/v1/ledger/schedules
+    kind: operation
+    owner: ledger
+    behavior_owner: ledger
+    audience: internal
+    artifact: api/openapi/internal-v1.yaml
+    auth: service-mtls+internal-token
+    consumers: [gateway]
+    lifecycle: active
+    contract_version: v1
+    source: internal/ledger/transport/http.go
+  - id: ledger.internal.schedules.create
+    service: ledger
+    method: POST
+    path: /api/v1/ledger/schedules
+    kind: operation
+    owner: ledger
+    behavior_owner: ledger
+    audience: internal
+    artifact: api/openapi/internal-v1.yaml
+    auth: service-mtls+internal-token
+    consumers: [gateway]
+    lifecycle: active
+    contract_version: v1
+    source: internal/ledger/transport/http.go
+  - id: ledger.internal.outbox.dead
+    service: ledger
+    method: GET
+    path: /api/v1/ledger/admin/outbox/dead
+    kind: operation
+    owner: ledger
+    behavior_owner: ledger
+    audience: internal
+    artifact: api/openapi/internal-v1.yaml
+    auth: service-mtls+admin-jwt
+    consumers: [operator]
+    lifecycle: active
+    contract_version: v1
+    source: internal/ledger/transport/http.go
+  - id: ledger.internal.outbox.replay-all
+    service: ledger
+    method: POST
+    path: /api/v1/ledger/admin/outbox/dead/replay-all
+    kind: operation
+    owner: ledger
+    behavior_owner: ledger
+    audience: internal
+    artifact: api/openapi/internal-v1.yaml
+    auth: service-mtls+admin-jwt
+    consumers: [operator]
+    lifecycle: active
+    contract_version: v1
+    source: internal/ledger/transport/http.go
+  - id: ledger.internal.outbox.replay
+    service: ledger
+    method: POST
+    path: /api/v1/ledger/admin/outbox/dead/{id}/replay
+    kind: operation
+    owner: ledger
+    behavior_owner: ledger
+    audience: internal
+    artifact: api/openapi/internal-v1.yaml
+    auth: service-mtls+admin-jwt
+    consumers: [operator]
+    lifecycle: active
+    contract_version: v1
+    source: internal/ledger/transport/http.go
+  - id: policy.internal.limits.get
+    service: policy
+    method: GET
+    path: /api/v1/admin/policy/limits
+    kind: operation
+    owner: policy
+    behavior_owner: policy
+    audience: internal
+    artifact: api/openapi/internal-v1.yaml
+    auth: service-mtls+admin-jwt
+    consumers: [admin-bff, operator]
+    lifecycle: active
+    contract_version: v1
+    source: internal/policy/http.go
+  - id: policy.internal.limits.update
+    service: policy
+    method: PUT
+    path: /api/v1/admin/policy/limits
+    kind: operation
+    owner: policy
+    behavior_owner: policy
+    audience: internal
+    artifact: api/openapi/internal-v1.yaml
+    auth: service-mtls+admin-jwt
+    consumers: [admin-bff, operator]
+    lifecycle: active
+    contract_version: v1
+    source: internal/policy/http.go
+  - id: payin.internal.events.list
+    service: payin
+    method: GET
+    path: /admin/payin/events
+    kind: operation
+    owner: payin
+    behavior_owner: payin
+    audience: internal
+    artifact: api/openapi/internal-v1.yaml
+    auth: service-mtls+admin-jwt
+    consumers: [admin-bff, operator]
+    lifecycle: active
+    contract_version: v1
+    source: internal/payin/http.go
+  - id: payin.internal.routing.list
+    service: payin
+    method: GET
+    path: /admin/payin/routing-rules
+    kind: operation
+    owner: payin
+    behavior_owner: payin
+    audience: internal
+    artifact: api/openapi/internal-v1.yaml
+    auth: service-mtls+admin-jwt
+    consumers: [admin-bff, operator]
+    lifecycle: active
+    contract_version: v1
+    source: internal/payin/http.go
+  - id: payin.internal.routing.create
+    service: payin
+    method: POST
+    path: /admin/payin/routing-rules
+    kind: operation
+    owner: payin
+    behavior_owner: payin
+    audience: internal
+    artifact: api/openapi/internal-v1.yaml
+    auth: service-mtls+admin-jwt
+    consumers: [admin-bff, operator]
+    lifecycle: active
+    contract_version: v1
+    source: internal/payin/http.go
+  - id: payout.internal.requests.list
+    service: payout
+    method: GET
+    path: /admin/payout/requests
+    kind: operation
+    owner: payout
+    behavior_owner: payout
+    audience: internal
+    artifact: api/openapi/internal-v1.yaml
+    auth: service-mtls+admin-jwt
+    consumers: [admin-bff, operator]
+    lifecycle: active
+    contract_version: v1
+    source: internal/payout/http.go
+  - id: payout.internal.routing.list
+    service: payout
+    method: GET
+    path: /admin/payout/routing-rules
+    kind: operation
+    owner: payout
+    behavior_owner: payout
+    audience: internal
+    artifact: api/openapi/internal-v1.yaml
+    auth: service-mtls+admin-jwt
+    consumers: [admin-bff, operator]
+    lifecycle: active
+    contract_version: v1
+    source: internal/payout/http.go
+  - id: payout.internal.routing.create
+    service: payout
+    method: POST
+    path: /admin/payout/routing-rules
+    kind: operation
+    owner: payout
+    behavior_owner: payout
+    audience: internal
+    artifact: api/openapi/internal-v1.yaml
+    auth: service-mtls+admin-jwt
+    consumers: [admin-bff, operator]
+    lifecycle: active
+    contract_version: v1
+    source: internal/payout/http.go
+  - id: assurance.internal.summary
+    service: assurance
+    method: GET
+    path: /admin/assurance/summary
+    kind: operation
+    owner: assurance
+    behavior_owner: assurance
+    audience: internal
+    artifact: api/openapi/internal-v1.yaml
+    auth: service-mtls+admin-jwt
+    consumers: [operator]
+    lifecycle: active
+    contract_version: v1
+    source: internal/assurance/http.go
+  - id: assurance.internal.findings
+    service: assurance
+    method: GET
+    path: /admin/assurance/findings
+    kind: operation
+    owner: assurance
+    behavior_owner: assurance
+    audience: internal
+    artifact: api/openapi/internal-v1.yaml
+    auth: service-mtls+admin-jwt
+    consumers: [operator]
+    lifecycle: active
+    contract_version: v1
+    source: internal/assurance/http.go
+  - id: fraud.internal.events
+    service: fraud
+    method: GET
+    path: /api/v1/admin/fraud/events
+    kind: operation
+    owner: fraud
+    behavior_owner: fraud
+    audience: internal
+    artifact: api/openapi/internal-v1.yaml
+    auth: service-mtls+admin-jwt
+    consumers: [admin-bff, operator]
+    lifecycle: active
+    contract_version: v1
+    source: internal/fraud/http.go
+  - id: auth.internal.privacy.export
+    service: auth
+    method: GET
+    path: /privacy/export
+    kind: operation
+    owner: auth
+    behavior_owner: auth
+    audience: internal
+    artifact: api/openapi/internal-v1.yaml
+    auth: service-mtls+internal-token
+    consumers: [operator]
+    lifecycle: active
+    contract_version: v1
+    source: internal/auth/privacy_http.go
+  - id: auth.internal.privacy.closure.prepare
+    service: auth
+    method: POST
+    path: /privacy/closure/prepare
+    kind: operation
+    owner: auth
+    behavior_owner: auth
+    audience: internal
+    artifact: api/openapi/internal-v1.yaml
+    auth: service-mtls+internal-token
+    consumers: [operator]
+    lifecycle: active
+    contract_version: v1
+    source: internal/auth/privacy_http.go
+  - id: auth.internal.privacy.closure.commit
+    service: auth
+    method: POST
+    path: /privacy/closure/commit
+    kind: operation
+    owner: auth
+    behavior_owner: auth
+    audience: internal
+    artifact: api/openapi/internal-v1.yaml
+    auth: service-mtls+internal-token
+    consumers: [operator]
+    lifecycle: active
+    contract_version: v1
+    source: internal/auth/privacy_http.go
+
+leaf_registrations_file: api/contracts/leaf-registrations.yaml
+
+rpc:
+  - id: fraud.v1.FraudService
+    owner: fraud
+    package: seev.fraud.v1
+    service: FraudService
+    version: v1
+    audience: internal
+    artifact: api/proto/seev/fraud/v1/fraud.proto
+    consumers: [auth, ledger, payin, payout]
+    methods:
+      - Screen
+  - id: ledger.v1.LedgerService
+    owner: ledger
+    package: seev.ledger.v1
+    service: LedgerService
+    version: v1
+    audience: internal
+    artifact: api/proto/seev/ledger/v1/ledger.proto
+    consumers: [auth, assurance, gateway, payin, payout]
+    methods:
+      - Post
+      - GetTransactionByIdempotencyKey
+      - GetUserCurrency
+      - ResolveFee
+      - ProvisionUser
+      - ConsumeFeeQuote
+      - ApplyKycTier
+      - BatchGetAssuranceTransactions
+  - id: payin.v1.PayinService
+    owner: payin
+    package: seev.payin.v1
+    service: PayinService
+    version: v1
+    audience: internal
+    artifact: api/proto/seev/payin/v1/payin.proto
+    consumers: [assurance, gateway, vendor-service]
+    methods:
+      - HandleWebhook
+      - HandleVendorCallback
+      - CreateTopupIntent
+      - GetTopupIntent
+      - ListAssuranceRecords
+      - GetIntakeControl
+      - ApplyIntakeControl
+  - id: payout.v1.PayoutService
+    owner: payout
+    package: seev.payout.v1
+    service: PayoutService
+    version: v1
+    audience: internal
+    artifact: api/proto/seev/payout/v1/payout.proto
+    consumers: [assurance, gateway, vendor-service]
+    methods:
+      - CreatePayout
+      - HandleVendorCallback
+      - GetPayout
+      - ListAssuranceRecords
+      - GetIntakeControl
+      - ApplyIntakeControl
+  - id: vendorservice.v1.VendorService
+    owner: vendor
+    package: seev.vendorservice.v1
+    service: VendorService
+    version: v1
+    audience: internal
+    artifact: api/proto/seev/vendorservice/v1/vendor_service.proto
+    consumers: [payin, payout]
+    methods:
+      - CreatePayinSession
+      - SubmitPayout
+      - QueryPayout
+  - id: ping.v1.PingService
+    owner: platform
+    package: seev.ping.v1
+    service: PingService
+    version: v1
+    audience: operational
+    artifact: api/proto/seev/ping/v1/ping.proto
+    consumers: [gateway, assurance, operator]
+    methods:
+      - Ping
+
+events:
+  - id: ledger.transaction.posted.v1
+    owner: ledger
+    routing_key: ledger.transaction.posted.v1
+    schema_version: v1
+    artifact: api/events/ledger/transaction-posted/v1.schema.json
+    producer: ledger
+    consumers: [fraud, notify]
+    queues: [ledger.events.fraud, ledger.events.notifications]
+    delivery: at-least-once
+    ordering: none
+    deduplication_key: amqp.message_id
+    data_classification: confidential
+    lifecycle: active
+  - id: ledger.transaction.reversed.v1
+    owner: ledger
+    routing_key: ledger.transaction.reversed.v1
+    schema_version: v1
+    artifact: api/events/ledger/transaction-reversed/v1.schema.json
+    producer: ledger
+    consumers: [ledger.events.audit]
+    queues: [ledger.events.audit]
+    delivery: at-least-once
+    ordering: none
+    deduplication_key: amqp.message_id
+    data_classification: confidential
+    lifecycle: active
+  - id: ledger.adjustment.decided.v1
+    owner: ledger
+    routing_key: ledger.adjustment.decided.v1
+    schema_version: v1
+    artifact: api/events/ledger/adjustment-decided/v1.schema.json
+    producer: ledger
+    consumers: [ledger.events.audit]
+    queues: [ledger.events.audit]
+    delivery: at-least-once
+    ordering: none
+    deduplication_key: amqp.message_id
+    data_classification: confidential
+    lifecycle: active

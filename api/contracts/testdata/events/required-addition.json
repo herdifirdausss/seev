@@ -1,0 +1,11 @@
+{
+  "type": "object",
+  "required": ["schema_version", "event_id", "amount", "description"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "event_id": {"type": "string", "format": "uuid"},
+    "amount": {"type": "string"},
+    "currency": {"type": "string"},
+    "description": {"type": "string"}
+  }
+}

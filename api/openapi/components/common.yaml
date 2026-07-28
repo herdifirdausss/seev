@@ -1,0 +1,259 @@
+openapi: 3.1.0
+info:
+  title: Seev shared contract components
+  version: 1.0.0
+components:
+  requestBodies:
+    JSON:
+      required: true
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/JSONRequest'}
+    Form:
+      required: true
+      content:
+        application/x-www-form-urlencoded:
+          schema: {$ref: '#/components/schemas/JSONRequest'}
+    Register:
+      required: true
+      content: {application/json: {schema: {$ref: '#/components/schemas/RegisterRequest'}}}
+    Login:
+      required: true
+      content: {application/json: {schema: {$ref: '#/components/schemas/LoginRequest'}}}
+    Refresh:
+      required: true
+      content: {application/json: {schema: {$ref: '#/components/schemas/RefreshRequest'}}}
+    UpdateMe:
+      required: true
+      content: {application/json: {schema: {$ref: '#/components/schemas/UpdateMeRequest'}}}
+    KYCSubmit:
+      required: true
+      content: {application/json: {schema: {$ref: '#/components/schemas/KYCSubmitRequest'}}}
+    PostTransaction:
+      required: true
+      content: {application/json: {schema: {$ref: '#/components/schemas/PostTransactionRequest'}}}
+    Quote:
+      required: true
+      content: {application/json: {schema: {$ref: '#/components/schemas/QuoteRequest'}}}
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: seev_session
+    internalToken:
+      type: apiKey
+      in: header
+      name: X-Internal-Token
+    vendorSignature:
+      type: apiKey
+      in: header
+      name: X-Mock-Signature
+  parameters:
+    RequestID:
+      name: X-Request-ID
+      in: header
+      required: false
+      schema: {type: string, minLength: 1, maxLength: 128}
+    UUID:
+      name: id
+      in: path
+      required: true
+      schema: {$ref: '#/components/schemas/UUID'}
+    Vendor:
+      name: vendor
+      in: path
+      required: true
+      schema: {type: string, minLength: 1, maxLength: 64, pattern: '^[a-z0-9_-]+$'}
+    Rule:
+      name: rule
+      in: path
+      required: true
+      schema: {type: string, minLength: 1, maxLength: 128}
+    Flow:
+      name: flow
+      in: path
+      required: true
+      schema: {type: string, minLength: 1, maxLength: 64}
+    AccountID:
+      name: account_id
+      in: path
+      required: true
+      schema: {$ref: '#/components/schemas/UUID'}
+  schemas:
+    UUID:
+      type: string
+      format: uuid
+      examples: ['00000000-0000-7000-8000-000000000001']
+    Timestamp:
+      type: string
+      format: date-time
+      examples: ['2026-01-02T03:04:05Z']
+    MoneyMinor:
+      type: string
+      pattern: '^[0-9]+$'
+      description: Non-negative integer amount in currency minor units; never a floating-point JSON number.
+      examples: ['125000']
+    Currency:
+      type: string
+      pattern: '^[A-Z]{3}$'
+      examples: [IDR]
+    SuccessEnvelope:
+      type: object
+      required: [success, data]
+      additionalProperties: false
+      properties:
+        success: {const: true}
+        data: {}
+        meta:
+          type: object
+          additionalProperties: true
+    Error:
+      type: object
+      required: [code, message]
+      additionalProperties: false
+      properties:
+        code: {type: string, pattern: '^[A-Z][A-Z0-9_]{2,63}$'}
+        message: {type: string, minLength: 1, maxLength: 512}
+        details:
+          type: object
+          additionalProperties: true
+    ErrorEnvelope:
+      type: object
+      required: [success, error]
+      additionalProperties: false
+      properties:
+        success: {const: false}
+        error: {$ref: '#/components/schemas/Error'}
+    JSONRequest:
+      type: object
+      additionalProperties: true
+      description: Operation-specific request schemas tighten this shape; this shared fallback is not a permission to accept unknown fields.
+    RegisterRequest:
+      type: object
+      required: [email, password, full_name]
+      additionalProperties: false
+      properties:
+        email: {type: string, format: email, maxLength: 320}
+        password: {type: string, minLength: 12, maxLength: 128, writeOnly: true}
+        full_name: {type: string, minLength: 1, maxLength: 200}
+      examples: [{email: synthetic.user@example.invalid, password: synthetic-password-not-a-secret, full_name: Synthetic User}]
+    LoginRequest:
+      type: object
+      required: [email, password]
+      additionalProperties: false
+      properties:
+        email: {type: string, format: email, maxLength: 320}
+        password: {type: string, minLength: 1, maxLength: 128, writeOnly: true}
+    RefreshRequest:
+      type: object
+      required: [refresh_token]
+      additionalProperties: false
+      properties:
+        refresh_token: {type: string, minLength: 1, maxLength: 4096, writeOnly: true}
+    UpdateMeRequest:
+      type: object
+      required: [full_name]
+      additionalProperties: false
+      properties: {full_name: {type: string, minLength: 1, maxLength: 200}}
+    KYCSubmitRequest:
+      type: object
+      required: [level_requested, payload]
+      additionalProperties: false
+      properties:
+        level_requested: {type: integer, minimum: 1, maximum: 3}
+        payload: {type: object, additionalProperties: true}
+    PostTransactionRequest:
+      type: object
+      required: [idempotency_key, type, amount]
+      additionalProperties: false
+      properties:
+        idempotency_key: {type: string, minLength: 8, maxLength: 128}
+        idempotency_scope: {type: string, maxLength: 64}
+        type: {type: string, minLength: 1, maxLength: 64}
+        amount: {$ref: '#/components/schemas/MoneyMinor'}
+        target_user_id: {$ref: '#/components/schemas/UUID'}
+        pocket_code: {type: string, maxLength: 64}
+        reference_id: {type: string, maxLength: 128}
+        metadata: {type: object, additionalProperties: true}
+        quote_id: {$ref: '#/components/schemas/UUID'}
+    QuoteRequest:
+      type: object
+      required: [transaction_type, amount]
+      additionalProperties: false
+      properties:
+        transaction_type: {type: string, minLength: 1, maxLength: 64}
+        amount: {$ref: '#/components/schemas/MoneyMinor'}
+        currency: {$ref: '#/components/schemas/Currency'}
+        gateway: {type: string, maxLength: 64}
+    PaginationQuery:
+      type: object
+      properties:
+        cursor: {type: string, maxLength: 512}
+        limit: {type: integer, minimum: 1, maximum: 100}
+    Health:
+      type: object
+      required: [status]
+      additionalProperties: false
+      properties:
+        status: {type: string, enum: [ok, ready, not_ready]}
+  responses:
+    Success:
+      description: Successful JSON response.
+      headers:
+        X-Request-ID:
+          description: Correlation identifier echoed by the server.
+          schema: {type: string, minLength: 1, maxLength: 128}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/SuccessEnvelope'}
+    Accepted:
+      description: Accepted for asynchronous processing.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/SuccessEnvelope'}
+    NoContent:
+      description: Operation completed without a response body.
+    CSV:
+      description: CSV report.
+      content:
+        text/csv:
+          schema: {type: string}
+    Statement:
+      description: Account statement in JSON or CSV form, selected by the format query parameter.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/SuccessEnvelope'}
+        text/csv:
+          schema: {type: string}
+    Binary:
+      description: Binary document.
+      content:
+        application/octet-stream:
+          schema: {type: string, format: binary}
+    BadRequest:
+      description: Invalid request, including unknown fields.
+      content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}
+    Unauthorized:
+      description: Authentication is required or invalid.
+      content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}
+    Forbidden:
+      description: Authenticated principal lacks permission.
+      content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}
+    NotFound:
+      description: Resource was not found.
+      content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}
+    Conflict:
+      description: Idempotency or state conflict.
+      content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}
+    TooManyRequests:
+      description: Rate limit exceeded.
+      headers:
+        Retry-After: {schema: {type: integer, minimum: 1}}
+      content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}
+    Unavailable:
+      description: A dependency is temporarily unavailable.
+      content: {application/json: {schema: {$ref: '#/components/schemas/ErrorEnvelope'}}}

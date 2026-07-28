@@ -46,6 +46,7 @@ var knownServices = map[string]string{
 	"payin":        tlsx.IdentityPayin,
 	"payout":       tlsx.IdentityPayout,
 	"fraud":        tlsx.IdentityFraud,
+	"vendor":       tlsx.IdentityVendor,
 	"admin-bff":    tlsx.IdentityAdminBFF,
 	"assurance":    tlsx.IdentityAssurance,
 	"dev-operator": tlsx.IdentityDevOperator,

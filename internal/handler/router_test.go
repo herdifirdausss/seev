@@ -147,6 +147,12 @@ func TestRouter_RemovedAdminUsersRoute_Returns404(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, w.Code)
 }
 
+func TestRouter_VendorCallbackRoute_IsOwnedByVendorService(t *testing.T) {
+	router := newTestRouter(testConfig())
+	w := doRequest(t, router, http.MethodPost, "/webhooks/mockvendor")
+	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
 func TestRouter_LedgerProxy_PreservesPathAndQuery(t *testing.T) {
 	seen := make(chan string, 1)
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

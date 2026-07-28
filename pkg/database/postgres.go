@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"github.com/prometheus/client_golang/prometheus"
 	"log/slog"
 	"time"
 
@@ -46,7 +47,15 @@ func New(ctx context.Context, cfg Config) (*DBSQL, error) {
 		"max_open", cfg.MaxOpenConns, "max_idle", cfg.MaxIdleConns,
 	)
 
-	return &DBSQL{db: sqlDB, cfg: cfg}, nil
+	db := &DBSQL{db: sqlDB, cfg: cfg}
+	if owner := poolOwner(cfg.DB); owner != "" {
+		if err := RegisterPoolMetrics(prometheus.DefaultRegisterer, owner, db); err != nil {
+			if _, duplicate := err.(prometheus.AlreadyRegisteredError); !duplicate {
+				slog.Warn("postgres: pool metrics unavailable", "owner", owner, "error", err)
+			}
+		}
+	}
+	return db, nil
 }
 
 // NewFromSQL wraps an existing *sql.DB — useful for testing with sqlmock.

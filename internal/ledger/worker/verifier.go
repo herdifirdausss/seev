@@ -132,6 +132,15 @@ func (v *Verifier) checkOutboxLag(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	if oldest.IsZero() {
+		outboxOldestPendingAgeGauge.Set(0)
+	} else {
+		age := time.Since(oldest).Seconds()
+		if age < 0 {
+			age = 0
+		}
+		outboxOldestPendingAgeGauge.Set(age)
+	}
 	if count == 0 || oldest.IsZero() {
 		return nil
 	}

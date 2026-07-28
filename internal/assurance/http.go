@@ -16,7 +16,9 @@ import (
 
 	payinv1 "github.com/herdifirdausss/seev/gen/payin/v1"
 	payoutv1 "github.com/herdifirdausss/seev/gen/payout/v1"
+	"github.com/herdifirdausss/seev/pkg/httpcontract"
 	"github.com/herdifirdausss/seev/pkg/middleware"
+	"github.com/herdifirdausss/seev/pkg/response"
 )
 
 type payinControlReader interface {
@@ -29,7 +31,7 @@ type payoutControlReader interface {
 }
 
 func (m *Module) AdminRouter() http.Handler {
-	mux := http.NewServeMux()
+	mux := httpcontract.New(httpcontract.Options{Owner: "assurance", Audience: "admin", Contract: "internal-v1"})
 	mux.HandleFunc("GET /admin/assurance/summary", m.summaryHandler)
 	mux.HandleFunc("GET /admin/assurance/findings", m.findingsHandler)
 	mux.HandleFunc("GET /admin/assurance/runs", m.runsHandler)
@@ -68,19 +70,32 @@ func actorFromRequest(r *http.Request) string {
 }
 
 func writeJSON(w http.ResponseWriter, code int, value any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(code)
-	_ = json.NewEncoder(w).Encode(value)
+	response.JSON(w, code, response.Envelope{Success: code < 400, Data: value})
+}
+
+func writeError(w http.ResponseWriter, message string, status int) {
+	code := map[int]string{
+		http.StatusBadRequest:          "BAD_REQUEST",
+		http.StatusForbidden:           "FORBIDDEN",
+		http.StatusNotFound:            "NOT_FOUND",
+		http.StatusConflict:            "CONFLICT",
+		http.StatusServiceUnavailable:  "DOWNSTREAM_UNAVAILABLE",
+		http.StatusInternalServerError: "INTERNAL_ERROR",
+	}[status]
+	if code == "" {
+		code = "INTERNAL_ERROR"
+	}
+	response.ErrorStatus(w, status, code, message)
 }
 
 func (m *Module) summaryHandler(w http.ResponseWriter, r *http.Request) {
 	if !m.authorized(r, "admin", "admin_maker", "admin_checker") {
-		http.Error(w, "forbidden", http.StatusForbidden)
+		writeError(w, "forbidden", http.StatusForbidden)
 		return
 	}
 	rows, err := m.db.QueryContext(r.Context(), `SELECT severity, status, COUNT(*), COALESCE(SUM(amount_minor),0) FROM assurance_findings GROUP BY severity, status ORDER BY severity, status`)
 	if err != nil {
-		http.Error(w, "assurance unavailable", http.StatusServiceUnavailable)
+		writeError(w, "assurance unavailable", http.StatusServiceUnavailable)
 		return
 	}
 	defer rows.Close()
@@ -94,7 +109,7 @@ func (m *Module) summaryHandler(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var value item
 		if err := rows.Scan(&value.Severity, &value.Status, &value.Count, &value.Amount); err != nil {
-			http.Error(w, "assurance unavailable", http.StatusInternalServerError)
+			writeError(w, "assurance unavailable", http.StatusInternalServerError)
 			return
 		}
 		items = append(items, value)
@@ -104,14 +119,14 @@ func (m *Module) summaryHandler(w http.ResponseWriter, r *http.Request) {
 
 func (m *Module) findingsHandler(w http.ResponseWriter, r *http.Request) {
 	if !m.authorized(r, "admin", "admin_maker", "admin_checker") {
-		http.Error(w, "forbidden", http.StatusForbidden)
+		writeError(w, "forbidden", http.StatusForbidden)
 		return
 	}
 	limit := 200
 	if raw := r.URL.Query().Get("limit"); raw != "" {
 		value, err := strconv.Atoi(raw)
 		if err != nil || value <= 0 || value > 200 {
-			http.Error(w, "limit must be between 1 and 200", http.StatusBadRequest)
+			writeError(w, "limit must be between 1 and 200", http.StatusBadRequest)
 			return
 		}
 		limit = value
@@ -128,7 +143,7 @@ func (m *Module) findingsHandler(w http.ResponseWriter, r *http.Request) {
 	query := `SELECT id, fingerprint, severity, rule_code, resource_id, amount_minor, currency, evidence, first_seen_at, last_seen_at, occurrence_count, status FROM assurance_findings WHERE ` + strings.Join(where, " AND ") + fmt.Sprintf(" ORDER BY last_seen_at DESC, id DESC LIMIT $%d", len(args))
 	rows, err := m.db.QueryContext(r.Context(), query, args...)
 	if err != nil {
-		http.Error(w, "assurance unavailable", http.StatusServiceUnavailable)
+		writeError(w, "assurance unavailable", http.StatusServiceUnavailable)
 		return
 	}
 	defer rows.Close()
@@ -139,7 +154,7 @@ func (m *Module) findingsHandler(w http.ResponseWriter, r *http.Request) {
 		var evidence []byte
 		var firstSeen, lastSeen time.Time
 		if err := rows.Scan(&id, &fingerprint, &severity, &rule, &resource, &amount, &currency, &evidence, &firstSeen, &lastSeen, &occurrences, &statusValue); err != nil {
-			http.Error(w, "assurance unavailable", http.StatusInternalServerError)
+			writeError(w, "assurance unavailable", http.StatusInternalServerError)
 			return
 		}
 		var evidenceValue any
@@ -151,12 +166,12 @@ func (m *Module) findingsHandler(w http.ResponseWriter, r *http.Request) {
 
 func (m *Module) runsHandler(w http.ResponseWriter, r *http.Request) {
 	if !m.authorized(r, "admin", "admin_maker", "admin_checker") {
-		http.Error(w, "forbidden", http.StatusForbidden)
+		writeError(w, "forbidden", http.StatusForbidden)
 		return
 	}
 	rows, err := m.db.QueryContext(r.Context(), `SELECT id, mode, status, baseline, cutoff_at, started_at, finished_at, records_scanned, pages_scanned, findings_opened, error_code FROM assurance_runs ORDER BY started_at DESC, id DESC LIMIT 200`)
 	if err != nil {
-		http.Error(w, "assurance unavailable", http.StatusServiceUnavailable)
+		writeError(w, "assurance unavailable", http.StatusServiceUnavailable)
 		return
 	}
 	defer rows.Close()
@@ -169,7 +184,7 @@ func (m *Module) runsHandler(w http.ResponseWriter, r *http.Request) {
 		var finished sql.NullTime
 		var scanned, pages, opened int
 		if err := rows.Scan(&id, &mode, &statusValue, &baseline, &cutoff, &started, &finished, &scanned, &pages, &opened, &errorCode); err != nil {
-			http.Error(w, "assurance unavailable", http.StatusInternalServerError)
+			writeError(w, "assurance unavailable", http.StatusInternalServerError)
 			return
 		}
 		run := map[string]any{"id": id, "mode": mode, "status": statusValue, "baseline": baseline, "started_at": started, "records_scanned": scanned, "pages_scanned": pages, "findings_opened": opened, "error_code": errorCode}
@@ -186,7 +201,7 @@ func (m *Module) runsHandler(w http.ResponseWriter, r *http.Request) {
 
 func (m *Module) runHandler(w http.ResponseWriter, r *http.Request) {
 	if !m.authorized(r, "admin", "admin_maker", "admin_checker") {
-		http.Error(w, "forbidden", http.StatusForbidden)
+		writeError(w, "forbidden", http.StatusForbidden)
 		return
 	}
 	go func() {
@@ -199,19 +214,19 @@ func (m *Module) runHandler(w http.ResponseWriter, r *http.Request) {
 
 func (m *Module) findingMutation(w http.ResponseWriter, r *http.Request, resolved bool) {
 	if !m.authorized(r, "admin", "admin_maker", "admin_checker") {
-		http.Error(w, "forbidden", http.StatusForbidden)
+		writeError(w, "forbidden", http.StatusForbidden)
 		return
 	}
 	id, err := uuid.Parse(r.PathValue("id"))
 	if err != nil {
-		http.Error(w, "invalid finding id", http.StatusBadRequest)
+		writeError(w, "invalid finding id", http.StatusBadRequest)
 		return
 	}
 	var body struct {
 		Reason string `json:"reason"`
 	}
 	if json.NewDecoder(r.Body).Decode(&body) != nil || strings.TrimSpace(body.Reason) == "" {
-		http.Error(w, "reason is required", http.StatusBadRequest)
+		writeError(w, "reason is required", http.StatusBadRequest)
 		return
 	}
 	statusValue := "acknowledged"
@@ -222,11 +237,11 @@ func (m *Module) findingMutation(w http.ResponseWriter, r *http.Request, resolve
 	query := `UPDATE assurance_findings SET status=$2, ` + field + `=$3, ` + map[bool]string{true: "resolved_at", false: "acknowledged_at"}[resolved] + `=now() WHERE id=$1`
 	result, err := m.db.ExecContext(r.Context(), query, id, statusValue, actorFromRequest(r))
 	if err != nil {
-		http.Error(w, "assurance unavailable", http.StatusServiceUnavailable)
+		writeError(w, "assurance unavailable", http.StatusServiceUnavailable)
 		return
 	}
 	if count, _ := result.RowsAffected(); count == 0 {
-		http.Error(w, "finding not found", http.StatusNotFound)
+		writeError(w, "finding not found", http.StatusNotFound)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"id": id, "status": statusValue})
@@ -247,7 +262,7 @@ type intakeCommandRequest struct {
 
 func (m *Module) intakeHandler(w http.ResponseWriter, r *http.Request) {
 	if !m.authorized(r, "admin", "admin_maker", "admin_checker") {
-		http.Error(w, "forbidden", http.StatusForbidden)
+		writeError(w, "forbidden", http.StatusForbidden)
 		return
 	}
 	result := map[string]any{}
@@ -271,7 +286,7 @@ func (m *Module) intakeHandler(w http.ResponseWriter, r *http.Request) {
 		dependencyErr = true
 	}
 	if dependencyErr {
-		http.Error(w, "owner unavailable", http.StatusServiceUnavailable)
+		writeError(w, "owner unavailable", http.StatusServiceUnavailable)
 		return
 	}
 	writeJSON(w, http.StatusOK, result)
@@ -279,7 +294,7 @@ func (m *Module) intakeHandler(w http.ResponseWriter, r *http.Request) {
 
 func (m *Module) pauseHandler(w http.ResponseWriter, r *http.Request) {
 	if !m.authorized(r, "admin", "admin_maker") {
-		http.Error(w, "pause requires admin or admin_maker", http.StatusForbidden)
+		writeError(w, "pause requires admin or admin_maker", http.StatusForbidden)
 		return
 	}
 	m.applyOwnerCommand(w, r, "pause")
@@ -288,23 +303,23 @@ func (m *Module) pauseHandler(w http.ResponseWriter, r *http.Request) {
 func (m *Module) applyOwnerCommand(w http.ResponseWriter, r *http.Request, action string) {
 	flow := r.PathValue("flow")
 	if flow != "payin" && flow != "payout" {
-		http.Error(w, "flow must be payin or payout", http.StatusBadRequest)
+		writeError(w, "flow must be payin or payout", http.StatusBadRequest)
 		return
 	}
 	var request intakeCommandRequest
 	if json.NewDecoder(r.Body).Decode(&request) != nil || request.Reason == "" {
-		http.Error(w, "command_id and reason are required", http.StatusBadRequest)
+		writeError(w, "command_id and reason are required", http.StatusBadRequest)
 		return
 	}
 	commandID, err := uuid.Parse(request.CommandID)
 	if err != nil {
-		http.Error(w, "command_id must be UUID", http.StatusBadRequest)
+		writeError(w, "command_id must be UUID", http.StatusBadRequest)
 		return
 	}
 	actor := actorFromRequest(r)
 	insertResult, err := m.db.ExecContext(r.Context(), `INSERT INTO intake_control_commands (id, flow, action, revision, requested_by, reason, status, idempotency_key) VALUES ($1,$2,$3,$4,$5,$6,'pending',$1) ON CONFLICT (idempotency_key) DO NOTHING`, commandID, flow, action, request.ExpectedRevision, actor, request.Reason)
 	if err != nil {
-		http.Error(w, "command already exists or assurance unavailable", http.StatusConflict)
+		writeError(w, "command already exists or assurance unavailable", http.StatusConflict)
 		return
 	}
 	if affected, _ := insertResult.RowsAffected(); affected == 0 {
@@ -318,7 +333,7 @@ func (m *Module) applyOwnerCommand(w http.ResponseWriter, r *http.Request, actio
 	response, err := m.sendOwnerCommand(r.Context(), flow, action, commandID, request.ExpectedRevision, actor, request.Reason)
 	if err != nil {
 		_, _ = m.db.ExecContext(r.Context(), `UPDATE intake_control_commands SET status='failed', error_code='OWNER_UNAVAILABLE', error_message=$2 WHERE id=$1`, commandID, err.Error())
-		http.Error(w, "owner unavailable", http.StatusServiceUnavailable)
+		writeError(w, "owner unavailable", http.StatusServiceUnavailable)
 		return
 	}
 	_, _ = m.db.ExecContext(r.Context(), `UPDATE intake_control_commands SET status='applied', approved_by=$2, resulting_revision=$3, applied_at=now() WHERE id=$1`, commandID, actor, responseRevision(response))
@@ -346,27 +361,27 @@ func (m *Module) sendOwnerCommand(ctx context.Context, flow, action string, comm
 
 func (m *Module) resumeRequestHandler(w http.ResponseWriter, r *http.Request) {
 	if !m.authorized(r, "admin", "admin_maker") {
-		http.Error(w, "resume request requires admin or admin_maker", http.StatusForbidden)
+		writeError(w, "resume request requires admin or admin_maker", http.StatusForbidden)
 		return
 	}
 	flow := r.PathValue("flow")
 	if flow != "payin" && flow != "payout" {
-		http.Error(w, "flow must be payin or payout", http.StatusBadRequest)
+		writeError(w, "flow must be payin or payout", http.StatusBadRequest)
 		return
 	}
 	var request intakeCommandRequest
 	if json.NewDecoder(r.Body).Decode(&request) != nil || request.Reason == "" {
-		http.Error(w, "command_id and reason are required", http.StatusBadRequest)
+		writeError(w, "command_id and reason are required", http.StatusBadRequest)
 		return
 	}
 	commandID, err := uuid.Parse(request.CommandID)
 	if err != nil {
-		http.Error(w, "command_id must be UUID", http.StatusBadRequest)
+		writeError(w, "command_id must be UUID", http.StatusBadRequest)
 		return
 	}
 	insertResult, err := m.db.ExecContext(r.Context(), `INSERT INTO intake_control_commands (id, flow, action, revision, requested_by, reason, status, idempotency_key) VALUES ($1,$2,'resume_request',$3,$4,$5,'pending',$1) ON CONFLICT (idempotency_key) DO NOTHING`, commandID, flow, request.ExpectedRevision, actorFromRequest(r), request.Reason)
 	if err != nil {
-		http.Error(w, "command already exists or assurance unavailable", http.StatusConflict)
+		writeError(w, "command already exists or assurance unavailable", http.StatusConflict)
 		return
 	}
 	if affected, _ := insertResult.RowsAffected(); affected == 0 {
@@ -381,12 +396,12 @@ func (m *Module) resumeRequestHandler(w http.ResponseWriter, r *http.Request) {
 
 func (m *Module) resumeApproveHandler(w http.ResponseWriter, r *http.Request) {
 	if !m.authorized(r, "admin", "admin_checker") {
-		http.Error(w, "approval requires admin or admin_checker", http.StatusForbidden)
+		writeError(w, "approval requires admin or admin_checker", http.StatusForbidden)
 		return
 	}
 	commandID, err := uuid.Parse(r.PathValue("id"))
 	if err != nil {
-		http.Error(w, "invalid command id", http.StatusBadRequest)
+		writeError(w, "invalid command id", http.StatusBadRequest)
 		return
 	}
 	flow := r.PathValue("flow")
@@ -394,30 +409,30 @@ func (m *Module) resumeApproveHandler(w http.ResponseWriter, r *http.Request) {
 	var revision int64
 	if err := m.db.QueryRowContext(r.Context(), `SELECT requested_by, revision FROM intake_control_commands WHERE id=$1 AND flow=$2 AND action='resume_request' AND status IN ('pending','failed')`, commandID, flow).Scan(&requestedBy, &revision); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			http.Error(w, "resume request not found or already approved", http.StatusNotFound)
+			writeError(w, "resume request not found or already approved", http.StatusNotFound)
 			return
 		}
-		http.Error(w, "assurance unavailable", http.StatusServiceUnavailable)
+		writeError(w, "assurance unavailable", http.StatusServiceUnavailable)
 		return
 	}
 	actor := actorFromRequest(r)
 	if actor == requestedBy {
-		http.Error(w, "requester and approver must differ", http.StatusForbidden)
+		writeError(w, "requester and approver must differ", http.StatusForbidden)
 		return
 	}
 	approvalResult, err := m.db.ExecContext(r.Context(), `UPDATE intake_control_commands SET status='applying', approved_by=$2, error_code='', error_message='' WHERE id=$1 AND status IN ('pending','failed')`, commandID, actor)
 	if err != nil {
-		http.Error(w, "assurance unavailable", http.StatusServiceUnavailable)
+		writeError(w, "assurance unavailable", http.StatusServiceUnavailable)
 		return
 	}
 	if affected, _ := approvalResult.RowsAffected(); affected == 0 {
-		http.Error(w, "resume request already being processed", http.StatusConflict)
+		writeError(w, "resume request already being processed", http.StatusConflict)
 		return
 	}
 	response, err := m.sendOwnerCommand(r.Context(), flow, "resume", commandID, revision, actor, "approved by "+actor)
 	if err != nil {
 		_, _ = m.db.ExecContext(r.Context(), `UPDATE intake_control_commands SET status='failed', error_code='OWNER_UNAVAILABLE', error_message=$2 WHERE id=$1`, commandID, err.Error())
-		http.Error(w, "owner unavailable", http.StatusServiceUnavailable)
+		writeError(w, "owner unavailable", http.StatusServiceUnavailable)
 		return
 	}
 	_, _ = m.db.ExecContext(r.Context(), `UPDATE intake_control_commands SET action='resume_approve', status='applied', resulting_revision=$2, applied_at=now() WHERE id=$1`, commandID, responseRevision(response))

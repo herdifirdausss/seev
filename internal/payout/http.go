@@ -13,6 +13,7 @@ import (
 	"github.com/herdifirdausss/seev/internal/payout/model"
 	"github.com/herdifirdausss/seev/internal/payout/repository"
 	"github.com/herdifirdausss/seev/internal/vendorgw"
+	"github.com/herdifirdausss/seev/pkg/httpcontract"
 	"github.com/herdifirdausss/seev/pkg/middleware"
 	"github.com/herdifirdausss/seev/pkg/response"
 )
@@ -176,7 +177,7 @@ func (m *Module) GetHandler() http.HandlerFunc {
 // is also admin-gated inside itself, defense in depth, same pattern as
 // every other /admin/* surface in this codebase.
 func (m *Module) AdminRouter() http.Handler {
-	mux := http.NewServeMux()
+	mux := httpcontract.New(httpcontract.Options{Owner: "payout", Audience: "admin", Contract: "internal-v1"})
 	mux.HandleFunc("GET /admin/payout/requests", m.listRequestsHandler)
 	mux.HandleFunc("POST /admin/payout/requests/{id}/cancel", m.adminCancelHandler)
 	mux.HandleFunc("POST /admin/payout/requests/{id}/retry", m.adminRetryHandler)

@@ -1,0 +1,11 @@
+# Performance evidence
+
+B0 load artifacts are disposable and live under `artifacts/load/`, which is
+ignored by Git. Raw k6 time series, dumps, credentials, and service logs never
+belong in Git. Only small redacted summaries may be committed under
+`docs/performance/reports/`, with hashes linking them to the raw artifact
+bundle. Capacity numbers are valid only for the named profile and Git/data
+hashes.
+
+Start with the [B0 protocol](../roadmap/active/53-b0-load-capacity-gate.md) and
+the [baseline inventory](baseline/b0-inventory.yaml).

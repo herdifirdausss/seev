@@ -45,11 +45,11 @@ ARTIFACT_DIR="${SEEV_SMOKE_ARTIFACT_DIR:-$ROOT_DIR/.smoke-container-artifacts}"
 HEALTH_DEADLINE_SECS="${SEEV_SMOKE_HEALTH_DEADLINE:-180}"
 SETTLE_DEADLINE_SECS="${SEEV_SMOKE_SETTLE_DEADLINE:-30}"
 
-# Expected app-profile services (3 infra + 8 app = 11) — K4 step 4 requires
+# Expected app-profile services (3 infra + 9 app = 12) — K4 step 4 requires
 # asserting this EXACT set, not just "however many containers the project
 # happens to report" (a stale container from an unrelated profile must not
-# silently count as one of the eleven).
-EXPECTED_SERVICES=(postgres redis rabbitmq ledger-service auth-service payin-service payout-service fraud-service admin-bff-service assurance-service gateway-service)
+# silently count as one of the twelve).
+EXPECTED_SERVICES=(postgres redis rabbitmq ledger-service auth-service payin-service payout-service fraud-service admin-bff-service assurance-service vendor-service gateway-service)
 
 # Per-run credentials (K6) — generated fresh, never committed, never logged
 # raw. docker compose picks these up as env overrides for the `app` profile
@@ -71,6 +71,10 @@ fail() {
 
 json_field() {
 	sed -n "s/.*\"$1\":\"\([^\"]*\)\".*/\1/p"
+}
+
+vendor_curl() {
+	curl --cacert deploy/certs/ca.pem --cert deploy/certs/dev-operator.pem --key deploy/certs/dev-operator-key.pem "$@"
 }
 
 # ─── Cleanup (K4 step 8: trap always tears down, preserves exit code) ───────
@@ -176,18 +180,18 @@ fi
 # regardless of profile — confirmed empirically: on a machine that also has
 # the `observability` profile containers up (docs/roadmap/archive/43), `ps --services
 # --status running` returned alloy/grafana/loki/prometheus/tempo alongside
-# the 11 app-profile services, which would have made this assertion falsely
+# the 12 app-profile services, which would have made this assertion falsely
 # fail. `config --services` is the STATIC definition instead — immune to
 # whatever else happens to be running in the same Compose project — and is
-# exactly what "the app profile defines precisely these eleven services"
+# exactly what "the app profile defines precisely these twelve services"
 # means; each service's own runtime health was already verified above,
 # individually, by name. `object-store-init` is a one-shot volume-permission
 # helper in the app profile, not a runtime service, so exclude it from this
-# eleven-service contract (it is expected to exit successfully).
+# twelve-service contract (it is expected to exit successfully).
 defined_services="$(docker compose --profile app config --services | grep -vx 'object-store-init' | sort)"
 expected_sorted="$(printf '%s\n' "${EXPECTED_SERVICES[@]}" | sort)"
 if [ "$defined_services" = "$expected_sorted" ]; then
-	ok "'app' profile defines exactly the expected eleven services"
+	ok "'app' profile defines exactly the expected twelve services"
 else
 	fail "'app' profile service set does not match expected: got [$defined_services] want [$expected_sorted]"
 fi
@@ -242,7 +246,7 @@ fi
 log "POST /webhooks/mockvendor with a valid HMAC signature..."
 BODY="{\"event_id\":\"smoke-container-$(date +%s)\",\"external_ref\":\"$REFERENCE\",\"user_id\":\"$(uuidgen | tr '[:upper:]' '[:lower:]')\",\"amount\":\"500000\",\"currency\":\"IDR\",\"occurred_at\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"type\":\"payment.settled\"}"
 SIG="$(printf '%s' "$BODY" | openssl dgst -sha256 -hmac "$VENDOR_MOCKVENDOR_SECRET" -r | awk '{print $1}')"
-code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://127.0.0.1:8080/webhooks/mockvendor" \
+code=$(vendor_curl -s -o /dev/null -w '%{http_code}' -X POST "https://127.0.0.1:8098/webhooks/mockvendor" \
 	-H "X-Mock-Signature: $SIG" -H "Content-Type: application/json" -d "$BODY")
 [ "${code:0:1}" = "2" ] && ok "signed webhook accepted (code=$code)" || { fail "webhook got $code, expected 2xx"; exit 1; }
 

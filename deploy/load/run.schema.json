@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "B0 run manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "run_id", "profile_id", "workload", "workload_version", "dataset_hash", "git_sha", "database_names", "disposable_ack", "host", "settings"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "run_id": {"type": "string", "minLength": 1},
+    "profile_id": {"type": "string", "pattern": "^[a-z][a-z0-9-]{2,31}$"},
+    "workload": {"type": "string", "minLength": 1},
+    "workload_version": {"type": "string", "minLength": 1},
+    "dataset_hash": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "git_sha": {"type": "string", "minLength": 1},
+    "database_names": {"type": "array", "minItems": 1, "items": {"type": "string", "pattern": "^seev_load_[a-z0-9_]+$"}},
+    "disposable_ack": {"const": "disposable-only"},
+    "host": {"$ref": "#/$defs/host"},
+    "settings": {"type": "object", "additionalProperties": {"type": "string"}}
+  },
+  "$defs": {
+    "host": {"type": "object", "additionalProperties": false, "required": ["os", "architecture", "logical_cpus", "memory_mib", "docker_version", "go_version", "k6_version"], "properties": {"os": {"type": "string"}, "architecture": {"type": "string"}, "logical_cpus": {"type": "integer"}, "memory_mib": {"type": "integer"}, "docker_version": {"type": "string"}, "go_version": {"type": "string"}, "k6_version": {"type": "string"}}}
+  }
+}

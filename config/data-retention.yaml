@@ -64,6 +64,32 @@ permanent_tables:
   - payout.payout_vendor_calls
 
 entries:
+
+  # ── vendor service ───────────────────────────────────────────────────────
+  - owner: vendor
+    class: vendor.callback_inbox
+    table: vendor.vendor_callback_inbox
+    classification: sensitive
+    terminal_timestamp: updated_at
+    duration: 30d
+    action: redact
+    batch_size: 500
+    hold_scope: none
+    policy_version: 1
+    notes: "Raw callback bytes are redacted after the investigation window; sanitized correlation fields remain for reconciliation."
+
+  - owner: vendor
+    class: vendor.outbound_attempts
+    table: vendor.vendor_outbound_attempts
+    classification: internal
+    terminal_timestamp: null
+    duration: null
+    action: retain_permanent
+    batch_size: 0
+    hold_scope: none
+    policy_version: 1
+    notes: "Append-only sanitized vendor transport audit; plaintext credentials and full vendor payloads are never stored."
+
   # ── adminbff ──────────────────────────────────────────────────────────────
   - owner: adminbff
     class: adminbff.sessions

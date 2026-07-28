@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/herdifirdausss/seev/internal/fraud/rules"
+	"github.com/herdifirdausss/seev/pkg/httpcontract"
 	"github.com/herdifirdausss/seev/pkg/middleware"
 	"github.com/herdifirdausss/seev/pkg/response"
 )
@@ -29,7 +30,7 @@ func isAdminRole(role string) bool {
 }
 
 func (m *Module) AdminRouter() http.Handler {
-	mux := http.NewServeMux()
+	mux := httpcontract.New(httpcontract.Options{Owner: "fraud", Audience: "admin", Contract: "internal-v1"})
 	mux.HandleFunc("GET /api/v1/admin/fraud/events", m.listEventsHandler)
 	mux.HandleFunc("GET /api/v1/admin/fraud/rules/{rule}/mode", m.getRuleModeHandler)
 	mux.HandleFunc("PUT /api/v1/admin/fraud/rules/{rule}/mode", m.putRuleModeHandler)

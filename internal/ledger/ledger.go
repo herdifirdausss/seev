@@ -46,6 +46,7 @@ import (
 	"github.com/herdifirdausss/seev/pkg/currency"
 	"github.com/herdifirdausss/seev/pkg/database"
 	"github.com/herdifirdausss/seev/pkg/fraudcheck"
+	"github.com/herdifirdausss/seev/pkg/httpcontract"
 	"github.com/herdifirdausss/seev/pkg/messaging"
 	"github.com/herdifirdausss/seev/pkg/retentionworker"
 	"github.com/herdifirdausss/seev/pkg/scheduler"
@@ -432,7 +433,7 @@ func (m *Module) InternalRouter() http.Handler {
 // this in pkg/middleware.WithInternalToken and mount it only on the
 // internal-only listener, same as InternalRouter.
 func (m *Module) ClosureRouter() http.Handler {
-	mux := http.NewServeMux()
+	mux := httpcontract.New(httpcontract.Options{Owner: "ledger", Audience: "internal", Contract: "internal-v1"})
 	mux.HandleFunc("POST /privacy/closure/prepare", m.handleClosurePrepare)
 	mux.HandleFunc("POST /privacy/closure/commit", m.handleClosureCommit)
 	// docs/roadmap/active/51 T4b (K9): same router, same token gate — auth's

@@ -73,6 +73,7 @@ type Repository interface {
 	SetVendor(ctx context.Context, id uuid.UUID, vendor string) error
 
 	Get(ctx context.Context, id uuid.UUID) (model.PayoutRequest, error)
+	GetByVendorReference(ctx context.Context, vendor, vendorReference string) (model.PayoutRequest, error)
 	// List returns requests newest first, optionally filtered by status
 	// and/or vendor (both empty = no filter).
 	List(ctx context.Context, status, vendor string, limit, offset int) ([]model.PayoutRequest, error)
@@ -105,7 +106,6 @@ type Repository interface {
 	// request, oldest first — mayFailover (docs/roadmap/archive/40 Task T3) reads
 	// this to decide whether any call has ever landed accepted/uncertain.
 	ListVendorCalls(ctx context.Context, payoutRequestID uuid.UUID) ([]model.PayoutVendorCall, error)
-
 }
 
 type repo struct {
@@ -272,6 +272,20 @@ func (r *repo) Get(ctx context.Context, id uuid.UUID) (model.PayoutRequest, erro
 		       fee_quote_id, fee_amount, COALESCE(fee_gateway, ''), created_at, updated_at,
 		       destination_ciphertext
 		FROM payout_requests WHERE id = $1`, id)
+	req, err := r.scanRequest(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return model.PayoutRequest{}, ErrNotFound
+	}
+	return req, err
+}
+
+func (r *repo) GetByVendorReference(ctx context.Context, vendor, vendorReference string) (model.PayoutRequest, error) {
+	row := r.db.QueryRowContext(ctx, `
+		SELECT id, user_id, amount, currency, vendor, status, hold_tx_id, settle_tx_id,
+		       COALESCE(vendor_ref, ''), COALESCE(error_message, ''), created_by, COALESCE(request_id, ''),
+		       fee_quote_id, fee_amount, COALESCE(fee_gateway, ''), created_at, updated_at,
+		       destination_ciphertext
+		FROM payout_requests WHERE vendor = $1 AND vendor_ref = $2`, vendor, vendorReference)
 	req, err := r.scanRequest(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return model.PayoutRequest{}, ErrNotFound

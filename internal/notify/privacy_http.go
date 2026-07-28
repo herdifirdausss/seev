@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/herdifirdausss/seev/pkg/httpcontract"
 	"github.com/herdifirdausss/seev/pkg/privacyexport"
 	"github.com/herdifirdausss/seev/pkg/response"
 )
@@ -17,7 +18,7 @@ import (
 // AdminRouter-adjacent listener), gateway has no admin surface of its own
 // — internal/handler.NewInternalRouter mounts this instead.
 func (m *Module) PrivacyRouter() http.Handler {
-	mux := http.NewServeMux()
+	mux := httpcontract.New(httpcontract.Options{Owner: "notify", Audience: "internal", Contract: "internal-v1"})
 	mux.HandleFunc("GET /privacy/export", m.handlePrivacyExport)
 	mux.HandleFunc("POST /privacy/closure/prepare", m.handleClosurePrepare)
 	mux.HandleFunc("POST /privacy/closure/commit", m.handleClosureCommit)

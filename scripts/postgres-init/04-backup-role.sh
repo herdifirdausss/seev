@@ -56,7 +56,7 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname postgres <<-EOSQL
     GRANT EXECUTE ON FUNCTION pg_switch_wal() TO seev_backup;
 EOSQL
 
-for service in ledger auth payin payout fraud gateway adminbff assurance; do
+for service in ledger auth payin payout fraud gateway vendor adminbff assurance; do
     database="seev_${service}"
     psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname postgres \
         -c "GRANT CONNECT ON DATABASE ${database} TO seev_backup;"

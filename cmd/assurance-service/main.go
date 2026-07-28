@@ -25,6 +25,7 @@ import (
 	"github.com/herdifirdausss/seev/pkg/alerting"
 	"github.com/herdifirdausss/seev/pkg/database"
 	"github.com/herdifirdausss/seev/pkg/grpcx"
+	"github.com/herdifirdausss/seev/pkg/httpcontract"
 	"github.com/herdifirdausss/seev/pkg/logger"
 	"github.com/herdifirdausss/seev/pkg/middleware"
 	"github.com/herdifirdausss/seev/pkg/tlsx"
@@ -141,7 +142,7 @@ func run(parent context.Context) error {
 		defer stopRetention()
 	}
 
-	mux := http.NewServeMux()
+	mux := httpcontract.New(httpcontract.Options{Owner: "assurance", Audience: "operational", Contract: "internal-v1"})
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"status":"ok"}`))

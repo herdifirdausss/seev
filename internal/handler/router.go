@@ -10,6 +10,7 @@ import (
 
 	"github.com/herdifirdausss/seev/internal/config"
 	"github.com/herdifirdausss/seev/pkg/cache"
+	"github.com/herdifirdausss/seev/pkg/httpcontract"
 	"github.com/herdifirdausss/seev/pkg/middleware"
 	"github.com/herdifirdausss/seev/pkg/response"
 )
@@ -63,8 +64,8 @@ func requireKYCForLedgerPostings(min int) middleware.Middleware {
 // (docs/roadmap/archive/10 Task T1).
 func NewRouter(cfg *config.Config, deps *Dependencies, logger *slog.Logger) http.Handler {
 	limiter := buildRateLimiter(cfg, deps, logger)
-	root := http.NewServeMux()
-	apiRoot := http.NewServeMux()
+	root := httpcontract.New(httpcontract.Options{Owner: "gateway", Audience: "operational", Contract: "public-v1"})
+	apiRoot := httpcontract.New(httpcontract.Options{Owner: "gateway", Audience: "public", Contract: "public-v1"})
 
 	// ─── Infrastructure probes (NO middleware) ───────────────────────────────
 	root.HandleFunc("GET /health", Health)
@@ -82,29 +83,12 @@ func NewRouter(cfg *config.Config, deps *Dependencies, logger *slog.Logger) http
 		middleware.WithTimeout(30*time.Second),
 	)
 
-	// ─── Vendor webhooks (docs/roadmap/archive/22 Task T3, decision K-T1) ───────────────
-	// Deliberately its OWN chain, not `global`: no CORS (a payment vendor's
-	// server-to-server POST is never a browser request — a CORS preflight
-	// would only reject it), no JWT/RequireJSON (the vendor authenticates
-	// via a per-vendor signature verified inside the handler, not this
-	// app's own auth), but still rate-limited (per-vendor key, not per-IP —
-	// see middleware.RateLimitByVendor) and still gets request
-	// ID/logging/recovery/security-headers/timeout like everything else.
-	// Mounted directly on `root`, never under /api/v1 — a vendor's webhook
-	// URL is a stable top-level path.
-	webhookChain := middleware.Chain(
-		middleware.WithRequestID(),
-		middleware.WithTracing(logger), middleware.WithHTTPMetrics(),
-		middleware.WithLogger(logger),
-		middleware.WithRecovery(),
-		middleware.WithSecurityHeaders(securityHeadersConfig(cfg)),
-		middleware.WithRateLimit(limiter, middleware.RateLimitByVendor),
-		middleware.WithTimeout(30*time.Second),
-	)
-	root.Handle("POST /webhooks/{vendor}", webhookChain(webhookHandler(deps, logger)))
+	// Vendor callbacks are no longer accepted by Gateway. They terminate at
+	// VendorService's restricted callback edge, which verifies, persists, and
+	// delivers only normalized owner callbacks.
 
 	// ─── API v1 ───────────────────────────────────────────────────────────────
-	apiMux := http.NewServeMux()
+	apiMux := httpcontract.New(httpcontract.Options{Owner: "gateway", Audience: "public", Contract: "public-v1"})
 
 	// Authenticated
 	authed := middleware.Chain(
@@ -167,8 +151,8 @@ func NewRouter(cfg *config.Config, deps *Dependencies, logger *slog.Logger) http
 // is assumed to be a trusted internal service, not a public client
 // (docs/roadmap/archive/10 Task T1).
 func NewInternalRouter(cfg *config.Config, deps *Dependencies, logger *slog.Logger) http.Handler {
-	root := http.NewServeMux()
-	apiRoot := http.NewServeMux()
+	root := httpcontract.New(httpcontract.Options{Owner: "gateway", Audience: "operational", Contract: "internal-v1"})
+	apiRoot := httpcontract.New(httpcontract.Options{Owner: "gateway", Audience: "internal", Contract: "internal-v1"})
 
 	// NOTE: /metrics now lives ONLY on the internal listener — it is never
 	// reachable from the public-facing port (docs/roadmap/archive/10 Task T6).
@@ -195,7 +179,7 @@ func NewInternalRouter(cfg *config.Config, deps *Dependencies, logger *slog.Logg
 		middleware.WithTimeout(30*time.Second),
 	)
 
-	apiMux := http.NewServeMux()
+	apiMux := httpcontract.New(httpcontract.Options{Owner: "gateway", Audience: "internal", Contract: "internal-v1"})
 
 	apiRoot.Handle("/api/v1/", http.StripPrefix("/api/v1", apiMux))
 	apiRoot.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {

@@ -3,18 +3,19 @@ BUILD_DIR := bin
 CMD_DIR   := ./cmd/gateway
 GOFLAGS   := -trimpath -ldflags="-s -w"
 
-.PHONY: build build-all run dev test lint docs-check tidy tools proto proto-lint proto-breaking docker-up docker-down smoke-container migrate-up migrate-up-all migrate-down grant-app-role verify-full chaos-debug observability-secret observability-up observability-down certs backup-secret backup-role-bootstrap backup-checksums-enable backup-stanza-init backup-full backup-diff backup-check backup-status backup-expire cryptox-secret retention-docs retention-check
+.PHONY: build build-all run dev test lint ci-lint docs-check tidy tools proto proto-lint proto-breaking contract-generate contract-lint contract-breaking contract-test contracts load-lint load-test load-seed load-snapshot load-restore load-smoke load-run load-capacity load-report-check load-clean docker-up docker-down smoke-container migrate-up migrate-up-all migrate-down grant-app-role verify-full verify-chaos chaos-debug observability-secret observability-up observability-down certs backup-secret backup-role-bootstrap backup-checksums-enable backup-stanza-init backup-full backup-diff backup-check backup-status backup-expire cryptox-secret retention-docs retention-check
 
 BUF_VERSION                := v1.72.0
 PROTOC_GEN_GO_VERSION      := v1.36.11
 PROTOC_GEN_GO_GRPC_VERSION := v1.6.2
+PROTO_MERGE_BASE_REF       ?= main
 
 ## build: Compile the binary
 build:
 	mkdir -p $(BUILD_DIR)
 	go build $(GOFLAGS) -o $(BUILD_DIR)/$(BINARY) $(CMD_DIR)
 
-## build-all: Compile all eight deployable service binaries
+## build-all: Compile all nine deployable service binaries
 build-all:
 	mkdir -p $(BUILD_DIR)
 	go build $(GOFLAGS) -o $(BUILD_DIR)/gateway ./cmd/gateway
@@ -25,6 +26,7 @@ build-all:
 	go build $(GOFLAGS) -o $(BUILD_DIR)/fraud-service ./cmd/fraud-service
 	go build $(GOFLAGS) -o $(BUILD_DIR)/admin-bff-service ./cmd/admin-bff-service
 	go build $(GOFLAGS) -o $(BUILD_DIR)/assurance-service ./cmd/assurance-service
+	go build $(GOFLAGS) -o $(BUILD_DIR)/vendor-service ./cmd/vendor-service
 
 ## run: Run the compiled binary
 run: build
@@ -46,6 +48,12 @@ test/cover:
 ## lint: Run golangci-lint (requires golangci-lint installed)
 lint:
 	golangci-lint run ./...
+
+## ci-lint: Validate workflow syntax, shell scripts, and action pin policy
+ci-lint:
+	actionlint -shellcheck "$$(command -v shellcheck)"
+	shellcheck --severity=error scripts/*.sh
+	./scripts/ci/check-action-pins.sh
 
 ## docs-check: Validate required guides, local Markdown links, and heading anchors
 docs-check:
@@ -78,9 +86,76 @@ proto:
 proto-lint:
 	buf lint
 
-## proto-breaking: Check protobuf compatibility against main
+## proto-breaking: Check protobuf compatibility against an explicit merge-base ref
 proto-breaking:
-	buf breaking --against '.git#branch=main'
+	buf breaking --against ".git#branch=$(PROTO_MERGE_BASE_REF)"
+
+## contract-generate: Resolve checked-in relative OpenAPI references deterministically
+contract-generate:
+	go run ./cmd/contractgenerate
+
+## contract-lint: Validate OpenAPI sources, refs, error registry, and inventory
+contract-lint:
+	go test ./api/contracts
+
+## contract-breaking: Compare generated HTTP bundles with the checked-in bootstrap baseline
+contract-breaking:
+	go run ./cmd/contractcheck -mode breaking
+
+## contract-test: Run route metadata and contract fixture checks
+contract-test:
+	go test ./pkg/httpcontract ./api/contracts
+
+## contracts: Run the local A9 contract gate without installing tools
+contracts: contract-generate contract-lint contract-breaking contract-test
+
+## load-lint: Validate B0 profiles, safety schemas, and helper/scenario tests without Docker mutation
+load-lint:
+	go test ./pkg/loadlab ./pkg/loadreport ./pkg/loadmetrics ./cmd/loadcheck ./cmd/loadseed ./cmd/loadreport ./cmd/loadprobe ./tests/load
+	go run ./cmd/loadcheck -profile deploy/load/profiles/local-small.yaml
+
+## load-test: Fast B0 helper/analyzer/safety tests; this does not claim capacity
+load-test: load-lint
+	git diff --check
+
+LOAD_SEED_KIND ?= journey
+LOAD_SEED_COUNT ?= 100
+LOAD_SEED_OUTPUT ?= artifacts/load/seed/seed.jsonl
+## load-seed: Generate synthetic deterministic seed material; requires an explicit disposable acknowledgement
+load-seed:
+	go run ./cmd/loadseed -kind $(LOAD_SEED_KIND) -count $(LOAD_SEED_COUNT) -out $(LOAD_SEED_OUTPUT) -ack "$(SEEV_LOAD_ACK)"
+
+## load-snapshot/load-restore: compressed state lifecycle inside one disposable project
+load-snapshot:
+	SEEV_LOAD_ACK=disposable-only ./scripts/load-snapshot.sh snapshot
+
+load-restore:
+	SEEV_LOAD_ACK=disposable-only ./scripts/load-snapshot.sh restore
+
+## load-smoke: Start only a disposable load Compose project and run the one-second bootstrap smoke
+load-smoke:
+	SEEV_LOAD_ACK=disposable-only ./scripts/load-test.sh smoke
+
+## load-run: Start a declared disposable load project; canonical rates remain manual inputs
+load-run:
+	SEEV_LOAD_ACK=disposable-only ./scripts/load-test.sh run
+
+## load-capacity: Explicitly manual; runs must provide scenario/rate and retain raw artifacts outside Git
+load-capacity:
+	@test -n "$(LOAD_SCENARIO)" || (echo 'set LOAD_SCENARIO' >&2; exit 1)
+	@test -n "$(LOAD_RATE)" || (echo 'set LOAD_RATE in WU/s' >&2; exit 1)
+	SEEV_LOAD_ACK=disposable-only SEEV_LOAD_SCENARIO=$(LOAD_SCENARIO) SEEV_LOAD_WORKLOAD=$(LOAD_SCENARIO) SEEV_LOAD_RATE=$(LOAD_RATE) ./scripts/load-test.sh run
+
+LOAD_RUNS ?=
+## load-report-check: Validate and aggregate committed-size run summaries without averaging percentiles
+load-report-check:
+	@test -n "$(LOAD_RUNS)" || (echo 'set LOAD_RUNS=path1.json,path2.json' >&2; exit 1)
+	go run ./cmd/loadreport -runs "$(LOAD_RUNS)" -out "$(LOAD_REPORT_OUT)"
+
+## load-clean: Remove only the exact disposable Compose project and its run artifact path
+load-clean:
+	@test -n "$(SEEV_LOAD_RUN_ID)" || (echo 'set SEEV_LOAD_RUN_ID to the exact run id' >&2; exit 1)
+	SEEV_LOAD_ACK=disposable-only ./scripts/load-test.sh clean
 
 ## vet: Run go vet
 vet:
@@ -98,31 +173,50 @@ docker-down:
 smoke-container:
 	./scripts/smoke-container.sh
 
-# This is what docs/development/project-guide.md's "Build and verification" section means by "the
-# full gate" — run this instead of chaining the steps by hand so a volume
-# reset is never skipped by mistake. Any ad-hoc debugging against the
-# shared dev stack (manual curl against a running service, a one-off
-# scenario re-run) leaves state behind that smoke-test.sh's fixed-UUID
-# fixtures will misreport as a regression — this target always starts from
-# zero so its PASS/FAIL is trustworthy.
-## verify-full: Full doc-completion gate from a CLEAN volume (build/vet/lint/test + smoke + business/admin e2e + chaos-all)
+# This is what docs/development/project-guide.md's "Build and verification"
+# section means by "the full gate" — run this instead of chaining the steps by
+# hand so a volume reset is never skipped by mistake. Any ad-hoc debugging
+# against the shared dev stack can leave state behind that smoke-test.sh's
+# fixed-UUID fixtures will misreport as a regression. This target covers every
+# repeatable non-chaos gate from a clean environment; chaos is deliberately
+# isolated in verify-chaos because it kills dependencies and is an
+# operator-controlled recovery drill.
+## verify-full: Complete repeatable gate from clean volumes (build/vet/lint/race/integration/contracts/proto/load/docs/container+business/admin)
 verify-full:
+	docker compose down -v --remove-orphans
 	go build ./...
 	go vet ./...
 	go vet -tags=integration ./...
+	go mod verify
+	$(MAKE) contracts
+	$(MAKE) proto
+	$(MAKE) proto-lint
+	$(MAKE) proto-breaking
+	$(MAKE) load-test
+	go test -tags=loadtest ./...
+	$(MAKE) ci-lint
 	$(MAKE) lint
 	$(MAKE) docs-check
+	$(MAKE) retention-check
 	$(MAKE) test
-	docker compose down -v
+	go test -tags=integration -race -timeout 25m ./...
+	$(MAKE) smoke-container
 	./scripts/smoke-test.sh
 	./scripts/business-e2e.sh
 	./scripts/admin-e2e.sh
+	docker compose down -v --remove-orphans
+	SEEV_LOAD_ACK=disposable-only $(MAKE) load-smoke
+	git diff --check
+	docker compose down -v --remove-orphans
+
+## verify-chaos: Operator-controlled recovery gate; intentionally separate from verify-full
+verify-chaos:
 	./scripts/chaos-test.sh all
 
 # Preserves /tmp/seev-chaos.*/*.log past the exit trap instead of deleting
 # them, so a failing scenario can be inspected after the fact. Usage:
 #   make chaos-debug SCENARIO=8
-## chaos-debug: Re-run one chaos scenario (SCENARIO=1..14, default all) with logs preserved after exit
+## chaos-debug: Re-run one chaos scenario (SCENARIO=1..20, default all) with logs preserved after exit
 SCENARIO ?= all
 chaos-debug:
 	KEEP_WORK_DIR=1 ./scripts/chaos-test.sh $(SCENARIO)
@@ -194,7 +288,7 @@ certs:
 	mkdir -p $(BUILD_DIR)
 	go build $(GOFLAGS) -o $(BUILD_DIR)/certgen ./cmd/certgen
 	$(BUILD_DIR)/certgen init-ca --out deploy/certs
-	@for service in gateway auth ledger payin payout fraud admin-bff assurance dev-operator prometheus backup-agent; do \
+	@for service in gateway auth ledger payin payout fraud admin-bff assurance vendor dev-operator prometheus backup-agent; do \
 		$(BUILD_DIR)/certgen issue --service $$service --out deploy/certs || exit $$?; \
 	done
 

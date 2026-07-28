@@ -32,7 +32,7 @@ func TestValidate_RealPolicyIsClean(t *testing.T) {
 	}
 }
 
-func TestValidate_AllEightMigrationDirectoriesCovered(t *testing.T) {
+func TestValidate_AllOwnerMigrationDirectoriesCovered(t *testing.T) {
 	entries, err := os.ReadDir(realMigrationsRoot())
 	if err != nil {
 		t.Fatal(err)
@@ -43,7 +43,7 @@ func TestValidate_AllEightMigrationDirectoriesCovered(t *testing.T) {
 			owners = append(owners, e.Name())
 		}
 	}
-	want := []string{"adminbff", "assurance", "auth", "fraud", "gateway", "ledger", "payin", "payout"}
+	want := []string{"adminbff", "assurance", "auth", "fraud", "gateway", "ledger", "payin", "payout", "vendor"}
 	if len(owners) != len(want) {
 		t.Fatalf("expected exactly %d owner migration directories, got %d: %v", len(want), len(owners), owners)
 	}

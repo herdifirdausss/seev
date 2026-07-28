@@ -19,7 +19,7 @@ they're named that way, and what to read first.
 ## 60-second mental model
 
 Seev started as a single ledger-first monolith and was deliberately split
-into 8 independently deployable services over time (the full history is in
+into 9 independently deployable services over time (the full history is in
 [docs/roadmap/](../roadmap/README.md), but you don't need to read that to be
 productive). Each service owns one Postgres database; nothing reads another
 service's tables directly — every cross-service call goes through HTTP,
@@ -28,11 +28,12 @@ gRPC, or a RabbitMQ event.
 ```
    Gateway (public edge)        Auth (public edge, independent)
    /    |      \                       |
- Payin Payout (webhooks)               |
+ Payin Payout (money workflows)        |
    \    |      /                       |
       Ledger (source of truth: double-entry postings) ←───────┘
                |
-        Fraud, Assurance, Admin BFF  (internal-only)
+        Fraud, Assurance, Admin BFF (internal-only)
+        Vendor → VendorService (restricted callback edge) → Payin/Payout
 ```
 
 Only **Gateway** (`:8080`) and **Auth** (`:8082`) expose end-user APIs.
@@ -40,6 +41,10 @@ Compose also publishes the internal/admin listeners to `127.0.0.1` for
 local operations and test scripts, but they are not public application
 surfaces. This surprises people expecting one public entrypoint:
 auth-service is public on its own, not proxied through gateway.
+
+Vendor callbacks and outbound vendor calls cross the separate VendorService
+boundary (`:8098` / gRPC `:9098`); Payin and Payout retain ownership of their
+own workflow and correlation decisions.
 
 - **Gateway** composes calls to payin/payout/ledger and consumes ledger
   events for notifications — it holds almost no business logic itself.
@@ -67,6 +72,7 @@ than anything else in this repo:
 | fraud | `cmd/fraud-service` | `internal/fraud` | seev_fraud |
 | admin console | `cmd/admin-bff-service` | `internal/adminbff` (**not** `internal/admin-bff`) | seev_adminbff |
 | assurance | `cmd/assurance-service` | `internal/assurance` | seev_assurance |
+| vendor | `cmd/vendor-service` | `internal/vendorboundary` | seev_vendor |
 
 Everything cross-cutting lives outside any one service: `internal/config`
 (env loading, every service imports it), `pkg/*` (shared infra — `pkg/`
@@ -160,11 +166,10 @@ of reading:
    calls ledger-service's gRPC contract to post the actual double-entry
    transaction.
 
-   **Current boundary:** the vendor calls Gateway's `/webhooks/{vendor}`
-   endpoint and Gateway forwards the exact body and headers to Payin. The
-   proposed VendorService boundary is a target in
-   [plan 54](../roadmap/active/54-vendor-service-boundary.md), not code to search for
-   yet.
+   **Current boundary:** the vendor calls VendorService's `/webhooks/{vendor}`
+   endpoint. VendorService authenticates and durably stores the callback, then
+   delivers a normalized event to Payin/Payout over mTLS; the owner service
+   correlates it with its own state.
 5. **The posting itself**: `Service.Handle` →
    `Service.execTransfer` in
    [internal/ledger/service/handle/service.go](../../internal/ledger/service/handle/service.go) —
@@ -218,12 +223,14 @@ mentally — they sit outside the money-movement path entirely.
 - **Money is never a float.** `decimal.Decimal` or integer minor units,
   everywhere, no exceptions — `go vet`/review will (should) catch a
   `float64` near anything monetary.
-- **`make verify-full` is expensive on purpose** — full Docker volume
-  reset + every chaos scenario. Use the normal gate
-  (`go build`, `go vet`, `make lint`, `make test`) for most changes; reach
-  for `verify-full` only for money-movement, persistence, messaging, or
-  service-startup changes (the [project guide](project-guide.md) spells out
-  the line).
+- **`make verify-full` is expensive on purpose** — it resets Docker volumes
+  and runs the complete repeatable non-chaos gate, including integration,
+  container, business, admin, and disposable load-smoke checks. Use
+  `make verify-chaos` separately for the dependency-kill recovery drill. Use
+  the normal gate (`go build`, `go vet`, `make lint`, `make test`) for most
+  changes; reach for `verify-full` only for money-movement, persistence,
+  messaging, or service-startup changes (the [project guide](project-guide.md)
+  spells out the line).
 - **`scripts/lib.sh` recomputes `WORK_DIR`/`GENTOKEN_BIN` per shell
   invocation.** Source it once per debug session, not once per command, or
   helpers like `gen_token` silently break.

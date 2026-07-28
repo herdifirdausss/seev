@@ -3,9 +3,8 @@
 > [Documentation home](../README.md) · [Reference](README.md)
 
 > **Status: Current.** This document describes the runtime implemented in the
-> repository. Proposed changes, including the dedicated VendorService
-> boundary, remain in the [plan archive](../roadmap/README.md) until their code
-> and acceptance tests are complete.
+> repository. The VendorService boundary is implemented; its final live
+> integration and chaos acceptance remains tracked in [plan 54](../roadmap/active/54-vendor-service-boundary.md).
 
 This document explains **why Seev exists, what problem it solves, and how
 it's built to solve it** — for both a business reader and a technical
@@ -70,7 +69,7 @@ only.
 
 ## 3. How it was built: monolith first, services only with evidence
 
-Seev didn't start as eight services. It started as **one binary, one
+Seev didn't start as a set of deployable services. It started as **one binary, one
 database, with module boundaries enforced by code** (`boundary_test.go`,
 still running today) — the ledger posting engine was built and hardened
 first, since it's the hardest part to get right and everything else
@@ -99,7 +98,8 @@ philosophy in one line:
 Concretely, the build order was: ledger core → policy/limits → auth →
 pay-in/vendor gateway → payout orchestration → fraud → the service
 extraction itself (ledger, auth, payin, payout, fraud, gateway, admin-BFF)
-→ product assurance as an independent read-only verifier → internal
+→ product assurance as an independent read-only verifier → VendorService
+boundary → internal
 security hardening (mTLS everywhere). Each phase is a self-contained,
 numbered document under [docs/roadmap/](../roadmap/README.md) — an archive of
 *why* each decision was made, not just what changed.
@@ -118,6 +118,7 @@ Mapping services to business capabilities, not technical layers:
 | **Continuous assurance** | Assurance | An independent, read-only watchdog that cross-checks payin/payout against the ledger and raises findings — it can *pause new intake* in an emergency, but it can never move money itself |
 | **Operations** | Admin BFF | The console operators use: maker-checker approval for sensitive actions (e.g. ledger adjustments), a full audit log, and typed proxying to the six operational admin APIs; Assurance also has a dedicated operator CLI and admin API |
 | **Public composition** | Gateway | The single public surface end-user clients talk to (alongside Auth's own public edge) — composes calls to the internal services, fans out ledger events to user notifications |
+| **Vendor connectivity** | VendorService | Owns vendor adapters, outbound attempt records, callback authentication and durable inboxing; it never chooses a wallet owner or posts Ledger money |
 
 This maps closely to how a real digital-wallet or PSP-adjacent product is
 organized: a **product/onboarding layer** (Auth), a **money-in and
@@ -144,9 +145,9 @@ segregation-of-duties controls built in rather than bolted on.
 ### 5.1 Service topology
 
 **In plain English:** users enter through Gateway or Auth. Internal services
-perform focused jobs, but only Ledger can make a balance change real. In the
-current implementation, Payin vendor callbacks enter through Gateway before
-Payin verifies and processes them.
+perform focused jobs, but only Ledger can make a balance change real. Vendor
+traffic enters and leaves through VendorService; Payin and Payout retain
+ownership of their business state and correlation decisions.
 
 ```mermaid
 flowchart TB
@@ -157,7 +158,7 @@ flowchart TB
 
     Client -->|JWT auth| Gateway
     Client -->|register/login| Auth
-    Vendor -->|signed webhook| Gateway
+    Vendor -->|signed webhook| VendorService
 
     subgraph Edge["Public-facing"]
         Gateway["Gateway<br/>:8080"]
@@ -171,6 +172,7 @@ flowchart TB
         Fraud["Fraud"]
         Assurance["Assurance<br/>(read-only)"]
         AdminBFF["Admin BFF"]
+        VendorService["VendorService<br/>:8098 / gRPC :9098"]
     end
 
     Gateway --> Payin
@@ -179,7 +181,11 @@ flowchart TB
     Auth -->|provision accounts, apply KYC tier| Ledger
     Payin -->|post transaction| Ledger
     Payout -->|post transaction| Ledger
-    Payout -->|submit or query payout| Vendor
+    Payin -->|create payin session| VendorService
+    Payout -->|submit or query payout| VendorService
+    VendorService -->|configured adapter| Vendor
+    VendorService -->|normalized callback over mTLS| Payin
+    VendorService -->|normalized callback over mTLS| Payout
     Payin -.->|screen| Fraud
     Payout -.->|screen| Fraud
     Auth -.->|screen KYC| Fraud
@@ -208,15 +214,15 @@ always match — that's flagged there for a reason).
 ### 5.2 One transaction, start to finish
 
 **In plain English:** creating a top-up only records an expectation. The
-balance changes later, after a signed vendor message reaches Payin and Ledger
-records the accounting transaction. A notification is a consequence of that
+balance changes later, after a signed vendor message reaches VendorService,
+then Payin correlates it before Ledger records the accounting transaction. A
+notification is a consequence of that
 record; it is not proof by itself that money moved.
 
-The diagram below is current behavior, including Gateway as the callback edge.
-It should not be mistaken for the stricter target: the current Payin code also
-retains a legacy unmatched-intent `user_id` fallback. The dedicated
-VendorService and strict owner-domain correlation are explicitly future work
-in [plan 54](../roadmap/active/54-vendor-service-boundary.md).
+The diagram below is current behavior. VendorService authenticates and stores
+the raw callback before delivering a normalized, owner-neutral event over mTLS;
+Payin/Payout then correlate it against their own state. A legacy raw callback
+RPC remains only for compatibility tests and is not an active Gateway route.
 
 A user topping up their wallet touches almost every architectural idea in
 the system:
@@ -228,6 +234,7 @@ sequenceDiagram
     participant G as Gateway
     participant P as Payin
     participant V as Vendor (mock)
+    participant VS as VendorService
     participant L as Ledger
     participant Q as RabbitMQ (outbox)
     participant N as Notify / Fraud
@@ -240,8 +247,10 @@ sequenceDiagram
     G->>P: CreateTopupIntent (gRPC)
     P-->>G: pending intent
 
-    V->>G: signed webhook (payment confirmed)
-    G->>P: forward webhook
+    P->>VS: create vendor session
+    VS->>V: configured vendor request
+    V->>VS: signed webhook (payment confirmed)
+    VS->>P: normalized callback over mTLS
     P->>L: post double-entry transaction
     L->>L: idempotency check, lock accounts,<br/>validate balance, write entries + outbox<br/>(one DB transaction)
     L-->>P: posted
@@ -271,13 +280,13 @@ guarantees before anyone touches it
 | Internal transport security | Mutual TLS with SPIFFE-style URI SAN identities (`pkg/tlsx`) | Every internal hop authenticates *which service* is calling, not just *that a token was presented* — see [docs/security/threat-model.md](../security/threat-model.md) for exactly what this replaced |
 | Caching / coordination | Redis (optional) | Rate limiting, velocity checks, distributed locks for scheduled jobs — the system degrades explicitly (fail-open or fail-closed, by documented contract) rather than silently when Redis is unavailable |
 | Observability | Prometheus, Grafana, Loki, Tempo (via Alloy) | Metrics, dashboards, logs, and traces as an opt-in profile — not required to run the system, required to operate it with confidence |
-| CI | GitHub Actions, SHA-pinned actions, a docs-only fast path | A single required `ci-gate` check that's fast for docs, thorough for code: lint, unit tests, integration tests (testcontainers), and a full 8-image container smoke test |
+| CI | GitHub Actions, SHA-pinned actions, a docs-only fast path | A single required `ci-gate` check that's fast for docs, thorough for code: lint, unit tests, integration tests (testcontainers), contract gates, load-harness safety checks, and a full 9-image container smoke test |
 
 ### 5.4 Security model, in one paragraph
 
 Public clients authenticate with JWT (users) or HMAC-signed webhooks
 (vendors). Every hop *between* services — gRPC or internal HTTP, all
-eight services — is mutually authenticated by mTLS, where identity is the
+all internal service hops — are mutually authenticated by mTLS, where identity is the
 certificate's URI SAN, never a Common Name or "signed by our CA" alone; a
 new caller has to be added to its callee's allowlist explicitly, it's
 never inferred. Certificates are short-lived and rotate without a

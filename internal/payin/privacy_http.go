@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/herdifirdausss/seev/pkg/httpcontract"
 	"github.com/herdifirdausss/seev/pkg/privacyexport"
 	"github.com/herdifirdausss/seev/pkg/response"
 )
@@ -19,7 +20,7 @@ import (
 // wrap this in pkg/middleware.WithInternalToken, mirroring ledger's own
 // ClosureRouter (docs/roadmap/active/51 T5).
 func (m *Module) PrivacyRouter() http.Handler {
-	mux := http.NewServeMux()
+	mux := httpcontract.New(httpcontract.Options{Owner: "payin", Audience: "internal", Contract: "internal-v1"})
 	mux.HandleFunc("GET /privacy/export", m.handlePrivacyExport)
 	mux.HandleFunc("POST /privacy/closure/prepare", m.handleClosurePrepare)
 	mux.HandleFunc("POST /privacy/closure/commit", m.handleClosureCommit)

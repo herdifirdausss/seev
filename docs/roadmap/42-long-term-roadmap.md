@@ -2,7 +2,7 @@
 
 > [Documentation home](../README.md) · [Roadmap](README.md)
 
-Created: 2026-07-16. Last reviewed against the live topology: 2026-07-22.
+Created: 2026-07-16. Last reviewed against the live topology: 2026-07-28.
 
 > Reference only. Do not execute this document directly. New execution plans (43 and later) should be created only when a track's activation trigger is satisfied.
 
@@ -18,7 +18,8 @@ When a trigger is met:
 
 1. record the evidence or conscious learning decision;
 2. create a self-contained numbered execution document with locked decisions, T1–Tn tasks, tests, DoD, and results;
-3. use the full repository gate: lint, tests, both vet modes, smoke, business journey, and chaos;
+3. use `make verify-full` for the repeatable non-chaos repository gate, then
+   run `make verify-chaos` separately for recovery evidence;
 4. update the plan index and this roadmap.
 
 ## Track map
@@ -33,9 +34,9 @@ When a trigger is met:
 | A6 | Internal security and service identity | H1 | After MVP; mandatory before B2B | Complete via [49](archive/49-a6-internal-security.md) |
 | A7 | Backup, PITR, and disaster recovery | H1 | Any time after MVP | Complete via [50](archive/50-a7-backup-pitr-disaster-recovery.md) |
 | A8 | Data lifecycle and privacy | H1 | After MVP; quote cleanup can start earlier | Complete via [51](archive/51-a8-data-lifecycle-privacy.md) |
-| A9 | API contracts and schema evolution | H1 | First silent consumer-breaking payload change; mandatory before B2B | Planned via [52](active/52-a9-api-contracts-schema-evolution.md) |
+| A9 | API contracts and schema evolution | H1 | First silent consumer-breaking payload change; mandatory before B2B | In progress via [52](active/52-a9-api-contracts-schema-evolution.md); final compatibility/rollout evidence open |
 | A10 | Product assurance and emergency intake control | H1 | Prove consistency across payin, payout, and ledger | Complete via [48](archive/48-a10-product-assurance.md) |
-| B0 | Load harness and capacity model | H2 gate | Before any measured scale work | Planned via [53](active/53-b0-load-capacity-gate.md) |
+| B0 | Load harness and capacity model | H2 gate | Before any measured scale work | In progress via [53](active/53-b0-load-capacity-gate.md); harness/safety foundation exists, measurements open |
 | B1 | Hot-account sub-sharding | H2 | B0 proves lock contention in delta application | Future |
 | B2 | Ledger-entry partitioning and archival | H2 | Approximately 50 million ledger entries or equivalent forecast | Future |
 | B3 | Fee and routing resolution cache | H2 | B0 proves per-call resolution is a hotspot | Future |
@@ -55,11 +56,12 @@ Business goal: operate a money system with measurable SLOs and fast incident res
 ### A2 — Delivery pipeline
 
 The CI portion is complete via plan 44: runtime changes run lint/tests,
-integration tests, and an eight-image container smoke gate; a weekly and
+integration tests, and a nine-image container smoke gate; a weekly and
 manually dispatchable workflow runs the business journey and all chaos
-scenarios. Documentation-only changes use a fast path. Local kind work remains
-the optional plan 35. Do not expand this into cloud CD, GitOps, or
-multi-cluster operations.
+scenarios. Locally, `make verify-full` covers the repeatable non-chaos gate and
+`make verify-chaos` is the operator-controlled recovery gate. Documentation-only
+changes use a fast path. Local kind work remains the optional plan 35. Do not
+expand this into cloud CD, GitOps, or multi-cluster operations.
 
 ### A3 — External resilience
 
@@ -134,7 +136,7 @@ without implementation.
 - No real-money licensing or formal certification claims.
 - No go-to-market, marketing, or pricing strategy.
 - No additional service extraction without a new evidence-based trigger; the
-  current eight-service topology is the baseline.
+  current nine-service topology is the baseline.
 
 ## Traceability
 

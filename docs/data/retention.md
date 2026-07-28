@@ -331,3 +331,14 @@ No entry may fully delete a row from these tables — only `retain_permanent`, `
 
 **`shared.redis_rate_limits`** — pkg/middleware/rate_limit.go. Self-expiring fixed-window counters; safe to start empty after any restore (A7 K10 §4).
 
+## vendor
+
+| Class | Table / object | Classification | Terminal timestamp | Duration | Action | Batch | Hold scope |
+|---|---|---|---|---|---|---|---|
+| `vendor.callback_inbox` | vendor.vendor_callback_inbox | sensitive | updated_at | 30d | redact | 500 | none |
+| `vendor.outbound_attempts` | vendor.vendor_outbound_attempts | internal | — | — | retain_permanent | — | none |
+
+**`vendor.callback_inbox`** — Raw callback bytes are redacted after the investigation window; sanitized correlation fields remain for reconciliation.
+
+**`vendor.outbound_attempts`** — Append-only sanitized vendor transport audit; plaintext credentials and full vendor payloads are never stored.
+

@@ -1,0 +1,7 @@
+syntax = "proto3";
+package seev.fixture.v1;
+
+message Sample {
+  string stable = 1;
+  string old_name = 2;
+}

@@ -1,0 +1,31 @@
+schema_version: 1
+id: local-small
+description: Four-CPU, four-GiB disposable B0 capacity profile.
+disposable: true
+resources:
+  logical_cpus: 4
+  docker_memory_mib: 4096
+  total_container_memory_mib: 3520
+  max_container_memory_mib: 768
+network:
+  name: seev-load
+  published_host: 127.0.0.1
+services:
+  - {name: postgres, memory_mib: 640, required: true}
+  - {name: redis, memory_mib: 128, required: true}
+  - {name: rabbitmq, memory_mib: 256, required: true}
+  - {name: gateway-service, memory_mib: 256, required: true}
+  - {name: vendor-service, memory_mib: 192, required: true}
+  - {name: auth-service, memory_mib: 384, required: true}
+  - {name: ledger-service, memory_mib: 512, required: true}
+  - {name: payin-service, memory_mib: 256, required: true}
+  - {name: payout-service, memory_mib: 256, required: true}
+  - {name: fraud-service, memory_mib: 256, required: true}
+  - {name: prometheus, memory_mib: 128, required: true}
+  - {name: object-store-init, memory_mib: 16, required: true}
+  - {name: load-generator, memory_mib: 240, required: true}
+k6:
+  image: grafana/k6
+  version: 0.52.0
+  digest: sha256:f9799c986eb1b7288052bcf737fc7bba95ff799471f82157cb3ef93c72e3e592
+  max_vus: 256

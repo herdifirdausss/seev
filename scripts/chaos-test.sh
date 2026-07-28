@@ -92,7 +92,7 @@ scenario_1() {
 
 	log "restarting gateway and retrying any requests that didn't get a clean response..."
 	# Only gateway was killed above (kill_server_hard is gateway-only) — the
-	# other five processes never stopped. Calling start_server/start_services
+	# other seven processes never stopped. Calling start_server/start_services
 	# here would try to rebind their still-held ports, fail immediately, and
 	# silently overwrite their PID files with the new (already-dead) pids —
 	# every later stop/kill in this run would then target that dead pid while
@@ -565,13 +565,16 @@ scenario_5() {
 	[ "$final_created" = "settled" ] && ok "kill point 1 (created) resolved to 'settled'" || fail "kill point 1 (created) ended at '$final_created', expected 'settled'"
 	[ "$final_held" = "settled" ] && ok "kill point 2 (held) resolved to 'settled'" || fail "kill point 2 (held) ended at '$final_held', expected 'settled'"
 	[ "$final_submitted" = "settled" ] && ok "kill point 3 (submitted) resolved to 'settled' after simulated vendor recovery" || fail "kill point 3 (submitted) ended at '$final_submitted', expected 'settled'"
-	[ "$final_pending" = "settled" ] && ok "kill point 4 (vendor_pending) recovered to settled" || fail "kill point 4 ended at '$final_pending', expected settled"
+	[ "$final_pending" = "vendor_pending" ] && ok "kill point 4 (vendor_pending) remained resumable after restart" || fail "kill point 4 ended at '$final_pending', expected vendor_pending"
+	local pending_query_count
+	pending_query_count="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT count(*) FROM payout_vendor_calls WHERE payout_request_id='$id_pending' AND req_summary LIKE 'query vendor=%';")"
+	[ "$pending_query_count" -gt 0 ] && ok "kill point 4 resume polled the vendor without re-submitting" || fail "kill point 4 recorded no vendor query after restart"
 	local final_ledger
 	final_ledger="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT status FROM payout_requests WHERE id='$id_ledger';")"
 	[ "$final_ledger" = "settled" ] && ok "ledger crash point recovered to settled" || fail "ledger crash point ended at '$final_ledger', expected settled"
 
 	local no_stuck
-	no_stuck="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT count(*) FROM payout_requests WHERE user_id = '$user_id' AND status IN ('created','held','submitted','vendor_pending');")"
+	no_stuck="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT count(*) FROM payout_requests WHERE user_id = '$user_id' AND status IN ('created','held','submitted');")"
 	if [ "$no_stuck" = "0" ]; then
 		ok "no payout request left stuck in created/held/submitted after resume"
 	else
@@ -604,15 +607,20 @@ scenario_6() {
 
 	local user_id="c6a05000-0000-0000-0000-000000000006"
 	provision_user "$user_id" >/dev/null
-	local cash before after body sig code
+	local cash before after body sig code topup_resp topup_reference
 	cash="$(cash_account_id "$user_id")"
 	before="$(account_balance "$cash")"
-	body="{\"event_id\":\"chaos6-$RANDOM\",\"external_ref\":\"chaos6-ref\",\"user_id\":\"$user_id\",\"amount\":\"6000\",\"currency\":\"IDR\",\"occurred_at\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"type\":\"payment.settled\"}"
-	sig="$(printf '%s' "$body" | openssl dgst -sha256 -hmac 'script-test-mockvendor-secret-at-least-32-chars-long' -r | awk '{print $1}')"
+	topup_resp="$(curl -s -X POST "http://localhost:$APP_PORT/api/v1/topup" \
+		-H "Authorization: Bearer $(gen_token "$user_id")" -H "Content-Type: application/json" \
+		-d '{"amount":"6000"}')"
+	topup_reference="$(echo "$topup_resp" | json_field reference)"
+	[ -n "$topup_reference" ] || fail "chaos6 topup intent creation failed: $topup_resp"
+	body="{\"event_id\":\"chaos6-$RANDOM\",\"external_ref\":\"$topup_reference\",\"user_id\":\"$user_id\",\"amount\":\"6000\",\"currency\":\"IDR\",\"occurred_at\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"type\":\"payment.settled\"}"
+	sig="$(printf '%s' "$body" | openssl dgst -sha256 -hmac "$VENDOR_MOCKVENDOR_SECRET" -r | awk '{print $1}')"
 
 	kill_payin_hard
-	code=$(curl -s --max-time 10 -o /dev/null -w '%{http_code}' -X POST "http://localhost:$APP_PORT/webhooks/mockvendor" -H "X-Mock-Signature: $sig" -H "Content-Type: application/json" -d "$body" || echo "000")
-	[ "$code" = "503" ] && ok "gateway returned 503 while payin-service was down" || fail "gateway returned $code while payin-service was down, expected 503"
+	code=$(curl_internal -s --max-time 10 -o /dev/null -w '%{http_code}' -X POST "http://localhost:$VENDOR_APP_PORT/webhooks/mockvendor" -H "X-Mock-Signature: $sig" -H "Content-Type: application/json" -d "$body" || echo "000")
+	[ "$code" = "503" ] && ok "vendor-service returned 503 while payin-service was down" || fail "vendor-service returned $code while payin-service was down, expected 503"
 
 	start_payin_service
 	# A real vendor's webhook redelivery is not a single immediate retry — it
@@ -627,7 +635,7 @@ scenario_6() {
 	local redelivery_tries=10
 	code="000"
 	while [ "$redelivery_tries" -gt 0 ]; do
-		code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$APP_PORT/webhooks/mockvendor" -H "X-Mock-Signature: $sig" -H "Content-Type: application/json" -d "$body")
+		code=$(curl_internal -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$VENDOR_APP_PORT/webhooks/mockvendor" -H "X-Mock-Signature: $sig" -H "Content-Type: application/json" -d "$body")
 		[ "$code" = "200" ] && break
 		sleep 1
 		redelivery_tries=$((redelivery_tries - 1))
@@ -682,11 +690,15 @@ scenario_7() {
 		|| fail "ledger log did not contain the fail-open screening error"
 
 	log "-- Topup webhook while fraud-service is down --"
-	local topup_body topup_sig topup_before topup_after
+	local topup_body topup_sig topup_before topup_after topup_resp topup_reference
 	topup_before="$after_fail_open"
-	topup_body="{\"event_id\":\"chaos7-down-$RANDOM\",\"external_ref\":\"chaos7-down-ref\",\"user_id\":\"$user_id\",\"amount\":\"6000\",\"currency\":\"IDR\",\"occurred_at\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"type\":\"payment.settled\"}"
-	topup_sig="$(printf '%s' "$topup_body" | openssl dgst -sha256 -hmac 'script-test-mockvendor-secret-at-least-32-chars-long' -r | awk '{print $1}')"
-	code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$APP_PORT/webhooks/mockvendor" \
+	topup_resp="$(curl -s -X POST "http://localhost:$APP_PORT/api/v1/topup" \
+		-H "Authorization: Bearer $token" -H "Content-Type: application/json" -d '{"amount":"6000"}')"
+	topup_reference="$(echo "$topup_resp" | json_field reference)"
+	[ -n "$topup_reference" ] || fail "chaos7 fail-open topup intent creation failed: $topup_resp"
+	topup_body="{\"event_id\":\"chaos7-down-$RANDOM\",\"external_ref\":\"$topup_reference\",\"user_id\":\"$user_id\",\"amount\":\"6000\",\"currency\":\"IDR\",\"occurred_at\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"type\":\"payment.settled\"}"
+	topup_sig="$(printf '%s' "$topup_body" | openssl dgst -sha256 -hmac "$VENDOR_MOCKVENDOR_SECRET" -r | awk '{print $1}')"
+	code=$(curl_internal -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$VENDOR_APP_PORT/webhooks/mockvendor" \
 		-H "X-Mock-Signature: $topup_sig" -H "Content-Type: application/json" -d "$topup_body")
 	topup_after="$(account_balance "$cash")"
 	[ "$code" = "200" ] && [ "$topup_after" = "$((topup_before + 6000))" ] \
@@ -756,11 +768,15 @@ scenario_7() {
 		|| fail "expected at least one blocked fraud event for P2P, found $event_count"
 
 	log "-- Topup webhook in block mode (amount >= threshold) --"
-	local block_topup_id block_topup_body block_topup_sig block_topup_status
-	block_topup_body="{\"event_id\":\"chaos7-block-$RANDOM\",\"external_ref\":\"chaos7-block-ref\",\"user_id\":\"$user_id\",\"amount\":\"6000\",\"currency\":\"IDR\",\"occurred_at\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"type\":\"payment.settled\"}"
+	local block_topup_id block_topup_body block_topup_sig block_topup_status block_topup_resp block_topup_reference
+	block_topup_resp="$(curl -s -X POST "http://localhost:$APP_PORT/api/v1/topup" \
+		-H "Authorization: Bearer $token" -H "Content-Type: application/json" -d '{"amount":"6000"}')"
+	block_topup_reference="$(echo "$block_topup_resp" | json_field reference)"
+	[ -n "$block_topup_reference" ] || fail "chaos7 block-mode topup intent creation failed: $block_topup_resp"
+	block_topup_body="{\"event_id\":\"chaos7-block-$RANDOM\",\"external_ref\":\"$block_topup_reference\",\"user_id\":\"$user_id\",\"amount\":\"6000\",\"currency\":\"IDR\",\"occurred_at\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"type\":\"payment.settled\"}"
 	block_topup_id="$(echo "$block_topup_body" | sed -n 's/.*"event_id":"\([^"]*\)".*/\1/p')"
-	block_topup_sig="$(printf '%s' "$block_topup_body" | openssl dgst -sha256 -hmac 'script-test-mockvendor-secret-at-least-32-chars-long' -r | awk '{print $1}')"
-	code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$APP_PORT/webhooks/mockvendor" \
+	block_topup_sig="$(printf '%s' "$block_topup_body" | openssl dgst -sha256 -hmac "$VENDOR_MOCKVENDOR_SECRET" -r | awk '{print $1}')"
+	code=$(curl_internal -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$VENDOR_APP_PORT/webhooks/mockvendor" \
 		-H "X-Mock-Signature: $block_topup_sig" -H "Content-Type: application/json" -d "$block_topup_body")
 	local after_block_topup
 	after_block_topup="$(account_balance "$cash")"

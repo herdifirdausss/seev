@@ -2,20 +2,23 @@
 
 > [Documentation home](../README.md) · **Roadmap**
 
-> **Status: Current index.** This page separates future execution plans from
-> completed or superseded history. A plan is not current product behavior.
+> **Status: Current index.** This page separates active execution plans from
+> completed or superseded history. Current runtime behavior is documented in
+> the reference and operations sections.
 
 ## Active plans
 
-These plans are designed but not implemented. Begin one only when its stated
+These plans are active execution records. Some contain implemented foundations
+with acceptance work still open; begin or extend one only when its stated
 trigger, prerequisites, and owner decision are satisfied.
 
 | # | Plan | Purpose | Status |
 |---|---|---|---|
 | 35 | [Optional local Kubernetes](active/35-phase6j-kubernetes.md) | Learn local orchestration with kind | Todo |
-| 52 · A9 | [API contracts and schema evolution](active/52-a9-api-contracts-schema-evolution.md) | Add compatibility and deprecation gates | Todo |
-| 53 · B0 | [Load and capacity gate](active/53-b0-load-capacity-gate.md) | Measure whether later scale work is justified | Todo |
-| 54 | [VendorService boundary](active/54-vendor-service-boundary.md) | Isolate vendor connectivity and callback ingress | Todo |
+| 52 · A9 | [API contracts and schema evolution](active/52-a9-api-contracts-schema-evolution.md) | Add compatibility and deprecation gates | In progress — implementation baseline |
+| 53 · B0 | [Load and capacity gate](active/53-b0-load-capacity-gate.md) | Measure whether later scale work is justified | In progress — harness and safety gates |
+| 54 | [VendorService boundary](active/54-vendor-service-boundary.md) | Isolate vendor connectivity and callback ingress | In progress — foundation implemented; final live gate pending |
+| 56 · F0 | [Frontend platform foundation](active/56-f0-frontend-platform-foundation.md) | Establish the browser product and shared frontend rules | In progress — design baseline; implementation not started |
 
 The same list is available in the [active-plan folder](active/README.md).
 
@@ -39,6 +42,7 @@ say “current” while describing an older system shape; use the
 ## Status meanings
 
 - **Todo** — an executable design exists, but implementation has not started.
+- **In progress** — implementation or acceptance evidence is still being collected; the status note identifies the current boundary.
 - **Done** — the tracked scope was implemented and moved to the archive.
 - **Core done** — the safe vendor-neutral core is complete; optional external
   integration remains outside the repository.

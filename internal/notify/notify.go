@@ -125,14 +125,23 @@ func (m *Module) handleDelivery(ctx context.Context, d amqp.Delivery) error {
 	if err := json.Unmarshal(d.Body, &ev); err != nil {
 		return fmt.Errorf("notify: decode TransactionPosted: %w", err)
 	}
+	if err := ev.Validate(); err != nil {
+		return fmt.Errorf("notify: validate TransactionPosted: %w", err)
+	}
 
 	if !notifiableTypes[ev.TransactionType] {
 		return nil
 	}
 
-	eventID, err := uuid.Parse(d.MessageId)
-	if err != nil {
-		return fmt.Errorf("notify: invalid message id %q: %w", d.MessageId, err)
+	var eventID uuid.UUID
+	if ev.EventID != nil {
+		eventID = *ev.EventID
+	} else {
+		var err error
+		eventID, err = uuid.Parse(d.MessageId)
+		if err != nil {
+			return fmt.Errorf("notify: invalid message id %q: %w", d.MessageId, err)
+		}
 	}
 
 	for _, rcpt := range recipientsFor(ev) {

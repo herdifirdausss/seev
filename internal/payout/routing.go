@@ -3,8 +3,10 @@ package payout
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
+	"github.com/herdifirdausss/seev/pkg/loadmetrics"
 	"github.com/shopspring/decimal"
 )
 
@@ -14,8 +16,12 @@ import (
 // already tried for this request). Pass a nil/empty exclude for a fresh
 // request.
 func (m *Module) ResolvePayoutRoute(ctx context.Context, userID uuid.UUID, currency string, amount decimal.Decimal, exclude []string) (string, string, error) {
+	started := time.Now()
+	result := "not_found"
+	defer func() { loadmetrics.ObserveResolution("payout", "payout_routing", result, started) }()
 	candidates, err := m.routing.ResolveCandidates(ctx, "payout", userID, currency, amount.IntPart())
 	if err != nil {
+		result = "error"
 		return "", "", err
 	}
 	if len(candidates) == 0 {

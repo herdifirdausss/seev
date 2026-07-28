@@ -11,11 +11,12 @@ import (
 	"github.com/herdifirdausss/seev/internal/adminbff"
 	adminweb "github.com/herdifirdausss/seev/internal/adminbff/web"
 	"github.com/herdifirdausss/seev/internal/config"
+	"github.com/herdifirdausss/seev/pkg/httpcontract"
 	"github.com/herdifirdausss/seev/pkg/middleware"
 )
 
 func adminRouter(cfg *config.Config, module *adminbff.Module, log *slog.Logger) http.Handler {
-	root := http.NewServeMux()
+	root := httpcontract.New(httpcontract.Options{Owner: "admin-bff", Audience: "operational", Contract: "admin-v1"})
 	root.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})

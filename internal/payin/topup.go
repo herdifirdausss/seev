@@ -54,6 +54,11 @@ func (m *Module) CreateTopupIntent(ctx context.Context, userID uuid.UUID, amount
 	if err := m.repo.InsertTopupIntent(ctx, intent); err != nil {
 		return TopupIntent{}, fmt.Errorf("payin: insert topup intent: %w", err)
 	}
+	if m.vendorSession != nil {
+		if err := m.vendorSession.CreatePayinSession(ctx, vendor, intent.ID.String(), amount, currency, intent.RequestID); err != nil {
+			return TopupIntent{}, fmt.Errorf("payin: create VendorService session: %w", err)
+		}
+	}
 	return intent, nil
 }
 

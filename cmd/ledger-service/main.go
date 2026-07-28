@@ -30,6 +30,7 @@ import (
 	"github.com/herdifirdausss/seev/pkg/database"
 	"github.com/herdifirdausss/seev/pkg/fraudcheck"
 	"github.com/herdifirdausss/seev/pkg/grpcx"
+	"github.com/herdifirdausss/seev/pkg/httpcontract"
 	"github.com/herdifirdausss/seev/pkg/logger"
 	"github.com/herdifirdausss/seev/pkg/messaging"
 	"github.com/herdifirdausss/seev/pkg/middleware"
@@ -315,11 +316,11 @@ func run(parent context.Context) error {
 }
 
 func publicRouter(cfg *config.Config, module *ledger.Module, db *database.DBSQL, redisCache *cache.Cache, mq *messaging.RabbitMQ, log *slog.Logger) http.Handler {
-	root := http.NewServeMux()
+	root := httpcontract.New(httpcontract.Options{Owner: "ledger", Audience: "operational", Contract: "public-v1"})
 	root.HandleFunc("GET /health", live)
 	root.Handle("GET /ready", ready(db, redisCache, mq))
 	authed := middleware.Chain(middleware.WithAuth(cfg.JWT.Secret, cfg.JWT.Issuer), middleware.RequireJSON())
-	api := http.NewServeMux()
+	api := httpcontract.New(httpcontract.Options{Owner: "ledger", Audience: "public", Contract: "public-v1"})
 	api.Handle("/api/v1/ledger/", authed(http.StripPrefix("/api/v1/ledger", module.Router())))
 	root.Handle("/", middleware.Chain(
 		middleware.WithRequestID(), middleware.WithRoutePattern(api), middleware.WithTracing(log), middleware.WithHTTPMetrics(), middleware.WithLogger(log), middleware.WithRecovery(),
@@ -329,10 +330,10 @@ func publicRouter(cfg *config.Config, module *ledger.Module, db *database.DBSQL,
 }
 
 func internalRouter(cfg *config.Config, module *ledger.Module, policyHandler *policy.Handler, log *slog.Logger) http.Handler {
-	root := http.NewServeMux()
+	root := httpcontract.New(httpcontract.Options{Owner: "ledger", Audience: "operational", Contract: "internal-v1"})
 	root.Handle("GET /metrics", promhttp.Handler())
 	authed := middleware.Chain(middleware.WithAuth(cfg.JWT.Secret, cfg.JWT.Issuer), middleware.RequireJSON())
-	api := http.NewServeMux()
+	api := httpcontract.New(httpcontract.Options{Owner: "ledger", Audience: "internal", Contract: "internal-v1"})
 	api.Handle("/api/v1/ledger/", authed(http.StripPrefix("/api/v1/ledger", module.InternalRouter())))
 	api.Handle("/api/v1/admin/ledger/", authed(http.StripPrefix("/api/v1", module.InternalRouter())))
 	api.Handle("/api/v1/admin/policy/", authed(http.StripPrefix("/api/v1", policyHandler.Mux())))

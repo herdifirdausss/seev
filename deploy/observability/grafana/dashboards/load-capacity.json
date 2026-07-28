@@ -1,0 +1,14 @@
+{
+  "uid": "seev-load-capacity",
+  "title": "Seev / B0 load capacity",
+  "description": "Disposable B0 load signals; not a production capacity claim.",
+  "tags": ["seev", "load", "b0"],
+  "schemaVersion": 39,
+  "version": 1,
+  "panels": [
+    {"id": 1, "title": "HTTP rate and latency", "type": "timeseries", "datasource": {"type": "prometheus", "uid": "seev-prometheus"}, "targets": [{"expr": "sum(rate(http_server_request_duration_seconds_count[1m])) by (route, status_code)", "refId": "A", "legendFormat": "{{route}} {{status_code}}"}]},
+    {"id": 2, "title": "Database pool waits", "type": "timeseries", "datasource": {"type": "prometheus", "uid": "seev-prometheus"}, "targets": [{"expr": "sum(rate(seev_database_pool_wait_count_total[1m])) by (owner)", "refId": "A", "legendFormat": "{{owner}}"}]},
+    {"id": 3, "title": "Outbox age", "type": "timeseries", "datasource": {"type": "prometheus", "uid": "seev-prometheus"}, "targets": [{"expr": "ledger_outbox_oldest_pending_age_seconds", "refId": "A", "legendFormat": "oldest pending"}]},
+    {"id": 4, "title": "Resolver duration", "type": "timeseries", "datasource": {"type": "prometheus", "uid": "seev-prometheus"}, "targets": [{"expr": "histogram_quantile(0.95, sum(rate(seev_resolution_duration_seconds_bucket[1m])) by (le, owner, kind))", "refId": "A", "legendFormat": "{{owner}} {{kind}}"}]}
+  ]
+}

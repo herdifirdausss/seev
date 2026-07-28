@@ -64,18 +64,24 @@ func (m *Module) handleDelivery(ctx context.Context, delivery amqp.Delivery) err
 	if err := json.Unmarshal(delivery.Body, &event); err != nil {
 		return fmt.Errorf("fraud: decode TransactionPosted: %w", err)
 	}
+	if err := event.Validate(); err != nil {
+		return fmt.Errorf("fraud: validate TransactionPosted: %w", err)
+	}
 	if event.UserID == nil {
 		return nil
 	}
-	if delivery.MessageId == "" {
-		return fmt.Errorf("fraud: message id is required")
+	deduplicationID := delivery.MessageId
+	if event.EventID != nil {
+		deduplicationID = event.EventID.String()
+	} else if deduplicationID == "" {
+		return fmt.Errorf("fraud: message id is required for legacy event")
 	}
 	at := event.OccurredAt
 	if at.IsZero() {
 		at = time.Now()
 	}
 	key := rules.VelocityKey(event.UserID.String(), at)
-	if err := m.store.Record(ctx, delivery.MessageId, key, velocityTTL); err != nil {
+	if err := m.store.Record(ctx, deduplicationID, key, velocityTTL); err != nil {
 		return fmt.Errorf("fraud: increment velocity: %w", err)
 	}
 	// request_id here is the CorrelationId the publisher stamped on this

@@ -113,20 +113,21 @@ continue without a matching top-up ticket; the safer target removes it.
 
 > **Status: Current.** This table describes code that exists in this
 > repository today. Future designs are kept in the
-> [plan archive](docs/roadmap/README.md) and are not presented as implemented.
+> [roadmap](docs/roadmap/README.md) and are not presented as implemented.
 
-Eight deployable services are built from this repository:
+Nine deployable services are built from this repository:
 
 | Service | Container ports (loopback-published locally) | Database | Primary responsibility |
 |---|---:|---|---|
 | Gateway | 8080, 8081 | seev_gateway | Public API composition, notifications, and ledger event consumption |
 | Auth | 8082, 8083 | seev_auth | Registration, login, refresh tokens, profiles, roles, and KYC state |
 | Ledger | 8090, 8091, gRPC 9091 | seev_ledger | Double-entry postings, policies, fees, reconciliation, reporting, and workers |
-| Pay-in | 8092, gRPC 9092 | seev_payin | Top-up intents, signed vendor webhooks, and routing |
+| Pay-in | 8092, gRPC 9092 | seev_payin | Top-up intents, normalized vendor callbacks, and routing |
 | Payout | 8093, gRPC 9093 | seev_payout | Withdrawal orchestration, vendor commands, recovery, and routing |
 | Fraud | 8094, gRPC 9094 | seev_fraud | Synchronous screening rules and asynchronous event enrichment |
 | Admin BFF | 8095 | seev_adminbff | Operator sessions, maker/checker console, typed admin proxy, and audit log |
 | Assurance | 8096 | seev_assurance | Read-only pay-in/payout/ledger assurance, durable findings, alert delivery, and explicit intake controls |
+| VendorService | 8098, gRPC 9098 | seev_vendor | Vendor adapters, outbound attempt records, callback authentication, durable callback inbox, and normalized delivery to Payin/Payout |
 
 PostgreSQL stores service-owned data, Redis supports caching, rate limiting,
 velocity checks, and distributed coordination, and RabbitMQ carries ledger
@@ -138,7 +139,7 @@ HTTP or gRPC contracts; services must not query another service's database.
 ~~~text
 .
 ├── api/proto/               # Protobuf service contracts
-├── cmd/                     # Eight service entrypoints plus local utilities
+├── cmd/                     # Nine service entrypoints plus local utilities
 ├── deploy/observability/    # Prometheus, Grafana, Loki, Tempo, and Alloy config
 ├── docs/                    # Documentation home and interactive story
 │   ├── learn/               # Plain-language and product learning paths
@@ -163,7 +164,7 @@ the [Project guide](docs/development/project-guide.md).
 
 ## Requirements
 
-- Go 1.25.12 or a compatible newer toolchain
+- Go 1.25.6 or a compatible newer toolchain (the version declared by `go.mod`)
 - Docker with Compose
 - golang-migrate for direct migration targets
 - golangci-lint for make lint
@@ -195,7 +196,7 @@ Apply every service migration:
 make migrate-up-all
 ~~~
 
-Build and start all eight application containers:
+Build and start all nine application containers:
 
 ~~~bash
 docker compose --profile app up --build -d
@@ -223,14 +224,25 @@ secrets, and TLS-related settings.
 ## Build and verification
 
 ~~~bash
-make build-all       # build all eight deployable services
+make build-all       # build all nine deployable services
 make test            # unit tests with race detection and coverage
 make vet             # static checks from the Go toolchain
 make lint            # golangci-lint
+make ci-lint         # actionlint, ShellCheck, and action SHA-pin policy
 make docs-check      # local Markdown links and heading anchors
 make proto-lint      # protobuf lint
+make contracts       # generate, lint, compare, and test A9 contracts
 git diff --check     # whitespace validation
 ~~~
+
+Contract ownership and evolution rules are documented in
+[API contracts](docs/reference/api-contracts.md); HTTP, event, and protobuf
+changes must keep their inventory and compatibility gate evidence together.
+
+Capacity work is disposable and profile-bound. Use `make load-lint` for fast
+checks; use `SEEV_LOAD_ACK=disposable-only make load-smoke` only with the
+documented `local-small` load profile. B0 results and safety limits are in
+[performance evidence](docs/performance/README.md).
 
 Integration tests use build tags and require Docker:
 
@@ -244,12 +256,14 @@ Operational verification:
 ./scripts/smoke-test.sh
 ./scripts/business-e2e.sh
 ./scripts/admin-e2e.sh
-./scripts/chaos-test.sh all
-make smoke-container
+make verify-chaos                 # manual recovery drill
+make smoke-container              # included in verify-full
 ~~~
 
-`make verify-full` runs the complete repository gate from clean Docker volumes.
-It is intentionally heavier than the normal unit-test loop.
+`make verify-full` runs the complete repeatable non-chaos repository gate from
+clean Docker volumes. Run `make verify-chaos` separately for the
+dependency-kill recovery drill. Both are intentionally heavier than the normal
+unit-test loop.
 
 ## Protobuf workflow
 
@@ -261,8 +275,13 @@ make proto-lint
 make proto-breaking
 ~~~
 
-Run the breaking-change check from a branch that can resolve the local main
-reference.
+Run the breaking-change check against an explicit merge-base ref. Local
+development defaults to `main`; CI computes the actual pull-request merge
+base and passes it through `PROTO_MERGE_BASE_REF`.
+
+```bash
+PROTO_MERGE_BASE_REF=main make proto-breaking
+```
 
 ## Observability
 

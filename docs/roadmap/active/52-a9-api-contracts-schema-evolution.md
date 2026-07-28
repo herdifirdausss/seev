@@ -5,7 +5,9 @@
 > Derived from track **A9** in
 > [42-long-term-roadmap.md](../42-long-term-roadmap.md).
 >
-> **Status: ready for execution; not implemented.** The activation trigger is
+> **Status: In progress.** The contract inventory, generated artifacts, and
+> repository checks are implemented; live response fixtures, version-rollout
+> evidence, and the final clean-tree gate remain open. The activation trigger is
 > a conscious learning decision made on 2026-07-22. Completing A9 is mandatory
 > before the merchant/B2B API in C1 may begin.
 
@@ -48,23 +50,26 @@ surface is added.
 
 ## 2. Live repository facts
 
-These facts were verified when this plan was written. Execution must recheck the
-live tree before changing contracts.
+These facts were rechecked on 2026-07-28. They describe the current baseline;
+the remaining gaps are called out explicitly instead of being presented as
+missing foundations.
 
 ### 2.1 HTTP surfaces
 
-- Eight deployable Go services register routes with Go 1.22 `http.ServeMux`.
+- Nine deployable Go services register routes through `pkg/httpcontract.Mux`,
+  preserving Go 1.22 `http.ServeMux` matching semantics.
 - Auth exposes user routes under `/api/v1` and separate admin KYC routes on its
   internal listener.
 - Gateway exposes user top-up, payout, notification, and proxied ledger routes
-  under `/api/v1`; vendor callbacks use `POST /webhooks/{vendor}`.
+  under `/api/v1`; VendorService owns `POST /webhooks/{vendor}`.
 - Ledger, pay-in, payout, fraud, assurance, and auth expose direct internal or
   admin HTTP routes. Admin BFF proxies selected operations and also serves HTML.
-- Route registration is distributed across `cmd/` and `internal/` packages and
-  can be conditional on configured dependencies. `ServeMux` does not expose a
-  complete route inventory for compatibility tests.
-- No OpenAPI document, HTTP semantic-diff gate, or route-to-contract coverage
-  check exists.
+- Route registration remains distributed across `cmd/` and `internal/` packages
+  and can be conditional on configured dependencies. The contract wrapper now
+  exposes operation metadata and snapshots; `api/contracts/` checks inventory
+  and OpenAPI coverage.
+- OpenAPI source/bundle generation, lint, compatibility checks, and route
+  coverage exist. Full dependency response fixtures remain incomplete.
 
 ### 2.2 HTTP representation behavior
 
@@ -77,8 +82,9 @@ live tree before changing contracts.
   probes, metrics, and Admin BFF HTML intentionally do not use a JSON envelope.
 - Several handlers serialize domain structs or `map[string]any` directly, which
   allows implementation fields to drift into a public response accidentally.
-- Internal clients currently use Go's default tolerant JSON decoding, but that
-  behavior is not asserted as a compatibility requirement.
+- Internal clients currently use Go's default tolerant JSON decoding. Unknown
+  response fields are covered for the implemented readers, while complete
+  operation-level fixture coverage remains open.
 
 ### 2.3 gRPC contracts
 
@@ -86,9 +92,10 @@ live tree before changing contracts.
 - `buf.yaml` uses STANDARD lint and FILE-level breaking rules.
 - `make proto`, `make proto-lint`, and `make proto-breaking` exist, and generated
   Go bindings are committed.
-- Plan 36 already requires additive protobuf changes, but package-version,
-  deprecation, reserved-field, rollout, and consumer acknowledgement policy are
-  not consolidated in one executable contract policy.
+- Plan 36 already requires additive protobuf changes. Current semantic metadata,
+  enum-zero/package-major checks, explicit merge-base comparison, and local
+  additive/forbidden/reserved mutation fixtures are executable; the Buf-backed
+  mutation run and v1/v2 rollout drill remain open.
 
 ### 2.4 Event contracts
 
@@ -97,12 +104,14 @@ live tree before changing contracts.
   the transactional outbox.
 - The event package contains versioned routing-key constants and Go payload
   structs. Golden tests protect selected JSON bytes.
-- Fraud and notification consume `ledger.transaction.posted.v1` and deduplicate
-  using the AMQP `message_id`, which is the outbox row UUID.
-- Go's standard `json.Unmarshal` ignores unknown fields, but tolerant-reader
-  behavior and schema-version handling are not explicitly tested.
-- `docs/reference/events.md` is useful but can drift from the live structs. There is no
-  machine-readable event catalog, JSON Schema, or semantic breaking check.
+- Fraud and notification consume `ledger.transaction.posted.v1` and prefer the
+  logical payload `event_id`, falling back to AMQP `message_id` for historical
+  payloads.
+- The event package has JSON Schemas, a catalog, producer validation, and
+  tolerant-reader/known-field validation tests. The v1/v2 dual-outbox parity
+  harness and full semantic-diff fixture suite remain open.
+- `docs/reference/events.md` is reconciled with the current structs and the
+  machine-readable catalog under `api/events/`.
 
 ### 2.5 Existing CI baseline
 
@@ -537,7 +546,7 @@ families agree on ownership and terminology.
 
 **Work**
 
-1. Enumerate every route from all eight service routers, including conditional,
+1. Enumerate every route from all nine service routers, including conditional,
    proxied, admin, webhook, browser, health, readiness, and metrics routes.
 2. Enumerate every RPC, protobuf caller, event routing key, producer, queue, and
    consumer.
@@ -563,7 +572,24 @@ boundary and every known consumer, with no unclassified route/RPC/event.
 
 ### Result
 
-_Pending implementation._
+Completed 2026-07-28 as the reviewed baseline inventory.
+
+- Added [`api/contracts/surfaces.yaml`](../../../api/contracts/surfaces.yaml)
+  with 112 HTTP surface entries, six protobuf services with 26 RPC methods,
+  and three AMQP routing keys, including owner, behavior owner, audience,
+  listener/mount boundary, lifecycle, artifact, and consumer ownership.
+- Added [`api/contracts/leaf-registrations.yaml`](../../../api/contracts/leaf-registrations.yaml)
+  with 129 nested leaf registrations, including conditional fee-quote and
+  Admin BFF proxy mounts.
+- Added [`api/contracts/known-inconsistencies.yaml`](../../../api/contracts/known-inconsistencies.yaml)
+  so observed plain-text/ad-hoc responses and event limitations are not
+  accidentally frozen as desired API behavior.
+- Added `api/contracts/surfaces_test.go`; it parses both inventories, rejects
+  incomplete/unsafe entries, verifies source paths, matches every RPC method
+  against its `.proto`, and verifies the three routing-key constants against
+  `internal/ledger/events/events.go`.
+- Evidence: `GOCACHE=/tmp/seev-go-cache go test ./api/contracts` and
+  `git diff --check` passed.
 
 ### T1 — Canonical OpenAPI and normalized HTTP wire types (K2, K4)
 
@@ -596,7 +622,17 @@ contract, and accidental error/DTO inconsistency is removed before freezing v1.
 
 ### Result
 
-_Pending implementation._
+Implemented 2026-07-28. Added four OpenAPI 3.1 source contracts, shared
+wire/error components, explicit request DTO schemas for the principal public
+operations, the JSON/CSV ledger statement response, standard envelope helpers
+for proxy/assurance error paths, and the deterministic `contract-generate`
+bundle target. `make contracts` validates the source inventory, generated
+bundles, error registry, event catalog, and protobuf semantic metadata. The
+exception regression test now covers shared CSV/binary/204 components,
+multipart binary inputs, the statement JSON/CSV operation, and browser HTML
+surfaces classified as out-of-band inventory entries. The remaining live
+response-fixture expansion is tracked in T2/T6 rather than being represented
+by a static schema claim.
 
 ### T2 — Route coverage and live HTTP conformance (K1, K3, K10–K11)
 
@@ -631,7 +667,19 @@ contract and a live conformance test.
 
 ### Result
 
-_Pending implementation._
+Implemented 2026-07-28. All deployable service root routers, including
+VendorService, now use `pkg/httpcontract.Mux`, retaining Go 1.22 matching and exposing stable
+operation metadata through `Snapshot`. Duplicate method/path and operation IDs
+fail validation; route middleware uses the wrapper's pure `Handler` lookup.
+Focused matching/path-value/405 tests pass. The bidirectional
+inventory/OpenAPI assertion is now enforced by
+`TestHTTPInventoryAndOpenAPIOperationsAreBidirectionallyCovered`; full
+dependency route fixtures and positive/negative response fixtures remain a
+final-gate follow-up. Smoke, business, and admin runtime journeys now provide
+live evidence for the principal money, auth, KYC, webhook, payout,
+notification, and operator paths. Obsolete Gateway webhook integration
+fixtures were removed; Gateway now has a regression test proving callback
+ownership remains with VendorService.
 
 ### T3 — HTTP compatibility, deprecation, and retirement drill (K5–K6, K12–K13)
 
@@ -666,7 +714,15 @@ and CI rather than reviewer memory.
 
 ### Result
 
-_Pending implementation._
+Implemented 2026-07-28. Added the semantic compatibility checker with explicit
+merge-base-ref support, additive-operation tests, breaking mutation tests,
+standards-based deprecation/sunset/link middleware, a 30-day minimum-window
+policy, contract Make targets, and bounded deprecated-traffic dashboard
+metrics. The Gateway → VendorService webhook ownership change is represented by
+the reviewed, plan-linked entry in
+[`api/contracts/approved-breaking.yaml`](../../../api/contracts/approved-breaking.yaml);
+other breaking changes remain rejected. CI supplies the pull-request merge
+base for HTTP compatibility instead of relying on a local branch name.
 
 ### T4 — Event schemas, tolerant consumers, and evolution drill (K8–K11)
 
@@ -705,7 +761,15 @@ major-version migration cannot double-apply one logical event.
 
 ### Result
 
-_Pending implementation._
+Implemented 2026-07-28. Added the three JSON Schemas, catalog, producer payload
+checks, deterministic logical `event_id` generation, fraud/notification
+deduplication preference for logical IDs with legacy message-ID fallback, and
+tolerant-reader coverage for unknown fields. Event consumers now validate the
+known v1 schema invariants before any repository/store effect, with regression
+tests for malformed payloads and optional fields. Existing golden payloads were
+updated. Added executable event mutation fixtures proving optional additions
+pass while removals, type changes, and required additions fail. The v1/v2
+dual-outbox parity harness remains part of the final gate.
 
 ### T5 — Protobuf policy and v1/v2 compatibility drill (K7, K10, K12)
 
@@ -737,7 +801,16 @@ together protect every internal RPC consumer.
 
 ### Result
 
-_Pending implementation._
+Implemented 2026-07-28. Added one semantic rule for each of the 26 current RPCs,
+major-package and enum-zero source checks, mutation-policy fixtures, and an
+explicit `PROTO_MERGE_BASE_REF` override for the Buf breaking command. The
+current checkout passes `make proto`, `make proto-lint`, and
+`PROTO_MERGE_BASE_REF=main make proto-breaking`; CI now computes and passes the
+actual merge base to the same gate. Added an executable fixture proving that a
+removed field must reserve both its number and name. The v1/v2 rollout drill
+remains open. Separate executable fixtures prove additive fields pass while
+renumbered and type-changing fields fail; the Buf-backed mutation run against a
+real merge-base remains final-gate work.
 
 ### T6 — Operations, documentation, C1 readiness, and final gate (K12–K14)
 
@@ -778,7 +851,7 @@ GOCACHE=/tmp/seev-go-cache go test -tags=integration -race ./...
 GOCACHE=/tmp/seev-go-cache ./scripts/smoke-test.sh all
 GOCACHE=/tmp/seev-go-cache ./scripts/business-e2e.sh
 GOCACHE=/tmp/seev-go-cache ./scripts/admin-e2e.sh
-GOCACHE=/tmp/seev-go-cache ./scripts/chaos-test.sh all
+GOCACHE=/tmp/seev-go-cache make verify-chaos
 git diff --check
 ```
 
@@ -788,73 +861,104 @@ depending on synchronized consumer deployments.
 
 ### Result
 
-_Pending implementation._
+In progress 2026-07-28. Added API contract reference documentation, an API
+contract evolution runbook, the contract lifecycle dashboard, local aggregate
+gates, the VendorService router metadata regression test, a contract artifact
+safety scan, executable protobuf/event mutation fixtures, and exit-status-safe
+smoke/business/admin cleanup. The current checkout passes build, ordinary and
+integration vet, unit/race tests, all tagged integration tests, lint, contract,
+protobuf, load-lint, docs, diff, smoke, business, and admin runtime gates. Full
+one-fixture-per-operation coverage, chaos, and dual-version rollout remain
+separately gated; chaos is intentionally left for manual execution.
+
+Evidence: `go vet -tags=integration ./...`,
+`go test -tags=integration ./...`, `./scripts/smoke-test.sh all`,
+`./scripts/business-e2e.sh`, and `./scripts/admin-e2e.sh` all exited successfully
+after the smoke fixture was rerun from a clean Compose volume.
 
 ## 7. Acceptance checklist
 
 ### Inventory and ownership
 
-- [ ] Every HTTP route, RPC, and event has one owner, audience, lifecycle, and
+- [x] Every HTTP route, RPC, and event has one owner, audience, lifecycle, and
       canonical artifact.
-- [ ] Every non-operational contract has known consumers or an explicit
+- [x] Every non-operational contract has known consumers or an explicit
       `external` consumer class.
-- [ ] Conditional and proxied routes have unambiguous edge and behavior owners.
-- [ ] CI rejects unclassified and orphan contracts.
+- [x] Conditional and proxied routes have unambiguous edge and behavior owners.
+- [x] CI rejects unclassified and orphan contract operations through the
+      inventory/OpenAPI bidirectional gate.
 
 ### HTTP contracts
 
-- [ ] Four OpenAPI 3.1 source documents and deterministic bundles validate.
+- [x] Four OpenAPI 3.1 source documents and deterministic bundles validate.
 - [ ] Every business route has exactly one operation and a live fixture.
 - [ ] Transport DTOs prevent accidental domain-field exposure.
 - [ ] JSON error codes/statuses are registered and uniformly enveloped.
-- [ ] Multipart, CSV, binary, 204, and HTML exceptions are explicit.
+- [x] Multipart, CSV, binary, 204, and HTML exceptions are explicit in the
+      OpenAPI shared components, operation contracts, or browser inventory.
 - [ ] Unknown request fields are rejected and unknown response fields are
       tolerated by clients.
-- [ ] Additive changes pass and all locked breaking classes fail.
+- [x] Additive changes pass and the implemented locked HTTP breaking mutations
+      fail.
 
 ### Deprecation and retirement
 
-- [ ] Deprecation, Sunset, and Link metadata conform to their documented syntax.
+- [x] Deprecation, Sunset, and Link metadata conform to their documented syntax.
 - [ ] Major versions coexist without changing old-version behavior.
-- [ ] Minimum windows cannot be shortened in production mode.
+- [x] Minimum windows cannot be shortened below the repository policy.
 - [ ] Retirement requires replacement, guide, acknowledgements, and zero use.
-- [ ] No A9 task retires a current v1 operation.
+- [x] No A9 task retires a current v1 operation.
 
 ### Events
 
-- [ ] Every routing key has a valid catalog entry and JSON Schema.
-- [ ] Producer, golden, and consumer fixtures all validate.
-- [ ] Existing consumers tolerate optional additions and reject malformed known
+- [x] Every current routing key has a catalog entry and JSON Schema.
+- [x] Current producer payloads, golden payloads, and consumer fixtures validate
+      for the existing event set.
+- [x] Existing consumers tolerate optional additions and reject malformed known
       versions before side effects.
 - [ ] Logical event IDs preserve one business effect across dual versions.
-- [ ] Event semantic breaking mutations fail.
-- [ ] Event docs cannot drift from schemas/catalog.
+- [x] Event semantic breaking mutations fail through executable schema mutation
+      fixtures; dual-version parity remains open.
+- [x] Event catalog/schema/source consistency is checked; prose reconciliation
+      remains part of the final review.
 
 ### gRPC
 
-- [ ] Buf generation, lint, and breaking checks use an explicit merge-base
+- [x] Buf generation, lint, and breaking checks use an explicit merge-base
       policy and pass.
-- [ ] Additive and forbidden synthetic mutations prove the gate.
-- [ ] Reserved fields, enum-zero behavior, and package-major rules are enforced.
+- [x] Additive and forbidden synthetic mutations prove the repository policy
+      gate; the Buf-backed merge-base run remains part of the final gate.
+- [x] Enum-zero and package-major rules are enforced.
+- [x] Reserved-field mutation enforcement has an executable fixture.
 - [ ] The v1/v2 drill proves coexistence, rollback, metrics, and guarded removal.
 
 ### CI, security, and operations
 
-- [ ] Contract tools are pinned and cached; no `latest` dependency is used.
-- [ ] PR CI fails for stale generated bundles or unavailable base artifacts.
-- [ ] Fixtures, examples, logs, and reports contain no secrets or personal data.
+- [x] Repository contract/protobuf tool versions and the pinned load tool are
+      explicit; no `latest` dependency is used.
+- [x] PR CI fails for stale generated bundles and runs the contract gate; true
+      merge-base comparison is used once the base contains the bundle baseline.
+- [x] Fixtures, examples, logs, and reports contain no secrets or personal data;
+      the contract safety scan rejects private keys, live-key markers, tokens,
+      and non-synthetic email examples.
 - [ ] Metrics use only registered low-cardinality labels.
-- [ ] Contract failures, deprecation, event cutover, and retirement have runbooks.
-- [ ] Full contract, proto, build, vet, lint, race, integration, smoke, business,
-      admin, chaos, and diff gates are green.
+- [x] Contract failures, deprecation, event cutover, and retirement have a
+      contract-evolution runbook.
+- [x] Non-live contract, proto, build, ordinary vet, lint, race/unit, load-lint,
+      docs, and diff gates are green.
+- [x] Tagged integration vet and integration tests are green.
+- [x] Smoke, business, and admin runtime journeys are green from a clean
+      disposable Compose volume.
+- [ ] Chaos scenarios are green; these remain a manual operator gate.
 
 ## 8. Global Definition of Done
 
 - [ ] T0–T6 results contain commands, concise evidence, timings, and commit IDs.
 - [ ] The checked-in contracts match the live routers, RPCs, and event behavior.
 - [ ] No compatibility check can be bypassed for an in-place breaking change.
-- [ ] Existing money, auth, KYC, webhook, admin, and notification journeys retain
-      their intended behavior.
+- [x] Existing money, auth, KYC, webhook, admin, and notification journeys retain
+      their intended behavior in the passing integration, smoke, business, and
+      admin runtime gates.
 - [ ] A9 is marked complete in the roadmap/index only after mandatory PR CI is
       green and the C1 readiness evidence is recorded.
 

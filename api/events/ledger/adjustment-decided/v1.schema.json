@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.seev.invalid/events/ledger/adjustment-decided/v1.schema.json",
+  "title": "ledger.adjustment.decided.v1",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["schema_version", "pending_id", "requested_by", "approved_by", "decision", "occurred_at"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "event_id": {"type": "string", "format": "uuid"},
+    "pending_id": {"type": "string", "format": "uuid"},
+    "requested_by": {"type": "string", "minLength": 1},
+    "approved_by": {"type": "string", "minLength": 1},
+    "decision": {"type": "string", "enum": ["approved", "rejected"]},
+    "executed_tx_id": {"type": ["string", "null"], "format": "uuid"},
+    "occurred_at": {"type": "string", "format": "date-time"}
+  }
+}

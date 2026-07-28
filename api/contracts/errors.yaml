@@ -1,0 +1,27 @@
+schema_version: 1
+description: Stable API error code registry. Message text is not contractual.
+codes:
+  - {code: BAD_REQUEST, statuses: [400], owner: platform, retryable: false}
+  - {code: UNAUTHORIZED, statuses: [401], owner: platform, retryable: false}
+  - {code: FORBIDDEN, statuses: [403], owner: platform, retryable: false}
+  - {code: NOT_FOUND, statuses: [404], owner: platform, retryable: false}
+  - {code: METHOD_NOT_ALLOWED, statuses: [405], owner: platform, retryable: false}
+  - {code: CONFLICT, statuses: [409], owner: platform, retryable: false}
+  - {code: IDEMPOTENCY_CONFLICT, statuses: [409], owner: platform, retryable: false}
+  - {code: VALIDATION_FAILED, statuses: [422], owner: platform, retryable: false}
+  - {code: UNPROCESSABLE_ENTITY, statuses: [422], owner: platform, retryable: false}
+  - {code: RATE_LIMITED, statuses: [429], owner: platform, retryable: true}
+  - {code: DOWNSTREAM_UNAVAILABLE, statuses: [502, 503, 504], owner: platform, retryable: true}
+  - {code: INTERNAL_ERROR, statuses: [500], owner: platform, retryable: false}
+  - {code: INVALID_SIGNATURE, statuses: [401, 403], owner: gateway, retryable: false}
+  - {code: KYC_REQUIRED, statuses: [403, 422], owner: auth, retryable: false}
+  - {code: KYC_TIER_LIMIT, statuses: [422], owner: auth, retryable: false}
+  - {code: DEPENDENCY_UNAVAILABLE, statuses: [503], owner: platform, retryable: true}
+  - {code: VENDOR_UNAVAILABLE, statuses: [503], owner: payin, retryable: true}
+  - {code: SCREENING_BLOCKED, statuses: [422], owner: fraud, retryable: false}
+  - {code: AUDIT_UNAVAILABLE, statuses: [503], owner: admin-bff, retryable: true}
+  - {code: CLOSURE_UNAVAILABLE, statuses: [503], owner: auth, retryable: true}
+  - {code: EXPORT_UNAVAILABLE, statuses: [503], owner: auth, retryable: true}
+  - {code: INTAKE_PAUSED, statuses: [409, 423], owner: assurance, retryable: false}
+  - {code: QUOTE_EXPIRED, statuses: [409], owner: ledger, retryable: false}
+  - {code: QUOTE_MISMATCH, statuses: [409], owner: ledger, retryable: false}

@@ -20,6 +20,7 @@ const _ = grpc.SupportPackageIsVersion9
 
 const (
 	PayinService_HandleWebhook_FullMethodName        = "/seev.payin.v1.PayinService/HandleWebhook"
+	PayinService_HandleVendorCallback_FullMethodName = "/seev.payin.v1.PayinService/HandleVendorCallback"
 	PayinService_CreateTopupIntent_FullMethodName    = "/seev.payin.v1.PayinService/CreateTopupIntent"
 	PayinService_GetTopupIntent_FullMethodName       = "/seev.payin.v1.PayinService/GetTopupIntent"
 	PayinService_ListAssuranceRecords_FullMethodName = "/seev.payin.v1.PayinService/ListAssuranceRecords"
@@ -32,6 +33,7 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type PayinServiceClient interface {
 	HandleWebhook(ctx context.Context, in *HandleWebhookRequest, opts ...grpc.CallOption) (*HandleWebhookResponse, error)
+	HandleVendorCallback(ctx context.Context, in *HandleVendorCallbackRequest, opts ...grpc.CallOption) (*HandleVendorCallbackResponse, error)
 	CreateTopupIntent(ctx context.Context, in *CreateTopupIntentRequest, opts ...grpc.CallOption) (*CreateTopupIntentResponse, error)
 	GetTopupIntent(ctx context.Context, in *GetTopupIntentRequest, opts ...grpc.CallOption) (*GetTopupIntentResponse, error)
 	// Read-only product-assurance projection. Additive: existing callers are
@@ -53,6 +55,16 @@ func (c *payinServiceClient) HandleWebhook(ctx context.Context, in *HandleWebhoo
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(HandleWebhookResponse)
 	err := c.cc.Invoke(ctx, PayinService_HandleWebhook_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *payinServiceClient) HandleVendorCallback(ctx context.Context, in *HandleVendorCallbackRequest, opts ...grpc.CallOption) (*HandleVendorCallbackResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(HandleVendorCallbackResponse)
+	err := c.cc.Invoke(ctx, PayinService_HandleVendorCallback_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -114,6 +126,7 @@ func (c *payinServiceClient) ApplyIntakeControl(ctx context.Context, in *ApplyIn
 // for forward compatibility.
 type PayinServiceServer interface {
 	HandleWebhook(context.Context, *HandleWebhookRequest) (*HandleWebhookResponse, error)
+	HandleVendorCallback(context.Context, *HandleVendorCallbackRequest) (*HandleVendorCallbackResponse, error)
 	CreateTopupIntent(context.Context, *CreateTopupIntentRequest) (*CreateTopupIntentResponse, error)
 	GetTopupIntent(context.Context, *GetTopupIntentRequest) (*GetTopupIntentResponse, error)
 	// Read-only product-assurance projection. Additive: existing callers are
@@ -133,6 +146,9 @@ type UnimplementedPayinServiceServer struct{}
 
 func (UnimplementedPayinServiceServer) HandleWebhook(context.Context, *HandleWebhookRequest) (*HandleWebhookResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method HandleWebhook not implemented")
+}
+func (UnimplementedPayinServiceServer) HandleVendorCallback(context.Context, *HandleVendorCallbackRequest) (*HandleVendorCallbackResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method HandleVendorCallback not implemented")
 }
 func (UnimplementedPayinServiceServer) CreateTopupIntent(context.Context, *CreateTopupIntentRequest) (*CreateTopupIntentResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreateTopupIntent not implemented")
@@ -184,6 +200,24 @@ func _PayinService_HandleWebhook_Handler(srv interface{}, ctx context.Context, d
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(PayinServiceServer).HandleWebhook(ctx, req.(*HandleWebhookRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PayinService_HandleVendorCallback_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(HandleVendorCallbackRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PayinServiceServer).HandleVendorCallback(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PayinService_HandleVendorCallback_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PayinServiceServer).HandleVendorCallback(ctx, req.(*HandleVendorCallbackRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -288,6 +322,10 @@ var PayinService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "HandleWebhook",
 			Handler:    _PayinService_HandleWebhook_Handler,
+		},
+		{
+			MethodName: "HandleVendorCallback",
+			Handler:    _PayinService_HandleVendorCallback_Handler,
 		},
 		{
 			MethodName: "CreateTopupIntent",

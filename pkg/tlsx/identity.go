@@ -18,6 +18,7 @@ const (
 	IdentityPayin       = "spiffe://seev/payin"
 	IdentityPayout      = "spiffe://seev/payout"
 	IdentityFraud       = "spiffe://seev/fraud"
+	IdentityVendor      = "spiffe://seev/vendor"
 	IdentityAdminBFF    = "spiffe://seev/admin-bff"
 	IdentityAssurance   = "spiffe://seev/assurance"
 	IdentityDevOperator = "spiffe://seev/dev-operator"

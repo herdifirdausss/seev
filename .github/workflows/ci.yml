@@ -84,7 +84,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          fetch-depth: 1
+          fetch-depth: 0
 
       - name: Read Go version from go.mod
         id: goversion
@@ -118,7 +118,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          fetch-depth: 1
+          fetch-depth: 0
 
       - name: Read Go version from go.mod
         id: goversion
@@ -167,6 +167,51 @@ jobs:
 
       - name: Test
         run: go test -race -cover ./...
+
+      # A9: generate/lint/test the checked-in HTTP contract artifacts in PR CI.
+      # Once the base branch contains the bundle baseline, compare against the
+      # actual PR base; the bootstrap fallback protects the first merge that
+      # introduces the repository's contract baseline.
+      - name: API contract gate
+        env:
+          CONTRACT_MERGE_BASE_REF: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          make contract-generate contract-lint contract-test
+          git diff --exit-code -- api/openapi/dist
+          if [ -n "$CONTRACT_MERGE_BASE_REF" ] && git cat-file -e "$CONTRACT_MERGE_BASE_REF:api/openapi/dist/public-v1.yaml" 2>/dev/null; then
+            go run ./cmd/contractcheck -merge-base-ref "$CONTRACT_MERGE_BASE_REF"
+          else
+            echo "contract baseline is being bootstrapped; running local baseline compatibility check"
+            go run ./cmd/contractcheck
+          fi
+
+      # A9: keep protobuf compatibility on the same explicit merge-base
+      # policy. Buf receives a commit SHA through PROTO_MERGE_BASE_REF rather
+      # than silently comparing against whichever local branch happens to be
+      # checked out.
+      - name: Protobuf contract gate
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          BASE="$PR_BASE_SHA"
+          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
+            BASE="$PUSH_BEFORE_SHA"
+          fi
+          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            echo "no usable event base SHA; protobuf compatibility is not safely comparable"
+            exit 1
+          fi
+          MERGE_BASE="$(git merge-base HEAD "$BASE")"
+          make proto proto-lint
+          PROTO_MERGE_BASE_REF="$MERGE_BASE" make proto-breaking
+
+      # B0: validate only the disposable harness and schemas in PR CI. This
+      # deliberately does not claim a capacity number or start a long load run.
+      - name: Load harness safety gate
+        run: make load-lint
 
   # ─── integration: testcontainers-backed integration suite ──────────────────
   integration:
@@ -242,7 +287,7 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
 
-      - name: Build nine images (Bake, GHA cache, load into daemon)
+      - name: Build ten images (Bake, GHA cache, load into daemon)
         uses: docker/bake-action@d3418bd7d0e9324001bca92fa8ba175ea7e6dc9b # v7.3.0
         with:
           files: docker-compose.yml
@@ -256,6 +301,7 @@ jobs:
             payout-service
             admin-bff-service
             assurance-service
+            vendor-service
           load: true
           set: |
             *.args.REVISION=${{ github.sha }}

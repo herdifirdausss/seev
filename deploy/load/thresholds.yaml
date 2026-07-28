@@ -1,0 +1,18 @@
+schema_version: 1
+workload_units: WU/s
+stages:
+  smoke: {warmup_seconds: 0, steady_seconds: 60}
+  discovery: {warmup_seconds: 180, steady_seconds: 120}
+  confirmation: {warmup_seconds: 180, steady_seconds: 900, runs: 3}
+  soak: {warmup_seconds: 180, steady_seconds: 3600}
+gates:
+  max_unexpected_failure_rate: 0.005
+  max_dropped_iterations: 0
+  min_achieved_fraction: 0.99
+  max_oldest_outbox_age_seconds: 10
+  max_outbox_drain_seconds: 30
+  max_queue_drain_seconds: 60
+  max_memory_fraction: 0.90
+  max_cpu_fraction: 0.85
+  max_pool_in_use_fraction: 0.80
+  max_pool_wait_fraction: 0.05

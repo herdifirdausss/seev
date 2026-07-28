@@ -8,11 +8,11 @@ On the 3.9 GB development machine, kind replaces Compose. Do not run both full e
 
 ## Context
 
-Move the six-service topology from Docker Compose to a local kind cluster. The exercise covers per-service manifests, PostgreSQL initialization with multiple databases, migration Jobs, secrets, and NodePorts for the public services.
+Move the nine-service topology from Docker Compose to a local kind cluster. The exercise covers per-service manifests, PostgreSQL initialization with multiple databases, migration Jobs, secrets, and NodePorts for the public services.
 
 ## T1 — Base manifests
 
-Create `deploy/k8s/` with a `seev` namespace, a Deployment and ClusterIP Service for gateway, auth, ledger, payin, payout, and fraud, and NodePorts for gateway and auth. Use the existing service Dockerfile with a service argument, small resource requests/limits, and liveness/readiness probes through `-healthcheck` or HTTP health endpoints.
+Create `deploy/k8s/` with a `seev` namespace, a Deployment and ClusterIP Service for gateway, auth, ledger, payin, payout, fraud, admin-bff, assurance, and vendor-service, and NodePorts for gateway and auth. Use the existing service Dockerfile with a service argument, small resource requests/limits, and liveness/readiness probes through `-healthcheck` or HTTP health endpoints.
 
 Add PostgreSQL as a StatefulSet with a persistent volume and initialization ConfigMap, plus Redis and RabbitMQ Deployments. Store JWT, internal gRPC, and per-service database credentials in Secrets; put non-sensitive service addresses in ConfigMaps.
 

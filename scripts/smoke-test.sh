@@ -125,14 +125,21 @@ smoke_payin() {
 	local balance_before
 	balance_before="$(account_balance "$cash")"
 
-	local body
-	body="{\"event_id\":\"smoke-evt-$SMOKE_RUN_ID\",\"external_ref\":\"smoke-ref-$SMOKE_RUN_ID\",\"user_id\":\"$user_id\",\"amount\":\"75000\",\"currency\":\"IDR\",\"occurred_at\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"type\":\"payment.settled\"}"
+	local token topup reference body
+	token="$(gen_token "$user_id")"
+	topup="$(curl -s -X POST "http://localhost:$APP_PORT/api/v1/topup" \
+		-H "Authorization: Bearer $token" -H "Content-Type: application/json" \
+		-d '{"amount":"75000"}')"
+	reference="$(echo "$topup" | json_field reference)"
+	[ -n "$reference" ] || fail "topup intent creation failed: $topup"
+
+	body="{\"event_id\":\"smoke-evt-$SMOKE_RUN_ID\",\"external_ref\":\"$reference\",\"user_id\":\"$user_id\",\"amount\":\"75000\",\"currency\":\"IDR\",\"occurred_at\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"type\":\"payment.settled\"}"
 	local sig
 	sig="$(printf '%s' "$body" | openssl dgst -sha256 -hmac "$MOCKVENDOR_SECRET" -r | awk '{print $1}')"
 
 	log "POST /webhooks/mockvendor with a valid signature..."
 	local code
-	code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$APP_PORT/webhooks/mockvendor" \
+	code=$(curl_internal -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$VENDOR_APP_PORT/webhooks/mockvendor" \
 		-H "X-Mock-Signature: $sig" -H "Content-Type: application/json" -d "$body")
 	[ "${code:0:1}" = "2" ] && ok "signed webhook accepted (code=$code)" || fail "signed webhook got $code, expected 2xx"
 
@@ -143,13 +150,13 @@ smoke_payin() {
 		|| fail "cash balance mismatch after webhook: before=$balance_before after=$balance_after expected=$expected"
 
 	log "POST /webhooks/mockvendor with a bad signature — must be rejected, no side effect..."
-	code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$APP_PORT/webhooks/mockvendor" \
+	code=$(curl_internal -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$VENDOR_APP_PORT/webhooks/mockvendor" \
 		-H "X-Mock-Signature: 0000deadbeef" -H "Content-Type: application/json" \
 		-d "{\"event_id\":\"smoke-evt-bad\",\"external_ref\":\"smoke-ref-bad\",\"user_id\":\"$user_id\",\"amount\":\"1000\",\"currency\":\"IDR\",\"occurred_at\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"type\":\"payment.settled\"}")
 	[ "$code" = "401" ] && ok "bad signature rejected with 401" || fail "bad signature got $code, expected 401"
 
 	log "POST /webhooks/unknownvendor — must 404..."
-	code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$APP_PORT/webhooks/unknownvendor" \
+	code=$(curl_internal -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$VENDOR_APP_PORT/webhooks/unknownvendor" \
 		-H "X-Mock-Signature: irrelevant" -H "Content-Type: application/json" -d '{}')
 	[ "$code" = "404" ] && ok "unknown vendor rejected with 404" || fail "unknown vendor got $code, expected 404"
 }

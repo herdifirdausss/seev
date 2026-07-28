@@ -1,0 +1,8 @@
+syntax = "proto3";
+
+package seev.fixture.v1;
+
+message MutationSample {
+  string reference = 1;
+  string note = 2;
+}

@@ -14,7 +14,7 @@ the verification workflow.
 
 - The deployable services are gateway, auth-service, ledger-service,
   payin-service, payout-service, fraud-service, admin-bff-service, and
-  assurance-service.
+  assurance-service, and vendor-service.
 - assurance-service is a read-only internal verifier with its own
   `seev_assurance` database. It may read payin, payout, and ledger only via
   authenticated assurance gRPC contracts; it must never receive their DB
@@ -57,7 +57,7 @@ the verification workflow.
 - Preserve request authentication and authorization at public and internal
   boundaries. Internal gRPC authentication is not a replacement for user
   authorization.
-- Every internal hop (gRPC and internal HTTP, across all eight services) is
+- Every internal hop (gRPC and internal HTTP, across all nine services) is
   mutually authenticated with a SPIFFE-style URI SAN identity (pkg/tlsx,
   cmd/certgen — docs/roadmap/archive/49). Identity is the URI SAN, never a Common Name
   or "signed by our CA" alone; a new hop must be added to its listener's
@@ -79,9 +79,13 @@ The normal pre-commit gate is:
 go build ./...
 go vet ./...
 make lint
+make ci-lint
 make test
 make docs-check
 make proto-lint
+make contracts
+make load-lint
+make retention-check
 git diff --check
 ~~~
 
@@ -98,12 +102,15 @@ Integration tests require Docker:
 go test -tags=integration -race ./...
 ~~~
 
-The complete verification target resets Docker volumes before executing the
-repository's build, static checks, unit tests, smoke journey, business journey,
-admin-console journey, and all chaos scenarios:
+The complete repeatable verification target resets Docker volumes before
+executing the repository's build, static checks, unit and integration tests,
+contract/protobuf/load checks, container smoke, smoke journey, business journey,
+admin-console journey, and disposable load smoke. Chaos is a separate
+operator-controlled recovery drill:
 
 ~~~bash
 make verify-full
+make verify-chaos   # manual; kills dependencies and runs all chaos scenarios
 ~~~
 
 Use the full gate for changes to money movement, persistence, messaging,
@@ -120,8 +127,8 @@ documentation check without starting the heavy runtime jobs.
 - scripts/business-e2e.sh verifies the end-user and operator business journey.
 - scripts/admin-e2e.sh verifies the admin BFF session, CSRF, proxy mutation,
   and audit row journey.
-- scripts/chaos-test.sh {1..14|all} verifies crash, dependency-failure, and
-  assurance/intake-control behavior.
+- scripts/chaos-test.sh {1..20|all} verifies crash, dependency-failure,
+  assurance/intake-control, and privacy-lifecycle recovery behavior.
 - scripts/smoke-container.sh verifies freshly built Compose application images
   rather than host binaries.
 
@@ -186,6 +193,12 @@ grows — start at tier 0, move up only when a file actually earns it:
 - docs/roadmap/ records implementation decisions, completed phases, and future
   work; older plans may describe the repository at an earlier phase.
 - docs/operations/runbooks/ contains operational recovery procedures.
+- `api/contracts/` and `api/events/` are executable contract registries. A
+  consumed route, RPC, or event must be inventoried and pass `make contracts`
+  before it is merged; see [API contracts](../reference/api-contracts.md).
+- B0 load work is disposable-only and profile-bound. Run `make load-lint` for
+  PR-safe checks; never run a load command against shared development data. See
+  [performance evidence](../performance/README.md) and the B0 runbook.
 
 When documentation and executable configuration disagree, verify behavior
 against code, tests, Compose, and the Makefile, then update the documentation in

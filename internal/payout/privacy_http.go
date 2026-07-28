@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/herdifirdausss/seev/pkg/httpcontract"
 	"github.com/herdifirdausss/seev/pkg/privacyexport"
 	"github.com/herdifirdausss/seev/pkg/response"
 )
@@ -14,7 +15,7 @@ import (
 // PrivacyRouter returns docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T4b/T5b's own
 // export + closure endpoints — mirrors internal/payin's own PrivacyRouter.
 func (m *Module) PrivacyRouter() http.Handler {
-	mux := http.NewServeMux()
+	mux := httpcontract.New(httpcontract.Options{Owner: "payout", Audience: "internal", Contract: "internal-v1"})
 	mux.HandleFunc("GET /privacy/export", m.handlePrivacyExport)
 	mux.HandleFunc("POST /privacy/closure/prepare", m.handleClosurePrepare)
 	mux.HandleFunc("POST /privacy/closure/commit", m.handleClosureCommit)

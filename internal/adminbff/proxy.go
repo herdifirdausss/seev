@@ -10,20 +10,21 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/herdifirdausss/seev/internal/adminbff/client"
+	"github.com/herdifirdausss/seev/pkg/response"
 )
 
 func (m *Module) proxy(target string, downstream *client.ServiceClient, publicPrefix, downstreamPrefix string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(io.LimitReader(r.Body, 4<<20))
 		if err != nil {
-			http.Error(w, "invalid request body", http.StatusBadRequest)
+			response.BadRequest(w, "invalid request body")
 			return
 		}
 		contentType := r.Header.Get("Content-Type")
 		if strings.HasPrefix(contentType, "application/x-www-form-urlencoded") {
 			values, parseErr := url.ParseQuery(string(body))
 			if parseErr != nil {
-				http.Error(w, "invalid form body", http.StatusBadRequest)
+				response.BadRequest(w, "invalid form body")
 				return
 			}
 			payload := make(map[string]any, len(values))
@@ -36,14 +37,14 @@ func (m *Module) proxy(target string, downstream *client.ServiceClient, publicPr
 			}
 			body, err = json.Marshal(payload)
 			if err != nil {
-				http.Error(w, "invalid form body", http.StatusBadRequest)
+				response.BadRequest(w, "invalid form body")
 				return
 			}
 			contentType = "application/json"
 		}
 		token, err := m.MintDownstreamToken(r.Context())
 		if err != nil {
-			http.Error(w, "authentication required", http.StatusUnauthorized)
+			response.Unauthorized(w, "authentication required")
 			return
 		}
 		suffix := strings.TrimPrefix(r.URL.Path, publicPrefix)
@@ -79,12 +80,12 @@ func (m *Module) reconUploadProxy() http.Handler {
 		}
 		body, err := io.ReadAll(io.LimitReader(r.Body, 10<<20))
 		if err != nil {
-			http.Error(w, "invalid upload", http.StatusBadRequest)
+			response.BadRequest(w, "invalid upload")
 			return
 		}
 		token, err := m.MintDownstreamToken(r.Context())
 		if err != nil {
-			http.Error(w, "authentication required", http.StatusUnauthorized)
+			response.Unauthorized(w, "authentication required")
 			return
 		}
 		path := "/api/v1/ledger/admin/recon/batches"
@@ -114,17 +115,17 @@ func (m *Module) reconUploadProxy() http.Handler {
 func (m *Module) adjustmentDecisionProxy(action string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := r.ParseForm(); err != nil {
-			http.Error(w, "invalid form", http.StatusBadRequest)
+			response.BadRequest(w, "invalid form")
 			return
 		}
 		id, err := uuid.Parse(r.FormValue("adjustment_id"))
 		if err != nil {
-			http.Error(w, "invalid adjustment id", http.StatusBadRequest)
+			response.BadRequest(w, "invalid adjustment id")
 			return
 		}
 		token, err := m.MintDownstreamToken(r.Context())
 		if err != nil {
-			http.Error(w, "authentication required", http.StatusUnauthorized)
+			response.Unauthorized(w, "authentication required")
 			return
 		}
 		path := "/api/v1/ledger/admin/adjustments/" + id.String() + "/" + action
@@ -149,7 +150,5 @@ func (m *Module) adjustmentDecisionProxy(action string) http.Handler {
 }
 
 func writeJSONError(w http.ResponseWriter, status int, code, message string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]any{"success": false, "error": map[string]string{"code": code, "message": message}})
+	response.ErrorStatus(w, status, code, message)
 }

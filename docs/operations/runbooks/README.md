@@ -26,6 +26,9 @@ and [Services](../../reference/services.md) for that.
 | WAL archiving has stalled | [WAL archive lag](wal-archive-lag.md) | Force a segment switch to confirm the fix; don't wait it out |
 | A backup fails its own repository check | [Repository corruption](repository-corruption.md) | Never expire data while a check is failing |
 | A retention hold, purge, export, or account-closure request is stuck or failing | [Data lifecycle and privacy](data-lifecycle-privacy.md) | Never manually purge, decrypt, or flip a closure/export status to "unstick" it |
+| A contract or schema compatibility gate fails | [API contract evolution](api-contract-evolution.md) | Keep the old consumer boundary live until acknowledgement and zero-use gates pass |
+| A B0 load run saturates, aborts, or reports an integrity failure | [B0 load and capacity](b0-load-capacity.md) | Stop offered work, drain, and verify money state before cleanup |
+| A vendor callback is rejected, duplicated, or cannot reach its owner | [VendorService boundary](vendor-service-boundary.md) | Preserve the VendorService inbox and do not replay raw callbacks manually |
 
 | Runbook | Covers |
 |---|---|
@@ -33,7 +36,7 @@ and [Services](../../reference/services.md) for that.
 | [cryptox-key-rotation.md](cryptox-key-rotation.md) | Rotating the shared pkg/cryptox encryption key ring (expand/backfill/contract) |
 | [handshake-failure-response.md](handshake-failure-response.md) | Responding to a rise in mTLS handshake failures (`tlsx_handshake_failures_total`) |
 | [ledger-integrity-alert.md](ledger-integrity-alert.md) | Responding to a trial-balance or projection-audit discrepancy alert |
-| [dr-restore-drill.md](dr-restore-drill.md) | Restoring all eight service databases from backup (latest or PITR) and proving it's safe to serve traffic again |
+| [dr-restore-drill.md](dr-restore-drill.md) | Restoring all nine service databases from backup (latest or PITR) and proving it's safe to serve traffic again |
 | [backup-failure.md](backup-failure.md) | Recovering from a missed or failed scheduled full/differential backup |
 | [wal-archive-lag.md](wal-archive-lag.md) | Recovering from stalled continuous WAL archiving before the RPO budget is exceeded |
 | [repository-corruption.md](repository-corruption.md) | Handling a pgBackRest repository check failure without losing the other retained chain |
@@ -44,6 +47,9 @@ and [Services](../../reference/services.md) for that.
 | [fx-position.md](fx-position.md) | Handling an incomplete `fx_out`/`fx_in` currency-conversion pair |
 | [vault-seed.md](vault-seed.md) | Seeding the local dev-mode Vault after a restart |
 | [data-lifecycle-privacy.md](data-lifecycle-privacy.md) | Active retention holds, failing purge/redact classes, failed exports, stuck/dead-lettered account closures, and privacy-track key-version mismatches |
+| [api-contract-evolution.md](api-contract-evolution.md) | HTTP, event, and protobuf compatibility failures and safe retirement |
+| [b0-load-capacity.md](b0-load-capacity.md) | Disposable load preparation, abort/drain, bottleneck diagnosis, integrity failure, and retention |
+| [vendor-service-boundary.md](vendor-service-boundary.md) | Vendor callback source policy, inbox replay, normalized owner delivery, and outbound mTLS boundary |
 
 Each runbook is self-contained: what triggers it, what to check, and the
 exact commands to run — no need to read another document first to act on

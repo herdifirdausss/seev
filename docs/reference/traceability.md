@@ -50,7 +50,7 @@ flowchart LR
 | Where is configuration loaded? | [`internal/config/config.go`](../../internal/config/config.go) |
 | What proves fresh containers can start together? | [`scripts/smoke-container.sh`](../../scripts/smoke-container.sh) |
 
-The executable system currently has eight services. Utilities under `cmd/`,
+The executable system currently has nine services. Utilities under `cmd/`,
 such as the certificate generator and documentation checker, are not services
 because they do not keep listening for requests.
 
@@ -74,17 +74,18 @@ new policy tier before Auth exposes the upgraded KYC claim in refreshed tokens.
 | Layer | Source |
 |---|---|
 | Plain explanation | [Visual story: top-up ticket](../learn/visual-story.md#scene-2-mia-asks-to-add-100000), [Product tour: adding money](../learn/product-tour.md#journey-3-adding-money) |
-| Public entry | [`internal/handler/topup.go`](../../internal/handler/topup.go), [`internal/handler/webhook.go`](../../internal/handler/webhook.go) |
+| Public entry | [`internal/handler/topup.go`](../../internal/handler/topup.go) |
 | Internal contract | [`api/proto/seev/payin/v1/payin.proto`](../../api/proto/seev/payin/v1/payin.proto) |
 | Intent and callback decisions | [`internal/payin/topup.go`](../../internal/payin/topup.go), [`internal/payin/payin.go`](../../internal/payin/payin.go) |
-| Vendor adapter boundary today | [`internal/vendorgw/`](../../internal/vendorgw/) |
+| Vendor boundary and callback ingress | [`internal/vendorboundary/`](../../internal/vendorboundary/), [`cmd/vendor-service/main.go`](../../cmd/vendor-service/main.go) |
 | Owned data | [`migrations/payin/`](../../migrations/payin/) |
 | Focused proof | [`internal/payin/topup_test.go`](../../internal/payin/topup_test.go), [`internal/payin/payin_integration_test.go`](../../internal/payin/payin_integration_test.go) |
 | Complete proof | Top-up section in [`scripts/business-e2e.sh`](../../scripts/business-e2e.sh) |
 
-The tests also expose the current legacy unmatched-intent fallback. The target
-replacement is [plan 54](../roadmap/active/54-vendor-service-boundary.md); it is not current
-code.
+The active callback path uses owner-domain correlation without an authoritative
+vendor-supplied user identifier. The legacy raw callback compatibility path is
+not exposed by Gateway; final live integration/chaos acceptance remains in
+[plan 54](../roadmap/active/54-vendor-service-boundary.md).
 
 ## Fee quote and user-to-user transfer
 

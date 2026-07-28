@@ -20,6 +20,9 @@ managed:
     - file_option: go_package
       path: seev/fraud/v1
       value: github.com/herdifirdausss/seev/gen/fraud/v1
+    - file_option: go_package
+      path: seev/vendorservice/v1
+      value: github.com/herdifirdausss/seev/gen/vendorservice/v1
 plugins:
   - local: protoc-gen-go
     out: gen

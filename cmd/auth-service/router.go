@@ -10,6 +10,7 @@ import (
 
 	"github.com/herdifirdausss/seev/internal/config"
 	"github.com/herdifirdausss/seev/pkg/cache"
+	"github.com/herdifirdausss/seev/pkg/httpcontract"
 	"github.com/herdifirdausss/seev/pkg/middleware"
 )
 
@@ -69,9 +70,9 @@ type operatorOffboardingHandlers interface {
 }
 
 func publicRouter(cfg *config.Config, handlers authHandlers, redisCache *cache.Cache, log *slog.Logger) http.Handler {
-	root := http.NewServeMux()
-	apiRoot := http.NewServeMux()
-	api := http.NewServeMux()
+	root := httpcontract.New(httpcontract.Options{Owner: "auth", Audience: "operational", Contract: "public-v1"})
+	apiRoot := httpcontract.New(httpcontract.Options{Owner: "auth", Audience: "public", Contract: "public-v1"})
+	api := httpcontract.New(httpcontract.Options{Owner: "auth", Audience: "public", Contract: "public-v1"})
 
 	limiterConfig := cache.RateConfig{Requests: cfg.App.RateLimitRequests, Per: cfg.App.RateLimitPer, Burst: cfg.App.RateLimitBurst}
 	var limiter cache.Limiter
@@ -129,7 +130,7 @@ func publicRouter(cfg *config.Config, handlers authHandlers, redisCache *cache.C
 }
 
 func internalRouter(args ...any) http.Handler {
-	mux := http.NewServeMux()
+	mux := httpcontract.New(httpcontract.Options{Owner: "auth", Audience: "admin", Contract: "internal-v1"})
 	mux.HandleFunc("GET /health", health)
 	mux.Handle("GET /metrics", promhttp.Handler())
 	if len(args) >= 2 {

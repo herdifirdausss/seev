@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/herdifirdausss/seev/pkg/httpcontract"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
@@ -14,8 +15,8 @@ import (
 // in this repo exposes (cmd/assurance-service/main.go), plus a read-only
 // /status endpoint for ad hoc operator inspection over the same
 // authenticated channel the CLI `status` subcommand also uses.
-func (a *Agent) NewMux() *http.ServeMux {
-	mux := http.NewServeMux()
+func (a *Agent) NewMux() *httpcontract.Mux {
+	mux := httpcontract.New(httpcontract.Options{Owner: "backup-agent", Audience: "operational", Contract: "none"})
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"status":"ok"}`))

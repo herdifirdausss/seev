@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.seev.invalid/events/ledger/transaction-posted/v1.schema.json",
+  "title": "ledger.transaction.posted.v1",
+  "type": "object",
+  "additionalProperties": true,
+  "description": "Unknown optional properties are tolerated by consumers.",
+  "required": ["schema_version", "tx_id", "transaction_type", "amount", "currency", "entries", "occurred_at"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "event_id": {"type": "string", "format": "uuid"},
+    "tx_id": {"type": "string", "format": "uuid"},
+    "transaction_type": {"type": "string", "minLength": 1},
+    "amount": {"type": "string", "pattern": "^[0-9]+$"},
+    "currency": {"type": "string", "pattern": "^[A-Z]{3}$"},
+    "source_account_id": {"type": ["string", "null"], "format": "uuid"},
+    "destination_account_id": {"type": ["string", "null"], "format": "uuid"},
+    "entries": {"type": "array", "items": {"$ref": "#/$defs/entry"}},
+    "external_ref": {"type": "string"},
+    "occurred_at": {"type": "string", "format": "date-time"},
+    "user_id": {"type": "string", "format": "uuid"},
+    "target_user_id": {"type": "string", "format": "uuid"},
+    "request_id": {"type": "string", "maxLength": 128}
+  },
+  "$defs": {"entry": {"type": "object", "additionalProperties": true, "required": ["account_id", "direction", "amount"], "properties": {"account_id": {"type": "string", "format": "uuid"}, "direction": {"type": "string", "enum": ["debit", "credit"]}, "amount": {"type": "string", "pattern": "^[0-9]+$"}}}}
+}

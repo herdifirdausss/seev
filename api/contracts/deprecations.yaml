@@ -1,0 +1,4 @@
+schema_version: 1
+description: Deprecated operations remain live until replacement, acknowledgement, and zero-use gates pass.
+minimum_window_days: 30
+entries: []

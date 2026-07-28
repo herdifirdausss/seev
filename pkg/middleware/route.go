@@ -32,7 +32,11 @@ type routeCtxKey struct{}
 // visible here. Install WithRoutePattern for the mux closest to where
 // WithTracing/WithHTTPMetrics run for the most specific label achievable
 // without threading instrumentation into module-owned inner routers.
-func WithRoutePattern(mux *http.ServeMux) Middleware {
+type routeLookup interface {
+	Handler(*http.Request) (http.Handler, string)
+}
+
+func WithRoutePattern(mux routeLookup) Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			_, pattern := mux.Handler(r)

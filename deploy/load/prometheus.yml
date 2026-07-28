@@ -1,0 +1,39 @@
+global:
+  scrape_interval: 1s
+  evaluation_interval: 1s
+scrape_configs:
+  - job_name: load-prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+  - job_name: gateway-service
+    scheme: https
+    tls_config: &load_mtls
+      ca_file: /certs/ca.pem
+      cert_file: /certs/prometheus.pem
+      key_file: /certs/prometheus-key.pem
+      insecure_skip_verify: true
+    static_configs: [{targets: ["gateway-service:8081"]}]
+  - job_name: vendor-service
+    scheme: https
+    tls_config: *load_mtls
+    static_configs: [{targets: ["vendor-service:8098"]}]
+  - job_name: auth-service
+    scheme: https
+    tls_config: *load_mtls
+    static_configs: [{targets: ["auth-service:8083"]}]
+  - job_name: ledger-service
+    scheme: https
+    tls_config: *load_mtls
+    static_configs: [{targets: ["ledger-service:8091"]}]
+  - job_name: payin-service
+    scheme: https
+    tls_config: *load_mtls
+    static_configs: [{targets: ["payin-service:8092"]}]
+  - job_name: payout-service
+    scheme: https
+    tls_config: *load_mtls
+    static_configs: [{targets: ["payout-service:8093"]}]
+  - job_name: fraud-service
+    scheme: https
+    tls_config: *load_mtls
+    static_configs: [{targets: ["fraud-service:8094"]}]

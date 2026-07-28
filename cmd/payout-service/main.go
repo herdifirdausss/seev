@@ -17,10 +17,11 @@ import (
 	"google.golang.org/grpc"
 
 	fraudv1 "github.com/herdifirdausss/seev/gen/fraud/v1"
+	vendorv1 "github.com/herdifirdausss/seev/gen/vendorservice/v1"
 	"github.com/herdifirdausss/seev/internal/config"
 	"github.com/herdifirdausss/seev/internal/payout"
+	"github.com/herdifirdausss/seev/internal/vendorboundary"
 	"github.com/herdifirdausss/seev/internal/vendorgw"
-	"github.com/herdifirdausss/seev/internal/vendorgw/mockvendor"
 	"github.com/herdifirdausss/seev/pkg/cache"
 	"github.com/herdifirdausss/seev/pkg/database"
 	"github.com/herdifirdausss/seev/pkg/fraudcheck"
@@ -130,13 +131,23 @@ func run(parent context.Context) error {
 		_ = db.Close()
 		return fmt.Errorf("connect ledger-service: %w", err)
 	}
+	vendorConn, err := grpcx.DialLazy(ctx, cfg.VendorGRPCAddr, cfg.InternalGRPCToken, tlsx.ClientConfig(certSrc, tlsx.IdentityVendor))
+	if err != nil {
+		_ = ledgerConn.Close()
+		if redisCache != nil {
+			_ = redisCache.Close()
+		}
+		_ = db.Close()
+		return fmt.Errorf("create vendor-service client: %w", err)
+	}
+	defer func() { _ = vendorConn.Close() }()
 	registry := vendorgw.NewRegistry()
-	if cfg.Vendor.MockvendorEnabled {
-		registry.AddPayout(mockvendor.NewPayoutProvider(mockvendor.VendorName))
-		log.Warn("vendorgw: mockvendor enabled — test-only vendor")
+	if cfg.Vendor.ServiceEnabled || cfg.Vendor.MockvendorEnabled {
+		registry.AddPayout(vendorboundary.NewPayoutProvider("mockvendor", vendorv1.NewVendorServiceClient(vendorConn)))
+		log.Warn("vendor routing: mockvendor delegated to VendorService")
 	}
 	if cfg.Vendor.Mockvendor2Enabled {
-		registry.AddPayout(mockvendor.NewPayoutProvider("mockvendor2"))
+		registry.AddPayout(vendorboundary.NewPayoutProvider("mockvendor2", vendorv1.NewVendorServiceClient(vendorConn)))
 		log.Warn("vendorgw: mockvendor2 enabled — test-only second vendor for failover demos")
 	}
 	var breaker vendorgw.Breaker = vendorgw.NewHealthTracker(cfg.Breaker.FailureThreshold, cfg.Breaker.Cooldown, log)
@@ -185,7 +196,7 @@ func run(parent context.Context) error {
 	// payout flows; assurance-service (TM-09) reads it for cross-service
 	// correlation.
 	grpcServer, err := grpcx.NewServer(log, cfg.InternalGRPCToken, tlsx.ServerConfig(certSrc, []string{
-		tlsx.IdentityGateway, tlsx.IdentityAssurance,
+		tlsx.IdentityGateway, tlsx.IdentityAssurance, tlsx.IdentityVendor,
 	}))
 	if err != nil {
 		module.StopWorkers()

@@ -5,7 +5,9 @@
 > Derived from track **B0** in
 > [42-long-term-roadmap.md](../42-long-term-roadmap.md).
 >
-> **Status: ready for execution; not implemented.** The activation trigger is
+> **Status: In progress.** The load harness, safety boundaries, and disposable
+> runbook foundation are implemented; canonical capacity evidence remains
+> open. The activation trigger is
 > a conscious learning decision made on 2026-07-22 after the MVP and its
 > observability foundation. Completing B0 does not activate B1, B2, or B3 by
 > itself; only the locked evidence gates in this plan may do that.
@@ -55,23 +57,26 @@ outbox delivery, and lifecycle integrity.
 
 ## 2. Live repository facts
 
-These facts were verified when this plan was written. T0 must recheck them
-before implementation.
+These facts were rechecked on 2026-07-28. The implementation status is recorded
+in each task result; live capacity numbers are intentionally not inferred from
+tooling tests.
 
 ### 2.1 Current topology and resource constraints
 
-- Eight deployable Go binaries exist, with six core money-path services:
-  gateway, auth, ledger, pay-in, payout, and fraud. Admin BFF and assurance are
-  operational extensions.
+- Nine deployable Go binaries exist. The six core money-path services in the
+  disposable load envelope are gateway, auth, ledger, pay-in, payout, and
+  fraud; VendorService is included as the required boundary for W2 webhook
+  runs. Admin BFF and assurance remain operational extensions.
 - PostgreSQL, Redis, and RabbitMQ run through Docker Compose. The app profile can
   run all service containers.
-- The documented development environment has a 4 GiB constraint. Plan 43
-  explicitly avoids running the complete Grafana/Loki/Tempo stack alongside
-  other heavy suites.
+- The documented development profile is resource-constrained. The load profile
+  keeps observability separate and uses a bounded local-small envelope; the
+  exact host fingerprint is recorded per run.
 - Default PostgreSQL pools are 10 open and 5 idle connections per service;
   assurance caps its own pool at 5.
 - No CPU-normalized or production-like infrastructure baseline exists, so a
-  result is meaningful only with its host/resource fingerprint.
+  result is meaningful only with its host/resource fingerprint. No capacity
+  claim is currently recorded.
 
 ### 2.2 Existing performance-sensitive design
 
@@ -83,9 +88,9 @@ before implementation.
   partitioning until `ledger_entries` approaches roughly 50 million rows.
 - Fee and pay-in/payout routing rules are resolved from PostgreSQL on product
   paths. No fee/routing cache exists.
-- The outbox relay polls every second with a default batch of 100. Existing
-  monitoring warns only when the oldest pending event exceeds five minutes,
-  which is too coarse for locating a load-test knee.
+- The ledger outbox relay polls every second with a default batch of 100.
+  Load-only oldest-age, pool, resolver, lock, and queue measurements now exist
+  for the experiments; they have not yet been used to claim a knee.
 
 ### 2.3 Existing telemetry
 
@@ -94,11 +99,12 @@ before implementation.
   breaker state, and several business gauges already exist.
 - Prometheus and dashboards are provisioned through the optional observability
   profile.
-- `database.DBSQL.Stats()` is available, but pool open/in-use/idle/wait metrics
-  are not exported.
-- No load-only PostgreSQL observer, `pg_stat_statements`, lock sampler, oldest
-  outbox-age gauge, resolver-duration metric, or repeatable result collector
-  exists.
+- `database.DBSQL.Stats()` is exported through bounded pool metrics, and the
+  load-only observer exposes activity, locks, normalized statement IDs,
+  database size, and transaction age.
+- Resolver duration, oldest outbox age, queue/command gauges, deterministic
+  result validation, and report aggregation are implemented. Live resource and
+  overhead evidence remains open.
 
 ### 2.4 Existing automation
 
@@ -106,10 +112,12 @@ before implementation.
   generated credentials, and reusable business helpers.
 - `scripts/business-e2e.sh` already exercises the complete MVP journey and is a
   useful correctness oracle, but it uses fixed assertions rather than load.
-- PR CI runs lint, tests, integration, and container smoke. A scheduled workflow
-  runs business and chaos suites weekly.
-- No k6 scripts, deterministic large-data seeder, performance-analysis command,
-  or capacity report exists.
+- PR CI runs lint, tests, integration, container smoke, contract checks, and
+  load-harness safety checks. A scheduled/manual load workflow serializes
+  disposable runs; the regular workflow runs business and chaos suites.
+- k6 scenarios, deterministic seed/snapshot/restore tooling, load probe,
+  load-report validation, and capacity entry points exist. Canonical business
+  seed integration and measurement evidence remain open.
 
 ## 3. Scope and anti-scope
 
@@ -177,7 +185,8 @@ Create `deploy/load/profiles/local-small.yaml` and
 `deploy/load/compose.load.yaml`. The canonical profile is:
 
 - 4 logical CPU capacity and 4 GiB Docker memory allocation;
-- PostgreSQL, Redis, RabbitMQ, and the six core money-path services;
+- PostgreSQL, Redis, RabbitMQ, the six core money-path services, and
+  VendorService when W2 is exercised;
 - one lightweight Prometheus process and one k6 load generator;
 - tracing export, Grafana, Loki, Tempo, Vault, Admin BFF, and assurance disabled;
 - normal production-like pool, timeout, outbox, and worker defaults;
@@ -291,7 +300,7 @@ personal data.
 | ID | Scenario | Measured workload unit | Primary pressure |
 | --- | --- | --- | --- |
 | W1 | P2P posting | quote plus one authenticated transfer and result check | user locks, fraud RPC, ledger transaction, outbox |
-| W2 | Webhook burst | one valid signed callback for a pre-created intent | gateway verification, pay-in state, shared settlement account, ledger, outbox |
+| W2 | Webhook burst | one valid signed callback for a pre-created intent | VendorService verification/inbox, pay-in state, shared settlement account, ledger, outbox |
 | W3 | Payout burst | quote, create, and terminal-status polling for one funded payout | routing, fraud, hold, command relay, mock vendor, settle |
 | W4 | Mixed MVP | one weighted user action/journey from K8 | realistic shared pools and dependencies |
 | W5 | System-account hotspot | W2 against one gateway versus an evenly split two-gateway control | atomic system-balance row contention for B1 |
@@ -597,7 +606,14 @@ fixed before instrumentation or load is added.
 
 ### Result
 
-_Pending implementation._
+Implemented 2026-07-28 as the safety/reproducibility foundation. Added the
+`local-small` profile, strict profile/run schemas, pinned Grafana k6 image,
+load-only Compose override with isolated `seev_load_*` databases and
+`pg_stat_statements`/I/O timing, synthetic load secrets, baseline inventory,
+and `scripts/load-test.sh` refusal/cleanup boundaries. Evidence:
+`go test ./pkg/loadlab ./cmd/loadcheck`, load Compose `config`, the no-ack
+refusal test, and `SEEV_LOAD_ACK=disposable-only ./scripts/load-test.sh validate`.
+No measured capacity claim is made by T0.
 
 ### T1 — Add pool, lock, resolver, queue, and resource observability (K15–K17)
 
@@ -631,7 +647,14 @@ exposing data or materially changing the baseline.
 
 ### Result
 
-_Pending implementation._
+In progress 2026-07-28. Added bounded `sql.DBStats` pool metrics with duplicate
+registration protection, fee/pay-in/payout resolution metrics, the ledger
+oldest-pending-outbox-age gauge, read-only `cmd/loadprobe` sampling for
+activity, locks, normalized statement IDs, database size, and transaction age,
+and a load-only Prometheus scrape configuration for the six core services plus
+VendorService for W2. Unit tests pass and the disposable stack boots with the
+instrumentation. Live observer-role, resource/queue, held-lock, and
+idle/1-WU/s overhead evidence still requires the canonical experiments.
 
 ### T2 — Build deterministic seed, restore, orchestration, and reporting tools (K1–K6, K18–K19)
 
@@ -667,9 +690,16 @@ state and obtain a validated, redacted result bundle from one command.
 
 ### Result
 
-_Pending implementation._
+In progress 2026-07-28. Added deterministic synthetic journey/ledger seed
+material generation with hash manifests, strict output/database boundaries,
+compressed per-database snapshot/restore with checksum verification,
+signal-safe disposable lifecycle cleanup, and `pkg/loadreport`
+validation/aggregation/threshold evaluation that rejects mixed profiles and
+missing percentiles. The seed command remains emit-only until a canonical
+business-state adapter is defined; restore interruption and two-clean-restore
+evidence remain before T2 can be marked complete.
 
-### T3 — Implement W1–W6 and semantic correctness checks (K6–K9)
+### T3 — Implement W1–W7 and semantic correctness checks (K6–K9)
 
 **Work**
 
@@ -704,7 +734,17 @@ detects semantic corruption even when HTTP status codes look successful.
 
 ### Result
 
-_Pending implementation._
+In progress 2026-07-28. Added shared k6 helpers for deterministic keys,
+semantic response checks, HMAC webhook signing, bounded arrival-rate options,
+and W1–W7 scenario scaffolds with static no-sleep/synthetic-data tests. W2 now
+targets the real VendorService callback listener in the disposable Compose
+profile, and W7 provides the bounded ledger-size read probe. The disposable
+stack smoke passed at 1 WU/s with 100% bootstrap checks after service startup;
+business scenarios now refuse to run without a disposable token/seed context
+and reject 4xx responses by default.
+Canonical business seed integration, duplicate-effect verification, payout
+terminal checks, and 10,000-WU distribution evidence still require the
+canonical workload runs.
 
 ### T4 — Measure capacity, recovery, soak, and ledger-size curves (K9–K14)
 
@@ -738,7 +778,10 @@ general capacity and every B1–B3 decision input, with no hidden failed state.
 
 ### Result
 
-_Pending implementation._
+In progress 2026-07-28. The configurable `load-capacity`, `load-run`, report,
+and cleanup entry points are present, but no MSSL/knee/soak/ledger-size
+numbers are claimed yet. Those experiments must be run against clean seeded
+state and retain raw evidence outside Git.
 
 ### T5 — Produce the capacity model and B1–B3 decisions (K10–K13, K19)
 
@@ -773,7 +816,10 @@ where it bends, why, and which measured scale tracks are justified.
 
 ### Result
 
-_Pending implementation._
+Pending measurement evidence. The report model and threshold evaluator are
+implemented, but B1–B3 decisions and the 2x planning limit remain deliberately
+unwritten until T4 produces valid repeated runs with two independent
+bottleneck signals.
 
 ### T6 — Automation, runbooks, documentation, and final gate
 
@@ -799,25 +845,14 @@ _Pending implementation._
 **Required final gate**
 
 ```bash
-GOCACHE=/tmp/seev-go-cache go build ./...
-GOCACHE=/tmp/seev-go-cache go vet ./...
-GOCACHE=/tmp/seev-go-cache go vet -tags=integration ./...
-GOCACHE=/tmp/seev-go-cache make test
-GOCACHE=/tmp/seev-go-cache make lint
-make proto
-make proto-lint
-make proto-breaking
-make load-lint
-GOCACHE=/tmp/seev-go-cache make load-test
-GOCACHE=/tmp/seev-go-cache go test -tags=loadtest ./...
-GOCACHE=/tmp/seev-go-cache go test -tags=integration -race ./...
-GOCACHE=/tmp/seev-go-cache ./scripts/smoke-test.sh all
-GOCACHE=/tmp/seev-go-cache ./scripts/business-e2e.sh
-GOCACHE=/tmp/seev-go-cache ./scripts/admin-e2e.sh
-GOCACHE=/tmp/seev-go-cache ./scripts/chaos-test.sh all
-SEEV_LOAD_ACK=disposable-only make load-smoke
-make load-report-check
-git diff --check
+# Complete repeatable non-chaos gate, including integration and load smoke.
+GOCACHE=/tmp/seev-go-cache make verify-full
+
+# Operator-controlled recovery evidence; run separately and retain diagnostics.
+GOCACHE=/tmp/seev-go-cache make verify-chaos
+
+# After canonical runs produce committed summaries only:
+make load-report-check LOAD_RUNS=path1.json,path2.json LOAD_REPORT_OUT=report.md
 ```
 
 Canonical staircase/confirmation/soak runs are required evidence for plan
@@ -830,23 +865,44 @@ manual/scheduled runs rather than noisy PR hardware.
 
 ### Result
 
-_Pending implementation._
+In progress 2026-07-28. Added load Make targets, safety/schema/helper tests,
+disposable runbooks, root/project-guide policy boundaries, ignored raw
+artifact handling, the pinned-k6 smoke path, actual k6 execution for
+`load-smoke`/`load-run`, exact-run cleanup protection, and VendorService/W7
+Compose wiring. `make load-lint` now runs in PR CI as a non-capacity safety
+gate. The runner serializes concurrent runs with an exact temporary lock and
+records setup, measurement, drain, and verification phase markers per run.
+Added `.github/workflows/load-capacity.yml` for serialized manual/scheduled
+disposable runs with unique artifact paths; scheduled execution is smoke-only
+and cannot create a capacity claim. The non-chaos harness gates now pass:
+`make load-test`, `go test -tags=loadtest ./...`, load safety validation, and
+`SEEV_LOAD_ACK=disposable-only make load-smoke` (completed run artifact
+`20260728T104130Z-fb52a2c770b6-local-small`). The smoke run also proved the
+load profile can coexist with the development stack: Compose project names
+are normalized, internal Redis/RabbitMQ ports are not published, Postgres and
+Prometheus use load-only host ports, and partial startup is cleaned safely.
+`make verify-full` now includes the repeatable non-chaos build, vet, contract,
+protobuf, load, CI-script lint, retention, race, integration, container-smoke,
+host smoke, business, admin, and load-smoke gates. `make verify-chaos` is the
+separate operator-controlled recovery gate.
+The full final gate and canonical capacity evidence remain before B0 can be
+marked complete.
 
 ## 10. Acceptance checklist
 
 ### Safety and reproducibility
 
-- [ ] The load runner cannot target public/non-disposable environments.
-- [ ] Canonical topology, limits, versions, Git SHA, settings, and dataset hashes
+- [x] The load runner cannot target public/non-disposable environments.
+- [x] Canonical topology, limits, versions, Git SHA, settings, and dataset hashes
       are recorded for every run.
 - [ ] Three confirmation runs restore identical clean logical state.
 - [ ] Setup, warm-up, steady state, drain, and verification are separate.
-- [ ] Cleanup cannot delete shared development or unrelated paths/volumes.
+- [x] Cleanup cannot delete shared development or unrelated paths/volumes.
 
 ### Workloads and measurement
 
 - [ ] W1–W7 implement the locked semantics and versions.
-- [ ] Open arrival-rate tests report offered, achieved, and dropped work.
+- [x] Open arrival-rate tests report offered, achieved, and dropped work.
 - [ ] P2P, webhook, payout, and mixed MSSL/knee values are measured.
 - [ ] Spike and soak runs prove recovery and bounded asynchronous drain.
 - [ ] Generator saturation is measured and separated from service saturation.
@@ -874,13 +930,17 @@ _Pending implementation._
 
 ### Evidence and automation
 
-- [ ] Committed reports are small, redacted, deterministic, and traceable to raw
+- [x] Committed reports are small, redacted, deterministic, and traceable to raw
       artifact hashes.
-- [ ] Raw time series, dumps, tokens, and service logs remain outside Git.
-- [ ] PR checks validate harness logic without claiming stable capacity.
-- [ ] Manual/scheduled jobs serialize runs and never overwrite a baseline.
-- [ ] Full build, vet, lint, race, integration, smoke, business, admin, chaos,
-      proto, load-smoke, report, and diff gates are green.
+- [x] Raw time series, dumps, tokens, and service logs remain outside Git.
+- [x] PR checks validate harness logic without claiming stable capacity.
+- [x] Manual/scheduled jobs serialize runs and never overwrite a baseline.
+- [x] Non-capacity build, vet, lint, race, integration, smoke, business, admin,
+      proto, load-lint, load-test, loadtest-tag, and diff gates are green.
+- [x] The disposable `load-smoke` gate is green and records all lifecycle
+      phase markers.
+- [ ] Canonical capacity staircase/confirmation/soak, report, and chaos gates
+      are green.
 
 ## 11. Global Definition of Done
 
@@ -891,7 +951,7 @@ _Pending implementation._
       integrity evidence.
 - [ ] B1–B3 decisions use the original locked thresholds without result-driven
       adjustment.
-- [ ] No scale optimization from B1–B3 is implemented inside B0.
+- [x] No scale optimization from B1–B3 is implemented inside B0.
 - [ ] The plan index and roadmap mark B0 complete only after all canonical runs
       and decisions are recorded here.
 

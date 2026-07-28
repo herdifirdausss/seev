@@ -1,0 +1,50 @@
+syntax = "proto3";
+
+package seev.vendorservice.v1;
+
+// VendorService is the only service allowed to speak vendor-specific
+// protocols. It does not own payment or payout state.
+service VendorService {
+  rpc CreatePayinSession(CreatePayinSessionRequest) returns (CreatePayinSessionResponse);
+  rpc SubmitPayout(SubmitPayoutRequest) returns (SubmitPayoutResponse);
+  rpc QueryPayout(QueryPayoutRequest) returns (QueryPayoutResponse);
+}
+
+message CreatePayinSessionRequest {
+  string vendor = 1;
+  string intent_id = 2;
+  string amount = 3;
+  string currency = 4;
+  string request_id = 5;
+}
+
+message CreatePayinSessionResponse {
+  string vendor = 1;
+  string vendor_reference = 2;
+  string status = 3; // pending | settled | failed | uncertain
+  bytes instructions = 4;
+}
+
+message SubmitPayoutRequest {
+  string vendor = 1;
+  string request_id = 2; // immutable payout idempotency key
+  string amount = 3;
+  string currency = 4;
+  bytes destination = 5;
+}
+
+message QueryPayoutRequest {
+  string vendor = 1;
+  string request_id = 2;
+  string vendor_reference = 3;
+}
+
+message SubmitPayoutResponse { PayoutResult result = 1; }
+message QueryPayoutResponse { PayoutResult result = 1; }
+
+message PayoutResult {
+  string vendor = 1;
+  string vendor_reference = 2;
+  string status = 3; // pending | settled | failed | uncertain
+  string reason = 4;
+}

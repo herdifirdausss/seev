@@ -69,6 +69,7 @@ type Config struct {
 	LedgerGRPCAddr    string
 	PayinGRPCAddr     string
 	PayoutGRPCAddr    string
+	VendorGRPCAddr    string
 	FraudGRPCAddr     string
 	LedgerUserAPIURL  string
 	// LedgerInternalAPIURL is docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T5's (K10)
@@ -127,6 +128,9 @@ type AuthConfig struct {
 // real vendor later is a new field here + one registration line in
 // cmd/gateway/main.go, never a change to internal/payin.
 type VendorConfig struct {
+	// ServiceEnabled means Payin/Payout route through the extracted
+	// VendorService boundary instead of constructing vendor adapters locally.
+	ServiceEnabled    bool
 	MockvendorEnabled bool
 	MockvendorSecret  string
 	// TopupIntentTTL is how long a payin topup intent (docs/roadmap/archive/25 Task
@@ -662,6 +666,7 @@ func loadFromEnvMode(getenv func(string) string, requireRabbitMQ bool) (*Config,
 			Insecure:     parseBool(getenv("OTEL_EXPORTER_OTLP_INSECURE"), true),
 		},
 		Vendor: VendorConfig{
+			ServiceEnabled:     parseBool(getenv("VENDOR_SERVICE_ENABLED"), false),
 			MockvendorEnabled:  parseBool(getenv("VENDOR_MOCKVENDOR_ENABLED"), false),
 			MockvendorSecret:   getenv("VENDOR_MOCKVENDOR_SECRET"),
 			TopupIntentTTL:     parseDuration(getenv("TOPUP_INTENT_TTL"), 24*time.Hour),
@@ -724,6 +729,7 @@ func loadFromEnvMode(getenv func(string) string, requireRabbitMQ bool) (*Config,
 		LedgerGRPCAddr:        getWithDefault(getenv, "LEDGER_GRPC_ADDR", "localhost:9091"),
 		PayinGRPCAddr:         getWithDefault(getenv, "PAYIN_GRPC_ADDR", "localhost:9092"),
 		PayoutGRPCAddr:        getWithDefault(getenv, "PAYOUT_GRPC_ADDR", "localhost:9093"),
+		VendorGRPCAddr:        getWithDefault(getenv, "VENDOR_GRPC_ADDR", "localhost:9098"),
 		FraudGRPCAddr:         getenv("FRAUD_GRPC_ADDR"),
 		LedgerUserAPIURL:      getWithDefault(getenv, "LEDGER_USER_API_URL", "https://localhost:8090"),
 		LedgerInternalAPIURL:  getWithDefault(getenv, "LEDGER_INTERNAL_API_URL", "https://localhost:8091"),

@@ -94,6 +94,14 @@ func ServiceUnavailable(w http.ResponseWriter, code, message string) {
 	errResp(w, http.StatusServiceUnavailable, code, message)
 }
 
+// ErrorStatus writes the standard error envelope for a caller that needs to
+// preserve a specific transport status, such as an admin or proxy handler.
+// The code is stable and should come from api/contracts/errors.yaml; message
+// remains human-readable and is not a parsing surface.
+func ErrorStatus(w http.ResponseWriter, status int, code, message string, details ...map[string]any) {
+	errResp(w, status, code, message, details...)
+}
+
 func InternalServerError(w http.ResponseWriter, err error) {
 	slog.Error("internal server error", "error", err)
 	errResp(w, http.StatusInternalServerError, "INTERNAL_ERROR", "An unexpected error occurred")

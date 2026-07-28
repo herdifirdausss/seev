@@ -34,6 +34,12 @@ var (
 		Help:      "Current number of outbox events in status=dead (exhausted retries).",
 	})
 
+	outboxOldestPendingAgeGauge = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: "ledger",
+		Name:      "outbox_oldest_pending_age_seconds",
+		Help:      "Age in seconds of the oldest pending ledger outbox event.",
+	})
+
 	outboxReapedTotal = promauto.NewCounter(prometheus.CounterOpts{
 		Namespace: "ledger",
 		Name:      "outbox_reaped_total",

@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "B0 load profile",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "id", "disposable", "resources", "network", "services", "k6"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "id": {"type": "string", "pattern": "^[a-z][a-z0-9-]{2,31}$"},
+    "description": {"type": "string"},
+    "disposable": {"const": true},
+    "resources": {"$ref": "#/$defs/resources"},
+    "network": {"$ref": "#/$defs/network"},
+    "services": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/service"}},
+    "k6": {"$ref": "#/$defs/k6"}
+  },
+  "$defs": {
+    "resources": {"type": "object", "additionalProperties": false, "required": ["logical_cpus", "docker_memory_mib", "total_container_memory_mib", "max_container_memory_mib"], "properties": {"logical_cpus": {"type": "integer", "minimum": 1}, "docker_memory_mib": {"type": "integer", "minimum": 1}, "total_container_memory_mib": {"type": "integer", "minimum": 1}, "max_container_memory_mib": {"type": "integer", "minimum": 1}}},
+    "network": {"type": "object", "additionalProperties": false, "required": ["name", "published_host"], "properties": {"name": {"type": "string"}, "published_host": {"const": "127.0.0.1"}}},
+    "service": {"type": "object", "additionalProperties": false, "required": ["name", "memory_mib", "required"], "properties": {"name": {"type": "string"}, "memory_mib": {"type": "integer", "minimum": 1}, "required": {"type": "boolean"}}},
+    "k6": {"type": "object", "additionalProperties": false, "required": ["image", "version", "digest", "max_vus"], "properties": {"image": {"const": "grafana/k6"}, "version": {"type": "string"}, "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}, "max_vus": {"type": "integer", "minimum": 1}}}
+  }
+}

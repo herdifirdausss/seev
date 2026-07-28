@@ -8,7 +8,7 @@
 
 [Services](services.md) covers business logic; [Operations](../operations/README.md)
 covers the tooling that builds/runs/verifies it. This document covers the
-17 packages under `pkg/` — the infrastructure every service is built out
+26 packages under `pkg/` — the infrastructure every service is built out
 of — plus the handful of cross-cutting `internal/` packages that exist for
 the same reason but can't live in `pkg/` for boundary reasons explained
 below. Every type/function listed was checked directly against the
@@ -25,7 +25,7 @@ because it's the single fact that explains this entire directory):
 transaction, a KYC tier, or a payout is. `pkg/database` doesn't know
 "account_balances" exists; `pkg/messaging` doesn't know
 "ledger.transaction.posted.v1" exists. That's what makes every package
-here safely reusable by all eight services without creating a hidden
+here safely reusable by all nine services without creating a hidden
 coupling between otherwise-independent domains.
 
 **The problem this solves**: without this rule, "shared code" tends to
@@ -37,9 +37,9 @@ supposedly-neutral layer. `pkg/` staying domain-neutral is what lets
 `internal/ledger`, `internal/auth`, `internal/payin`, etc. be extracted,
 recomposed, or even deleted independently, which is the entire premise
 [Architecture](architecture.md#3-how-it-was-built-monolith-first-services-only-with-evidence)
-describes for how this repo grew from one binary into eight.
+describes for how this repo grew from one binary into nine.
 
-**Taxonomy** — the 17 packages fall into five concerns:
+**Taxonomy** — the 26 packages fall into seven concerns:
 
 | Concern | Packages |
 |---|---|
@@ -48,6 +48,8 @@ describes for how this repo grew from one binary into eight.
 | Messaging & scheduled work | `messaging`, `scheduler`, `alerting` |
 | HTTP/gRPC request plumbing | `middleware` (the rest), `response`, `ledgerclient`, `ledgererr`, `fraudcheck` |
 | Observability | `logger`, `tracing` |
+| Contract and load safety | `httpcontract`, `loadlab`, `loadmetrics`, `loadreport` |
+| Privacy and lifecycle | `cryptox`, `objectoutbox`, `privacyexport`, `retentionpolicy`, `retentionworker` |
 | General-purpose utilities | `generalerror`, `generalutil` |
 
 None of these packages talk to each other's internals across concern
@@ -62,7 +64,7 @@ independently testable and independently understandable.
 ### `pkg/tlsx`
 
 **Problem it solves**: every internal hop (gRPC and HTTP, across all
-eight services) needs to cryptographically prove *which service* is
+all nine services) needs to cryptographically prove *which service* is
 calling, not just that *some* certificate was presented — and that proof
 has to survive a certificate rotation without a process restart.
 
@@ -104,7 +106,7 @@ panic-to-Internal-error conversion (the server survives a handler panic),
 structured request logging.
 
 **Used by**: every service that exposes or calls an internal gRPC API
-(Ledger, Auth, Payin, Payout, Fraud, Assurance, Gateway).
+(Ledger, Auth, Payin, Payout, Fraud, Assurance, Gateway, VendorService).
 
 ### `pkg/middleware` (security-relevant half)
 
@@ -362,11 +364,60 @@ duplicated in `cmd/gateway` and `cmd/ledger-service`) drifts the moment
 one service's config changes and the others don't follow.
 
 **What's inside**: one shared `TracerProvider` installer, used by all
-eight services (opt-in — this repo runs correctly with tracing
+nine services (opt-in — this repo runs correctly with tracing
 disabled), feeding Tempo via the observability profile described in
 [Operations](../operations/README.md#5-observability-deployobservability--optional-operator-facing).
 
 **Used by**: every service's startup wiring, `pkg/middleware.WithTracing`.
+
+---
+
+## Contract, load, and lifecycle packages
+
+The packages below were added after the original shared-package catalog was
+written. They are now part of the current repository surface, even though
+they do not own business data.
+
+### `pkg/httpcontract`
+
+Provides the route-registration wrapper and metadata snapshot used to keep
+HTTP ownership, operation IDs, method/path pairs, and deprecation metadata
+machine-checkable. It is used by service routers and A9 contract tests; it
+does not replace the business handler or authorization middleware.
+
+### `pkg/loadlab`, `pkg/loadmetrics`, and `pkg/loadreport`
+
+These packages form the disposable B0 load boundary. `loadlab` validates the
+locked profile and per-run manifest, `loadmetrics` defines bounded load
+measurements, and `loadreport` validates and aggregates redacted run
+summaries without averaging percentiles. They refuse unsafe databases, paths,
+profiles, or production-like targets and must not be used to claim production
+capacity from a local run.
+
+### `pkg/cryptox`
+
+Provides versioned encryption key-ring operations and fail-closed behavior
+when a required key version is missing. Privacy-sensitive flows never treat
+an unavailable key as permission to continue with plaintext.
+
+### `pkg/objectoutbox`
+
+Provides durable object-store outbox worker behavior. Domain metadata is
+committed independently from object delivery so an object-store outage leaves
+metadata truthful and retryable.
+
+### `pkg/privacyexport`
+
+Contains bounded privacy-export state and orchestration helpers, keeping
+export metadata and retry decisions separate from the object-store client.
+
+### `pkg/retentionpolicy` and `pkg/retentionworker`
+
+`retentionpolicy` validates the repository retention policy against its schema,
+owner migrations, action classes, and safety constraints. `retentionworker`
+executes the policy with bounded batches and fail-closed handling for database
+or classification errors. Neither package authorizes a purge merely because
+a worker lost access to its evidence.
 
 ---
 

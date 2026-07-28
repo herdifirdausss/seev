@@ -154,8 +154,11 @@ flowchart TB
     Gateway --> Ledger[Ledger: money records]
     Payin --> Ledger
     Payout --> Ledger
-    Vendor([Outside payment company]) --> Gateway
-    Payout --> Vendor
+    Vendor([Outside payment company]) --> VendorService[VendorService: vendor boundary]
+    Payin --> VendorService
+    Payout --> VendorService
+    VendorService --> Payin
+    VendorService --> Payout
     Ledger --> Events[Receipts about completed records]
     Events --> Notify[Notifications]
     Events --> Fraud[Fraud checks]
@@ -165,8 +168,9 @@ flowchart TB
 ```
 
 The solid arrows show requests or messages. The dotted arrows show Assurance
-reading and comparing facts; Assurance cannot move money. The vendor-to-
-Gateway arrow is current behavior and is planned to move to VendorService.
+reading and comparing facts; Assurance cannot move money. VendorService
+authenticates and stores vendor traffic, while Payin/Payout decide whether it
+matches their own business state.
 
 ## Three kinds of truth
 
@@ -247,14 +251,16 @@ sequenceDiagram
     participant Gateway
     participant Payin
     participant Vendor as Payment vendor
+    participant VendorService
     participant Ledger
     Person->>Gateway: I want to add 100,000 IDR
     Gateway->>Payin: Create a top-up intent
     Payin-->>Person: Pending reference
     Person->>Vendor: Complete the payment
-    Vendor->>Gateway: Signed payment callback
-    Gateway->>Payin: Forward the unchanged callback
-    Payin->>Payin: Verify vendor and match the intent
+    Vendor->>VendorService: Signed payment callback
+    VendorService->>VendorService: Verify signature and normalize
+    VendorService->>Payin: Normalized callback over mTLS
+    Payin->>Payin: Match the intent and validate business data
     Payin->>Ledger: Record the confirmed money-in
     Ledger-->>Payin: Posted once
 ```
@@ -262,25 +268,24 @@ sequenceDiagram
 A top-up intent is a plan, not money. It says who expects to add how much, in
 which currency, through which vendor, and under which reference.
 
-Today, the vendor sends a signed callback to Gateway. Gateway forwards the
-unchanged bytes to Payin. Payin verifies the signature, tries to match the
-reference to an intent, checks the amount and currency, screens the action,
-and asks Ledger to post the money. The Ledger's idempotency check prevents a
-repeated callback from creating money twice.
+Today, the vendor sends a signed callback to VendorService. VendorService
+verifies and durably stores the message, then sends a normalized callback to
+Payin. Payin matches the reference to an intent, checks the amount and
+currency, screens the action, and asks Ledger to post the money. The Ledger's
+idempotency check prevents a repeated callback from creating money twice.
 
 Why keep the intent in Payin? The outside vendor should not decide which Seev
 user owns the money. That relationship belongs to Seev's money-in domain.
 
-> **Known current limitation:** the present code still contains an old
-> compatibility path that can use a vendor payload's `user_id` when no top-up
-> intent is found, and it does not yet enforce the complete dedicated-service
-> boundary described above. This is documented openly because it is not the
-> desired safety model. Plan 54 removes that fallback and requires strict
-> owner-domain correlation before money or notifications can change.
+> **Known current limitation / compatibility path:** an old raw callback RPC
+> remains in the code and can represent the former fallback, but it is not an
+> active Gateway route. The active VendorService path uses strict owner-domain
+> correlation and does not accept vendor-supplied user ownership. Final live
+> integration and chaos acceptance remain in plan 54.
 
-> A future design moves all direct vendor communication behind a dedicated
-> VendorService. It is documented as a target in
-> [plan 54](../roadmap/active/54-vendor-service-boundary.md), not as current behavior.
+> The active path already moves direct vendor communication behind the
+> dedicated VendorService. Final live integration and chaos acceptance remain
+> tracked in [plan 54](../roadmap/active/54-vendor-service-boundary.md).
 
 ## Story 3: sending money to another user
 
@@ -344,7 +349,7 @@ documents name each policy explicitly as fail-open or fail-closed.
 
 ## Current system and future ideas
 
-The current system has eight deployable services. Documents marked
+The current system has nine deployable services. Documents marked
 **Current** must agree with executable code and tests. Documents marked
 **Target** describe a design that still needs implementation. Files under
 `docs/roadmap` are a chronological decision history; an old plan can be useful

@@ -61,7 +61,8 @@ func TestHandleDelivery_MoneyIn_InsertsSingleRecipient(t *testing.T) {
 	repo.EXPECT().Insert(gomock.Any(), gomock.Any()).DoAndReturn(
 		func(_ context.Context, n model.Notification) (bool, error) {
 			assert.Equal(t, userID, n.UserID)
-			assert.Equal(t, msgID, n.EventID)
+			require.NotNil(t, ev.EventID)
+			assert.Equal(t, *ev.EventID, n.EventID)
 			assert.Equal(t, "money_in", n.Type)
 			assert.NotEmpty(t, n.Title)
 			assert.NotEmpty(t, n.Body)
@@ -84,7 +85,8 @@ func TestHandleDelivery_TransferP2P_InsertsBothRecipients(t *testing.T) {
 	repo.EXPECT().Insert(gomock.Any(), gomock.Any()).Times(2).DoAndReturn(
 		func(_ context.Context, n model.Notification) (bool, error) {
 			gotUserIDs = append(gotUserIDs, n.UserID)
-			assert.Equal(t, msgID, n.EventID)
+			require.NotNil(t, ev.EventID)
+			assert.Equal(t, *ev.EventID, n.EventID)
 			assert.Equal(t, "transfer_p2p", n.Type)
 			return true, nil
 		})
@@ -149,11 +151,22 @@ func TestHandleDelivery_MalformedBody_ReturnsError(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestHandleDeliveryMalformedKnownVersionHasNoRepositorySideEffect(t *testing.T) {
+	m, repo := newModule(t)
+	event := events.NewTransactionPosted(uuid.New(), "money_in", "500000", "IDR", nil, nil, nil, "", time.Now(), nil, nil, "")
+	event.Currency = "idr"
+	assert.Error(t, m.handleDelivery(context.Background(), deliveryFor(t, event, uuid.New().String())))
+	_ = repo
+}
+
 func TestHandleDelivery_InvalidMessageID_ReturnsError(t *testing.T) {
 	m, _ := newModule(t)
 	txID := uuid.New()
 	userID := uuid.New()
 	ev := events.NewTransactionPosted(txID, "money_in", "500000", "IDR", nil, nil, nil, "", time.Now(), &userID, nil, "")
+	// Historical v1 payloads have no logical event ID and therefore still
+	// require a UUID AMQP message_id for notification deduplication.
+	ev.EventID = nil
 	err := m.handleDelivery(context.Background(), deliveryFor(t, ev, "not-a-uuid"))
 	assert.Error(t, err)
 }

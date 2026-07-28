@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 	"google.golang.org/grpc"
 
 	payinv1 "github.com/herdifirdausss/seev/gen/payin/v1"
@@ -43,6 +44,13 @@ const (
 	WebhookOutcomeBusinessFailure WebhookOutcome = "business_failure"
 )
 
+const (
+	VendorCallbackFinalized         = "finalized"
+	VendorCallbackAlreadyFinalized  = "already_finalized"
+	VendorCallbackIgnored           = "ignored_non_terminal"
+	VendorCallbackRecordedUnmatched = "recorded_unmatched"
+)
+
 // Poster is the subset of ledger.Module's behavior payin needs — a local
 // structural interface rather than a dependency on the concrete
 // *ledger.Module type, so unit tests can inject a mock without touching
@@ -62,12 +70,15 @@ func (m *Module) RegisterGRPC(server *grpc.Server) {
 
 // Module is the public facade for the payin module.
 type Module struct {
-	db       database.DatabaseSQL
-	repo     repository.Repository
-	routing  repository.RoutingRepository
-	poster   Poster
-	registry *vendorgw.Registry
-	logger   *slog.Logger
+	db            database.DatabaseSQL
+	repo          repository.Repository
+	routing       repository.RoutingRepository
+	poster        Poster
+	registry      *vendorgw.Registry
+	vendorSession interface {
+		CreatePayinSession(context.Context, string, string, decimal.Decimal, string, string) error
+	}
+	logger *slog.Logger
 	// topupTTL is how long a topup intent stays 'pending' before being
 	// treated as expired (docs/roadmap/archive/25 Task T3). <=0 falls back to 24h.
 	topupTTL time.Duration
@@ -78,6 +89,15 @@ type Module struct {
 	// is a valid, fully-supported configuration (byte-identical to before
 	// this feature existed: every registered vendor is always "allowed").
 	breaker vendorgw.Breaker
+}
+
+// SetVendorSession wires the outbound VendorService seam. It is optional for
+// in-process tests and migration compatibility; production composition roots
+// set it before serving traffic.
+func (m *Module) SetVendorSession(creator interface {
+	CreatePayinSession(context.Context, string, string, decimal.Decimal, string, string) error
+}) {
+	m.vendorSession = creator
 }
 
 // NewModule wires the payin module. Vendor and gateway selection comes
@@ -228,6 +248,88 @@ func (m *Module) HandleWebhookResult(ctx context.Context, vendor string, headers
 		return "", err
 	}
 	return WebhookOutcomeOK, nil
+}
+
+// HandleVendorCallback processes the normalized callback delivered by
+// VendorService. Correlation is strictly by the Payin-owned external
+// reference and expected vendor/amount/currency; the vendor payload's user id
+// is intentionally unavailable on this path.
+func (m *Module) HandleVendorCallback(ctx context.Context, vendor, vendorEventID, externalReference, amountRaw, currency, status, occurredAt, inboxID, requestID, unknownStatus string) (string, error) {
+	amount, err := decimal.NewFromString(amountRaw)
+	if err != nil || !amount.IsPositive() || !amount.Equal(amount.Truncate(0)) {
+		return "", fmt.Errorf("payin: invalid normalized callback amount")
+	}
+	mapping, found, err := m.routing.GetVendorGateway(ctx, vendor)
+	if err != nil {
+		return "", err
+	}
+
+	event := model.WebhookEvent{
+		ID: generalutil.NewV7(), Vendor: vendor, VendorEventID: vendorEventID,
+		ExternalRef: externalReference, Amount: amount, Currency: currency,
+		Raw: []byte(fmt.Sprintf(`{"vendor_inbox_id":%q}`, inboxID)), RequestID: requestID,
+	}
+	unmatchedReason := ""
+	var intent model.TopupIntent
+	if !found {
+		unmatchedReason = "no payin vendor gateway mapping"
+	} else {
+		intent, found, err = m.repo.GetTopupIntentByReference(ctx, externalReference)
+		if err != nil {
+			return "", fmt.Errorf("payin: lookup normalized callback intent: %w", err)
+		}
+		switch {
+		case !found:
+			unmatchedReason = "no matching payin intent"
+		case intent.Vendor != vendor:
+			unmatchedReason = "callback vendor does not match payin intent"
+		case intent.Status != model.TopupStatusPending:
+			unmatchedReason = fmt.Sprintf("payin intent is not pending: %s", intent.Status)
+		case !intent.ExpiresAt.After(time.Now()):
+			unmatchedReason = "payin intent expired"
+		case !intent.Amount.Equal(amount) || intent.Currency != currency:
+			unmatchedReason = "callback amount or currency does not match payin intent"
+		default:
+			event.UserID = intent.UserID
+		}
+	}
+
+	stored, err := m.repo.GetOrInsert(ctx, event)
+	if err != nil {
+		return "", fmt.Errorf("payin: persist normalized callback: %w", err)
+	}
+	if stored.Status == "posted" {
+		return VendorCallbackAlreadyFinalized, nil
+	}
+	if stored.Status == "failed" || stored.Status == "blocked" {
+		return VendorCallbackRecordedUnmatched, nil
+	}
+	if status != "settled" {
+		reason := "non-terminal vendor status"
+		if unknownStatus != "" {
+			reason = "unknown vendor status: " + unknownStatus
+		}
+		if err := m.repo.MarkFailed(ctx, stored.ID, reason); err != nil {
+			return "", err
+		}
+		return VendorCallbackIgnored, nil
+	}
+	if unmatchedReason != "" {
+		if err := m.repo.MarkFailed(ctx, stored.ID, unmatchedReason); err != nil {
+			return "", err
+		}
+		return VendorCallbackRecordedUnmatched, nil
+	}
+	if !found {
+		return "", fmt.Errorf("payin: normalized callback intent unexpectedly absent")
+	}
+	if err := m.postAndFinalize(ctx, stored, mapping.Gateway); err != nil {
+		if IsBusinessFailure(err) {
+			return VendorCallbackRecordedUnmatched, nil
+		}
+		return "", err
+	}
+	return VendorCallbackFinalized, nil
 }
 
 // postAndFinalize posts stored to the ledger and updates its status

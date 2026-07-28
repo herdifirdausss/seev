@@ -1,0 +1,24 @@
+{
+  "uid": "seev-contract-lifecycle",
+  "title": "Seev / Contract lifecycle",
+  "description": "Bounded HTTP deprecation and contract validation signals for A9.",
+  "tags": ["seev", "contracts"],
+  "schemaVersion": 39,
+  "version": 1,
+  "panels": [
+    {
+      "id": 1,
+      "title": "Deprecated HTTP traffic",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "seev-prometheus"},
+      "targets": [{"expr": "sum(rate(seev_deprecated_contract_requests_total[5m])) by (contract_id, version)", "refId": "A", "legendFormat": "{{contract_id}} {{version}}"}]
+    },
+    {
+      "id": 2,
+      "title": "Contract validation failures",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "seev-prometheus"},
+      "targets": [{"expr": "sum(rate(seev_contract_validation_failures_total[5m])) by (family, reason)", "refId": "A", "legendFormat": "{{family}} {{reason}}"}]
+    }
+  ]
+}

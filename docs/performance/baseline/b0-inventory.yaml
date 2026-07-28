@@ -1,0 +1,21 @@
+schema_version: 1
+track: B0
+profile_id: local-small
+captured_at: 2026-07-28
+status: pre-measurement
+scope:
+  services: [gateway, vendor, auth, ledger, payin, payout, fraud]
+  infrastructure: [postgres, redis, rabbitmq]
+  excluded: [admin-bff, assurance, vault, grafana, loki, tempo, alloy]
+workloads: [W1-p2p, W2-webhook, W3-payout, W4-mixed, W5-hotspot, W6-resolver, W7-size-ladder]
+defaults:
+  postgres_max_open_connections: 10
+  postgres_max_idle_connections: 5
+  outbox_batch_size: 100
+  outbox_poll_interval: 1s
+  webhook_sli_seconds: 2
+deferred_tracks:
+  B1: atomic system-account delta contention
+  B2: ledger size/query/maintenance growth
+  B3: fee and routing resolution cost
+measurement_note: Host and Docker fingerprints are collected by each run manifest; this file is not a capacity claim.

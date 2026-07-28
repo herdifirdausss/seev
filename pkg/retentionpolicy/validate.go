@@ -27,7 +27,7 @@ var validHoldScopes = map[HoldScope]bool{
 
 var validOwners = map[string]bool{
 	"adminbff": true, "assurance": true, "auth": true, "fraud": true,
-	"gateway": true, "ledger": true, "payin": true, "payout": true, "shared": true,
+	"gateway": true, "ledger": true, "payin": true, "payout": true, "shared": true, "vendor": true,
 }
 
 // actionsRequiringAge is the set of actions docs/roadmap/active/51 K1 defines an

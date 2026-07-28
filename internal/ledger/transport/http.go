@@ -22,6 +22,7 @@ import (
 	"github.com/herdifirdausss/seev/internal/ledger/processors"
 	"github.com/herdifirdausss/seev/pkg/currency"
 	"github.com/herdifirdausss/seev/pkg/fraudcheck"
+	"github.com/herdifirdausss/seev/pkg/httpcontract"
 	"github.com/herdifirdausss/seev/pkg/middleware"
 	"github.com/herdifirdausss/seev/pkg/response"
 )
@@ -123,7 +124,11 @@ func NewInternalRouterWithFeePolicy(svc Service, feePolicy *feepolicy.Policy) ht
 }
 
 func (h *handler) mux() http.Handler {
-	mux := http.NewServeMux()
+	audience, contract := "internal", "internal-v1"
+	if h.allowedTypes != nil {
+		audience, contract = "public", "public-v1"
+	}
+	mux := httpcontract.New(httpcontract.Options{Owner: "ledger", Audience: audience, Contract: contract})
 
 	mux.HandleFunc("POST /transactions", h.postTransaction)
 	mux.HandleFunc("GET /transactions/{id}", h.getTransaction)

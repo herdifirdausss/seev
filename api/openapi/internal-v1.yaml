@@ -1,0 +1,202 @@
+openapi: 3.1.0
+info:
+  title: Seev direct internal HTTP API
+  version: 1.0.0
+  description: Service-to-service and operational HTTP contracts; listeners are network-isolated and mTLS protected.
+servers: [{url: https://ledger.internal.example.invalid}, {url: https://payin.internal.example.invalid}, {url: https://payout.internal.example.invalid}, {url: https://fraud.internal.example.invalid}, {url: https://assurance.internal.example.invalid}]
+paths:
+  /api/v1/ledger/transactions:
+    post:
+      operationId: ledgerInternalPostTransactionV1
+      x-see-owner: ledger
+      x-see-audience: internal
+      security: [{internalToken: []}]
+      requestBody: {$ref: './components/common.yaml#/components/requestBodies/JSON'}
+      responses: {'201': {$ref: './components/common.yaml#/components/responses/Success'}, '400': {$ref: './components/common.yaml#/components/responses/BadRequest'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '409': {$ref: './components/common.yaml#/components/responses/Conflict'}, '503': {$ref: './components/common.yaml#/components/responses/Unavailable'}}
+  /api/v1/ledger/transactions/{id}:
+    get:
+      operationId: ledgerInternalGetTransactionV1
+      x-see-owner: ledger
+      x-see-audience: internal
+      security: [{internalToken: []}]
+      parameters: [{$ref: './components/common.yaml#/components/parameters/UUID'}]
+      responses: {'200': {$ref: './components/common.yaml#/components/responses/Success'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '404': {$ref: './components/common.yaml#/components/responses/NotFound'}}
+  /api/v1/ledger/accounts:
+    get:
+      operationId: ledgerInternalListAccountsV1
+      x-see-owner: ledger
+      x-see-audience: internal
+      security: [{internalToken: []}]
+      responses: {'200': {$ref: './components/common.yaml#/components/responses/Success'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}}
+  /api/v1/ledger/accounts/{id}/balance:
+    get:
+      operationId: ledgerInternalGetBalanceV1
+      x-see-owner: ledger
+      x-see-audience: internal
+      security: [{internalToken: []}]
+      parameters: [{$ref: './components/common.yaml#/components/parameters/UUID'}]
+      responses: {'200': {$ref: './components/common.yaml#/components/responses/Success'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '404': {$ref: './components/common.yaml#/components/responses/NotFound'}}
+  /api/v1/ledger/accounts/{id}/entries:
+    get:
+      operationId: ledgerInternalListEntriesV1
+      x-see-owner: ledger
+      x-see-audience: internal
+      security: [{internalToken: []}]
+      parameters: [{$ref: './components/common.yaml#/components/parameters/UUID'}]
+      responses: {'200': {$ref: './components/common.yaml#/components/responses/Success'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '404': {$ref: './components/common.yaml#/components/responses/NotFound'}}
+  /api/v1/ledger/accounts/{id}/statement:
+    get:
+      operationId: ledgerInternalGetStatementV1
+      x-see-owner: ledger
+      x-see-audience: internal
+      security: [{internalToken: []}]
+      parameters: [{$ref: './components/common.yaml#/components/parameters/UUID'}]
+      responses: {'200': {$ref: './components/common.yaml#/components/responses/Statement'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '404': {$ref: './components/common.yaml#/components/responses/NotFound'}}
+  /api/v1/ledger/accounts/pockets:
+    post:
+      operationId: ledgerInternalCreatePocketV1
+      x-see-owner: ledger
+      x-see-audience: internal
+      security: [{internalToken: []}]
+      requestBody: {$ref: './components/common.yaml#/components/requestBodies/JSON'}
+      responses: {'201': {$ref: './components/common.yaml#/components/responses/Success'}, '400': {$ref: './components/common.yaml#/components/responses/BadRequest'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}}
+  /api/v1/ledger/schedules:
+    get:
+      operationId: ledgerInternalListSchedulesV1
+      x-see-owner: ledger
+      x-see-audience: internal
+      security: [{internalToken: []}]
+      responses: {'200': {$ref: './components/common.yaml#/components/responses/Success'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}}
+    post:
+      operationId: ledgerInternalCreateScheduleV1
+      x-see-owner: ledger
+      x-see-audience: internal
+      security: [{internalToken: []}]
+      requestBody: {$ref: './components/common.yaml#/components/requestBodies/JSON'}
+      responses: {'201': {$ref: './components/common.yaml#/components/responses/Success'}, '400': {$ref: './components/common.yaml#/components/responses/BadRequest'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}}
+  /api/v1/ledger/admin/outbox/dead:
+    get:
+      operationId: ledgerListDeadOutboxV1
+      x-see-owner: ledger
+      x-see-audience: admin
+      security: [{internalToken: []}]
+      responses: {'200': {$ref: './components/common.yaml#/components/responses/Success'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '403': {$ref: './components/common.yaml#/components/responses/Forbidden'}}
+  /api/v1/ledger/admin/outbox/dead/replay-all:
+    post:
+      operationId: ledgerReplayAllDeadOutboxV1
+      x-see-owner: ledger
+      x-see-audience: admin
+      security: [{internalToken: []}]
+      responses: {'204': {$ref: './components/common.yaml#/components/responses/NoContent'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '403': {$ref: './components/common.yaml#/components/responses/Forbidden'}}
+  /api/v1/ledger/admin/outbox/dead/{id}/replay:
+    post:
+      operationId: ledgerReplayDeadOutboxV1
+      x-see-owner: ledger
+      x-see-audience: admin
+      security: [{internalToken: []}]
+      parameters: [{$ref: './components/common.yaml#/components/parameters/UUID'}]
+      responses: {'204': {$ref: './components/common.yaml#/components/responses/NoContent'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '403': {$ref: './components/common.yaml#/components/responses/Forbidden'}, '404': {$ref: './components/common.yaml#/components/responses/NotFound'}}
+  /api/v1/admin/policy/limits:
+    get:
+      operationId: ledgerListPolicyLimitsV1
+      x-see-owner: policy
+      x-see-audience: admin
+      security: [{internalToken: []}]
+      responses: {'200': {$ref: './components/common.yaml#/components/responses/Success'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '403': {$ref: './components/common.yaml#/components/responses/Forbidden'}}
+    put:
+      operationId: ledgerUpsertPolicyLimitV1
+      x-see-owner: policy
+      x-see-audience: admin
+      security: [{internalToken: []}]
+      requestBody: {$ref: './components/common.yaml#/components/requestBodies/JSON'}
+      responses: {'200': {$ref: './components/common.yaml#/components/responses/Success'}, '400': {$ref: './components/common.yaml#/components/responses/BadRequest'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '403': {$ref: './components/common.yaml#/components/responses/Forbidden'}}
+  /admin/payin/events:
+    get:
+      operationId: payinListEventsV1
+      x-see-owner: payin
+      x-see-audience: admin
+      security: [{internalToken: []}]
+      responses: {'200': {$ref: './components/common.yaml#/components/responses/Success'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '403': {$ref: './components/common.yaml#/components/responses/Forbidden'}}
+  /admin/payin/routing-rules:
+    get:
+      operationId: payinListRoutingRulesV1
+      x-see-owner: payin
+      x-see-audience: admin
+      security: [{internalToken: []}]
+      responses: {'200': {$ref: './components/common.yaml#/components/responses/Success'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '403': {$ref: './components/common.yaml#/components/responses/Forbidden'}}
+    post:
+      operationId: payinCreateRoutingRuleV1
+      x-see-owner: payin
+      x-see-audience: admin
+      security: [{internalToken: []}]
+      requestBody: {$ref: './components/common.yaml#/components/requestBodies/JSON'}
+      responses: {'201': {$ref: './components/common.yaml#/components/responses/Success'}, '400': {$ref: './components/common.yaml#/components/responses/BadRequest'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '403': {$ref: './components/common.yaml#/components/responses/Forbidden'}}
+  /admin/payout/requests:
+    get:
+      operationId: payoutListRequestsV1
+      x-see-owner: payout
+      x-see-audience: admin
+      security: [{internalToken: []}]
+      responses: {'200': {$ref: './components/common.yaml#/components/responses/Success'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '403': {$ref: './components/common.yaml#/components/responses/Forbidden'}}
+  /admin/payout/routing-rules:
+    get:
+      operationId: payoutListRoutingRulesV1
+      x-see-owner: payout
+      x-see-audience: admin
+      security: [{internalToken: []}]
+      responses: {'200': {$ref: './components/common.yaml#/components/responses/Success'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '403': {$ref: './components/common.yaml#/components/responses/Forbidden'}}
+    post:
+      operationId: payoutCreateRoutingRuleV1
+      x-see-owner: payout
+      x-see-audience: admin
+      security: [{internalToken: []}]
+      requestBody: {$ref: './components/common.yaml#/components/requestBodies/JSON'}
+      responses: {'201': {$ref: './components/common.yaml#/components/responses/Success'}, '400': {$ref: './components/common.yaml#/components/responses/BadRequest'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '403': {$ref: './components/common.yaml#/components/responses/Forbidden'}}
+  /api/v1/admin/fraud/events:
+    get:
+      operationId: fraudListEventsV1
+      x-see-owner: fraud
+      x-see-audience: admin
+      security: [{internalToken: []}]
+      responses: {'200': {$ref: './components/common.yaml#/components/responses/Success'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '403': {$ref: './components/common.yaml#/components/responses/Forbidden'}}
+  /admin/assurance/summary:
+    get:
+      operationId: assuranceGetSummaryV1
+      x-see-owner: assurance
+      x-see-audience: admin
+      security: [{internalToken: []}]
+      responses: {'200': {$ref: './components/common.yaml#/components/responses/Success'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '403': {$ref: './components/common.yaml#/components/responses/Forbidden'}}
+  /admin/assurance/findings:
+    get:
+      operationId: assuranceListFindingsV1
+      x-see-owner: assurance
+      x-see-audience: admin
+      security: [{internalToken: []}]
+      responses: {'200': {$ref: './components/common.yaml#/components/responses/Success'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '403': {$ref: './components/common.yaml#/components/responses/Forbidden'}}
+  /privacy/export:
+    get:
+      operationId: ownerPrivacyExportV1
+      x-see-owner: privacy-owner
+      x-see-audience: internal
+      security: [{internalToken: []}]
+      parameters: [{name: user_id, in: query, required: true, schema: {$ref: './components/common.yaml#/components/schemas/UUID'}}, {name: cutoff, in: query, required: true, schema: {$ref: './components/common.yaml#/components/schemas/Timestamp'}}, {name: cursor, in: query, schema: {type: string, maxLength: 512}}]
+      responses: {'200': {$ref: './components/common.yaml#/components/responses/Success'}, '400': {$ref: './components/common.yaml#/components/responses/BadRequest'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '500': {$ref: './components/common.yaml#/components/responses/Unavailable'}}
+  /privacy/closure/prepare:
+    post:
+      operationId: ownerPrivacyClosurePrepareV1
+      x-see-owner: privacy-owner
+      x-see-audience: internal
+      security: [{internalToken: []}]
+      requestBody: {$ref: './components/common.yaml#/components/requestBodies/JSON'}
+      responses: {'200': {$ref: './components/common.yaml#/components/responses/Success'}, '400': {$ref: './components/common.yaml#/components/responses/BadRequest'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '500': {$ref: './components/common.yaml#/components/responses/Unavailable'}}
+  /privacy/closure/commit:
+    post:
+      operationId: ownerPrivacyClosureCommitV1
+      x-see-owner: privacy-owner
+      x-see-audience: internal
+      security: [{internalToken: []}]
+      requestBody: {$ref: './components/common.yaml#/components/requestBodies/JSON'}
+      responses: {'200': {$ref: './components/common.yaml#/components/responses/Success'}, '400': {$ref: './components/common.yaml#/components/responses/BadRequest'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '500': {$ref: './components/common.yaml#/components/responses/Unavailable'}}
+components:
+  securitySchemes:
+    internalToken: {$ref: './components/common.yaml#/components/securitySchemes/internalToken'}

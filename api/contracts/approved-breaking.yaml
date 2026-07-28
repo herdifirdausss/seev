@@ -1,0 +1,9 @@
+schema_version: 1
+description: Explicit, reviewed contract cutovers that are intentionally breaking within one release.
+changes:
+  - method: POST
+    path: /webhooks/{vendor}
+    predecessor_operation_id: gatewayVendorWebhookV1
+    successor_operation_id: vendorServiceVendorWebhookV1
+    reason: VendorService owns the restricted callback edge; Gateway no longer accepts vendor callbacks.
+    plan: docs/roadmap/active/54-vendor-service-boundary.md

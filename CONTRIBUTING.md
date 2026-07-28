@@ -74,9 +74,13 @@ cheap checks that are useful before opening a pull request:
 go build ./...
 go vet ./...
 make lint
+make ci-lint
 make test
 make docs-check
 make proto-lint   # only if you changed api/proto/
+make contracts
+make load-lint
+make retention-check
 git diff --check
 ```
 
@@ -89,6 +93,7 @@ persistence, messaging, service startup, or shared test bootstrap changes:
 
 ```bash
 make verify-full
+make verify-chaos   # manual recovery scenarios, when the change needs them
 ```
 
 See [Project guide](docs/development/project-guide.md#build-and-verification) for exactly
@@ -100,8 +105,9 @@ Every push and PR runs `.github/workflows/ci.yml`: documentation link checks,
 `actionlint` +
 `ShellCheck` on the workflows/scripts themselves, an external-action
 SHA-pin policy check, `golangci-lint`, unit tests, the `integration` suite
-(testcontainers-backed, no external services needed), and a full
-smoke-container run building and exercising all eight service images.
+(testcontainers-backed, no external services needed), HTTP/protobuf contract
+gates, the disposable load-harness safety gate, and a full smoke-container run
+building and exercising all nine service images.
 Documentation-only changes run the documentation check and skip the three
 heavy jobs automatically — you don't need to do anything special for a docs
 PR to stay fast. The

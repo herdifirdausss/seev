@@ -203,7 +203,7 @@ topup() {
 	sig="$(printf '%s' "$body" | openssl dgst -sha256 -hmac "$MOCKVENDOR_SECRET" -r | awk '{print $1}')"
 	log "webhook payload deliberately carries a RANDOM user_id — the intent's OWN user_id must win, proving the vendor never learns it..."
 	local code
-	code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$APP_PORT/webhooks/mockvendor" \
+	code=$(curl_internal -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$VENDOR_APP_PORT/webhooks/mockvendor" \
 		-H "X-Mock-Signature: $sig" -H "Content-Type: application/json" -d "$body")
 	[ "${code:0:1}" = "2" ] && ok "signed topup webhook accepted (code=$code)" || fail "topup webhook got $code, expected 2xx"
 
@@ -299,7 +299,7 @@ kyc_journey() {
 	local body sig code
 	body="{\"event_id\":\"e2e-kyc-topup-$RUN_ID\",\"external_ref\":\"$reference\",\"user_id\":\"$(uuidgen | tr '[:upper:]' '[:lower:]')\",\"amount\":\"3000000\",\"currency\":\"IDR\",\"occurred_at\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"type\":\"payment.settled\"}"
 	sig="$(printf '%s' "$body" | openssl dgst -sha256 -hmac "$MOCKVENDOR_SECRET" -r | awk '{print $1}')"
-	code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$APP_PORT/webhooks/mockvendor" \
+	code=$(curl_internal -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$VENDOR_APP_PORT/webhooks/mockvendor" \
 		-H "X-Mock-Signature: $sig" -H "Content-Type: application/json" -d "$body")
 	[ "${code:0:1}" = "2" ] && ok "user C topup webhook accepted (code=$code)" || fail "user C topup webhook got $code, expected 2xx"
 

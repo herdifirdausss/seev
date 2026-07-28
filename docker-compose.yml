@@ -405,13 +405,13 @@ services:
       POSTGRES_DB: seev_payin
       POSTGRES_SSL_MODE: disable
       LEDGER_GRPC_ADDR: ledger-service:9091
+      VENDOR_GRPC_ADDR: vendor-service:9098
       FRAUD_GRPC_ADDR: fraud-service:9094
       JWT_SECRET: ${JWT_SECRET:-change-me-to-a-random-32-plus-character-secret}
       JWT_ISSUER: ${JWT_ISSUER:-seev}
-      VENDOR_MOCKVENDOR_ENABLED: "true"
-      VENDOR_MOCKVENDOR_SECRET: ${VENDOR_MOCKVENDOR_SECRET:-change-me-mockvendor-secret}
-      MOCKVENDOR2_ENABLED: "true"
-      MOCKVENDOR2_SECRET: ${MOCKVENDOR2_SECRET:-change-me-mockvendor2-secret}
+      VENDOR_SERVICE_ENABLED: "true"
+      VENDOR_MOCKVENDOR_ENABLED: "false"
+      MOCKVENDOR2_ENABLED: "false"
       CRYPTOX_KEY_V1_FILE: /run/secrets/cryptox_key_v1
     secrets:
       - cryptox_key_v1
@@ -423,6 +423,8 @@ services:
       postgres:
         condition: service_healthy
       ledger-service:
+        condition: service_healthy
+      vendor-service:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "/app/service", "-healthcheck"]
@@ -459,13 +461,13 @@ services:
       REDIS_ADDR: redis:6379
       REDIS_DB: "0"
       LEDGER_GRPC_ADDR: ledger-service:9091
+      VENDOR_GRPC_ADDR: vendor-service:9098
       FRAUD_GRPC_ADDR: fraud-service:9094
       JWT_SECRET: ${JWT_SECRET:-change-me-to-a-random-32-plus-character-secret}
       JWT_ISSUER: ${JWT_ISSUER:-seev}
-      VENDOR_MOCKVENDOR_ENABLED: "true"
-      VENDOR_MOCKVENDOR_SECRET: ${VENDOR_MOCKVENDOR_SECRET:-change-me-mockvendor-secret}
-      MOCKVENDOR2_ENABLED: "true"
-      MOCKVENDOR2_SECRET: ${MOCKVENDOR2_SECRET:-change-me-mockvendor2-secret}
+      VENDOR_SERVICE_ENABLED: "true"
+      VENDOR_MOCKVENDOR_ENABLED: "false"
+      MOCKVENDOR2_ENABLED: "false"
       CRYPTOX_KEY_V1_FILE: /run/secrets/cryptox_key_v1
     secrets:
       - cryptox_key_v1
@@ -479,6 +481,8 @@ services:
       redis:
         condition: service_healthy
       ledger-service:
+        condition: service_healthy
+      vendor-service:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "/app/service", "-healthcheck"]
@@ -534,6 +538,53 @@ services:
       redis:
         condition: service_healthy
       rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/app/service", "-healthcheck"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  vendor-service:
+    profiles: ["app"]
+    image: seev/vendor-service:${SEEV_IMAGE_TAG:-dev}
+    build:
+      context: .
+      args:
+        SERVICE: vendor-service
+    logging: *app-logging
+    environment:
+      APP_NAME: vendor-service
+      LOG_FORMAT: json
+      OTEL_EXPORTER_OTLP_ENDPOINT: "${OTEL_EXPORTER_OTLP_ENDPOINT:-}"
+      OTEL_TRACES_SAMPLER: parentbased_traceidratio
+      OTEL_TRACES_SAMPLER_ARG: "${OTEL_TRACES_SAMPLER_ARG:-0.10}"
+      OTEL_EXPORTER_OTLP_INSECURE: "${OTEL_EXPORTER_OTLP_INSECURE:-true}"
+      APP_PORT: "8098"
+      GRPC_PORT: "9098"
+      PAYIN_GRPC_ADDR: payin-service:9092
+      PAYOUT_GRPC_ADDR: payout-service:9093
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: vendor_app
+      POSTGRES_PASSWORD: vendor_app
+      POSTGRES_DB: seev_vendor
+      POSTGRES_SSL_MODE: disable
+      INTERNAL_GRPC_TOKEN: ${INTERNAL_GRPC_TOKEN:-change-me-to-a-random-32-plus-character-token}
+      JWT_SECRET: ${JWT_SECRET:-change-me-to-a-random-32-plus-character-secret}
+      JWT_ISSUER: ${JWT_ISSUER:-seev}
+      TLS_CERT_DIR: /certs
+      VENDOR_CALLBACK_CIDRS: 127.0.0.1/32,::1/128
+      VENDOR_MOCKVENDOR_ENABLED: "true"
+      VENDOR_MOCKVENDOR_SECRET: ${VENDOR_MOCKVENDOR_SECRET:-change-me-mockvendor-secret}
+      MOCKVENDOR2_ENABLED: "true"
+      MOCKVENDOR2_SECRET: ${MOCKVENDOR2_SECRET:-change-me-mockvendor2-secret}
+    volumes: *cert-volume
+    ports:
+      - "127.0.0.1:8098:8098"
+      - "127.0.0.1:9098:9098"
+    depends_on:
+      postgres:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "/app/service", "-healthcheck"]

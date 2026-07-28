@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -11,6 +10,7 @@ import (
 	"time"
 
 	"github.com/herdifirdausss/seev/pkg/middleware"
+	"github.com/herdifirdausss/seev/pkg/response"
 	"github.com/herdifirdausss/seev/pkg/tlsx"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
@@ -61,9 +61,7 @@ func newLedgerProxy(rawURL string, certSrc *tlsx.CertSource, log *slog.Logger) (
 	}
 	proxy.ErrorHandler = func(w http.ResponseWriter, _ *http.Request, err error) {
 		log.Error("ledger proxy unavailable", "error", err)
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadGateway)
-		_ = json.NewEncoder(w).Encode(map[string]string{"message": "ledger service unavailable"})
+		response.ErrorStatus(w, http.StatusBadGateway, "DOWNSTREAM_UNAVAILABLE", "ledger service unavailable")
 	}
 	return proxy, nil
 }

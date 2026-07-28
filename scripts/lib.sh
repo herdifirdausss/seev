@@ -25,6 +25,7 @@ FRAUD_DB_NAME="${FRAUD_DB_NAME:-seev_fraud}"
 GATEWAY_DB_NAME="${GATEWAY_DB_NAME:-seev_gateway}"
 ADMINBFF_DB_NAME="${ADMINBFF_DB_NAME:-seev_adminbff}"
 ASSURANCE_DB_NAME="${ASSURANCE_DB_NAME:-seev_assurance}"
+VENDOR_DB_NAME="${VENDOR_DB_NAME:-seev_vendor}"
 JWT_SECRET="${JWT_SECRET:-change-me-to-a-random-32-plus-character-secret}"
 # docs/roadmap/archive/49 TM-07: every service now REFUSES to boot with an empty
 # JWT_ISSUER (internal/config validate()) — issuer validation used to be
@@ -86,6 +87,16 @@ FRAUD_GRPC_PORT="${FRAUD_GRPC_PORT:-19094}"
 FRAUD_ADMIN_PORT="${FRAUD_ADMIN_PORT:-18094}"
 ADMINBFF_PORT="${ADMINBFF_PORT:-18095}"
 ASSURANCE_PORT="${ASSURANCE_PORT:-18096}"
+VENDOR_GRPC_PORT="${VENDOR_GRPC_PORT:-19098}"
+VENDOR_APP_PORT="${VENDOR_APP_PORT:-18098}"
+# The callback signing secret is consumed by both the VendorService child
+# process and scenario code in the parent shell. Initialize/export it here,
+# not only inside start_vendor_service's subshell, so set -u scenarios can sign
+# their first callback before any service restart.
+VENDOR_MOCKVENDOR_SECRET="${VENDOR_MOCKVENDOR_SECRET:-script-test-mockvendor-secret-at-least-32-chars-long}"
+export VENDOR_MOCKVENDOR_SECRET
+MOCKVENDOR2_SECRET="${MOCKVENDOR2_SECRET:-script-test-mockvendor2-secret-at-least-32-chars-long}"
+export MOCKVENDOR2_SECRET
 REDIS_HOST_PORT="${REDIS_HOST_PORT:-6380}"
 
 # docs/roadmap/archive/44 K7: SEEV_WORK_DIR lets a caller (T4's scheduled workflow, one
@@ -127,6 +138,7 @@ PAYOUT_BIN="$WORK_DIR/payout-service"
 FRAUD_BIN="$WORK_DIR/fraud-service"
 ADMINBFF_BIN="$WORK_DIR/admin-bff-service"
 ASSURANCE_BIN="$WORK_DIR/assurance-service"
+VENDOR_BIN="$WORK_DIR/vendor-service"
 GENTOKEN_BIN="$WORK_DIR/gentoken"
 CERTGEN_BIN="$WORK_DIR/certgen"
 CRYPTOX_FIXTURE_BIN="$WORK_DIR/cryptox-fixture"
@@ -142,6 +154,7 @@ PAYOUT_LOG="$WORK_DIR/payout-service.log"
 FRAUD_LOG="$WORK_DIR/fraud-service.log"
 ADMINBFF_LOG="$WORK_DIR/admin-bff-service.log"
 ASSURANCE_LOG="$WORK_DIR/assurance-service.log"
+VENDOR_LOG="$WORK_DIR/vendor-service.log"
 GATEWAY_PID_FILE="$WORK_DIR/gateway.pid"
 LEDGER_PID_FILE="$WORK_DIR/ledger-service.pid"
 AUTH_PID_FILE="$WORK_DIR/auth-service.pid"
@@ -150,6 +163,7 @@ PAYOUT_PID_FILE="$WORK_DIR/payout-service.pid"
 FRAUD_PID_FILE="$WORK_DIR/fraud-service.pid"
 ADMINBFF_PID_FILE="$WORK_DIR/admin-bff-service.pid"
 ASSURANCE_PID_FILE="$WORK_DIR/assurance-service.pid"
+VENDOR_PID_FILE="$WORK_DIR/vendor-service.pid"
 PAYOUT2_LOG="$WORK_DIR/payout-service-2.log"
 PAYOUT2_PID_FILE="$WORK_DIR/payout-service-2.pid"
 
@@ -286,6 +300,9 @@ apply_migrations() {
 	for f in migrations/assurance/*.up.sql; do
 		docker exec -i "$POSTGRES_CONTAINER" psql -U "$DB_USER" -d "$ASSURANCE_DB_NAME" -v ON_ERROR_STOP=0 <"$f" >/dev/null 2>&1 || true
 	done
+	for f in migrations/vendor/*.up.sql; do
+		docker exec -i "$POSTGRES_CONTAINER" psql -U "$DB_USER" -d "$VENDOR_DB_NAME" -v ON_ERROR_STOP=0 <"$f" >/dev/null 2>&1 || true
+	done
 	local service_dir
 	for service_dir in migrations/*; do
 		[ -d "$service_dir" ] || continue
@@ -297,6 +314,7 @@ apply_migrations() {
 		[ "$service_dir" = "migrations/gateway" ] && continue
 		[ "$service_dir" = "migrations/adminbff" ] && continue
 		[ "$service_dir" = "migrations/assurance" ] && continue
+		[ "$service_dir" = "migrations/vendor" ] && continue
 		for f in "$service_dir"/*.up.sql; do
 			[ -f "$f" ] || continue
 			docker exec -i "$POSTGRES_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=0 <"$f" >/dev/null 2>&1 || true
@@ -311,6 +329,7 @@ apply_migrations() {
 	ensure_app_role "$GATEWAY_DB_NAME" gateway_app gateway_app
 	ensure_app_role "$ADMINBFF_DB_NAME" adminbff_app adminbff_app
 	ensure_app_role "$ASSURANCE_DB_NAME" assurance_app assurance_app
+	ensure_app_role "$VENDOR_DB_NAME" vendor_app vendor_app
 }
 
 # ensure_app_role provisions the restricted login role the server actually
@@ -337,13 +356,13 @@ ensure_app_role() {
 build_server() {
 	if [ -x "$GATEWAY_BIN" ] && [ -x "$LEDGER_BIN" ] && [ -x "$AUTH_BIN" ] &&
 		[ -x "$PAYIN_BIN" ] && [ -x "$PAYOUT_BIN" ] && [ -x "$FRAUD_BIN" ] &&
-		[ -x "$ADMINBFF_BIN" ] && [ -x "$ASSURANCE_BIN" ] &&
+		[ -x "$ADMINBFF_BIN" ] && [ -x "$ASSURANCE_BIN" ] && [ -x "$VENDOR_BIN" ] &&
 		[ -x "$GENTOKEN_BIN" ] && [ -x "$CERTGEN_BIN" ] && [ -x "$CRYPTOX_FIXTURE_BIN" ]; then
 		log "reusing binaries already built for this test run..."
 		generate_certs
 		return
 	fi
-	log "building gateway + ledger-service + auth-service + payin-service + payout-service + fraud-service + admin-bff-service + assurance-service + gentoken + certgen binaries..."
+	log "building gateway + ledger-service + auth-service + payin-service + payout-service + fraud-service + admin-bff-service + assurance-service + vendor-service + gentoken + certgen binaries..."
 	go build -o "$GATEWAY_BIN" ./cmd/gateway
 	go build -o "$LEDGER_BIN" ./cmd/ledger-service
 	go build -o "$AUTH_BIN" ./cmd/auth-service
@@ -352,6 +371,7 @@ build_server() {
 	go build -o "$FRAUD_BIN" ./cmd/fraud-service
 	go build -o "$ADMINBFF_BIN" ./cmd/admin-bff-service
 	go build -o "$ASSURANCE_BIN" ./cmd/assurance-service
+	go build -o "$VENDOR_BIN" ./cmd/vendor-service
 	go build -o "$GENTOKEN_BIN" ./cmd/gentoken
 	go build -o "$CERTGEN_BIN" ./cmd/certgen
 	go build -o "$CRYPTOX_FIXTURE_BIN" ./cmd/cryptox-fixture
@@ -367,7 +387,7 @@ build_server() {
 generate_certs() {
 	log "generating mTLS certificates (docs/roadmap/archive/49 K3) into $CERT_DIR..."
 	"$CERTGEN_BIN" init-ca --out "$CERT_DIR"
-	for service in gateway auth ledger payin payout fraud admin-bff assurance dev-operator prometheus backup-agent; do
+	for service in gateway auth ledger payin payout fraud admin-bff assurance vendor dev-operator prometheus backup-agent; do
 		"$CERTGEN_BIN" issue --service "$service" --out "$CERT_DIR"
 	done
 }
@@ -425,6 +445,7 @@ start_payout_service() {
 		export REDIS_DB=0
 		export LEDGER_GRPC_ADDR=localhost:$LEDGER_GRPC_PORT
 		export FRAUD_GRPC_ADDR=localhost:$FRAUD_GRPC_PORT
+		export VENDOR_GRPC_ADDR=localhost:$VENDOR_GRPC_PORT
 		export JWT_SECRET=$JWT_SECRET
 		export JWT_ISSUER=$JWT_ISSUER
 		export RATE_LIMIT_REQUESTS=$RATE_LIMIT_REQUESTS
@@ -433,12 +454,8 @@ start_payout_service() {
 		export TLS_CERT_DIR=$CERT_DIR
 		export INTERNAL_GRPC_TOKEN=$INTERNAL_GRPC_TOKEN
 		export CRYPTOX_KEY_V1=$CRYPTOX_KEY_V1
-		export VENDOR_MOCKVENDOR_ENABLED=true
-		export VENDOR_MOCKVENDOR_SECRET="${VENDOR_MOCKVENDOR_SECRET:-script-test-mockvendor-secret-at-least-32-chars-long}"
-		# mockvendor2 registered alongside mockvendor (docs/roadmap/archive/40 Task T4) —
-		# purely additive: only reachable once a routing rule actually points
-		# at it (seeded by chaos-test.sh's vendor-failover scenario), every
-		# other flow is unaffected.
+		export VENDOR_SERVICE_ENABLED=true
+		export VENDOR_MOCKVENDOR_ENABLED=false
 		export MOCKVENDOR2_ENABLED=true
 		export MOCKVENDOR2_SECRET="${MOCKVENDOR2_SECRET:-script-test-mockvendor2-secret-at-least-32-chars-long}"
 		# docs/roadmap/archive/45 Task T2/K3: off by default (matches production
@@ -476,6 +493,7 @@ start_payout_service_replica() {
 		export REDIS_DB=0
 		export LEDGER_GRPC_ADDR=localhost:$LEDGER_GRPC_PORT
 		export FRAUD_GRPC_ADDR=localhost:$FRAUD_GRPC_PORT
+		export VENDOR_GRPC_ADDR=localhost:$VENDOR_GRPC_PORT
 		export JWT_SECRET=$JWT_SECRET
 		export JWT_ISSUER=$JWT_ISSUER
 		export RATE_LIMIT_REQUESTS=$RATE_LIMIT_REQUESTS
@@ -484,8 +502,8 @@ start_payout_service_replica() {
 		export TLS_CERT_DIR=$CERT_DIR
 		export INTERNAL_GRPC_TOKEN=$INTERNAL_GRPC_TOKEN
 		export CRYPTOX_KEY_V1=$CRYPTOX_KEY_V1
-		export VENDOR_MOCKVENDOR_ENABLED=true
-		export VENDOR_MOCKVENDOR_SECRET="${VENDOR_MOCKVENDOR_SECRET:-script-test-mockvendor-secret-at-least-32-chars-long}"
+		export VENDOR_SERVICE_ENABLED=true
+		export VENDOR_MOCKVENDOR_ENABLED=false
 		export MOCKVENDOR2_ENABLED=true
 		export MOCKVENDOR2_SECRET="${MOCKVENDOR2_SECRET:-script-test-mockvendor2-secret-at-least-32-chars-long}"
 		export BREAKER_DISTRIBUTED="${BREAKER_DISTRIBUTED:-false}"
@@ -516,6 +534,36 @@ stop_payout_replica() {
 	fi
 }
 
+start_vendor_service() {
+	log "starting vendor-service (grpc $VENDOR_GRPC_PORT / http $VENDOR_APP_PORT)..."
+	(
+		export APP_NAME=vendor-service
+		export APP_PORT=$VENDOR_APP_PORT
+		export GRPC_PORT=$VENDOR_GRPC_PORT
+		export POSTGRES_HOST=localhost
+		export POSTGRES_PORT=$DB_HOST_PORT
+		export POSTGRES_USER=vendor_app
+		export POSTGRES_PASSWORD=vendor_app
+		export POSTGRES_DB=$VENDOR_DB_NAME
+		export POSTGRES_SSL_MODE=disable
+		export PAYIN_GRPC_ADDR=localhost:$PAYIN_GRPC_PORT
+		export PAYOUT_GRPC_ADDR=localhost:$PAYOUT_GRPC_PORT
+		export JWT_SECRET=$JWT_SECRET
+		export JWT_ISSUER=$JWT_ISSUER
+		export TLS_CERT_DIR=$CERT_DIR
+		export INTERNAL_GRPC_TOKEN=$INTERNAL_GRPC_TOKEN
+		export VENDOR_CALLBACK_CIDRS=127.0.0.1/32,::1/128
+		export VENDOR_MOCKVENDOR_ENABLED=true
+		export VENDOR_MOCKVENDOR_SECRET="${VENDOR_MOCKVENDOR_SECRET:-script-test-mockvendor-secret-at-least-32-chars-long}"
+		export MOCKVENDOR2_ENABLED=true
+		export MOCKVENDOR2_SECRET="${MOCKVENDOR2_SECRET:-script-test-mockvendor2-secret-at-least-32-chars-long}"
+		export LOG_FORMAT=json
+		nohup "$VENDOR_BIN" >>"$VENDOR_LOG" 2>&1 &
+		echo $! >"$VENDOR_PID_FILE"
+	)
+	wait_for_service_up vendor-service "https://localhost:$VENDOR_APP_PORT/health" "$VENDOR_PID_FILE" "$VENDOR_LOG"
+}
+
 start_payin_service() {
 	log "starting payin-service (grpc $PAYIN_GRPC_PORT / admin $PAYIN_ADMIN_PORT)..."
 	(
@@ -530,6 +578,7 @@ start_payin_service() {
 		export POSTGRES_SSL_MODE=disable
 		export LEDGER_GRPC_ADDR=localhost:$LEDGER_GRPC_PORT
 		export FRAUD_GRPC_ADDR=localhost:$FRAUD_GRPC_PORT
+		export VENDOR_GRPC_ADDR=localhost:$VENDOR_GRPC_PORT
 		export JWT_SECRET=$JWT_SECRET
 		export JWT_ISSUER=$JWT_ISSUER
 		export RATE_LIMIT_REQUESTS=$RATE_LIMIT_REQUESTS
@@ -538,8 +587,8 @@ start_payin_service() {
 		export TLS_CERT_DIR=$CERT_DIR
 		export INTERNAL_GRPC_TOKEN=$INTERNAL_GRPC_TOKEN
 		export CRYPTOX_KEY_V1=$CRYPTOX_KEY_V1
-		export VENDOR_MOCKVENDOR_ENABLED=true
-		export VENDOR_MOCKVENDOR_SECRET="${VENDOR_MOCKVENDOR_SECRET:-script-test-mockvendor-secret-at-least-32-chars-long}"
+		export VENDOR_SERVICE_ENABLED=true
+		export VENDOR_MOCKVENDOR_ENABLED=false
 		export MOCKVENDOR2_ENABLED=true
 		export MOCKVENDOR2_SECRET="${MOCKVENDOR2_SECRET:-script-test-mockvendor2-secret-at-least-32-chars-long}"
 		export LOG_FORMAT=json
@@ -628,11 +677,8 @@ start_gateway() {
 		export PAYIN_GRPC_ADDR=localhost:$PAYIN_GRPC_PORT
 		export PAYOUT_GRPC_ADDR=localhost:$PAYOUT_GRPC_PORT
 		export LOG_FORMAT=json
-		# mockvendor enabled unconditionally — purely additive: it only makes
-		# /api/v1/payout and /webhooks/mockvendor reachable, flows that never
-		# touch those routes are unaffected.
-		export VENDOR_MOCKVENDOR_ENABLED=true
-		export VENDOR_MOCKVENDOR_SECRET="${VENDOR_MOCKVENDOR_SECRET:-script-test-mockvendor-secret-at-least-32-chars-long}"
+		# Vendor callbacks are served by vendor-service; gateway only owns the
+		# public API and no longer registers a /webhooks route.
 		nohup "$GATEWAY_BIN" >>"$GATEWAY_LOG" 2>&1 &
 		echo $! >"$GATEWAY_PID_FILE"
 	)
@@ -688,6 +734,7 @@ start_services() {
 	start_auth_service
 	start_payin_service
 	start_payout_service
+	start_vendor_service
 	start_gateway
 	start_assurance_service
 }
@@ -863,8 +910,8 @@ stop_gateway_only() {
 
 # Compatibility alias: every caller of "stop the server gracefully" means
 # "shut the whole stack down cleanly", same as start_server above means
-# "start all six" — a caller that stopped only the gateway here would leak
-# the other five processes, which then squat on the next scenario's ports
+# "start all eight" — a caller that stopped only the gateway here would leak
+# the other seven processes, which then squat on the next scenario's ports
 # and get silently misreported as "up" by wait_for_service_up (a stale
 # survivor answering the same health-check URL). Real bug found running
 # `chaos-test.sh all` end to end for docs/roadmap/archive/34 T2: five scenarios called
@@ -900,6 +947,13 @@ stop_services() {
 		kill -TERM "$payout_pid" 2>/dev/null || true
 		wait_for_pid_gone "$payout_pid"
 		rm -f "$PAYOUT_PID_FILE"
+	fi
+	if [ -f "$VENDOR_PID_FILE" ]; then
+		local vendor_pid
+		vendor_pid="$(cat "$VENDOR_PID_FILE")"
+		kill -TERM "$vendor_pid" 2>/dev/null || true
+		wait_for_pid_gone "$vendor_pid"
+		rm -f "$VENDOR_PID_FILE"
 	fi
 	if [ -f "$FRAUD_PID_FILE" ]; then
 		local fraud_pid
@@ -941,6 +995,16 @@ kill_payin_hard() {
 		log "kill -9 payin-service pid $pid"
 		kill -9 "$pid" 2>/dev/null || true
 		rm -f "$PAYIN_PID_FILE"
+	fi
+}
+
+kill_vendor_hard() {
+	if [ -f "$VENDOR_PID_FILE" ]; then
+		local pid
+		pid="$(cat "$VENDOR_PID_FILE")"
+		log "kill -9 vendor-service pid $pid"
+		kill -9 "$pid" 2>/dev/null || true
+		rm -f "$VENDOR_PID_FILE"
 	fi
 }
 
@@ -1289,11 +1353,17 @@ assert_no_stuck_pending_transactions() {
 # scenario for debugging so the *.log files under WORK_DIR survive for
 # postmortem instead of being wiped on every exit, success or failure.
 cleanup() {
-	stop_services
-	kill_payout_replica_hard
+	local exit_code=$?
+	# Cleanup must never mask the assertion/bootstrap failure that triggered the
+	# EXIT trap. This is especially important for set -e scripts: a failed
+	# Docker bootstrap used to be followed by a successful rm, making the whole
+	# smoke/business/admin command appear green.
+	stop_services || true
+	kill_payout_replica_hard || true
 	if [ "${KEEP_WORK_DIR:-0}" = "1" ]; then
 		log "KEEP_WORK_DIR=1 — leaving $WORK_DIR in place (binaries + *.log) for inspection"
 	else
-		rm -rf "$WORK_DIR"
+		rm -rf "$WORK_DIR" || true
 	fi
+	return "$exit_code"
 }

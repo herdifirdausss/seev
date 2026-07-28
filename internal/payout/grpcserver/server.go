@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
@@ -81,6 +82,37 @@ func (s *Server) CreatePayout(ctx context.Context, request *payoutv1.CreatePayou
 		return nil, status.Error(codes.Internal, "read created payout failed")
 	}
 	return &payoutv1.CreatePayoutResponse{Payout: payoutToProto(value)}, nil
+}
+
+func (s *Server) HandleVendorCallback(ctx context.Context, request *payoutv1.HandleVendorCallbackRequest) (*payoutv1.HandleVendorCallbackResponse, error) {
+	handler, ok := s.service.(interface {
+		HandleVendorCallback(context.Context, string, string, string, string, string, string, string, string, string, string) (string, error)
+	})
+	if !ok {
+		return nil, status.Error(codes.Unimplemented, "normalized vendor callback unavailable")
+	}
+	occurredAt := ""
+	if request.GetOccurredAt() != nil {
+		occurredAt = request.GetOccurredAt().AsTime().UTC().Format(time.RFC3339Nano)
+	}
+	outcome, err := handler.HandleVendorCallback(ctx, request.GetVendor(), request.GetVendorEventId(), request.GetExternalReference(), request.GetAmount(), request.GetCurrency(), request.GetStatus(), occurredAt, request.GetVendorInboxId(), request.GetRequestId(), request.GetUnknownVendorStatus())
+	if err != nil {
+		return nil, status.Error(codes.Unavailable, "normalized vendor callback processing failed")
+	}
+	return &payoutv1.HandleVendorCallbackResponse{Result: normalizedCallbackResult(outcome)}, nil
+}
+
+func normalizedCallbackResult(outcome string) payoutv1.VendorCallbackResult {
+	switch outcome {
+	case "finalized":
+		return payoutv1.VendorCallbackResult_VENDOR_CALLBACK_RESULT_FINALIZED
+	case "already_finalized":
+		return payoutv1.VendorCallbackResult_VENDOR_CALLBACK_RESULT_ALREADY_FINALIZED
+	case "ignored_non_terminal":
+		return payoutv1.VendorCallbackResult_VENDOR_CALLBACK_RESULT_IGNORED_NON_TERMINAL
+	default:
+		return payoutv1.VendorCallbackResult_VENDOR_CALLBACK_RESULT_RECORDED_UNMATCHED
+	}
 }
 
 func (s *Server) GetPayout(ctx context.Context, request *payoutv1.GetPayoutRequest) (*payoutv1.GetPayoutResponse, error) {

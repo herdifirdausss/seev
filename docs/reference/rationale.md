@@ -80,10 +80,10 @@ modern. It is useful only when its benefit justifies its cost.
 - **Cost:** top-ups have a multi-step lifecycle with expiry, unmatched events,
   and reconciliation instead of one immediate request.
 
-> **Current gap:** Payin still contains a legacy unmatched-intent fallback to a
-> vendor payload's `user_id`. This does not satisfy the reason above.
-> [Plan 54](../roadmap/active/54-vendor-service-boundary.md) removes it and makes strict
-> intent correlation mandatory.
+> **Compatibility note:** an old raw callback RPC remains in Payin for
+> transition tests, but it is not exposed by Gateway and the active
+> VendorService path requires strict owner-domain intent correlation. Final
+> live integration and chaos acceptance remain in [plan 54](../roadmap/active/54-vendor-service-boundary.md).
 
 ## Why authenticate a callback and still validate its business data?
 
@@ -169,7 +169,7 @@ modern. It is useful only when its benefit justifies its cost.
   concerns.
 - **Risk prevented:** one deployment or incident need not expose or stop every
   capability.
-- **Cost:** eight current services are harder to run and understand than one
+- **Cost:** nine current services are harder to run and understand than one
   program. Seev therefore started as one deployable program with clearly
   separated internal modules, then extracted services only after explicit
   triggers.
@@ -277,9 +277,10 @@ modern. It is useful only when its benefit justifies its cost.
 - **Cost:** chaos suites are slower, require isolated state, and are more
   expensive than unit tests.
 
-## Why should vendor traffic move to VendorService?
+## Why is vendor traffic isolated in VendorService?
 
-This is a **target**, not current behavior.
+This is a current boundary; the final live integration and chaos evidence is
+still tracked in plan 54.
 
 - **Reason:** vendor APIs and callbacks share machine-to-machine secrets,
   allowlists, adapters, retries, and audit needs that differ from user Gateway
@@ -322,7 +323,7 @@ code:
 5. Why can a balanced Ledger still disagree with a bank?
 6. Why can Assurance report or pause but not repair money?
 7. Why is one database per service safer but operationally harder?
-8. Which VendorService statements are target design rather than current code?
+8. Which VendorService acceptance evidence is still outstanding?
 
 If an answer is unclear, follow its heading above, then use the
 [glossary](glossary.md) for terminology and the
