@@ -31,12 +31,12 @@ import (
 type Module struct {
 	db database.DatabaseSQL
 
-	Tenants      repository.TenantRepository
-	APIKeys      repository.APIKeyRepository
-	Quotas       repository.QuotaRepository
-	Idempotency  repository.IdempotencyRepository
-	EventInbox   repository.EventInboxRepository
-	Webhooks     repository.WebhookRepository
+	Tenants     repository.TenantRepository
+	APIKeys     repository.APIKeyRepository
+	Quotas      repository.QuotaRepository
+	Idempotency repository.IdempotencyRepository
+	EventInbox  repository.EventInboxRepository
+	Webhooks    repository.WebhookRepository
 }
 
 // NewModule panics if db is nil — matches this repository's own

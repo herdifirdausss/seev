@@ -1902,14 +1902,66 @@ T3 may begin.
 
 ### Acceptance
 
-- [ ] Invalid, expired, revoked, wrong-environment, and suspended-tenant keys fail
+- [x] Invalid, expired, revoked, wrong-environment, and suspended-tenant keys fail
       closed.
-- [ ] Key plaintext is never queryable after creation.
-- [ ] Scope denial returns stable `403`.
-- [ ] Resource existence is not leaked.
-- [ ] Revocation applies immediately.
-- [ ] Authentication unit, integration, fuzz, and race tests pass.
-- [ ] Log-capture tests find no key plaintext.
+- [x] Key plaintext is never queryable after creation.
+- [x] Scope denial returns stable `403`.
+- [x] Resource existence is not leaked.
+- [x] Revocation applies immediately.
+- [x] Authentication unit, integration, fuzz, and race tests pass.
+- [x] Log-capture tests find no key plaintext.
+
+### Result
+
+Delivered 2026-07-28:
+
+- **Package**: `internal/merchant/auth` — key generation/parsing
+  (`key.go`), HMAC-SHA-256 digest with constant-time compare
+  (`digest.go`), the machine `Principal` type + context helpers
+  (`principal.go`), the central scope registry (`scopes.go`, kept in sync
+  with `api/openapi/b2b-v1.yaml`'s `x-see-scopes` by
+  `TestScopeRegistryMatchesContract`), the `RequireMerchantAuth`/
+  `RequireScope` HTTP middleware (`middleware.go`), and the operator
+  `KeyService` (create/rotate/revoke, `service.go`).
+- **Design decision on multi-scope operations**: where §6.4 lists two
+  scopes together for one resource group (transfers, payins, payouts),
+  the registry requires ALL listed scopes (AND), not OR — documented
+  explicitly in `scopes.go` since the plan's prose doesn't specify a
+  per-operation split.
+- **Log masking reused, not rebuilt**: the merchant API key travels on
+  the same `Authorization: Bearer ...` header AuthService's JWTs already
+  use — `pkg/logger`'s existing `sensitiveKeys`/`SanitizeHeaders` masking
+  already covers it with no code change. Proven, not assumed:
+  `TestRequireMerchantAuth_KeyPlaintextNeverAppearsInLogs` and its
+  tampered-attempt counterpart both capture real log output through
+  `pkg/middleware.WithLogger` and assert the plaintext never appears.
+- **Two real bugs found and fixed via this task's own tests**:
+  1. `ParseKey` split the key on the first `_` character to separate the
+     public prefix from the secret — but `base64.RawURLEncoding`'s own
+     alphabet includes `_`, so a prefix or secret containing that
+     character could shift the split to the wrong position. Caught
+     immediately by `TestGenerateKey_SandboxAndLive_RoundTripThroughParseKey`
+     (a real generated key round-tripped incorrectly). Fixed by slicing on
+     the prefix's exact, deterministic encoded length instead of
+     separator-splitting.
+  2. `go fix`'s safe-modernizer check (`make lint`'s own
+     `modernize-check` step) flagged two hand-written linear scans
+     (`Principal.HasScope`, `ValidScope`) that `slices.Contains` already
+     expresses — applied via `go fix -omitzero=false ./internal/merchant/...`
+     rather than left for a future pass.
+- **Verified**: unit tests (23, all pass), a 368,392-execution/15s fuzz
+  run of `ParseKey` (0 crashes), `-race` on both the plain and
+  `-tags=integration` suites, 3 real-Postgres integration tests
+  (`TestKeyServiceAndMiddleware_RealStack`,
+  `TestKeyService_RotateKey_RealStack`,
+  `TestKeyService_CreateKey_EnforcesMaxTwoActiveKeysPerEnvironment` —
+  covering the full create→authenticate→scope-deny→revoke→re-reject
+  lifecycle and §8.4's two-key-per-environment limit against a real
+  database, not fakes), `go build ./...`, `go vet -tags=integration
+  ./...`, `make lint` (0 issues), `go test -race ./...` (full repo), and
+  `make docs-check`.
+
+T4 may begin.
 
 ---
 

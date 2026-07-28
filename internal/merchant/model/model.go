@@ -12,22 +12,22 @@ import (
 // PrimaryAccountID is an application-level reference to a LedgerService
 // account, never a cross-database foreign key (§11.1's own note).
 type Tenant struct {
-	ID                uuid.UUID
-	PublicID          string
-	ExternalCode      string
-	Name              string
-	Environment       string // "sandbox" | "live"
-	Status            string // "draft" | "active" | "suspended" | "closed"
-	DefaultCurrency   string
-	PrimaryAccountID  *uuid.UUID
-	CreatedBy         string
-	ActivatedBy       *string
-	SuspendedBy       *string
-	CreatedAt         time.Time
-	UpdatedAt         time.Time
-	ActivatedAt       *time.Time
-	SuspendedAt       *time.Time
-	ClosedAt          *time.Time
+	ID               uuid.UUID
+	PublicID         string
+	ExternalCode     string
+	Name             string
+	Environment      string // "sandbox" | "live"
+	Status           string // "draft" | "active" | "suspended" | "closed"
+	DefaultCurrency  string
+	PrimaryAccountID *uuid.UUID
+	CreatedBy        string
+	ActivatedBy      *string
+	SuspendedBy      *string
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+	ActivatedAt      *time.Time
+	SuspendedAt      *time.Time
+	ClosedAt         *time.Time
 }
 
 // APIKey is a merchant API key record (§11.2). The plaintext key is never
@@ -68,23 +68,23 @@ type QuotaPolicy struct {
 // idempotency key" a database guarantee, not just an application
 // convention.
 type IdempotencyRecord struct {
-	ID               uuid.UUID
-	TenantID         uuid.UUID
-	OperationID      string
-	IdempotencyKey   string
-	RequestHash      []byte
-	DownstreamKey    string
-	State            string // "processing" | "completed" | "failed"
-	ResourceID       *string
-	HTTPStatus       *int
-	ResponseBody     []byte // JSON
-	ResponseHeaders  []byte // JSON
-	ErrorCode        *string
-	LeaseOwner       *string
-	LeaseExpiresAt   *time.Time
-	ExpiresAt        time.Time
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
+	ID              uuid.UUID
+	TenantID        uuid.UUID
+	OperationID     string
+	IdempotencyKey  string
+	RequestHash     []byte
+	DownstreamKey   string
+	State           string // "processing" | "completed" | "failed"
+	ResourceID      *string
+	HTTPStatus      *int
+	ResponseBody    []byte // JSON
+	ResponseHeaders []byte // JSON
+	ErrorCode       *string
+	LeaseOwner      *string
+	LeaseExpiresAt  *time.Time
+	ExpiresAt       time.Time
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
 }
 
 // InboxEvent deduplicates an internal AMQP event before it becomes an
@@ -103,34 +103,34 @@ type InboxEvent struct {
 // (§11.7). SecretCiphertext is sealed via pkg/cryptox (T7); plaintext is
 // shown only at creation and rotation.
 type WebhookEndpoint struct {
-	ID                uuid.UUID
-	PublicID          string
-	TenantID          uuid.UUID
-	URL               string
-	Status            string // "enabled" | "disabled"
-	SecretCiphertext  []byte
-	SecretVersion     int
-	SubscribedEvents  []string
-	Description       *string
-	CreatedAt         time.Time
-	UpdatedAt         time.Time
-	DisabledAt        *time.Time
+	ID               uuid.UUID
+	PublicID         string
+	TenantID         uuid.UUID
+	URL              string
+	Status           string // "enabled" | "disabled"
+	SecretCiphertext []byte
+	SecretVersion    int
+	SubscribedEvents []string
+	Description      *string
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+	DisabledAt       *time.Time
 }
 
 // WebhookEvent is an immutable external event, persisted once (§11.8).
 // PayloadBytes is the exact serialized body used for signing and retry —
 // it must never be re-serialized from Payload for a redelivery.
 type WebhookEvent struct {
-	ID             uuid.UUID
-	PublicID       string
-	TenantID       uuid.UUID
-	EventType      string
-	SchemaVersion  int
-	Livemode       bool
-	Payload        []byte // JSON
-	PayloadBytes   []byte
-	SourceEventID  uuid.UUID
-	CreatedAt      time.Time
+	ID            uuid.UUID
+	PublicID      string
+	TenantID      uuid.UUID
+	EventType     string
+	SchemaVersion int
+	Livemode      bool
+	Payload       []byte // JSON
+	PayloadBytes  []byte
+	SourceEventID uuid.UUID
+	CreatedAt     time.Time
 }
 
 // WebhookDelivery tracks one endpoint's delivery attempts for one event
@@ -146,30 +146,30 @@ type WebhookDelivery struct {
 	EventID            uuid.UUID
 	ReplayOfDeliveryID *uuid.UUID // nil for the automatic delivery; set for every replay row
 	Status             string     // "pending" | "delivered" | "failed" | "dead"
-	AttemptCount    int
-	NextAttemptAt   *time.Time
-	LeaseOwner      *string
-	LeaseExpiresAt  *time.Time
-	LastHTTPStatus  *int
-	LastErrorCode   *string
-	FirstAttemptAt  *time.Time
-	DeliveredAt     *time.Time
-	DeadAt          *time.Time
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	AttemptCount       int
+	NextAttemptAt      *time.Time
+	LeaseOwner         *string
+	LeaseExpiresAt     *time.Time
+	LastHTTPStatus     *int
+	LastErrorCode      *string
+	FirstAttemptAt     *time.Time
+	DeliveredAt        *time.Time
+	DeadAt             *time.Time
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
 }
 
 // WebhookAttempt is one append-only attempt record (§11.10). Do not
 // persist a sensitive response body — ResponseExcerpt must already be
 // truncated/sanitized by the caller before Insert.
 type WebhookAttempt struct {
-	ID               uuid.UUID
-	DeliveryID       uuid.UUID
-	AttemptNumber    int
-	StartedAt        time.Time
-	FinishedAt       time.Time
-	HTTPStatus       *int
-	DurationMS       int
-	ErrorCode        *string
-	ResponseExcerpt  *string
+	ID              uuid.UUID
+	DeliveryID      uuid.UUID
+	AttemptNumber   int
+	StartedAt       time.Time
+	FinishedAt      time.Time
+	HTTPStatus      *int
+	DurationMS      int
+	ErrorCode       *string
+	ResponseExcerpt *string
 }
