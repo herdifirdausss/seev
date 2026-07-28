@@ -28,10 +28,10 @@ it depends on, and what it deliberately does not do. The opening paragraphs
 are the mental model; endpoint and package tables are implementation
 reference.
 
-One boundary is intentionally easy to misread: `internal/vendorgw` is a
-compatibility library used by Payin and Payout tests and transition paths. The
-running `cmd/vendor-service` owns active vendor connectivity and callback
-ingress.
+One boundary is intentionally easy to misread: `internal/vendorgw` contains
+shared routing/provider contracts, breaker code, and mock adapter types used by
+Payin and Payout. The running `cmd/vendor-service`, together with
+`internal/vendorboundary`, owns active vendor connectivity and callback ingress.
 
 ---
 
@@ -498,8 +498,9 @@ as the trust layer over everything else.
 - `pkg/*` — infrastructure with zero business logic (database, cache,
   messaging, middleware, logger, scheduler, tlsx, grpcx). `pkg/` must
   never import `internal/`; dependencies only flow one way.
-- `internal/vendorgw` — compatibility adapter code used by Payin/Payout
-  tests and transition paths. Active vendor I/O is owned by VendorService.
+- `internal/vendorgw` — shared routing/provider contracts, breaker code, and
+  mock adapter types used by Payin/Payout. Active vendor I/O is composed by
+  VendorService through `internal/vendorboundary`.
 - `internal/testutil` — shared integration-test bootstrap.
 
 See [Project guide](../development/project-guide.md#service-boundaries) for the

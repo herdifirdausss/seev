@@ -102,9 +102,10 @@ A genuine message can still be duplicated, old, malformed, or connected to
 the wrong expectation. This is why a signature alone is not enough.
 
 This diagram shows the active safety rule. VendorService proves the transport
-message and Payin/Payout correlate it against owner-domain state; neither
-service exposes a raw callback contract. The remaining live acceptance is
-described in [archived plan 54](../roadmap/archive/54-vendor-service-boundary.md).
+message and Payin/Payout correlate it against owner-domain state. There is no
+active raw callback path; the deprecated v1 wire method is unimplemented. The
+remaining live acceptance is described in
+[archived plan 54](../roadmap/archive/54-vendor-service-boundary.md).
 
 ## Scene 4: the accounting book makes the money real
 

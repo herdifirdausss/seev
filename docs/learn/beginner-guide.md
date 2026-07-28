@@ -277,14 +277,12 @@ idempotency check prevents a repeated callback from creating money twice.
 Why keep the intent in Payin? The outside vendor should not decide which Seev
 user owns the money. That relationship belongs to Seev's money-in domain.
 
+### Current callback contract
+
 > The old Payin v1 raw callback RPC is deprecated and unimplemented. VendorService
 > uses strict owner-domain correlation and Payin never accepts vendor-supplied
 > user ownership. Final live integration and chaos acceptance remain in
 > [archived plan 54](../roadmap/archive/54-vendor-service-boundary.md).
-
-> The active path already moves direct vendor communication behind the
-> dedicated VendorService. Final live integration and chaos acceptance remain
-> tracked in [archived plan 54](../roadmap/archive/54-vendor-service-boundary.md).
 
 ## Story 3: sending money to another user
 

@@ -128,8 +128,9 @@ You do not need to read the code yet:
 ## One honest warning
 
 The active top-up path requires a signed VendorService callback matching
-Payin's ticket before completion. Payin exposes no raw callback compatibility
-RPC; final live and chaos acceptance is an operator gate.
+Payin's ticket before completion. Payin has no active raw callback path; the
+deprecated v1 wire RPC remains unimplemented for compatibility and final live
+and chaos acceptance is an operator gate.
 
 ## A quick check
 

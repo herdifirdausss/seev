@@ -305,7 +305,7 @@ func requiredDocumentationFailures(root string) []string {
 		},
 		"docs/learn/beginner-guide.md": {
 			"Status: Current",
-			"Known current limitation",
+			"Current callback contract",
 			"roadmap/archive/54-vendor-service-boundary.md",
 			"24,500 entering Noah",
 			"18,000 goes to the settlement path",

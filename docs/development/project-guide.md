@@ -192,14 +192,17 @@ grows — start at tier 0, move up only when a file actually earns it:
 
 - .env.example is the source of local host-process configuration examples.
 - docker-compose.yml is the source of container ports, profiles, and
-  service-specific environment variables — see OPERATIONS.md for why each
-  profile and design choice exists.
+  service-specific environment variables — see
+  [Operations](../operations/README.md) for why each profile and design
+  choice exists.
 - Makefile is the source of supported build and verification commands.
-- README.md is the quick-start and local run reference. ARCHITECTURE.md is
-  the business/technical architecture overview; SERVICES.md is the
-  per-service deep dive; ONBOARDING.md is the code-navigation guide;
-  OPERATIONS.md covers Compose, the Makefile, scripts/, CI, and
-  observability; PKG.md covers every shared pkg/ package.
+- [README.md](../../README.md) is the quick-start and local run reference.
+  [Architecture](../reference/architecture.md) is the business/technical
+  architecture overview; [Services](../reference/services.md) is the
+  per-service deep dive; [Onboarding](onboarding.md) is the code-navigation
+  guide; [Operations](../operations/README.md) covers Compose, the Makefile,
+  scripts/, CI, and observability; [Shared packages](../reference/shared-packages.md)
+  covers every shared `pkg/` package.
 - docs/roadmap/ records implementation decisions, completed phases, and future
   work; older plans may describe the repository at an earlier phase.
 - docs/operations/runbooks/ contains operational recovery procedures.
