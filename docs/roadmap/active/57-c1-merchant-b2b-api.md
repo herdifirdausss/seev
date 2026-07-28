@@ -1691,10 +1691,29 @@ docs/reference/c1-current-contract-inventory.md
 
 ### Acceptance
 
-- [ ] All entry-gate checks are recorded.
-- [ ] Every failed prerequisite has an owner and blocking disposition.
-- [ ] No implementation assumption remains based only on roadmap prose.
-- [ ] Baseline commit and commands are reproducible.
+- [x] All entry-gate checks are recorded.
+- [x] Every failed prerequisite has an owner and blocking disposition.
+- [x] No implementation assumption remains based only on roadmap prose.
+- [x] Baseline commit and commands are reproducible.
+
+### Result
+
+Executed 2026-07-28 at baseline commit `d20e5295ef0cdbbc44816af239c90c3d7514439b`.
+Gate disposition: **PASS** — no failed prerequisite, so no blocking
+disposition needed. Full evidence:
+[docs/evidence/c1-entry-gate.md](../../evidence/c1-entry-gate.md) (gate
+checklist + command log) and
+[docs/reference/c1-current-contract-inventory.md](../../reference/c1-current-contract-inventory.md)
+(contract/event/migration inventory, user-specific blocking-field findings,
+reusable-helper confirmation, dependency/blast-radius table).
+
+Most consequential finding: `internal/ledger`'s `accounts.owner_type` CHECK
+constraint has allowed `'merchant'` since the very first migration
+(`000001_ledger_core.up.sql`) — the schema already anticipated this track.
+T5 extends existing repository query methods rather than designing a new
+ownership model or writing a new Ledger migration for account ownership.
+
+T1 may begin.
 
 ---
 
