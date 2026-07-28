@@ -26,7 +26,16 @@ func newLedgerProxy(rawURL string, certSrc *tlsx.CertSource, log *slog.Logger) (
 	if err != nil || target.Scheme == "" || target.Host == "" {
 		return nil, fmt.Errorf("invalid LEDGER_USER_API_URL %q", rawURL)
 	}
-	proxy := httputil.NewSingleHostReverseProxy(target)
+	proxy := &httputil.ReverseProxy{Rewrite: func(req *httputil.ProxyRequest) {
+		req.SetURL(target)
+		// Preserve NewSingleHostReverseProxy's inbound Host behavior. The
+		// ledger endpoint uses the target URL for routing, while the original
+		// Host remains part of the forwarded request contract.
+		req.Out.Host = req.In.Host
+		if id := middleware.RequestIDFromCtx(req.Out.Context()); id != "" {
+			req.Out.Header.Set("X-Request-Id", id)
+		}
+	}}
 	// [docs/roadmap/archive/43 Task T6] Without this, the proxy's outbound request to
 	// ledger-service carries none of gateway's own span context (a raw
 	// httputil.ReverseProxy only forwards whatever headers the ORIGINAL
@@ -47,18 +56,7 @@ func newLedgerProxy(rawURL string, certSrc *tlsx.CertSource, log *slog.Logger) (
 		baseTransport = &http.Transport{TLSClientConfig: tlsx.ClientConfig(certSrc, tlsx.IdentityLedger)}
 	}
 	proxy.Transport = otelhttp.NewTransport(baseTransport)
-	// Belt-and-braces on top of WithRequestID already setting r.Header
-	// (docs/roadmap/archive/36 Task T2): explicitly re-assert X-Request-Id from ctx on
-	// the outgoing request so it survives even if middleware ordering
-	// changes later. Wraps the existing Director (host/path rewriting)
-	// rather than switching to Rewrite, which would silently disable it.
-	defaultDirector := proxy.Director
-	proxy.Director = func(req *http.Request) {
-		defaultDirector(req)
-		if id := middleware.RequestIDFromCtx(req.Context()); id != "" {
-			req.Header.Set("X-Request-Id", id)
-		}
-	}
+	// Rewrite above re-asserts X-Request-Id from ctx on the outgoing request.
 	proxy.ErrorHandler = func(w http.ResponseWriter, _ *http.Request, err error) {
 		log.Error("ledger proxy unavailable", "error", err)
 		response.ErrorStatus(w, http.StatusBadGateway, "DOWNSTREAM_UNAVAILABLE", "ledger service unavailable")
