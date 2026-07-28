@@ -62,6 +62,9 @@ type Config struct {
 	// namespace for the same K2 reason as Export above.
 	Closure ClosureConfig
 	Cryptox CryptoxConfig
+	// Merchant is docs/roadmap/active/57-c1-merchant-b2b-api.md T2's config for the
+	// Gateway-owned Merchant/B2B API module.
+	Merchant MerchantConfig
 
 	// Cross-process endpoints introduced by the service extraction phases.
 	GRPCPort          string
@@ -724,6 +727,7 @@ func loadFromEnvMode(getenv func(string) string, requireRabbitMQ bool) (*Config,
 		},
 		Export:                loadExportConfig(getenv),
 		Closure:               loadClosureConfig(getenv),
+		Merchant:              loadMerchantConfig(getenv),
 		GRPCPort:              getWithDefault(getenv, "GRPC_PORT", "9091"),
 		InternalGRPCToken:     getenv("INTERNAL_GRPC_TOKEN"),
 		LedgerGRPCAddr:        getWithDefault(getenv, "LEDGER_GRPC_ADDR", "localhost:9091"),

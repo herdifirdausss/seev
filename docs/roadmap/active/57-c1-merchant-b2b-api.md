@@ -1823,13 +1823,64 @@ T2 may begin.
 
 ### Acceptance
 
-- [ ] Migration up/down tests pass where supported.
-- [ ] Repository integration tests use real PostgreSQL.
-- [ ] Unique constraints prove race safety.
-- [ ] All timestamps are UTC.
-- [ ] No cross-service foreign key exists.
-- [ ] No secret plaintext column exists.
-- [ ] Existing Gateway notification tables and routes remain green.
+- [x] Migration up/down tests pass where supported.
+- [x] Repository integration tests use real PostgreSQL.
+- [x] Unique constraints prove race safety.
+- [x] All timestamps are UTC.
+- [x] No cross-service foreign key exists.
+- [x] No secret plaintext column exists.
+- [x] Existing Gateway notification tables and routes remain green.
+
+### Result
+
+Delivered 2026-07-28:
+
+- **Migrations**: `migrations/gateway/000004_merchant_schema` (all 10 tables
+  from §11, RLS + `app_service`/`app_readonly` grants, matching every other
+  Gateway table's convention) and `000005_merchant_retention` (5 purge
+  functions for the classes registered in `config/data-retention.yaml`).
+  Verified up→down→up live against a real Postgres container (`make
+  migrate-up`/`migrate-down SERVICE=gateway`), both directions clean.
+- **Retention**: 10 new `gateway.merchant.*` classes added to
+  `config/data-retention.yaml` (`make retention-check`: 100 entries valid).
+  `internal/merchant.Module.StartRetentionRunner` wires the 5 age-based
+  classes on their own scheduler, mirroring `internal/notify`'s own
+  pattern (both are Gateway submodules).
+- **Package**: `internal/merchant/{model,repository}` populated;
+  `{api,application,auth,quota,idempotency,webhook,client,observability}`
+  scaffolded as empty directories per §3.1's layout, populated task by
+  task starting T3. `internal/config.MerchantConfig` (API-key pepper,
+  idempotency default TTL, quota fail-closed default) follows the same
+  secret-loading-boundary pattern as `ClosureConfig`/`CryptoxConfig`.
+- **Real bug found and fixed during its own integration test**: the first
+  schema draft used a plain `UNIQUE(endpoint_id, event_id)` on
+  `merchant_webhook_deliveries` with a comment claiming replay rows were
+  "intentionally not covered" — false. Postgres rejected every replay
+  INSERT outright, caught immediately by
+  `TestWebhookRepository_DeliveryUniqueness_RaceSafe`. Fixed with proper
+  lineage tracking: a new `replay_of_delivery_id` column (NULL for the
+  automatic delivery, set to the original delivery's id for every replay)
+  and a partial unique index (`... WHERE replay_of_delivery_id IS NULL`)
+  that bounds only the automatic path, exactly matching T7's own
+  requirement ("one endpoint receives at most one automatic delivery
+  record per event... replay creates a new delivery ID with the same
+  event ID").
+- **Race safety proven live** (not just declared): concurrent-goroutine
+  tests for `merchant_api_keys.public_prefix`,
+  `merchant_idempotency_records`'s `(tenant_id, operation_id,
+  idempotency_key)`, and `merchant_webhook_deliveries`'s automatic-path
+  uniqueness each assert exactly one of 10 concurrent inserts wins.
+  Tenant-scoping is proven both positively (two tenants can reuse the
+  identical idempotency key string independently) and negatively (a
+  cross-tenant `Revoke` call affects zero rows, per §7.3).
+- **Verified**: `go build ./...`, `go vet -tags=integration ./...`, `make
+  lint` (0 issues), `go test -race ./...` (full repo, all green), `make
+  docs-check`, `make retention-check`, the full
+  `internal/merchant/repository` integration suite (8/8 pass), and the
+  full pre-existing `internal/notify` integration suite (27/27 pass,
+  confirming existing Gateway notification tables/routes are unaffected).
+
+T3 may begin.
 
 ---
 

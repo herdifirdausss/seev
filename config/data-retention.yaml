@@ -448,6 +448,127 @@ entries:
     policy_version: 1
     notes: "docs/roadmap/archive/51 §4.2 'Any notification' — backstop rule for unread notifications regardless of read_at."
 
+  # ── gateway.merchant (docs/roadmap/active/57-c1-merchant-b2b-api.md T2) ────────────
+  - owner: gateway
+    class: gateway.merchant.tenants
+    table: gateway.merchant_tenants
+    classification: internal
+    terminal_timestamp: null
+    duration: null
+    action: retain_state
+    batch_size: 0
+    hold_scope: none
+    policy_version: 1
+    notes: "Live tenant configuration row; no generic age rule. Tenant closure is a future operator workflow, not an automatic purge."
+
+  - owner: gateway
+    class: gateway.merchant.api_keys_revoked
+    table: gateway.merchant_api_keys
+    classification: secret
+    terminal_timestamp: revoked_at
+    duration: 90d
+    action: delete
+    batch_size: 500
+    hold_scope: subject
+    policy_version: 1
+    notes: "Only revoked keys age out; active/expired-but-not-revoked keys are untouched. Cascades its own merchant_api_key_scopes rows in the same purge transaction."
+
+  - owner: gateway
+    class: gateway.merchant.api_key_scopes
+    table: gateway.merchant_api_key_scopes
+    classification: internal
+    terminal_timestamp: null
+    duration: null
+    action: retain_state
+    batch_size: 0
+    hold_scope: none
+    policy_version: 1
+    notes: "No independent timestamp column; rows are deleted transactionally alongside their parent merchant_api_keys row (gateway.merchant.api_keys_revoked), not by an independent age rule."
+
+  - owner: gateway
+    class: gateway.merchant.quota_policies
+    table: gateway.merchant_quota_policies
+    classification: internal
+    terminal_timestamp: null
+    duration: null
+    action: retain_state
+    batch_size: 0
+    hold_scope: none
+    policy_version: 1
+    notes: "Live per-tenant quota configuration; no generic age rule applies."
+
+  - owner: gateway
+    class: gateway.merchant.idempotency_records
+    table: gateway.merchant_idempotency_records
+    classification: sensitive
+    terminal_timestamp: expires_at
+    duration: 24h
+    action: delete
+    batch_size: 500
+    hold_scope: subject
+    policy_version: 1
+    notes: "Same expiry-column-driven pattern as ledger.fee_quotes.unconsumed (T2.6 precedent) — purges shortly after the record's own expires_at, not a fixed age from creation. May contain tenant response bodies (sensitive), hence classification."
+
+  - owner: gateway
+    class: gateway.merchant.event_inbox
+    table: gateway.merchant_event_inbox
+    classification: internal
+    terminal_timestamp: processed_at
+    duration: 30d
+    action: delete
+    batch_size: 500
+    hold_scope: none
+    policy_version: 1
+    notes: "Requires processed_at IS NOT NULL — an unprocessed inbox row is never purged, regardless of age."
+
+  - owner: gateway
+    class: gateway.merchant.webhook_endpoints
+    table: gateway.merchant_webhook_endpoints
+    classification: secret
+    terminal_timestamp: null
+    duration: null
+    action: retain_state
+    batch_size: 0
+    hold_scope: none
+    policy_version: 1
+    notes: "Live endpoint configuration (secret_ciphertext is already encrypted via pkg/cryptox, T7); deletion is an explicit merchant/operator action (DELETE /webhook-endpoints/{id}), not an automatic age rule."
+
+  - owner: gateway
+    class: gateway.merchant.webhook_events
+    table: gateway.merchant_webhook_events
+    classification: sensitive
+    terminal_timestamp: created_at
+    duration: 90d
+    action: delete
+    batch_size: 500
+    hold_scope: subject
+    policy_version: 1
+    notes: "Immutable external event bytes, purged once no merchant_webhook_deliveries row still references them (enforced in the purge function itself, not just the age check) — payload may carry tenant transaction data."
+
+  - owner: gateway
+    class: gateway.merchant.webhook_deliveries
+    table: gateway.merchant_webhook_deliveries
+    classification: internal
+    terminal_timestamp: updated_at
+    duration: 90d
+    action: delete
+    batch_size: 500
+    hold_scope: subject
+    policy_version: 1
+    notes: "Requires status IN ('delivered','dead') — a pending/failed (still retrying) delivery is never purged regardless of age. merchant_webhook_attempts cascade-delete with their parent row (ON DELETE CASCADE), so they need no independent purge function."
+
+  - owner: gateway
+    class: gateway.merchant.webhook_attempts
+    table: gateway.merchant_webhook_attempts
+    classification: internal
+    terminal_timestamp: null
+    duration: null
+    action: retain_state
+    batch_size: 0
+    hold_scope: none
+    policy_version: 1
+    notes: "No independent age rule — rows are removed transactionally via ON DELETE CASCADE when their parent merchant_webhook_deliveries row is purged (gateway.merchant.webhook_deliveries)."
+
   # ── ledger ────────────────────────────────────────────────────────────────
   - owner: ledger
     class: ledger.ledger_entries

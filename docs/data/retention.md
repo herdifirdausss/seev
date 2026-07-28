@@ -154,10 +154,40 @@ No entry may fully delete a row from these tables — only `retain_permanent`, `
 
 | Class | Table / object | Classification | Terminal timestamp | Duration | Action | Batch | Hold scope |
 |---|---|---|---|---|---|---|---|
+| `gateway.merchant.api_key_scopes` | gateway.merchant_api_key_scopes | internal | — | — | retain_state | — | none |
+| `gateway.merchant.api_keys_revoked` | gateway.merchant_api_keys | secret | revoked_at | 90d | delete | 500 | subject |
+| `gateway.merchant.event_inbox` | gateway.merchant_event_inbox | internal | processed_at | 30d | delete | 500 | none |
+| `gateway.merchant.idempotency_records` | gateway.merchant_idempotency_records | sensitive | expires_at | 24h | delete | 500 | subject |
+| `gateway.merchant.quota_policies` | gateway.merchant_quota_policies | internal | — | — | retain_state | — | none |
+| `gateway.merchant.tenants` | gateway.merchant_tenants | internal | — | — | retain_state | — | none |
+| `gateway.merchant.webhook_attempts` | gateway.merchant_webhook_attempts | internal | — | — | retain_state | — | none |
+| `gateway.merchant.webhook_deliveries` | gateway.merchant_webhook_deliveries | internal | updated_at | 90d | delete | 500 | subject |
+| `gateway.merchant.webhook_endpoints` | gateway.merchant_webhook_endpoints | secret | — | — | retain_state | — | none |
+| `gateway.merchant.webhook_events` | gateway.merchant_webhook_events | sensitive | created_at | 90d | delete | 500 | subject |
 | `gateway.notifications.any` | gateway.notif_notifications | financial | created_at | 365d | delete | 500 | subject |
 | `gateway.notifications.read` | gateway.notif_notifications | financial | read_at | 180d | delete | 500 | subject |
 | `gateway.retention_audit` | gateway.gateway_retention_audit | internal | — | — | retain_permanent | — | none |
 | `gateway.retention_holds` | gateway.gateway_retention_holds | internal | — | — | retain_state | — | none |
+
+**`gateway.merchant.api_key_scopes`** — No independent timestamp column; rows are deleted transactionally alongside their parent merchant_api_keys row (gateway.merchant.api_keys_revoked), not by an independent age rule.
+
+**`gateway.merchant.api_keys_revoked`** — Only revoked keys age out; active/expired-but-not-revoked keys are untouched. Cascades its own merchant_api_key_scopes rows in the same purge transaction.
+
+**`gateway.merchant.event_inbox`** — Requires processed_at IS NOT NULL — an unprocessed inbox row is never purged, regardless of age.
+
+**`gateway.merchant.idempotency_records`** — Same expiry-column-driven pattern as ledger.fee_quotes.unconsumed (T2.6 precedent) — purges shortly after the record's own expires_at, not a fixed age from creation. May contain tenant response bodies (sensitive), hence classification.
+
+**`gateway.merchant.quota_policies`** — Live per-tenant quota configuration; no generic age rule applies.
+
+**`gateway.merchant.tenants`** — Live tenant configuration row; no generic age rule. Tenant closure is a future operator workflow, not an automatic purge.
+
+**`gateway.merchant.webhook_attempts`** — No independent age rule — rows are removed transactionally via ON DELETE CASCADE when their parent merchant_webhook_deliveries row is purged (gateway.merchant.webhook_deliveries).
+
+**`gateway.merchant.webhook_deliveries`** — Requires status IN ('delivered','dead') — a pending/failed (still retrying) delivery is never purged regardless of age. merchant_webhook_attempts cascade-delete with their parent row (ON DELETE CASCADE), so they need no independent purge function.
+
+**`gateway.merchant.webhook_endpoints`** — Live endpoint configuration (secret_ciphertext is already encrypted via pkg/cryptox, T7); deletion is an explicit merchant/operator action (DELETE /webhook-endpoints/{id}), not an automatic age rule.
+
+**`gateway.merchant.webhook_events`** — Immutable external event bytes, purged once no merchant_webhook_deliveries row still references them (enforced in the purge function itself, not just the age check) — payload may carry tenant transaction data.
 
 **`gateway.notifications.any`** — docs/roadmap/archive/51 §4.2 'Any notification' — backstop rule for unread notifications regardless of read_at.
 
