@@ -948,8 +948,9 @@ B0 can be marked fully measured; this record is archived as Core done.
 ## 11. Global Definition of Done
 
 - [ ] T0–T6 results contain commands, concise evidence, timings, and commit IDs.
-- [ ] `docs/performance/capacity-model.md` names the exact environment and does
-      not make a production-capacity claim.
+- [x] `docs/performance/capacity-model.md` names the exact environment and does
+      not make a production-capacity claim; it is explicitly marked pending
+      until canonical measurements exist.
 - [ ] Every capacity number is accompanied by latency, saturation, drain, and
       integrity evidence.
 - [ ] B1–B3 decisions use the original locked thresholds without result-driven
