@@ -26,7 +26,7 @@ GOLANGCI_LINT := $(GOLANGCI_LINT_DIR)/golangci-lint
 GOVULNCHECK_DIR := $(TOOLS_DIR)/govulncheck-$(GOVULNCHECK_VERSION)
 GOVULNCHECK := $(GOVULNCHECK_DIR)/govulncheck
 
-.PHONY: build build-all run dev test test/cover clean lint modernize-check ci-lint docs-check tidy tools tools-lint tools-security security-vuln proto proto-lint proto-breaking contract-generate contract-lint contract-breaking contract-test contracts load-lint load-test load-seed load-snapshot load-restore load-smoke load-run load-capacity load-report-check load-clean vet docker-up docker-down smoke-container smoke-test business-e2e admin-e2e privacy-e2e verify-static verify-full verify-chaos chaos-debug migrate-up migrate-up-all migrate-down grant-app-role observability-secret observability-up observability-down certs backup-secret backup-role-bootstrap backup-checksums-enable backup-stanza-init backup-full backup-diff backup-check backup-status backup-expire cryptox-secret retention-docs retention-check help
+.PHONY: build build-all run dev test test/cover clean lint modernize-check ci-lint print-golangci-lint-version print-govulncheck-version docs-check tidy tools tools-lint tools-security security-vuln proto proto-lint proto-breaking contract-generate contract-lint contract-breaking contract-test contracts load-lint load-test load-seed load-snapshot load-restore load-smoke load-run load-capacity load-report-check load-clean vet docker-up docker-down smoke-container smoke-test business-e2e admin-e2e privacy-e2e verify-static verify-full verify-chaos chaos-debug migrate-up migrate-up-all migrate-down grant-app-role observability-secret observability-up observability-down certs backup-secret backup-role-bootstrap backup-checksums-enable backup-stanza-init backup-full backup-diff backup-check backup-status backup-expire cryptox-secret retention-docs retention-check help
 
 ## build: Compile the binary
 build:
@@ -82,6 +82,14 @@ ci-lint:
 	actionlint -shellcheck "$$(command -v shellcheck)"
 	find scripts -name '*.sh' -print0 | xargs -0 shellcheck --severity=error
 	./scripts/ci/check-action-pins.sh
+
+## print-golangci-lint-version: Print the pinned golangci-lint version (single source of truth for CI)
+print-golangci-lint-version:
+	@echo $(GOLANGCI_LINT_VERSION)
+
+## print-govulncheck-version: Print the pinned govulncheck version (single source of truth for CI)
+print-govulncheck-version:
+	@echo $(GOVULNCHECK_VERSION)
 
 ## docs-check: Validate required guides, local Markdown links, and heading anchors
 docs-check:
