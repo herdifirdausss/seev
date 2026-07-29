@@ -301,6 +301,24 @@ func (f *fakeWebhookRepository) RecordAttempt(_ context.Context, a model.Webhook
 	return nil
 }
 
+func (f *fakeWebhookRepository) BacklogStats(_ context.Context) (map[string]int, *time.Time, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	counts := map[string]int{}
+	var oldest *time.Time
+	for _, d := range f.deliveries {
+		counts[d.Status]++
+		if d.Status != "pending" && d.Status != "failed" {
+			continue
+		}
+		if oldest == nil || d.CreatedAt.Before(*oldest) {
+			createdAt := d.CreatedAt
+			oldest = &createdAt
+		}
+	}
+	return counts, oldest, nil
+}
+
 // fakeTenantRepository is a minimal in-memory stand-in for
 // repository.TenantRepository — this package's tests only ever need
 // GetByID (consumer.go's own livemode lookup).

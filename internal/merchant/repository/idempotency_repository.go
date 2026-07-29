@@ -129,3 +129,33 @@ func (r *idempotencyRepository) ReclaimFailed(ctx context.Context, tenantID, id 
 	n, _ := res.RowsAffected()
 	return n == 1, nil
 }
+
+func (r *idempotencyRepository) StateCounts(ctx context.Context) (map[string]int, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT state, count(*) FROM merchant_idempotency_records GROUP BY state`)
+	if err != nil {
+		return nil, fmt.Errorf("merchant: idempotency state counts: %w", err)
+	}
+	defer rows.Close()
+
+	counts := map[string]int{}
+	for rows.Next() {
+		var state string
+		var count int
+		if err := rows.Scan(&state, &count); err != nil {
+			return nil, fmt.Errorf("merchant: scan idempotency state count: %w", err)
+		}
+		counts[state] = count
+	}
+	return counts, rows.Err()
+}
+
+func (r *idempotencyRepository) CountStuckLeases(ctx context.Context) (int, error) {
+	var count int
+	err := r.db.QueryRowContext(ctx, `
+		SELECT count(*) FROM merchant_idempotency_records
+		WHERE state = 'processing' AND lease_expires_at < now()`).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("merchant: count stuck idempotency leases: %w", err)
+	}
+	return count, nil
+}

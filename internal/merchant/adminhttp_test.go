@@ -349,6 +349,33 @@ func (f *fakeWebhookRepo) MarkFailedAttempt(context.Context, uuid.UUID, string, 
 }
 func (f *fakeWebhookRepo) MarkDead(context.Context, uuid.UUID) error           { return nil }
 func (f *fakeWebhookRepo) RecordAttempt(context.Context, model.WebhookAttempt) error { return nil }
+func (f *fakeWebhookRepo) BacklogStats(context.Context) (map[string]int, *time.Time, error) {
+	return nil, nil, nil
+}
+
+// fakeSettingsRepo is an in-memory stand-in for repository.SettingsRepository.
+type fakeSettingsRepo struct {
+	mu     sync.Mutex
+	values map[string]string
+}
+
+func newFakeSettingsRepo() *fakeSettingsRepo {
+	return &fakeSettingsRepo{values: map[string]string{}}
+}
+
+func (f *fakeSettingsRepo) Get(_ context.Context, key string) (string, bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	v, ok := f.values[key]
+	return v, ok, nil
+}
+
+func (f *fakeSettingsRepo) Set(_ context.Context, key, value, _ string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.values[key] = value
+	return nil
+}
 
 // ─── Test harness ──────────────────────────────────────────────────────
 
@@ -359,14 +386,17 @@ func testModule(t *testing.T) (*Module, *fakeTenantRepo, *fakeAPIKeyRepo, *fakeQ
 	quotas := newFakeQuotaRepo()
 	lifecycleRepo := newFakeLifecycleRepo()
 	webhooks := newFakeWebhookRepo()
+	settings := newFakeSettingsRepo()
 
 	m := &Module{
 		Tenants:          tenants,
 		APIKeys:          apiKeys,
 		Quotas:           quotas,
+		Settings:         settings,
 		KeyService:       auth.NewKeyService(apiKeys, "test-pepper-0123456789"),
 		LifecycleService: lifecycle.NewService(lifecycleRepo, tenants),
 		WebhookService:   webhook.NewService(webhooks, testCryptoxRing(t)),
+		GlobalFlag:       auth.NewGlobalFlag(settings),
 	}
 	return m, tenants, apiKeys, quotas
 }
@@ -699,4 +729,43 @@ func TestAdminRouter_FullSandboxOnboardingFlow(t *testing.T) {
 
 	deliveriesRec := doRequest(t, router, http.MethodGet, "/admin/gateway/tenants/"+tenantID+"/deliveries", "admin", nil)
 	assert.Equal(t, http.StatusOK, deliveriesRec.Code)
+}
+
+func TestAdminRouter_GlobalFlag_DefaultsEnabled(t *testing.T) {
+	m, _, _, _ := testModule(t)
+	router := authedRouter(m)
+
+	rec := doRequest(t, router, http.MethodGet, "/admin/gateway/global/b2b-api", "admin", nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+	var out struct {
+		Data struct {
+			Enabled bool `json:"b2b_api_enabled"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &out))
+	assert.True(t, out.Data.Enabled, "a fresh deployment with no operator action must default to enabled")
+}
+
+func TestAdminRouter_GlobalFlag_SetRequiresChecker(t *testing.T) {
+	m, _, _, _ := testModule(t)
+	router := authedRouter(m)
+
+	rec := doRequest(t, router, http.MethodPut, "/admin/gateway/global/b2b-api", "admin_maker", map[string]any{"enabled": false})
+	assert.Equal(t, http.StatusForbidden, rec.Code, "disabling the entire B2B surface requires the checker role, not maker")
+}
+
+func TestAdminRouter_GlobalFlag_CheckerCanDisableAndReenable(t *testing.T) {
+	m, _, _, _ := testModule(t)
+	router := authedRouter(m)
+
+	disableRec := doRequest(t, router, http.MethodPut, "/admin/gateway/global/b2b-api", "admin_checker", map[string]any{"enabled": false})
+	require.Equal(t, http.StatusOK, disableRec.Code, disableRec.Body.String())
+	assert.False(t, m.GlobalFlag.Enabled(), "SetEnabled must update the in-memory flag immediately, not wait for the next periodic refresh")
+
+	// RequireB2BEnabled itself (internal/merchant/auth) is proven
+	// separately by that package's own test — here we only prove the
+	// admin control surface reaches the shared flag correctly.
+	enableRec := doRequest(t, router, http.MethodPut, "/admin/gateway/global/b2b-api", "admin_checker", map[string]any{"enabled": true})
+	require.Equal(t, http.StatusOK, enableRec.Code)
+	assert.True(t, m.GlobalFlag.Enabled())
 }

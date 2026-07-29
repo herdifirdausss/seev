@@ -29,6 +29,13 @@ and [Services](../../reference/services.md) for that.
 | A contract or schema compatibility gate fails | [API contract evolution](api-contract-evolution.md) | Keep the old consumer boundary live until acknowledgement and zero-use gates pass |
 | A B0 load run saturates, aborts, or reports an integrity failure | [B0 load and capacity](b0-load-capacity.md) | Stop offered work, drain, and verify money state before cleanup |
 | A vendor callback is rejected, duplicated, or cannot reach its owner | [VendorService boundary](vendor-service-boundary.md) | Preserve the VendorService inbox and do not replay raw callbacks manually |
+| A merchant reports a leaked API key | [Merchant API key compromise](merchant-api-key-compromise.md) | Revoke immediately; never resend a plaintext key over an insecure channel |
+| A single merchant tenant needs to stop transacting now | [Merchant tenant suspension](merchant-tenant-suspension.md) | Suspension is per-tenant; use the global kill switch only for a platform-wide incident |
+| Merchant requests are failing 503 and Redis is unreachable | [Merchant quota backend outage](merchant-quota-backend-outage.md) | Writes fail closed by default; do not flip fail-open mid-incident without authority |
+| A merchant idempotency record is stuck in `processing` | [Merchant idempotency stuck](merchant-idempotency-stuck.md) | Never manually flip a record's state; let the merchant retry the same key |
+| Merchant webhook deliveries are backing up or dead-lettering | [Merchant webhook backlog](merchant-webhook-backlog.md) | Diagnose the endpoint before replaying; replay reuses the original event id |
+| A merchant reports a leaked webhook signing secret | [Merchant webhook secret compromise](merchant-webhook-secret-compromise.md) | In-flight retries keep using the old secret until they drain |
+| Ledger/Payin/Payout is unreachable from merchant traffic | [Merchant owner-service outage](merchant-owner-service-outage.md) | Merchants must retry with the SAME idempotency key, never a new one |
 
 | Runbook | Covers |
 |---|---|
@@ -50,6 +57,13 @@ and [Services](../../reference/services.md) for that.
 | [api-contract-evolution.md](api-contract-evolution.md) | HTTP, event, and protobuf compatibility failures and safe retirement |
 | [b0-load-capacity.md](b0-load-capacity.md) | Disposable load preparation, abort/drain, bottleneck diagnosis, integrity failure, and retention |
 | [vendor-service-boundary.md](vendor-service-boundary.md) | Vendor callback source policy, inbox replay, normalized owner delivery, and outbound mTLS boundary |
+| [merchant-api-key-compromise.md](merchant-api-key-compromise.md) | Revoking a leaked merchant API key and issuing a replacement |
+| [merchant-tenant-suspension.md](merchant-tenant-suspension.md) | Suspending/reactivating a single merchant tenant, and how it differs from the global kill switch |
+| [merchant-quota-backend-outage.md](merchant-quota-backend-outage.md) | Redis-backed quota enforcement's fail-closed/fail-open behavior during an outage |
+| [merchant-idempotency-stuck.md](merchant-idempotency-stuck.md) | Diagnosing and (self-)recovering merchant idempotency records stuck under an expired lease |
+| [merchant-webhook-backlog.md](merchant-webhook-backlog.md) | Diagnosing webhook delivery backlog/dead-letters and replaying eligible deliveries |
+| [merchant-webhook-secret-compromise.md](merchant-webhook-secret-compromise.md) | Rotating a merchant webhook endpoint's signing secret and handling the in-flight overlap window |
+| [merchant-owner-service-outage.md](merchant-owner-service-outage.md) | Merchant-facing impact of a Ledger/Payin/Payout outage and why same-key retries are safe |
 
 Each runbook is self-contained: what triggers it, what to check, and the
 exact commands to run — no need to read another document first to act on

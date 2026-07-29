@@ -570,6 +570,18 @@ entries:
     notes: "Plan 57 T8. Maker-checker record for tenant live-mode activation and closure — same shape and rationale as auth.operator_offboarding_requests: requested_by/approved_by are OPERATOR identities (never the tenant's own data), reason is an operator-authored justification, and the row is the permanent two-person-control audit trail proving who proposed and who approved each sensitive tenant transition. Retained permanently, same append-only rationale as auth.retention_audit."
 
   - owner: gateway
+    class: gateway.merchant.settings
+    table: gateway.merchant_settings
+    classification: internal
+    terminal_timestamp: null
+    duration: null
+    action: retain_state
+    batch_size: 0
+    hold_scope: none
+    policy_version: 1
+    notes: "Plan 57 T9. Generic operational key/value store — currently one row, b2b_api_enabled (the global route-disable kill switch). Live configuration, not an event log; no generic age rule applies, same posture as gateway.merchant.quota_policies."
+
+  - owner: gateway
     class: gateway.merchant.webhook_attempts
     table: gateway.merchant_webhook_attempts
     classification: internal

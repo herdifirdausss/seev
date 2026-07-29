@@ -78,6 +78,18 @@ type IdempotencyRepository interface {
 	// concurrent retries of a previously-failed request both proceeding to
 	// re-run the operation.
 	ReclaimFailed(ctx context.Context, tenantID, id uuid.UUID, newLeaseOwner string, newLeaseExpiresAt time.Time) (reclaimed bool, err error)
+	// StateCounts and CountStuckLeases back Plan 57 T9's own observability
+	// gauges (seev_merchant_idempotency_records{state},
+	// seev_merchant_idempotency_stuck_leases) — read-only aggregate
+	// queries, never used by the claim/complete/fail enforcement path
+	// itself.
+	StateCounts(ctx context.Context) (map[string]int, error)
+	// CountStuckLeases counts records still 'processing' whose lease has
+	// already expired — the same "crashed mid-request, nobody has taken
+	// over yet" condition TakeoverExpiredLease exists to recover from,
+	// surfaced here as a number an operator can alert on (T9 acceptance:
+	// "stuck leases... are visible").
+	CountStuckLeases(ctx context.Context) (int, error)
 }
 
 // EventInboxRepository persists merchant_event_inbox.
@@ -131,11 +143,28 @@ type WebhookRepository interface {
 	// dangling lease is reclaimed by the next poll once it expires, no
 	// separate recovery pass needed.
 	ClaimDue(ctx context.Context, limit int, leaseOwner string, leaseExpiresAt time.Time) ([]model.WebhookDelivery, error)
+	// BacklogStats backs Plan 57 T9's own observability gauges
+	// (seev_merchant_webhook_deliveries{status},
+	// seev_merchant_webhook_backlog_oldest_age_seconds) — counts is every
+	// status present in merchant_webhook_deliveries; oldestPendingAt is the
+	// created_at of the oldest row whose status is 'pending' or 'failed'
+	// (nil if none), never a business-logic input.
+	BacklogStats(ctx context.Context) (counts map[string]int, oldestPendingAt *time.Time, err error)
 	MarkDelivered(ctx context.Context, deliveryID uuid.UUID, httpStatus int) error
 	MarkFailedAttempt(ctx context.Context, deliveryID uuid.UUID, errorCode string, httpStatus *int, nextAttemptAt any) error
 	MarkDead(ctx context.Context, deliveryID uuid.UUID) error
 
 	RecordAttempt(ctx context.Context, a model.WebhookAttempt) error
+}
+
+// SettingsRepository persists merchant_settings — Plan 57 T9's generic
+// key/value store for operational toggles (starting with the global
+// B2B-API-disable kill switch). A missing key is not an error: the
+// application layer (internal/merchant.GlobalFlag) treats "no row" as the
+// default/enabled state.
+type SettingsRepository interface {
+	Get(ctx context.Context, key string) (value string, found bool, err error)
+	Set(ctx context.Context, key, value, updatedBy string) error
 }
 
 // LifecycleRepository persists merchant_tenant_lifecycle_requests (Plan 57
@@ -209,4 +238,11 @@ func NewLifecycleRepository(db database.DatabaseSQL) LifecycleRepository {
 		panic("merchant: NewLifecycleRepository requires a non-nil database")
 	}
 	return &lifecycleRepository{db: db}
+}
+
+func NewSettingsRepository(db database.DatabaseSQL) SettingsRepository {
+	if db == nil {
+		panic("merchant: NewSettingsRepository requires a non-nil database")
+	}
+	return &settingsRepository{db: db}
 }

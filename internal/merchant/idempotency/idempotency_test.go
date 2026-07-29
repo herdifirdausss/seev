@@ -140,6 +140,29 @@ func (f *fakeIdempotencyRepository) ReclaimFailed(_ context.Context, tenantID, i
 	return true, nil
 }
 
+func (f *fakeIdempotencyRepository) StateCounts(context.Context) (map[string]int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	counts := map[string]int{}
+	for _, rec := range f.records {
+		counts[rec.State]++
+	}
+	return counts, nil
+}
+
+func (f *fakeIdempotencyRepository) CountStuckLeases(context.Context) (int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	count := 0
+	now := time.Now()
+	for _, rec := range f.records {
+		if rec.State == "processing" && rec.LeaseExpiresAt != nil && rec.LeaseExpiresAt.Before(now) {
+			count++
+		}
+	}
+	return count, nil
+}
+
 type notFoundErr struct{}
 
 func (notFoundErr) Error() string { return "merchant: not found" }

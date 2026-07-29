@@ -186,6 +186,7 @@ func (w *RelayWorker) processDelivery(ctx context.Context, d model.WebhookDelive
 
 	switch {
 	case dispatchErr == nil && status >= 200 && status < 300:
+		deliveryAttemptsTotal.WithLabelValues("delivered").Inc()
 		return w.repo.MarkDelivered(ctx, d.ID, status)
 
 	case dispatchErr == nil && status == http.StatusGone:
@@ -195,9 +196,11 @@ func (w *RelayWorker) processDelivery(ctx context.Context, d model.WebhookDelive
 		if disableErr := w.repo.DisableEndpoint(ctx, endpoint.ID); disableErr != nil {
 			w.logger.Error("merchant/webhook: disable endpoint on 410 failed", "endpoint_id", endpoint.ID, "error", disableErr)
 		}
+		deliveryAttemptsTotal.WithLabelValues("dead").Inc()
 		return w.repo.MarkDead(ctx, d.ID)
 
 	case attemptNumber >= maxDeliveryAttempts:
+		deliveryAttemptsTotal.WithLabelValues("dead").Inc()
 		return w.repo.MarkDead(ctx, d.ID)
 
 	default:
@@ -208,6 +211,7 @@ func (w *RelayWorker) processDelivery(ctx context.Context, d model.WebhookDelive
 			s := status
 			httpStatus = &s
 		}
+		deliveryAttemptsTotal.WithLabelValues("failed").Inc()
 		return w.repo.MarkFailedAttempt(ctx, d.ID, errorCode, httpStatus, nextAttemptAt(attemptNumber))
 	}
 }

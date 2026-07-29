@@ -55,6 +55,7 @@ type Module struct {
 	EventInbox  repository.EventInboxRepository
 	Webhooks    repository.WebhookRepository
 	Lifecycle   repository.LifecycleRepository
+	Settings    repository.SettingsRepository
 
 	// WebhookService is T7's tenant-facing endpoint management surface
 	// (create/rotate/list/delete endpoints, list/get deliveries, replay) —
@@ -78,6 +79,13 @@ type Module struct {
 	// Ledger) — every adminhttp.go handler that needs it nil-checks
 	// explicitly and returns 503 rather than panicking.
 	Ledger LedgerClient
+
+	// GlobalFlag is T9's own "global route-disable control" — an
+	// incident-response kill switch for the entire merchant B2B API
+	// surface, independent of any single tenant's own suspension. See
+	// internal/merchant/auth.GlobalFlag's own doc comment for the
+	// enforcement side (RequireB2BEnabled).
+	GlobalFlag *auth.GlobalFlag
 }
 
 // NewModule panics if db, ring, or apiKeyPepper is nil/empty — matches this
@@ -102,6 +110,7 @@ func NewModule(db database.DatabaseSQL, ring *cryptox.Ring, apiKeyPepper string,
 	tenants := repository.NewTenantRepository(db)
 	lifecycleRepo := repository.NewLifecycleRepository(db)
 	apiKeys := repository.NewAPIKeyRepository(db)
+	settings := repository.NewSettingsRepository(db)
 	return &Module{
 		db:          db,
 		ring:        ring,
@@ -112,12 +121,14 @@ func NewModule(db database.DatabaseSQL, ring *cryptox.Ring, apiKeyPepper string,
 		EventInbox:  repository.NewEventInboxRepository(db),
 		Webhooks:    webhooks,
 		Lifecycle:   lifecycleRepo,
+		Settings:    settings,
 
 		WebhookService:   webhook.NewService(webhooks, ring),
 		webhookRelay:     webhook.NewRelayWorker(webhooks, ring, nil),
 		LifecycleService: lifecycle.NewService(lifecycleRepo, tenants),
 		KeyService:       auth.NewKeyService(apiKeys, apiKeyPepper),
 		Ledger:           ledgerClient,
+		GlobalFlag:       auth.NewGlobalFlag(settings),
 	}
 }
 

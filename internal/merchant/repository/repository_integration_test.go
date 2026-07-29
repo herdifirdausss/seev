@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	pgcontainer "github.com/testcontainers/testcontainers-go/modules/postgres"
 
@@ -401,3 +402,112 @@ func TestWebhookRepository_AttemptsCascadeDeleteWithDelivery(t *testing.T) {
 		`SELECT count(*) FROM merchant_webhook_attempts WHERE delivery_id = $1`, deliveryID).Scan(&count))
 	require.Zero(t, count, "attempts must cascade-delete with their parent delivery")
 }
+
+// TestIdempotencyRepository_ObservabilityQueries_T9 proves the T9 gauge
+// backing queries (StateCounts, CountStuckLeases) against real Postgres —
+// unit tests already cover the Go-side aggregation logic against fakes;
+// this proves the actual SQL.
+func TestIdempotencyRepository_ObservabilityQueries_T9(t *testing.T) {
+	db := setupGatewayTestDB(t)
+	tenantRepo := repository.NewTenantRepository(db)
+	idempotencyRepo := repository.NewIdempotencyRepository(db)
+	tenant := newTenant(t, tenantRepo, "sandbox")
+	ctx := context.Background()
+
+	processingID := uuid.New()
+	_, _, err := idempotencyRepo.Claim(ctx, model.IdempotencyRecord{
+		ID: processingID, TenantID: tenant.ID, OperationID: "op-a", IdempotencyKey: "key-a",
+		RequestHash: []byte("hash"), DownstreamKey: "dk-a",
+		LeaseOwner: strPtr("worker-1"), LeaseExpiresAt: timePtr(time.Now().Add(-time.Hour)), // already expired
+		ExpiresAt: time.Now().Add(24 * time.Hour),
+	})
+	require.NoError(t, err)
+
+	completedID := uuid.New()
+	_, _, err = idempotencyRepo.Claim(ctx, model.IdempotencyRecord{
+		ID: completedID, TenantID: tenant.ID, OperationID: "op-b", IdempotencyKey: "key-b",
+		RequestHash: []byte("hash"), DownstreamKey: "dk-b",
+		LeaseOwner: strPtr("worker-1"), LeaseExpiresAt: timePtr(time.Now().Add(time.Minute)),
+		ExpiresAt: time.Now().Add(24 * time.Hour),
+	})
+	require.NoError(t, err)
+	require.NoError(t, idempotencyRepo.Complete(ctx, tenant.ID, completedID, 200, []byte(`{}`), []byte(`{}`), nil))
+
+	counts, err := idempotencyRepo.StateCounts(ctx)
+	require.NoError(t, err)
+	assert.GreaterOrEqual(t, counts["processing"], 1)
+	assert.GreaterOrEqual(t, counts["completed"], 1)
+
+	stuck, err := idempotencyRepo.CountStuckLeases(ctx)
+	require.NoError(t, err)
+	assert.GreaterOrEqual(t, stuck, 1, "the deliberately-expired-lease record must count as stuck")
+}
+
+// TestWebhookRepository_BacklogStats_T9 proves T9's backlog gauge query
+// against real Postgres.
+func TestWebhookRepository_BacklogStats_T9(t *testing.T) {
+	db := setupGatewayTestDB(t)
+	tenantRepo := repository.NewTenantRepository(db)
+	webhookRepo := repository.NewWebhookRepository(db)
+	tenant := newTenant(t, tenantRepo, "sandbox")
+	ctx := context.Background()
+
+	endpoint := model.WebhookEndpoint{
+		ID: uuid.New(), PublicID: "wh_" + uuid.NewString()[:16], TenantID: tenant.ID,
+		URL: "https://example.invalid/hook", Status: "enabled",
+		SecretCiphertext: []byte("c"), SecretVersion: 1, SubscribedEvents: []string{"transaction.posted.v1"},
+		Environment: "sandbox",
+	}
+	require.NoError(t, webhookRepo.CreateEndpoint(ctx, endpoint))
+	event := model.WebhookEvent{
+		ID: uuid.New(), PublicID: "evt_" + uuid.NewString()[:16], TenantID: tenant.ID,
+		EventType: "transaction.posted.v1", SchemaVersion: 1,
+		Payload: []byte(`{}`), PayloadBytes: []byte(`{}`), SourceEventID: uuid.New(),
+	}
+	require.NoError(t, webhookRepo.CreateEvent(ctx, event))
+
+	pendingID := uuid.New()
+	_, err := webhookRepo.CreateDelivery(ctx, model.WebhookDelivery{
+		ID: pendingID, PublicID: "wd_" + uuid.NewString()[:16], TenantID: tenant.ID,
+		EndpointID: endpoint.ID, EventID: event.ID, Status: "pending",
+	})
+	require.NoError(t, err)
+
+	counts, oldestPendingAt, err := webhookRepo.BacklogStats(ctx)
+	require.NoError(t, err)
+	assert.GreaterOrEqual(t, counts["pending"], 1)
+	require.NotNil(t, oldestPendingAt, "a real pending row must produce a non-nil oldest-pending timestamp")
+	assert.WithinDuration(t, time.Now(), *oldestPendingAt, time.Minute)
+}
+
+// TestSettingsRepository_GetSetRoundTrip_T9 proves the merchant_settings
+// table (migration 000008) and the global-flag repository round-trip
+// against real Postgres.
+func TestSettingsRepository_GetSetRoundTrip_T9(t *testing.T) {
+	db := setupGatewayTestDB(t)
+	settings := repository.NewSettingsRepository(db)
+	ctx := context.Background()
+
+	_, found, err := settings.Get(ctx, "b2b_api_enabled")
+	require.NoError(t, err)
+	assert.False(t, found, "a fresh database must have no row for a key nobody has ever set")
+
+	require.NoError(t, settings.Set(ctx, "b2b_api_enabled", "false", "operator@example.test"))
+	value, found, err := settings.Get(ctx, "b2b_api_enabled")
+	require.NoError(t, err)
+	require.True(t, found)
+	assert.Equal(t, "false", value)
+
+	// Set again (update path, not insert) — ON CONFLICT DO UPDATE.
+	require.NoError(t, settings.Set(ctx, "b2b_api_enabled", "true", "operator2@example.test"))
+	value, _, err = settings.Get(ctx, "b2b_api_enabled")
+	require.NoError(t, err)
+	assert.Equal(t, "true", value)
+
+	var updatedBy string
+	require.NoError(t, db.QueryRowContext(ctx, `SELECT updated_by FROM merchant_settings WHERE key = $1`, "b2b_api_enabled").Scan(&updatedBy))
+	assert.Equal(t, "operator2@example.test", updatedBy)
+}
+
+func strPtr(s string) *string    { return &s }
+func timePtr(t time.Time) *time.Time { return &t }

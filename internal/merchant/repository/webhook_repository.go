@@ -354,6 +354,39 @@ func (r *webhookRepository) RecordAttempt(ctx context.Context, a model.WebhookAt
 	return nil
 }
 
+func (r *webhookRepository) BacklogStats(ctx context.Context) (map[string]int, *time.Time, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT status, count(*) FROM merchant_webhook_deliveries GROUP BY status`)
+	if err != nil {
+		return nil, nil, fmt.Errorf("merchant: webhook delivery status counts: %w", err)
+	}
+	counts := map[string]int{}
+	for rows.Next() {
+		var status string
+		var count int
+		if err := rows.Scan(&status, &count); err != nil {
+			rows.Close()
+			return nil, nil, fmt.Errorf("merchant: scan webhook delivery status count: %w", err)
+		}
+		counts[status] = count
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, nil, err
+	}
+	rows.Close()
+
+	var oldestPendingAt sql.NullTime
+	err = r.db.QueryRowContext(ctx, `
+		SELECT min(created_at) FROM merchant_webhook_deliveries WHERE status IN ('pending', 'failed')`).Scan(&oldestPendingAt)
+	if err != nil {
+		return nil, nil, fmt.Errorf("merchant: oldest pending webhook delivery: %w", err)
+	}
+	if !oldestPendingAt.Valid {
+		return counts, nil, nil
+	}
+	return counts, &oldestPendingAt.Time, nil
+}
+
 type rowScanner interface {
 	Scan(dest ...any) error
 }

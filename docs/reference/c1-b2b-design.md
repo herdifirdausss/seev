@@ -285,3 +285,54 @@ TM-19). Service ownership recorded in
 [docs/reference/services.md](services.md)'s Gateway entry (`internal/merchant`
 sub-module, Gateway-owned persistence only, no cross-service DB access —
 Plan 57 §3.1/§3.3).
+
+## 6. Restart and recovery behavior (T9)
+
+Every background component `internal/merchant` runs is designed to
+recover from a crash or rolling restart with no separate recovery pass —
+the same claim/lease pattern repeats at every layer instead of a
+bespoke recovery procedure per component:
+
+- **Idempotency records** (T4): a claim in `'processing'` carries a lease
+  (`lease_owner`, `lease_expires_at`). If the process that claimed it
+  crashes mid-request, the row is simply left `'processing'` with a
+  lease that will expire. The NEXT request for the SAME `(tenant_id,
+  operation_id, idempotency_key)` — typically the merchant's own retry —
+  calls `TakeoverExpiredLease`, which atomically reassigns the lease only
+  if it has already expired, and the retry proceeds normally. No
+  operator action and no separate sweep are required; see
+  [merchant-idempotency-stuck.md](../operations/runbooks/merchant-idempotency-stuck.md)
+  for the case where nobody has retried yet.
+- **Webhook relay** (T7): `RelayWorker.ClaimDue` uses `FOR UPDATE SKIP
+  LOCKED` against `merchant_webhook_deliveries` with the same
+  lease-then-expire shape — a crashed worker's claimed-but-unfinished
+  deliveries become claimable again by ANY worker instance (including a
+  freshly restarted one) the moment `lease_expires_at` passes. Verified
+  live in T7's own end-to-end integration test
+  (`internal/merchant/webhook/webhook_integration_test.go`,
+  `TestWebhookRelay_EndToEnd`'s final phase): a delivery given a
+  deliberately expired lease is reclaimed and dispatched by the very
+  next `ProcessOnce` poll.
+- **Webhook consumer** (T7): the RabbitMQ consumer redeclares its own
+  topology and re-subscribes on every `Start()` call — a process restart
+  simply re-runs `Start()` (see `cmd/gateway/main.go`); RabbitMQ's own
+  at-least-once redelivery for any message that was in flight when the
+  old consumer died is handled by the consumer's existing dedup
+  (`GetEventBySource`), the same mechanism that already tolerates
+  ordinary redelivery.
+- **Observability gauges and the global kill switch** (T9): both are
+  pure read-side state, recomputed from the database on every tick of
+  `StartObservabilityRefresher` (default 30s). A restarted process starts
+  with `GlobalFlag` defaulting to enabled in memory but calls `Refresh`
+  once immediately on the FIRST tick before serving meaningful traffic
+  volume, so a previously-disabled kill switch is picked up within one
+  refresh interval of restart, not lost.
+- **Quota enforcement** (T4): Redis-backed counters are ephemeral by
+  design — a Gateway restart does not need to recover them; a lost
+  counter simply behaves as if the tenant made no requests during the
+  gap, which is the safe direction to lose state in.
+
+No component in this module requires a manual "resume" step after a
+crash or planned restart — every recovery path above is a normal,
+already-tested consequence of the request/poll cycle continuing, not a
+special code path invoked only during recovery.

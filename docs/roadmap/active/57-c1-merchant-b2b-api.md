@@ -2701,13 +2701,147 @@ docs/runbooks/merchant-owner-service-outage.md
 
 ### Acceptance
 
-- [ ] Every alert has an actionable runbook.
-- [ ] Dashboards avoid tenant-level metric cardinality.
-- [ ] Suspension prevents new writes.
-- [ ] Existing accepted writes remain queryable.
-- [ ] Webhook backlog and oldest age are visible.
-- [ ] Stuck leases and idempotency records are visible.
-- [ ] Trace evidence crosses owner-service and async boundaries.
+- [x] Every alert has an actionable runbook.
+- [x] Dashboards avoid tenant-level metric cardinality.
+- [x] Suspension prevents new writes.
+- [x] Existing accepted writes remain queryable.
+- [x] Webhook backlog and oldest age are visible.
+- [x] Stuck leases and idempotency records are visible.
+- [x] Trace evidence crosses owner-service and async boundaries.
+
+### Result
+
+Delivered 2026-07-29:
+
+- **Runbook path corrected from the plan's own stale literal**: this
+  task's own "Required runbooks" list above names
+  `docs/runbooks/merchant-*.md`, but `docs/runbooks` is explicitly listed
+  as a FORBIDDEN legacy path in `cmd/doccheck`'s own
+  `documentationLayoutFailures` check (a prior reorg moved every runbook
+  under `docs/operations/runbooks/` and doccheck now fails the build if
+  that old path is recreated). All seven runbooks were written at
+  `docs/operations/runbooks/merchant-*.md` instead — the currently
+  enforced location — and cross-linked from
+  `docs/operations/runbooks/README.md`'s own "choose by symptom" and
+  index tables.
+- **Metrics** (`internal/merchant/metrics.go`,
+  `internal/merchant/webhook/metrics.go`, new): `seev_merchant_idempotency_records{state}`,
+  `seev_merchant_idempotency_stuck_leases`,
+  `seev_merchant_webhook_deliveries{status}`,
+  `seev_merchant_webhook_backlog_oldest_age_seconds`,
+  `seev_merchant_webhook_delivery_attempts_total{result}`, and
+  `seev_merchant_b2b_api_enabled`. Every label is a small fixed enum
+  (`state`/`status`/`result`) — never a tenant id, delivery id, endpoint
+  id, or idempotency key, satisfying "dashboards avoid tenant-level
+  metric cardinality" structurally rather than by convention alone (there
+  is no per-tenant label anywhere to accidentally add one to). The three
+  snapshot gauges are refreshed every 30s by a new
+  `Module.StartObservabilityRefresher` ticker
+  (`internal/merchant/metrics.go`), mirroring
+  `internal/auth.refreshPrivacyRequestsGauge`'s own established
+  "recompute from the database once per tick" convention; the delivery
+  counter increments inline in `relay.go`'s own `processDelivery`.
+- **Stuck-idempotency and webhook-backlog visibility** (T9's own two named
+  acceptance lines): backed by two new repository methods proven against
+  real Postgres in this task
+  (`IdempotencyRepository.StateCounts`/`CountStuckLeases`,
+  `WebhookRepository.BacklogStats` — `internal/merchant/repository/{idempotency,webhook}_repository.go`)
+  — `TestIdempotencyRepository_ObservabilityQueries_T9` and
+  `TestWebhookRepository_BacklogStats_T9` in
+  `internal/merchant/repository/repository_integration_test.go`.
+- **Alerts** (`deploy/observability/prometheus/rules/merchant.yml`, new,
+  registered in `prometheus.yml`'s `rule_files`, validated live via
+  `promtool check rules` in a throwaway `prom/prometheus` container — 5
+  rules, 0 errors): `SeevMerchantIdempotencyStuckLeases`,
+  `SeevMerchantWebhookBacklogStale` (oldest pending/failed delivery older
+  than T7's own 15-minute backoff cap), `SeevMerchantWebhookDeliveriesDeadLettering`,
+  `SeevMerchantWebhookDeliveryFailuresHigh`, `SeevMerchantB2BAPIDisabled`.
+  Every alert's `runbook:` annotation points at one of the seven runbooks
+  below — "every alert has an actionable runbook" checked by
+  construction, not just by intent.
+- **Dashboard** (`deploy/observability/grafana/dashboards/merchant-b2b.json`,
+  new, auto-discovered by the existing file-provider — no provisioning
+  change needed): idempotency records by state, stuck-lease stat panel,
+  webhook deliveries by status, backlog-oldest-age stat panel (with
+  yellow/red thresholds at 5/15 minutes matching the alert), delivery
+  attempt rate by result, and the global kill-switch state.
+- **Global route-disable control**
+  (`internal/merchant/auth.GlobalFlag`/`RequireB2BEnabled`, new;
+  `merchant_settings` table, migration `000008`): a generic key/value
+  operational-settings table (extensible to future toggles with no new
+  migration) backs an in-memory-cached, atomically-read flag —
+  `RequireB2BEnabled` returns `503` before any API-key lookup when
+  disabled. A missing row (the state of every fresh deployment) reads as
+  enabled; only an explicit operator `SetEnabled(false)` call can ever
+  disable traffic, and `SetEnabled` updates the in-memory value
+  immediately on the instance that called it (other instances pick it up
+  on their next 30s refresh tick) rather than waiting for the next
+  scheduled reload. Exposed at
+  `GET`/`PUT /api/v1/admin/gateway/global/b2b-api` — `PUT` (disabling OR
+  re-enabling) requires the checker role, the single highest-blast-radius
+  action this router exposes, since it affects every tenant
+  simultaneously rather than one. **This control is structurally correct
+  but not yet load-bearing**: it is mounted at the exact chokepoint
+  (`RequireMerchantAuth`'s own layer) every future merchant-facing
+  business route will pass through, but — as already noted in T6's own
+  Result section and tracked separately as `task_6214960b` — Gateway has
+  no live merchant transfer/payin/payout HTTP routes wired yet, so there
+  is currently nothing for this switch to gate in a running deployment
+  beyond the admin surface itself. `RequireB2BEnabled` will need one line
+  added to whichever router eventually mounts those routes.
+- **Tenant suspension already existed and needed no new code** (T3):
+  `RequireMerchantAuth` was already checking `tenant.Status ==
+  "suspended"` and returning `403` before this task began — this task's
+  job was verifying and documenting the behavior, not building it. Traced
+  through both existing unit test coverage
+  (`internal/merchant/auth/middleware_test.go`'s own
+  `suspended_tenant` subtest) and the new
+  [merchant-tenant-suspension.md](../../operations/runbooks/merchant-tenant-suspension.md)
+  runbook, which also documents the two things suspension deliberately
+  does NOT do (cancel in-flight webhook deliveries; revoke API keys) so
+  an operator doesn't assume broader effect than the mechanism actually
+  has.
+- **Restart and recovery behavior documented**
+  (`docs/reference/c1-b2b-design.md` new §6): every background component
+  (idempotency leases, the webhook relay's claim-then-expire pattern, the
+  webhook consumer's topology re-declaration on restart, the
+  observability gauges, quota's ephemeral Redis state) recovers through
+  the SAME mechanism already exercised by normal operation — no bespoke
+  recovery procedure exists anywhere in this module, and none was added;
+  the doc explains why by walking through each component's own already-
+  built self-healing path (with a direct citation to T7's own
+  `TestWebhookRelay_EndToEnd` live proof of lease reclaim after a
+  simulated crash).
+- **Trace evidence across the async boundary already existed
+  structurally, confirmed rather than built**: `pkg/messaging`'s own
+  `Publisher`/`Consumer` inject and extract OpenTelemetry trace context
+  into/from AMQP headers unconditionally
+  (`pkg/messaging/publisher.go:124`, `pkg/messaging/consumer.go:196`) —
+  since T7's `webhook.Consumer.Start` calls `c.broker.Consume(...)` the
+  identical way `internal/notify`'s own consumer does, it inherits this
+  propagation for free. The synchronous HTTP boundary (Admin BFF →
+  Gateway's internal listener) is covered the same way: `AdminRouter()`
+  is mounted inside `internal/handler.NewInternalRouter`'s existing
+  `global` middleware chain, which already includes
+  `middleware.WithTracing` for every request. No new tracing code was
+  needed anywhere in this task.
+- **Full sweep**: `go build ./...`, `go vet -tags=integration ./...`,
+  `make lint` (0 issues), `go test -race ./...` (full repo, green),
+  `go test -tags=integration ./internal/merchant/...` (repository +
+  webhook + auth packages against real Postgres, green — including three
+  new T9-specific integration tests), `go run ./cmd/doccheck` (136 files
+  valid, including all seven new runbooks and the new design-doc
+  section), `go run ./cmd/retentioncheck` (102 policy entries valid,
+  covering the new `merchant_tenant_lifecycle_requests` — filed under T8
+  but only now retention-classified — and `merchant_settings` tables),
+  `promtool check rules` on the new alert file (5 rules, 0 errors). 15
+  new unit tests (`internal/merchant/auth/globalflag_test.go` plus
+  additions to `internal/merchant/adminhttp_test.go`) cover the flag's
+  default-enabled state, immediate-effect `SetEnabled`, the
+  multi-instance refresh-lag behavior, `RequireB2BEnabled`'s pass/block
+  paths, and the admin route's own checker-only gate.
+
+T10 may begin.
 
 ---
 

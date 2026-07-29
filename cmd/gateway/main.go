@@ -156,6 +156,10 @@ func main() {
 	if err != nil {
 		log.Error("failed to start merchant data retention worker", "error", err)
 	}
+	// Plan 57 T9: periodic gauge refresh for idempotency stuck-lease and
+	// webhook backlog visibility (seev_merchant_idempotency_*,
+	// seev_merchant_webhook_*) — see internal/merchant/metrics.go.
+	stopMerchantObservability := merchantModule.StartObservabilityRefresher(ctx, merchant.DefaultObservabilityRefreshInterval, log)
 
 	// ─── Payout module (docs/roadmap/archive/23 Task T3/T5, decision K-T3/K-T6) ──────────
 	// StartWorkers launches the resume/polling job (Task T3
@@ -238,6 +242,8 @@ func main() {
 			log.Info("cleanup: stopping merchant data retention worker")
 			stopMerchantRetention()
 		}
+		log.Info("cleanup: stopping merchant observability refresher")
+		stopMerchantObservability()
 
 		log.Info("cleanup: closing ledger grpc connection")
 		if err := ledgerConn.Close(); err != nil {

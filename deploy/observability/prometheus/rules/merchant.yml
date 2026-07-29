@@ -1,0 +1,81 @@
+# docs/roadmap/active/57-c1-merchant-b2b-api.md T9 — alerts on
+# internal/merchant's own metrics (internal/merchant/metrics.go,
+# internal/merchant/webhook/metrics.go). Every expression below reads only
+# the fixed, low-cardinality label set those files expose — state, status,
+# result — never a tenant id, delivery id, endpoint id, or idempotency
+# key (T9 acceptance: "dashboards avoid tenant-level metric cardinality").
+groups:
+- name: merchant-b2b
+  interval: 30s
+  rules:
+  - alert: SeevMerchantIdempotencyStuckLeases
+    # A record still 'processing' with an expired lease means its
+    # original claimant crashed mid-request and nobody has taken over yet
+    # (TakeoverExpiredLease exists to recover this automatically on the
+    # NEXT request for the same idempotency key — this alert fires when
+    # that hasn't happened because no retry has come in).
+    expr: seev_merchant_idempotency_stuck_leases > 0
+    for: 15m
+    labels:
+      severity: warning
+      service: merchant
+    annotations:
+      summary: "{{ $value }} merchant idempotency record(s) have been stuck in 'processing' with an expired lease for over 15 minutes"
+      runbook: docs/runbooks/merchant-idempotency-stuck.md
+
+  - alert: SeevMerchantWebhookBacklogStale
+    # T7's own retry schedule caps backoff at 15 minutes (900s) — a
+    # pending/failed delivery still older than that means either the
+    # relay worker itself has stopped polling, or every attempt so far
+    # has failed and the delivery is approaching (or has reached)
+    # maxDeliveryAttempts.
+    expr: seev_merchant_webhook_backlog_oldest_age_seconds > 900
+    for: 5m
+    labels:
+      severity: warning
+      service: merchant
+    annotations:
+      summary: "the oldest pending/failed merchant webhook delivery is {{ $value }}s old — beyond the relay's own 15-minute backoff cap"
+      runbook: docs/runbooks/merchant-webhook-backlog.md
+
+  - alert: SeevMerchantWebhookDeliveriesDeadLettering
+    # A delivery only reaches 'dead' after exhausting T7's own
+    # maxDeliveryAttempts (15) or an explicit 410 from the receiver —
+    # this is not self-healing and needs an operator to investigate the
+    # endpoint and possibly replay, same posture as the privacy saga's
+    # own SeevPrivacyClosureDead alert.
+    expr: increase(seev_merchant_webhook_delivery_attempts_total{result="dead"}[1h]) > 0
+    for: 1m
+    labels:
+      severity: critical
+      service: merchant
+    annotations:
+      summary: "a merchant webhook delivery has been dead-lettered and needs operator review/replay"
+      runbook: docs/runbooks/merchant-webhook-backlog.md
+
+  - alert: SeevMerchantWebhookDeliveryFailuresHigh
+    # Repeated failures (before reaching dead) point at a broader problem
+    # — a receiver-side outage, a misconfigured endpoint, or (in the
+    # extreme) an SSRF-guard rejection loop — worth surfacing earlier
+    # than the eventual dead-letter alert above.
+    expr: increase(seev_merchant_webhook_delivery_attempts_total{result="failed"}[1h]) > 20
+    for: 15m
+    labels:
+      severity: warning
+      service: merchant
+    annotations:
+      summary: "merchant webhook delivery attempts are failing repeatedly ({{ $value }} in the last hour)"
+      runbook: docs/runbooks/merchant-webhook-backlog.md
+
+  - alert: SeevMerchantB2BAPIDisabled
+    # The global kill switch (T9's own "global route-disable control") is
+    # meant to be a short-lived incident response, not a standing state —
+    # this pages so a disabled surface is never silently forgotten.
+    expr: seev_merchant_b2b_api_enabled == 0
+    for: 5m
+    labels:
+      severity: warning
+      service: merchant
+    annotations:
+      summary: "the merchant B2B API global kill switch is DISABLED — confirm this is intentional and time-bounded"
+      runbook: docs/runbooks/merchant-tenant-suspension.md

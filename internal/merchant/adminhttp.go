@@ -70,6 +70,9 @@ func (m *Module) AdminRouter() http.Handler {
 	mux.HandleFunc("GET /admin/gateway/tenants/{id}/deliveries", m.adminListDeliveries)
 	mux.HandleFunc("POST /admin/gateway/tenants/{id}/deliveries/{deliveryID}/replay", m.adminReplayDelivery)
 
+	mux.HandleFunc("GET /admin/gateway/global/b2b-api", m.adminGetGlobalFlag)
+	mux.HandleFunc("PUT /admin/gateway/global/b2b-api", m.adminSetGlobalFlag)
+
 	return mux
 }
 
@@ -755,4 +758,41 @@ func (m *Module) adminReplayDelivery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	response.Created(w, replay)
+}
+
+// ─── Global route-disable control (T9) — an incident-response kill switch
+// for the ENTIRE merchant B2B API surface, independent of any single
+// tenant's own suspension. See internal/merchant/auth.GlobalFlag's own
+// doc comment for the enforcement side.
+
+func (m *Module) adminGetGlobalFlag(w http.ResponseWriter, r *http.Request) {
+	if !isAdmin(r) {
+		response.Forbidden(w, "admin privileges required")
+		return
+	}
+	response.OK(w, map[string]any{"b2b_api_enabled": m.GlobalFlag.Enabled()})
+}
+
+type setGlobalFlagRequest struct {
+	Enabled bool `json:"enabled"`
+}
+
+// adminSetGlobalFlag requires the checker role — disabling (or
+// re-enabling) the entire merchant B2B API for every tenant at once is
+// the single highest-blast-radius action this router exposes, more so
+// than any single tenant's own closure.
+func (m *Module) adminSetGlobalFlag(w http.ResponseWriter, r *http.Request) {
+	if !isAdminChecker(r) {
+		response.Forbidden(w, "checker privileges required")
+		return
+	}
+	var req setGlobalFlagRequest
+	if !response.Decode(w, r, &req) {
+		return
+	}
+	if err := m.GlobalFlag.SetEnabled(r.Context(), req.Enabled, actorFromClaims(r)); err != nil {
+		response.InternalServerError(w, err)
+		return
+	}
+	response.OK(w, map[string]any{"b2b_api_enabled": req.Enabled})
 }
