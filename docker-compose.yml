@@ -746,6 +746,15 @@ services:
       TLS_CERT_DIR: /certs
       JWT_SECRET: ${JWT_SECRET:-change-me-to-a-random-32-plus-character-secret}
       JWT_ISSUER: ${JWT_ISSUER:-seev}
+      # Plan 57 T7/T8: webhook endpoint secrets are sealed under
+      # cryptox_key_v1 (no lookup key needed — gateway only ever
+      # seals/opens, never looks up by equality); MERCHANT_API_KEY_PEPPER
+      # is the separate HMAC pepper for API-key digests (T3 §8.2).
+      CRYPTOX_KEY_V1_FILE: /run/secrets/cryptox_key_v1
+      MERCHANT_API_KEY_PEPPER_FILE: /run/secrets/merchant_api_key_pepper
+    secrets:
+      - cryptox_key_v1
+      - merchant_api_key_pepper
     volumes: *cert-volume
     ports:
       - "127.0.0.1:8080:8080"
@@ -1021,6 +1030,14 @@ secrets:
     file: ./deploy/cryptox/secrets/export_kek_v1
   closure_kek_v1:
     file: ./deploy/cryptox/secrets/closure_kek_v1
+  # Plan 57 T3: merchant API-key HMAC-SHA-256 digest pepper (T3 §8.2) — a
+  # SEPARATE key namespace from cryptox_key_v1 (K2's own
+  # separate-key-material principle, same reasoning as
+  # ledger_idempotency_key_v1 above): this is an HMAC pepper, not an AES
+  # KEK, and gateway's own webhook endpoint secrets (T7) are sealed under
+  # cryptox_key_v1 instead.
+  merchant_api_key_pepper:
+    file: ./deploy/cryptox/secrets/merchant_api_key_pepper
 
 volumes:
   seev_postgres_data:

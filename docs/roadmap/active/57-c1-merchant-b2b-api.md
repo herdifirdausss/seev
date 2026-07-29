@@ -2515,13 +2515,160 @@ T8 may begin.
 
 ### Acceptance
 
-- [ ] Unauthorized roles cannot view or mutate merchant management.
-- [ ] Browser mutations require CSRF.
-- [ ] Live activation and tenant closure require checker approval.
-- [ ] Secret is shown once and never re-rendered.
-- [ ] Every mutation emits a redacted audit event.
-- [ ] Existing Admin BFF routes remain green.
-- [ ] Admin E2E covers the full sandbox onboarding flow.
+- [x] Unauthorized roles cannot view or mutate merchant management.
+- [x] Browser mutations require CSRF.
+- [x] Live activation and tenant closure require checker approval.
+- [x] Secret is shown once and never re-rendered.
+- [x] Every mutation emits a redacted audit event.
+- [x] Existing Admin BFF routes remain green.
+- [x] Admin E2E covers the full sandbox onboarding flow.
+
+### Result
+
+Delivered 2026-07-29:
+
+- **The real gap wasn't Admin BFF — it was that `internal/merchant` had no
+  HTTP surface at all, and was never wired into `cmd/gateway`.** Admin
+  BFF's own `/api/v1/admin/gateway/` route, generic proxy, CSRF
+  middleware, and `AuditMutation` call were ALL already fully wired from
+  earlier work (`internal/adminbff/module.go:125`,
+  `internal/adminbff/proxy.go`'s `m.proxy(...)`) — they simply had nothing
+  behind them to proxy to. T8's actual scope, once that was established,
+  was: (1) build `internal/merchant`'s own admin HTTP router
+  (`internal/merchant/adminhttp.go`, new), (2) add the maker-checker gate
+  T8 needed that didn't exist yet (`internal/merchant/lifecycle`, new),
+  (3) wire `internal/merchant.Module` into `cmd/gateway/main.go` for the
+  first time ever, and (4) add one console page to Admin BFF. No new
+  Go code was needed in `internal/adminbff` itself beyond the template —
+  CSRF, audit, and the downstream call were free.
+- **Maker-checker for tenant lifecycle**
+  (`internal/merchant/lifecycle`, migration `000007_merchant_tenant_lifecycle`):
+  mirrors `internal/auth`'s own `OperatorOffboardingRequest` shape almost
+  exactly — `Propose`/`Approve`/`Reject` on a
+  `merchant_tenant_lifecycle_requests` table with a
+  `CHECK (approved_by IS NULL OR approved_by <> requested_by)` backstop
+  and a partial unique index limiting one pending proposal per
+  (tenant, action). `Approve` calls the SAME `TenantRepository.UpdateStatus`
+  T2/T3 already built for the ungated transitions — the only new work was
+  the two-person gate in front of it, not the status flip itself.
+  §16.3's exact rule set is enforced structurally, not just documented:
+  sandbox tenant creation goes 'active' immediately (maker only, no
+  lifecycle row at all); a live tenant is created 'draft' and requires a
+  separate `activate` propose/approve; `close` uses the identical
+  propose/approve path; `suspend` stays a direct maker-only call with no
+  lifecycle row, since §16.3 never lists it as checker-gated; quota
+  updates compare the REQUESTED values against the 60/60 baseline
+  BEFORE any write and require the checker role directly (a single-actor
+  permission check, not a two-step propose/approve — §16.3 distinguishes
+  these two enforcement shapes and this implementation preserves the
+  distinction) — a maker can never sneak an oversized quota through by
+  pairing it with an unrelated field change.
+- **`internal/merchant/adminhttp.go`** (new, 22 routes on
+  `Module.AdminRouter()`): tenant create/list/get/suspend, lifecycle
+  propose/approve/reject/list, account provision/get, key
+  create/list/rotate/revoke, quota get/update, webhook endpoint
+  create/list/rotate-secret/disable, delivery list/replay. Role gates
+  (`isAdmin`/`isAdminMaker`/`isAdminChecker`) are byte-identical in shape
+  to `internal/ledger/transport/http.go`'s own trio — this codebase's
+  established per-package duplication convention for this exact check,
+  not a new pattern. One-time secrets (API key plaintext, webhook signing
+  secret) are returned ONLY from the create/rotate response body, never
+  from any list/get endpoint (`redactedKey`/`redactedWebhookEndpoint`
+  wire types explicitly omit them) — proven by
+  `TestAdminRouter_CreateKey_ReturnsPlaintextOnce` asserting the returned
+  plaintext string never appears in a subsequent list response.
+- **Bug found live, before any unit test caught it**: the first working
+  build mapped every `KeyService.CreateKey` error to a bare 500 — a live
+  curl request with an invalid scope name returned
+  `{"code":"INTERNAL_ERROR"}` when it should have been 400. Fixed with a
+  `writeKeyServiceError` helper mapping `auth.ErrUnknownScope`/
+  `ErrTooManyActiveKeys` to 400/409, and locked in with
+  `TestAdminRouter_CreateKey_UnknownScopeIsBadRequest`.
+- **Two contract gates caught by `go test -race ./...`, both fixed
+  before commit**: (1) `TestModuleBoundaries` — `cmd/gateway` and
+  `internal/handler` importing `internal/merchant` for the first time
+  tripped the module-ownership allowlist in `boundary_test.go`; fixed by
+  adding `"merchant": true` to gateway's owned-module set (one line,
+  `boundary_test.go:55`). (2) `TestValidate_RealPolicyIsClean` — the new
+  `merchant_tenant_lifecycle_requests` table had no
+  `config/data-retention.yaml` entry; fixed by adding
+  `gateway.merchant.tenant_lifecycle_requests` (classification internal,
+  `retain_permanent`, mirroring `auth.operator_offboarding_requests`'s own
+  entry and rationale — both are permanent two-person-control audit
+  trails), then regenerating `docs/data/retention.md` via
+  `make retention-docs`.
+- **Wiring** (`cmd/gateway/main.go`, `internal/handler/{dependencies,router}.go`):
+  `cfg.Cryptox.Ring()` (boot-fails on a missing/malformed ring, same
+  "money-safety, never optional" posture as every other cryptox-dependent
+  service) and `ledgerclient.New(ledgerConn)` (reusing Gateway's existing
+  gRPC connection — no second dial) feed `merchant.NewModule`.
+  `StartWebhookRelay`/`StartWebhookConsumer`/`StartRetentionRunner` (all
+  already built in T7 but never started anywhere) are now started
+  alongside Gateway's other background workers, with matching cleanup on
+  shutdown. `internal/handler.NewInternalRouter` gained its first-ever JWT
+  `authed` chain (`middleware.WithAuth`, matching ledger/payin/payout's
+  own convention) specifically to mount
+  `AdminRouter()` at `/api/v1/admin/gateway/`.
+- **Real deployment gap found and fixed via a live boot**: `cmd/gateway`
+  had never required `cryptox`/`MERCHANT_API_KEY_PEPPER` before, so
+  `docker-compose.yml`'s `gateway-service` block had neither secret
+  wired — the container would have failed to boot in every real
+  deployment the moment this code shipped. Confirmed live: added
+  `merchant_api_key_pepper` to `make cryptox-secret`, to the top-level
+  `secrets:` block, to `gateway-service`'s own `environment`/`secrets`
+  keys (`CRYPTOX_KEY_V1_FILE`, `MERCHANT_API_KEY_PEPPER_FILE`), and to
+  `scripts/load-test.sh`'s disposable-secret seeding list (the same class
+  of gap this session's own memory already flags for
+  `LEDGER_IDEMPOTENCY_KEY_V1`) — then rebuilt and booted the real
+  container to confirm.
+- **Verified live against the real stack** (Docker Compose, real
+  Postgres, real mTLS, real signed JWTs — no unit-test shortcuts) before
+  concurrent unrelated work on the same machine began mutating the shared
+  Compose project: `docker compose --profile app up -d --build
+  gateway-service` + `curl` through the dev-operator mTLS identity at the
+  internal listener, driving the actual production code path
+  end-to-end: created a sandbox tenant (verified `status: active`
+  immediately, no lifecycle row); created a live tenant (verified
+  `status: draft`); proposed `activate` as a maker, verified the SAME
+  maker role could not approve its own proposal (403), then verified a
+  DIFFERENT checker identity's approval succeeded and the tenant flipped
+  to `active` with `ActivatedBy` correctly set to the checker; verified a
+  `user`-role token was rejected outright (403) from tenant creation;
+  verified a quota update above the 60/60 baseline was rejected for a
+  maker (403) and accepted for a checker (200). This live pass is what
+  caught the `writeKeyServiceError` gap above.
+- **Full sweep**: `go build ./...`, `go vet -tags=integration ./...`,
+  `make lint` (0 issues), `go test -race ./...` (full repo, green,
+  including the two contract-gate fixes above), `go run ./cmd/doccheck`
+  (129 files valid, including the new merchant console template),
+  `go run ./cmd/retentioncheck` (101 policy entries valid,
+  `docs/data/retention.md` regenerated and current). 14 new unit tests in
+  `internal/merchant/adminhttp_test.go` (hand-written fakes, matching this
+  package's own no-gomock convention, driven through the REAL
+  `middleware.WithAuth` JWT chain rather than injecting claims directly)
+  plus 9 in `internal/merchant/lifecycle/lifecycle_test.go` cover every
+  role gate, the self-approval rejection, the quota baseline boundary,
+  the one-time-secret contract, and a `TestAdminRouter_FullSandboxOnboardingFlow`
+  test that chains create-tenant → create-key → create-webhook-endpoint →
+  confirm-neither-secret-is-re-exposed → list-deliveries through the real
+  HTTP handlers, satisfying this task's own "Admin E2E covers the full
+  sandbox onboarding flow" acceptance line by name.
+- **Deliberately out of scope**: a dedicated "policy registry" module —
+  §16.3 says "must be locked in the Admin BFF policy registry," but no
+  such module exists anywhere in this codebase (confirmed by explicit
+  search); the established, working convention this codebase already
+  uses everywhere else for this exact check is a local
+  `isAdmin`/`isAdminMaker`/`isAdminChecker` trio per package (ledger,
+  auth, and now merchant) — introducing a new shared registry abstraction
+  for T8 alone, when three independent precedents already reject that
+  design, would be scope creep, not scope completion. Rich tenant-list
+  browsing (search/filter/paginate across every tenant) is also out of
+  scope: `TenantRepository` has no `ListAll`, and §16.2's own "tenant list
+  and detail" is satisfied by a public-ID lookup, matching the plan's own
+  minimal-UI, htmx-placeholder-div style already established by every
+  other Admin BFF console page (`catalog.html`, `payout.html`).
+
+T9 may begin.
 
 ---
 

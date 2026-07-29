@@ -104,6 +104,7 @@ func (m *Module) AdminRouter() http.Handler {
 	mux.Handle("GET /api/v1/admin/payout", m.consolePage("payout"))
 	mux.Handle("GET /api/v1/admin/recon", m.consolePage("recon"))
 	mux.Handle("GET /api/v1/admin/catalog", m.consolePage("catalog"))
+	mux.Handle("GET /api/v1/admin/merchant", m.consolePage("merchant"))
 	mux.HandleFunc("GET /api/v1/admin/audit", m.auditListHandler)
 	mux.Handle("/api/v1/admin/adjustments/", m.proxy("ledger", m.clients.Ledger, "/api/v1/admin/adjustments/", "/api/v1/ledger/admin/adjustments/"))
 	mux.Handle("/api/v1/admin/adjustments", m.proxy("ledger", m.clients.Ledger, "/api/v1/admin/adjustments", "/api/v1/ledger/admin/adjustments"))

@@ -16,11 +16,13 @@ import (
 	payoutv1 "github.com/herdifirdausss/seev/gen/payout/v1"
 	"github.com/herdifirdausss/seev/internal/config"
 	"github.com/herdifirdausss/seev/internal/handler"
+	"github.com/herdifirdausss/seev/internal/merchant"
 	"github.com/herdifirdausss/seev/internal/notify"
 	"github.com/herdifirdausss/seev/internal/server"
 	"github.com/herdifirdausss/seev/pkg/cache"
 	"github.com/herdifirdausss/seev/pkg/database"
 	"github.com/herdifirdausss/seev/pkg/grpcx"
+	"github.com/herdifirdausss/seev/pkg/ledgerclient"
 	"github.com/herdifirdausss/seev/pkg/logger"
 	"github.com/herdifirdausss/seev/pkg/messaging"
 	"github.com/herdifirdausss/seev/pkg/tlsx"
@@ -133,6 +135,28 @@ func main() {
 		os.Exit(1)
 	}
 
+	// ─── Merchant/B2B module (Plan 57) ─────────────────────────────────────────
+	// cryptox is required unconditionally — webhook endpoint secrets (T7)
+	// have no plaintext fallback, same "money-safety, never optional"
+	// posture every other cryptox-dependent service in this repo already
+	// enforces at boot. ledgerConn is reused directly (no second dial) for
+	// account provisioning (T8's admin surface).
+	cryptoxRing, err := cfg.Cryptox.Ring()
+	if err != nil {
+		log.Error("failed to build cryptox ring", "error", err)
+		os.Exit(1)
+	}
+	merchantModule := merchant.NewModule(db, cryptoxRing, cfg.Merchant.APIKeyPepper, ledgerclient.New(ledgerConn))
+	stopWebhookRelay := merchantModule.StartWebhookRelay(ctx, merchant.DefaultWebhookRelayInterval)
+	stopWebhookConsumer, err := merchantModule.StartWebhookConsumer(ctx, mq, log)
+	if err != nil {
+		log.Error("failed to start merchant webhook consumer", "error", err)
+	}
+	stopMerchantRetention, err := merchantModule.StartRetentionRunner(redisClientOrNil(redisCache), log)
+	if err != nil {
+		log.Error("failed to start merchant data retention worker", "error", err)
+	}
+
 	// ─── Payout module (docs/roadmap/archive/23 Task T3/T5, decision K-T3/K-T6) ──────────
 	// StartWorkers launches the resume/polling job (Task T3
 	// step 3) that re-drives crashed/stalled requests.
@@ -167,6 +191,7 @@ func main() {
 		Payin:       payinv1.NewPayinServiceClient(payinConn),
 		Payout:      payoutv1.NewPayoutServiceClient(payoutConn),
 		Notify:      notifyModule,
+		Merchant:    merchantModule,
 	}
 
 	// ─── Routers ──────────────────────────────────────────────────────────────
@@ -201,6 +226,17 @@ func main() {
 		if stopRetention != nil {
 			log.Info("cleanup: stopping data retention worker")
 			stopRetention()
+		}
+
+		log.Info("cleanup: stopping merchant webhook relay")
+		stopWebhookRelay()
+		if stopWebhookConsumer != nil {
+			log.Info("cleanup: stopping merchant webhook consumer")
+			stopWebhookConsumer()
+		}
+		if stopMerchantRetention != nil {
+			log.Info("cleanup: stopping merchant data retention worker")
+			stopMerchantRetention()
 		}
 
 		log.Info("cleanup: closing ledger grpc connection")

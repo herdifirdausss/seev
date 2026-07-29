@@ -164,6 +164,25 @@ type WebhookDelivery struct {
 	UpdatedAt          time.Time
 }
 
+// TenantLifecycleRequest is a maker-checker record gating a sensitive
+// tenant status transition (Plan 57 T8 §16.3: "live-mode activation:
+// checker", "tenant closure: checker") — mirrors
+// internal/auth.OperatorOffboardingRequest's own shape, generalized to
+// two Action kinds instead of one hardcoded operation. RequestedBy/
+// ApprovedBy are OPERATOR identities (admin email or user id), never the
+// tenant's own data.
+type TenantLifecycleRequest struct {
+	ID          uuid.UUID
+	TenantID    uuid.UUID
+	Action      string // "activate" | "close"
+	RequestedBy string
+	ApprovedBy  string
+	Reason      string
+	Status      string // "pending" | "approved" | "rejected"
+	CreatedAt   time.Time
+	DecidedAt   *time.Time
+}
+
 // WebhookAttempt is one append-only attempt record (§11.10). Do not
 // persist a sensitive response body — ResponseExcerpt must already be
 // truncated/sanitized by the caller before Insert.

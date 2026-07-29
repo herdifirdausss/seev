@@ -79,7 +79,7 @@ preflight() {
   fi
   umask 077
   mkdir -p "$SECRET_DIR"
-  for secret in seev_backup_password pgbackrest_repo_passphrase cryptox_key_v1 cryptox_lookup_key ledger_idempotency_key_v1 export_kek_v1 closure_kek_v1; do
+  for secret in seev_backup_password pgbackrest_repo_passphrase cryptox_key_v1 cryptox_lookup_key ledger_idempotency_key_v1 export_kek_v1 closure_kek_v1 merchant_api_key_pepper; do
     if [[ ! -s "$SECRET_DIR/$secret" ]]; then
       case "$secret" in
         cryptox_key_v1) value=4444444444444444444444444444444444444444444444444444444444444444 ;;

@@ -138,6 +138,26 @@ type WebhookRepository interface {
 	RecordAttempt(ctx context.Context, a model.WebhookAttempt) error
 }
 
+// LifecycleRepository persists merchant_tenant_lifecycle_requests (Plan 57
+// T8's maker-checker gate on live-mode activation and tenant closure).
+type LifecycleRepository interface {
+	// Create is the "maker" half's own insert — ON CONFLICT DO NOTHING
+	// against the partial unique index on (tenant_id, action) WHERE
+	// status = 'pending', so a duplicate propose for the same pending
+	// action is idempotent rather than an error: created=false means an
+	// existing pending request for this (tenant, action) was returned
+	// instead.
+	Create(ctx context.Context, req model.TenantLifecycleRequest) (created bool, existing model.TenantLifecycleRequest, err error)
+	GetByID(ctx context.Context, id uuid.UUID) (model.TenantLifecycleRequest, error)
+	GetPending(ctx context.Context, tenantID uuid.UUID, action string) (model.TenantLifecycleRequest, bool, error)
+	List(ctx context.Context, tenantID uuid.UUID, status string, limit int) ([]model.TenantLifecycleRequest, error)
+	// Decide atomically transitions a pending request to approved/rejected
+	// — matched=false means it was no longer 'pending' (already decided by
+	// a concurrent call), the same compare-and-swap shape as
+	// IdempotencyRepository.TakeoverExpiredLease.
+	Decide(ctx context.Context, id uuid.UUID, status, approvedBy string) (matched bool, err error)
+}
+
 // NewTenantRepository panics on a nil db — every repository in this
 // package requires a real, non-nil connection at construction (matches
 // this repository's own established A8 T2.5b convention: construct now,
@@ -182,4 +202,11 @@ func NewWebhookRepository(db database.DatabaseSQL) WebhookRepository {
 		panic("merchant: NewWebhookRepository requires a non-nil database")
 	}
 	return &webhookRepository{db: db}
+}
+
+func NewLifecycleRepository(db database.DatabaseSQL) LifecycleRepository {
+	if db == nil {
+		panic("merchant: NewLifecycleRepository requires a non-nil database")
+	}
+	return &lifecycleRepository{db: db}
 }
