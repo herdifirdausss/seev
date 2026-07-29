@@ -47,38 +47,65 @@ services:
 
   ledger-service:
     profiles: [load]
-    environment: {POSTGRES_DB: seev_load_ledger}
+    environment:
+      POSTGRES_DB: seev_load_ledger
+      RATE_LIMIT_REQUESTS: ${SEEV_LOAD_RATE_LIMIT_REQUESTS:-5000}
+      RATE_LIMIT_PER: ${SEEV_LOAD_RATE_LIMIT_PER:-1m}
+      RATE_LIMIT_BURST: ${SEEV_LOAD_RATE_LIMIT_BURST:-5000}
     mem_limit: 512m
     deploy: {resources: {limits: {memory: 512M}}}
   auth-service:
     profiles: [load]
-    environment: {POSTGRES_DB: seev_load_auth}
+    environment:
+      POSTGRES_DB: seev_load_auth
+      RATE_LIMIT_REQUESTS: ${SEEV_LOAD_RATE_LIMIT_REQUESTS:-5000}
+      RATE_LIMIT_PER: ${SEEV_LOAD_RATE_LIMIT_PER:-1m}
+      RATE_LIMIT_BURST: ${SEEV_LOAD_RATE_LIMIT_BURST:-5000}
     mem_limit: 384m
     deploy: {resources: {limits: {memory: 384M}}}
   payin-service:
     profiles: [load]
-    environment: {POSTGRES_DB: seev_load_payin}
+    environment:
+      POSTGRES_DB: seev_load_payin
+      RATE_LIMIT_REQUESTS: ${SEEV_LOAD_RATE_LIMIT_REQUESTS:-5000}
+      RATE_LIMIT_PER: ${SEEV_LOAD_RATE_LIMIT_PER:-1m}
+      RATE_LIMIT_BURST: ${SEEV_LOAD_RATE_LIMIT_BURST:-5000}
     mem_limit: 256m
     deploy: {resources: {limits: {memory: 256M}}}
   payout-service:
     profiles: [load]
-    environment: {POSTGRES_DB: seev_load_payout}
+    environment:
+      POSTGRES_DB: seev_load_payout
+      RATE_LIMIT_REQUESTS: ${SEEV_LOAD_RATE_LIMIT_REQUESTS:-5000}
+      RATE_LIMIT_PER: ${SEEV_LOAD_RATE_LIMIT_PER:-1m}
+      RATE_LIMIT_BURST: ${SEEV_LOAD_RATE_LIMIT_BURST:-5000}
     mem_limit: 256m
     deploy: {resources: {limits: {memory: 256M}}}
   fraud-service:
     profiles: [load]
-    environment: {POSTGRES_DB: seev_load_fraud}
+    environment:
+      POSTGRES_DB: seev_load_fraud
+      RATE_LIMIT_REQUESTS: ${SEEV_LOAD_RATE_LIMIT_REQUESTS:-5000}
+      RATE_LIMIT_PER: ${SEEV_LOAD_RATE_LIMIT_PER:-1m}
+      RATE_LIMIT_BURST: ${SEEV_LOAD_RATE_LIMIT_BURST:-5000}
     mem_limit: 256m
     deploy: {resources: {limits: {memory: 256M}}}
   gateway-service:
     profiles: [load]
-    environment: {POSTGRES_DB: seev_load_gateway}
+    environment:
+      POSTGRES_DB: seev_load_gateway
+      RATE_LIMIT_REQUESTS: ${SEEV_LOAD_RATE_LIMIT_REQUESTS:-5000}
+      RATE_LIMIT_PER: ${SEEV_LOAD_RATE_LIMIT_PER:-1m}
+      RATE_LIMIT_BURST: ${SEEV_LOAD_RATE_LIMIT_BURST:-5000}
     mem_limit: 256m
     deploy: {resources: {limits: {memory: 256M}}}
   vendor-service:
     profiles: [load]
     environment:
       POSTGRES_DB: seev_load_vendor
+      RATE_LIMIT_REQUESTS: ${SEEV_LOAD_RATE_LIMIT_REQUESTS:-5000}
+      RATE_LIMIT_PER: ${SEEV_LOAD_RATE_LIMIT_PER:-1m}
+      RATE_LIMIT_BURST: ${SEEV_LOAD_RATE_LIMIT_BURST:-5000}
       VENDOR_MOCKVENDOR_ENABLED: "true"
       VENDOR_MOCKVENDOR_SECRET: ${VENDOR_MOCKVENDOR_SECRET:-synthetic-vendor-secret}
       VENDOR_CALLBACK_CIDRS: 172.16.0.0/12
@@ -102,8 +129,11 @@ services:
     command: ["run", "/scripts/${SEEV_LOAD_SCENARIO:-smoke.js}"]
     environment:
       LOAD_BASE_URL: http://gateway-service:8080
-      LOAD_VENDOR_BASE_URL: http://vendor-service:8098
+      LOAD_AUTH_BASE_URL: http://auth-service:8082
+      LOAD_VENDOR_BASE_URL: https://vendor-service:8098
       LOAD_VENDOR_SECRET: ${VENDOR_MOCKVENDOR_SECRET:-synthetic-vendor-secret}
+      LOAD_TLS_CERT_FILE: /certs/dev-operator.pem
+      LOAD_TLS_KEY_FILE: /certs/dev-operator-key.pem
       LOAD_PROFILE: ${SEEV_LOAD_PROFILE:-local-small}
       LOAD_RUN_ID: ${SEEV_LOAD_RUN_ID:-unbound}
       LOAD_WORKLOAD: ${SEEV_LOAD_WORKLOAD:-bootstrap}
@@ -117,6 +147,7 @@ services:
       LOAD_SUMMARY_FILE: /results/summary.json
     volumes:
       - ./tests/load:/scripts:ro
+      - ./deploy/certs:/certs:ro
       - ./${SEEV_LOAD_ARTIFACT_ROOT:-artifacts/load/unbound}:/results:rw
     mem_limit: 240m
     deploy: {resources: {limits: {memory: 240M}}}

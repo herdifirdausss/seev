@@ -10,3 +10,7 @@ hashes.
 Start with the [archived B0 protocol](../roadmap/archive/53-b0-load-capacity-gate.md),
 the [baseline inventory](baseline/b0-inventory.yaml), and the
 [capacity model](capacity-model.md).
+
+The current preliminary evidence is [2026-07 baseline](reports/2026-07-baseline.md).
+It records four short disposable runs and explicitly does not claim canonical
+MSSL or production capacity.

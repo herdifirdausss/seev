@@ -1,13 +1,16 @@
 import http from 'k6/http';
 import { check } from 'k6';
 import crypto from 'k6/crypto';
+import { Counter } from 'k6/metrics';
 
 export const baseURL = __ENV.LOAD_BASE_URL || 'http://127.0.0.1:8080';
+export const authBaseURL = __ENV.LOAD_AUTH_BASE_URL || baseURL;
 export const vendorBaseURL = __ENV.LOAD_VENDOR_BASE_URL || baseURL;
 export const token = __ENV.LOAD_TOKEN || '';
+export const unexpectedFailures = new Counter('unexpected_failures');
 
 export function stableKey(prefix) {
-  return `${prefix}-${__VU}-${__ITER}`;
+  return `${prefix}-workload-${__VU}-${__ITER}`;
 }
 
 export function headers(extra = {}) {
@@ -19,16 +22,27 @@ export function json(method, path, payload, extra = {}) {
   return http.request(method, `${baseURL}${path}`, body, { headers: headers(extra), tags: { workload: __ENV.LOAD_WORKLOAD || 'unknown', operation: path } });
 }
 
+export function authJson(method, path, payload, extra = {}) {
+  const body = JSON.stringify(payload);
+  return http.request(method, `${authBaseURL}${path}`, body, { headers: headers(extra), tags: { workload: __ENV.LOAD_WORKLOAD || 'unknown', operation: `auth:${path}` } });
+}
+
 export function semantic(response, name, statuses = [200, 201, 202]) {
   let decoded = null;
   try { decoded = response.json(); } catch (_) { /* status/content check below is authoritative for non-JSON errors */ }
   const allowed = __ENV.LOAD_ALLOW_EXPECTED_REJECTIONS === '1' ? statuses : statuses.filter((status) => status < 400);
+  unexpectedFailures.add(allowed.includes(response.status) ? 0 : 1);
   check(response, { [`${name}: expected status`]: (r) => allowed.includes(r.status), [`${name}: bounded response`]: (r) => r.body.length < 1024 * 1024 });
   return decoded;
 }
 
 export function iterationOptions(rate = Number(__ENV.LOAD_RATE || 1), duration = __ENV.LOAD_DURATION || '1m') {
-  return { scenarios: { workload: { executor: 'constant-arrival-rate', rate, timeUnit: '1s', duration, preAllocatedVUs: Math.max(1, Math.min(rate * 2, 128)), maxVUs: Number(__ENV.LOAD_MAX_VUS || 256), exec: 'default' } }, thresholds: { dropped_iterations: ['count==0'] } };
+  const options = { scenarios: { workload: { executor: 'constant-arrival-rate', rate, timeUnit: '1s', duration, preAllocatedVUs: Math.max(1, Math.min(rate * 2, 128)), maxVUs: Number(__ENV.LOAD_MAX_VUS || 256), exec: 'default' } }, summaryTrendStats: ['avg', 'min', 'med', 'max', 'p(95)', 'p(99)'], thresholds: { dropped_iterations: ['count==0'] } };
+  if (__ENV.LOAD_TLS_CERT_FILE && __ENV.LOAD_TLS_KEY_FILE) {
+    options.tlsAuth = [{ cert: open(__ENV.LOAD_TLS_CERT_FILE), key: open(__ENV.LOAD_TLS_KEY_FILE) }];
+    options.insecureSkipTLSVerify = true;
+  }
+  return options;
 }
 
 export function signature(secret, body) { return crypto.hmac('sha256', secret, body, 'hex'); }
@@ -37,7 +51,6 @@ export function handleSummary(data) {
   const duration = data.metrics.http_req_duration && data.metrics.http_req_duration.values || {};
   const iterations = data.metrics.iterations && data.metrics.iterations.values || {};
   const dropped = data.metrics.dropped_iterations && data.metrics.dropped_iterations.values || {};
-  const checks = data.metrics.checks && data.metrics.checks.values || {};
   const summary = {
     schema_version: 1,
     run_id: __ENV.LOAD_RUN_ID || 'unbound',
@@ -48,9 +61,9 @@ export function handleSummary(data) {
     offered_wu_per_second: Number(__ENV.LOAD_RATE || 0),
     achieved_wu_per_second: Number(iterations.rate || 0),
     dropped_iterations: Number(dropped.count || 0),
-    unexpected_failures: Number(checks.fails || 0),
+    unexpected_failures: Number((data.metrics.unexpected_failures && data.metrics.unexpected_failures.values.count) || 0),
     total_iterations: Number(iterations.count || 0),
-    percentiles_ms: { p50: Number(duration['p(50)'] || 0), p95: Number(duration['p(95)'] || 0), p99: Number(duration['p(99)'] || 0) },
+    percentiles_ms: { p50: Number(duration.med || duration['p(50)'] || 0), p95: Number(duration['p(95)'] || 0), p99: Number(duration['p(99)'] || 0) },
     drain_seconds: Number(__ENV.LOAD_DRAIN_SECONDS || 0),
     integrity_passed: false,
     gate_passed: false,
