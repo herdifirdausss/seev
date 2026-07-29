@@ -133,7 +133,13 @@ func TestResolveMerchantVendor_Live_NeverFallsBackToSandboxVendor(t *testing.T) 
 
 func TestCreateMerchantTopupIntent_MissingTenantID(t *testing.T) {
 	m := &Module{}
-	_, err := m.CreateMerchantTopupIntent(context.Background(), uuid.Nil, "sandbox", "IDR", decimal.NewFromInt(1000))
+	_, err := m.CreateMerchantTopupIntent(context.Background(), uuid.Nil, "sandbox", "IDR", decimal.NewFromInt(1000), "downstream-key")
+	assert.Error(t, err)
+}
+
+func TestCreateMerchantTopupIntent_MissingDownstreamKey(t *testing.T) {
+	m := &Module{}
+	_, err := m.CreateMerchantTopupIntent(context.Background(), uuid.New(), "sandbox", "IDR", decimal.NewFromInt(1000), "")
 	assert.Error(t, err)
 }
 
@@ -142,20 +148,50 @@ func TestCreateMerchantTopupIntent_Sandbox_InsertsPendingIntent(t *testing.T) {
 	repo := repository.NewMockRepository(ctrl)
 	tenantID := uuid.New()
 
-	repo.EXPECT().InsertTopupIntent(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, intent model.TopupIntent) error {
+	repo.EXPECT().InsertMerchantTopupIntent(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, intent model.TopupIntent) (model.TopupIntent, error) {
 		assert.Equal(t, tenantID, intent.MerchantTenantID)
 		assert.Equal(t, uuid.Nil, intent.UserID)
 		assert.Equal(t, sandboxVendor, intent.Vendor)
 		assert.Equal(t, model.TopupStatusPending, intent.Status)
-		return nil
+		assert.Equal(t, "downstream-key", intent.DownstreamKey)
+		return intent, nil
 	})
 
 	registry := vendorgw.NewRegistry()
 	registry.AddPayin(stubVerifier{name: sandboxVendor})
 	m := &Module{repo: repo, registry: registry, logger: discardLogger()}
 
-	intent, err := m.CreateMerchantTopupIntent(context.Background(), tenantID, "sandbox", "IDR", decimal.NewFromInt(50000))
+	intent, err := m.CreateMerchantTopupIntent(context.Background(), tenantID, "sandbox", "IDR", decimal.NewFromInt(50000), "downstream-key")
 	require.NoError(t, err)
 	assert.Equal(t, sandboxVendor, intent.Vendor)
 	assert.Equal(t, tenantID, intent.MerchantTenantID)
+}
+
+// TestCreateMerchantTopupIntent_DownstreamKeyConflict_ReturnsOriginal proves
+// a Gateway retry using the same downstreamKey (e.g. after a crash between
+// the owner call succeeding and Gateway's own idempotency record being
+// persisted) recovers the ORIGINAL intent rather than opening a second
+// vendor session for a duplicate row (docs/reference/c1-b2b-design.md §10.4).
+func TestCreateMerchantTopupIntent_DownstreamKeyConflict_ReturnsOriginal(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	repo := repository.NewMockRepository(ctrl)
+	tenantID := uuid.New()
+	originalID := uuid.New()
+
+	repo.EXPECT().InsertMerchantTopupIntent(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, intent model.TopupIntent) (model.TopupIntent, error) {
+		// Simulate another attempt already having won the race: the
+		// returned row's ID differs from the one this call tried to insert.
+		return model.TopupIntent{
+			ID: originalID, MerchantTenantID: tenantID, Vendor: sandboxVendor,
+			Status: model.TopupStatusPending, DownstreamKey: intent.DownstreamKey,
+		}, nil
+	})
+
+	registry := vendorgw.NewRegistry()
+	registry.AddPayin(stubVerifier{name: sandboxVendor})
+	m := &Module{repo: repo, registry: registry, logger: discardLogger()}
+
+	intent, err := m.CreateMerchantTopupIntent(context.Background(), tenantID, "sandbox", "IDR", decimal.NewFromInt(50000), "downstream-key")
+	require.NoError(t, err)
+	assert.Equal(t, originalID, intent.ID, "must return the pre-existing row, not the one this attempt tried to insert")
 }

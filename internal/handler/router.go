@@ -129,6 +129,17 @@ func NewRouter(cfg *config.Config, deps *Dependencies, logger *slog.Logger) http
 		apiMux.Handle("POST /notifications/{id}/read", authed(deps.Notify.MarkReadHandler()))
 	}
 
+	// Merchant/B2B API (Plan 57, roadmap track C1) — mounted UNAUTHENTICATED
+	// by this router's own `authed` (JWT) chain: B2B principals are machine
+	// API keys, never AuthService users (§3.2), so internal/merchant/api's
+	// own router applies T3's RequireMerchantAuth/RequireScope and T4's
+	// RequireQuota per route instead. Still runs inside the shared `global`
+	// chain below (request id, tracing, metrics, recovery, security
+	// headers, timeout) exactly like every other apiMux route.
+	if deps.B2B != nil {
+		apiMux.Handle("/b2b/", http.StripPrefix("/b2b", deps.B2B))
+	}
+
 	apiRoot.Handle("/api/v1/", http.StripPrefix("/api/v1", apiMux))
 
 	// Catch-all inside global

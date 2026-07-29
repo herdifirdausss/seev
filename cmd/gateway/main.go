@@ -12,11 +12,17 @@ import (
 	"github.com/redis/go-redis/v9"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 
+	"github.com/google/uuid"
+
 	payinv1 "github.com/herdifirdausss/seev/gen/payin/v1"
 	payoutv1 "github.com/herdifirdausss/seev/gen/payout/v1"
 	"github.com/herdifirdausss/seev/internal/config"
 	"github.com/herdifirdausss/seev/internal/handler"
 	"github.com/herdifirdausss/seev/internal/merchant"
+	merchantapi "github.com/herdifirdausss/seev/internal/merchant/api"
+	merchantclient "github.com/herdifirdausss/seev/internal/merchant/client"
+	"github.com/herdifirdausss/seev/internal/merchant/idempotency"
+	"github.com/herdifirdausss/seev/internal/merchant/quota"
 	"github.com/herdifirdausss/seev/internal/notify"
 	"github.com/herdifirdausss/seev/internal/server"
 	"github.com/herdifirdausss/seev/pkg/cache"
@@ -134,13 +140,19 @@ func main() {
 		log.Error("failed to connect to payout-service", "error", err)
 		os.Exit(1)
 	}
+	payinGRPCClient := payinv1.NewPayinServiceClient(payinConn)
+	payoutGRPCClient := payoutv1.NewPayoutServiceClient(payoutConn)
 
-	// ─── Merchant/B2B module (Plan 57) ─────────────────────────────────────────
+	// ─── Merchant/B2B module (Plan 57, roadmap track C1) ───────────────────────
 	// cryptox is required unconditionally — webhook endpoint secrets (T7)
 	// have no plaintext fallback, same "money-safety, never optional"
 	// posture every other cryptox-dependent service in this repo already
 	// enforces at boot. ledgerConn is reused directly (no second dial) for
-	// account provisioning (T8's admin surface).
+	// account provisioning (T8's admin surface). This is the first wiring
+	// of internal/merchant.Module into cmd/gateway — T2 through T7 built
+	// the module, auth/quota/idempotency middleware, owner-service RPCs,
+	// and the outbound webhook relay, but none of it was ever started here
+	// before now.
 	cryptoxRing, err := cfg.Cryptox.Ring()
 	if err != nil {
 		log.Error("failed to build cryptox ring", "error", err)
@@ -156,6 +168,31 @@ func main() {
 	if err != nil {
 		log.Error("failed to start merchant data retention worker", "error", err)
 	}
+
+	// ─── Merchant/B2B API HTTP surface (POST/GET /api/v1/b2b/payins, /payouts) ──
+	// idempotencyLeaseOwner is observability-only (see
+	// merchant.Module.StartRetentionRunner's identical instanceID
+	// construction) — TakeoverExpiredLease's own WHERE clause is what
+	// actually enforces exclusivity, not this value.
+	idempotencyLeaseOwner, hostErr := os.Hostname()
+	if hostErr != nil || idempotencyLeaseOwner == "" {
+		idempotencyLeaseOwner = uuid.NewString()
+	}
+	idempotencyTTL, err := time.ParseDuration(cfg.Merchant.IdempotencyDefaultTTL)
+	if err != nil {
+		log.Error("failed to parse MERCHANT_IDEMPOTENCY_DEFAULT_TTL", "error", err)
+		os.Exit(1)
+	}
+	b2bRouter := merchantapi.NewRouter(merchantapi.Deps{
+		APIKeys:       merchantModule.APIKeys,
+		Tenants:       merchantModule.Tenants,
+		APIKeyPepper:  cfg.Merchant.APIKeyPepper,
+		QuotaEnforcer: quota.NewEnforcer(merchantModule.Quotas, redisClientOrNil(redisCache)),
+		Idempotency:   idempotency.NewService(merchantModule.Idempotency, idempotencyTTL, idempotencyLeaseOwner),
+		Payin:         merchantclient.NewPayinClient(payinGRPCClient),
+		Payout:        merchantclient.NewPayoutClient(payoutGRPCClient),
+	})
+
 	// Plan 57 T9: periodic gauge refresh for idempotency stuck-lease and
 	// webhook backlog visibility (seev_merchant_idempotency_*,
 	// seev_merchant_webhook_*) — see internal/merchant/metrics.go.
@@ -192,10 +229,11 @@ func main() {
 		MQ:          mq,
 		LedgerProxy: ledgerProxy,
 		LedgerReady: ledgerReady(healthpb.NewHealthClient(ledgerConn)),
-		Payin:       payinv1.NewPayinServiceClient(payinConn),
-		Payout:      payoutv1.NewPayoutServiceClient(payoutConn),
+		Payin:       payinGRPCClient,
+		Payout:      payoutGRPCClient,
 		Notify:      notifyModule,
 		Merchant:    merchantModule,
+		B2B:         b2bRouter,
 	}
 
 	// ─── Routers ──────────────────────────────────────────────────────────────

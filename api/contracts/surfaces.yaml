@@ -1944,6 +1944,8 @@ rpc:
       - HandleVendorCallback
       - CreateTopupIntent
       - GetTopupIntent
+      - CreateMerchantTopupIntent
+      - GetMerchantTopupIntent
       - ListAssuranceRecords
       - GetIntakeControl
       - ApplyIntakeControl
@@ -1959,6 +1961,8 @@ rpc:
       - CreatePayout
       - HandleVendorCallback
       - GetPayout
+      - CreateMerchantPayout
+      - GetMerchantPayout
       - ListAssuranceRecords
       - GetIntakeControl
       - ApplyIntakeControl

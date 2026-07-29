@@ -19,13 +19,15 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	PayinService_HandleWebhook_FullMethodName        = "/seev.payin.v1.PayinService/HandleWebhook"
-	PayinService_HandleVendorCallback_FullMethodName = "/seev.payin.v1.PayinService/HandleVendorCallback"
-	PayinService_CreateTopupIntent_FullMethodName    = "/seev.payin.v1.PayinService/CreateTopupIntent"
-	PayinService_GetTopupIntent_FullMethodName       = "/seev.payin.v1.PayinService/GetTopupIntent"
-	PayinService_ListAssuranceRecords_FullMethodName = "/seev.payin.v1.PayinService/ListAssuranceRecords"
-	PayinService_GetIntakeControl_FullMethodName     = "/seev.payin.v1.PayinService/GetIntakeControl"
-	PayinService_ApplyIntakeControl_FullMethodName   = "/seev.payin.v1.PayinService/ApplyIntakeControl"
+	PayinService_HandleWebhook_FullMethodName             = "/seev.payin.v1.PayinService/HandleWebhook"
+	PayinService_HandleVendorCallback_FullMethodName      = "/seev.payin.v1.PayinService/HandleVendorCallback"
+	PayinService_CreateTopupIntent_FullMethodName         = "/seev.payin.v1.PayinService/CreateTopupIntent"
+	PayinService_GetTopupIntent_FullMethodName            = "/seev.payin.v1.PayinService/GetTopupIntent"
+	PayinService_CreateMerchantTopupIntent_FullMethodName = "/seev.payin.v1.PayinService/CreateMerchantTopupIntent"
+	PayinService_GetMerchantTopupIntent_FullMethodName    = "/seev.payin.v1.PayinService/GetMerchantTopupIntent"
+	PayinService_ListAssuranceRecords_FullMethodName      = "/seev.payin.v1.PayinService/ListAssuranceRecords"
+	PayinService_GetIntakeControl_FullMethodName          = "/seev.payin.v1.PayinService/GetIntakeControl"
+	PayinService_ApplyIntakeControl_FullMethodName        = "/seev.payin.v1.PayinService/ApplyIntakeControl"
 )
 
 // PayinServiceClient is the client API for PayinService service.
@@ -37,6 +39,12 @@ type PayinServiceClient interface {
 	HandleVendorCallback(ctx context.Context, in *HandleVendorCallbackRequest, opts ...grpc.CallOption) (*HandleVendorCallbackResponse, error)
 	CreateTopupIntent(ctx context.Context, in *CreateTopupIntentRequest, opts ...grpc.CallOption) (*CreateTopupIntentResponse, error)
 	GetTopupIntent(ctx context.Context, in *GetTopupIntentRequest, opts ...grpc.CallOption) (*GetTopupIntentResponse, error)
+	// Merchant/B2B (Plan 57, C1) — Gateway-only callers, never a direct
+	// merchant-facing RPC. tenant_id/environment come from Gateway's own
+	// resolved API-key principal, never a caller-suppliable field once past
+	// the B2B HTTP edge.
+	CreateMerchantTopupIntent(ctx context.Context, in *CreateMerchantTopupIntentRequest, opts ...grpc.CallOption) (*CreateMerchantTopupIntentResponse, error)
+	GetMerchantTopupIntent(ctx context.Context, in *GetMerchantTopupIntentRequest, opts ...grpc.CallOption) (*GetMerchantTopupIntentResponse, error)
 	// Read-only product-assurance projection. Additive: existing callers are
 	// unaffected and sensitive webhook payloads never cross this boundary.
 	ListAssuranceRecords(ctx context.Context, in *ListAssuranceRecordsRequest, opts ...grpc.CallOption) (*ListAssuranceRecordsResponse, error)
@@ -93,6 +101,26 @@ func (c *payinServiceClient) GetTopupIntent(ctx context.Context, in *GetTopupInt
 	return out, nil
 }
 
+func (c *payinServiceClient) CreateMerchantTopupIntent(ctx context.Context, in *CreateMerchantTopupIntentRequest, opts ...grpc.CallOption) (*CreateMerchantTopupIntentResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateMerchantTopupIntentResponse)
+	err := c.cc.Invoke(ctx, PayinService_CreateMerchantTopupIntent_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *payinServiceClient) GetMerchantTopupIntent(ctx context.Context, in *GetMerchantTopupIntentRequest, opts ...grpc.CallOption) (*GetMerchantTopupIntentResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetMerchantTopupIntentResponse)
+	err := c.cc.Invoke(ctx, PayinService_GetMerchantTopupIntent_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *payinServiceClient) ListAssuranceRecords(ctx context.Context, in *ListAssuranceRecordsRequest, opts ...grpc.CallOption) (*ListAssuranceRecordsResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListAssuranceRecordsResponse)
@@ -132,6 +160,12 @@ type PayinServiceServer interface {
 	HandleVendorCallback(context.Context, *HandleVendorCallbackRequest) (*HandleVendorCallbackResponse, error)
 	CreateTopupIntent(context.Context, *CreateTopupIntentRequest) (*CreateTopupIntentResponse, error)
 	GetTopupIntent(context.Context, *GetTopupIntentRequest) (*GetTopupIntentResponse, error)
+	// Merchant/B2B (Plan 57, C1) — Gateway-only callers, never a direct
+	// merchant-facing RPC. tenant_id/environment come from Gateway's own
+	// resolved API-key principal, never a caller-suppliable field once past
+	// the B2B HTTP edge.
+	CreateMerchantTopupIntent(context.Context, *CreateMerchantTopupIntentRequest) (*CreateMerchantTopupIntentResponse, error)
+	GetMerchantTopupIntent(context.Context, *GetMerchantTopupIntentRequest) (*GetMerchantTopupIntentResponse, error)
 	// Read-only product-assurance projection. Additive: existing callers are
 	// unaffected and sensitive webhook payloads never cross this boundary.
 	ListAssuranceRecords(context.Context, *ListAssuranceRecordsRequest) (*ListAssuranceRecordsResponse, error)
@@ -158,6 +192,12 @@ func (UnimplementedPayinServiceServer) CreateTopupIntent(context.Context, *Creat
 }
 func (UnimplementedPayinServiceServer) GetTopupIntent(context.Context, *GetTopupIntentRequest) (*GetTopupIntentResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetTopupIntent not implemented")
+}
+func (UnimplementedPayinServiceServer) CreateMerchantTopupIntent(context.Context, *CreateMerchantTopupIntentRequest) (*CreateMerchantTopupIntentResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CreateMerchantTopupIntent not implemented")
+}
+func (UnimplementedPayinServiceServer) GetMerchantTopupIntent(context.Context, *GetMerchantTopupIntentRequest) (*GetMerchantTopupIntentResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetMerchantTopupIntent not implemented")
 }
 func (UnimplementedPayinServiceServer) ListAssuranceRecords(context.Context, *ListAssuranceRecordsRequest) (*ListAssuranceRecordsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListAssuranceRecords not implemented")
@@ -261,6 +301,42 @@ func _PayinService_GetTopupIntent_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PayinService_CreateMerchantTopupIntent_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateMerchantTopupIntentRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PayinServiceServer).CreateMerchantTopupIntent(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PayinService_CreateMerchantTopupIntent_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PayinServiceServer).CreateMerchantTopupIntent(ctx, req.(*CreateMerchantTopupIntentRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PayinService_GetMerchantTopupIntent_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetMerchantTopupIntentRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PayinServiceServer).GetMerchantTopupIntent(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PayinService_GetMerchantTopupIntent_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PayinServiceServer).GetMerchantTopupIntent(ctx, req.(*GetMerchantTopupIntentRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _PayinService_ListAssuranceRecords_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ListAssuranceRecordsRequest)
 	if err := dec(in); err != nil {
@@ -337,6 +413,14 @@ var PayinService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetTopupIntent",
 			Handler:    _PayinService_GetTopupIntent_Handler,
+		},
+		{
+			MethodName: "CreateMerchantTopupIntent",
+			Handler:    _PayinService_CreateMerchantTopupIntent_Handler,
+		},
+		{
+			MethodName: "GetMerchantTopupIntent",
+			Handler:    _PayinService_GetMerchantTopupIntent_Handler,
 		},
 		{
 			MethodName: "ListAssuranceRecords",

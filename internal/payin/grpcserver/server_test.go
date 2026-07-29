@@ -47,7 +47,7 @@ func TestHandleVendorCallback_DeliversNormalizedContract(t *testing.T) {
 		return "finalized", nil
 	}}
 	server := grpc.NewServer()
-	payinv1.RegisterPayinServiceServer(server, New(service, nil, nil, nil, nil))
+	payinv1.RegisterPayinServiceServer(server, New(service, nil, nil, nil, nil, nil))
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(func() { server.Stop(); _ = listener.Close() })
 
