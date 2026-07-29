@@ -731,6 +731,43 @@ func TestAdminRouter_FullSandboxOnboardingFlow(t *testing.T) {
 	assert.Equal(t, http.StatusOK, deliveriesRec.Code)
 }
 
+// TestAdminRouter_CreateWebhookEndpoint_ValidationErrorsReturn400 proves a
+// T10 fix: adminCreateWebhookEndpoint previously mapped every
+// webhook.Service.CreateEndpoint validation error (bad environment, no
+// subscribed events, a malformed URL) straight to 500 via
+// response.InternalServerError, the same class of bug writeKeyServiceError
+// already exists to prevent for the API-key surface. writeWebhookServiceError
+// now maps these to 400 instead.
+func TestAdminRouter_CreateWebhookEndpoint_ValidationErrorsReturn400(t *testing.T) {
+	m, _, _, _ := testModule(t)
+	router := authedRouter(m)
+
+	createTenantRec := doRequest(t, router, http.MethodPost, "/admin/gateway/tenants", "admin_maker", map[string]any{
+		"external_code": "WHVALID1", "name": "Validation Test Co", "environment": "sandbox", "default_currency": "IDR",
+	})
+	require.Equal(t, http.StatusCreated, createTenantRec.Code, createTenantRec.Body.String())
+	var tenantOut struct {
+		Data model.Tenant `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(createTenantRec.Body.Bytes(), &tenantOut))
+	tenantID := tenantOut.Data.ID.String()
+
+	cases := []struct {
+		name string
+		body map[string]any
+	}{
+		{"bad url", map[string]any{"url": "not-a-url", "environment": "sandbox", "subscribed_events": []string{"transaction.posted.v1"}}},
+		{"bad environment", map[string]any{"url": "https://merchant.example.test/hook", "environment": "production", "subscribed_events": []string{"transaction.posted.v1"}}},
+		{"no subscribed events", map[string]any{"url": "https://merchant.example.test/hook", "environment": "sandbox", "subscribed_events": []string{}}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := doRequest(t, router, http.MethodPost, "/admin/gateway/tenants/"+tenantID+"/webhooks", "admin_maker", tc.body)
+			assert.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
+		})
+	}
+}
+
 func TestAdminRouter_GlobalFlag_DefaultsEnabled(t *testing.T) {
 	m, _, _, _ := testModule(t)
 	router := authedRouter(m)

@@ -2,9 +2,11 @@ package webhook
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -38,13 +40,80 @@ func TestService_CreateEndpoint_SecretShownOnceAndStoredEncrypted(t *testing.T) 
 func TestService_CreateEndpoint_RejectsInvalidEnvironment(t *testing.T) {
 	svc := NewService(newFakeWebhookRepository(), testRing(t))
 	_, _, err := svc.CreateEndpoint(context.Background(), generalutil.NewV7(), "https://example.test/hook", "production", []string{transactionPostedExternalType}, nil)
-	assert.Error(t, err)
+	assert.ErrorIs(t, err, ErrInvalidEnvironment)
 }
 
 func TestService_CreateEndpoint_RejectsEmptySubscriptions(t *testing.T) {
 	svc := NewService(newFakeWebhookRepository(), testRing(t))
 	_, _, err := svc.CreateEndpoint(context.Background(), generalutil.NewV7(), "https://example.test/hook", "live", nil, nil)
-	assert.Error(t, err)
+	assert.ErrorIs(t, err, ErrEventsRequired)
+}
+
+func TestService_CreateEndpoint_RejectsNilTenant(t *testing.T) {
+	svc := NewService(newFakeWebhookRepository(), testRing(t))
+	_, _, err := svc.CreateEndpoint(context.Background(), uuid.Nil, "https://example.test/hook", "live", []string{transactionPostedExternalType}, nil)
+	assert.ErrorIs(t, err, ErrTenantRequired)
+}
+
+func TestService_CreateEndpoint_RejectsEmptyURL(t *testing.T) {
+	svc := NewService(newFakeWebhookRepository(), testRing(t))
+	_, _, err := svc.CreateEndpoint(context.Background(), generalutil.NewV7(), "", "live", []string{transactionPostedExternalType}, nil)
+	assert.ErrorIs(t, err, ErrURLRequired)
+}
+
+// TestService_CreateEndpoint_RejectsInvalidURL found a real gap during T10:
+// CreateEndpoint previously accepted any non-empty string and only
+// discovered a malformed URL when the relay worker's first delivery
+// attempt failed, days later. validateWebhookURL now fails fast.
+func TestService_CreateEndpoint_RejectsInvalidURL(t *testing.T) {
+	cases := []string{
+		"not-a-url",
+		"ftp://example.test/hook",
+		"javascript:alert(1)",
+		"http://",
+		"://missing-scheme",
+	}
+	for _, raw := range cases {
+		svc := NewService(newFakeWebhookRepository(), testRing(t))
+		_, _, err := svc.CreateEndpoint(context.Background(), generalutil.NewV7(), raw, "live", []string{transactionPostedExternalType}, nil)
+		assert.ErrorIsf(t, err, ErrInvalidURL, "url %q should be rejected", raw)
+	}
+}
+
+func TestValidateWebhookURL_AcceptsHTTPAndHTTPS(t *testing.T) {
+	assert.NoError(t, validateWebhookURL("https://example.test/hook"))
+	assert.NoError(t, validateWebhookURL("http://localhost:9999/hook"))
+}
+
+func FuzzValidateWebhookURL(f *testing.F) {
+	seeds := []string{
+		"https://example.test/hook",
+		"http://localhost:9999/hook",
+		"not-a-url",
+		"ftp://example.test/hook",
+		"javascript:alert(1)",
+		"http://",
+		"://missing-scheme",
+		"https://user:pass@example.test:8443/hook?query=1#frag",
+		"",
+		"   ",
+		"https://[::1]:8080/hook",
+	}
+	for _, s := range seeds {
+		f.Add(s)
+	}
+	f.Fuzz(func(t *testing.T, raw string) {
+		// Must never panic — the only contract under fuzz. A nil error
+		// implies an http(s) scheme with a non-empty host; any other
+		// input must return a non-nil error wrapping ErrInvalidURL.
+		err := validateWebhookURL(raw)
+		if err == nil {
+			return
+		}
+		if !errors.Is(err, ErrInvalidURL) {
+			t.Fatalf("validateWebhookURL(%q) returned an error not wrapping ErrInvalidURL: %v", raw, err)
+		}
+	})
 }
 
 func TestService_RotateSecret_ChangesSecretAndCiphertext(t *testing.T) {

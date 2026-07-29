@@ -100,3 +100,39 @@ func TestSign_TimestampNotRefreshedAcrossRetries(t *testing.T) {
 	assert.Equal(t, sigs[0], sigs[1])
 	assert.Equal(t, sigs[1], sigs[2])
 }
+
+// FuzzParseSignatureHeader fuzzes the untrusted-input entry point every
+// published receiver-verification example (docs/reference/webhook-receiver-guide.md)
+// tells a MERCHANT to implement themselves against a header this service
+// controls — proving Seev's own reference implementation never panics on a
+// malformed "Seev-Signature" value is exactly what T10's fuzz requirement
+// (§23.2 "signature header parser") is protecting.
+func FuzzParseSignatureHeader(f *testing.F) {
+	seeds := []string{
+		"t=1735808645,v1=abc123",
+		"",
+		"t=1735808645",
+		"v1=abc123",
+		"t=notanumber,v1=abc123",
+		"t=1735808645,v1=",
+		"t=,v1=abc123",
+		"t=1735808645,v1=abc123,extra=1",
+		"t=1735808645;v1=abc123",
+		"a=b,c=d",
+		",",
+		"t=99999999999999999999999999,v1=abc123",
+	}
+	for _, s := range seeds {
+		f.Add(s)
+	}
+	f.Fuzz(func(t *testing.T, header string) {
+		// Must never panic; ok=false is always an acceptable outcome for
+		// malformed input, but a true result must carry a non-zero
+		// timestamp and non-empty v1 (parseSignatureHeader's own
+		// documented postcondition).
+		ts, v1, ok := parseSignatureHeader(header)
+		if ok && (ts == 0 || v1 == "") {
+			t.Fatalf("parseSignatureHeader(%q) returned ok=true with an invalid zero-value result (t=%d, v1=%q)", header, ts, v1)
+		}
+	})
+}

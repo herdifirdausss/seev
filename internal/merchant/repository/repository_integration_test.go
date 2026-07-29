@@ -509,5 +509,51 @@ func TestSettingsRepository_GetSetRoundTrip_T9(t *testing.T) {
 	assert.Equal(t, "operator2@example.test", updatedBy)
 }
 
+// TestWebhookRepository_TenantScoped_CannotReadOrMutateAnotherTenantsEndpoint
+// is T10's §23.7 cross-tenant matrix proof for the one merchant_webhook_endpoints
+// path not already covered live: TestAPIKeyRepository_Revoke_TenantScoped_...
+// above proves this for API keys and TestIdempotencyRepository_TenantScopedUniqueness_RaceSafe
+// proves it for idempotency records; webhook.Service's own
+// TestService_Replay_WrongTenantNotFound proves it for delivery replay at
+// the service layer. This is the matching proof for GetEndpoint/
+// UpdateEndpoint/DeleteEndpoint against a real database, not a fake.
+func TestWebhookRepository_TenantScoped_CannotReadOrMutateAnotherTenantsEndpoint(t *testing.T) {
+	db := setupGatewayTestDB(t)
+	tenantRepo := repository.NewTenantRepository(db)
+	webhookRepo := repository.NewWebhookRepository(db)
+	tenantA := newTenant(t, tenantRepo, "sandbox")
+	tenantB := newTenant(t, tenantRepo, "sandbox")
+	ctx := context.Background()
+
+	endpoint := model.WebhookEndpoint{
+		ID: uuid.New(), PublicID: "wh_" + uuid.NewString()[:16], TenantID: tenantA.ID,
+		URL: "https://merchant-a.example.test/hook", Status: "enabled",
+		SecretCiphertext: []byte("ciphertext"), SecretVersion: 1,
+		SubscribedEvents: []string{"transaction.posted.v1"}, Environment: "sandbox",
+	}
+	require.NoError(t, webhookRepo.CreateEndpoint(ctx, endpoint))
+
+	// §7.3: reading tenant A's endpoint under tenant B's tenantID must fail
+	// as not-found, never return tenant A's data.
+	_, err := webhookRepo.GetEndpoint(ctx, tenantB.ID, endpoint.ID)
+	require.ErrorIs(t, err, repository.ErrNotFound)
+
+	// Mutating under the wrong tenant must not silently succeed either.
+	tampered := endpoint
+	tampered.TenantID = tenantB.ID
+	tampered.URL = "https://attacker.example.test/hook"
+	err = webhookRepo.UpdateEndpoint(ctx, tampered)
+	require.ErrorIs(t, err, repository.ErrNotFound)
+
+	err = webhookRepo.DeleteEndpoint(ctx, tenantB.ID, endpoint.ID)
+	require.ErrorIs(t, err, repository.ErrNotFound)
+
+	// The endpoint must be completely unaffected under its real tenant.
+	stillThere, err := webhookRepo.GetEndpoint(ctx, tenantA.ID, endpoint.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "https://merchant-a.example.test/hook", stillThere.URL)
+	assert.Equal(t, "enabled", stillThere.Status)
+}
+
 func strPtr(s string) *string    { return &s }
 func timePtr(t time.Time) *time.Time { return &t }

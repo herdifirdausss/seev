@@ -11,6 +11,7 @@ import (
 	"github.com/herdifirdausss/seev/internal/merchant/lifecycle"
 	"github.com/herdifirdausss/seev/internal/merchant/model"
 	"github.com/herdifirdausss/seev/internal/merchant/repository"
+	"github.com/herdifirdausss/seev/internal/merchant/webhook"
 	"github.com/herdifirdausss/seev/pkg/generalutil"
 	"github.com/herdifirdausss/seev/pkg/httpcontract"
 	"github.com/herdifirdausss/seev/pkg/middleware"
@@ -142,6 +143,27 @@ func writeKeyServiceError(w http.ResponseWriter, err error) {
 		response.BadRequest(w, err.Error())
 	case errors.Is(err, auth.ErrTooManyActiveKeys):
 		response.Conflict(w, err.Error())
+	case errors.Is(err, repository.ErrNotFound):
+		response.NotFound(w, "not found")
+	default:
+		response.InternalServerError(w, err)
+	}
+}
+
+// writeWebhookServiceError maps webhook.Service's own validation errors to
+// 400 — found live during T10's final verification pass:
+// adminCreateWebhookEndpoint previously sent every CreateEndpoint error,
+// including a plain bad "environment" value or an empty subscribed-events
+// list, straight to response.InternalServerError, the same class of bug
+// writeKeyServiceError above already exists to prevent for API keys.
+func writeWebhookServiceError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, webhook.ErrTenantRequired),
+		errors.Is(err, webhook.ErrURLRequired),
+		errors.Is(err, webhook.ErrInvalidURL),
+		errors.Is(err, webhook.ErrInvalidEnvironment),
+		errors.Is(err, webhook.ErrEventsRequired):
+		response.BadRequest(w, err.Error())
 	case errors.Is(err, repository.ErrNotFound):
 		response.NotFound(w, "not found")
 	default:
@@ -604,7 +626,7 @@ func (m *Module) adminCreateWebhookEndpoint(w http.ResponseWriter, r *http.Reque
 	}
 	endpoint, secret, err := m.WebhookService.CreateEndpoint(r.Context(), tenantID, req.URL, req.Environment, req.SubscribedEvents, req.Description)
 	if err != nil {
-		response.InternalServerError(w, err)
+		writeWebhookServiceError(w, err)
 		return
 	}
 	// One-time plaintext secret — see the api-keys section's own §16.4 doc

@@ -9,6 +9,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
+	"net/url"
 
 	"github.com/google/uuid"
 
@@ -21,6 +22,38 @@ import (
 // secretByteLen matches this codebase's other high-entropy secret
 // generation (e.g. internal/merchant/auth's key material) — 256 bits.
 const secretByteLen = 32
+
+// Sentinel validation errors for CreateEndpoint, wrapped with %w so a
+// caller (adminhttp.go's writeWebhookServiceError) can map them to 400 via
+// errors.Is instead of every input mistake surfacing as a 500 — same
+// pattern as internal/merchant/auth's ErrUnknownScope/ErrTooManyActiveKeys.
+var (
+	ErrTenantRequired     = fmt.Errorf("merchant/webhook: tenantID is required")
+	ErrURLRequired        = fmt.Errorf("merchant/webhook: url is required")
+	ErrInvalidURL         = fmt.Errorf("merchant/webhook: url must be an absolute http or https URL with a host")
+	ErrInvalidEnvironment = fmt.Errorf("merchant/webhook: environment must be sandbox or live")
+	ErrEventsRequired     = fmt.Errorf("merchant/webhook: at least one subscribed event is required")
+)
+
+// validateWebhookURL enforces the shape resolveAndDial/safeClient assume at
+// dispatch time (an absolute http(s) URL with a host) at CREATION time
+// instead — catching a merchant/operator typo immediately with a 400
+// rather than silently accepting it and only discovering the problem when
+// the relay worker's first delivery attempt fails days later. This is a
+// FORMAT check only; it deliberately does not resolve DNS or reject
+// private addresses — that live-mode-only SSRF enforcement stays in
+// ssrf.go's resolveAndDial, re-checked at every dispatch (TM-16) because a
+// hostname valid at creation can be rebound to a private address later.
+func validateWebhookURL(raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidURL, err)
+	}
+	if (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return ErrInvalidURL
+	}
+	return nil
+}
 
 func secretAAD(endpointID uuid.UUID) cryptox.AAD {
 	return cryptox.AAD{Service: "merchant", Table: "merchant_webhook_endpoints", Column: "secret", RowID: endpointID.String()}
@@ -64,16 +97,19 @@ func generateSecret() (string, error) {
 // contract). environment is fixed for the endpoint's lifetime.
 func (s *Service) CreateEndpoint(ctx context.Context, tenantID uuid.UUID, url, environment string, subscribedEvents []string, description *string) (model.WebhookEndpoint, string, error) {
 	if tenantID == uuid.Nil {
-		return model.WebhookEndpoint{}, "", fmt.Errorf("merchant/webhook: tenantID is required")
+		return model.WebhookEndpoint{}, "", ErrTenantRequired
 	}
 	if url == "" {
-		return model.WebhookEndpoint{}, "", fmt.Errorf("merchant/webhook: url is required")
+		return model.WebhookEndpoint{}, "", ErrURLRequired
+	}
+	if err := validateWebhookURL(url); err != nil {
+		return model.WebhookEndpoint{}, "", err
 	}
 	if environment != "sandbox" && environment != "live" {
-		return model.WebhookEndpoint{}, "", fmt.Errorf("merchant/webhook: environment must be sandbox or live, got %q", environment)
+		return model.WebhookEndpoint{}, "", ErrInvalidEnvironment
 	}
 	if len(subscribedEvents) == 0 {
-		return model.WebhookEndpoint{}, "", fmt.Errorf("merchant/webhook: at least one subscribed event is required")
+		return model.WebhookEndpoint{}, "", ErrEventsRequired
 	}
 
 	secret, err := generateSecret()
