@@ -5,8 +5,10 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/herdifirdausss/seev/internal/merchant/model"
 	"github.com/herdifirdausss/seev/pkg/database"
@@ -19,10 +21,10 @@ type webhookRepository struct {
 func (r *webhookRepository) CreateEndpoint(ctx context.Context, e model.WebhookEndpoint) error {
 	_, err := r.db.ExecContext(ctx, `
 		INSERT INTO merchant_webhook_endpoints
-			(id, public_id, tenant_id, url, status, secret_ciphertext, secret_version, subscribed_events, description, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now(), now())`,
+			(id, public_id, tenant_id, url, status, secret_ciphertext, secret_version, subscribed_events, environment, description, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now(), now())`,
 		e.ID, e.PublicID, e.TenantID, e.URL, e.Status, e.SecretCiphertext, e.SecretVersion,
-		e.SubscribedEvents, e.Description,
+		e.SubscribedEvents, e.Environment, e.Description,
 	)
 	if err != nil {
 		return fmt.Errorf("merchant: create webhook endpoint: %w", err)
@@ -33,14 +35,14 @@ func (r *webhookRepository) CreateEndpoint(ctx context.Context, e model.WebhookE
 func (r *webhookRepository) GetEndpoint(ctx context.Context, tenantID, endpointID uuid.UUID) (model.WebhookEndpoint, error) {
 	return r.scanEndpoint(r.db.QueryRowContext(ctx, `
 		SELECT id, public_id, tenant_id, url, status, secret_ciphertext, secret_version, subscribed_events,
-		       description, created_at, updated_at, disabled_at
+		       environment, description, created_at, updated_at, disabled_at
 		FROM merchant_webhook_endpoints WHERE tenant_id = $1 AND id = $2`, tenantID, endpointID))
 }
 
 func (r *webhookRepository) ListEndpoints(ctx context.Context, tenantID uuid.UUID) ([]model.WebhookEndpoint, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT id, public_id, tenant_id, url, status, secret_ciphertext, secret_version, subscribed_events,
-		       description, created_at, updated_at, disabled_at
+		       environment, description, created_at, updated_at, disabled_at
 		FROM merchant_webhook_endpoints WHERE tenant_id = $1 ORDER BY created_at DESC`, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("merchant: list webhook endpoints: %w", err)
@@ -131,6 +133,23 @@ func (r *webhookRepository) GetEventBySource(ctx context.Context, tenantID, sour
 		return model.WebhookEvent{}, false, fmt.Errorf("merchant: get webhook event by source: %w", err)
 	}
 	return e, true, nil
+}
+
+func (r *webhookRepository) GetEventByID(ctx context.Context, eventID uuid.UUID) (model.WebhookEvent, error) {
+	var e model.WebhookEvent
+	err := r.db.QueryRowContext(ctx, `
+		SELECT id, public_id, tenant_id, event_type, schema_version, livemode, payload, payload_bytes, source_event_id, created_at
+		FROM merchant_webhook_events WHERE id = $1`,
+		eventID,
+	).Scan(&e.ID, &e.PublicID, &e.TenantID, &e.EventType, &e.SchemaVersion, &e.Livemode, &e.Payload, &e.PayloadBytes,
+		&e.SourceEventID, &e.CreatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return model.WebhookEvent{}, ErrNotFound
+	}
+	if err != nil {
+		return model.WebhookEvent{}, fmt.Errorf("merchant: get webhook event by id: %w", err)
+	}
+	return e, nil
 }
 
 func (r *webhookRepository) CreateDelivery(ctx context.Context, d model.WebhookDelivery) (bool, error) {
@@ -229,6 +248,54 @@ func (r *webhookRepository) ListDue(ctx context.Context, limit int) ([]model.Web
 	return out, rows.Err()
 }
 
+// ClaimDue atomically assigns a batch of due deliveries to leaseOwner —
+// same WHERE-clause-as-compare-and-swap + FOR UPDATE SKIP LOCKED shape
+// pkg/objectoutbox.Worker's own claimPending already established for this
+// exact "durable outbox" pattern (docs/reference/c1-current-contract-inventory.md
+// §5 flagged it as directly reusable for T7). A row whose lease already
+// expired (lease_expires_at < now()) is just as claimable as one that was
+// never leased at all — that symmetry is what recovers a crashed worker's
+// dangling lease on the very next poll.
+func (r *webhookRepository) ClaimDue(ctx context.Context, limit int, leaseOwner string, leaseExpiresAt time.Time) ([]model.WebhookDelivery, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		WITH claimed AS (
+			UPDATE merchant_webhook_deliveries
+			SET lease_owner = $1, lease_expires_at = $2, updated_at = now()
+			WHERE id IN (
+				SELECT id FROM merchant_webhook_deliveries
+				WHERE status IN ('pending', 'failed')
+				  AND (next_attempt_at IS NULL OR next_attempt_at <= now())
+				  AND (lease_owner IS NULL OR lease_expires_at < now())
+				ORDER BY created_at
+				LIMIT $3
+				FOR UPDATE SKIP LOCKED
+			)
+			RETURNING id, public_id, tenant_id, endpoint_id, event_id, replay_of_delivery_id, status, attempt_count,
+			          next_attempt_at, lease_owner, lease_expires_at, last_http_status, last_error_code,
+			          first_attempt_at, delivered_at, dead_at, created_at, updated_at
+		)
+		SELECT id, public_id, tenant_id, endpoint_id, event_id, replay_of_delivery_id, status, attempt_count,
+		       next_attempt_at, lease_owner, lease_expires_at, last_http_status, last_error_code,
+		       first_attempt_at, delivered_at, dead_at, created_at, updated_at
+		FROM claimed`,
+		leaseOwner, leaseExpiresAt, limit,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("merchant: claim due webhook deliveries: %w", err)
+	}
+	defer rows.Close()
+
+	var out []model.WebhookDelivery
+	for rows.Next() {
+		d, err := r.scanDeliveryRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
 func (r *webhookRepository) MarkDelivered(ctx context.Context, deliveryID uuid.UUID, httpStatus int) error {
 	res, err := r.db.ExecContext(ctx, `
 		UPDATE merchant_webhook_deliveries
@@ -310,10 +377,19 @@ func (r *webhookRepository) scanEndpointRow(row rowScanner) (model.WebhookEndpoi
 	return e, nil
 }
 
+// pgTypeMap backs scanEndpointFrom's subscribed_events decoding. Plain
+// database/sql.Scan does not know how to decode a Postgres TEXT[] into a
+// Go []string on its own (confirmed by a live integration test failure:
+// "unsupported Scan, storing driver.Value type string into type
+// *[]string") — pgtype.Map.SQLScanner is pgx's own documented bridge for
+// exactly this case ("necessary for types like Array[T] ... where the
+// type needs assistance from Map to implement the sql.Scanner interface").
+var pgTypeMap = pgtype.NewMap()
+
 func scanEndpointFrom(row rowScanner) (model.WebhookEndpoint, error) {
 	var e model.WebhookEndpoint
 	err := row.Scan(&e.ID, &e.PublicID, &e.TenantID, &e.URL, &e.Status, &e.SecretCiphertext, &e.SecretVersion,
-		&e.SubscribedEvents, &e.Description, &e.CreatedAt, &e.UpdatedAt, &e.DisabledAt)
+		pgTypeMap.SQLScanner(&e.SubscribedEvents), &e.Environment, &e.Description, &e.CreatedAt, &e.UpdatedAt, &e.DisabledAt)
 	return e, err
 }
 

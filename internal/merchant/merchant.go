@@ -19,6 +19,8 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"github.com/herdifirdausss/seev/internal/merchant/repository"
+	"github.com/herdifirdausss/seev/internal/merchant/webhook"
+	"github.com/herdifirdausss/seev/pkg/cryptox"
 	"github.com/herdifirdausss/seev/pkg/database"
 	"github.com/herdifirdausss/seev/pkg/retentionworker"
 	"github.com/herdifirdausss/seev/pkg/scheduler"
@@ -29,7 +31,8 @@ import (
 // database (§3.1: "This module may use the Gateway database only for
 // edge-owned state").
 type Module struct {
-	db database.DatabaseSQL
+	db   database.DatabaseSQL
+	ring *cryptox.Ring
 
 	Tenants     repository.TenantRepository
 	APIKeys     repository.APIKeyRepository
@@ -37,23 +40,41 @@ type Module struct {
 	Idempotency repository.IdempotencyRepository
 	EventInbox  repository.EventInboxRepository
 	Webhooks    repository.WebhookRepository
+
+	// WebhookService is T7's tenant-facing endpoint management surface
+	// (create/rotate/list/delete endpoints, list/get deliveries, replay) —
+	// the counterpart of webhookRelay below, which is the dispatch side.
+	WebhookService *webhook.Service
+	webhookRelay   *webhook.RelayWorker
+	webhookConsume *webhook.Consumer
 }
 
-// NewModule panics if db is nil — matches this repository's own
+// NewModule panics if db or ring is nil — matches this repository's own
 // established convention (A8 T2.5b: construct now, not "construct then
-// wire later").
-func NewModule(db database.DatabaseSQL) *Module {
+// wire later"). ring is required unconditionally, same posture as every
+// other encrypted-at-rest field in this codebase (webhook endpoint secrets,
+// T7): there is no valid "cryptox unconfigured" mode to construct this
+// module in.
+func NewModule(db database.DatabaseSQL, ring *cryptox.Ring) *Module {
 	if db == nil {
 		panic("merchant: NewModule requires a non-nil database")
 	}
+	if ring == nil {
+		panic("merchant: NewModule requires a non-nil cryptox ring")
+	}
+	webhooks := repository.NewWebhookRepository(db)
 	return &Module{
 		db:          db,
+		ring:        ring,
 		Tenants:     repository.NewTenantRepository(db),
 		APIKeys:     repository.NewAPIKeyRepository(db),
 		Quotas:      repository.NewQuotaRepository(db),
 		Idempotency: repository.NewIdempotencyRepository(db),
 		EventInbox:  repository.NewEventInboxRepository(db),
-		Webhooks:    repository.NewWebhookRepository(db),
+		Webhooks:    webhooks,
+
+		WebhookService: webhook.NewService(webhooks, ring),
+		webhookRelay:   webhook.NewRelayWorker(webhooks, ring, nil),
 	}
 }
 
@@ -102,4 +123,31 @@ func (m *Module) StartRetentionRunner(redisClient *redis.Client, logger *slog.Lo
 		return nil, err
 	}
 	return sched.Stop, nil
+}
+
+// DefaultWebhookRelayInterval is how often StartWebhookRelay polls for due
+// deliveries when the caller doesn't need a different cadence.
+const DefaultWebhookRelayInterval = 10 * time.Second
+
+// StartWebhookRelay launches T7's leasing delivery worker (internal/merchant/webhook.RelayWorker)
+// on interval, matching StartRetentionRunner's own "stop func()" return
+// shape. Safe to call from multiple gateway instances concurrently — the
+// relay's own ClaimDue uses FOR UPDATE SKIP LOCKED, requiring no
+// coordination beyond the database.
+func (m *Module) StartWebhookRelay(ctx context.Context, interval time.Duration) (stop func()) {
+	return m.webhookRelay.Start(ctx, interval)
+}
+
+// StartWebhookConsumer declares topology and launches T7's inbound
+// RabbitMQ consumer (internal/merchant/webhook.Consumer), which is
+// constructed lazily here rather than in NewModule since it needs a
+// messaging.Broker that isn't available until cmd/gateway wires RabbitMQ —
+// unlike webhookRelay, which only needs the ring already passed to
+// NewModule. Call the returned stop func on shutdown.
+func (m *Module) StartWebhookConsumer(ctx context.Context, broker webhook.Broker, logger *slog.Logger) (stop func(), err error) {
+	m.webhookConsume = webhook.NewConsumer(m.Webhooks, m.Tenants, broker, logger)
+	if err := m.webhookConsume.Start(ctx); err != nil {
+		return nil, err
+	}
+	return m.webhookConsume.Stop, nil
 }

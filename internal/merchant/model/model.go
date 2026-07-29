@@ -111,10 +111,15 @@ type WebhookEndpoint struct {
 	SecretCiphertext []byte
 	SecretVersion    int
 	SubscribedEvents []string
-	Description      *string
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
-	DisabledAt       *time.Time
+	// Environment ("sandbox" | "live", Plan 57 T7) is fixed at creation
+	// (mirrors merchant_api_keys.environment) and gates whether the relay's
+	// SSRF check runs at dispatch time — sandbox endpoints may legitimately
+	// target a local receiver (docs/reference/c1-b2b-design.md §4).
+	Environment string
+	Description *string
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	DisabledAt  *time.Time
 }
 
 // WebhookEvent is an immutable external event, persisted once (§11.8).

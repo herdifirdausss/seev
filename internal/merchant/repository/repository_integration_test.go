@@ -305,7 +305,7 @@ func TestWebhookRepository_DeliveryUniqueness_RaceSafe(t *testing.T) {
 		ID: uuid.New(), PublicID: "wh_" + uuid.NewString()[:16], TenantID: tenant.ID,
 		URL: "https://example.invalid/hook", Status: "enabled",
 		SecretCiphertext: []byte("ciphertext"), SecretVersion: 1,
-		SubscribedEvents: []string{"transaction.posted.v1"},
+		SubscribedEvents: []string{"transaction.posted.v1"}, Environment: "sandbox",
 	}
 	require.NoError(t, webhookRepo.CreateEndpoint(context.Background(), endpoint))
 
@@ -365,6 +365,7 @@ func TestWebhookRepository_AttemptsCascadeDeleteWithDelivery(t *testing.T) {
 		ID: uuid.New(), PublicID: "wh_" + uuid.NewString()[:16], TenantID: tenant.ID,
 		URL: "https://example.invalid/hook", Status: "enabled",
 		SecretCiphertext: []byte("c"), SecretVersion: 1, SubscribedEvents: []string{"transaction.posted.v1"},
+		Environment: "sandbox",
 	}
 	require.NoError(t, webhookRepo.CreateEndpoint(context.Background(), endpoint))
 	event := model.WebhookEvent{

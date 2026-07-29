@@ -104,6 +104,11 @@ type WebhookRepository interface {
 
 	CreateEvent(ctx context.Context, e model.WebhookEvent) error
 	GetEventBySource(ctx context.Context, tenantID, sourceEventID uuid.UUID, eventType string) (model.WebhookEvent, bool, error)
+	// GetEventByID is the relay worker's own lookup (relay.go) — a claimed
+	// WebhookDelivery only carries EventID, not the event body, so dispatch
+	// must fetch the immutable event row (PayloadBytes) separately before
+	// it can sign and send.
+	GetEventByID(ctx context.Context, eventID uuid.UUID) (model.WebhookEvent, error)
 
 	// CreateDelivery dedups the AUTOMATIC path on UNIQUE(endpoint_id,
 	// event_id) — created=false means this (endpoint, event) pair already
@@ -117,6 +122,15 @@ type WebhookRepository interface {
 	GetDelivery(ctx context.Context, tenantID, deliveryID uuid.UUID) (model.WebhookDelivery, error)
 	ListDeliveries(ctx context.Context, tenantID uuid.UUID, limit int) ([]model.WebhookDelivery, error)
 	ListDue(ctx context.Context, limit int) ([]model.WebhookDelivery, error)
+	// ClaimDue is the T7 relay worker's own atomic claim — a due delivery
+	// (status pending/failed, next_attempt_at due) whose lease is either
+	// unheld or EXPIRED is atomically assigned to leaseOwner via
+	// `FOR UPDATE SKIP LOCKED` (same shape as T4's own
+	// IdempotencyRepository.TakeoverExpiredLease). This is what makes
+	// "worker restart recovers expired leases" true: a crashed worker's
+	// dangling lease is reclaimed by the next poll once it expires, no
+	// separate recovery pass needed.
+	ClaimDue(ctx context.Context, limit int, leaseOwner string, leaseExpiresAt time.Time) ([]model.WebhookDelivery, error)
 	MarkDelivered(ctx context.Context, deliveryID uuid.UUID, httpStatus int) error
 	MarkFailedAttempt(ctx context.Context, deliveryID uuid.UUID, errorCode string, httpStatus *int, nextAttemptAt any) error
 	MarkDead(ctx context.Context, deliveryID uuid.UUID) error

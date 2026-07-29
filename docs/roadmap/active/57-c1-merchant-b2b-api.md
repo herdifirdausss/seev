@@ -2346,17 +2346,154 @@ T7 may begin.
 
 ### Acceptance
 
-- [ ] Duplicate internal event creates no duplicate external event.
-- [ ] One endpoint receives at most one automatic delivery record per event.
-- [ ] Retries reuse exact event bytes.
-- [ ] Signature fixtures are deterministic.
-- [ ] Private and metadata IP destinations are rejected for live mode.
-- [ ] Redirects are not followed.
-- [ ] Timeout and response-body limits are enforced.
-- [ ] Failed deliveries become dead after the bounded schedule.
-- [ ] Replay creates a new delivery ID with the same event ID.
-- [ ] Secret plaintext does not appear in DB dumps, logs, traces, or audit.
-- [ ] Worker restart recovers expired leases.
+- [x] Duplicate internal event creates no duplicate external event.
+- [x] One endpoint receives at most one automatic delivery record per event.
+- [x] Retries reuse exact event bytes.
+- [x] Signature fixtures are deterministic.
+- [x] Private and metadata IP destinations are rejected for live mode.
+- [x] Redirects are not followed.
+- [x] Timeout and response-body limits are enforced.
+- [x] Failed deliveries become dead after the bounded schedule.
+- [x] Replay creates a new delivery ID with the same event ID.
+- [x] Secret plaintext does not appear in DB dumps, logs, traces, or audit.
+- [x] Worker restart recovers expired leases.
+
+### Result
+
+Delivered 2026-07-29:
+
+- **Endpoint management + delivery/dispatch split into two sides of one
+  package** (`internal/merchant/webhook`): `Service` (tenant-facing —
+  create/rotate/list/delete endpoints, list/get deliveries) is the
+  counterpart of `RelayWorker` (the dispatch side, `relay.go`). `Consumer`
+  (`consumer.go`) is the inbound side that turns internal ledger events
+  into external `WebhookEvent`/`WebhookDelivery` rows; `Replay`
+  (`replay.go`) is the tenant/operator replay path. All four share the
+  same repository already scaffolded in earlier tasks
+  (`WebhookRepository`, migration 000004 + T7's own 000006 for the new
+  `environment` column) — no new tables were needed this task, only new
+  Go code and one additive column.
+- **Envelope/signature/SSRF exactly per the T1 lock**
+  (`docs/reference/c1-b2b-design.md §2/§4`): `envelope.go` builds the
+  locked `{id, type, livemode, created_at, data}` body with `id` derived
+  from the SAME internal logical `EventID` convention `internal/ledger/events`
+  already uses (no second hash); `signature.go` implements
+  `t=<unix>,v1=<hmac-sha256 hex>` with `t` bound to the delivery row's own
+  immutable `CreatedAt` — reused, never recomputed per attempt, so retries
+  and replays are reproducible without a dedicated "signed_at" column;
+  `ssrf.go` resolves-then-dials-the-validated-IP directly (never
+  re-resolving the hostname) to close the DNS-rebinding TOCTOU window,
+  enforced only for `environment == "live"` per the design doc's own
+  locked failure-matrix row.
+- **Retry/backoff kept in lockstep with the rest of the codebase's outbox
+  implementations, on purpose**: `relay.go`'s `nextAttemptAt` uses the
+  identical formula to
+  `internal/payout/repository/vendor_command_repository.go`'s
+  `FailCommand` (itself matched to the ledger outbox's `MarkFailed`) —
+  base 30s, factor 2, cap 15m, +50% jitter. Unlike
+  `payout_vendor_commands`, `merchant_webhook_deliveries` has no per-row
+  `max_retries` column (T7's own migration never added one), so
+  `maxDeliveryAttempts = 15` is a package constant instead — a deliberate
+  simplification since nothing in this task's acceptance list requires a
+  per-tenant-configurable retry depth.
+- **Structural SSRF/security posture, not rule-based** (same philosophy
+  established in T5/T6): `resolveAndDial` dials the IP it just validated,
+  never the hostname a second time; `safeClient`'s `CheckRedirect` refuses
+  every redirect unconditionally (`http.ErrUseLastResponse`) regardless of
+  environment, since that's baseline delivery hygiene, not an SSRF-only
+  concern; the 410-auto-disable path and the dead-letter path are both
+  reached through the SAME `processDelivery` function as the success
+  path — there is no separate "special case" code path that could drift
+  out of sync with the ordinary one.
+- **Real bug found live, not by inspection**: the pgx v5 stdlib driver
+  cannot `Scan` a Postgres `TEXT[]` column (`subscribed_events`) into a
+  plain `*[]string` through `database/sql`'s generic interface — a live
+  integration test failed with `unsupported Scan, storing driver.Value
+  type string into type *[]string` the first time `ListEndpoints` was
+  exercised against real Postgres. Fixed by scanning through
+  `pgtype.Map.SQLScanner(&e.SubscribedEvents)`
+  (`internal/merchant/repository/webhook_repository.go`) — pgx's own
+  documented bridge for exactly this case, no new dependency (pgtype is
+  already a subpackage of the pgx/v5 module this repo already depends
+  on). This is the only `TEXT[]` column in the entire schema, so there
+  was no prior precedent to follow; a naive `pgtype.Array[string]` scan
+  destination was tried first and also failed for the same underlying
+  reason (generic pgtype wrapper types don't implement `sql.Scanner` on
+  their own outside a `Map`), which is what led to the `SQLScanner`
+  fix.
+- **Second bug found the same way**: two PRE-EXISTING integration tests in
+  `internal/merchant/repository/repository_integration_test.go`
+  (`TestWebhookRepository_DeliveryUniqueness_RaceSafe`,
+  `TestWebhookRepository_AttemptsCascadeDeleteWithDelivery`, both written
+  before this task added the `environment` column + its
+  `CHECK (environment IN ('sandbox','live'))` constraint) constructed a
+  `model.WebhookEndpoint{}` with no `Environment` set, which now fails
+  the CHECK with an empty string instead of falling through to the
+  column's `DEFAULT 'live'` — a Go zero-value insert always sends an
+  explicit value, so it never reaches the column default. Fixed by adding
+  `Environment: "sandbox"` (matching the tenant those tests already
+  provision as `"sandbox"`) to both literals.
+- **Test convention**: hand-written fakes for `WebhookRepository` and
+  `TenantRepository` (`fakes_test.go`), matching this package's own
+  established no-gomock convention — the fake reproduces the real
+  implementation's key invariants (`ClaimDue`'s lease exclusivity,
+  `CreateDelivery`'s dedup vs. `CreateReplayDelivery`'s exemption from
+  it) rather than being a dumb stub. `messaging.MockBroker` (already
+  shared by `pkg/messaging`) is reused for `Consumer` tests instead of a
+  second hand-rolled broker fake.
+- **Verified end-to-end against real Postgres and a real HTTP server**
+  (`webhook_integration_test.go`, `-tags=integration`):
+  `TestWebhookRelay_EndToEnd` drives the full chain through the actual
+  public API — `Consumer.Start`'s registered handler (captured via
+  `messaging.MockBroker`, not called directly) dedupes a redelivered
+  message to one `WebhookEvent` and one `WebhookDelivery`; the stored
+  `secret_ciphertext` column is read raw via SQL and asserted to never
+  contain the plaintext secret; `RelayWorker.ProcessOnce` dispatches to a
+  real `httptest.Server` and the received signature is verified against
+  `Sign(secret, delivery.CreatedAt, payload)` byte-for-byte; `Replay`
+  produces a new delivery ID sharing the original event ID and that
+  replay is itself picked up and dispatched on the next poll; a delivery
+  manually given an EXPIRED lease (simulating a crashed worker) is
+  reclaimed and dispatched by the next `ProcessOnce` call, proving
+  restart recovery without a separate recovery pass. Unit tests
+  additionally cover: SSRF rejection table (loopback/private/link-local/
+  metadata/unspecified/multicast), live-vs-sandbox SSRF divergence against
+  the same URL, no-redirect, bounded response body, signature determinism
+  and tamper/malformed-header rejection, exhausted-retry dead-lettering,
+  410 auto-disable, and replay's exemption from the automatic path's
+  dedup constraint.
+- **Scope deliberately NOT covered this task** (unchanged from earlier
+  scoping notes in `envelope.go`): `payin.updated.v1`/`payout.updated.v1`
+  external event types — these require a payin/payout-owned pending-state
+  outbox that T6 explicitly deferred; no T7 acceptance criterion requires
+  them. Wiring `internal/merchant.Module.StartWebhookConsumer`/
+  `StartWebhookRelay` into `cmd/gateway/main.go` is also not done here —
+  `internal/merchant.Module` has never been wired into `cmd/gateway` at
+  all (confirmed: zero references anywhere under `cmd/`), a pre-existing
+  gap from T2 onward and already tracked separately (`task_6214960b`,
+  flagged during T6 for the B2B HTTP handlers specifically); this task
+  only had to make the Module itself capable of being started, which it
+  now is (`NewModule` takes the `*cryptox.Ring` it needs; `StartWebhookRelay`/
+  `StartWebhookConsumer` exist with the same `stop func()`/`(stop, err)`
+  shapes as `StartRetentionRunner`).
+- **Full sweep**: `go build ./...`, `go vet -tags=integration ./...`,
+  `make lint` (0 issues, after applying `go fix -omitzero=false`'s two
+  suggested modernizations — a `slices.Contains` replacement and a
+  range-over-int loop), `go test -race ./...` (full repo, green),
+  `go test -tags=integration ./internal/merchant/...` (repository +
+  webhook packages against real Postgres, green — including the two
+  pre-existing tests fixed above), `go run ./cmd/doccheck` (129 files
+  valid, including the new receiver guide), `go run ./cmd/retentioncheck`
+  (100 policy entries valid — no new retention classes needed, T2 already
+  covers `gateway.merchant.webhook_events`/`webhook_deliveries`).
+- **Published**: `docs/reference/webhook-receiver-guide.md` — envelope
+  shape, signature verification (with a standalone Go reference
+  implementation independent of this codebase's own `webhook.Verify`),
+  idempotency guidance, retry/dead-letter schedule, response requirements,
+  sandbox-vs-live behavior, and secret rotation guidance for a merchant
+  building a receiver.
+
+T8 may begin.
 
 ---
 
