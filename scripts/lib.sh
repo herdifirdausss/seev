@@ -55,6 +55,14 @@ LEDGER_IDEMPOTENCY_KEY_V1="${LEDGER_IDEMPOTENCY_KEY_V1:-111111111111111111111111
 # privacy-e2e.sh needs both actually configured to exercise those flows.
 EXPORT_KEK_V1="${EXPORT_KEK_V1:-2222222222222222222222222222222222222222222222222222222222222222}"
 CLOSURE_KEK_V1="${CLOSURE_KEK_V1:-3333333333333333333333333333333333333333333333333333333333333333}"
+# Plan 57 T2/T3: gateway now REFUSES to boot without a non-empty
+# MERCHANT_API_KEY_PEPPER (internal/merchant.NewModule panics on an empty
+# pepper — the same "money-safety secret, never optional" posture as
+# LEDGER_IDEMPOTENCY_KEY_V1 above) and unconditionally builds a cryptox
+# ring for webhook-secret encryption (T7), so CRYPTOX_KEY_V1/
+# CRYPTOX_LOOKUP_KEY (already defined above for auth-service) must also
+# reach gateway's own process now, not just auth's.
+MERCHANT_API_KEY_PEPPER="${MERCHANT_API_KEY_PEPPER:-6666666666666666666666666666666666666666666666666666666666666666}"
 # docs/roadmap/archive/49 TM-11: the per-IP(+path) rate limiter now actually enforces
 # (previously bypassed by keying on the ephemeral source port) — this
 # harness legitimately fires many requests per minute from ONE machine
@@ -676,6 +684,13 @@ start_gateway() {
 		export LEDGER_USER_API_URL=https://localhost:$LEDGER_APP_PORT
 		export PAYIN_GRPC_ADDR=localhost:$PAYIN_GRPC_PORT
 		export PAYOUT_GRPC_ADDR=localhost:$PAYOUT_GRPC_PORT
+		# Plan 57 T2/T3/T7: gateway's own merchant module now requires both of
+		# these unconditionally at boot (see MERCHANT_API_KEY_PEPPER's own
+		# comment above) — found live while writing scripts/merchant-e2e.sh:
+		# every script sourcing this file was booting gateway without them.
+		export CRYPTOX_KEY_V1=$CRYPTOX_KEY_V1
+		export CRYPTOX_LOOKUP_KEY=$CRYPTOX_LOOKUP_KEY
+		export MERCHANT_API_KEY_PEPPER=$MERCHANT_API_KEY_PEPPER
 		export LOG_FORMAT=json
 		# Vendor callbacks are served by vendor-service; gateway only owns the
 		# public API and no longer registers a /webhooks route.
