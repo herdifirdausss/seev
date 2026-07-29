@@ -14,7 +14,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-var sourceNames = []string{"public-v1.yaml", "webhooks-v1.yaml", "admin-v1.yaml", "internal-v1.yaml"}
+var sourceNames = []string{"public-v1.yaml", "webhooks-v1.yaml", "admin-v1.yaml", "internal-v1.yaml", "b2b-v1.yaml"}
 
 func main() {
 	outDir := flag.String("out", "api/openapi/dist", "bundle output directory")

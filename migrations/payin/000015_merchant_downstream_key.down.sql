@@ -1,0 +1,2 @@
+DROP INDEX IF EXISTS idx_payin_topup_intents_merchant_downstream_key;
+ALTER TABLE payin_topup_intents DROP COLUMN downstream_key;

@@ -88,7 +88,7 @@ func TestSurfaceInventoryIsCompleteAndSafe(t *testing.T) {
 	}
 
 	ids := map[string]string{}
-	allowedAudience := map[string]bool{"public": true, "vendor": true, "admin": true, "internal": true, "browser": true, "operational": true}
+	allowedAudience := map[string]bool{"public": true, "vendor": true, "admin": true, "internal": true, "browser": true, "operational": true, "merchant": true}
 	allowedKind := map[string]bool{"operation": true, "mount": true, "browser": true, "operational": true}
 	unsafe := regexp.MustCompile(`(?i)(password|secret|token|bearer|@|personal|real[-_ ]?data)`)
 	for _, h := range got.HTTP {

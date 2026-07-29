@@ -84,3 +84,38 @@ func TestCompatibilityRequiresExactApprovedCutover(t *testing.T) {
 		t.Fatal("mismatched approved cutover unexpectedly passed")
 	}
 }
+
+// TestCompatibilityHandlesMultipleRefParametersOnOneOperation is a
+// regression test for a real bug found while locking the C1 Merchant/B2B
+// contract (docs/roadmap/active/57-c1-merchant-b2b-api.md T1): cmd/contractgenerate's
+// bundler represents a resolved $ref as {"$ref": {...resolved...}} rather
+// than replacing the node outright, so a bare object(raw) lookup of
+// "name"/"in" was always nil for a $ref-shaped parameter. With only ONE
+// such parameter per operation anywhere in the repository before this,
+// compareParameters's nil==nil match happened to hit the right (only)
+// candidate by accident. An operation with TWO $ref parameters — first
+// introduced by the B2B contract — exposed that the matching logic
+// compared unrelated parameters against each other whenever it saw more
+// than one.
+const multiRefParamFixture = `openapi: 3.1.0
+paths:
+  /widgets/{id}:
+    get:
+      operationId: getWidget
+      parameters:
+        - {$ref: {name: X-Request-ID, in: header, required: false, schema: {type: string}}}
+        - {$ref: {name: id, in: path, required: true, schema: {type: string, format: uuid}}}
+      responses: {'200': {description: ok}}
+components: {schemas: {}}
+`
+
+func TestCompatibilityHandlesMultipleRefParametersOnOneOperation(t *testing.T) {
+	if err := compatible([]byte(multiRefParamFixture), []byte(multiRefParamFixture)); err != nil {
+		t.Fatalf("identical multi-$ref-parameter operation rejected as incompatible: %v", err)
+	}
+	// A genuine change to one of the two ref'd parameters must still be caught.
+	mutated := strings.Replace(multiRefParamFixture, "format: uuid", "format: ulid", 1)
+	if err := compatible([]byte(multiRefParamFixture), []byte(mutated)); err == nil {
+		t.Fatal("changed $ref parameter format unexpectedly passed as compatible")
+	}
+}

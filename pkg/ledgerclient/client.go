@@ -10,6 +10,7 @@ import (
 	"github.com/shopspring/decimal"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/structpb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	ledgerv1 "github.com/herdifirdausss/seev/gen/ledger/v1"
 	"github.com/herdifirdausss/seev/pkg/ledgererr"
@@ -25,6 +26,17 @@ type Command struct {
 	PocketCode       string
 	ReferenceID      uuid.UUID
 	Metadata         map[string]any
+	// MerchantTenantID (Plan 57 T5) is set ONLY for type="merchant_transfer".
+	MerchantTenantID uuid.UUID
+}
+
+// MerchantAccount is a merchant tenant's cash account and its current
+// balance (Plan 57 T5).
+type MerchantAccount struct {
+	AccountID uuid.UUID
+	Currency  string
+	Balance   decimal.Decimal
+	Status    string
 }
 
 type Transaction struct {
@@ -66,6 +78,7 @@ func (c *Client) Post(ctx context.Context, command Command) error {
 		Type: command.Type, Amount: command.Amount.String(), UserId: uuidString(command.UserID),
 		TargetUserId: uuidString(command.TargetUserID), PocketCode: command.PocketCode,
 		ReferenceId: uuidString(command.ReferenceID), Metadata: metadata,
+		MerchantTenantId: uuidString(command.MerchantTenantID),
 	})
 	return ledgererr.FromStatus(err)
 }
@@ -107,6 +120,62 @@ func (c *Client) ResolveFee(ctx context.Context, userID uuid.UUID, txType, gatew
 func (c *Client) ProvisionUser(ctx context.Context, userID uuid.UUID, currency string) error {
 	_, err := c.client.ProvisionUser(ctx, &ledgerv1.ProvisionUserRequest{UserId: uuidString(userID), Currency: currency})
 	return ledgererr.FromStatus(err)
+}
+
+// ProvisionMerchant is Plan 57 T5's additive RPC — idempotently provisions
+// a merchant tenant's cash account, returning its account id.
+func (c *Client) ProvisionMerchant(ctx context.Context, tenantID uuid.UUID, currency string) (uuid.UUID, error) {
+	resp, err := c.client.ProvisionMerchant(ctx, &ledgerv1.ProvisionMerchantRequest{TenantId: uuidString(tenantID), Currency: currency})
+	if err != nil {
+		return uuid.Nil, ledgererr.FromStatus(err)
+	}
+	return parseUUID(resp.GetAccountId())
+}
+
+// GetMerchantAccount resolves a tenant's cash account and current balance
+// in one round trip — tenantID is the ONLY identity this call accepts; the
+// account id is always resolved server-side (Plan 57 T5).
+func (c *Client) GetMerchantAccount(ctx context.Context, tenantID uuid.UUID) (MerchantAccount, error) {
+	resp, err := c.client.GetMerchantAccount(ctx, &ledgerv1.GetMerchantAccountRequest{TenantId: uuidString(tenantID)})
+	if err != nil {
+		return MerchantAccount{}, ledgererr.FromStatus(err)
+	}
+	accountID, err := parseUUID(resp.GetAccountId())
+	if err != nil {
+		return MerchantAccount{}, fmt.Errorf("ledgerclient: invalid account id: %w", err)
+	}
+	balance, err := decimal.NewFromString(resp.GetBalance())
+	if err != nil {
+		return MerchantAccount{}, fmt.Errorf("ledgerclient: invalid balance: %w", err)
+	}
+	return MerchantAccount{AccountID: accountID, Currency: resp.GetCurrency(), Balance: balance, Status: resp.GetStatus()}, nil
+}
+
+// ListMerchantTransactions returns tenantID's own transactions, newest
+// first — tenantID is the ONLY identity this call accepts; the account id
+// is always resolved server-side, so no caller can list another tenant's
+// transactions (Plan 57 T5). before* are cursor fields for the next page;
+// zero values mean "start from the most recent transaction".
+func (c *Client) ListMerchantTransactions(ctx context.Context, tenantID uuid.UUID, beforeCreatedAt time.Time, beforeID uuid.UUID, limit int) ([]Transaction, error) {
+	req := &ledgerv1.ListMerchantTransactionsRequest{
+		TenantId: uuidString(tenantID), Limit: int32(limit), BeforeId: uuidString(beforeID),
+	}
+	if !beforeCreatedAt.IsZero() {
+		req.BeforeCreatedAt = timestamppb.New(beforeCreatedAt)
+	}
+	resp, err := c.client.ListMerchantTransactions(ctx, req)
+	if err != nil {
+		return nil, ledgererr.FromStatus(err)
+	}
+	txs := make([]Transaction, 0, len(resp.GetTransactions()))
+	for _, tx := range resp.GetTransactions() {
+		t, err := transactionFromProto(tx)
+		if err != nil {
+			return nil, err
+		}
+		txs = append(txs, t)
+	}
+	return txs, nil
 }
 
 // ConsumeFeeQuote is docs/roadmap/archive/38 Task T5's additive RPC — a rejection

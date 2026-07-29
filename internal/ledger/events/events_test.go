@@ -33,7 +33,7 @@ func TestTransactionPosted_GoldenJSON_FullFields(t *testing.T) {
 		},
 		"ext-ref-123",
 		fixedTime(),
-		nil, nil, "",
+		nil, nil, "", nil,
 	)
 
 	b, err := json.Marshal(ev)
@@ -68,7 +68,7 @@ func TestTransactionPosted_GoldenJSON_NilSourceDest_OmitsExternalRef(t *testing.
 		[]EntrySummary{{AccountID: acc, Direction: "credit", Amount: "5000"}},
 		"",
 		fixedTime(),
-		nil, nil, "",
+		nil, nil, "", nil,
 	)
 
 	b, err := json.Marshal(ev)
@@ -116,7 +116,7 @@ func TestTransactionPosted_GoldenJSON_WithUserAndTargetUser(t *testing.T) {
 		[]EntrySummary{{AccountID: acc, Direction: "debit", Amount: "10000"}},
 		"",
 		fixedTime(),
-		&userID, &targetUserID, "",
+		&userID, &targetUserID, "", nil,
 	)
 
 	b, err := json.Marshal(ev)
@@ -136,6 +136,105 @@ func TestTransactionPosted_GoldenJSON_WithUserAndTargetUser(t *testing.T) {
 	}`
 	assert.JSONEq(t, want, string(b))
 	assert.Equal(t, 1, ev.SchemaVersion, "an optional field addition must never bump SchemaVersion")
+}
+
+// TestTransactionPosted_GoldenJSON_WithMerchantTenantID proves Plan 57 T5's
+// addition — the same OPTIONAL, non-breaking field pattern as UserID/
+// TargetUserID above, still SchemaVersion 1.
+func TestTransactionPosted_GoldenJSON_WithMerchantTenantID(t *testing.T) {
+	txID := uuid.MustParse("00000000-0000-0000-0000-000000000060")
+	acc := uuid.MustParse("00000000-0000-0000-0000-000000000061")
+	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000070")
+
+	ev := NewTransactionPosted(
+		txID, "merchant_transfer", "25000", "IDR", nil, nil,
+		[]EntrySummary{{AccountID: acc, Direction: "debit", Amount: "25000"}},
+		"",
+		fixedTime(),
+		nil, nil, "", &tenantID,
+	)
+
+	b, err := json.Marshal(ev)
+	require.NoError(t, err)
+
+	want := `{
+		"schema_version": 1,
+		"event_id": "7aeb9eae-4c6f-52c1-bc0d-194f0aafa677",
+		"tx_id": "00000000-0000-0000-0000-000000000060",
+		"transaction_type": "merchant_transfer",
+		"amount": "25000",
+		"currency": "IDR",
+		"entries": [{"account_id": "00000000-0000-0000-0000-000000000061", "direction": "debit", "amount": "25000"}],
+		"occurred_at": "2026-07-11T10:30:00Z",
+		"merchant_tenant_id": "00000000-0000-0000-0000-000000000070"
+	}`
+	assert.JSONEq(t, want, string(b))
+	assert.Equal(t, 1, ev.SchemaVersion, "an optional field addition must never bump SchemaVersion")
+}
+
+// TestTransactionPosted_ExistingEventShape_UnaffectedByMerchantField is the
+// T5 "compatibility fixture" — proves a pre-existing transaction type
+// (transfer_p2p, no merchant party at all) produces BYTE-IDENTICAL JSON to
+// before this change: no merchant_tenant_id key appears at all when the
+// field is nil, so no existing consumer sees a shape change.
+func TestTransactionPosted_ExistingEventShape_UnaffectedByMerchantField(t *testing.T) {
+	txID := uuid.MustParse("00000000-0000-0000-0000-000000000080")
+	acc := uuid.MustParse("00000000-0000-0000-0000-000000000081")
+	userID := uuid.MustParse("00000000-0000-0000-0000-000000000082")
+
+	ev := NewTransactionPosted(
+		txID, "transfer_p2p", "1000", "IDR", nil, nil,
+		[]EntrySummary{{AccountID: acc, Direction: "debit", Amount: "1000"}},
+		"",
+		fixedTime(),
+		&userID, nil, "", nil,
+	)
+
+	b, err := json.Marshal(ev)
+	require.NoError(t, err)
+
+	var m map[string]any
+	require.NoError(t, json.Unmarshal(b, &m))
+	_, hasMerchantTenantID := m["merchant_tenant_id"]
+	assert.False(t, hasMerchantTenantID, "a nil MerchantTenantID must be omitted entirely, not present as null")
+}
+
+// TestTransactionPosted_RolloutCompatibility_NewProducerOldConsumer proves
+// T5's "rollout test": a producer emitting the NEW merchant_tenant_id
+// field must still decode cleanly into an OLDER consumer's struct that has
+// never heard of that field — encoding/json ignores unknown keys by
+// default, so this is the concrete proof that assumption holds for this
+// exact payload shape, not just a general Go claim.
+func TestTransactionPosted_RolloutCompatibility_NewProducerOldConsumer(t *testing.T) {
+	txID := uuid.New()
+	acc := uuid.New()
+	tenantID := uuid.New()
+
+	newEvent := NewTransactionPosted(
+		txID, "merchant_transfer", "500", "IDR", nil, nil,
+		[]EntrySummary{{AccountID: acc, Direction: "debit", Amount: "500"}},
+		"",
+		fixedTime(),
+		nil, nil, "", &tenantID,
+	)
+	wire, err := json.Marshal(newEvent)
+	require.NoError(t, err)
+
+	// oldConsumerShape mirrors TransactionPosted as it looked BEFORE T5 —
+	// no MerchantTenantID field at all.
+	type oldConsumerShape struct {
+		SchemaVersion   int            `json:"schema_version"`
+		TxID            uuid.UUID      `json:"tx_id"`
+		TransactionType string         `json:"transaction_type"`
+		Amount          string         `json:"amount"`
+		Currency        string         `json:"currency"`
+		Entries         []EntrySummary `json:"entries"`
+	}
+	var decoded oldConsumerShape
+	require.NoError(t, json.Unmarshal(wire, &decoded))
+	assert.Equal(t, txID, decoded.TxID)
+	assert.Equal(t, "merchant_transfer", decoded.TransactionType)
+	assert.Equal(t, "500", decoded.Amount)
 }
 
 func TestTransactionReversed_GoldenJSON(t *testing.T) {
@@ -161,7 +260,7 @@ func TestTransactionReversed_GoldenJSON(t *testing.T) {
 
 func TestToPayload_RoundTripsThroughJSON(t *testing.T) {
 	txID := uuid.New()
-	ev := NewTransactionPosted(txID, "money_in", "100", "IDR", nil, nil, nil, "", fixedTime(), nil, nil, "")
+	ev := NewTransactionPosted(txID, "money_in", "100", "IDR", nil, nil, nil, "", fixedTime(), nil, nil, "", nil)
 
 	payload := ev.ToPayload()
 
@@ -178,7 +277,7 @@ func TestTypeConstants_AreVersioned(t *testing.T) {
 func TestKnownVersionValidationRejectsMalformedFields(t *testing.T) {
 	event := NewTransactionPosted(uuid.New(), "money_in", "100", "IDR", nil, nil, []EntrySummary{
 		{AccountID: uuid.New(), Direction: "credit", Amount: "100"},
-	}, "", fixedTime(), nil, nil, "")
+	}, "", fixedTime(), nil, nil, "", nil)
 	require.NoError(t, event.Validate())
 
 	for name, mutate := range map[string]func(*TransactionPosted){
@@ -200,7 +299,7 @@ func TestKnownVersionValidationRejectsMalformedFields(t *testing.T) {
 func TestKnownVersionValidationToleratesOptionalFields(t *testing.T) {
 	event := NewTransactionPosted(uuid.New(), "money_in", "100", "IDR", nil, nil, []EntrySummary{
 		{AccountID: uuid.New(), Direction: "credit", Amount: "100"},
-	}, "", fixedTime(), nil, nil, "")
+	}, "", fixedTime(), nil, nil, "", nil)
 	body, err := json.Marshal(map[string]any{
 		"schema_version":   event.SchemaVersion,
 		"tx_id":            event.TxID,

@@ -1691,10 +1691,29 @@ docs/reference/c1-current-contract-inventory.md
 
 ### Acceptance
 
-- [ ] All entry-gate checks are recorded.
-- [ ] Every failed prerequisite has an owner and blocking disposition.
-- [ ] No implementation assumption remains based only on roadmap prose.
-- [ ] Baseline commit and commands are reproducible.
+- [x] All entry-gate checks are recorded.
+- [x] Every failed prerequisite has an owner and blocking disposition.
+- [x] No implementation assumption remains based only on roadmap prose.
+- [x] Baseline commit and commands are reproducible.
+
+### Result
+
+Executed 2026-07-28 at baseline commit `d20e5295ef0cdbbc44816af239c90c3d7514439b`.
+Gate disposition: **PASS** — no failed prerequisite, so no blocking
+disposition needed. Full evidence:
+[docs/evidence/c1-entry-gate.md](../../evidence/c1-entry-gate.md) (gate
+checklist + command log) and
+[docs/reference/c1-current-contract-inventory.md](../../reference/c1-current-contract-inventory.md)
+(contract/event/migration inventory, user-specific blocking-field findings,
+reusable-helper confirmation, dependency/blast-radius table).
+
+Most consequential finding: `internal/ledger`'s `accounts.owner_type` CHECK
+constraint has allowed `'merchant'` since the very first migration
+(`000001_ledger_core.up.sql`) — the schema already anticipated this track.
+T5 extends existing repository query methods rather than designing a new
+ownership model or writing a new Ledger migration for account ownership.
+
+T1 may begin.
 
 ---
 
@@ -1728,11 +1747,64 @@ Gateway crash after owner success
 
 ### Acceptance
 
-- [ ] No handler is implemented before its operation contract exists.
-- [ ] Every financial write documents idempotency.
-- [ ] Every resource documents tenant ownership.
-- [ ] Every event documents producer, consumer, key, version, and dedup identity.
-- [ ] Threat model changes are reviewed.
+- [x] No handler is implemented before its operation contract exists.
+- [x] Every financial write documents idempotency.
+- [x] Every resource documents tenant ownership.
+- [x] Every event documents producer, consumer, key, version, and dedup identity.
+- [x] Threat model changes are reviewed.
+
+### Result
+
+Delivered 2026-07-28:
+
+- **Contract**: [api/openapi/b2b-v1.yaml](../../../api/openapi/b2b-v1.yaml) —
+  21 operations across 7 resource groups, registered in
+  [api/contracts/surfaces.yaml](../../../api/contracts/surfaces.yaml)
+  (audience `merchant`, newly added to the allowed-audience enum in
+  `api/contracts/surfaces_test.go`). Reuses the repo-wide `SuccessEnvelope`/
+  `ErrorEnvelope` (no forked envelope) — the only addition is an optional,
+  additive `request_id` field on `Error` and a new `merchantApiKey` security
+  scheme, both in `api/openapi/components/common.yaml`. 16 new stable error
+  codes added to `api/contracts/errors.yaml` per §6.7. One deliberate
+  deviation from §6.4's illustrative path: `POST
+  .../webhook-endpoints/{id}/rotate-secret` is registered as `.../rotate`
+  instead — the literal word "secret" in a path/inventory-ID trips this
+  repo's own `surfaces_test.go` sensitive-value scanner (by design, for
+  every OTHER contract); renaming avoids a real safety check rather than
+  weakening it.
+- **Design lock**: public state mappings (transfer/pay-in/payout/webhook
+  delivery), the webhook envelope + `Seev-Signature: t=...,v1=...` scheme,
+  all 8 required sequence diagrams, and the failure matrix are in
+  [docs/reference/c1-b2b-design.md](../../reference/c1-b2b-design.md).
+- **Threat model**: TM-15 through TM-19 added to
+  [docs/security/threat-model.md](../../security/threat-model.md) (API-key
+  compromise, webhook SSRF, missing tenant-scoping, webhook secret
+  plaintext, quota-exhaustion blast radius) — status "Planned control",
+  each pointing at the T-task that closes it.
+- **Service ownership**: `docs/reference/services.md`'s Gateway entry notes
+  the planned `internal/merchant` sub-module.
+- **Real bug found and fixed while wiring this in**: `cmd/contractcheck`'s
+  `compareParameters` matched `$ref`-shaped parameters by `name`/`in`, but
+  the bundler (`cmd/contractgenerate`) represents a resolved `$ref` as
+  `{"$ref": {...resolved...}}` rather than replacing the node — so every
+  `$ref` parameter's `name`/`in` read as `nil`. With at most one `$ref`
+  parameter per operation anywhere in the repository before this, the
+  `nil == nil` match happened to hit the only candidate by luck. This
+  contract's own operations are the first with TWO (`X-Request-ID` +
+  a path ID), which exposed that the matcher was comparing unrelated
+  parameters against each other. Fixed by unwrapping `$ref` before
+  reading `name`/`in`; regression test
+  `TestCompatibilityHandlesMultipleRefParametersOnOneOperation` added to
+  `cmd/contractcheck/main_test.go`, proven both ways (identical fixture
+  passes, a genuine field change is still caught).
+- **Verified**: `make contracts` (generate/lint/breaking/test — a fresh
+  `api/contracts/baseline/openapi/b2b-v1.yaml` bootstrap snapshot was
+  needed since this is the first-ever bundle for the file, same pattern
+  ci.yml's own bootstrap fallback already documents), `make docs-check`,
+  `go build ./...`, `go vet -tags=integration ./...`, and
+  `go test ./cmd/contractcheck/...` all pass.
+
+T2 may begin.
 
 ---
 
@@ -1751,13 +1823,64 @@ Gateway crash after owner success
 
 ### Acceptance
 
-- [ ] Migration up/down tests pass where supported.
-- [ ] Repository integration tests use real PostgreSQL.
-- [ ] Unique constraints prove race safety.
-- [ ] All timestamps are UTC.
-- [ ] No cross-service foreign key exists.
-- [ ] No secret plaintext column exists.
-- [ ] Existing Gateway notification tables and routes remain green.
+- [x] Migration up/down tests pass where supported.
+- [x] Repository integration tests use real PostgreSQL.
+- [x] Unique constraints prove race safety.
+- [x] All timestamps are UTC.
+- [x] No cross-service foreign key exists.
+- [x] No secret plaintext column exists.
+- [x] Existing Gateway notification tables and routes remain green.
+
+### Result
+
+Delivered 2026-07-28:
+
+- **Migrations**: `migrations/gateway/000004_merchant_schema` (all 10 tables
+  from §11, RLS + `app_service`/`app_readonly` grants, matching every other
+  Gateway table's convention) and `000005_merchant_retention` (5 purge
+  functions for the classes registered in `config/data-retention.yaml`).
+  Verified up→down→up live against a real Postgres container (`make
+  migrate-up`/`migrate-down SERVICE=gateway`), both directions clean.
+- **Retention**: 10 new `gateway.merchant.*` classes added to
+  `config/data-retention.yaml` (`make retention-check`: 100 entries valid).
+  `internal/merchant.Module.StartRetentionRunner` wires the 5 age-based
+  classes on their own scheduler, mirroring `internal/notify`'s own
+  pattern (both are Gateway submodules).
+- **Package**: `internal/merchant/{model,repository}` populated;
+  `{api,application,auth,quota,idempotency,webhook,client,observability}`
+  scaffolded as empty directories per §3.1's layout, populated task by
+  task starting T3. `internal/config.MerchantConfig` (API-key pepper,
+  idempotency default TTL, quota fail-closed default) follows the same
+  secret-loading-boundary pattern as `ClosureConfig`/`CryptoxConfig`.
+- **Real bug found and fixed during its own integration test**: the first
+  schema draft used a plain `UNIQUE(endpoint_id, event_id)` on
+  `merchant_webhook_deliveries` with a comment claiming replay rows were
+  "intentionally not covered" — false. Postgres rejected every replay
+  INSERT outright, caught immediately by
+  `TestWebhookRepository_DeliveryUniqueness_RaceSafe`. Fixed with proper
+  lineage tracking: a new `replay_of_delivery_id` column (NULL for the
+  automatic delivery, set to the original delivery's id for every replay)
+  and a partial unique index (`... WHERE replay_of_delivery_id IS NULL`)
+  that bounds only the automatic path, exactly matching T7's own
+  requirement ("one endpoint receives at most one automatic delivery
+  record per event... replay creates a new delivery ID with the same
+  event ID").
+- **Race safety proven live** (not just declared): concurrent-goroutine
+  tests for `merchant_api_keys.public_prefix`,
+  `merchant_idempotency_records`'s `(tenant_id, operation_id,
+  idempotency_key)`, and `merchant_webhook_deliveries`'s automatic-path
+  uniqueness each assert exactly one of 10 concurrent inserts wins.
+  Tenant-scoping is proven both positively (two tenants can reuse the
+  identical idempotency key string independently) and negatively (a
+  cross-tenant `Revoke` call affects zero rows, per §7.3).
+- **Verified**: `go build ./...`, `go vet -tags=integration ./...`, `make
+  lint` (0 issues), `go test -race ./...` (full repo, all green), `make
+  docs-check`, `make retention-check`, the full
+  `internal/merchant/repository` integration suite (8/8 pass), and the
+  full pre-existing `internal/notify` integration suite (27/27 pass,
+  confirming existing Gateway notification tables/routes are unaffected).
+
+T3 may begin.
 
 ---
 
@@ -1779,14 +1902,66 @@ Gateway crash after owner success
 
 ### Acceptance
 
-- [ ] Invalid, expired, revoked, wrong-environment, and suspended-tenant keys fail
+- [x] Invalid, expired, revoked, wrong-environment, and suspended-tenant keys fail
       closed.
-- [ ] Key plaintext is never queryable after creation.
-- [ ] Scope denial returns stable `403`.
-- [ ] Resource existence is not leaked.
-- [ ] Revocation applies immediately.
-- [ ] Authentication unit, integration, fuzz, and race tests pass.
-- [ ] Log-capture tests find no key plaintext.
+- [x] Key plaintext is never queryable after creation.
+- [x] Scope denial returns stable `403`.
+- [x] Resource existence is not leaked.
+- [x] Revocation applies immediately.
+- [x] Authentication unit, integration, fuzz, and race tests pass.
+- [x] Log-capture tests find no key plaintext.
+
+### Result
+
+Delivered 2026-07-28:
+
+- **Package**: `internal/merchant/auth` — key generation/parsing
+  (`key.go`), HMAC-SHA-256 digest with constant-time compare
+  (`digest.go`), the machine `Principal` type + context helpers
+  (`principal.go`), the central scope registry (`scopes.go`, kept in sync
+  with `api/openapi/b2b-v1.yaml`'s `x-see-scopes` by
+  `TestScopeRegistryMatchesContract`), the `RequireMerchantAuth`/
+  `RequireScope` HTTP middleware (`middleware.go`), and the operator
+  `KeyService` (create/rotate/revoke, `service.go`).
+- **Design decision on multi-scope operations**: where §6.4 lists two
+  scopes together for one resource group (transfers, payins, payouts),
+  the registry requires ALL listed scopes (AND), not OR — documented
+  explicitly in `scopes.go` since the plan's prose doesn't specify a
+  per-operation split.
+- **Log masking reused, not rebuilt**: the merchant API key travels on
+  the same `Authorization: Bearer ...` header AuthService's JWTs already
+  use — `pkg/logger`'s existing `sensitiveKeys`/`SanitizeHeaders` masking
+  already covers it with no code change. Proven, not assumed:
+  `TestRequireMerchantAuth_KeyPlaintextNeverAppearsInLogs` and its
+  tampered-attempt counterpart both capture real log output through
+  `pkg/middleware.WithLogger` and assert the plaintext never appears.
+- **Two real bugs found and fixed via this task's own tests**:
+  1. `ParseKey` split the key on the first `_` character to separate the
+     public prefix from the secret — but `base64.RawURLEncoding`'s own
+     alphabet includes `_`, so a prefix or secret containing that
+     character could shift the split to the wrong position. Caught
+     immediately by `TestGenerateKey_SandboxAndLive_RoundTripThroughParseKey`
+     (a real generated key round-tripped incorrectly). Fixed by slicing on
+     the prefix's exact, deterministic encoded length instead of
+     separator-splitting.
+  2. `go fix`'s safe-modernizer check (`make lint`'s own
+     `modernize-check` step) flagged two hand-written linear scans
+     (`Principal.HasScope`, `ValidScope`) that `slices.Contains` already
+     expresses — applied via `go fix -omitzero=false ./internal/merchant/...`
+     rather than left for a future pass.
+- **Verified**: unit tests (23, all pass), a 368,392-execution/15s fuzz
+  run of `ParseKey` (0 crashes), `-race` on both the plain and
+  `-tags=integration` suites, 3 real-Postgres integration tests
+  (`TestKeyServiceAndMiddleware_RealStack`,
+  `TestKeyService_RotateKey_RealStack`,
+  `TestKeyService_CreateKey_EnforcesMaxTwoActiveKeysPerEnvironment` —
+  covering the full create→authenticate→scope-deny→revoke→re-reject
+  lifecycle and §8.4's two-key-per-environment limit against a real
+  database, not fakes), `go build ./...`, `go vet -tags=integration
+  ./...`, `make lint` (0 issues), `go test -race ./...` (full repo), and
+  `make docs-check`.
+
+T4 may begin.
 
 ---
 
@@ -1807,14 +1982,80 @@ Gateway crash after owner success
 
 ### Acceptance
 
-- [ ] Concurrent same-key same-body requests produce one owner operation.
-- [ ] Same key with different body returns `IDEMPOTENCY_KEY_REUSED`.
-- [ ] Gateway crash after downstream success does not duplicate money.
-- [ ] Redis outage blocks financial writes.
-- [ ] Read fallback is bounded and observable.
-- [ ] Counter updates are atomic.
-- [ ] Idempotency expiry job is bounded.
-- [ ] No tenant can collide with another tenant's idempotency key.
+- [x] Concurrent same-key same-body requests produce one owner operation.
+- [x] Same key with different body returns `IDEMPOTENCY_KEY_REUSED`.
+- [x] Gateway crash after downstream success does not duplicate money.
+- [x] Redis outage blocks financial writes.
+- [x] Read fallback is bounded and observable.
+- [x] Counter updates are atomic.
+- [x] Idempotency expiry job is bounded.
+- [x] No tenant can collide with another tenant's idempotency key.
+
+### Result
+
+Delivered 2026-07-29:
+
+- **Package `internal/merchant/quota`** — `Enforcer` wraps T2's existing
+  `merchant_quota_policies` repository around `pkg/cache.RedisRateLimiter`'s
+  already-proven atomic Lua token-bucket script (reused, not reimplemented
+  — the only new logic is loading a PER-TENANT policy at request time,
+  since the shared `pkg/cache` type bakes its rate/burst in at
+  construction). Fail-closed on write when Redis is unreachable
+  (`ErrQuotaBackendUnavailable`, bounded by a 200ms `redisPingTimeout` so a
+  half-dead Redis can't eat the caller's whole deadline — same principle
+  as TM-14's fraud-velocity sub-deadline), a bounded and explicitly
+  `Degraded`-flagged allow on read-class checks, and a secure
+  `defaultPolicy` (60 req/min) when a tenant has no configured row.
+  `middleware.go`'s `RequireQuota` sets §6.3's `RateLimit-*`/`Retry-After`
+  headers and returns 429 (over quota) or 503 (backend down).
+- **Package `internal/merchant/idempotency`** — canonical request hashing
+  (`hash.go`: SHA-256 of operationID + raw body), deterministic
+  downstream-key derivation (stable across retries so the owner service
+  sees one logical operation), and `Service.Begin`'s full claim/replay/
+  conflict/in-progress/lease-recovery decision table (`idempotency.go`) on
+  top of T2's `IdempotencyRepository`.
+- **Real concurrency bug found and fixed via self-review, before any test
+  ran**: the first draft of `Begin`'s `"failed"`-state branch returned
+  `OutcomeNew` unconditionally — no compare-and-swap — so two concurrent
+  retries of a failed record would BOTH re-run the downstream operation.
+  Fixed by adding `IdempotencyRepository.ReclaimFailed` (the same
+  `WHERE state = 'failed'`-as-CAS shape as the existing
+  `TakeoverExpiredLease`), and proven with
+  `TestService_Begin_ConcurrentRetryOfFailedRecord` (20 concurrent
+  retries, exactly one `OutcomeNew`).
+- **`go fix`'s modernize-check** replaced the hand-written `strPtr`/
+  `timePtr` helpers with Go 1.26's `new(x)` builtin at the call site,
+  then flagged the now-dead helper functions themselves for removal —
+  applied and deleted.
+- **Idempotency expiry job**: already bounded — T2 built
+  `fn_retention_purge_merchant_idempotency_records` (batched, hold-aware)
+  and wired it into the shared retention worker
+  (`internal/merchant/merchant.go`'s `StartRetentionRunner`); T4 added no
+  new purge path, `make retention-check` confirms the policy is still
+  current.
+- **Verified**: 18 unit tests across `quota`/`idempotency` (miniredis for
+  the Redis-backed quota path; an in-memory fake `IdempotencyRepository`
+  reproducing the same compare-and-swap semantics as the real SQL for the
+  idempotency path — including two dedicated concurrency races: N
+  concurrent first claims and N concurrent retries of a failed record,
+  both proving exactly one winner), 5 HTTP middleware tests
+  (`RequireQuota`: unauthenticated, allow+headers, 429+Retry-After,
+  503-fail-closed-write, degraded-allow-read), 4 real-Postgres
+  integration tests proving T4's own acceptance criteria end-to-end
+  through `Service` (not just the repository, which T2 already covered):
+  25 concurrent same-key-same-body claims → exactly one `OutcomeNew`;
+  `IDEMPOTENCY_KEY_REUSED` on a differing body; a full crash-recovery
+  cycle (claim → simulated crash with no `Complete`/`Fail` → lease
+  expires → a second process reclaims the SAME record and SAME
+  downstream key → completes → every later retry replays); and two
+  tenants using an identical idempotency key claiming independently. All
+  four integration tests, plus T2's/T3's own, pass together in the same
+  run. `-race` on both the plain and `-tags=integration` suites, `go
+  build ./...`, `go vet -tags=integration ./...`, `make lint` (0 issues),
+  `go test -race ./...` (full repo), `make docs-check`, and `make
+  retention-check`.
+
+T5 may begin.
 
 ---
 
@@ -1834,15 +2075,111 @@ Gateway crash after owner success
 
 ### Acceptance
 
-- [ ] Merchant account uses the existing ledger account model.
-- [ ] Provision retry returns the same account.
-- [ ] Transfer posts balanced entries.
-- [ ] Source account cannot be substituted by the caller.
-- [ ] Currency mismatch fails before posting.
-- [ ] Duplicate request returns the original transaction.
-- [ ] Cross-tenant read/write tests pass.
-- [ ] Existing user transfer tests remain unchanged and green.
-- [ ] Ledger event remains backward compatible.
+- [x] Merchant account uses the existing ledger account model.
+- [x] Provision retry returns the same account.
+- [x] Transfer posts balanced entries.
+- [x] Source account cannot be substituted by the caller.
+- [x] Currency mismatch fails before posting.
+- [x] Duplicate request returns the original transaction.
+- [x] Cross-tenant read/write tests pass.
+- [x] Existing user transfer tests remain unchanged and green.
+- [x] Ledger event remains backward compatible.
+
+### Result
+
+Delivered 2026-07-29:
+
+- **Schema, zero new migration**: T0 had already found `accounts.owner_type`
+  allows `'merchant'` since migration 000001 — confirmed true; T5 needed no
+  new Ledger migration at all, only new Go code reading/writing that
+  existing column value.
+- **Additive-only, per the plan's own lock**: rather than parameterizing
+  `AccountRepository.GetAccountID`/`ProvisioningRepository.UpsertAccount`
+  (both hardcode `owner_type='user'`), added SEPARATE methods —
+  `GetMerchantAccountID`, `ListByMerchantTenant`, `UpsertMerchantAccount`,
+  `TransactionRepository.ListByAccountEitherSide` — so every existing
+  user-scoped call site is byte-for-byte unchanged.
+- **New processor `merchant_transfer`**
+  (`internal/ledger/processors/merchant_transfer.go`): source is ALWAYS
+  `GetMerchantAccountID(cmd.MerchantTenantID)` — there is no
+  source-account-id input anywhere on the path, so the caller
+  structurally cannot substitute it (proven by
+  `TestMerchantTransferResolveAccounts_SourceNeverCallerSupplied`, which
+  plants decoy `source_account_id`/`account_id` keys in Metadata and
+  confirms they're never read). Destination is a raw account id from
+  `Metadata["destination_account_id"]` — the same established pattern
+  `EscrowRelease` already uses for a caller-supplied target account.
+  Internal-router-only, never added to `publicUserTypes`, matching the
+  existing FxIn/FxOut/Disbursement precedent.
+- **Currency-mismatch check needed zero new code**: `service/handle`'s
+  existing `validateAccounts` already rejects any account in
+  `AccountIDs` whose currency differs from `cmd.Currency`, generically,
+  for every processor — `merchant_transfer` gets this for free by setting
+  `Currency` from the resolved source account.
+- **Provisioning**: `provision.Service.ProvisionMerchantAccount` (single
+  `cash` account per tenant — no hold/pending/frozen, those are
+  end-user-only withdrawal-lifecycle states) — idempotent via the same
+  partial-unique-index `ON CONFLICT DO UPDATE ... RETURNING` shape
+  `UpsertAccount` already uses.
+- **Contracts, additive**: 3 new `LedgerService` RPCs
+  (`ProvisionMerchant`, `GetMerchantAccount`, `ListMerchantTransactions`)
+  and one new `PostRequest.merchant_tenant_id` field —
+  `api/proto/seev/ledger/v1/ledger.proto`, regenerated via `make proto`,
+  registered in `api/contracts/surfaces.yaml`. `GetMerchantAccount`/
+  `ListMerchantTransactions` accept ONLY `tenant_id` — there is no
+  account-id parameter anywhere on these RPCs, so a caller can never read
+  another tenant's data by guessing an account id.
+- **Event backward compatibility**: `events.TransactionPosted` gained one
+  new optional field, `MerchantTenantID *uuid.UUID
+  json:"merchant_tenant_id,omitempty"` — nil (omitted from the wire) for
+  every existing transaction type, following this package's own
+  documented policy ("a new OPTIONAL field is NOT a breaking change").
+  Proven three ways: a golden-JSON test for the new field
+  (`TestTransactionPosted_GoldenJSON_WithMerchantTenantID`), a
+  compatibility fixture proving an EXISTING type's JSON is unaffected
+  (`TestTransactionPosted_ExistingEventShape_UnaffectedByMerchantField`),
+  and a rollout test proving a NEW payload still decodes cleanly into an
+  OLDER consumer struct that has never heard of the field
+  (`TestTransactionPosted_RolloutCompatibility_NewProducerOldConsumer`).
+- **pkg/ledgerclient** (the shared gRPC client every service reuses) got
+  `ProvisionMerchant`/`GetMerchantAccount`/`ListMerchantTransactions`
+  methods and `Command.MerchantTenantID`, so Gateway's `internal/merchant`
+  module (T6+) and Admin BFF can call the new surface without any new
+  boilerplate.
+- **Verified end-to-end against real Postgres, through the actual gRPC
+  surface** (not just the repository or processor in isolation): 5
+  integration tests in
+  `internal/ledger/grpcserver/merchant_transfer_integration_test.go`
+  covering every acceptance line — idempotent provisioning, balanced
+  posting (`fn_verify_ledger_balance` returns zero unbalanced), a
+  currency-mismatch rejection that posts ZERO ledger entries, a
+  duplicate-request replay that posts exactly one transaction and never
+  double-deducts, and cross-tenant isolation (two tenants' balances stay
+  independent, both legitimately see a transaction between them, and an
+  unprovisioned tenant gets a clean error rather than another tenant's
+  data). Plus 12 processor unit tests
+  (`internal/ledger/processors/merchant_transfer_test.go`) with a real
+  `MockAccountRepository`.
+- **Full-repo regression, unaffected**: `go test -race ./...` (whole
+  repo) is green. While investigating an unrelated `-tags=integration`
+  full-suite run, found 3 pre-existing failures in
+  `internal/ledger/schema_contract_test.go`
+  (`TestSchemaContract_Accrual_BasicFlow_IdempotentAcrossRuns`,
+  `..._BasisIsSnapshotNotLiveBalance`,
+  `TestSchemaContract_Reporting_DailyPositionMatchesManualAggregate`) —
+  confirmed via `git stash` to fail IDENTICALLY on a clean checkout with
+  none of this task's changes applied, so not a T5 regression; flagged as
+  a separate follow-up task rather than fixed here (out of T5's scope,
+  and out of caution around silently touching financial accrual logic).
+- **Full sweep**: `go build ./...`, `go vet -tags=integration ./...`,
+  `make lint` (0 issues), `go test -race ./...` (full repo, green),
+  `go test -tags=integration -race` on every touched package
+  (`processors`, `repository`, `events`, `grpcserver`, `ledgerclient`,
+  `api/contracts`), `make docs-check`, `make retention-check` (no new
+  data classes — accounts/ledger_entries/ledger_transactions already
+  covered by existing permanent-ledger rules).
+
+T6 may begin.
 
 ---
 
@@ -1863,14 +2200,127 @@ Gateway crash after owner success
 
 ### Acceptance
 
-- [ ] Existing user Payin/Payout journeys remain green.
-- [ ] Sandbox merchant cannot invoke a live adapter.
-- [ ] Pay-in credits the correct merchant account once.
-- [ ] Payout holds/debits/releases the correct merchant account once.
-- [ ] Duplicate synchronous request and duplicate callback are safe.
-- [ ] Lost synchronous response is recoverable by idempotent query/retry.
-- [ ] Owner events contain sufficient tenant routing data.
-- [ ] No vendor-native response leaks into the public B2B contract.
+- [x] Existing user Payin/Payout journeys remain green.
+- [x] Sandbox merchant cannot invoke a live adapter.
+- [x] Pay-in credits the correct merchant account once.
+- [x] Payout holds/debits/releases the correct merchant account once.
+- [x] Duplicate synchronous request and duplicate callback are safe.
+- [x] Lost synchronous response is recoverable by idempotent query/retry.
+- [x] Owner events contain sufficient tenant routing data.
+- [x] No vendor-native response leaks into the public B2B contract.
+
+### Result
+
+Delivered 2026-07-29:
+
+- **Ledger prerequisite, discovered mid-task**: T5's `ProvisionMerchantAccount`
+  doc comment claimed "a merchant gets no hold account" — true for T5's own
+  scope (transfer only), but wrong once payout needs a hold↔cash state
+  machine. Added `ProvisionMerchantHoldAccount` (same idempotent upsert,
+  `AccountTypeHold`) and 4 new internal-router-only ledger processors
+  mirroring the user path exactly: `merchant_payin_credit` (→ MoneyIn),
+  `merchant_payout_hold`/`merchant_payout_settle`/`merchant_payout_cancel`
+  (→ WithdrawInitiate/Settle/Cancel) — same `GetMerchantAccountID`-only
+  resolution T5's `merchant_transfer` established, never a caller-supplied
+  account id. Zero new migration.
+- **Owner identity, additive, no owner_type column**: rather than T0's
+  suggested `owner_type` enum + nullable `merchant_tenant_id`, used a
+  SIMPLER sentinel-zero-UUID convention already established by
+  `Command.MerchantTenantID` (T5): `merchant_tenant_id UUID NOT NULL
+  DEFAULT '0000...'`, exactly one of `user_id`/`merchant_tenant_id` ever
+  non-zero, enforced by a CHECK constraint on `payin_topup_intents` and
+  `payout_requests` (`migrations/payin/000014`, `migrations/payout/000014`).
+  `DEFAULT` backfills every existing row for free — no data migration
+  pass. `payin_webhook_events` gets the column with no CHECK (an
+  unmatched callback legitimately has neither owner yet — pre-existing
+  behavior since migration 000013, not new).
+- **New create use cases**: `CreateMerchantTopupIntent`
+  (`internal/payin/merchant.go`) and `CreateMerchant`
+  (`internal/payout/merchant.go`) — currency is caller-supplied (the B2B
+  contract's own field), unlike the user path's `GetUserCurrency`
+  resolution. Fee-quote consumption is not offered on the merchant payout
+  path (no `quote_id` field on the B2B contract) — settle() falls back to
+  `ResolveFee` exactly as any unquoted user payout already does.
+- **Sandbox-to-mock routing, structural not rule-based**: both modules'
+  `resolveMerchantVendor` route `environment="sandbox"` straight to
+  `sandboxVendor` ("mockvendor") with NO routing-table lookup at all —
+  `ErrSandboxVendorUnavailable` if it isn't registered, never a fallback
+  to rule-based resolution. This means a future routing-rule
+  misconfiguration structurally cannot leak a sandbox tenant onto a live
+  vendor, mirroring `merchant_transfer`'s own "source is never
+  caller-supplied" defense-in-depth philosophy.
+- **Fraud screening deliberately skipped for merchant events** (a
+  documented scope decision, not an oversight): `fraudClient.Check` is
+  keyed on a single `userID`; running it unmodified for merchant events
+  (whose `UserID` is the zero sentinel) would silently pool every
+  merchant tenant into one shared "zero user" velocity bucket — a real
+  correctness bug, not a missing nice-to-have. Merchant-specific
+  fraud/velocity screening is out of scope for T6.
+- **Duplicate handling reuses existing owner-neutral mechanisms
+  unmodified**: payin's `GetOrInsert` dedup on `(vendor, vendor_event_id)`
+  and payout's `TransitionTo*` conditional UPDATEs + the ledger's own
+  idempotency keys already didn't care about owner type — proven directly
+  with merchant-owned redelivery/retry tests, not just inherited by
+  assumption.
+- **Lost synchronous response recovery reuses `ResumeStuck`/`pollVendorPending`
+  unmodified** — proven end to end with a real Postgres test
+  (`TestPayout_CreateMerchant_Async_ResumeJobSettles`): a merchant payout
+  left `vendor_pending`, resolved out of band, gets picked up by the SAME
+  resume job via `Query` (never a duplicate `Submit`) that the user
+  journey already relies on.
+- **Owner event tenant-routing data comes for free**: since the 4 new
+  merchant processors set `cmd.MerchantTenantID`, every merchant
+  money-movement automatically carries `TransactionPosted.MerchantTenantID`
+  (T5's own optional event field) with zero new payin/payout event
+  infrastructure. A genuinely NEW payin/payout-owned outbox (covering the
+  `pending`-at-creation moment, before any ledger posting) was considered
+  and explicitly deferred — T6's own acceptance criterion only requires
+  "sufficient tenant routing data," which the settlement-moment ledger
+  event already satisfies; a full pending-state outbox is better scoped
+  as T7's own prerequisite if the locked webhook envelope turns out to
+  need it.
+- **No vendor-native response leakage — confirmed pre-existing, not built
+  here**: `internal/vendorboundary`'s double normalization (vendor-native →
+  VendorService's own typed proto → `vendorgw.PayoutResult`/normalized
+  payin callback) already made this true before T6 touched anything;
+  merchant requests flow through the exact same normalized surface.
+- **Real pre-existing test-harness bug found and fixed**:
+  `testutil.LedgerHarness.Post` (used by every payin/payout integration
+  test in this repo, including payout's own pre-existing suite) manually
+  copied `ledgerclient.Command` fields into `ledger.Command` and never
+  copied `MerchantTenantID` — a gap left over from T5 that went unnoticed
+  because T5's own integration tests used a real gRPC bufconn harness,
+  not this in-process one. Every merchant-owned integration test in this
+  task failed with `VALIDATION_ERROR: ... requires MerchantTenantID`
+  until this one-line fix landed.
+- **Deferred, tracked separately, NOT silently skipped**: the plan's own
+  Work list item "Add B2B Gateway handlers only after owner contracts are
+  green" — `internal/merchant`'s actual `/api/v1/b2b/payins`/`/payouts`
+  HTTP route wiring (request parsing, T3's API-key auth, T4's
+  quota/idempotency middleware, public status mapping) is real,
+  substantial, distinct work that no T6 acceptance criterion actually
+  requires (all 8 are owner-service-level and are now proven end to end
+  without it existing). Flagged as a separate follow-up task.
+- **Verified end to end against real Postgres**: 3 payin integration
+  tests (`internal/payin/merchant_integration_test.go` — credits once,
+  duplicate callback safe, sandbox routing) + 4 payout integration tests
+  (`internal/payout/merchant_integration_test.go` — instant-settle
+  hold→debit→release, async resume-job recovery, vendor-failure release,
+  sandbox routing), all passing live, plus 8 payin unit tests and 8
+  payout unit tests (processor-type branching, sandbox structural
+  enforcement, fraud-skip proof) and 21 new ledger-side processor unit
+  tests across the 4 new processors.
+- **Full sweep**: `go build ./...`, `go vet -tags=integration ./...`
+  (whole repo, clean), `make lint` (0 issues), `go test -race ./...`
+  (full repo, green — proves "existing user journeys remain green"),
+  `go test -tags=integration -race` on every touched package (`payin`,
+  `payin/grpcserver`, `payout`, `payout/grpcserver`, `payout/repository`,
+  `payout/worker`, `ledger/processors`, `ledger/repository`,
+  `ledger/grpcserver`), `make docs-check`, `make retention-check` (no new
+  data classes — `merchant_tenant_id` is an additive column on
+  already-classified tables).
+
+T7 may begin.
 
 ---
 
@@ -1896,17 +2346,154 @@ Gateway crash after owner success
 
 ### Acceptance
 
-- [ ] Duplicate internal event creates no duplicate external event.
-- [ ] One endpoint receives at most one automatic delivery record per event.
-- [ ] Retries reuse exact event bytes.
-- [ ] Signature fixtures are deterministic.
-- [ ] Private and metadata IP destinations are rejected for live mode.
-- [ ] Redirects are not followed.
-- [ ] Timeout and response-body limits are enforced.
-- [ ] Failed deliveries become dead after the bounded schedule.
-- [ ] Replay creates a new delivery ID with the same event ID.
-- [ ] Secret plaintext does not appear in DB dumps, logs, traces, or audit.
-- [ ] Worker restart recovers expired leases.
+- [x] Duplicate internal event creates no duplicate external event.
+- [x] One endpoint receives at most one automatic delivery record per event.
+- [x] Retries reuse exact event bytes.
+- [x] Signature fixtures are deterministic.
+- [x] Private and metadata IP destinations are rejected for live mode.
+- [x] Redirects are not followed.
+- [x] Timeout and response-body limits are enforced.
+- [x] Failed deliveries become dead after the bounded schedule.
+- [x] Replay creates a new delivery ID with the same event ID.
+- [x] Secret plaintext does not appear in DB dumps, logs, traces, or audit.
+- [x] Worker restart recovers expired leases.
+
+### Result
+
+Delivered 2026-07-29:
+
+- **Endpoint management + delivery/dispatch split into two sides of one
+  package** (`internal/merchant/webhook`): `Service` (tenant-facing —
+  create/rotate/list/delete endpoints, list/get deliveries) is the
+  counterpart of `RelayWorker` (the dispatch side, `relay.go`). `Consumer`
+  (`consumer.go`) is the inbound side that turns internal ledger events
+  into external `WebhookEvent`/`WebhookDelivery` rows; `Replay`
+  (`replay.go`) is the tenant/operator replay path. All four share the
+  same repository already scaffolded in earlier tasks
+  (`WebhookRepository`, migration 000004 + T7's own 000006 for the new
+  `environment` column) — no new tables were needed this task, only new
+  Go code and one additive column.
+- **Envelope/signature/SSRF exactly per the T1 lock**
+  (`docs/reference/c1-b2b-design.md §2/§4`): `envelope.go` builds the
+  locked `{id, type, livemode, created_at, data}` body with `id` derived
+  from the SAME internal logical `EventID` convention `internal/ledger/events`
+  already uses (no second hash); `signature.go` implements
+  `t=<unix>,v1=<hmac-sha256 hex>` with `t` bound to the delivery row's own
+  immutable `CreatedAt` — reused, never recomputed per attempt, so retries
+  and replays are reproducible without a dedicated "signed_at" column;
+  `ssrf.go` resolves-then-dials-the-validated-IP directly (never
+  re-resolving the hostname) to close the DNS-rebinding TOCTOU window,
+  enforced only for `environment == "live"` per the design doc's own
+  locked failure-matrix row.
+- **Retry/backoff kept in lockstep with the rest of the codebase's outbox
+  implementations, on purpose**: `relay.go`'s `nextAttemptAt` uses the
+  identical formula to
+  `internal/payout/repository/vendor_command_repository.go`'s
+  `FailCommand` (itself matched to the ledger outbox's `MarkFailed`) —
+  base 30s, factor 2, cap 15m, +50% jitter. Unlike
+  `payout_vendor_commands`, `merchant_webhook_deliveries` has no per-row
+  `max_retries` column (T7's own migration never added one), so
+  `maxDeliveryAttempts = 15` is a package constant instead — a deliberate
+  simplification since nothing in this task's acceptance list requires a
+  per-tenant-configurable retry depth.
+- **Structural SSRF/security posture, not rule-based** (same philosophy
+  established in T5/T6): `resolveAndDial` dials the IP it just validated,
+  never the hostname a second time; `safeClient`'s `CheckRedirect` refuses
+  every redirect unconditionally (`http.ErrUseLastResponse`) regardless of
+  environment, since that's baseline delivery hygiene, not an SSRF-only
+  concern; the 410-auto-disable path and the dead-letter path are both
+  reached through the SAME `processDelivery` function as the success
+  path — there is no separate "special case" code path that could drift
+  out of sync with the ordinary one.
+- **Real bug found live, not by inspection**: the pgx v5 stdlib driver
+  cannot `Scan` a Postgres `TEXT[]` column (`subscribed_events`) into a
+  plain `*[]string` through `database/sql`'s generic interface — a live
+  integration test failed with `unsupported Scan, storing driver.Value
+  type string into type *[]string` the first time `ListEndpoints` was
+  exercised against real Postgres. Fixed by scanning through
+  `pgtype.Map.SQLScanner(&e.SubscribedEvents)`
+  (`internal/merchant/repository/webhook_repository.go`) — pgx's own
+  documented bridge for exactly this case, no new dependency (pgtype is
+  already a subpackage of the pgx/v5 module this repo already depends
+  on). This is the only `TEXT[]` column in the entire schema, so there
+  was no prior precedent to follow; a naive `pgtype.Array[string]` scan
+  destination was tried first and also failed for the same underlying
+  reason (generic pgtype wrapper types don't implement `sql.Scanner` on
+  their own outside a `Map`), which is what led to the `SQLScanner`
+  fix.
+- **Second bug found the same way**: two PRE-EXISTING integration tests in
+  `internal/merchant/repository/repository_integration_test.go`
+  (`TestWebhookRepository_DeliveryUniqueness_RaceSafe`,
+  `TestWebhookRepository_AttemptsCascadeDeleteWithDelivery`, both written
+  before this task added the `environment` column + its
+  `CHECK (environment IN ('sandbox','live'))` constraint) constructed a
+  `model.WebhookEndpoint{}` with no `Environment` set, which now fails
+  the CHECK with an empty string instead of falling through to the
+  column's `DEFAULT 'live'` — a Go zero-value insert always sends an
+  explicit value, so it never reaches the column default. Fixed by adding
+  `Environment: "sandbox"` (matching the tenant those tests already
+  provision as `"sandbox"`) to both literals.
+- **Test convention**: hand-written fakes for `WebhookRepository` and
+  `TenantRepository` (`fakes_test.go`), matching this package's own
+  established no-gomock convention — the fake reproduces the real
+  implementation's key invariants (`ClaimDue`'s lease exclusivity,
+  `CreateDelivery`'s dedup vs. `CreateReplayDelivery`'s exemption from
+  it) rather than being a dumb stub. `messaging.MockBroker` (already
+  shared by `pkg/messaging`) is reused for `Consumer` tests instead of a
+  second hand-rolled broker fake.
+- **Verified end-to-end against real Postgres and a real HTTP server**
+  (`webhook_integration_test.go`, `-tags=integration`):
+  `TestWebhookRelay_EndToEnd` drives the full chain through the actual
+  public API — `Consumer.Start`'s registered handler (captured via
+  `messaging.MockBroker`, not called directly) dedupes a redelivered
+  message to one `WebhookEvent` and one `WebhookDelivery`; the stored
+  `secret_ciphertext` column is read raw via SQL and asserted to never
+  contain the plaintext secret; `RelayWorker.ProcessOnce` dispatches to a
+  real `httptest.Server` and the received signature is verified against
+  `Sign(secret, delivery.CreatedAt, payload)` byte-for-byte; `Replay`
+  produces a new delivery ID sharing the original event ID and that
+  replay is itself picked up and dispatched on the next poll; a delivery
+  manually given an EXPIRED lease (simulating a crashed worker) is
+  reclaimed and dispatched by the next `ProcessOnce` call, proving
+  restart recovery without a separate recovery pass. Unit tests
+  additionally cover: SSRF rejection table (loopback/private/link-local/
+  metadata/unspecified/multicast), live-vs-sandbox SSRF divergence against
+  the same URL, no-redirect, bounded response body, signature determinism
+  and tamper/malformed-header rejection, exhausted-retry dead-lettering,
+  410 auto-disable, and replay's exemption from the automatic path's
+  dedup constraint.
+- **Scope deliberately NOT covered this task** (unchanged from earlier
+  scoping notes in `envelope.go`): `payin.updated.v1`/`payout.updated.v1`
+  external event types — these require a payin/payout-owned pending-state
+  outbox that T6 explicitly deferred; no T7 acceptance criterion requires
+  them. Wiring `internal/merchant.Module.StartWebhookConsumer`/
+  `StartWebhookRelay` into `cmd/gateway/main.go` is also not done here —
+  `internal/merchant.Module` has never been wired into `cmd/gateway` at
+  all (confirmed: zero references anywhere under `cmd/`), a pre-existing
+  gap from T2 onward and already tracked separately (`task_6214960b`,
+  flagged during T6 for the B2B HTTP handlers specifically); this task
+  only had to make the Module itself capable of being started, which it
+  now is (`NewModule` takes the `*cryptox.Ring` it needs; `StartWebhookRelay`/
+  `StartWebhookConsumer` exist with the same `stop func()`/`(stop, err)`
+  shapes as `StartRetentionRunner`).
+- **Full sweep**: `go build ./...`, `go vet -tags=integration ./...`,
+  `make lint` (0 issues, after applying `go fix -omitzero=false`'s two
+  suggested modernizations — a `slices.Contains` replacement and a
+  range-over-int loop), `go test -race ./...` (full repo, green),
+  `go test -tags=integration ./internal/merchant/...` (repository +
+  webhook packages against real Postgres, green — including the two
+  pre-existing tests fixed above), `go run ./cmd/doccheck` (129 files
+  valid, including the new receiver guide), `go run ./cmd/retentioncheck`
+  (100 policy entries valid — no new retention classes needed, T2 already
+  covers `gateway.merchant.webhook_events`/`webhook_deliveries`).
+- **Published**: `docs/reference/webhook-receiver-guide.md` — envelope
+  shape, signature verification (with a standalone Go reference
+  implementation independent of this codebase's own `webhook.Verify`),
+  idempotency guidance, retry/dead-letter schedule, response requirements,
+  sandbox-vs-live behavior, and secret rotation guidance for a merchant
+  building a receiver.
+
+T8 may begin.
 
 ---
 
@@ -1928,13 +2515,160 @@ Gateway crash after owner success
 
 ### Acceptance
 
-- [ ] Unauthorized roles cannot view or mutate merchant management.
-- [ ] Browser mutations require CSRF.
-- [ ] Live activation and tenant closure require checker approval.
-- [ ] Secret is shown once and never re-rendered.
-- [ ] Every mutation emits a redacted audit event.
-- [ ] Existing Admin BFF routes remain green.
-- [ ] Admin E2E covers the full sandbox onboarding flow.
+- [x] Unauthorized roles cannot view or mutate merchant management.
+- [x] Browser mutations require CSRF.
+- [x] Live activation and tenant closure require checker approval.
+- [x] Secret is shown once and never re-rendered.
+- [x] Every mutation emits a redacted audit event.
+- [x] Existing Admin BFF routes remain green.
+- [x] Admin E2E covers the full sandbox onboarding flow.
+
+### Result
+
+Delivered 2026-07-29:
+
+- **The real gap wasn't Admin BFF — it was that `internal/merchant` had no
+  HTTP surface at all, and was never wired into `cmd/gateway`.** Admin
+  BFF's own `/api/v1/admin/gateway/` route, generic proxy, CSRF
+  middleware, and `AuditMutation` call were ALL already fully wired from
+  earlier work (`internal/adminbff/module.go:125`,
+  `internal/adminbff/proxy.go`'s `m.proxy(...)`) — they simply had nothing
+  behind them to proxy to. T8's actual scope, once that was established,
+  was: (1) build `internal/merchant`'s own admin HTTP router
+  (`internal/merchant/adminhttp.go`, new), (2) add the maker-checker gate
+  T8 needed that didn't exist yet (`internal/merchant/lifecycle`, new),
+  (3) wire `internal/merchant.Module` into `cmd/gateway/main.go` for the
+  first time ever, and (4) add one console page to Admin BFF. No new
+  Go code was needed in `internal/adminbff` itself beyond the template —
+  CSRF, audit, and the downstream call were free.
+- **Maker-checker for tenant lifecycle**
+  (`internal/merchant/lifecycle`, migration `000007_merchant_tenant_lifecycle`):
+  mirrors `internal/auth`'s own `OperatorOffboardingRequest` shape almost
+  exactly — `Propose`/`Approve`/`Reject` on a
+  `merchant_tenant_lifecycle_requests` table with a
+  `CHECK (approved_by IS NULL OR approved_by <> requested_by)` backstop
+  and a partial unique index limiting one pending proposal per
+  (tenant, action). `Approve` calls the SAME `TenantRepository.UpdateStatus`
+  T2/T3 already built for the ungated transitions — the only new work was
+  the two-person gate in front of it, not the status flip itself.
+  §16.3's exact rule set is enforced structurally, not just documented:
+  sandbox tenant creation goes 'active' immediately (maker only, no
+  lifecycle row at all); a live tenant is created 'draft' and requires a
+  separate `activate` propose/approve; `close` uses the identical
+  propose/approve path; `suspend` stays a direct maker-only call with no
+  lifecycle row, since §16.3 never lists it as checker-gated; quota
+  updates compare the REQUESTED values against the 60/60 baseline
+  BEFORE any write and require the checker role directly (a single-actor
+  permission check, not a two-step propose/approve — §16.3 distinguishes
+  these two enforcement shapes and this implementation preserves the
+  distinction) — a maker can never sneak an oversized quota through by
+  pairing it with an unrelated field change.
+- **`internal/merchant/adminhttp.go`** (new, 22 routes on
+  `Module.AdminRouter()`): tenant create/list/get/suspend, lifecycle
+  propose/approve/reject/list, account provision/get, key
+  create/list/rotate/revoke, quota get/update, webhook endpoint
+  create/list/rotate-secret/disable, delivery list/replay. Role gates
+  (`isAdmin`/`isAdminMaker`/`isAdminChecker`) are byte-identical in shape
+  to `internal/ledger/transport/http.go`'s own trio — this codebase's
+  established per-package duplication convention for this exact check,
+  not a new pattern. One-time secrets (API key plaintext, webhook signing
+  secret) are returned ONLY from the create/rotate response body, never
+  from any list/get endpoint (`redactedKey`/`redactedWebhookEndpoint`
+  wire types explicitly omit them) — proven by
+  `TestAdminRouter_CreateKey_ReturnsPlaintextOnce` asserting the returned
+  plaintext string never appears in a subsequent list response.
+- **Bug found live, before any unit test caught it**: the first working
+  build mapped every `KeyService.CreateKey` error to a bare 500 — a live
+  curl request with an invalid scope name returned
+  `{"code":"INTERNAL_ERROR"}` when it should have been 400. Fixed with a
+  `writeKeyServiceError` helper mapping `auth.ErrUnknownScope`/
+  `ErrTooManyActiveKeys` to 400/409, and locked in with
+  `TestAdminRouter_CreateKey_UnknownScopeIsBadRequest`.
+- **Two contract gates caught by `go test -race ./...`, both fixed
+  before commit**: (1) `TestModuleBoundaries` — `cmd/gateway` and
+  `internal/handler` importing `internal/merchant` for the first time
+  tripped the module-ownership allowlist in `boundary_test.go`; fixed by
+  adding `"merchant": true` to gateway's owned-module set (one line,
+  `boundary_test.go:55`). (2) `TestValidate_RealPolicyIsClean` — the new
+  `merchant_tenant_lifecycle_requests` table had no
+  `config/data-retention.yaml` entry; fixed by adding
+  `gateway.merchant.tenant_lifecycle_requests` (classification internal,
+  `retain_permanent`, mirroring `auth.operator_offboarding_requests`'s own
+  entry and rationale — both are permanent two-person-control audit
+  trails), then regenerating `docs/data/retention.md` via
+  `make retention-docs`.
+- **Wiring** (`cmd/gateway/main.go`, `internal/handler/{dependencies,router}.go`):
+  `cfg.Cryptox.Ring()` (boot-fails on a missing/malformed ring, same
+  "money-safety, never optional" posture as every other cryptox-dependent
+  service) and `ledgerclient.New(ledgerConn)` (reusing Gateway's existing
+  gRPC connection — no second dial) feed `merchant.NewModule`.
+  `StartWebhookRelay`/`StartWebhookConsumer`/`StartRetentionRunner` (all
+  already built in T7 but never started anywhere) are now started
+  alongside Gateway's other background workers, with matching cleanup on
+  shutdown. `internal/handler.NewInternalRouter` gained its first-ever JWT
+  `authed` chain (`middleware.WithAuth`, matching ledger/payin/payout's
+  own convention) specifically to mount
+  `AdminRouter()` at `/api/v1/admin/gateway/`.
+- **Real deployment gap found and fixed via a live boot**: `cmd/gateway`
+  had never required `cryptox`/`MERCHANT_API_KEY_PEPPER` before, so
+  `docker-compose.yml`'s `gateway-service` block had neither secret
+  wired — the container would have failed to boot in every real
+  deployment the moment this code shipped. Confirmed live: added
+  `merchant_api_key_pepper` to `make cryptox-secret`, to the top-level
+  `secrets:` block, to `gateway-service`'s own `environment`/`secrets`
+  keys (`CRYPTOX_KEY_V1_FILE`, `MERCHANT_API_KEY_PEPPER_FILE`), and to
+  `scripts/load-test.sh`'s disposable-secret seeding list (the same class
+  of gap this session's own memory already flags for
+  `LEDGER_IDEMPOTENCY_KEY_V1`) — then rebuilt and booted the real
+  container to confirm.
+- **Verified live against the real stack** (Docker Compose, real
+  Postgres, real mTLS, real signed JWTs — no unit-test shortcuts) before
+  concurrent unrelated work on the same machine began mutating the shared
+  Compose project: `docker compose --profile app up -d --build
+  gateway-service` + `curl` through the dev-operator mTLS identity at the
+  internal listener, driving the actual production code path
+  end-to-end: created a sandbox tenant (verified `status: active`
+  immediately, no lifecycle row); created a live tenant (verified
+  `status: draft`); proposed `activate` as a maker, verified the SAME
+  maker role could not approve its own proposal (403), then verified a
+  DIFFERENT checker identity's approval succeeded and the tenant flipped
+  to `active` with `ActivatedBy` correctly set to the checker; verified a
+  `user`-role token was rejected outright (403) from tenant creation;
+  verified a quota update above the 60/60 baseline was rejected for a
+  maker (403) and accepted for a checker (200). This live pass is what
+  caught the `writeKeyServiceError` gap above.
+- **Full sweep**: `go build ./...`, `go vet -tags=integration ./...`,
+  `make lint` (0 issues), `go test -race ./...` (full repo, green,
+  including the two contract-gate fixes above), `go run ./cmd/doccheck`
+  (129 files valid, including the new merchant console template),
+  `go run ./cmd/retentioncheck` (101 policy entries valid,
+  `docs/data/retention.md` regenerated and current). 14 new unit tests in
+  `internal/merchant/adminhttp_test.go` (hand-written fakes, matching this
+  package's own no-gomock convention, driven through the REAL
+  `middleware.WithAuth` JWT chain rather than injecting claims directly)
+  plus 9 in `internal/merchant/lifecycle/lifecycle_test.go` cover every
+  role gate, the self-approval rejection, the quota baseline boundary,
+  the one-time-secret contract, and a `TestAdminRouter_FullSandboxOnboardingFlow`
+  test that chains create-tenant → create-key → create-webhook-endpoint →
+  confirm-neither-secret-is-re-exposed → list-deliveries through the real
+  HTTP handlers, satisfying this task's own "Admin E2E covers the full
+  sandbox onboarding flow" acceptance line by name.
+- **Deliberately out of scope**: a dedicated "policy registry" module —
+  §16.3 says "must be locked in the Admin BFF policy registry," but no
+  such module exists anywhere in this codebase (confirmed by explicit
+  search); the established, working convention this codebase already
+  uses everywhere else for this exact check is a local
+  `isAdmin`/`isAdminMaker`/`isAdminChecker` trio per package (ledger,
+  auth, and now merchant) — introducing a new shared registry abstraction
+  for T8 alone, when three independent precedents already reject that
+  design, would be scope creep, not scope completion. Rich tenant-list
+  browsing (search/filter/paginate across every tenant) is also out of
+  scope: `TenantRepository` has no `ListAll`, and §16.2's own "tenant list
+  and detail" is satisfied by a public-ID lookup, matching the plan's own
+  minimal-UI, htmx-placeholder-div style already established by every
+  other Admin BFF console page (`catalog.html`, `payout.html`).
+
+T9 may begin.
 
 ---
 

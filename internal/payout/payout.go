@@ -46,7 +46,7 @@ import (
 type PayoutRequest = model.PayoutRequest
 
 func (m *Module) RegisterGRPC(server *grpc.Server) {
-	payoutv1.RegisterPayoutServiceServer(server, grpcserver.New(m, repository.ErrNotFound, ErrNoRoute, ErrNoVendorAvailable, ErrScreeningBlocked, ErrScreeningDependencyUnavailable))
+	payoutv1.RegisterPayoutServiceServer(server, grpcserver.New(m, repository.ErrNotFound, ErrNoRoute, ErrNoVendorAvailable, ErrScreeningBlocked, ErrScreeningDependencyUnavailable, ErrSandboxVendorUnavailable))
 }
 
 const (

@@ -481,6 +481,13 @@ cryptox-secret:
 	else \
 		echo "deploy/cryptox/secrets/closure_kek_v1 already exists, leaving it alone"; \
 	fi
+	@if [ ! -f deploy/cryptox/secrets/merchant_api_key_pepper ]; then \
+		openssl rand -hex 32 > deploy/cryptox/secrets/merchant_api_key_pepper; \
+		chmod 644 deploy/cryptox/secrets/merchant_api_key_pepper; \
+		echo "generated deploy/cryptox/secrets/merchant_api_key_pepper"; \
+	else \
+		echo "deploy/cryptox/secrets/merchant_api_key_pepper already exists, leaving it alone"; \
+	fi
 
 ## backup-role-bootstrap: Create/refresh the seev_backup role on an ALREADY-INITIALIZED volume (run once per environment after `make backup-secret`)
 backup-role-bootstrap:

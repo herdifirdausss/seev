@@ -16,9 +16,9 @@ import (
 func (r *repo) InsertTopupIntent(ctx context.Context, intent model.TopupIntent) error {
 	_, err := r.db.ExecContext(ctx, `
 		INSERT INTO payin_topup_intents
-			(id, reference, user_id, amount, currency, vendor, status, expires_at, request_id, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7, $8, now(), now())`,
-		intent.ID, intent.Reference, intent.UserID, intent.Amount.IntPart(), intent.Currency, intent.Vendor, intent.ExpiresAt,
+			(id, reference, user_id, merchant_tenant_id, amount, currency, vendor, status, expires_at, request_id, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8, $9, now(), now())`,
+		intent.ID, intent.Reference, intent.UserID, intent.MerchantTenantID, intent.Amount.IntPart(), intent.Currency, intent.Vendor, intent.ExpiresAt,
 		generalutil.NullString(intent.RequestID),
 	)
 	if err != nil {
@@ -27,9 +27,35 @@ func (r *repo) InsertTopupIntent(ctx context.Context, intent model.TopupIntent) 
 	return nil
 }
 
+func (r *repo) InsertMerchantTopupIntent(ctx context.Context, intent model.TopupIntent) (model.TopupIntent, error) {
+	if intent.DownstreamKey == "" {
+		return model.TopupIntent{}, fmt.Errorf("insert merchant payin topup intent: downstream key is required")
+	}
+	_, err := r.db.ExecContext(ctx, `
+		INSERT INTO payin_topup_intents
+			(id, reference, user_id, merchant_tenant_id, amount, currency, vendor, status, expires_at, request_id, downstream_key, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8, $9, $10, now(), now())
+		ON CONFLICT (merchant_tenant_id, downstream_key) WHERE downstream_key IS NOT NULL DO NOTHING`,
+		intent.ID, intent.Reference, intent.UserID, intent.MerchantTenantID, intent.Amount.IntPart(), intent.Currency, intent.Vendor, intent.ExpiresAt,
+		generalutil.NullString(intent.RequestID), intent.DownstreamKey,
+	)
+	if err != nil {
+		return model.TopupIntent{}, fmt.Errorf("insert merchant payin topup intent: %w", err)
+	}
+	row := r.db.QueryRowContext(ctx, `
+		SELECT id, reference, user_id, merchant_tenant_id, amount, currency, vendor, status, settled_event_id, expires_at,
+		       COALESCE(request_id, ''), created_at, updated_at
+		FROM payin_topup_intents WHERE merchant_tenant_id = $1 AND downstream_key = $2`, intent.MerchantTenantID, intent.DownstreamKey)
+	stored, err := scanTopupIntent(row)
+	if err != nil {
+		return model.TopupIntent{}, fmt.Errorf("read merchant payin topup intent after insert: %w", err)
+	}
+	return stored, nil
+}
+
 func (r *repo) GetTopupIntent(ctx context.Context, id uuid.UUID) (model.TopupIntent, error) {
 	row := r.db.QueryRowContext(ctx, `
-		SELECT id, reference, user_id, amount, currency, vendor, status, settled_event_id, expires_at,
+		SELECT id, reference, user_id, merchant_tenant_id, amount, currency, vendor, status, settled_event_id, expires_at,
 		       COALESCE(request_id, ''), created_at, updated_at
 		FROM payin_topup_intents WHERE id = $1`, id)
 	intent, err := scanTopupIntent(row)
@@ -41,7 +67,7 @@ func (r *repo) GetTopupIntent(ctx context.Context, id uuid.UUID) (model.TopupInt
 
 func (r *repo) GetTopupIntentByReference(ctx context.Context, reference string) (model.TopupIntent, bool, error) {
 	row := r.db.QueryRowContext(ctx, `
-		SELECT id, reference, user_id, amount, currency, vendor, status, settled_event_id, expires_at,
+		SELECT id, reference, user_id, merchant_tenant_id, amount, currency, vendor, status, settled_event_id, expires_at,
 		       COALESCE(request_id, ''), created_at, updated_at
 		FROM payin_topup_intents WHERE reference = $1`, reference)
 	intent, err := scanTopupIntent(row)
@@ -58,7 +84,7 @@ func scanTopupIntent(row *sql.Row) (model.TopupIntent, error) {
 	var intent model.TopupIntent
 	var amount int64
 	var settledEventID sql.NullString
-	if err := row.Scan(&intent.ID, &intent.Reference, &intent.UserID, &amount, &intent.Currency, &intent.Vendor,
+	if err := row.Scan(&intent.ID, &intent.Reference, &intent.UserID, &intent.MerchantTenantID, &amount, &intent.Currency, &intent.Vendor,
 		&intent.Status, &settledEventID, &intent.ExpiresAt, &intent.RequestID, &intent.CreatedAt, &intent.UpdatedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return model.TopupIntent{}, err

@@ -14,7 +14,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-var names = []string{"public-v1.yaml", "webhooks-v1.yaml", "admin-v1.yaml", "internal-v1.yaml"}
+var names = []string{"public-v1.yaml", "webhooks-v1.yaml", "admin-v1.yaml", "internal-v1.yaml", "b2b-v1.yaml"}
 
 type approvedBreaking struct {
 	Method                 string `yaml:"method"`
@@ -253,13 +253,31 @@ func compareRequestBody(path, method string, base, next map[string]any) error {
 	return compareContent("request body for "+method+" "+path, object(base["content"]), object(next["content"]))
 }
 
+// resolvedParam unwraps the bundler's own representation of a resolved
+// $ref (cmd/contractgenerate leaves the resolved object nested under a
+// literal "$ref" key rather than replacing the node outright) so name/in
+// can actually be read. Without this, every $ref-shaped parameter compares
+// as name=nil/in=nil, and an operation with two or more of them (the first
+// in the repository being this file's own b2b-v1.yaml endpoints) matches
+// whichever candidate happens to be seen first instead of its true
+// counterpart — silently comparing unrelated parameters against each
+// other. A single $ref parameter per operation (the only shape that
+// existed before) never revealed this, because there was nothing else for
+// it to collide with.
+func resolvedParam(m map[string]any) map[string]any {
+	if resolved, ok := m["$ref"]; ok {
+		return object(resolved)
+	}
+	return m
+}
+
 func compareParameters(path, method string, baseRaw, nextRaw any) error {
 	baseList, nextList := list(baseRaw), list(nextRaw)
 	for _, raw := range baseList {
-		baseParam := object(raw)
+		baseParam := resolvedParam(object(raw))
 		found := false
 		for _, candidate := range nextList {
-			nextParam := object(candidate)
+			nextParam := resolvedParam(object(candidate))
 			if baseParam["name"] == nextParam["name"] && baseParam["in"] == nextParam["in"] {
 				found = true
 				if !reflect.DeepEqual(baseParam, nextParam) {

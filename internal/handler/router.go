@@ -129,6 +129,17 @@ func NewRouter(cfg *config.Config, deps *Dependencies, logger *slog.Logger) http
 		apiMux.Handle("POST /notifications/{id}/read", authed(deps.Notify.MarkReadHandler()))
 	}
 
+	// Merchant/B2B API (Plan 57, roadmap track C1) — mounted UNAUTHENTICATED
+	// by this router's own `authed` (JWT) chain: B2B principals are machine
+	// API keys, never AuthService users (§3.2), so internal/merchant/api's
+	// own router applies T3's RequireMerchantAuth/RequireScope and T4's
+	// RequireQuota per route instead. Still runs inside the shared `global`
+	// chain below (request id, tracing, metrics, recovery, security
+	// headers, timeout) exactly like every other apiMux route.
+	if deps.B2B != nil {
+		apiMux.Handle("/b2b/", http.StripPrefix("/b2b", deps.B2B))
+	}
+
 	apiRoot.Handle("/api/v1/", http.StripPrefix("/api/v1", apiMux))
 
 	// Catch-all inside global
@@ -180,6 +191,21 @@ func NewInternalRouter(cfg *config.Config, deps *Dependencies, logger *slog.Logg
 	)
 
 	apiMux := httpcontract.New(httpcontract.Options{Owner: "gateway", Audience: "internal", Contract: "internal-v1"})
+
+	// Plan 57 T8: Admin BFF's own generic proxy already targets
+	// /api/v1/admin/gateway/ (internal/adminbff/module.go) — mount
+	// internal/merchant.Module's AdminRouter() here, gated by the same
+	// JWT `authed` chain ledger/payin/payout already use for their own
+	// admin routes (this listener had no JWT chain at all before this;
+	// every other route on it authenticates via mTLS identity alone).
+	if deps.Merchant != nil {
+		authed := middleware.Chain(middleware.WithAuth(cfg.JWT.Secret, cfg.JWT.Issuer), middleware.RequireJSON())
+		// apiMux is itself mounted at apiRoot's "/api/v1/" with that prefix
+		// already stripped (below), so AdminRouter()'s own routes — already
+		// registered at the full "/admin/gateway/..." pattern — are reached
+		// unmodified from here; no further StripPrefix needed.
+		apiMux.Handle("/admin/gateway/", authed(deps.Merchant.AdminRouter()))
+	}
 
 	apiRoot.Handle("/api/v1/", http.StripPrefix("/api/v1", apiMux))
 	apiRoot.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {

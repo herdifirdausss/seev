@@ -55,7 +55,7 @@ func TestVelocityConsumerRealRabbitMQIncrementsPostedCounterOnce(t *testing.T) {
 
 	userID := uuid.New()
 	at := time.Now().UTC()
-	event := events.NewTransactionPosted(uuid.New(), "transfer_p2p", "100", "IDR", nil, nil, nil, "", at, &userID, nil, "")
+	event := events.NewTransactionPosted(uuid.New(), "transfer_p2p", "100", "IDR", nil, nil, nil, "", at, &userID, nil, "", nil)
 	eventID := uuid.NewString()
 	options := messaging.PublishOptions{RoutingKey: events.TypeTransactionPosted, MessageID: eventID}
 	require.NoError(t, broker.PublishTo(ctx, options, event))

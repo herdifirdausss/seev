@@ -4,6 +4,7 @@ package grpcserver
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
@@ -34,6 +35,12 @@ type Service interface {
 	// ApplyKycTier is docs/roadmap/archive/39 Task T5's additive RPC backing — returns
 	// apperror.ErrUnknownKycTier for an unrecognized kyc_level.
 	ApplyKycTier(ctx context.Context, userID uuid.UUID, kycLevel int32) error
+	// ProvisionMerchant is Plan 57 T5's additive RPC backing.
+	ProvisionMerchant(ctx context.Context, tenantID uuid.UUID, currency string) (model.Account, error)
+	// GetMerchantAccount is Plan 57 T5's additive RPC backing.
+	GetMerchantAccount(ctx context.Context, tenantID uuid.UUID) (model.AccountBalance, error)
+	// ListMerchantTransactions is Plan 57 T5's additive RPC backing.
+	ListMerchantTransactions(ctx context.Context, tenantID uuid.UUID, beforeCreatedAt time.Time, beforeID uuid.UUID, limit int) ([]model.LedgerTransaction, error)
 }
 
 type Server struct {
@@ -60,6 +67,10 @@ func (s *Server) Post(ctx context.Context, req *ledgerv1.PostRequest) (*ledgerv1
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "reference_id: %v", err)
 	}
+	merchantTenantID, err := parseUUID(req.GetMerchantTenantId())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "merchant_tenant_id: %v", err)
+	}
 	var metadata map[string]any
 	if req.Metadata != nil {
 		metadata = req.Metadata.AsMap()
@@ -79,6 +90,7 @@ func (s *Server) Post(ctx context.Context, req *ledgerv1.PostRequest) (*ledgerv1
 		IdempotencyKey: req.GetIdempotencyKey(), IdempotencyScope: req.GetIdempotencyScope(),
 		Type: req.GetType(), Amount: amount, UserID: userID, TargetUserID: targetUserID,
 		PocketCode: req.GetPocketCode(), ReferenceID: referenceID, Metadata: metadata,
+		MerchantTenantID: merchantTenantID,
 	})
 	if err != nil {
 		return nil, mapError(err)
@@ -188,6 +200,67 @@ func (s *Server) ProvisionUser(ctx context.Context, req *ledgerv1.ProvisionUserR
 		return nil, mapError(err)
 	}
 	return &ledgerv1.ProvisionUserResponse{}, nil
+}
+
+// ProvisionMerchant serves Plan 57 T5's additive RPC.
+func (s *Server) ProvisionMerchant(ctx context.Context, req *ledgerv1.ProvisionMerchantRequest) (*ledgerv1.ProvisionMerchantResponse, error) {
+	tenantID, err := parseUUID(req.GetTenantId())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "tenant_id: %v", err)
+	}
+	acc, err := s.service.ProvisionMerchant(ctx, tenantID, req.GetCurrency())
+	if err != nil {
+		return nil, mapError(err)
+	}
+	return &ledgerv1.ProvisionMerchantResponse{AccountId: uuidString(acc.ID)}, nil
+}
+
+// GetMerchantAccount serves Plan 57 T5's additive RPC — tenant_id is the
+// ONLY identity accepted; the account id is always resolved server-side.
+func (s *Server) GetMerchantAccount(ctx context.Context, req *ledgerv1.GetMerchantAccountRequest) (*ledgerv1.MerchantAccount, error) {
+	tenantID, err := parseUUID(req.GetTenantId())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "tenant_id: %v", err)
+	}
+	bal, err := s.service.GetMerchantAccount(ctx, tenantID)
+	if err != nil {
+		return nil, mapError(err)
+	}
+	return &ledgerv1.MerchantAccount{
+		AccountId: uuidString(bal.AccountID), Currency: bal.Currency,
+		Balance: bal.Balance.String(), Status: bal.Status,
+	}, nil
+}
+
+// ListMerchantTransactions serves Plan 57 T5's additive RPC — tenant_id is
+// the ONLY identity accepted; the account id is always resolved
+// server-side, so no caller can list another tenant's transactions.
+func (s *Server) ListMerchantTransactions(ctx context.Context, req *ledgerv1.ListMerchantTransactionsRequest) (*ledgerv1.ListMerchantTransactionsResponse, error) {
+	tenantID, err := parseUUID(req.GetTenantId())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "tenant_id: %v", err)
+	}
+	beforeID, err := parseUUID(req.GetBeforeId())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "before_id: %v", err)
+	}
+	var beforeCreatedAt time.Time
+	if req.GetBeforeCreatedAt() != nil {
+		beforeCreatedAt = req.GetBeforeCreatedAt().AsTime()
+	}
+	limit := int(req.GetLimit())
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	txs, err := s.service.ListMerchantTransactions(ctx, tenantID, beforeCreatedAt, beforeID, limit)
+	if err != nil {
+		return nil, mapError(err)
+	}
+	resp := &ledgerv1.ListMerchantTransactionsResponse{Transactions: make([]*ledgerv1.Transaction, 0, len(txs))}
+	for _, tx := range txs {
+		resp.Transactions = append(resp.Transactions, transactionToProto(tx))
+	}
+	return resp, nil
 }
 
 func integralAmount(value string) (decimal.Decimal, error) {

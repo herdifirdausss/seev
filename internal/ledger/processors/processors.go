@@ -33,6 +33,13 @@ type Command struct {
 	// stripped/rebuilt on the public router (docs/roadmap/archive/10 Task T3) before a
 	// command ever reaches here.
 	QuoteID string
+	// MerchantTenantID (Plan 57 T5) is set ONLY for type="merchant_transfer"
+	// — the SOURCE merchant cash account is always resolved server-side
+	// from this tenant id via AccountRepository.GetMerchantAccountID,
+	// NEVER from a caller-supplied account id (§T5 "source account cannot
+	// be substituted by the caller"). Every other processor leaves this at
+	// its zero value uuid.Nil.
+	MerchantTenantID uuid.UUID
 }
 
 // ResolvedCommand is exported so external packages can implement TxProcessor.
@@ -379,10 +386,15 @@ func newPostedEvent(cmd ResolvedCommand, txID uuid.UUID, entries []model.EntryIn
 		u := cmd.TargetUserID
 		targetUserID = &u
 	}
+	var merchantTenantID *uuid.UUID
+	if cmd.MerchantTenantID != uuid.Nil {
+		m := cmd.MerchantTenantID
+		merchantTenantID = &m
+	}
 	ev := events.NewTransactionPosted(
 		txID, cmd.Type, cmd.Amount.String(), cmd.Currency, source, dest,
 		buildEntrySummaries(entries), externalRef, time.Now().UTC(),
-		userID, targetUserID, requestID,
+		userID, targetUserID, requestID, merchantTenantID,
 	)
 	return model.OutboxEvent{
 		AggregateType: "ledger_transaction", AggregateID: txID,
@@ -473,6 +485,16 @@ func NewDefaultRegistry(
 		// Transfers
 		NewTransferP2P(accRepo),
 		NewTransferPocket(accRepo),
+		// Merchant transfer (Plan 57 T5) — internal router only, never
+		// added to publicUserTypes; reachable only via Gateway's B2B path.
+		NewMerchantTransfer(accRepo),
+		// Merchant pay-in/payout (Plan 57 T6) — internal router only,
+		// reachable only via internal/payin and internal/payout's own
+		// merchant-aware use cases.
+		NewMerchantPayinCredit(accRepo),
+		NewMerchantPayoutHold(accRepo),
+		NewMerchantPayoutSettle(accRepo, txRepo),
+		NewMerchantPayoutCancel(accRepo, txRepo),
 		// Merchant / payment
 		NewRefund(accRepo),
 		NewFeeCollect(accRepo),

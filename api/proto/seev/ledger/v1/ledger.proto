@@ -17,6 +17,19 @@ service LedgerService {
   rpc ConsumeFeeQuote(ConsumeFeeQuoteRequest) returns (ConsumeFeeQuoteResponse);
   rpc ApplyKycTier(ApplyKycTierRequest) returns (ApplyKycTierResponse);
   rpc BatchGetAssuranceTransactions(BatchGetAssuranceTransactionsRequest) returns (BatchGetAssuranceTransactionsResponse);
+  // ProvisionMerchant is Plan 57 T5's additive RPC — idempotently
+  // provisions a merchant tenant's single owner_type='merchant' cash
+  // account (mirrors ProvisionUser; a merchant needs no hold/pending/
+  // frozen accounts, those are end-user withdrawal-lifecycle states).
+  rpc ProvisionMerchant(ProvisionMerchantRequest) returns (ProvisionMerchantResponse);
+  // GetMerchantAccount resolves a tenant's cash account id and reads its
+  // current balance in one round trip — the account id is NEVER accepted
+  // from a caller, only ever resolved server-side from tenant_id.
+  rpc GetMerchantAccount(GetMerchantAccountRequest) returns (MerchantAccount);
+  // ListMerchantTransactions is tenant-scoped: the account id is resolved
+  // server-side from tenant_id, never accepted as a request parameter, so
+  // no caller can ever list another tenant's transactions.
+  rpc ListMerchantTransactions(ListMerchantTransactionsRequest) returns (ListMerchantTransactionsResponse);
 }
 
 message PostRequest {
@@ -29,6 +42,13 @@ message PostRequest {
   string pocket_code = 7;
   string reference_id = 8;
   google.protobuf.Struct metadata = 9;
+  // merchant_tenant_id (Plan 57 T5) is set ONLY for type="merchant_transfer"
+  // — the SOURCE account is always resolved server-side from this tenant
+  // id, never from a caller-supplied account id (§T5 "source account
+  // cannot be substituted by the caller"). The destination account id
+  // travels in metadata["destination_account_id"], the same established
+  // pattern escrow_release already uses for a raw account-id target.
+  string merchant_tenant_id = 10;
 }
 
 message PostResponse {}
@@ -160,4 +180,40 @@ message FeeQuoteProof {
   string fee_gateway = 7;
   string status = 8;
   string consumed_by_ref = 9;
+}
+
+// ── Plan 57 T5 — merchant account provisioning, balance and transaction reads ──
+
+message ProvisionMerchantRequest {
+  string tenant_id = 1;
+  string currency = 2;
+}
+
+message ProvisionMerchantResponse {
+  string account_id = 1;
+}
+
+message GetMerchantAccountRequest {
+  string tenant_id = 1;
+}
+
+message MerchantAccount {
+  string account_id = 1;
+  string currency = 2;
+  string balance = 3;
+  string status = 4;
+}
+
+message ListMerchantTransactionsRequest {
+  string tenant_id = 1;
+  int32 limit = 2;
+  // before_id/before_created_at page backward from a prior response's last
+  // row (same cursor shape as internal/ledger's own ListEntries) — both
+  // empty means "start from the most recent transaction".
+  string before_id = 3;
+  google.protobuf.Timestamp before_created_at = 4;
+}
+
+message ListMerchantTransactionsResponse {
+  repeated Transaction transactions = 1;
 }

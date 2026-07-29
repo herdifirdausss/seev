@@ -8,6 +8,12 @@ service PayoutService {
   rpc HandleVendorCallback(HandleVendorCallbackRequest) returns (HandleVendorCallbackResponse);
   rpc CreatePayout(CreatePayoutRequest) returns (CreatePayoutResponse);
   rpc GetPayout(GetPayoutRequest) returns (GetPayoutResponse);
+  // Merchant/B2B (Plan 57, C1) — Gateway-only callers, never a direct
+  // merchant-facing RPC. tenant_id/environment come from Gateway's own
+  // resolved API-key principal, never a caller-suppliable field once past
+  // the B2B HTTP edge.
+  rpc CreateMerchantPayout(CreateMerchantPayoutRequest) returns (CreateMerchantPayoutResponse);
+  rpc GetMerchantPayout(GetMerchantPayoutRequest) returns (GetMerchantPayoutResponse);
   rpc ListAssuranceRecords(ListAssuranceRecordsRequest) returns (ListAssuranceRecordsResponse);
   rpc GetIntakeControl(GetIntakeControlRequest) returns (GetIntakeControlResponse);
   rpc ApplyIntakeControl(ApplyIntakeControlRequest) returns (ApplyIntakeControlResponse);
@@ -43,6 +49,29 @@ message Payout {
   google.protobuf.Timestamp created_at = 8;
   google.protobuf.Timestamp updated_at = 9;
 }
+
+message CreateMerchantPayoutRequest {
+  string tenant_id = 1;
+  string environment = 2; // sandbox | live
+  string currency = 3;
+  string amount = 4;
+  bytes destination = 5;
+  string created_by = 6;
+  // downstream_key is Gateway's own idempotency.DownstreamKey for this
+  // (tenant, operation, merchant idempotency key) — a Gateway retry
+  // (including a Gateway crash after this call already succeeded once)
+  // reuses the SAME downstream_key, so the response is the ORIGINAL
+  // request, never a second hold (docs/reference/c1-b2b-design.md §10.4).
+  string downstream_key = 7;
+}
+
+message GetMerchantPayoutRequest {
+  string tenant_id = 1;
+  string id = 2;
+}
+
+message CreateMerchantPayoutResponse { Payout payout = 1; }
+message GetMerchantPayoutResponse { Payout payout = 1; }
 
 message HandleVendorCallbackRequest {
   string vendor = 1;

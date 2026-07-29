@@ -33,3 +33,10 @@ var ErrScreeningBlocked = errors.New("payout: screening blocked")
 // infra error (which fails open), this one fails CLOSED. The gateway
 // handler maps this to 503 DEPENDENCY_UNAVAILABLE.
 var ErrScreeningDependencyUnavailable = errors.New("payout: screening dependency unavailable")
+
+// ErrSandboxVendorUnavailable is returned by CreateMerchant when
+// environment="sandbox" and the mock vendor isn't registered (Plan 57 T6)
+// — mirrors internal/payin.ErrSandboxVendorUnavailable; a sandbox tenant's
+// request MUST fail closed rather than ever fall through to a
+// live-capable vendor.
+var ErrSandboxVendorUnavailable = errors.New("payout: sandbox vendor unavailable")

@@ -27,6 +27,14 @@ func (f fakePayinClient) HandleVendorCallback(context.Context, *payinv1.HandleVe
 	return nil, status.Error(codes.Unimplemented, "not used by Gateway")
 }
 
+func (f fakePayinClient) CreateMerchantTopupIntent(context.Context, *payinv1.CreateMerchantTopupIntentRequest, ...grpc.CallOption) (*payinv1.CreateMerchantTopupIntentResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "not used by this fake")
+}
+
+func (f fakePayinClient) GetMerchantTopupIntent(context.Context, *payinv1.GetMerchantTopupIntentRequest, ...grpc.CallOption) (*payinv1.GetMerchantTopupIntentResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "not used by this fake")
+}
+
 func (f fakePayinClient) CreateTopupIntent(ctx context.Context, request *payinv1.CreateTopupIntentRequest, _ ...grpc.CallOption) (*payinv1.CreateTopupIntentResponse, error) {
 	return f.create(ctx, request)
 }

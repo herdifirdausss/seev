@@ -1,0 +1,10 @@
+DROP TABLE IF EXISTS merchant_webhook_attempts;
+DROP TABLE IF EXISTS merchant_webhook_deliveries;
+DROP TABLE IF EXISTS merchant_webhook_events;
+DROP TABLE IF EXISTS merchant_webhook_endpoints;
+DROP TABLE IF EXISTS merchant_event_inbox;
+DROP TABLE IF EXISTS merchant_idempotency_records;
+DROP TABLE IF EXISTS merchant_quota_policies;
+DROP TABLE IF EXISTS merchant_api_key_scopes;
+DROP TABLE IF EXISTS merchant_api_keys;
+DROP TABLE IF EXISTS merchant_tenants;

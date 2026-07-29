@@ -13,6 +13,7 @@ import (
 	context "context"
 	sql "database/sql"
 	reflect "reflect"
+	time "time"
 
 	uuid "github.com/google/uuid"
 	model "github.com/herdifirdausss/seev/internal/ledger/model"
@@ -197,6 +198,21 @@ func (mr *MockTransactionRepositoryMockRecorder) Insert(ctx, tx, params any) *go
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Insert", reflect.TypeOf((*MockTransactionRepository)(nil).Insert), ctx, tx, params)
 }
 
+// ListByAccountEitherSide mocks base method.
+func (m *MockTransactionRepository) ListByAccountEitherSide(ctx context.Context, accountID uuid.UUID, beforeCreatedAt time.Time, beforeID uuid.UUID, limit int) ([]model.LedgerTransaction, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListByAccountEitherSide", ctx, accountID, beforeCreatedAt, beforeID, limit)
+	ret0, _ := ret[0].([]model.LedgerTransaction)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListByAccountEitherSide indicates an expected call of ListByAccountEitherSide.
+func (mr *MockTransactionRepositoryMockRecorder) ListByAccountEitherSide(ctx, accountID, beforeCreatedAt, beforeID, limit any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListByAccountEitherSide", reflect.TypeOf((*MockTransactionRepository)(nil).ListByAccountEitherSide), ctx, accountID, beforeCreatedAt, beforeID, limit)
+}
+
 // UpdateStatus mocks base method.
 func (m *MockTransactionRepository) UpdateStatus(ctx context.Context, tx *sql.Tx, transactionID uuid.UUID, status string, errorMessage *string) error {
 	m.ctrl.T.Helper()
@@ -209,4 +225,46 @@ func (m *MockTransactionRepository) UpdateStatus(ctx context.Context, tx *sql.Tx
 func (mr *MockTransactionRepositoryMockRecorder) UpdateStatus(ctx, tx, transactionID, status, errorMessage any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateStatus", reflect.TypeOf((*MockTransactionRepository)(nil).UpdateStatus), ctx, tx, transactionID, status, errorMessage)
+}
+
+// MocksqlScanner is a mock of sqlScanner interface.
+type MocksqlScanner struct {
+	ctrl     *gomock.Controller
+	recorder *MocksqlScannerMockRecorder
+	isgomock struct{}
+}
+
+// MocksqlScannerMockRecorder is the mock recorder for MocksqlScanner.
+type MocksqlScannerMockRecorder struct {
+	mock *MocksqlScanner
+}
+
+// NewMocksqlScanner creates a new mock instance.
+func NewMocksqlScanner(ctrl *gomock.Controller) *MocksqlScanner {
+	mock := &MocksqlScanner{ctrl: ctrl}
+	mock.recorder = &MocksqlScannerMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MocksqlScanner) EXPECT() *MocksqlScannerMockRecorder {
+	return m.recorder
+}
+
+// Scan mocks base method.
+func (m *MocksqlScanner) Scan(dest ...any) error {
+	m.ctrl.T.Helper()
+	varargs := []any{}
+	for _, a := range dest {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "Scan", varargs...)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// Scan indicates an expected call of Scan.
+func (mr *MocksqlScannerMockRecorder) Scan(dest ...any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Scan", reflect.TypeOf((*MocksqlScanner)(nil).Scan), dest...)
 }

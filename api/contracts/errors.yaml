@@ -25,3 +25,21 @@ codes:
   - {code: INTAKE_PAUSED, statuses: [409, 423], owner: assurance, retryable: false}
   - {code: QUOTE_EXPIRED, statuses: [409], owner: ledger, retryable: false}
   - {code: QUOTE_MISMATCH, statuses: [409], owner: ledger, retryable: false}
+  # Plan 57 / C1 Merchant/B2B API §6.7 — required stable codes not already
+  # covered by the generic platform codes above.
+  - {code: AUTHENTICATION_REQUIRED, statuses: [401], owner: gateway, retryable: false}
+  - {code: API_KEY_INVALID, statuses: [401], owner: gateway, retryable: false}
+  - {code: API_KEY_EXPIRED, statuses: [401], owner: gateway, retryable: false}
+  - {code: API_KEY_REVOKED, statuses: [401], owner: gateway, retryable: false}
+  - {code: TENANT_SUSPENDED, statuses: [403], owner: gateway, retryable: false}
+  - {code: SCOPE_DENIED, statuses: [403], owner: gateway, retryable: false}
+  - {code: RESOURCE_NOT_FOUND, statuses: [404], owner: gateway, retryable: false}
+  - {code: QUOTA_UNAVAILABLE, statuses: [503], owner: gateway, retryable: true}
+  - {code: IDEMPOTENCY_KEY_REQUIRED, statuses: [400], owner: gateway, retryable: false}
+  - {code: IDEMPOTENCY_KEY_REUSED, statuses: [409], owner: gateway, retryable: false}
+  - {code: IDEMPOTENCY_IN_PROGRESS, statuses: [409], owner: gateway, retryable: true}
+  - {code: CURRENCY_MISMATCH, statuses: [422], owner: gateway, retryable: false}
+  - {code: INSUFFICIENT_FUNDS, statuses: [422], owner: ledger, retryable: false}
+  - {code: OWNER_SERVICE_UNAVAILABLE, statuses: [503], owner: gateway, retryable: true}
+  - {code: WEBHOOK_ENDPOINT_INVALID, statuses: [400, 422], owner: gateway, retryable: false}
+  - {code: WEBHOOK_REPLAY_NOT_ALLOWED, statuses: [409], owner: gateway, retryable: false}

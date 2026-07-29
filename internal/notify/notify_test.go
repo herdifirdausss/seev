@@ -42,7 +42,7 @@ func TestHandleDelivery_NonNotifiableType_NoOp(t *testing.T) {
 	m, repo := newModule(t)
 	txID := uuid.New()
 	userID := uuid.New()
-	ev := events.NewTransactionPosted(txID, "escrow_hold", "1000", "IDR", nil, nil, nil, "", time.Now(), &userID, nil, "")
+	ev := events.NewTransactionPosted(txID, "escrow_hold", "1000", "IDR", nil, nil, nil, "", time.Now(), &userID, nil, "", nil)
 
 	// No repo.EXPECT() calls set up at all — a call to Insert would fail
 	// the test via gomock's unexpected-call panic.
@@ -56,7 +56,7 @@ func TestHandleDelivery_MoneyIn_InsertsSingleRecipient(t *testing.T) {
 	txID := uuid.New()
 	userID := uuid.New()
 	msgID := uuid.New()
-	ev := events.NewTransactionPosted(txID, "money_in", "500000", "IDR", nil, nil, nil, "", time.Now(), &userID, nil, "")
+	ev := events.NewTransactionPosted(txID, "money_in", "500000", "IDR", nil, nil, nil, "", time.Now(), &userID, nil, "", nil)
 
 	repo.EXPECT().Insert(gomock.Any(), gomock.Any()).DoAndReturn(
 		func(_ context.Context, n model.Notification) (bool, error) {
@@ -79,7 +79,7 @@ func TestHandleDelivery_TransferP2P_InsertsBothRecipients(t *testing.T) {
 	sender := uuid.New()
 	receiver := uuid.New()
 	msgID := uuid.New()
-	ev := events.NewTransactionPosted(txID, "transfer_p2p", "100000", "IDR", nil, nil, nil, "", time.Now(), &sender, &receiver, "")
+	ev := events.NewTransactionPosted(txID, "transfer_p2p", "100000", "IDR", nil, nil, nil, "", time.Now(), &sender, &receiver, "", nil)
 
 	var gotUserIDs []uuid.UUID
 	repo.EXPECT().Insert(gomock.Any(), gomock.Any()).Times(2).DoAndReturn(
@@ -103,7 +103,7 @@ func TestHandleDelivery_WithdrawSettleAndCancel_InsertSingleRecipient(t *testing
 			txID := uuid.New()
 			userID := uuid.New()
 			msgID := uuid.New()
-			ev := events.NewTransactionPosted(txID, txType, "200000", "IDR", nil, nil, nil, "", time.Now(), &userID, nil, "")
+			ev := events.NewTransactionPosted(txID, txType, "200000", "IDR", nil, nil, nil, "", time.Now(), &userID, nil, "", nil)
 
 			repo.EXPECT().Insert(gomock.Any(), gomock.Any()).DoAndReturn(
 				func(_ context.Context, n model.Notification) (bool, error) {
@@ -123,7 +123,7 @@ func TestHandleDelivery_DuplicateDelivery_DedupInsertReturnsFalse_StillAcks(t *t
 	txID := uuid.New()
 	userID := uuid.New()
 	msgID := uuid.New()
-	ev := events.NewTransactionPosted(txID, "money_in", "500000", "IDR", nil, nil, nil, "", time.Now(), &userID, nil, "")
+	ev := events.NewTransactionPosted(txID, "money_in", "500000", "IDR", nil, nil, nil, "", time.Now(), &userID, nil, "", nil)
 
 	// inserted=false, no error — a redelivery of an already-processed event.
 	repo.EXPECT().Insert(gomock.Any(), gomock.Any()).Return(false, nil)
@@ -136,7 +136,7 @@ func TestHandleDelivery_RepoInsertError_Propagates(t *testing.T) {
 	m, repo := newModule(t)
 	txID := uuid.New()
 	userID := uuid.New()
-	ev := events.NewTransactionPosted(txID, "money_in", "500000", "IDR", nil, nil, nil, "", time.Now(), &userID, nil, "")
+	ev := events.NewTransactionPosted(txID, "money_in", "500000", "IDR", nil, nil, nil, "", time.Now(), &userID, nil, "", nil)
 
 	repo.EXPECT().Insert(gomock.Any(), gomock.Any()).Return(false, errors.New("db down"))
 
@@ -153,7 +153,7 @@ func TestHandleDelivery_MalformedBody_ReturnsError(t *testing.T) {
 
 func TestHandleDeliveryMalformedKnownVersionHasNoRepositorySideEffect(t *testing.T) {
 	m, repo := newModule(t)
-	event := events.NewTransactionPosted(uuid.New(), "money_in", "500000", "IDR", nil, nil, nil, "", time.Now(), nil, nil, "")
+	event := events.NewTransactionPosted(uuid.New(), "money_in", "500000", "IDR", nil, nil, nil, "", time.Now(), nil, nil, "", nil)
 	event.Currency = "idr"
 	assert.Error(t, m.handleDelivery(context.Background(), deliveryFor(t, event, uuid.New().String())))
 	_ = repo
@@ -163,7 +163,7 @@ func TestHandleDelivery_InvalidMessageID_ReturnsError(t *testing.T) {
 	m, _ := newModule(t)
 	txID := uuid.New()
 	userID := uuid.New()
-	ev := events.NewTransactionPosted(txID, "money_in", "500000", "IDR", nil, nil, nil, "", time.Now(), &userID, nil, "")
+	ev := events.NewTransactionPosted(txID, "money_in", "500000", "IDR", nil, nil, nil, "", time.Now(), &userID, nil, "", nil)
 	// Historical v1 payloads have no logical event ID and therefore still
 	// require a UUID AMQP message_id for notification deduplication.
 	ev.EventID = nil
@@ -174,7 +174,7 @@ func TestHandleDelivery_InvalidMessageID_ReturnsError(t *testing.T) {
 func TestHandleDelivery_NoUserIDSet_ZeroRecipients_NoInsertCalls(t *testing.T) {
 	m, repo := newModule(t)
 	txID := uuid.New()
-	ev := events.NewTransactionPosted(txID, "money_in", "500000", "IDR", nil, nil, nil, "", time.Now(), nil, nil, "")
+	ev := events.NewTransactionPosted(txID, "money_in", "500000", "IDR", nil, nil, nil, "", time.Now(), nil, nil, "", nil)
 
 	// No repo.EXPECT() — recipientsFor returns empty, Insert must never be called.
 	err := m.handleDelivery(context.Background(), deliveryFor(t, ev, uuid.New().String()))

@@ -145,6 +145,12 @@ func (m *Module) hold(ctx context.Context, req model.PayoutRequest) error {
 		IdempotencyKey: key, IdempotencyScope: payoutScope,
 		Type: "withdraw_initiate", Amount: req.Amount, UserID: req.UserID,
 	}
+	if req.MerchantTenantID != uuid.Nil {
+		// Plan 57 T6: the merchant-owned counterpart of withdraw_initiate.
+		cmd.Type = "merchant_payout_hold"
+		cmd.UserID = uuid.Nil
+		cmd.MerchantTenantID = req.MerchantTenantID
+	}
 	if err := m.poster.Post(ctx, cmd); err != nil {
 		return err
 	}
@@ -282,6 +288,12 @@ func (m *Module) settle(ctx context.Context, id uuid.UUID, gateway string) error
 		Type: "withdraw_settle", Amount: req.Amount, UserID: req.UserID,
 		ReferenceID: *req.HoldTxID, Metadata: metadata,
 	}
+	if req.MerchantTenantID != uuid.Nil {
+		// Plan 57 T6: the merchant-owned counterpart of withdraw_settle.
+		cmd.Type = "merchant_payout_settle"
+		cmd.UserID = uuid.Nil
+		cmd.MerchantTenantID = req.MerchantTenantID
+	}
 	if postErr := m.poster.Post(ctx, cmd); postErr != nil {
 		if errors.Is(postErr, ledgererr.ErrAlreadyClosed) {
 			return m.reconcileAfterLostRace(ctx, id, postErr)
@@ -318,6 +330,12 @@ func (m *Module) cancel(ctx context.Context, id uuid.UUID, gateway, reason strin
 		IdempotencyKey: key, IdempotencyScope: payoutScope,
 		Type: "withdraw_cancel", Amount: req.Amount, UserID: req.UserID,
 		ReferenceID: *req.HoldTxID, Metadata: map[string]any{"gateway": gateway},
+	}
+	if req.MerchantTenantID != uuid.Nil {
+		// Plan 57 T6: the merchant-owned counterpart of withdraw_cancel.
+		cmd.Type = "merchant_payout_cancel"
+		cmd.UserID = uuid.Nil
+		cmd.MerchantTenantID = req.MerchantTenantID
 	}
 	if postErr := m.poster.Post(ctx, cmd); postErr != nil {
 		if errors.Is(postErr, ledgererr.ErrAlreadyClosed) {

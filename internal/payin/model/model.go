@@ -15,11 +15,18 @@ type WebhookEvent struct {
 	VendorEventID string
 	ExternalRef   string
 	UserID        uuid.UUID
-	Amount        decimal.Decimal
-	Currency      string
-	Raw           []byte // raw webhook body, forensic/replay — never exposed in any reporting view
-	Status        string // received | posted | failed
-	ErrorMessage  string
+	// MerchantTenantID (Plan 57 T6) is set instead of UserID for a
+	// merchant-owned event — exactly one of the two is ever non-zero,
+	// mirroring internal/ledger/processors.Command's own
+	// MerchantTenantID sentinel convention (Plan 57 T5). Zero (uuid.Nil)
+	// for every event that hasn't matched an intent yet, or that belongs
+	// to a user, unchanged from before T6.
+	MerchantTenantID uuid.UUID
+	Amount           decimal.Decimal
+	Currency         string
+	Raw              []byte // raw webhook body, forensic/replay — never exposed in any reporting view
+	Status           string // received | posted | failed
+	ErrorMessage     string
 	// RequestID (docs/roadmap/archive/36 Task T5) is the HTTP request_id of the gateway
 	// call that received this webhook delivery — end-to-end trace anchor.
 	RequestID string
@@ -39,15 +46,25 @@ const (
 // vendor, carried back in the settling webhook's existing ExternalRef
 // field (zero vendorgw/mockvendor schema change).
 type TopupIntent struct {
-	ID             uuid.UUID
-	Reference      string
-	UserID         uuid.UUID
-	Amount         decimal.Decimal
-	Currency       string
-	Vendor         string
-	Status         string // pending | settled | expired
-	SettledEventID *uuid.UUID
-	ExpiresAt      time.Time
+	ID        uuid.UUID
+	Reference string
+	UserID    uuid.UUID
+	// MerchantTenantID (Plan 57 T6) is set instead of UserID for a
+	// merchant-owned intent — exactly one of the two is ever non-zero.
+	MerchantTenantID uuid.UUID
+	Amount           decimal.Decimal
+	Currency         string
+	Vendor           string
+	Status           string // pending | settled | expired
+	SettledEventID   *uuid.UUID
+	// DownstreamKey (B2B HTTP handlers follow-up to Plan 57 T6) is the
+	// deterministic key Gateway derives per (tenant, operation, merchant
+	// idempotency key) — set only for a merchant-owned intent, empty for a
+	// user-owned one. A unique (merchant_tenant_id, downstream_key) index
+	// is what makes CreateMerchantTopupIntent idempotent against a Gateway
+	// retry (docs/reference/c1-b2b-design.md §10.4).
+	DownstreamKey string
+	ExpiresAt     time.Time
 	// RequestID (docs/roadmap/archive/36 Task T5) is the HTTP request_id of the call
 	// that created this intent — end-to-end trace anchor.
 	RequestID string

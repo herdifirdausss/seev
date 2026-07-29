@@ -322,12 +322,34 @@ func newDisbursementService(db *database.DBSQL, maxPerRun int) (*disbursement.Se
 // newAccrualService wires the interest accrual service (docs/roadmap/archive/19 Task
 // T3) against real repositories, reusing newService's posting engine as
 // its Poster and a real SnapshotRepository as its (snapshot-only) balance
-// basis.
+// basis. Uses Asia/Jakarta to match production's own snapshot repository
+// wiring (ledger.go) — callers must use the same location (via
+// testSnapshotLoc) when computing "today" and constructing their own
+// SnapshotRepository for InsertForDate, or the day-boundary windows won't
+// agree with what RunDue reads back.
 func newAccrualService(db *database.DBSQL) (*accrual.Service, repository.SavingsRepository) {
 	handleSvc, _ := newService(db)
 	savingsRepo := repository.NewSavingsRepository(db)
-	snapshotRepo := repository.NewSnapshotRepository(db, time.UTC)
+	snapshotRepo := repository.NewSnapshotRepository(db, testSnapshotLoc())
 	return accrual.New(db, savingsRepo, snapshotRepo, handleSvc, slog.Default()), savingsRepo
+}
+
+// testSnapshotLoc is the location every test must use both to compute
+// "today" (dateOnly(time.Now().In(loc))) and to construct any
+// SnapshotRepository — mirroring production (ledger.go loads Asia/Jakarta
+// for the same purpose). Using dateOnly(time.Now()) (bare local machine
+// zone) together with a hardcoded UTC repository, as this file used to do,
+// made InsertForDate's day-window silently disagree with the "today" the
+// test computed whenever the local wall clock's calendar date differs from
+// the UTC one (e.g. any time before 07:00 WIB) — InsertForDate would then
+// snapshot zero rows, and BalanceAsOf would silently fall back to summing
+// the entire live ledger instead of using the snapshot basis.
+func testSnapshotLoc() *time.Location {
+	loc, err := time.LoadLocation("Asia/Jakarta")
+	if err != nil {
+		return time.UTC
+	}
+	return loc
 }
 
 func getBalance(t *testing.T, db *database.DBSQL, accountID uuid.UUID) decimal.Decimal {
@@ -2655,8 +2677,8 @@ func TestSchemaContract_Accrual_BasicFlow_IdempotentAcrossRuns(t *testing.T) {
 		return savingsRepo.Upsert(ctx, tx, model.SavingsConfig{AccountID: cashA, AnnualRateBps: 500, Enabled: true})
 	}))
 
-	today := dateOnly(time.Now())
-	snapshotRepo := repository.NewSnapshotRepository(db, time.UTC)
+	today := dateOnly(time.Now().In(testSnapshotLoc()))
+	snapshotRepo := repository.NewSnapshotRepository(db, testSnapshotLoc())
 	_, err := snapshotRepo.InsertForDate(ctx, today)
 	require.NoError(t, err)
 
@@ -2708,8 +2730,8 @@ func TestSchemaContract_Accrual_BasisIsSnapshotNotLiveBalance(t *testing.T) {
 		return savingsRepo.Upsert(ctx, tx, model.SavingsConfig{AccountID: cashA, AnnualRateBps: 500, Enabled: true})
 	}))
 
-	today := dateOnly(time.Now())
-	snapshotRepo := repository.NewSnapshotRepository(db, time.UTC)
+	today := dateOnly(time.Now().In(testSnapshotLoc()))
+	snapshotRepo := repository.NewSnapshotRepository(db, testSnapshotLoc())
 	_, err := snapshotRepo.InsertForDate(ctx, today)
 	require.NoError(t, err)
 
@@ -2762,8 +2784,8 @@ func TestSchemaContract_Accrual_DisabledAccount_NotAccrued(t *testing.T) {
 		return savingsRepo.Upsert(ctx, tx, model.SavingsConfig{AccountID: cashA, AnnualRateBps: 500, Enabled: false})
 	}))
 
-	today := dateOnly(time.Now())
-	snapshotRepo := repository.NewSnapshotRepository(db, time.UTC)
+	today := dateOnly(time.Now().In(testSnapshotLoc()))
+	snapshotRepo := repository.NewSnapshotRepository(db, testSnapshotLoc())
 	_, err := snapshotRepo.InsertForDate(ctx, today)
 	require.NoError(t, err)
 
@@ -2856,8 +2878,8 @@ func TestSchemaContract_Reporting_DailyPositionMatchesManualAggregate(t *testing
 	_ = cashA
 	_ = cashB
 
-	today := dateOnly(time.Now())
-	snapshotRepo := repository.NewSnapshotRepository(db, time.UTC)
+	today := dateOnly(time.Now().In(testSnapshotLoc()))
+	snapshotRepo := repository.NewSnapshotRepository(db, testSnapshotLoc())
 	_, err := snapshotRepo.InsertForDate(ctx, today)
 	require.NoError(t, err)
 

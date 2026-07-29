@@ -30,6 +30,13 @@ var ErrNotFound = errors.New("payout: request not found")
 // model reconciled after the fact, not an independent source of truth.
 type Repository interface {
 	Insert(ctx context.Context, req model.PayoutRequest) error
+	// InsertMerchant is CreateMerchant's idempotent counterpart to Insert
+	// (B2B HTTP handlers follow-up to Plan 57 T6): req.DownstreamKey must
+	// be non-empty. A conflict on the partial unique (merchant_tenant_id,
+	// downstream_key) index means another attempt already won — the row
+	// THAT attempt inserted is returned instead of req, never a second row
+	// for the same Gateway retry (docs/reference/c1-b2b-design.md §10.4).
+	InsertMerchant(ctx context.Context, req model.PayoutRequest) (model.PayoutRequest, error)
 
 	// TransitionToHeld sets hold_tx_id and moves created->held.
 	TransitionToHeld(ctx context.Context, id, holdTxID uuid.UUID) (bool, error)
@@ -146,16 +153,50 @@ func (r *repo) Insert(ctx context.Context, req model.PayoutRequest) error {
 	v := r.ring.CurrentVersion()
 	_, err = r.db.ExecContext(ctx, `
 		INSERT INTO payout_requests
-			(id, user_id, amount, currency, vendor, status, created_by, request_id, created_at, updated_at,
+			(id, user_id, merchant_tenant_id, amount, currency, vendor, status, created_by, request_id, created_at, updated_at,
 			 destination_ciphertext, destination_key_version)
-		VALUES ($1, $2, $3, $4, $5, 'created', $6, $7, now(), now(), $8, $9)`,
-		req.ID, req.UserID, req.Amount.IntPart(), req.Currency, req.Vendor, req.CreatedBy,
+		VALUES ($1, $2, $3, $4, $5, $6, 'created', $7, $8, now(), now(), $9, $10)`,
+		req.ID, req.UserID, req.MerchantTenantID, req.Amount.IntPart(), req.Currency, req.Vendor, req.CreatedBy,
 		generalutil.NullString(req.RequestID), destCiphertext, v,
 	)
 	if err != nil {
 		return fmt.Errorf("insert payout request: %w", err)
 	}
 	return nil
+}
+
+func (r *repo) InsertMerchant(ctx context.Context, req model.PayoutRequest) (model.PayoutRequest, error) {
+	if req.DownstreamKey == "" {
+		return model.PayoutRequest{}, fmt.Errorf("insert merchant payout request: downstream key is required")
+	}
+	destCiphertext, err := r.ring.Seal(destinationAAD(req.ID), req.Destination)
+	if err != nil {
+		return model.PayoutRequest{}, fmt.Errorf("encrypt payout destination: %w", err)
+	}
+	v := r.ring.CurrentVersion()
+	_, err = r.db.ExecContext(ctx, `
+		INSERT INTO payout_requests
+			(id, user_id, merchant_tenant_id, amount, currency, vendor, status, created_by, request_id, downstream_key, created_at, updated_at,
+			 destination_ciphertext, destination_key_version)
+		VALUES ($1, $2, $3, $4, $5, $6, 'created', $7, $8, $9, now(), now(), $10, $11)
+		ON CONFLICT (merchant_tenant_id, downstream_key) WHERE downstream_key IS NOT NULL DO NOTHING`,
+		req.ID, req.UserID, req.MerchantTenantID, req.Amount.IntPart(), req.Currency, req.Vendor, req.CreatedBy,
+		generalutil.NullString(req.RequestID), req.DownstreamKey, destCiphertext, v,
+	)
+	if err != nil {
+		return model.PayoutRequest{}, fmt.Errorf("insert merchant payout request: %w", err)
+	}
+	row := r.db.QueryRowContext(ctx, `
+		SELECT id, user_id, merchant_tenant_id, amount, currency, vendor, status, hold_tx_id, settle_tx_id,
+		       COALESCE(vendor_ref, ''), COALESCE(error_message, ''), created_by, COALESCE(request_id, ''),
+		       fee_quote_id, fee_amount, COALESCE(fee_gateway, ''), created_at, updated_at,
+		       destination_ciphertext
+		FROM payout_requests WHERE merchant_tenant_id = $1 AND downstream_key = $2`, req.MerchantTenantID, req.DownstreamKey)
+	stored, err := r.scanRequest(row)
+	if err != nil {
+		return model.PayoutRequest{}, fmt.Errorf("read merchant payout request after insert: %w", err)
+	}
+	return stored, nil
 }
 
 func (r *repo) transition(ctx context.Context, query string, args ...any) (bool, error) {
@@ -267,7 +308,7 @@ func (r *repo) SetVendor(ctx context.Context, id uuid.UUID, vendor string) error
 
 func (r *repo) Get(ctx context.Context, id uuid.UUID) (model.PayoutRequest, error) {
 	row := r.db.QueryRowContext(ctx, `
-		SELECT id, user_id, amount, currency, vendor, status, hold_tx_id, settle_tx_id,
+		SELECT id, user_id, merchant_tenant_id, amount, currency, vendor, status, hold_tx_id, settle_tx_id,
 		       COALESCE(vendor_ref, ''), COALESCE(error_message, ''), created_by, COALESCE(request_id, ''),
 		       fee_quote_id, fee_amount, COALESCE(fee_gateway, ''), created_at, updated_at,
 		       destination_ciphertext
@@ -281,7 +322,7 @@ func (r *repo) Get(ctx context.Context, id uuid.UUID) (model.PayoutRequest, erro
 
 func (r *repo) GetByVendorReference(ctx context.Context, vendor, vendorReference string) (model.PayoutRequest, error) {
 	row := r.db.QueryRowContext(ctx, `
-		SELECT id, user_id, amount, currency, vendor, status, hold_tx_id, settle_tx_id,
+		SELECT id, user_id, merchant_tenant_id, amount, currency, vendor, status, hold_tx_id, settle_tx_id,
 		       COALESCE(vendor_ref, ''), COALESCE(error_message, ''), created_by, COALESCE(request_id, ''),
 		       fee_quote_id, fee_amount, COALESCE(fee_gateway, ''), created_at, updated_at,
 		       destination_ciphertext
@@ -311,7 +352,7 @@ func (r *repo) scanRequest(s rowScanner) (model.PayoutRequest, error) {
 	var holdTxID, settleTxID, feeQuoteID sql.NullString
 	var feeAmount sql.NullInt64
 	var destCiphertext []byte
-	if err := s.Scan(&req.ID, &req.UserID, &amount, &req.Currency, &req.Vendor, &req.Status,
+	if err := s.Scan(&req.ID, &req.UserID, &req.MerchantTenantID, &amount, &req.Currency, &req.Vendor, &req.Status,
 		&holdTxID, &settleTxID, &req.VendorRef, &req.ErrorMessage, &req.CreatedBy, &req.RequestID,
 		&feeQuoteID, &feeAmount, &req.FeeGateway,
 		&req.CreatedAt, &req.UpdatedAt,
@@ -363,7 +404,7 @@ func (r *repo) scanRequest(s rowScanner) (model.PayoutRequest, error) {
 }
 
 func (r *repo) List(ctx context.Context, status, vendor string, limit, offset int) ([]model.PayoutRequest, error) {
-	query := `SELECT id, user_id, amount, currency, vendor, status, hold_tx_id, settle_tx_id,
+	query := `SELECT id, user_id, merchant_tenant_id, amount, currency, vendor, status, hold_tx_id, settle_tx_id,
 	                 COALESCE(vendor_ref, ''), COALESCE(error_message, ''), created_by, COALESCE(request_id, ''),
 	                 fee_quote_id, fee_amount, COALESCE(fee_gateway, ''), created_at, updated_at,
 	                 destination_ciphertext
@@ -388,7 +429,7 @@ func (r *repo) List(ctx context.Context, status, vendor string, limit, offset in
 
 func (r *repo) ListStuck(ctx context.Context, status string, olderThan time.Time, limit int) ([]model.PayoutRequest, error) {
 	return r.queryRequests(ctx, `
-		SELECT id, user_id, amount, currency, vendor, status, hold_tx_id, settle_tx_id,
+		SELECT id, user_id, merchant_tenant_id, amount, currency, vendor, status, hold_tx_id, settle_tx_id,
 		       COALESCE(vendor_ref, ''), COALESCE(error_message, ''), created_by, COALESCE(request_id, ''),
 		       fee_quote_id, fee_amount, COALESCE(fee_gateway, ''), created_at, updated_at,
 		       destination_ciphertext

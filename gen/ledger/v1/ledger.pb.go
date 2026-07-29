@@ -34,6 +34,13 @@ type PostRequest struct {
 	PocketCode       string                 `protobuf:"bytes,7,opt,name=pocket_code,json=pocketCode,proto3" json:"pocket_code,omitempty"`
 	ReferenceId      string                 `protobuf:"bytes,8,opt,name=reference_id,json=referenceId,proto3" json:"reference_id,omitempty"`
 	Metadata         *structpb.Struct       `protobuf:"bytes,9,opt,name=metadata,proto3" json:"metadata,omitempty"`
+	// merchant_tenant_id (Plan 57 T5) is set ONLY for type="merchant_transfer"
+	// — the SOURCE account is always resolved server-side from this tenant
+	// id, never from a caller-supplied account id (§T5 "source account
+	// cannot be substituted by the caller"). The destination account id
+	// travels in metadata["destination_account_id"], the same established
+	// pattern escrow_release already uses for a raw account-id target.
+	MerchantTenantId string `protobuf:"bytes,10,opt,name=merchant_tenant_id,json=merchantTenantId,proto3" json:"merchant_tenant_id,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -129,6 +136,13 @@ func (x *PostRequest) GetMetadata() *structpb.Struct {
 		return x.Metadata
 	}
 	return nil
+}
+
+func (x *PostRequest) GetMerchantTenantId() string {
+	if x != nil {
+		return x.MerchantTenantId
+	}
+	return ""
 }
 
 type PostResponse struct {
@@ -1417,11 +1431,334 @@ func (x *FeeQuoteProof) GetConsumedByRef() string {
 	return ""
 }
 
+type ProvisionMerchantRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TenantId      string                 `protobuf:"bytes,1,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
+	Currency      string                 `protobuf:"bytes,2,opt,name=currency,proto3" json:"currency,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ProvisionMerchantRequest) Reset() {
+	*x = ProvisionMerchantRequest{}
+	mi := &file_seev_ledger_v1_ledger_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProvisionMerchantRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProvisionMerchantRequest) ProtoMessage() {}
+
+func (x *ProvisionMerchantRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_seev_ledger_v1_ledger_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProvisionMerchantRequest.ProtoReflect.Descriptor instead.
+func (*ProvisionMerchantRequest) Descriptor() ([]byte, []int) {
+	return file_seev_ledger_v1_ledger_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *ProvisionMerchantRequest) GetTenantId() string {
+	if x != nil {
+		return x.TenantId
+	}
+	return ""
+}
+
+func (x *ProvisionMerchantRequest) GetCurrency() string {
+	if x != nil {
+		return x.Currency
+	}
+	return ""
+}
+
+type ProvisionMerchantResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	AccountId     string                 `protobuf:"bytes,1,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ProvisionMerchantResponse) Reset() {
+	*x = ProvisionMerchantResponse{}
+	mi := &file_seev_ledger_v1_ledger_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProvisionMerchantResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProvisionMerchantResponse) ProtoMessage() {}
+
+func (x *ProvisionMerchantResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_seev_ledger_v1_ledger_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProvisionMerchantResponse.ProtoReflect.Descriptor instead.
+func (*ProvisionMerchantResponse) Descriptor() ([]byte, []int) {
+	return file_seev_ledger_v1_ledger_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *ProvisionMerchantResponse) GetAccountId() string {
+	if x != nil {
+		return x.AccountId
+	}
+	return ""
+}
+
+type GetMerchantAccountRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TenantId      string                 `protobuf:"bytes,1,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetMerchantAccountRequest) Reset() {
+	*x = GetMerchantAccountRequest{}
+	mi := &file_seev_ledger_v1_ledger_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetMerchantAccountRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetMerchantAccountRequest) ProtoMessage() {}
+
+func (x *GetMerchantAccountRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_seev_ledger_v1_ledger_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetMerchantAccountRequest.ProtoReflect.Descriptor instead.
+func (*GetMerchantAccountRequest) Descriptor() ([]byte, []int) {
+	return file_seev_ledger_v1_ledger_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *GetMerchantAccountRequest) GetTenantId() string {
+	if x != nil {
+		return x.TenantId
+	}
+	return ""
+}
+
+type MerchantAccount struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	AccountId     string                 `protobuf:"bytes,1,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
+	Currency      string                 `protobuf:"bytes,2,opt,name=currency,proto3" json:"currency,omitempty"`
+	Balance       string                 `protobuf:"bytes,3,opt,name=balance,proto3" json:"balance,omitempty"`
+	Status        string                 `protobuf:"bytes,4,opt,name=status,proto3" json:"status,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MerchantAccount) Reset() {
+	*x = MerchantAccount{}
+	mi := &file_seev_ledger_v1_ledger_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MerchantAccount) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MerchantAccount) ProtoMessage() {}
+
+func (x *MerchantAccount) ProtoReflect() protoreflect.Message {
+	mi := &file_seev_ledger_v1_ledger_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MerchantAccount.ProtoReflect.Descriptor instead.
+func (*MerchantAccount) Descriptor() ([]byte, []int) {
+	return file_seev_ledger_v1_ledger_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *MerchantAccount) GetAccountId() string {
+	if x != nil {
+		return x.AccountId
+	}
+	return ""
+}
+
+func (x *MerchantAccount) GetCurrency() string {
+	if x != nil {
+		return x.Currency
+	}
+	return ""
+}
+
+func (x *MerchantAccount) GetBalance() string {
+	if x != nil {
+		return x.Balance
+	}
+	return ""
+}
+
+func (x *MerchantAccount) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+type ListMerchantTransactionsRequest struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	TenantId string                 `protobuf:"bytes,1,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
+	Limit    int32                  `protobuf:"varint,2,opt,name=limit,proto3" json:"limit,omitempty"`
+	// before_id/before_created_at page backward from a prior response's last
+	// row (same cursor shape as internal/ledger's own ListEntries) — both
+	// empty means "start from the most recent transaction".
+	BeforeId        string                 `protobuf:"bytes,3,opt,name=before_id,json=beforeId,proto3" json:"before_id,omitempty"`
+	BeforeCreatedAt *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=before_created_at,json=beforeCreatedAt,proto3" json:"before_created_at,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *ListMerchantTransactionsRequest) Reset() {
+	*x = ListMerchantTransactionsRequest{}
+	mi := &file_seev_ledger_v1_ledger_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListMerchantTransactionsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListMerchantTransactionsRequest) ProtoMessage() {}
+
+func (x *ListMerchantTransactionsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_seev_ledger_v1_ledger_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListMerchantTransactionsRequest.ProtoReflect.Descriptor instead.
+func (*ListMerchantTransactionsRequest) Descriptor() ([]byte, []int) {
+	return file_seev_ledger_v1_ledger_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *ListMerchantTransactionsRequest) GetTenantId() string {
+	if x != nil {
+		return x.TenantId
+	}
+	return ""
+}
+
+func (x *ListMerchantTransactionsRequest) GetLimit() int32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
+}
+
+func (x *ListMerchantTransactionsRequest) GetBeforeId() string {
+	if x != nil {
+		return x.BeforeId
+	}
+	return ""
+}
+
+func (x *ListMerchantTransactionsRequest) GetBeforeCreatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.BeforeCreatedAt
+	}
+	return nil
+}
+
+type ListMerchantTransactionsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Transactions  []*Transaction         `protobuf:"bytes,1,rep,name=transactions,proto3" json:"transactions,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListMerchantTransactionsResponse) Reset() {
+	*x = ListMerchantTransactionsResponse{}
+	mi := &file_seev_ledger_v1_ledger_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListMerchantTransactionsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListMerchantTransactionsResponse) ProtoMessage() {}
+
+func (x *ListMerchantTransactionsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_seev_ledger_v1_ledger_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListMerchantTransactionsResponse.ProtoReflect.Descriptor instead.
+func (*ListMerchantTransactionsResponse) Descriptor() ([]byte, []int) {
+	return file_seev_ledger_v1_ledger_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *ListMerchantTransactionsResponse) GetTransactions() []*Transaction {
+	if x != nil {
+		return x.Transactions
+	}
+	return nil
+}
+
 var File_seev_ledger_v1_ledger_proto protoreflect.FileDescriptor
 
 const file_seev_ledger_v1_ledger_proto_rawDesc = "" +
 	"\n" +
-	"\x1bseev/ledger/v1/ledger.proto\x12\x0eseev.ledger.v1\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xc7\x02\n" +
+	"\x1bseev/ledger/v1/ledger.proto\x12\x0eseev.ledger.v1\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xf5\x02\n" +
 	"\vPostRequest\x12'\n" +
 	"\x0fidempotency_key\x18\x01 \x01(\tR\x0eidempotencyKey\x12+\n" +
 	"\x11idempotency_scope\x18\x02 \x01(\tR\x10idempotencyScope\x12\x12\n" +
@@ -1432,7 +1769,9 @@ const file_seev_ledger_v1_ledger_proto_rawDesc = "" +
 	"\vpocket_code\x18\a \x01(\tR\n" +
 	"pocketCode\x12!\n" +
 	"\freference_id\x18\b \x01(\tR\vreferenceId\x123\n" +
-	"\bmetadata\x18\t \x01(\v2\x17.google.protobuf.StructR\bmetadata\"\x0e\n" +
+	"\bmetadata\x18\t \x01(\v2\x17.google.protobuf.StructR\bmetadata\x12,\n" +
+	"\x12merchant_tenant_id\x18\n" +
+	" \x01(\tR\x10merchantTenantId\"\x0e\n" +
 	"\fPostResponse\"m\n" +
 	"\x15GetTxByIdemKeyRequest\x12'\n" +
 	"\x0fidempotency_key\x18\x01 \x01(\tR\x0eidempotencyKey\x12+\n" +
@@ -1539,7 +1878,28 @@ const file_seev_ledger_v1_ledger_proto_rawDesc = "" +
 	"\vfee_gateway\x18\a \x01(\tR\n" +
 	"feeGateway\x12\x16\n" +
 	"\x06status\x18\b \x01(\tR\x06status\x12&\n" +
-	"\x0fconsumed_by_ref\x18\t \x01(\tR\rconsumedByRef2\x9d\x06\n" +
+	"\x0fconsumed_by_ref\x18\t \x01(\tR\rconsumedByRef\"S\n" +
+	"\x18ProvisionMerchantRequest\x12\x1b\n" +
+	"\ttenant_id\x18\x01 \x01(\tR\btenantId\x12\x1a\n" +
+	"\bcurrency\x18\x02 \x01(\tR\bcurrency\":\n" +
+	"\x19ProvisionMerchantResponse\x12\x1d\n" +
+	"\n" +
+	"account_id\x18\x01 \x01(\tR\taccountId\"8\n" +
+	"\x19GetMerchantAccountRequest\x12\x1b\n" +
+	"\ttenant_id\x18\x01 \x01(\tR\btenantId\"~\n" +
+	"\x0fMerchantAccount\x12\x1d\n" +
+	"\n" +
+	"account_id\x18\x01 \x01(\tR\taccountId\x12\x1a\n" +
+	"\bcurrency\x18\x02 \x01(\tR\bcurrency\x12\x18\n" +
+	"\abalance\x18\x03 \x01(\tR\abalance\x12\x16\n" +
+	"\x06status\x18\x04 \x01(\tR\x06status\"\xb9\x01\n" +
+	"\x1fListMerchantTransactionsRequest\x12\x1b\n" +
+	"\ttenant_id\x18\x01 \x01(\tR\btenantId\x12\x14\n" +
+	"\x05limit\x18\x02 \x01(\x05R\x05limit\x12\x1b\n" +
+	"\tbefore_id\x18\x03 \x01(\tR\bbeforeId\x12F\n" +
+	"\x11before_created_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\x0fbeforeCreatedAt\"c\n" +
+	" ListMerchantTransactionsResponse\x12?\n" +
+	"\ftransactions\x18\x01 \x03(\v2\x1b.seev.ledger.v1.TransactionR\ftransactions2\xe8\b\n" +
 	"\rLedgerService\x12A\n" +
 	"\x04Post\x12\x1b.seev.ledger.v1.PostRequest\x1a\x1c.seev.ledger.v1.PostResponse\x12d\n" +
 	"\x1eGetTransactionByIdempotencyKey\x12%.seev.ledger.v1.GetTxByIdemKeyRequest\x1a\x1b.seev.ledger.v1.Transaction\x12b\n" +
@@ -1549,7 +1909,10 @@ const file_seev_ledger_v1_ledger_proto_rawDesc = "" +
 	"\rProvisionUser\x12$.seev.ledger.v1.ProvisionUserRequest\x1a%.seev.ledger.v1.ProvisionUserResponse\x12b\n" +
 	"\x0fConsumeFeeQuote\x12&.seev.ledger.v1.ConsumeFeeQuoteRequest\x1a'.seev.ledger.v1.ConsumeFeeQuoteResponse\x12Y\n" +
 	"\fApplyKycTier\x12#.seev.ledger.v1.ApplyKycTierRequest\x1a$.seev.ledger.v1.ApplyKycTierResponse\x12\x8c\x01\n" +
-	"\x1dBatchGetAssuranceTransactions\x124.seev.ledger.v1.BatchGetAssuranceTransactionsRequest\x1a5.seev.ledger.v1.BatchGetAssuranceTransactionsResponseB\xa9\x01\n" +
+	"\x1dBatchGetAssuranceTransactions\x124.seev.ledger.v1.BatchGetAssuranceTransactionsRequest\x1a5.seev.ledger.v1.BatchGetAssuranceTransactionsResponse\x12h\n" +
+	"\x11ProvisionMerchant\x12(.seev.ledger.v1.ProvisionMerchantRequest\x1a).seev.ledger.v1.ProvisionMerchantResponse\x12`\n" +
+	"\x12GetMerchantAccount\x12).seev.ledger.v1.GetMerchantAccountRequest\x1a\x1f.seev.ledger.v1.MerchantAccount\x12}\n" +
+	"\x18ListMerchantTransactions\x12/.seev.ledger.v1.ListMerchantTransactionsRequest\x1a0.seev.ledger.v1.ListMerchantTransactionsResponseB\xa9\x01\n" +
 	"\x12com.seev.ledger.v1B\vLedgerProtoP\x01Z,github.com/herdifirdausss/seev/gen/ledger/v1\xa2\x02\x03SLX\xaa\x02\x0eSeev.Ledger.V1\xca\x02\x0eSeev\\Ledger\\V1\xe2\x02\x1aSeev\\Ledger\\V1\\GPBMetadata\xea\x02\x10Seev::Ledger::V1b\x06proto3"
 
 var (
@@ -1564,7 +1927,7 @@ func file_seev_ledger_v1_ledger_proto_rawDescGZIP() []byte {
 	return file_seev_ledger_v1_ledger_proto_rawDescData
 }
 
-var file_seev_ledger_v1_ledger_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
+var file_seev_ledger_v1_ledger_proto_msgTypes = make([]protoimpl.MessageInfo, 26)
 var file_seev_ledger_v1_ledger_proto_goTypes = []any{
 	(*PostRequest)(nil),                           // 0: seev.ledger.v1.PostRequest
 	(*PostResponse)(nil),                          // 1: seev.ledger.v1.PostResponse
@@ -1586,40 +1949,54 @@ var file_seev_ledger_v1_ledger_proto_goTypes = []any{
 	(*AssuranceTransactionResult)(nil),            // 17: seev.ledger.v1.AssuranceTransactionResult
 	(*AssuranceTransaction)(nil),                  // 18: seev.ledger.v1.AssuranceTransaction
 	(*FeeQuoteProof)(nil),                         // 19: seev.ledger.v1.FeeQuoteProof
-	(*structpb.Struct)(nil),                       // 20: google.protobuf.Struct
-	(*timestamppb.Timestamp)(nil),                 // 21: google.protobuf.Timestamp
+	(*ProvisionMerchantRequest)(nil),              // 20: seev.ledger.v1.ProvisionMerchantRequest
+	(*ProvisionMerchantResponse)(nil),             // 21: seev.ledger.v1.ProvisionMerchantResponse
+	(*GetMerchantAccountRequest)(nil),             // 22: seev.ledger.v1.GetMerchantAccountRequest
+	(*MerchantAccount)(nil),                       // 23: seev.ledger.v1.MerchantAccount
+	(*ListMerchantTransactionsRequest)(nil),       // 24: seev.ledger.v1.ListMerchantTransactionsRequest
+	(*ListMerchantTransactionsResponse)(nil),      // 25: seev.ledger.v1.ListMerchantTransactionsResponse
+	(*structpb.Struct)(nil),                       // 26: google.protobuf.Struct
+	(*timestamppb.Timestamp)(nil),                 // 27: google.protobuf.Timestamp
 }
 var file_seev_ledger_v1_ledger_proto_depIdxs = []int32{
-	20, // 0: seev.ledger.v1.PostRequest.metadata:type_name -> google.protobuf.Struct
-	21, // 1: seev.ledger.v1.Transaction.created_at:type_name -> google.protobuf.Timestamp
-	21, // 2: seev.ledger.v1.Transaction.updated_at:type_name -> google.protobuf.Timestamp
+	26, // 0: seev.ledger.v1.PostRequest.metadata:type_name -> google.protobuf.Struct
+	27, // 1: seev.ledger.v1.Transaction.created_at:type_name -> google.protobuf.Timestamp
+	27, // 2: seev.ledger.v1.Transaction.updated_at:type_name -> google.protobuf.Timestamp
 	15, // 3: seev.ledger.v1.BatchGetAssuranceTransactionsRequest.selectors:type_name -> seev.ledger.v1.AssuranceSelector
 	17, // 4: seev.ledger.v1.BatchGetAssuranceTransactionsResponse.results:type_name -> seev.ledger.v1.AssuranceTransactionResult
 	19, // 5: seev.ledger.v1.BatchGetAssuranceTransactionsResponse.fee_quote_proofs:type_name -> seev.ledger.v1.FeeQuoteProof
 	18, // 6: seev.ledger.v1.AssuranceTransactionResult.transactions:type_name -> seev.ledger.v1.AssuranceTransaction
-	21, // 7: seev.ledger.v1.AssuranceTransaction.created_at:type_name -> google.protobuf.Timestamp
-	21, // 8: seev.ledger.v1.AssuranceTransaction.updated_at:type_name -> google.protobuf.Timestamp
-	0,  // 9: seev.ledger.v1.LedgerService.Post:input_type -> seev.ledger.v1.PostRequest
-	2,  // 10: seev.ledger.v1.LedgerService.GetTransactionByIdempotencyKey:input_type -> seev.ledger.v1.GetTxByIdemKeyRequest
-	4,  // 11: seev.ledger.v1.LedgerService.GetUserCurrency:input_type -> seev.ledger.v1.GetUserCurrencyRequest
-	6,  // 12: seev.ledger.v1.LedgerService.ResolveFee:input_type -> seev.ledger.v1.ResolveFeeRequest
-	8,  // 13: seev.ledger.v1.LedgerService.ProvisionUser:input_type -> seev.ledger.v1.ProvisionUserRequest
-	10, // 14: seev.ledger.v1.LedgerService.ConsumeFeeQuote:input_type -> seev.ledger.v1.ConsumeFeeQuoteRequest
-	12, // 15: seev.ledger.v1.LedgerService.ApplyKycTier:input_type -> seev.ledger.v1.ApplyKycTierRequest
-	14, // 16: seev.ledger.v1.LedgerService.BatchGetAssuranceTransactions:input_type -> seev.ledger.v1.BatchGetAssuranceTransactionsRequest
-	1,  // 17: seev.ledger.v1.LedgerService.Post:output_type -> seev.ledger.v1.PostResponse
-	3,  // 18: seev.ledger.v1.LedgerService.GetTransactionByIdempotencyKey:output_type -> seev.ledger.v1.Transaction
-	5,  // 19: seev.ledger.v1.LedgerService.GetUserCurrency:output_type -> seev.ledger.v1.GetUserCurrencyResponse
-	7,  // 20: seev.ledger.v1.LedgerService.ResolveFee:output_type -> seev.ledger.v1.ResolveFeeResponse
-	9,  // 21: seev.ledger.v1.LedgerService.ProvisionUser:output_type -> seev.ledger.v1.ProvisionUserResponse
-	11, // 22: seev.ledger.v1.LedgerService.ConsumeFeeQuote:output_type -> seev.ledger.v1.ConsumeFeeQuoteResponse
-	13, // 23: seev.ledger.v1.LedgerService.ApplyKycTier:output_type -> seev.ledger.v1.ApplyKycTierResponse
-	16, // 24: seev.ledger.v1.LedgerService.BatchGetAssuranceTransactions:output_type -> seev.ledger.v1.BatchGetAssuranceTransactionsResponse
-	17, // [17:25] is the sub-list for method output_type
-	9,  // [9:17] is the sub-list for method input_type
-	9,  // [9:9] is the sub-list for extension type_name
-	9,  // [9:9] is the sub-list for extension extendee
-	0,  // [0:9] is the sub-list for field type_name
+	27, // 7: seev.ledger.v1.AssuranceTransaction.created_at:type_name -> google.protobuf.Timestamp
+	27, // 8: seev.ledger.v1.AssuranceTransaction.updated_at:type_name -> google.protobuf.Timestamp
+	27, // 9: seev.ledger.v1.ListMerchantTransactionsRequest.before_created_at:type_name -> google.protobuf.Timestamp
+	3,  // 10: seev.ledger.v1.ListMerchantTransactionsResponse.transactions:type_name -> seev.ledger.v1.Transaction
+	0,  // 11: seev.ledger.v1.LedgerService.Post:input_type -> seev.ledger.v1.PostRequest
+	2,  // 12: seev.ledger.v1.LedgerService.GetTransactionByIdempotencyKey:input_type -> seev.ledger.v1.GetTxByIdemKeyRequest
+	4,  // 13: seev.ledger.v1.LedgerService.GetUserCurrency:input_type -> seev.ledger.v1.GetUserCurrencyRequest
+	6,  // 14: seev.ledger.v1.LedgerService.ResolveFee:input_type -> seev.ledger.v1.ResolveFeeRequest
+	8,  // 15: seev.ledger.v1.LedgerService.ProvisionUser:input_type -> seev.ledger.v1.ProvisionUserRequest
+	10, // 16: seev.ledger.v1.LedgerService.ConsumeFeeQuote:input_type -> seev.ledger.v1.ConsumeFeeQuoteRequest
+	12, // 17: seev.ledger.v1.LedgerService.ApplyKycTier:input_type -> seev.ledger.v1.ApplyKycTierRequest
+	14, // 18: seev.ledger.v1.LedgerService.BatchGetAssuranceTransactions:input_type -> seev.ledger.v1.BatchGetAssuranceTransactionsRequest
+	20, // 19: seev.ledger.v1.LedgerService.ProvisionMerchant:input_type -> seev.ledger.v1.ProvisionMerchantRequest
+	22, // 20: seev.ledger.v1.LedgerService.GetMerchantAccount:input_type -> seev.ledger.v1.GetMerchantAccountRequest
+	24, // 21: seev.ledger.v1.LedgerService.ListMerchantTransactions:input_type -> seev.ledger.v1.ListMerchantTransactionsRequest
+	1,  // 22: seev.ledger.v1.LedgerService.Post:output_type -> seev.ledger.v1.PostResponse
+	3,  // 23: seev.ledger.v1.LedgerService.GetTransactionByIdempotencyKey:output_type -> seev.ledger.v1.Transaction
+	5,  // 24: seev.ledger.v1.LedgerService.GetUserCurrency:output_type -> seev.ledger.v1.GetUserCurrencyResponse
+	7,  // 25: seev.ledger.v1.LedgerService.ResolveFee:output_type -> seev.ledger.v1.ResolveFeeResponse
+	9,  // 26: seev.ledger.v1.LedgerService.ProvisionUser:output_type -> seev.ledger.v1.ProvisionUserResponse
+	11, // 27: seev.ledger.v1.LedgerService.ConsumeFeeQuote:output_type -> seev.ledger.v1.ConsumeFeeQuoteResponse
+	13, // 28: seev.ledger.v1.LedgerService.ApplyKycTier:output_type -> seev.ledger.v1.ApplyKycTierResponse
+	16, // 29: seev.ledger.v1.LedgerService.BatchGetAssuranceTransactions:output_type -> seev.ledger.v1.BatchGetAssuranceTransactionsResponse
+	21, // 30: seev.ledger.v1.LedgerService.ProvisionMerchant:output_type -> seev.ledger.v1.ProvisionMerchantResponse
+	23, // 31: seev.ledger.v1.LedgerService.GetMerchantAccount:output_type -> seev.ledger.v1.MerchantAccount
+	25, // 32: seev.ledger.v1.LedgerService.ListMerchantTransactions:output_type -> seev.ledger.v1.ListMerchantTransactionsResponse
+	22, // [22:33] is the sub-list for method output_type
+	11, // [11:22] is the sub-list for method input_type
+	11, // [11:11] is the sub-list for extension type_name
+	11, // [11:11] is the sub-list for extension extendee
+	0,  // [0:11] is the sub-list for field type_name
 }
 
 func init() { file_seev_ledger_v1_ledger_proto_init() }
@@ -1633,7 +2010,7 @@ func file_seev_ledger_v1_ledger_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_seev_ledger_v1_ledger_proto_rawDesc), len(file_seev_ledger_v1_ledger_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   20,
+			NumMessages:   26,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

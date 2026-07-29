@@ -103,7 +103,7 @@ func TestHTTPInventoryAndOpenAPIOperationsAreBidirectionallyCovered(t *testing.T
 	}
 
 	seen := map[operation]bool{}
-	for _, name := range []string{"public-v1.yaml", "webhooks-v1.yaml", "admin-v1.yaml", "internal-v1.yaml"} {
+	for _, name := range []string{"public-v1.yaml", "webhooks-v1.yaml", "admin-v1.yaml", "internal-v1.yaml", "b2b-v1.yaml"} {
 		artifact := "api/openapi/" + name
 		contractBody, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(artifact)))
 		if err != nil {

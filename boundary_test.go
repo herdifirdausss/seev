@@ -52,7 +52,7 @@ var serviceModules = map[string]map[string]bool{
 	"backup-agent":      {"backupagent": true},
 	"drreseed":          {"drreseed": true},
 	"drverify":          {"drverify": true},
-	"gateway":           {"handler": true, "notify": true},
+	"gateway":           {"handler": true, "notify": true, "merchant": true},
 	"gentoken":          {},
 }
 

@@ -21,6 +21,16 @@ type UpsertAccountParams struct {
 	CreatedBy  string
 }
 
+// UpsertMerchantAccountParams groups the fields needed to provision (or
+// idempotently re-fetch) one owner_type='merchant' account row plus its
+// zero-balance companion (Plan 57 T5).
+type UpsertMerchantAccountParams struct {
+	TenantID  uuid.UUID
+	Type      string
+	Currency  string
+	CreatedBy string
+}
+
 // ProvisioningRepository abstracts account creation — deliberately
 // SEPARATE from AccountRepository (which is documented as read-only,
 // outside any ledger transaction): provisioning is a write that must run
@@ -31,6 +41,15 @@ type ProvisioningRepository interface {
 	// ON CONFLICT DO UPDATE is a no-op write used only to make RETURNING
 	// report the existing row too.
 	UpsertAccount(ctx context.Context, tx *sql.Tx, params UpsertAccountParams) (model.Account, error)
+
+	// UpsertMerchantAccount is UpsertAccount's owner_type='merchant'
+	// counterpart (Plan 57 T5) — kept as a SEPARATE method rather than an
+	// owner-type parameter on UpsertAccount, per T0's "additive new
+	// methods preferred, do not parameterize existing user-scoped call
+	// sites" finding. Same idempotent ON CONFLICT DO UPDATE shape: calling
+	// it again for the same (tenant, type, currency) returns the existing
+	// account, never a duplicate.
+	UpsertMerchantAccount(ctx context.Context, tx *sql.Tx, params UpsertMerchantAccountParams) (model.Account, error)
 }
 
 type provisioningRepo struct{}
@@ -76,6 +95,35 @@ func (r *provisioningRepo) UpsertAccount(ctx context.Context, tx *sql.Tx, p Upse
 		acc.ID,
 	); err != nil {
 		return model.Account{}, fmt.Errorf("upsert account balance: %w", err)
+	}
+
+	return acc, nil
+}
+
+func (r *provisioningRepo) UpsertMerchantAccount(ctx context.Context, tx *sql.Tx, p UpsertMerchantAccountParams) (model.Account, error) {
+	id := uuid.New()
+
+	var acc model.Account
+	acc.OwnerID = p.TenantID
+	acc.Type = p.Type
+	acc.Currency = p.Currency
+
+	const query = `
+		INSERT INTO accounts (id, owner_id, owner_type, type, currency, pocket_code, status, created_by)
+		VALUES ($1, $2, 'merchant', $3, $4, NULL, 'active', $5)
+		ON CONFLICT (owner_type, owner_id, type, currency) WHERE pocket_code IS NULL AND owner_id IS NOT NULL
+		DO UPDATE SET updated_at = accounts.updated_at
+		RETURNING id, status`
+
+	if err := tx.QueryRowContext(ctx, query, id, p.TenantID, p.Type, p.Currency, p.CreatedBy).Scan(&acc.ID, &acc.Status); err != nil {
+		return model.Account{}, fmt.Errorf("upsert merchant account: %w", err)
+	}
+
+	if _, err := tx.ExecContext(ctx,
+		`INSERT INTO account_balances (account_id) VALUES ($1) ON CONFLICT (account_id) DO NOTHING`,
+		acc.ID,
+	); err != nil {
+		return model.Account{}, fmt.Errorf("upsert merchant account balance: %w", err)
 	}
 
 	return acc, nil

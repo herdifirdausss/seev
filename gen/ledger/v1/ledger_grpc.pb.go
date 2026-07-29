@@ -27,6 +27,9 @@ const (
 	LedgerService_ConsumeFeeQuote_FullMethodName                = "/seev.ledger.v1.LedgerService/ConsumeFeeQuote"
 	LedgerService_ApplyKycTier_FullMethodName                   = "/seev.ledger.v1.LedgerService/ApplyKycTier"
 	LedgerService_BatchGetAssuranceTransactions_FullMethodName  = "/seev.ledger.v1.LedgerService/BatchGetAssuranceTransactions"
+	LedgerService_ProvisionMerchant_FullMethodName              = "/seev.ledger.v1.LedgerService/ProvisionMerchant"
+	LedgerService_GetMerchantAccount_FullMethodName             = "/seev.ledger.v1.LedgerService/GetMerchantAccount"
+	LedgerService_ListMerchantTransactions_FullMethodName       = "/seev.ledger.v1.LedgerService/ListMerchantTransactions"
 )
 
 // LedgerServiceClient is the client API for LedgerService service.
@@ -44,6 +47,19 @@ type LedgerServiceClient interface {
 	ConsumeFeeQuote(ctx context.Context, in *ConsumeFeeQuoteRequest, opts ...grpc.CallOption) (*ConsumeFeeQuoteResponse, error)
 	ApplyKycTier(ctx context.Context, in *ApplyKycTierRequest, opts ...grpc.CallOption) (*ApplyKycTierResponse, error)
 	BatchGetAssuranceTransactions(ctx context.Context, in *BatchGetAssuranceTransactionsRequest, opts ...grpc.CallOption) (*BatchGetAssuranceTransactionsResponse, error)
+	// ProvisionMerchant is Plan 57 T5's additive RPC — idempotently
+	// provisions a merchant tenant's single owner_type='merchant' cash
+	// account (mirrors ProvisionUser; a merchant needs no hold/pending/
+	// frozen accounts, those are end-user withdrawal-lifecycle states).
+	ProvisionMerchant(ctx context.Context, in *ProvisionMerchantRequest, opts ...grpc.CallOption) (*ProvisionMerchantResponse, error)
+	// GetMerchantAccount resolves a tenant's cash account id and reads its
+	// current balance in one round trip — the account id is NEVER accepted
+	// from a caller, only ever resolved server-side from tenant_id.
+	GetMerchantAccount(ctx context.Context, in *GetMerchantAccountRequest, opts ...grpc.CallOption) (*MerchantAccount, error)
+	// ListMerchantTransactions is tenant-scoped: the account id is resolved
+	// server-side from tenant_id, never accepted as a request parameter, so
+	// no caller can ever list another tenant's transactions.
+	ListMerchantTransactions(ctx context.Context, in *ListMerchantTransactionsRequest, opts ...grpc.CallOption) (*ListMerchantTransactionsResponse, error)
 }
 
 type ledgerServiceClient struct {
@@ -134,6 +150,36 @@ func (c *ledgerServiceClient) BatchGetAssuranceTransactions(ctx context.Context,
 	return out, nil
 }
 
+func (c *ledgerServiceClient) ProvisionMerchant(ctx context.Context, in *ProvisionMerchantRequest, opts ...grpc.CallOption) (*ProvisionMerchantResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ProvisionMerchantResponse)
+	err := c.cc.Invoke(ctx, LedgerService_ProvisionMerchant_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *ledgerServiceClient) GetMerchantAccount(ctx context.Context, in *GetMerchantAccountRequest, opts ...grpc.CallOption) (*MerchantAccount, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MerchantAccount)
+	err := c.cc.Invoke(ctx, LedgerService_GetMerchantAccount_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *ledgerServiceClient) ListMerchantTransactions(ctx context.Context, in *ListMerchantTransactionsRequest, opts ...grpc.CallOption) (*ListMerchantTransactionsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListMerchantTransactionsResponse)
+	err := c.cc.Invoke(ctx, LedgerService_ListMerchantTransactions_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // LedgerServiceServer is the server API for LedgerService service.
 // All implementations must embed UnimplementedLedgerServiceServer
 // for forward compatibility.
@@ -149,6 +195,19 @@ type LedgerServiceServer interface {
 	ConsumeFeeQuote(context.Context, *ConsumeFeeQuoteRequest) (*ConsumeFeeQuoteResponse, error)
 	ApplyKycTier(context.Context, *ApplyKycTierRequest) (*ApplyKycTierResponse, error)
 	BatchGetAssuranceTransactions(context.Context, *BatchGetAssuranceTransactionsRequest) (*BatchGetAssuranceTransactionsResponse, error)
+	// ProvisionMerchant is Plan 57 T5's additive RPC — idempotently
+	// provisions a merchant tenant's single owner_type='merchant' cash
+	// account (mirrors ProvisionUser; a merchant needs no hold/pending/
+	// frozen accounts, those are end-user withdrawal-lifecycle states).
+	ProvisionMerchant(context.Context, *ProvisionMerchantRequest) (*ProvisionMerchantResponse, error)
+	// GetMerchantAccount resolves a tenant's cash account id and reads its
+	// current balance in one round trip — the account id is NEVER accepted
+	// from a caller, only ever resolved server-side from tenant_id.
+	GetMerchantAccount(context.Context, *GetMerchantAccountRequest) (*MerchantAccount, error)
+	// ListMerchantTransactions is tenant-scoped: the account id is resolved
+	// server-side from tenant_id, never accepted as a request parameter, so
+	// no caller can ever list another tenant's transactions.
+	ListMerchantTransactions(context.Context, *ListMerchantTransactionsRequest) (*ListMerchantTransactionsResponse, error)
 	mustEmbedUnimplementedLedgerServiceServer()
 }
 
@@ -182,6 +241,15 @@ func (UnimplementedLedgerServiceServer) ApplyKycTier(context.Context, *ApplyKycT
 }
 func (UnimplementedLedgerServiceServer) BatchGetAssuranceTransactions(context.Context, *BatchGetAssuranceTransactionsRequest) (*BatchGetAssuranceTransactionsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method BatchGetAssuranceTransactions not implemented")
+}
+func (UnimplementedLedgerServiceServer) ProvisionMerchant(context.Context, *ProvisionMerchantRequest) (*ProvisionMerchantResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ProvisionMerchant not implemented")
+}
+func (UnimplementedLedgerServiceServer) GetMerchantAccount(context.Context, *GetMerchantAccountRequest) (*MerchantAccount, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetMerchantAccount not implemented")
+}
+func (UnimplementedLedgerServiceServer) ListMerchantTransactions(context.Context, *ListMerchantTransactionsRequest) (*ListMerchantTransactionsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListMerchantTransactions not implemented")
 }
 func (UnimplementedLedgerServiceServer) mustEmbedUnimplementedLedgerServiceServer() {}
 func (UnimplementedLedgerServiceServer) testEmbeddedByValue()                       {}
@@ -348,6 +416,60 @@ func _LedgerService_BatchGetAssuranceTransactions_Handler(srv interface{}, ctx c
 	return interceptor(ctx, in, info, handler)
 }
 
+func _LedgerService_ProvisionMerchant_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ProvisionMerchantRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(LedgerServiceServer).ProvisionMerchant(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: LedgerService_ProvisionMerchant_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(LedgerServiceServer).ProvisionMerchant(ctx, req.(*ProvisionMerchantRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _LedgerService_GetMerchantAccount_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetMerchantAccountRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(LedgerServiceServer).GetMerchantAccount(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: LedgerService_GetMerchantAccount_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(LedgerServiceServer).GetMerchantAccount(ctx, req.(*GetMerchantAccountRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _LedgerService_ListMerchantTransactions_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListMerchantTransactionsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(LedgerServiceServer).ListMerchantTransactions(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: LedgerService_ListMerchantTransactions_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(LedgerServiceServer).ListMerchantTransactions(ctx, req.(*ListMerchantTransactionsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // LedgerService_ServiceDesc is the grpc.ServiceDesc for LedgerService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -386,6 +508,18 @@ var LedgerService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "BatchGetAssuranceTransactions",
 			Handler:    _LedgerService_BatchGetAssuranceTransactions_Handler,
+		},
+		{
+			MethodName: "ProvisionMerchant",
+			Handler:    _LedgerService_ProvisionMerchant_Handler,
+		},
+		{
+			MethodName: "GetMerchantAccount",
+			Handler:    _LedgerService_GetMerchantAccount_Handler,
+		},
+		{
+			MethodName: "ListMerchantTransactions",
+			Handler:    _LedgerService_ListMerchantTransactions_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
