@@ -48,6 +48,14 @@ type Repository interface {
 	// ─── Topup intents (docs/roadmap/archive/25 Task T3) ──────────────────────────
 
 	InsertTopupIntent(ctx context.Context, intent model.TopupIntent) error
+	// InsertMerchantTopupIntent is CreateMerchantTopupIntent's idempotent
+	// counterpart to InsertTopupIntent (B2B HTTP handlers follow-up to Plan
+	// 57 T6): intent.DownstreamKey must be non-empty. A conflict on the
+	// partial unique (merchant_tenant_id, downstream_key) index means
+	// another attempt already won — the row THAT attempt inserted is
+	// returned instead of intent, never a second row for the same Gateway
+	// retry (docs/reference/c1-b2b-design.md §10.4).
+	InsertMerchantTopupIntent(ctx context.Context, intent model.TopupIntent) (model.TopupIntent, error)
 	GetTopupIntent(ctx context.Context, id uuid.UUID) (model.TopupIntent, error)
 	// GetTopupIntentByReference reports found=false (not an error) when no
 	// intent exists for reference. VendorService callbacks fail closed when

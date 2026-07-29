@@ -22,6 +22,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/herdifirdausss/seev/internal/payout/model"
+	"github.com/herdifirdausss/seev/internal/payout/repository"
 	"github.com/herdifirdausss/seev/internal/testutil"
 	"github.com/herdifirdausss/seev/internal/vendorgw"
 	"github.com/herdifirdausss/seev/internal/vendorgw/mockvendor"
@@ -44,7 +45,7 @@ func TestPayout_CreateMerchant_InstantSettle_HoldsDebitsReleasesOnce(t *testing.
 	cash := merchantCashAccountID(t, ledgerModule, tenantID)
 	seedMerchantCash(t, db, cash, 200_000)
 
-	id, err := payoutModule.CreateMerchant(ctx, tenantID, "live", "IDR", decimal.NewFromInt(100_000), mockDestination(""), "test")
+	id, err := payoutModule.CreateMerchant(ctx, tenantID, "live", "IDR", decimal.NewFromInt(100_000), mockDestination(""), "test", "downstream-key-1")
 	require.NoError(t, err)
 
 	req, err := payoutModule.Get(ctx, id)
@@ -84,7 +85,7 @@ func TestPayout_CreateMerchant_Async_ResumeJobSettles(t *testing.T) {
 	cash := merchantCashAccountID(t, ledgerModule, tenantID)
 	seedMerchantCash(t, db, cash, 200_000)
 
-	id, err := payoutModule.CreateMerchant(ctx, tenantID, "live", "IDR", decimal.NewFromInt(75_000), mockDestination(mockvendor.ModeAsync), "test")
+	id, err := payoutModule.CreateMerchant(ctx, tenantID, "live", "IDR", decimal.NewFromInt(75_000), mockDestination(mockvendor.ModeAsync), "test", "downstream-key-2")
 	require.NoError(t, err)
 
 	n, err := payoutModule.DispatchPendingCommands(ctx, 10)
@@ -128,7 +129,7 @@ func TestPayout_CreateMerchant_VendorFails_MoneyReturnedToMerchantCash(t *testin
 	cash := merchantCashAccountID(t, ledgerModule, tenantID)
 	seedMerchantCash(t, db, cash, 200_000)
 
-	id, err := payoutModule.CreateMerchant(ctx, tenantID, "live", "IDR", decimal.NewFromInt(50_000), mockDestination(mockvendor.ModeFail), "test")
+	id, err := payoutModule.CreateMerchant(ctx, tenantID, "live", "IDR", decimal.NewFromInt(50_000), mockDestination(mockvendor.ModeFail), "test", "downstream-key-3")
 	require.NoError(t, err)
 
 	_, err = payoutModule.DispatchPendingCommands(ctx, 10)
@@ -153,7 +154,7 @@ func TestPayout_CreateMerchant_Sandbox_AlwaysRoutesToMockVendor(t *testing.T) {
 	cash := merchantCashAccountID(t, ledgerModule, tenantID)
 	seedMerchantCash(t, db, cash, 100_000)
 
-	id, err := payoutModule.CreateMerchant(ctx, tenantID, "sandbox", "IDR", decimal.NewFromInt(40_000), mockDestination(""), "test")
+	id, err := payoutModule.CreateMerchant(ctx, tenantID, "sandbox", "IDR", decimal.NewFromInt(40_000), mockDestination(""), "test", "downstream-key-4")
 	require.NoError(t, err)
 
 	_, err = payoutModule.DispatchPendingCommands(ctx, 10)
@@ -163,6 +164,60 @@ func TestPayout_CreateMerchant_Sandbox_AlwaysRoutesToMockVendor(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, mockvendor.VendorName, req.Vendor)
 	assert.Equal(t, model.StatusSettled, req.Status)
+}
+
+// TestPayout_CreateMerchant_DownstreamKeyConflict_NoSecondHold proves the
+// real Postgres partial unique index backs the "Gateway crash after
+// owner-service success" recovery path (docs/reference/c1-b2b-design.md
+// §10.4): calling CreateMerchant twice with the SAME downstreamKey
+// (simulating a Gateway retry) must return the identical request id, place
+// exactly one hold, and never insert a second row.
+func TestPayout_CreateMerchant_DownstreamKeyConflict_NoSecondHold(t *testing.T) {
+	db := setupPayoutTestDB(t)
+	ledgerModule, payoutModule, _ := newPayoutTestModules(db)
+	ctx := context.Background()
+
+	tenantID := uuid.New()
+	cash := merchantCashAccountID(t, ledgerModule, tenantID)
+	seedMerchantCash(t, db, cash, 200_000)
+
+	first, err := payoutModule.CreateMerchant(ctx, tenantID, "live", "IDR", decimal.NewFromInt(50_000), mockDestination(""), "test", "shared-downstream-key")
+	require.NoError(t, err)
+
+	second, err := payoutModule.CreateMerchant(ctx, tenantID, "live", "IDR", decimal.NewFromInt(50_000), mockDestination(""), "test", "shared-downstream-key")
+	require.NoError(t, err)
+	assert.Equal(t, first, second, "a retry with the same downstream key must recover the original request id, not create a new one")
+
+	var count int
+	require.NoError(t, db.QueryRowContext(ctx, `SELECT count(*) FROM payout_requests WHERE merchant_tenant_id = $1`, tenantID).Scan(&count))
+	assert.Equal(t, 1, count, "exactly one row must exist for this downstream key, regardless of retry count")
+
+	assert.True(t, getAccountBalance(t, db, cash).Equal(decimal.NewFromInt(150_000)), "only one hold of 50,000 may ever be placed")
+}
+
+// TestPayout_GetMerchant_CrossTenant_NotFound proves §7.3's tenant-isolation
+// rule: a payout request owned by tenant A is invisible to tenant B,
+// indistinguishable from a genuinely missing id (§6.7).
+func TestPayout_GetMerchant_CrossTenant_NotFound(t *testing.T) {
+	db := setupPayoutTestDB(t)
+	ledgerModule, payoutModule, _ := newPayoutTestModules(db)
+	ctx := context.Background()
+
+	tenantA := uuid.New()
+	tenantB := uuid.New()
+	cashA := merchantCashAccountID(t, ledgerModule, tenantA)
+	merchantCashAccountID(t, ledgerModule, tenantB)
+	seedMerchantCash(t, db, cashA, 200_000)
+
+	id, err := payoutModule.CreateMerchant(ctx, tenantA, "live", "IDR", decimal.NewFromInt(10_000), mockDestination(""), "test", "tenant-a-key")
+	require.NoError(t, err)
+
+	_, err = payoutModule.GetMerchant(ctx, tenantB, id)
+	assert.ErrorIs(t, err, repository.ErrNotFound)
+
+	found, err := payoutModule.GetMerchant(ctx, tenantA, id)
+	require.NoError(t, err)
+	assert.Equal(t, id, found.ID)
 }
 
 // seedMerchantCash directly credits a merchant account for test setup —

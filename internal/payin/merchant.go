@@ -35,9 +35,20 @@ const sandboxVendor = "mockvendor"
 // caller-suppliable request field) and determines routing: sandbox is
 // ALWAYS routed to sandboxVendor, structurally, before any routing-rule
 // resolution ever runs.
-func (m *Module) CreateMerchantTopupIntent(ctx context.Context, tenantID uuid.UUID, environment, currency string, amount decimal.Decimal) (TopupIntent, error) {
+//
+// downstreamKey (B2B HTTP handlers follow-up to Plan 57 T6) is Gateway's
+// own idempotency.DownstreamKey for this (tenant, operation, merchant
+// idempotency key) — required, non-empty. A Gateway retry (including one
+// caused by a Gateway crash after this call already succeeded once, before
+// its own idempotency record was persisted — docs/reference/c1-b2b-design.md
+// §10.4) reuses the SAME downstreamKey, so InsertMerchantTopupIntent
+// returns the ORIGINAL intent instead of creating a second one.
+func (m *Module) CreateMerchantTopupIntent(ctx context.Context, tenantID uuid.UUID, environment, currency string, amount decimal.Decimal, downstreamKey string) (TopupIntent, error) {
 	if tenantID == uuid.Nil {
 		return TopupIntent{}, fmt.Errorf("payin: tenantID is required")
+	}
+	if downstreamKey == "" {
+		return TopupIntent{}, fmt.Errorf("payin: downstreamKey is required")
 	}
 	if err := m.ensureIntakeOpen(ctx); err != nil {
 		return TopupIntent{}, err
@@ -63,14 +74,38 @@ func (m *Module) CreateMerchantTopupIntent(ctx context.Context, tenantID uuid.UU
 		Status:           model.TopupStatusPending,
 		ExpiresAt:        time.Now().Add(ttl),
 		RequestID:        middleware.RequestIDFromCtx(ctx),
+		DownstreamKey:    downstreamKey,
 	}
-	if err := m.repo.InsertTopupIntent(ctx, intent); err != nil {
+	stored, err := m.repo.InsertMerchantTopupIntent(ctx, intent)
+	if err != nil {
 		return TopupIntent{}, fmt.Errorf("payin: insert merchant topup intent: %w", err)
+	}
+	if stored.ID != intent.ID {
+		// A prior attempt for the same downstreamKey already won — return
+		// its resource unchanged; this attempt must not also open a vendor
+		// session for a topup intent nobody else will ever settle against.
+		return stored, nil
 	}
 	if m.vendorSession != nil {
 		if err := m.vendorSession.CreatePayinSession(ctx, vendor, intent.ID.String(), amount, currency, intent.RequestID); err != nil {
 			return TopupIntent{}, fmt.Errorf("payin: create VendorService session: %w", err)
 		}
+	}
+	return stored, nil
+}
+
+// GetMerchantTopupIntent is the tenant-scoped counterpart of GetTopupIntent
+// (§7.3: every merchant-owned read must be scoped by tenant_id). A topup
+// intent that exists but belongs to a different tenant returns the same
+// ErrTopupIntentNotFound as a genuinely missing one — §6.7's "never leak
+// resource existence across tenants."
+func (m *Module) GetMerchantTopupIntent(ctx context.Context, tenantID, id uuid.UUID) (TopupIntent, error) {
+	intent, err := m.GetTopupIntent(ctx, id)
+	if err != nil {
+		return TopupIntent{}, err
+	}
+	if intent.MerchantTenantID != tenantID {
+		return TopupIntent{}, ErrTopupIntentNotFound
 	}
 	return intent, nil
 }

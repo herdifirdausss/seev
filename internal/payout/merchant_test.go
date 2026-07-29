@@ -62,7 +62,13 @@ func TestResolveMerchantVendor_Live_NeverFallsBackToSandboxVendor(t *testing.T) 
 
 func TestCreateMerchant_MissingTenantID(t *testing.T) {
 	m := &Module{}
-	_, err := m.CreateMerchant(context.Background(), uuid.Nil, "sandbox", "IDR", decimal.NewFromInt(1000), []byte(`{}`), "test")
+	_, err := m.CreateMerchant(context.Background(), uuid.Nil, "sandbox", "IDR", decimal.NewFromInt(1000), []byte(`{}`), "test", "downstream-key")
+	assert.Error(t, err)
+}
+
+func TestCreateMerchant_MissingDownstreamKey(t *testing.T) {
+	m := &Module{}
+	_, err := m.CreateMerchant(context.Background(), uuid.New(), "sandbox", "IDR", decimal.NewFromInt(1000), []byte(`{}`), "test", "")
 	assert.Error(t, err)
 }
 
@@ -79,7 +85,9 @@ func TestCreateMerchant_HappyPath_PostsMerchantPayoutHold(t *testing.T) {
 	holdTxID := uuid.New()
 
 	var posted ledgerclient.Command
-	repo.EXPECT().Insert(gomock.Any(), gomock.Any()).Return(nil)
+	repo.EXPECT().InsertMerchant(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, req model.PayoutRequest) (model.PayoutRequest, error) {
+		return req, nil
+	})
 	repo.EXPECT().TransitionToHeld(gomock.Any(), gomock.Any(), gomock.Any()).Return(true, nil)
 	cmdRepo.EXPECT().EnqueueInitialSubmit(gomock.Any(), gomock.Any(), sandboxVendor).Return(true, nil)
 
@@ -94,12 +102,38 @@ func TestCreateMerchant_HappyPath_PostsMerchantPayoutHold(t *testing.T) {
 	m := newTestModule(repo, poster, registry)
 	m.commandRepo = cmdRepo
 
-	id, err := m.CreateMerchant(context.Background(), tenantID, "sandbox", "IDR", decimal.NewFromInt(100_000), []byte(`{}`), "test")
+	id, err := m.CreateMerchant(context.Background(), tenantID, "sandbox", "IDR", decimal.NewFromInt(100_000), []byte(`{}`), "test", "downstream-key")
 	require.NoError(t, err)
 	assert.NotEqual(t, uuid.Nil, id)
 	assert.Equal(t, "merchant_payout_hold", posted.Type)
 	assert.Equal(t, tenantID, posted.MerchantTenantID)
 	assert.Equal(t, uuid.Nil, posted.UserID)
+}
+
+// TestCreateMerchant_DownstreamKeyConflict_ReturnsOriginal proves a
+// Gateway retry using the same downstreamKey (e.g. after a crash between
+// the owner call succeeding and Gateway's own idempotency record being
+// persisted) recovers the ORIGINAL request rather than placing a second
+// hold (docs/reference/c1-b2b-design.md §10.4).
+func TestCreateMerchant_DownstreamKeyConflict_ReturnsOriginal(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	repo := repository.NewMockRepository(ctrl)
+	tenantID := uuid.New()
+	originalID := uuid.New()
+
+	repo.EXPECT().InsertMerchant(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, req model.PayoutRequest) (model.PayoutRequest, error) {
+		// Simulate another attempt already having won the race: the
+		// returned row's ID differs from the one this call tried to insert.
+		return model.PayoutRequest{ID: originalID, MerchantTenantID: tenantID, DownstreamKey: req.DownstreamKey}, nil
+	})
+
+	registry := vendorgw.NewRegistry()
+	registry.AddPayout(&stubPayoutProvider{name: sandboxVendor})
+	m := newTestModule(repo, stubPoster{}, registry)
+
+	id, err := m.CreateMerchant(context.Background(), tenantID, "sandbox", "IDR", decimal.NewFromInt(100_000), []byte(`{}`), "test", "downstream-key")
+	require.NoError(t, err)
+	assert.Equal(t, originalID, id, "must return the pre-existing request id, not the one this attempt tried to insert")
 }
 
 // TestSettle_MerchantRequest_PostsMerchantPayoutSettle proves settle()

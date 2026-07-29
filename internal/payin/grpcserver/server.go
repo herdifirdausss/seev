@@ -28,12 +28,14 @@ type Server struct {
 	noRoute                        error
 	noVendorAvailable              error
 	screeningDependencyUnavailable error
+	sandboxVendorUnavailable       error
 }
 
-func New(service Service, notFound, noRoute, noVendorAvailable, screeningDependencyUnavailable error) *Server {
+func New(service Service, notFound, noRoute, noVendorAvailable, screeningDependencyUnavailable, sandboxVendorUnavailable error) *Server {
 	return &Server{
 		service: service, notFound: notFound, noRoute: noRoute, noVendorAvailable: noVendorAvailable,
 		screeningDependencyUnavailable: screeningDependencyUnavailable,
+		sandboxVendorUnavailable:       sandboxVendorUnavailable,
 	}
 }
 
@@ -113,6 +115,79 @@ func (s *Server) GetTopupIntent(ctx context.Context, request *payinv1.GetTopupIn
 		return nil, status.Error(codes.NotFound, "topup intent not found")
 	}
 	return &payinv1.GetTopupIntentResponse{Intent: intentToProto(intent)}, nil
+}
+
+// CreateMerchantTopupIntent is Gateway-only (Plan 57, C1) — the merchant
+// counterpart of CreateTopupIntent, reached via the optional-interface
+// type assertion below rather than a Service interface change so this
+// package's core Service contract stays untouched (mirrors
+// ListAssuranceRecords/GetIntakeControl's own pattern in this file).
+func (s *Server) CreateMerchantTopupIntent(ctx context.Context, request *payinv1.CreateMerchantTopupIntentRequest) (*payinv1.CreateMerchantTopupIntentResponse, error) {
+	creator, ok := s.service.(interface {
+		CreateMerchantTopupIntent(context.Context, uuid.UUID, string, string, decimal.Decimal, string) (model.TopupIntent, error)
+	})
+	if !ok {
+		return nil, status.Error(codes.Unimplemented, "merchant topup intent creation unavailable")
+	}
+	tenantID, err := uuid.Parse(request.GetTenantId())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "tenant_id must be a valid UUID")
+	}
+	amount, err := decimal.NewFromString(request.GetAmount())
+	if err != nil || !amount.Equal(amount.Truncate(0)) || !amount.IsPositive() {
+		return nil, status.Error(codes.InvalidArgument, "amount must be a positive integer decimal string")
+	}
+	if request.GetDownstreamKey() == "" {
+		return nil, status.Error(codes.InvalidArgument, "downstream_key is required")
+	}
+	intent, callErr := creator.CreateMerchantTopupIntent(ctx, tenantID, request.GetEnvironment(), request.GetCurrency(), amount, request.GetDownstreamKey())
+	if callErr != nil {
+		if strings.Contains(callErr.Error(), "intake paused") {
+			return nil, status.Error(codes.FailedPrecondition, "INTAKE_PAUSED")
+		}
+		if errors.Is(callErr, s.noRoute) {
+			return nil, status.Error(codes.FailedPrecondition, "no topup route available")
+		}
+		if errors.Is(callErr, s.noVendorAvailable) {
+			return nil, status.Error(codes.Unavailable, "no vendor available")
+		}
+		if errors.Is(callErr, s.sandboxVendorUnavailable) {
+			// A sandbox tenant must fail closed if the mock vendor isn't
+			// registered — distinct from a live "no route" config problem.
+			return nil, status.Error(codes.FailedPrecondition, "SANDBOX_VENDOR_UNAVAILABLE")
+		}
+		return nil, status.Error(codes.Internal, "create merchant topup intent failed")
+	}
+	return &payinv1.CreateMerchantTopupIntentResponse{Intent: intentToProto(intent)}, nil
+}
+
+// GetMerchantTopupIntent is Gateway-only (Plan 57, C1) — the tenant-scoped
+// counterpart of GetTopupIntent (§7.3: every merchant-owned read must be
+// scoped by tenant_id, enforced by the service's own GetMerchantTopupIntent,
+// not re-derived here).
+func (s *Server) GetMerchantTopupIntent(ctx context.Context, request *payinv1.GetMerchantTopupIntentRequest) (*payinv1.GetMerchantTopupIntentResponse, error) {
+	reader, ok := s.service.(interface {
+		GetMerchantTopupIntent(context.Context, uuid.UUID, uuid.UUID) (model.TopupIntent, error)
+	})
+	if !ok {
+		return nil, status.Error(codes.Unimplemented, "merchant topup intent read unavailable")
+	}
+	tenantID, err := uuid.Parse(request.GetTenantId())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "tenant_id must be a valid UUID")
+	}
+	id, err := uuid.Parse(request.GetId())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "id must be a valid UUID")
+	}
+	intent, callErr := reader.GetMerchantTopupIntent(ctx, tenantID, id)
+	if callErr != nil {
+		if errors.Is(callErr, s.notFound) {
+			return nil, status.Error(codes.NotFound, "topup intent not found")
+		}
+		return nil, status.Error(codes.Internal, "get merchant topup intent failed")
+	}
+	return &payinv1.GetMerchantTopupIntentResponse{Intent: intentToProto(intent)}, nil
 }
 
 func (s *Server) ListAssuranceRecords(ctx context.Context, request *payinv1.ListAssuranceRecordsRequest) (*payinv1.ListAssuranceRecordsResponse, error) {

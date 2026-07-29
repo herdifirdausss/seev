@@ -22,6 +22,8 @@ const (
 	PayoutService_HandleVendorCallback_FullMethodName = "/seev.payout.v1.PayoutService/HandleVendorCallback"
 	PayoutService_CreatePayout_FullMethodName         = "/seev.payout.v1.PayoutService/CreatePayout"
 	PayoutService_GetPayout_FullMethodName            = "/seev.payout.v1.PayoutService/GetPayout"
+	PayoutService_CreateMerchantPayout_FullMethodName = "/seev.payout.v1.PayoutService/CreateMerchantPayout"
+	PayoutService_GetMerchantPayout_FullMethodName    = "/seev.payout.v1.PayoutService/GetMerchantPayout"
 	PayoutService_ListAssuranceRecords_FullMethodName = "/seev.payout.v1.PayoutService/ListAssuranceRecords"
 	PayoutService_GetIntakeControl_FullMethodName     = "/seev.payout.v1.PayoutService/GetIntakeControl"
 	PayoutService_ApplyIntakeControl_FullMethodName   = "/seev.payout.v1.PayoutService/ApplyIntakeControl"
@@ -34,6 +36,12 @@ type PayoutServiceClient interface {
 	HandleVendorCallback(ctx context.Context, in *HandleVendorCallbackRequest, opts ...grpc.CallOption) (*HandleVendorCallbackResponse, error)
 	CreatePayout(ctx context.Context, in *CreatePayoutRequest, opts ...grpc.CallOption) (*CreatePayoutResponse, error)
 	GetPayout(ctx context.Context, in *GetPayoutRequest, opts ...grpc.CallOption) (*GetPayoutResponse, error)
+	// Merchant/B2B (Plan 57, C1) — Gateway-only callers, never a direct
+	// merchant-facing RPC. tenant_id/environment come from Gateway's own
+	// resolved API-key principal, never a caller-suppliable field once past
+	// the B2B HTTP edge.
+	CreateMerchantPayout(ctx context.Context, in *CreateMerchantPayoutRequest, opts ...grpc.CallOption) (*CreateMerchantPayoutResponse, error)
+	GetMerchantPayout(ctx context.Context, in *GetMerchantPayoutRequest, opts ...grpc.CallOption) (*GetMerchantPayoutResponse, error)
 	ListAssuranceRecords(ctx context.Context, in *ListAssuranceRecordsRequest, opts ...grpc.CallOption) (*ListAssuranceRecordsResponse, error)
 	GetIntakeControl(ctx context.Context, in *GetIntakeControlRequest, opts ...grpc.CallOption) (*GetIntakeControlResponse, error)
 	ApplyIntakeControl(ctx context.Context, in *ApplyIntakeControlRequest, opts ...grpc.CallOption) (*ApplyIntakeControlResponse, error)
@@ -77,6 +85,26 @@ func (c *payoutServiceClient) GetPayout(ctx context.Context, in *GetPayoutReques
 	return out, nil
 }
 
+func (c *payoutServiceClient) CreateMerchantPayout(ctx context.Context, in *CreateMerchantPayoutRequest, opts ...grpc.CallOption) (*CreateMerchantPayoutResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateMerchantPayoutResponse)
+	err := c.cc.Invoke(ctx, PayoutService_CreateMerchantPayout_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *payoutServiceClient) GetMerchantPayout(ctx context.Context, in *GetMerchantPayoutRequest, opts ...grpc.CallOption) (*GetMerchantPayoutResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetMerchantPayoutResponse)
+	err := c.cc.Invoke(ctx, PayoutService_GetMerchantPayout_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *payoutServiceClient) ListAssuranceRecords(ctx context.Context, in *ListAssuranceRecordsRequest, opts ...grpc.CallOption) (*ListAssuranceRecordsResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListAssuranceRecordsResponse)
@@ -114,6 +142,12 @@ type PayoutServiceServer interface {
 	HandleVendorCallback(context.Context, *HandleVendorCallbackRequest) (*HandleVendorCallbackResponse, error)
 	CreatePayout(context.Context, *CreatePayoutRequest) (*CreatePayoutResponse, error)
 	GetPayout(context.Context, *GetPayoutRequest) (*GetPayoutResponse, error)
+	// Merchant/B2B (Plan 57, C1) — Gateway-only callers, never a direct
+	// merchant-facing RPC. tenant_id/environment come from Gateway's own
+	// resolved API-key principal, never a caller-suppliable field once past
+	// the B2B HTTP edge.
+	CreateMerchantPayout(context.Context, *CreateMerchantPayoutRequest) (*CreateMerchantPayoutResponse, error)
+	GetMerchantPayout(context.Context, *GetMerchantPayoutRequest) (*GetMerchantPayoutResponse, error)
 	ListAssuranceRecords(context.Context, *ListAssuranceRecordsRequest) (*ListAssuranceRecordsResponse, error)
 	GetIntakeControl(context.Context, *GetIntakeControlRequest) (*GetIntakeControlResponse, error)
 	ApplyIntakeControl(context.Context, *ApplyIntakeControlRequest) (*ApplyIntakeControlResponse, error)
@@ -135,6 +169,12 @@ func (UnimplementedPayoutServiceServer) CreatePayout(context.Context, *CreatePay
 }
 func (UnimplementedPayoutServiceServer) GetPayout(context.Context, *GetPayoutRequest) (*GetPayoutResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetPayout not implemented")
+}
+func (UnimplementedPayoutServiceServer) CreateMerchantPayout(context.Context, *CreateMerchantPayoutRequest) (*CreateMerchantPayoutResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CreateMerchantPayout not implemented")
+}
+func (UnimplementedPayoutServiceServer) GetMerchantPayout(context.Context, *GetMerchantPayoutRequest) (*GetMerchantPayoutResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetMerchantPayout not implemented")
 }
 func (UnimplementedPayoutServiceServer) ListAssuranceRecords(context.Context, *ListAssuranceRecordsRequest) (*ListAssuranceRecordsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListAssuranceRecords not implemented")
@@ -220,6 +260,42 @@ func _PayoutService_GetPayout_Handler(srv interface{}, ctx context.Context, dec 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PayoutService_CreateMerchantPayout_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateMerchantPayoutRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PayoutServiceServer).CreateMerchantPayout(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PayoutService_CreateMerchantPayout_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PayoutServiceServer).CreateMerchantPayout(ctx, req.(*CreateMerchantPayoutRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PayoutService_GetMerchantPayout_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetMerchantPayoutRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PayoutServiceServer).GetMerchantPayout(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PayoutService_GetMerchantPayout_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PayoutServiceServer).GetMerchantPayout(ctx, req.(*GetMerchantPayoutRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _PayoutService_ListAssuranceRecords_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ListAssuranceRecordsRequest)
 	if err := dec(in); err != nil {
@@ -292,6 +368,14 @@ var PayoutService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetPayout",
 			Handler:    _PayoutService_GetPayout_Handler,
+		},
+		{
+			MethodName: "CreateMerchantPayout",
+			Handler:    _PayoutService_CreateMerchantPayout_Handler,
+		},
+		{
+			MethodName: "GetMerchantPayout",
+			Handler:    _PayoutService_GetMerchantPayout_Handler,
 		},
 		{
 			MethodName: "ListAssuranceRecords",

@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"net/http"
 	"net/http/httputil"
 
 	payinv1 "github.com/herdifirdausss/seev/gen/payin/v1"
@@ -39,6 +40,13 @@ type Dependencies struct {
 	// goroutine (Start/Stop) is driven directly from cmd/gateway/main.go
 	// alongside the other background workers, not through this struct.
 	Notify *notify.Module
+	// B2B serves the Merchant/B2B API surface (Plan 57, roadmap track C1)
+	// at /api/v1/b2b — built by internal/merchant/api.NewRouter in
+	// cmd/gateway/main.go. nil (should never happen in production; only a
+	// test harness that doesn't need the B2B surface would omit it) means
+	// every /api/v1/b2b/* route 404s, the same "absent dependency ->
+	// route absent" convention Payin/Payout/Notify already establish above.
+	B2B http.Handler
 }
 
 // CacheOrNil returns c wrapped as a cache.FullCache, or a genuinely nil

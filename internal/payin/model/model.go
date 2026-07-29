@@ -57,7 +57,14 @@ type TopupIntent struct {
 	Vendor           string
 	Status           string // pending | settled | expired
 	SettledEventID   *uuid.UUID
-	ExpiresAt        time.Time
+	// DownstreamKey (B2B HTTP handlers follow-up to Plan 57 T6) is the
+	// deterministic key Gateway derives per (tenant, operation, merchant
+	// idempotency key) — set only for a merchant-owned intent, empty for a
+	// user-owned one. A unique (merchant_tenant_id, downstream_key) index
+	// is what makes CreateMerchantTopupIntent idempotent against a Gateway
+	// retry (docs/reference/c1-b2b-design.md §10.4).
+	DownstreamKey string
+	ExpiresAt     time.Time
 	// RequestID (docs/roadmap/archive/36 Task T5) is the HTTP request_id of the call
 	// that created this intent — end-to-end trace anchor.
 	RequestID string

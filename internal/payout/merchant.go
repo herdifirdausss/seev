@@ -9,6 +9,7 @@ import (
 	"github.com/shopspring/decimal"
 
 	"github.com/herdifirdausss/seev/internal/payout/model"
+	"github.com/herdifirdausss/seev/internal/payout/repository"
 	"github.com/herdifirdausss/seev/pkg/generalutil"
 	"github.com/herdifirdausss/seev/pkg/middleware"
 )
@@ -31,9 +32,20 @@ const sandboxVendor = "mockvendor"
 // principal (Gateway's own resolved API key environment, never a
 // caller-suppliable request field) and determines routing exactly like
 // internal/payin's CreateMerchantTopupIntent.
-func (m *Module) CreateMerchant(ctx context.Context, tenantID uuid.UUID, environment, currency string, amount decimal.Decimal, destination []byte, createdBy string) (uuid.UUID, error) {
+//
+// downstreamKey (B2B HTTP handlers follow-up to Plan 57 T6) is Gateway's
+// own idempotency.DownstreamKey for this (tenant, operation, merchant
+// idempotency key) — required, non-empty. A Gateway retry (including one
+// caused by a Gateway crash after this call already succeeded once, before
+// its own idempotency record was persisted — docs/reference/c1-b2b-design.md
+// §10.4) reuses the SAME downstreamKey, so InsertMerchant returns the
+// ORIGINAL request instead of holding funds a second time.
+func (m *Module) CreateMerchant(ctx context.Context, tenantID uuid.UUID, environment, currency string, amount decimal.Decimal, destination []byte, createdBy, downstreamKey string) (uuid.UUID, error) {
 	if tenantID == uuid.Nil {
 		return uuid.Nil, fmt.Errorf("payout: tenantID is required")
+	}
+	if downstreamKey == "" {
+		return uuid.Nil, fmt.Errorf("payout: downstreamKey is required")
 	}
 	if err := m.ensureIntakeOpen(ctx); err != nil {
 		return uuid.Nil, err
@@ -56,10 +68,18 @@ func (m *Module) CreateMerchant(ctx context.Context, tenantID uuid.UUID, environ
 	req := model.PayoutRequest{
 		ID: id, MerchantTenantID: tenantID, Amount: amount, Currency: currency,
 		Vendor: vendor, Destination: destination, CreatedBy: createdBy,
-		RequestID: middleware.RequestIDFromCtx(ctx),
+		RequestID:     middleware.RequestIDFromCtx(ctx),
+		DownstreamKey: downstreamKey,
 	}
-	if err := m.repo.Insert(ctx, req); err != nil {
+	stored, err := m.repo.InsertMerchant(ctx, req)
+	if err != nil {
 		return uuid.Nil, fmt.Errorf("payout: insert merchant request: %w", err)
+	}
+	if stored.ID != id {
+		// A prior attempt for the same downstreamKey already won — its
+		// hold (or later state) is the authoritative one; this attempt
+		// must not also place a second hold for the same logical request.
+		return stored.ID, nil
 	}
 
 	if err := m.hold(ctx, req); err != nil {
@@ -76,6 +96,22 @@ func (m *Module) CreateMerchant(ctx context.Context, tenantID uuid.UUID, environ
 	}
 
 	return id, nil
+}
+
+// GetMerchant is the tenant-scoped counterpart of Get (§7.3: every
+// merchant-owned read must be scoped by tenant_id). A payout request that
+// exists but belongs to a different tenant returns the same
+// repository.ErrNotFound as a genuinely missing one — §6.7's "never leak
+// resource existence across tenants."
+func (m *Module) GetMerchant(ctx context.Context, tenantID, id uuid.UUID) (model.PayoutRequest, error) {
+	req, err := m.Get(ctx, id)
+	if err != nil {
+		return model.PayoutRequest{}, err
+	}
+	if req.MerchantTenantID != tenantID {
+		return model.PayoutRequest{}, repository.ErrNotFound
+	}
+	return req, nil
 }
 
 // resolveMerchantVendor implements sandbox-to-mock routing (Plan 57 T6) —

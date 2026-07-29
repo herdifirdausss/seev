@@ -30,12 +30,14 @@ type Server struct {
 	noVendorAvailable              error
 	screeningBlocked               error
 	screeningDependencyUnavailable error
+	sandboxVendorUnavailable       error
 }
 
-func New(service Service, notFound, noRoute, noVendorAvailable, screeningBlocked, screeningDependencyUnavailable error) *Server {
+func New(service Service, notFound, noRoute, noVendorAvailable, screeningBlocked, screeningDependencyUnavailable, sandboxVendorUnavailable error) *Server {
 	return &Server{
 		service: service, notFound: notFound, noRoute: noRoute, noVendorAvailable: noVendorAvailable,
 		screeningBlocked: screeningBlocked, screeningDependencyUnavailable: screeningDependencyUnavailable,
+		sandboxVendorUnavailable: sandboxVendorUnavailable,
 	}
 }
 
@@ -82,6 +84,93 @@ func (s *Server) CreatePayout(ctx context.Context, request *payoutv1.CreatePayou
 		return nil, status.Error(codes.Internal, "read created payout failed")
 	}
 	return &payoutv1.CreatePayoutResponse{Payout: payoutToProto(value)}, nil
+}
+
+// CreateMerchantPayout is Gateway-only (Plan 57, C1) — the merchant
+// counterpart of CreatePayout, reached via the optional-interface type
+// assertion below rather than a Service interface change so this
+// package's core Service contract stays untouched (mirrors
+// ListAssuranceRecords/GetIntakeControl's own pattern in this file). No
+// screeningBlocked/screeningDependencyUnavailable branch: fraud screening
+// is deliberately skipped for merchant-owned payouts (Plan 57 T6 scope
+// decision), so CreateMerchant never returns those errors.
+func (s *Server) CreateMerchantPayout(ctx context.Context, request *payoutv1.CreateMerchantPayoutRequest) (*payoutv1.CreateMerchantPayoutResponse, error) {
+	creator, ok := s.service.(interface {
+		CreateMerchant(context.Context, uuid.UUID, string, string, decimal.Decimal, []byte, string, string) (uuid.UUID, error)
+	})
+	if !ok {
+		return nil, status.Error(codes.Unimplemented, "merchant payout creation unavailable")
+	}
+	tenantID, err := uuid.Parse(request.GetTenantId())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "tenant_id must be a valid UUID")
+	}
+	amount, err := decimal.NewFromString(request.GetAmount())
+	if err != nil || !amount.IsPositive() || !amount.Equal(amount.Truncate(0)) {
+		return nil, status.Error(codes.InvalidArgument, "amount must be a positive integer decimal string")
+	}
+	if len(request.GetDestination()) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "destination is required")
+	}
+	if request.GetDownstreamKey() == "" {
+		return nil, status.Error(codes.InvalidArgument, "downstream_key is required")
+	}
+	id, callErr := creator.CreateMerchant(ctx, tenantID, request.GetEnvironment(), request.GetCurrency(), amount, request.GetDestination(), request.GetCreatedBy(), request.GetDownstreamKey())
+	if callErr != nil {
+		if strings.Contains(callErr.Error(), "intake paused") {
+			return nil, status.Error(codes.FailedPrecondition, "INTAKE_PAUSED")
+		}
+		if errors.Is(callErr, s.noRoute) {
+			return nil, status.Error(codes.FailedPrecondition, "no payout route available")
+		}
+		if errors.Is(callErr, s.noVendorAvailable) {
+			return nil, status.Error(codes.Unavailable, "no vendor available")
+		}
+		if errors.Is(callErr, s.sandboxVendorUnavailable) {
+			// A sandbox tenant must fail closed if the mock vendor isn't
+			// registered — distinct from a live "no route" config problem.
+			return nil, status.Error(codes.FailedPrecondition, "SANDBOX_VENDOR_UNAVAILABLE")
+		}
+		var business *ledgererr.LedgerError
+		if errors.As(callErr, &business) {
+			return nil, status.Error(codes.FailedPrecondition, business.Error())
+		}
+		return nil, status.Error(codes.Internal, "create merchant payout failed")
+	}
+	value, getErr := s.service.Get(ctx, id)
+	if getErr != nil {
+		return nil, status.Error(codes.Internal, "read created merchant payout failed")
+	}
+	return &payoutv1.CreateMerchantPayoutResponse{Payout: payoutToProto(value)}, nil
+}
+
+// GetMerchantPayout is Gateway-only (Plan 57, C1) — the tenant-scoped
+// counterpart of GetPayout (§7.3: every merchant-owned read must be scoped
+// by tenant_id, enforced by the service's own GetMerchant, not re-derived
+// here).
+func (s *Server) GetMerchantPayout(ctx context.Context, request *payoutv1.GetMerchantPayoutRequest) (*payoutv1.GetMerchantPayoutResponse, error) {
+	reader, ok := s.service.(interface {
+		GetMerchant(context.Context, uuid.UUID, uuid.UUID) (model.PayoutRequest, error)
+	})
+	if !ok {
+		return nil, status.Error(codes.Unimplemented, "merchant payout read unavailable")
+	}
+	tenantID, err := uuid.Parse(request.GetTenantId())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "tenant_id must be a valid UUID")
+	}
+	id, err := uuid.Parse(request.GetId())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "id must be a valid UUID")
+	}
+	value, callErr := reader.GetMerchant(ctx, tenantID, id)
+	if callErr != nil {
+		if errors.Is(callErr, s.notFound) {
+			return nil, status.Error(codes.NotFound, "payout request not found")
+		}
+		return nil, status.Error(codes.Internal, "get merchant payout failed")
+	}
+	return &payoutv1.GetMerchantPayoutResponse{Payout: payoutToProto(value)}, nil
 }
 
 func (s *Server) HandleVendorCallback(ctx context.Context, request *payoutv1.HandleVendorCallbackRequest) (*payoutv1.HandleVendorCallbackResponse, error) {

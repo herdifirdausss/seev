@@ -79,8 +79,15 @@ type PayoutRequest struct {
 	FeeQuoteID *uuid.UUID
 	FeeAmount  *decimal.Decimal
 	FeeGateway string
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
+	// DownstreamKey (B2B HTTP handlers follow-up to Plan 57 T6) is the
+	// deterministic key Gateway derives per (tenant, operation, merchant
+	// idempotency key) — set only for a merchant-owned request, empty for
+	// a user-owned one. A unique (merchant_tenant_id, downstream_key)
+	// index is what makes CreateMerchant idempotent against a Gateway
+	// retry (docs/reference/c1-b2b-design.md §10.4).
+	DownstreamKey string
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
 }
 
 // PayoutVendorCall is one row of payout_vendor_calls — one outbound attempt.

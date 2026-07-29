@@ -55,7 +55,7 @@ type Poster interface {
 
 // RegisterGRPC exposes the internal payin service contract.
 func (m *Module) RegisterGRPC(server *grpc.Server) {
-	payinv1.RegisterPayinServiceServer(server, grpcserver.New(m, ErrTopupIntentNotFound, ErrNoRoute, ErrNoVendorAvailable, ErrScreeningDependencyUnavailable))
+	payinv1.RegisterPayinServiceServer(server, grpcserver.New(m, ErrTopupIntentNotFound, ErrNoRoute, ErrNoVendorAvailable, ErrScreeningDependencyUnavailable, ErrSandboxVendorUnavailable))
 }
 
 // Module is the public facade for the payin module.
