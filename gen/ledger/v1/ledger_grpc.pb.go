@@ -30,6 +30,7 @@ const (
 	LedgerService_ProvisionMerchant_FullMethodName              = "/seev.ledger.v1.LedgerService/ProvisionMerchant"
 	LedgerService_GetMerchantAccount_FullMethodName             = "/seev.ledger.v1.LedgerService/GetMerchantAccount"
 	LedgerService_ListMerchantTransactions_FullMethodName       = "/seev.ledger.v1.LedgerService/ListMerchantTransactions"
+	LedgerService_GetMerchantTransaction_FullMethodName         = "/seev.ledger.v1.LedgerService/GetMerchantTransaction"
 )
 
 // LedgerServiceClient is the client API for LedgerService service.
@@ -60,6 +61,18 @@ type LedgerServiceClient interface {
 	// server-side from tenant_id, never accepted as a request parameter, so
 	// no caller can ever list another tenant's transactions.
 	ListMerchantTransactions(ctx context.Context, in *ListMerchantTransactionsRequest, opts ...grpc.CallOption) (*ListMerchantTransactionsResponse, error)
+	// GetMerchantTransaction resolves ONE of tenant_id's own transactions by
+	// id (Plan 57 T10 follow-up: the B2B GET /transactions/{id} and
+	// GET /transfers/{id} routes both serve this same RPC — a merchant
+	// transaction has no separate "transfer" resource type, only a Type
+	// value on the same Transaction). Tenant scoping mirrors
+	// CanAccessTransaction's own "walk every account the transaction
+	// touched" approach rather than trusting Transaction's own
+	// source/destination fields alone (docs/roadmap/archive/04's D1 note) —
+	// a transaction that exists but touches none of tenant_id's accounts
+	// returns NOT_FOUND, identical to a genuinely missing id (§6.7: never
+	// leak resource existence across tenants).
+	GetMerchantTransaction(ctx context.Context, in *GetMerchantTransactionRequest, opts ...grpc.CallOption) (*Transaction, error)
 }
 
 type ledgerServiceClient struct {
@@ -180,6 +193,16 @@ func (c *ledgerServiceClient) ListMerchantTransactions(ctx context.Context, in *
 	return out, nil
 }
 
+func (c *ledgerServiceClient) GetMerchantTransaction(ctx context.Context, in *GetMerchantTransactionRequest, opts ...grpc.CallOption) (*Transaction, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Transaction)
+	err := c.cc.Invoke(ctx, LedgerService_GetMerchantTransaction_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // LedgerServiceServer is the server API for LedgerService service.
 // All implementations must embed UnimplementedLedgerServiceServer
 // for forward compatibility.
@@ -208,6 +231,18 @@ type LedgerServiceServer interface {
 	// server-side from tenant_id, never accepted as a request parameter, so
 	// no caller can ever list another tenant's transactions.
 	ListMerchantTransactions(context.Context, *ListMerchantTransactionsRequest) (*ListMerchantTransactionsResponse, error)
+	// GetMerchantTransaction resolves ONE of tenant_id's own transactions by
+	// id (Plan 57 T10 follow-up: the B2B GET /transactions/{id} and
+	// GET /transfers/{id} routes both serve this same RPC — a merchant
+	// transaction has no separate "transfer" resource type, only a Type
+	// value on the same Transaction). Tenant scoping mirrors
+	// CanAccessTransaction's own "walk every account the transaction
+	// touched" approach rather than trusting Transaction's own
+	// source/destination fields alone (docs/roadmap/archive/04's D1 note) —
+	// a transaction that exists but touches none of tenant_id's accounts
+	// returns NOT_FOUND, identical to a genuinely missing id (§6.7: never
+	// leak resource existence across tenants).
+	GetMerchantTransaction(context.Context, *GetMerchantTransactionRequest) (*Transaction, error)
 	mustEmbedUnimplementedLedgerServiceServer()
 }
 
@@ -250,6 +285,9 @@ func (UnimplementedLedgerServiceServer) GetMerchantAccount(context.Context, *Get
 }
 func (UnimplementedLedgerServiceServer) ListMerchantTransactions(context.Context, *ListMerchantTransactionsRequest) (*ListMerchantTransactionsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListMerchantTransactions not implemented")
+}
+func (UnimplementedLedgerServiceServer) GetMerchantTransaction(context.Context, *GetMerchantTransactionRequest) (*Transaction, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetMerchantTransaction not implemented")
 }
 func (UnimplementedLedgerServiceServer) mustEmbedUnimplementedLedgerServiceServer() {}
 func (UnimplementedLedgerServiceServer) testEmbeddedByValue()                       {}
@@ -470,6 +508,24 @@ func _LedgerService_ListMerchantTransactions_Handler(srv interface{}, ctx contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _LedgerService_GetMerchantTransaction_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetMerchantTransactionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(LedgerServiceServer).GetMerchantTransaction(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: LedgerService_GetMerchantTransaction_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(LedgerServiceServer).GetMerchantTransaction(ctx, req.(*GetMerchantTransactionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // LedgerService_ServiceDesc is the grpc.ServiceDesc for LedgerService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -520,6 +576,10 @@ var LedgerService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListMerchantTransactions",
 			Handler:    _LedgerService_ListMerchantTransactions_Handler,
+		},
+		{
+			MethodName: "GetMerchantTransaction",
+			Handler:    _LedgerService_GetMerchantTransaction_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

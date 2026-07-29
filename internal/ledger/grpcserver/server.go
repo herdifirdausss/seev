@@ -41,6 +41,8 @@ type Service interface {
 	GetMerchantAccount(ctx context.Context, tenantID uuid.UUID) (model.AccountBalance, error)
 	// ListMerchantTransactions is Plan 57 T5's additive RPC backing.
 	ListMerchantTransactions(ctx context.Context, tenantID uuid.UUID, beforeCreatedAt time.Time, beforeID uuid.UUID, limit int) ([]model.LedgerTransaction, error)
+	// GetMerchantTransaction is Plan 57 T10 follow-up's additive RPC backing.
+	GetMerchantTransaction(ctx context.Context, tenantID, txID uuid.UUID) (model.LedgerTransaction, error)
 }
 
 type Server struct {
@@ -261,6 +263,27 @@ func (s *Server) ListMerchantTransactions(ctx context.Context, req *ledgerv1.Lis
 		resp.Transactions = append(resp.Transactions, transactionToProto(tx))
 	}
 	return resp, nil
+}
+
+// GetMerchantTransaction serves Plan 57 T10 follow-up's additive RPC —
+// tenant_id is the ONLY identity accepted; a transaction that exists but
+// touches none of tenant_id's accounts is indistinguishable from a missing
+// one at this layer (mapError below turns apperror.ErrTransactionNotFound
+// into codes.NotFound either way).
+func (s *Server) GetMerchantTransaction(ctx context.Context, req *ledgerv1.GetMerchantTransactionRequest) (*ledgerv1.Transaction, error) {
+	tenantID, err := parseUUID(req.GetTenantId())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "tenant_id: %v", err)
+	}
+	txID, err := parseUUID(req.GetTransactionId())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "transaction_id: %v", err)
+	}
+	tx, err := s.service.GetMerchantTransaction(ctx, tenantID, txID)
+	if err != nil {
+		return nil, mapError(err)
+	}
+	return transactionToProto(tx), nil
 }
 
 func integralAmount(value string) (decimal.Decimal, error) {

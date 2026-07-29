@@ -63,8 +63,12 @@ func migrationsSourceURL(t *testing.T) string {
 // internal/merchant/auth's own identically-named helper — ledger
 // migrations run first because that is where app_service/app_readonly
 // are actually created (cluster-wide roles), a prerequisite every gateway
-// migration's own GRANT statement depends on.
-func setupGatewayTestDB(t *testing.T) *database.DBSQL {
+// migration's own GRANT statement depends on. Also returns a connection
+// to the SAME container's seev_ledger database (Plan 57 T10 follow-up) —
+// tests that need a real in-process ledger.Module (via
+// internal/testutil.NewLedgerHarness) reuse this instead of standing up a
+// second container.
+func setupGatewayTestDB(t *testing.T) (gatewayDB, ledgerDB *database.DBSQL) {
 	t.Helper()
 	ctx := context.Background()
 
@@ -99,7 +103,14 @@ func setupGatewayTestDB(t *testing.T) *database.DBSQL {
 	}).Pkg())
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
-	return db
+
+	ledgerConn, err := database.New(ctx, (config.PostgresConfig{
+		Host: host, Port: port.Port(), User: "test", Password: "secret", DB: "seev_ledger", SSLMode: "disable", MaxOpenConns: 10,
+	}).Pkg())
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = ledgerConn.Close() })
+
+	return db, ledgerConn
 }
 
 // ─── Fake owner services (bufconn) ─────────────────────────────────────────
@@ -221,7 +232,7 @@ func startBufconnPayout(t *testing.T, srv payoutv1.PayoutServiceServer) payoutv1
 // by internal/merchant/quota's own tests).
 func disableQuota(t *testing.T, quotas repository.QuotaRepository, tenantID uuid.UUID) {
 	t.Helper()
-	for _, class := range []string{"payin", "payout", "read"} {
+	for _, class := range []string{"payin", "payout", "read", "transfers"} {
 		require.NoError(t, quotas.Upsert(context.Background(), model.QuotaPolicy{
 			ID: uuid.New(), TenantID: tenantID, QuotaClass: class, RequestsPerMinute: 1000, Burst: 1000, IsEnabled: false,
 		}))
@@ -280,7 +291,7 @@ func doRequest(t *testing.T, method, url, apiKey, idempotencyKey string, body []
 // assembled router, over real HTTP, against real PostgreSQL-backed
 // auth/quota/idempotency.
 func TestB2BRouter_RealStack(t *testing.T) {
-	db := setupGatewayTestDB(t)
+	db, _ := setupGatewayTestDB(t)
 	tenants := repository.NewTenantRepository(db)
 	apiKeys := repository.NewAPIKeyRepository(db)
 	quotas := repository.NewQuotaRepository(db)
@@ -436,5 +447,246 @@ func TestB2BRouter_RealStack(t *testing.T) {
 		assert.Equal(t, http.StatusNotFound, resp.StatusCode)
 		require.NotNil(t, env.Error)
 		assert.Equal(t, "RESOURCE_NOT_FOUND", env.Error.Code)
+	})
+}
+
+// merchantTransactionData mirrors internal/merchant/api's own
+// transactionResponse JSON shape.
+type merchantTransactionData struct {
+	ID                   string `json:"id"`
+	Type                 string `json:"type"`
+	Status               string `json:"status"`
+	Amount               string `json:"amount"`
+	Currency             string `json:"currency"`
+	SourceAccountID      string `json:"source_account_id"`
+	DestinationAccountID string `json:"destination_account_id"`
+}
+
+type merchantAccountData struct {
+	ID       string `json:"id"`
+	Currency string `json:"currency"`
+	Balance  string `json:"balance"`
+	Status   string `json:"status"`
+}
+
+type merchantProfileData struct {
+	ID              string `json:"id"`
+	ExternalCode    string `json:"external_code"`
+	Environment     string `json:"environment"`
+	Status          string `json:"status"`
+	DefaultCurrency string `json:"default_currency"`
+}
+
+// seedMerchantBalance mirrors internal/ledger/grpcserver's own identically
+// named helper — a direct SQL credit against account_balances, since
+// there is no "deposit" RPC and this test's job is proving the B2B HTTP
+// surface, not re-testing money-in (already covered elsewhere).
+func seedMerchantBalance(t *testing.T, ledgerDB *database.DBSQL, accountID uuid.UUID, amount int64) {
+	t.Helper()
+	_, err := ledgerDB.ExecContext(context.Background(),
+		`UPDATE account_balances SET balance = balance + $1 WHERE account_id = $2`, amount, accountID)
+	require.NoError(t, err)
+}
+
+// TestB2BRouter_MerchantAccountsAndTransfers proves the merchant profile,
+// accounts, transactions, and transfers HTTP surface (Plan 57 T10
+// follow-up — T5/T6 built the LedgerService RPCs behind this, but nothing
+// ever called them over HTTP until now) through the ACTUAL assembled
+// router, against a REAL in-process ledger.Module sharing this test's own
+// Postgres container (internal/testutil.LedgerHarness) — unlike the
+// payin/payout test above, Ledger's own correctness is exactly what this
+// surface depends on, so it is never faked here, only Payin/Payout are
+// (and aren't exercised by this test at all).
+func TestB2BRouter_MerchantAccountsAndTransfers(t *testing.T) {
+	gatewayDB, ledgerDB := setupGatewayTestDB(t)
+	ctx := context.Background()
+
+	ledgerHarness := testutil.NewLedgerHarness(ledgerDB)
+	require.NoError(t, ledgerHarness.Module().LoadCurrencies(ctx))
+
+	tenants := repository.NewTenantRepository(gatewayDB)
+	apiKeys := repository.NewAPIKeyRepository(gatewayDB)
+	quotas := repository.NewQuotaRepository(gatewayDB)
+	idemRepo := repository.NewIdempotencyRepository(gatewayDB)
+	keySvc := auth.NewKeyService(apiKeys, integrationTestPepper)
+
+	scopes := []string{"merchant:read", "accounts:read", "transactions:read", "transfers:write"}
+
+	tenantA := uuid.New()
+	require.NoError(t, tenants.Create(ctx, model.Tenant{
+		ID: tenantA, PublicID: "mrc_" + uuid.NewString()[:16], ExternalCode: "ext-a-" + tenantA.String(),
+		Name: "Transfer Merchant A", Environment: "live", Status: "active", DefaultCurrency: "IDR", CreatedBy: "test",
+	}))
+	disableQuota(t, quotas, tenantA)
+	fullKeyA, _, err := keySvc.CreateKey(ctx, tenantA, "live", scopes, "operator")
+	require.NoError(t, err)
+	readOnlyKeyA, _, err := keySvc.CreateKey(ctx, tenantA, "live", []string{"accounts:read"}, "operator")
+	require.NoError(t, err)
+
+	tenantB := uuid.New()
+	require.NoError(t, tenants.Create(ctx, model.Tenant{
+		ID: tenantB, PublicID: "mrc_" + uuid.NewString()[:16], ExternalCode: "ext-b-" + tenantB.String(),
+		Name: "Transfer Merchant B", Environment: "live", Status: "active", DefaultCurrency: "IDR", CreatedBy: "test",
+	}))
+	disableQuota(t, quotas, tenantB)
+	keyB, _, err := keySvc.CreateKey(ctx, tenantB, "live", scopes, "operator")
+	require.NoError(t, err)
+
+	accountIDA, err := ledgerHarness.Module().ProvisionMerchant(ctx, tenantA, "IDR")
+	require.NoError(t, err)
+	accountIDB, err := ledgerHarness.Module().ProvisionMerchant(ctx, tenantB, "IDR")
+	require.NoError(t, err)
+	seedMerchantBalance(t, ledgerDB, accountIDA.ID, 100000)
+
+	router := merchantapi.NewRouter(merchantapi.Deps{
+		APIKeys:       apiKeys,
+		Tenants:       tenants,
+		APIKeyPepper:  integrationTestPepper,
+		QuotaEnforcer: quota.NewEnforcer(quotas, nil),
+		Idempotency:   idempotency.NewService(idemRepo, 24*time.Hour, "test"),
+		Payin:         client.NewPayinClient(startBufconnPayin(t, newFakePayinServer())),
+		Payout:        client.NewPayoutClient(startBufconnPayout(t, newFakePayoutServer())),
+		Ledger:        client.NewLedgerClient(ledgerHarness),
+	})
+	srv := httptest.NewServer(router)
+	t.Cleanup(srv.Close)
+
+	t.Run("get merchant profile", func(t *testing.T) {
+		resp, env := doRequest(t, http.MethodGet, srv.URL+"/merchant", fullKeyA, "", nil)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		var data merchantProfileData
+		require.NoError(t, json.Unmarshal(env.Data, &data))
+		assert.Equal(t, "live", data.Environment)
+		assert.Equal(t, "active", data.Status)
+		assert.Equal(t, "IDR", data.DefaultCurrency)
+	})
+
+	t.Run("list accounts returns the single cash account", func(t *testing.T) {
+		resp, env := doRequest(t, http.MethodGet, srv.URL+"/accounts", fullKeyA, "", nil)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		var data []merchantAccountData
+		require.NoError(t, json.Unmarshal(env.Data, &data))
+		require.Len(t, data, 1)
+		assert.Equal(t, accountIDA.ID.String(), data[0].ID)
+		assert.Equal(t, "100000", data[0].Balance)
+	})
+
+	t.Run("get account by id happy path", func(t *testing.T) {
+		resp, env := doRequest(t, http.MethodGet, srv.URL+"/accounts/"+accountIDA.ID.String(), fullKeyA, "", nil)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		var data merchantAccountData
+		require.NoError(t, json.Unmarshal(env.Data, &data))
+		assert.Equal(t, "100000", data.Balance)
+	})
+
+	t.Run("get account balance happy path", func(t *testing.T) {
+		resp, env := doRequest(t, http.MethodGet, srv.URL+"/accounts/"+accountIDA.ID.String()+"/balance", fullKeyA, "", nil)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		var data merchantAccountData
+		require.NoError(t, json.Unmarshal(env.Data, &data))
+		assert.Equal(t, "100000", data.Balance)
+	})
+
+	t.Run("get account with another tenant's real account id is not found", func(t *testing.T) {
+		resp, env := doRequest(t, http.MethodGet, srv.URL+"/accounts/"+accountIDB.ID.String(), fullKeyA, "", nil)
+		assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+		require.NotNil(t, env.Error)
+		assert.Equal(t, "RESOURCE_NOT_FOUND", env.Error.Code)
+	})
+
+	var transferID string
+
+	t.Run("create transfer happy path", func(t *testing.T) {
+		body := fmt.Sprintf(`{"destination_account_id":%q,"amount":"25000","currency":"IDR"}`, accountIDB.ID.String())
+		resp, env := doRequest(t, http.MethodPost, srv.URL+"/transfers", fullKeyA, "xfer-key-1", []byte(body))
+		require.Equal(t, http.StatusCreated, resp.StatusCode, env.Error)
+		var data merchantTransactionData
+		require.NoError(t, json.Unmarshal(env.Data, &data))
+		assert.Equal(t, "posted", data.Status)
+		assert.Equal(t, "25000", data.Amount)
+		assert.Equal(t, accountIDA.ID.String(), data.SourceAccountID)
+		assert.Equal(t, accountIDB.ID.String(), data.DestinationAccountID)
+		transferID = data.ID
+	})
+
+	t.Run("replay same key returns original, balance unchanged", func(t *testing.T) {
+		body := fmt.Sprintf(`{"destination_account_id":%q,"amount":"25000","currency":"IDR"}`, accountIDB.ID.String())
+		resp, env := doRequest(t, http.MethodPost, srv.URL+"/transfers", fullKeyA, "xfer-key-1", []byte(body))
+		require.Equal(t, http.StatusCreated, resp.StatusCode)
+		var data merchantTransactionData
+		require.NoError(t, json.Unmarshal(env.Data, &data))
+		assert.Equal(t, transferID, data.ID)
+
+		balResp, balEnv := doRequest(t, http.MethodGet, srv.URL+"/accounts/"+accountIDA.ID.String(), fullKeyA, "", nil)
+		require.Equal(t, http.StatusOK, balResp.StatusCode)
+		var bal merchantAccountData
+		require.NoError(t, json.Unmarshal(balEnv.Data, &bal))
+		assert.Equal(t, "75000", bal.Balance, "a replayed transfer must never debit the source account twice")
+	})
+
+	t.Run("insufficient scope cannot create a transfer", func(t *testing.T) {
+		body := fmt.Sprintf(`{"destination_account_id":%q,"amount":"1000","currency":"IDR"}`, accountIDB.ID.String())
+		resp, _ := doRequest(t, http.MethodPost, srv.URL+"/transfers", readOnlyKeyA, "xfer-key-scope", []byte(body))
+		assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+	})
+
+	t.Run("invalid destination_account_id is rejected", func(t *testing.T) {
+		resp, env := doRequest(t, http.MethodPost, srv.URL+"/transfers", fullKeyA, "xfer-key-bad-dest", []byte(`{"destination_account_id":"not-a-uuid","amount":"1000","currency":"IDR"}`))
+		assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+		require.NotNil(t, env.Error)
+		assert.Equal(t, "VALIDATION_FAILED", env.Error.Code)
+	})
+
+	t.Run("get transfer happy path via GET /transfers", func(t *testing.T) {
+		resp, env := doRequest(t, http.MethodGet, srv.URL+"/transfers/"+transferID, fullKeyA, "", nil)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		var data merchantTransactionData
+		require.NoError(t, json.Unmarshal(env.Data, &data))
+		assert.Equal(t, transferID, data.ID)
+	})
+
+	t.Run("get transfer via GET /transactions serves the identical resource", func(t *testing.T) {
+		resp, env := doRequest(t, http.MethodGet, srv.URL+"/transactions/"+transferID, fullKeyA, "", nil)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		var data merchantTransactionData
+		require.NoError(t, json.Unmarshal(env.Data, &data))
+		assert.Equal(t, transferID, data.ID)
+	})
+
+	t.Run("tenant B can also read the same transfer via its own account", func(t *testing.T) {
+		resp, env := doRequest(t, http.MethodGet, srv.URL+"/transactions/"+transferID, keyB, "", nil)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		var data merchantTransactionData
+		require.NoError(t, json.Unmarshal(env.Data, &data))
+		assert.Equal(t, transferID, data.ID)
+	})
+
+	t.Run("a completely unrelated tenant gets not found, never the transaction's data", func(t *testing.T) {
+		strangerID := uuid.New()
+		require.NoError(t, tenants.Create(ctx, model.Tenant{
+			ID: strangerID, PublicID: "mrc_" + uuid.NewString()[:16], ExternalCode: "ext-stranger-" + strangerID.String(),
+			Name: "Stranger", Environment: "live", Status: "active", DefaultCurrency: "IDR", CreatedBy: "test",
+		}))
+		disableQuota(t, quotas, strangerID)
+		_, err := ledgerHarness.Module().ProvisionMerchant(ctx, strangerID, "IDR")
+		require.NoError(t, err)
+		strangerKey, _, err := keySvc.CreateKey(ctx, strangerID, "live", scopes, "operator")
+		require.NoError(t, err)
+
+		resp, env := doRequest(t, http.MethodGet, srv.URL+"/transactions/"+transferID, strangerKey, "", nil)
+		assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+		require.NotNil(t, env.Error)
+		assert.Equal(t, "RESOURCE_NOT_FOUND", env.Error.Code)
+	})
+
+	t.Run("list transactions shows the transfer for the source tenant", func(t *testing.T) {
+		resp, env := doRequest(t, http.MethodGet, srv.URL+"/transactions", fullKeyA, "", nil)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		var data struct {
+			Data []merchantTransactionData `json:"data"`
+		}
+		require.NoError(t, json.Unmarshal(env.Data, &data))
+		require.Len(t, data.Data, 1)
+		assert.Equal(t, transferID, data.Data[0].ID)
 	})
 }

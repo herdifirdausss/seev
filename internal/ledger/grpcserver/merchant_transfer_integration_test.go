@@ -295,3 +295,53 @@ func TestMerchantTransfer_CrossTenantIsolation_RealPostgres(t *testing.T) {
 	_, err = h.client.ListMerchantTransactions(ctx, &ledgerv1.ListMerchantTransactionsRequest{TenantId: strangerID.String(), Limit: 10})
 	require.Error(t, err, "an unprovisioned tenant has no account to resolve — must fail, never return another tenant's data")
 }
+
+// TestGetMerchantTransaction_ScopedByTenant_RealPostgres proves the T10
+// follow-up RPC (backing the B2B GET /transactions/{id} and
+// GET /transfers/{id} routes): both legitimate parties to a transfer can
+// read it by id, but a completely unrelated tenant gets NOT_FOUND rather
+// than the transaction's data — same tenant-isolation posture proven for
+// ListMerchantTransactions above, now for the single-resource lookup.
+func TestGetMerchantTransaction_ScopedByTenant_RealPostgres(t *testing.T) {
+	h := setupMerchantTestHarness(t)
+	ctx := context.Background()
+	tenantA, tenantB, stranger := uuid.New(), uuid.New(), uuid.New()
+
+	provisionA, err := h.client.ProvisionMerchant(ctx, &ledgerv1.ProvisionMerchantRequest{TenantId: tenantA.String(), Currency: "IDR"})
+	require.NoError(t, err)
+	provisionB, err := h.client.ProvisionMerchant(ctx, &ledgerv1.ProvisionMerchantRequest{TenantId: tenantB.String(), Currency: "IDR"})
+	require.NoError(t, err)
+	// stranger IS provisioned — proves the "membership check found no
+	// matching account" NOT_FOUND path, not merely "unprovisioned tenant."
+	_, err = h.client.ProvisionMerchant(ctx, &ledgerv1.ProvisionMerchantRequest{TenantId: stranger.String(), Currency: "IDR"})
+	require.NoError(t, err)
+	sourceAUUID, err := uuid.Parse(provisionA.GetAccountId())
+	require.NoError(t, err)
+	seedMerchantBalance(t, h, sourceAUUID, 50000)
+
+	metadata, err := structpb.NewStruct(map[string]any{"destination_account_id": provisionB.GetAccountId()})
+	require.NoError(t, err)
+	_, err = h.client.Post(ctx, &ledgerv1.PostRequest{
+		IdempotencyKey: "get-merchant-tx-1", IdempotencyScope: tenantA.String(), Type: "merchant_transfer",
+		Amount: "5000", MerchantTenantId: tenantA.String(), Metadata: metadata,
+	})
+	require.NoError(t, err)
+	posted, err := h.client.GetTransactionByIdempotencyKey(ctx, &ledgerv1.GetTxByIdemKeyRequest{
+		IdempotencyKey: "get-merchant-tx-1", IdempotencyScope: tenantA.String(),
+	})
+	require.NoError(t, err)
+
+	gotA, err := h.client.GetMerchantTransaction(ctx, &ledgerv1.GetMerchantTransactionRequest{TenantId: tenantA.String(), TransactionId: posted.GetId()})
+	require.NoError(t, err, "the source tenant must be able to read its own outgoing transfer")
+	require.Equal(t, posted.GetId(), gotA.GetId())
+
+	gotB, err := h.client.GetMerchantTransaction(ctx, &ledgerv1.GetMerchantTransactionRequest{TenantId: tenantB.String(), TransactionId: posted.GetId()})
+	require.NoError(t, err, "the destination tenant must be able to read the same transfer via its own account")
+	require.Equal(t, posted.GetId(), gotB.GetId())
+
+	_, err = h.client.GetMerchantTransaction(ctx, &ledgerv1.GetMerchantTransactionRequest{TenantId: stranger.String(), TransactionId: posted.GetId()})
+	require.Error(t, err, "a tenant with no relationship to the transaction must get NOT_FOUND, never the transaction's data")
+
+	_, err = h.client.GetMerchantTransaction(ctx, &ledgerv1.GetMerchantTransactionRequest{TenantId: tenantA.String(), TransactionId: uuid.NewString()})
+	require.Error(t, err, "a genuinely nonexistent transaction id must also fail")
+}

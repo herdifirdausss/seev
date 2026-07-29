@@ -178,6 +178,20 @@ func (c *Client) ListMerchantTransactions(ctx context.Context, tenantID uuid.UUI
 	return txs, nil
 }
 
+// GetMerchantTransaction resolves ONE of tenantID's own transactions by id
+// (Plan 57 T10 follow-up) — tenantID is the ONLY identity this call
+// accepts; the account-membership check happens server-side, so no caller
+// can ever read another tenant's transaction.
+func (c *Client) GetMerchantTransaction(ctx context.Context, tenantID, txID uuid.UUID) (Transaction, error) {
+	tx, err := c.client.GetMerchantTransaction(ctx, &ledgerv1.GetMerchantTransactionRequest{
+		TenantId: uuidString(tenantID), TransactionId: uuidString(txID),
+	})
+	if err != nil {
+		return Transaction{}, ledgererr.FromStatus(err)
+	}
+	return transactionFromProto(tx)
+}
+
 // ConsumeFeeQuote is docs/roadmap/archive/38 Task T5's additive RPC — a rejection
 // (quote expired/mismatch) decodes generically into *ledgererr.LedgerError
 // with Code "QUOTE_EXPIRED"/"QUOTE_MISMATCH" via ledgererr.FromStatus (no

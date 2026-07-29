@@ -336,3 +336,54 @@ No component in this module requires a manual "resume" step after a
 crash or planned restart — every recovery path above is a normal,
 already-tested consequence of the request/poll cycle continuing, not a
 special code path invoked only during recovery.
+
+## 7. Merchant profile, accounts, transactions, and transfers (T10 follow-up)
+
+T6's own Result section deliberately deferred wiring the merchant-facing
+HTTP surface for `GET /merchant`, `GET /accounts*`, `GET /transactions*`,
+and `POST/GET /transfers*` — the OpenAPI operations, scopes, and quota
+classes were all locked in T1, but no handler existed until this pass.
+`internal/merchant/api`'s payin/payout handlers (T6) were the template;
+this section records what's specific to the Ledger-backed routes.
+
+- **No new LedgerService RPC for transfers.** `POST /transfers` posts a
+  `merchant_transfer`-typed `Command` through the SAME generic `Post` RPC
+  every other transaction type already uses
+  (`internal/ledger/processors/merchant_transfer.go`, T5) — there is no
+  dedicated `CreateMerchantTransfer` RPC. The resulting transaction is
+  then fetched via the existing `GetTransactionByIdempotencyKey`, scoped
+  by `(downstreamKey, tenantID.String())`.
+- **One new RPC:** `GetMerchantTransaction(tenant_id, transaction_id) ->
+  Transaction` — resolves a single transaction the same
+  "walk every account the transaction touched" way
+  `ledger.Module.CanAccessTransaction` already does for end users
+  (docs/roadmap/archive/04's D1 note on why source/destination fields
+  alone aren't reliable for multi-account transactions), applied to the
+  tenant's own resolved cash account instead of a user id. Backs BOTH
+  `GET /transactions/{id}` and `GET /transfers/{id}` — a merchant
+  transaction has no separate "transfer" resource, only a `Type` value on
+  the shared resource, so both routes share one handler
+  (`GetTransactionHandler`) registered under two different operation IDs
+  (and therefore two different locked scope sets).
+- **Accounts are derived, not stored.** `GET /accounts`,
+  `GET /accounts/{id}`, and `GET /accounts/{id}/balance` are all built
+  from the existing `GetMerchantAccount` RPC (T5) — a merchant tenant has
+  exactly one ledger account today, so `ListAccountsHandler` always
+  returns a single-element array; `cursor`/`limit` query params are
+  accepted (contract-required) but have no effect until multi-account
+  tenants exist.
+- **Merchant profile needs no owner-service call.** `GET /merchant`
+  reads directly from Gateway's own `Tenants` repository — a tenant's
+  identity is edge-owned data (§3.1), not something Ledger has any
+  opinion about.
+- **Verification:** `TestGetMerchantTransaction_ScopedByTenant_RealPostgres`
+  (`internal/ledger/grpcserver`) proves the new RPC's tenant-membership
+  check at the gRPC layer; `TestB2BRouter_MerchantAccountsAndTransfers`
+  (`internal/merchant/api`) proves the full HTTP surface against a REAL
+  in-process `ledger.Module` (`internal/testutil.LedgerHarness`, extended
+  with the three new merchant read methods) rather than a fake — unlike
+  the payin/payout test in the same package, Ledger's own correctness is
+  exactly what this surface depends on, so it is never faked here. That
+  test also proves the money-safety property directly: a replayed
+  transfer request returns the original transaction and leaves the
+  source account's balance unchanged (no double-debit).

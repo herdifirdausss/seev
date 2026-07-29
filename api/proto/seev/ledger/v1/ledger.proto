@@ -30,6 +30,18 @@ service LedgerService {
   // server-side from tenant_id, never accepted as a request parameter, so
   // no caller can ever list another tenant's transactions.
   rpc ListMerchantTransactions(ListMerchantTransactionsRequest) returns (ListMerchantTransactionsResponse);
+  // GetMerchantTransaction resolves ONE of tenant_id's own transactions by
+  // id (Plan 57 T10 follow-up: the B2B GET /transactions/{id} and
+  // GET /transfers/{id} routes both serve this same RPC — a merchant
+  // transaction has no separate "transfer" resource type, only a Type
+  // value on the same Transaction). Tenant scoping mirrors
+  // CanAccessTransaction's own "walk every account the transaction
+  // touched" approach rather than trusting Transaction's own
+  // source/destination fields alone (docs/roadmap/archive/04's D1 note) —
+  // a transaction that exists but touches none of tenant_id's accounts
+  // returns NOT_FOUND, identical to a genuinely missing id (§6.7: never
+  // leak resource existence across tenants).
+  rpc GetMerchantTransaction(GetMerchantTransactionRequest) returns (Transaction);
 }
 
 message PostRequest {
@@ -216,4 +228,9 @@ message ListMerchantTransactionsRequest {
 
 message ListMerchantTransactionsResponse {
   repeated Transaction transactions = 1;
+}
+
+message GetMerchantTransactionRequest {
+  string tenant_id = 1;
+  string transaction_id = 2;
 }

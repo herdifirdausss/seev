@@ -24,6 +24,10 @@ type Deps struct {
 	Idempotency   *idempotency.Service
 	Payin         *client.PayinClient
 	Payout        *client.PayoutClient
+	// Ledger is Plan 57 T10 follow-up's addition — backs the merchant
+	// profile/accounts/transactions/transfers surface (§6.4) that T5/T6
+	// built the owner-service RPCs for but never wired to HTTP.
+	Ledger *client.LedgerClient
 }
 
 // NewRouter builds the B2B payin/payout HTTP surface
@@ -62,6 +66,18 @@ func NewRouter(deps Deps) http.Handler {
 	route("GET /payins/{payin_id}", opGetPayin, "read", false, GetPayinHandler(deps.Payin))
 	route("POST /payouts", opCreatePayout, "payout", true, CreatePayoutHandler(deps.Payout, deps.Idempotency))
 	route("GET /payouts/{payout_id}", opGetPayout, "read", false, GetPayoutHandler(deps.Payout))
+
+	// Merchant profile, accounts, transactions, and transfers (Plan 57 T10
+	// follow-up) — "transfers" is its own quota class, same reasoning as
+	// payin/payout above; every other route here is a read.
+	route("GET /merchant", opGetMerchant, "read", false, GetMerchantHandler(deps.Tenants))
+	route("GET /accounts", opListAccounts, "read", false, ListAccountsHandler(deps.Ledger))
+	route("GET /accounts/{account_id}", opGetAccount, "read", false, GetAccountHandler(deps.Ledger))
+	route("GET /accounts/{account_id}/balance", opGetAccountBalance, "read", false, GetAccountBalanceHandler(deps.Ledger))
+	route("GET /transactions", opListTransactions, "read", false, ListTransactionsHandler(deps.Ledger))
+	route("GET /transactions/{transaction_id}", opGetTransaction, "read", false, GetTransactionHandler(deps.Ledger))
+	route("POST /transfers", opCreateTransfer, "transfers", true, CreateTransferHandler(deps.Ledger, deps.Idempotency))
+	route("GET /transfers/{transaction_id}", opGetTransfer, "read", false, GetTransactionHandler(deps.Ledger))
 
 	return mux
 }

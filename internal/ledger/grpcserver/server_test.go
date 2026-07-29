@@ -61,6 +61,11 @@ type fakeService struct {
 	listMerchantLimit    int
 	merchantTxs          []model.LedgerTransaction
 	listMerchantErr      error
+
+	getMerchantTxTenantID uuid.UUID
+	getMerchantTxID       uuid.UUID
+	getMerchantTx         model.LedgerTransaction
+	getMerchantTxErr      error
 }
 
 func (f *fakeService) Post(_ context.Context, command processors.Command) error {
@@ -98,6 +103,11 @@ func (f *fakeService) GetMerchantAccount(_ context.Context, tenantID uuid.UUID) 
 func (f *fakeService) ListMerchantTransactions(_ context.Context, tenantID uuid.UUID, beforeCreatedAt time.Time, beforeID uuid.UUID, limit int) ([]model.LedgerTransaction, error) {
 	f.listMerchantTenantID, f.listMerchantBefore, f.listMerchantBeforeID, f.listMerchantLimit = tenantID, beforeCreatedAt, beforeID, limit
 	return f.merchantTxs, f.listMerchantErr
+}
+
+func (f *fakeService) GetMerchantTransaction(_ context.Context, tenantID, txID uuid.UUID) (model.LedgerTransaction, error) {
+	f.getMerchantTxTenantID, f.getMerchantTxID = tenantID, txID
+	return f.getMerchantTx, f.getMerchantTxErr
 }
 
 func newTestClient(t *testing.T, service Service) ledgerv1.LedgerServiceClient {

@@ -158,7 +158,8 @@ func main() {
 		log.Error("failed to build cryptox ring", "error", err)
 		os.Exit(1)
 	}
-	merchantModule := merchant.NewModule(db, cryptoxRing, cfg.Merchant.APIKeyPepper, ledgerclient.New(ledgerConn))
+	merchantLedgerClient := ledgerclient.New(ledgerConn)
+	merchantModule := merchant.NewModule(db, cryptoxRing, cfg.Merchant.APIKeyPepper, merchantLedgerClient)
 	stopWebhookRelay := merchantModule.StartWebhookRelay(ctx, merchant.DefaultWebhookRelayInterval)
 	stopWebhookConsumer, err := merchantModule.StartWebhookConsumer(ctx, mq, log)
 	if err != nil {
@@ -191,6 +192,7 @@ func main() {
 		Idempotency:   idempotency.NewService(merchantModule.Idempotency, idempotencyTTL, idempotencyLeaseOwner),
 		Payin:         merchantclient.NewPayinClient(payinGRPCClient),
 		Payout:        merchantclient.NewPayoutClient(payoutGRPCClient),
+		Ledger:        merchantclient.NewLedgerClient(merchantLedgerClient),
 	})
 
 	// Plan 57 T9: periodic gauge refresh for idempotency stuck-lease and

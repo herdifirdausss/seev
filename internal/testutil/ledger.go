@@ -7,6 +7,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/herdifirdausss/seev/internal/ledger"
 	"github.com/herdifirdausss/seev/pkg/cryptox"
@@ -82,13 +84,20 @@ func (h *LedgerHarness) Post(ctx context.Context, command ledgerclient.Command) 
 // ledgererr.FromStatus decoding the wire status) — so callers like
 // internal/payout's K3-race reconciliation (errors.Is against
 // ledgererr.ErrAlreadyClosed) behave identically whether they're wired to
-// the real network client or this test harness.
+// the real network client or this test harness. NotFound cases (Plan 57
+// T10 follow-up) become a genuine grpc status error rather than the raw
+// apperror sentinel, matching what status.FromError needs to see for
+// internal/merchant/client's own translateError to classify them as
+// ErrNotFound instead of falling through to ErrOwnerUnavailable.
 func translateLedgerErr(err error) error {
 	if err == nil {
 		return nil
 	}
 	if errors.Is(err, ledger.ErrAlreadyClosed) {
 		return ledgererr.ErrAlreadyClosed
+	}
+	if errors.Is(err, ledger.ErrTransactionNotFound) || errors.Is(err, ledger.ErrAccountNotFound) {
+		return status.Error(codes.NotFound, err.Error())
 	}
 	var bizErr *ledger.LedgerError
 	if errors.As(err, &bizErr) {
@@ -163,4 +172,52 @@ func (h *LedgerHarness) ProvisionUser(ctx context.Context, userID uuid.UUID, cur
 
 func (h *LedgerHarness) ListAccounts(ctx context.Context, userID uuid.UUID) ([]LedgerAccount, error) {
 	return h.module.ListAccounts(ctx, userID)
+}
+
+// GetMerchantAccount delegates to the in-process ledger module (Plan 57
+// T5/T10 follow-up) — lets internal/merchant/client's own integration
+// tests exercise the real merchant account read against a shared test
+// database instead of a fake/mocked LedgerService.
+func (h *LedgerHarness) GetMerchantAccount(ctx context.Context, tenantID uuid.UUID) (ledgerclient.MerchantAccount, error) {
+	bal, err := h.module.GetMerchantAccount(ctx, tenantID)
+	if err != nil {
+		return ledgerclient.MerchantAccount{}, translateLedgerErr(err)
+	}
+	return ledgerclient.MerchantAccount{AccountID: bal.AccountID, Currency: bal.Currency, Balance: bal.Balance, Status: bal.Status}, nil
+}
+
+// ListMerchantTransactions delegates to the in-process ledger module
+// (Plan 57 T5/T10 follow-up).
+func (h *LedgerHarness) ListMerchantTransactions(ctx context.Context, tenantID uuid.UUID, beforeCreatedAt time.Time, beforeID uuid.UUID, limit int) ([]ledgerclient.Transaction, error) {
+	txs, err := h.module.ListMerchantTransactions(ctx, tenantID, beforeCreatedAt, beforeID, limit)
+	if err != nil {
+		return nil, translateLedgerErr(err)
+	}
+	out := make([]ledgerclient.Transaction, 0, len(txs))
+	for _, tx := range txs {
+		out = append(out, ledgerclient.Transaction{
+			ID: tx.ID, IdempotencyKey: tx.IdempotencyKey, IdempotencyScope: tx.IdempotencyScope,
+			Type: tx.Type, Status: tx.Status, Amount: tx.Amount, Currency: tx.Currency,
+			SourceAccountID: tx.SourceAccountID, DestinationAccountID: tx.DestinationAccountID,
+			ErrorMessage: tx.ErrorMessage, ExternalRef: tx.ExternalRef, Gateway: tx.Gateway,
+			CreatedAt: tx.CreatedAt, UpdatedAt: tx.UpdatedAt,
+		})
+	}
+	return out, nil
+}
+
+// GetMerchantTransaction delegates to the in-process ledger module (Plan
+// 57 T10 follow-up).
+func (h *LedgerHarness) GetMerchantTransaction(ctx context.Context, tenantID, txID uuid.UUID) (ledgerclient.Transaction, error) {
+	tx, err := h.module.GetMerchantTransaction(ctx, tenantID, txID)
+	if err != nil {
+		return ledgerclient.Transaction{}, translateLedgerErr(err)
+	}
+	return ledgerclient.Transaction{
+		ID: tx.ID, IdempotencyKey: tx.IdempotencyKey, IdempotencyScope: tx.IdempotencyScope,
+		Type: tx.Type, Status: tx.Status, Amount: tx.Amount, Currency: tx.Currency,
+		SourceAccountID: tx.SourceAccountID, DestinationAccountID: tx.DestinationAccountID,
+		ErrorMessage: tx.ErrorMessage, ExternalRef: tx.ExternalRef, Gateway: tx.Gateway,
+		CreatedAt: tx.CreatedAt, UpdatedAt: tx.UpdatedAt,
+	}, nil
 }

@@ -16,6 +16,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"slices"
 	"time"
 
 	"github.com/google/uuid"
@@ -129,6 +130,16 @@ var ErrAlreadyClosed = apperror.ErrAlreadyClosed
 // needing to import the module-private internal/ledger/feepolicy package.
 var ErrQuoteExpired = apperror.ErrQuoteExpired
 var ErrQuoteMismatch = apperror.ErrQuoteMismatch
+
+// ErrTransactionNotFound/ErrAccountNotFound (Plan 57 T10 follow-up) are
+// re-exported so a caller outside this module (internal/testutil's
+// LedgerHarness, standing in for a real gRPC-connected ledgerclient.Client
+// in internal/merchant/client's own integration tests) can classify
+// GetMerchantAccount/GetMerchantTransaction's not-found cases via
+// errors.Is, the same re-export pattern as ErrAlreadyClosed/ErrQuoteExpired
+// above.
+var ErrTransactionNotFound = apperror.ErrTransactionNotFound
+var ErrAccountNotFound = apperror.ErrAccountNotFound
 
 // WorkerConfig tunes the ledger module's background workers (outbox relay +
 // integrity verifier). Deliberately independent of internal/config — the
@@ -692,6 +703,37 @@ func (m *Module) ListMerchantTransactions(ctx context.Context, tenantID uuid.UUI
 		return nil, err
 	}
 	return m.txRepo.ListByAccountEitherSide(ctx, accountID, beforeCreatedAt, beforeID, limit)
+}
+
+// GetMerchantTransaction resolves ONE of tenantID's own transactions by id
+// (Plan 57 T10 follow-up — backs both the B2B GET /transactions/{id} and
+// GET /transfers/{id} routes; a merchant transaction has no separate
+// "transfer" resource, only a Type value on the same Transaction). Mirrors
+// CanAccessTransaction's own "walk every account the transaction touched"
+// approach, applied to the tenant's resolved cash account instead of a
+// user id, rather than trusting Transaction's own
+// source/destination_account_id fields alone (docs/roadmap/archive/04's
+// D1 note on multi-account transactions). Returns
+// apperror.ErrTransactionNotFound both for a genuinely missing id and for
+// one that touches none of tenantID's accounts — §6.7's "never leak
+// resource existence across tenants."
+func (m *Module) GetMerchantTransaction(ctx context.Context, tenantID, txID uuid.UUID) (Transaction, error) {
+	accountID, err := m.accountRepo.GetMerchantAccountID(ctx, tenantID, constant.AccountTypeCash)
+	if err != nil {
+		return Transaction{}, err
+	}
+	tx, err := m.txRepo.GetByID(ctx, txID)
+	if err != nil {
+		return Transaction{}, err
+	}
+	accountIDs, err := m.txRepo.GetAccountIDs(ctx, txID)
+	if err != nil {
+		return Transaction{}, err
+	}
+	if slices.Contains(accountIDs, accountID) {
+		return tx, nil
+	}
+	return Transaction{}, fmt.Errorf("%w: transaction %s", apperror.ErrTransactionNotFound, txID)
 }
 
 // CanAccessAccount reports whether userID owns accountID.
