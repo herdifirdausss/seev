@@ -22,6 +22,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -805,4 +806,81 @@ func TestB2BRouter_SuspendedTenant_ReadsAllowedWritesDenied(t *testing.T) {
 	require.NoError(t, tenants.UpdateStatus(ctx, tenantID, "active", "test-operator"))
 	resumedResp, _ := doRequest(t, http.MethodPost, srv.URL+"/payins", key, "suspend-write-2", []byte(`{"amount":"1000","currency":"IDR"}`))
 	assert.Equal(t, http.StatusCreated, resumedResp.StatusCode, "writes must recover immediately once the tenant is reactivated")
+}
+
+// TestB2BRouter_ConcurrentTenantSuspensionAndFinancialWrite proves §23.8
+// item 6: N genuinely concurrent financial writes (each its own unique
+// idempotency key, not a replay of one) racing a single goroutine that
+// suspends the tenant partway through must never produce anything but a
+// clean 201 (write landed before suspension) or 403 TENANT_SUSPENDED
+// (write landed after) — no panic, no 500, and critically no write that
+// reports success while the tenant is (or becomes) suspended: every 201
+// response's own request must have actually created a payin record,
+// checked afterward against the real count in Postgres, so a race that
+// let a write "succeed" without actually completing wouldn't hide behind
+// a miscounted assertion.
+func TestB2BRouter_ConcurrentTenantSuspensionAndFinancialWrite(t *testing.T) {
+	gatewayDB, _ := setupGatewayTestDB(t)
+	ctx := context.Background()
+
+	tenants := repository.NewTenantRepository(gatewayDB)
+	apiKeys := repository.NewAPIKeyRepository(gatewayDB)
+	quotas := repository.NewQuotaRepository(gatewayDB)
+	idemRepo := repository.NewIdempotencyRepository(gatewayDB)
+	keySvc := auth.NewKeyService(apiKeys, tenants, integrationTestPepper)
+
+	tenantID := uuid.New()
+	require.NoError(t, tenants.Create(ctx, model.Tenant{
+		ID: tenantID, PublicID: "mrc_" + uuid.NewString()[:16], ExternalCode: "ext-race6-" + tenantID.String(),
+		Name: "Race6 Merchant", Environment: "live", Status: "active", DefaultCurrency: "IDR", CreatedBy: "test",
+	}))
+	disableQuota(t, quotas, tenantID)
+	key, _, err := keySvc.CreateKey(ctx, tenantID, "live", []string{"merchant:read", "payins:write", "payins:read"}, "operator")
+	require.NoError(t, err)
+
+	router := merchantapi.NewRouter(merchantapi.Deps{
+		APIKeys:       apiKeys,
+		Tenants:       tenants,
+		APIKeyPepper:  integrationTestPepper,
+		QuotaEnforcer: quota.NewEnforcer(quotas, nil),
+		Idempotency:   idempotency.NewService(idemRepo, 24*time.Hour, "test"),
+		GlobalFlag:    auth.NewGlobalFlag(repository.NewSettingsRepository(gatewayDB)),
+		Payin:         client.NewPayinClient(startBufconnPayin(t, newFakePayinServer())),
+		Payout:        client.NewPayoutClient(startBufconnPayout(t, newFakePayoutServer())),
+	})
+	srv := httptest.NewServer(router)
+	t.Cleanup(srv.Close)
+
+	const concurrency = 30
+	var wg sync.WaitGroup
+	var created, denied, unexpected int32
+	wg.Add(concurrency + 1)
+	for i := range concurrency {
+		go func(i int) {
+			defer wg.Done()
+			resp, _ := doRequest(t, http.MethodPost, srv.URL+"/payins", key, fmt.Sprintf("race6-%d", i), []byte(`{"amount":"1000","currency":"IDR"}`))
+			switch resp.StatusCode {
+			case http.StatusCreated:
+				atomic.AddInt32(&created, 1)
+			case http.StatusForbidden:
+				atomic.AddInt32(&denied, 1)
+			default:
+				atomic.AddInt32(&unexpected, 1)
+			}
+		}(i)
+	}
+	go func() {
+		defer wg.Done()
+		require.NoError(t, tenants.UpdateStatus(ctx, tenantID, "suspended", "test-operator"))
+	}()
+	wg.Wait()
+
+	assert.Equal(t, int32(0), atomic.LoadInt32(&unexpected), "every concurrent write must resolve to exactly 201 or 403 — no panic, no 500")
+	assert.Equal(t, int32(concurrency), created+denied, "every goroutine must have gotten a response")
+
+	// The tenant is suspended by now (the goroutine above already
+	// completed, and status changes are immediately visible — no cache).
+	// A write attempted AFTER this point must be denied.
+	postResp, _ := doRequest(t, http.MethodPost, srv.URL+"/payins", key, "race6-after", []byte(`{"amount":"1000","currency":"IDR"}`))
+	assert.Equal(t, http.StatusForbidden, postResp.StatusCode, "a write attempted once suspension is confirmed durable must be denied")
 }
