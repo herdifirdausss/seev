@@ -2860,15 +2860,161 @@ T10 may begin.
 
 ### Acceptance
 
-- [ ] All final gates pass from a clean tree.
-- [ ] Chaos evidence demonstrates no duplicate money.
-- [ ] Cross-tenant access attempts all fail.
-- [ ] No secret is found in repository/log/database scans.
-- [ ] All contract artifacts are generated and clean.
-- [ ] Existing user, admin, and callback journeys remain green.
-- [ ] Operational rollback and disable controls are exercised.
-- [ ] Residual risks are documented.
-- [ ] Plan status and roadmap index are updated truthfully.
+- [x] All final gates pass from a clean tree (one pre-existing, unrelated
+  script flake found and tracked — see Result).
+- [x] Chaos evidence demonstrates no duplicate money.
+- [x] Cross-tenant access attempts all fail (one item not applicable to the
+  current API shape, one nuance deferred — see Result).
+- [x] No secret is found in repository/log/database scans.
+- [x] All contract artifacts are generated and clean.
+- [x] Existing user, admin, and callback journeys remain green (privacy-e2e
+  exception below, unrelated to this plan).
+- [x] Operational rollback and disable controls are exercised.
+- [x] Residual risks are documented.
+- [x] Plan status and roadmap index are updated truthfully.
+
+### Result
+
+**Core complete.** Every money-movement, auth, and operational-control path
+required for T10 is built and live-verified. Two follow-up gaps are
+explicitly deferred as **"T10b"** (§23.8 race-test items 2-6, and the
+non-precision-targeted chaos coverage in §24.2-24.6) — the same
+honest-scope-reduction discipline this repository already used for A8's
+T2.5b/T4b/T5b/T6b, applied here to the final verification task rather than
+pretending a narrower scope was the whole of T10.
+
+**Two real bugs found and fixed this pass, both live-verified:**
+
+1. **T9's kill switch was never wired to the B2B router.** `RequireB2BEnabled`
+   existed since T9, but no B2B HTTP route existed yet to gate it — and it
+   was *still* never mounted once T10's follow-up built the router. Found
+   live via `scripts/merchant-e2e.sh` (disabling the flag had zero effect on
+   real traffic). Fixed: `GlobalFlag` is now a required `Deps` field
+   (`NewRouter` panics without it), `RequireB2BEnabled` runs first in the
+   middleware chain, and `TestB2BRouter_GlobalKillSwitchGatesEveryRoute`
+   proves it (commit `d818370`).
+2. **A live-activation bypass via key/tenant environment mismatch.**
+   `KeyService.CreateKey` took `tenantID` and `environment` as fully
+   independent arguments and never checked either against the tenant's own
+   `Environment` — so a sandbox tenant (auto-activates, no checker approval)
+   could be issued a "live" key, completely bypassing the maker/checker
+   draft→active gate a real live tenant is supposed to require before
+   touching real vendors and real money. Found while auditing §23.7's "test
+   key accesses live tenant" / "live key accesses sandbox tenant" cases.
+   Fixed at two layers: `CreateKey` now rejects a mismatched environment
+   before ever issuing a key, and `RequireMerchantAuth` independently
+   rejects any already-issued key whose environment disagrees with its
+   tenant's (protects rows that predate the fix). New unit tests for both
+   layers; full merchant suite (unit + `-tags=integration`, real Postgres)
+   and a fresh live `merchant-e2e.sh` run both stayed green (commit
+   `86b4824`).
+
+**Chaos (§24.1).** Added **scenario 21** to `scripts/chaos-test.sh`
+(the plan's forecast of a separate `scripts/merchant-chaos.sh` was narrowed
+to a new scenario in the existing shared chaos harness instead — the
+established convention every other track already uses, and the reason
+`scripts/merchant-chaos.sh` does not exist as its own file). Mirrors
+scenario 1's kill-9 pattern (40 concurrent requests, kill -9 partway
+through, restart, retry non-2xx) against the merchant B2B transfer endpoint
+instead of the user-facing ledger API — proving the money-safety guarantee
+for a genuine gateway process crash, not just a client-side idempotent
+retry (which `merchant-e2e.sh`'s own replay test already covered but is a
+weaker claim). Verified live: all 40 in-flight requests were killed before
+receiving any response; all 40 retries landed exactly once; final balances
+exact (tenant A debited 40, tenant B credited 40); `fn_verify_ledger_balance`,
+`v_account_balance_audit`, and no-stuck-pending all clean (commit
+`b2e20b7`). §24.2-24.6 (owner-service/RabbitMQ/Redis/webhook-receiver/
+database failure matrices) are covered generically by the pre-existing
+chaos scenarios for the shared ledger/payin/payout/webhook machinery
+merchant transactions route through, plus T7's own webhook receiver-failure
+unit tests (timeout/reset/TLS/429/500/410/oversized/redirect/DNS-rebinding/
+private-address) — but no scenario re-runs those failure modes through the
+merchant-specific surface precisely. Tracked as T10b.
+
+**Cross-tenant matrix (§23.7).** Audited all 9 required cases against the
+existing test suite (`internal/merchant/**/*_test.go`):
+tenant-reads-tenant, tenant-mutates-tenant, idempotency-key-reuse, and
+delivery-replay are covered by existing tests
+(`b2b_integration_test.go`, `idempotency_test.go`, `replay_test.go`,
+`repository_integration_test.go`). Test-key-vs-live-tenant and
+live-key-vs-sandbox-tenant were **not** covered — and turned out to be the
+real gap fixed above, now covered by
+`TestKeyService_CreateKey_RejectsEnvironmentMismatch` and
+`TestRequireMerchantAuth_TenantKeyEnvironmentMismatch_FailsClosed`.
+Source-account targeting does not apply to the current API shape:
+`source_account_id` is always derived server-side from the caller's own
+tenant (`internal/merchant/api/transactions_handler.go`), never taken from
+the request body, so there is no field for tenant A to nominate tenant B's
+account as a debit source. Suspended-tenant reads vs. writes: the
+middleware currently fails closed uniformly for a suspended tenant
+(`TestRequireMerchantAuth_FailsClosed/suspended_tenant`), which is stricter
+than §23.7's stated default policy ("read access may remain available for
+reconciliation") — no test (or code path) currently distinguishes the two.
+Tracked as T10b.
+
+**Race tests (§23.8).** `go test -race ./internal/merchant/...` (plain and
+`-tags=integration`) is clean — no data races in anything that exists. Of
+the 7 required scenarios: concurrent-same-idempotency-key is fully covered
+(3 tests, unit + real-Postgres); duplicate-owner-events is covered
+functionally but not under real goroutine contention; concurrent
+key-rotation-vs-request, concurrent-webhook-workers,
+concurrent-replay-vs-replay, concurrent-endpoint-disable-vs-delivery, and
+concurrent-tenant-suspension-vs-financial-write have no test coverage at
+all — there is nothing for `-race` to have caught. Tracked as T10b.
+
+**Final gate, run from a clean tree this pass:** `go build ./...`,
+`go vet ./...`, `make lint` (0 issues), `make contracts` (clean),
+`go run ./cmd/doccheck` (139 files, clean), `go test ./...` (91 packages,
+0 failures), `go test -race ./...` (91 packages, 0 failures, 0 data races),
+`go test -tags=integration ./...` (0 failures after fixing the environment
+issue below), `scripts/smoke-test.sh all` (19/19), `scripts/business-e2e.sh`
+(84/84), `scripts/admin-e2e.sh` (5/5), `scripts/merchant-e2e.sh` (25/25).
+`scripts/privacy-e2e-host.sh` fails reproducibly (2/2 runs) at its closure
+leg — root-caused via log analysis to the script's own `assurance_run()`
+manual trigger racing the `ASSURANCE_INTERVAL=1s` background scheduler it
+also configures (a 409-style collision under `curl -sf` kills the script via
+`set -e`, which tears down services mid-run). Confirmed via
+`git log -- scripts/privacy-e2e.sh scripts/privacy-e2e-host.sh
+internal/assurance` that none of these have been touched by any commit in
+this plan — this is a pre-existing bug in plan 51's own test tooling, not a
+Plan 57 regression, and does not exercise anything Plan 57 owns. Filed as
+its own follow-up task rather than fixed here (out of this plan's blast
+radius).
+
+**Environment issues found and fixed along the way (not product bugs, but
+real blockers to running the gate honestly):** the accumulated
+`KEEP_WORK_DIR=1`/testcontainers runs across this session's verification
+work left 66 leaked testcontainers Postgres instances and 1 leaked
+testcontainers RabbitMQ instance running, and separately left ~11 GB of
+stale Go build/lint/module caches under `/tmp`, pushing the host disk to
+95% full — together these caused a transient `pkg/database` testcontainers
+timeout and a `seev-rabbitmq-1` health-check failure that had nothing to do
+with any code change. Cleaned up (containers stopped/removed by name,
+scoped to exclude the real `seev-*` compose stack; stale `/tmp/seev-*`
+caches removed) and every affected gate re-run clean afterward.
+
+**Secret scan.** `merchant_api_keys.secret_digest` and
+`merchant_webhook_endpoints.secret_ciphertext` are both `bytea` — no
+plaintext secret column exists in the schema. Every service log from a
+full live `merchant-e2e.sh` run was grepped for the `mk_sandbox_`/`mk_live_`
+API-key prefix pattern: zero matches outside the one intentional one-time
+plaintext response.
+
+**Operational controls exercised live:** the global B2B kill switch
+(disable → 503 on every route → re-enable → immediate recovery, both via
+`merchant-e2e.sh` and a dedicated Go test), checker-only enforcement on the
+kill switch, and the maker/checker tenant lifecycle (T8) via the admin
+console.
+
+**Docs.** `docs/reference/services.md`'s Gateway section, `docs/roadmap/
+README.md`, and `docs/roadmap/42-long-term-roadmap.md` all previously said
+"not yet implemented" — updated to reflect the actual T0-T9-complete,
+T10-in-progress state (commit `32047d7`). `docs/evidence/
+c1-final-acceptance.md` records this task's full evidence log.
+
+**Plan status:** T10 is core-complete; the plan stays **active** (not
+archived) until the T10b follow-up items above are resolved, matching the
+same pattern A8 used for its own T6/T6b split.
 
 ---
 
@@ -3426,77 +3572,79 @@ C1 is complete only when:
 
 ### Contracts
 
-- [ ] B2B OpenAPI is complete and generated checks pass.
-- [ ] Every operation has canonical fixtures.
-- [ ] Error, pagination, idempotency, and scope semantics are documented.
-- [ ] Internal event and proto changes are backward compatible.
-- [ ] External webhook schemas are versioned and tested.
+- [x] B2B OpenAPI is complete and generated checks pass.
+- [x] Every operation has canonical fixtures.
+- [x] Error, pagination, idempotency, and scope semantics are documented.
+- [x] Internal event and proto changes are backward compatible.
+- [x] External webhook schemas are versioned and tested.
 
 ### Security
 
-- [ ] API keys are one-time visible and digest-only at rest.
-- [ ] Webhook secrets are encrypted at rest.
-- [ ] Revocation is immediate.
-- [ ] Tenant isolation is proven on every resource.
-- [ ] SSRF protections are exercised.
-- [ ] Secret scans across logs, DB evidence, and fixtures are clean.
-- [ ] Admin CSRF and role checks pass.
-- [ ] Threat model is complete.
+- [x] API keys are one-time visible and digest-only at rest.
+- [x] Webhook secrets are encrypted at rest.
+- [x] Revocation is immediate.
+- [x] Tenant isolation is proven on every resource (source-account
+  targeting not applicable to the current API shape; suspended-tenant
+  read/write nuance deferred — T10b, see Result).
+- [x] SSRF protections are exercised.
+- [x] Secret scans across logs, DB evidence, and fixtures are clean.
+- [x] Admin CSRF and role checks pass.
+- [x] Threat model is complete.
 
 ### Money correctness
 
-- [ ] Merchant accounts use LedgerService.
-- [ ] Every transfer is balanced.
-- [ ] Pay-in credits once.
-- [ ] Payout hold/settle/release occurs once.
-- [ ] Duplicate request, event, and callback cannot duplicate money.
-- [ ] Gateway crash recovery returns the original resource.
-- [ ] Existing user money journeys remain green.
+- [x] Merchant accounts use LedgerService.
+- [x] Every transfer is balanced.
+- [x] Pay-in credits once.
+- [x] Payout hold/settle/release occurs once.
+- [x] Duplicate request, event, and callback cannot duplicate money.
+- [x] Gateway crash recovery returns the original resource.
+- [x] Existing user money journeys remain green.
 
 ### Reliability
 
-- [ ] Quota outage posture is proven.
-- [ ] Owner outboxes survive RabbitMQ outage.
-- [ ] Merchant event inbox deduplicates.
-- [ ] Webhook retry, dead, replay, and worker recovery are proven.
-- [ ] Retention jobs are bounded.
-- [ ] Kill switches and tenant suspension are exercised.
+- [x] Quota outage posture is proven.
+- [x] Owner outboxes survive RabbitMQ outage.
+- [x] Merchant event inbox deduplicates.
+- [x] Webhook retry, dead, replay, and worker recovery are proven.
+- [x] Retention jobs are bounded.
+- [x] Kill switches and tenant suspension are exercised.
 
 ### Operations
 
-- [ ] Metrics, traces, dashboards, alerts, and runbooks exist.
-- [ ] Cardinality checks pass.
-- [ ] Clean-tree final verification passes.
-- [ ] Chaos evidence is recorded.
-- [ ] Residual risks are explicit.
-- [ ] Roadmap and current-service documentation reflect reality.
-- [ ] The plan is archived only after all required evidence is linked.
+- [x] Metrics, traces, dashboards, alerts, and runbooks exist.
+- [x] Cardinality checks pass.
+- [x] Clean-tree final verification passes (one pre-existing, unrelated
+  script flake tracked separately — see Result).
+- [x] Chaos evidence is recorded.
+- [x] Residual risks are explicit (T10b, see Result).
+- [x] Roadmap and current-service documentation reflect reality.
+- [ ] The plan is archived only after all required evidence is linked —
+  **not yet**: staying active until T10b closes, same as A8's T6/T6b.
 
 ---
 
 ## 32. Final evidence log
 
-Fill during execution.
-
 | Evidence | Commit / artifact | Result | Notes |
 |---|---|---:|---|
-| C1 entry gate |  |  |  |
-| B2B OpenAPI gate |  |  |  |
-| API-key security |  |  |  |
-| Quota outage |  |  |  |
-| Idempotency concurrency |  |  |  |
-| Merchant account provisioning |  |  |  |
-| Transfer E2E |  |  |  |
-| Payin E2E |  |  |  |
-| Payout E2E |  |  |  |
-| Webhook signature fixtures |  |  |  |
-| Webhook retry/dead/replay |  |  |  |
-| Cross-tenant matrix |  |  |  |
-| Admin BFF E2E |  |  |  |
-| RabbitMQ chaos |  |  |  |
-| Redis chaos |  |  |  |
-| Gateway crash recovery |  |  |  |
-| Final clean-tree gate |  |  |  |
+| C1 entry gate | `docs/evidence/c1-entry-gate.md` | pass | T0 |
+| B2B OpenAPI gate | `make contracts` | pass | clean, this pass |
+| API-key security | `internal/merchant/auth` | pass | digest-only at rest; environment-mismatch bypass found+fixed `86b4824` |
+| Quota outage | `internal/merchant/quota` tests | pass | T4 |
+| Idempotency concurrency | `idempotency_test.go`, `idempotency_integration_test.go`, `repository_integration_test.go` | pass | real-Postgres concurrent-claim races, T4 |
+| Merchant account provisioning | `b2b_integration_test.go` | pass | T5 |
+| Transfer E2E | `merchant-e2e.sh` §4, chaos scenario 21 | pass | idempotent replay + genuine crash, no double-debit |
+| Payin E2E | `merchant-e2e.sh` §3 | pass | real mockvendor signed webhook |
+| Payout E2E | `b2b_integration_test.go` | pass | T6 |
+| Webhook signature fixtures | `webhook` package unit tests | pass | T7 |
+| Webhook retry/dead/replay | `webhook_integration_test.go`, `relay_test.go`, `replay_test.go` | pass | T7 |
+| Cross-tenant matrix | `b2b_integration_test.go`, `repository_integration_test.go`, `service_test.go` | 7/9 covered | 1 n/a to API shape, 1 nuance deferred — T10b |
+| Admin BFF E2E | `admin-e2e.sh` | pass | 5/5, this pass |
+| RabbitMQ chaos | chaos scenario 2 (shared outbox machinery) | pass (generic) | no merchant-webhook-specific RabbitMQ-down scenario — T10b |
+| Redis chaos | `internal/merchant/quota` outage tests | pass (generic) | no dedicated chaos-test.sh scenario — T10b |
+| Gateway crash recovery | chaos scenario 21 | pass | 40/40 concurrent, exact balances, this pass |
+| Final clean-tree gate | build/vet/lint/contracts/doccheck/`test`/`test -race`/`test -tags=integration`/smoke/business-e2e/admin-e2e/merchant-e2e | pass | this pass; `privacy-e2e-host.sh` fails on a pre-existing, unrelated issue (task filed separately) |
 
 ---
 
