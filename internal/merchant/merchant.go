@@ -126,7 +126,7 @@ func NewModule(db database.DatabaseSQL, ring *cryptox.Ring, apiKeyPepper string,
 		WebhookService:   webhook.NewService(webhooks, ring),
 		webhookRelay:     webhook.NewRelayWorker(webhooks, ring, nil),
 		LifecycleService: lifecycle.NewService(lifecycleRepo, tenants),
-		KeyService:       auth.NewKeyService(apiKeys, apiKeyPepper),
+		KeyService:       auth.NewKeyService(apiKeys, tenants, apiKeyPepper),
 		Ledger:           ledgerClient,
 		GlobalFlag:       auth.NewGlobalFlag(settings),
 	}

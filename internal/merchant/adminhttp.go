@@ -139,7 +139,7 @@ func mapNotFound(w http.ResponseWriter, err error) {
 // response.InternalServerError before this helper existed).
 func writeKeyServiceError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, auth.ErrUnknownScope):
+	case errors.Is(err, auth.ErrUnknownScope), errors.Is(err, auth.ErrEnvironmentMismatch):
 		response.BadRequest(w, err.Error())
 	case errors.Is(err, auth.ErrTooManyActiveKeys):
 		response.Conflict(w, err.Error())

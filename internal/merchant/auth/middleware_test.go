@@ -83,7 +83,7 @@ func seedKeyAndTenant(t *testing.T, keys *fakeKeyRepo, tenants *fakeTenantRepo, 
 
 	tenantID = uuid.New()
 	keyID = uuid.New()
-	tenants.byID[tenantID] = model.Tenant{ID: tenantID, Status: tenantStatus}
+	tenants.byID[tenantID] = model.Tenant{ID: tenantID, Status: tenantStatus, Environment: "sandbox"}
 	keys.byPrefix[generated.PublicPrefix] = model.APIKey{
 		ID: keyID, TenantID: tenantID, PublicPrefix: generated.PublicPrefix, SecretDigest: digest,
 		Environment: "sandbox", Status: keyStatus, ExpiresAt: expiresAt, Scopes: scopes,

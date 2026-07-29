@@ -83,7 +83,7 @@ func TestKeyServiceAndMiddleware_RealStack(t *testing.T) {
 	db := setupGatewayTestDB(t)
 	tenants := repository.NewTenantRepository(db)
 	keys := repository.NewAPIKeyRepository(db)
-	keySvc := auth.NewKeyService(keys, integrationTestPepper)
+	keySvc := auth.NewKeyService(keys, tenants, integrationTestPepper)
 
 	ctx := context.Background()
 	tenantID := uuid.New()
@@ -138,7 +138,7 @@ func TestKeyService_RotateKey_RealStack(t *testing.T) {
 	db := setupGatewayTestDB(t)
 	tenants := repository.NewTenantRepository(db)
 	keys := repository.NewAPIKeyRepository(db)
-	keySvc := auth.NewKeyService(keys, integrationTestPepper)
+	keySvc := auth.NewKeyService(keys, tenants, integrationTestPepper)
 
 	ctx := context.Background()
 	tenantID := uuid.New()
@@ -179,7 +179,7 @@ func TestKeyService_CreateKey_EnforcesMaxTwoActiveKeysPerEnvironment(t *testing.
 	db := setupGatewayTestDB(t)
 	tenants := repository.NewTenantRepository(db)
 	keys := repository.NewAPIKeyRepository(db)
-	keySvc := auth.NewKeyService(keys, integrationTestPepper)
+	keySvc := auth.NewKeyService(keys, tenants, integrationTestPepper)
 
 	ctx := context.Background()
 	tenantID := uuid.New()

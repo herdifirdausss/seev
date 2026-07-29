@@ -89,6 +89,16 @@ func RequireMerchantAuth(keys repository.APIKeyRepository, tenants repository.Te
 				response.Unauthorized(w, "invalid API key")
 				return
 			}
+			// Defense in depth for §23.7's "test key accesses live tenant" /
+			// "live key accesses sandbox tenant": CreateKey (T10) now
+			// refuses to issue a key whose environment doesn't match its
+			// tenant's, but this catches any key that predates that fix
+			// too — fail closed exactly like every other check here,
+			// never distinguishing the reason in the response body.
+			if key.Environment != tenant.Environment {
+				response.Unauthorized(w, "invalid API key")
+				return
+			}
 			if tenant.Status == "suspended" {
 				response.Forbidden(w, "tenant suspended")
 				return

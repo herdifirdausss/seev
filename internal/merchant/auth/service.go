@@ -20,18 +20,34 @@ var ErrTooManyActiveKeys = fmt.Errorf("merchant/auth: tenant already has the max
 // AllScopes (§7.2).
 var ErrUnknownScope = fmt.Errorf("merchant/auth: unknown scope")
 
+// ErrEnvironmentMismatch is returned by CreateKey when the requested key
+// environment does not match the tenant's own Environment — found live
+// while auditing T10's §23.7 cross-tenant matrix ("test key accesses live
+// tenant" / "live key accesses sandbox tenant"): CreateKey previously took
+// tenantID and environment as fully independent arguments, so an operator
+// could issue a "live" key for a tenant that was created (and auto-
+// activated) as "sandbox", completely bypassing the maker/checker
+// draft->active approval gate that a real live tenant is supposed to go
+// through (adminCreateTenant: sandbox tenants activate immediately, live
+// tenants start "draft" and need checker approval). The plan's own §8.3
+// step 6 ("validate tenant status, key status, expiry, and environment")
+// already called for this as a distinct check from step 1's key-prefix
+// format validation — it was simply never implemented.
+var ErrEnvironmentMismatch = fmt.Errorf("merchant/auth: key environment must match tenant environment")
+
 // KeyService is T3's "operator create/rotate/revoke application
 // services" — called by Admin BFF (T8), never directly by a merchant.
 type KeyService struct {
-	keys   repository.APIKeyRepository
-	pepper string
+	keys    repository.APIKeyRepository
+	tenants repository.TenantRepository
+	pepper  string
 }
 
-func NewKeyService(keys repository.APIKeyRepository, pepper string) *KeyService {
+func NewKeyService(keys repository.APIKeyRepository, tenants repository.TenantRepository, pepper string) *KeyService {
 	if pepper == "" {
 		panic("merchant/auth: NewKeyService requires a non-empty pepper")
 	}
-	return &KeyService{keys: keys, pepper: pepper}
+	return &KeyService{keys: keys, tenants: tenants, pepper: pepper}
 }
 
 // CreateKey generates, digests, and stores a new key, returning its
@@ -44,6 +60,14 @@ func (s *KeyService) CreateKey(ctx context.Context, tenantID uuid.UUID, environm
 		if !ValidScope(scope) {
 			return "", uuid.Nil, fmt.Errorf("%w: %q", ErrUnknownScope, scope)
 		}
+	}
+
+	tenant, err := s.tenants.GetByID(ctx, tenantID)
+	if err != nil {
+		return "", uuid.Nil, fmt.Errorf("merchant/auth: create key: %w", err)
+	}
+	if tenant.Environment != environment {
+		return "", uuid.Nil, fmt.Errorf("%w: tenant is %q, requested key is %q", ErrEnvironmentMismatch, tenant.Environment, environment)
 	}
 
 	existing, err := s.keys.ListByTenant(ctx, tenantID)

@@ -393,7 +393,7 @@ func testModule(t *testing.T) (*Module, *fakeTenantRepo, *fakeAPIKeyRepo, *fakeQ
 		APIKeys:          apiKeys,
 		Quotas:           quotas,
 		Settings:         settings,
-		KeyService:       auth.NewKeyService(apiKeys, "test-pepper-0123456789"),
+		KeyService:       auth.NewKeyService(apiKeys, tenants, "test-pepper-0123456789"),
 		LifecycleService: lifecycle.NewService(lifecycleRepo, tenants),
 		WebhookService:   webhook.NewService(webhooks, testCryptoxRing(t)),
 		GlobalFlag:       auth.NewGlobalFlag(settings),
@@ -598,7 +598,7 @@ func TestAdminRouter_CreateKey_UnknownScopeIsBadRequest(t *testing.T) {
 	m, tenants, _, _ := testModule(t)
 	router := authedRouter(m)
 	tenantID := generalutil.NewV7()
-	require.NoError(t, tenants.Create(context.Background(), model.Tenant{ID: tenantID, Status: "active"}))
+	require.NoError(t, tenants.Create(context.Background(), model.Tenant{ID: tenantID, Status: "active", Environment: "sandbox"}))
 
 	rec := doRequest(t, router, http.MethodPost, "/admin/gateway/tenants/"+tenantID.String()+"/keys", "admin_maker", map[string]any{
 		"environment": "sandbox", "scopes": []string{"not-a-real-scope"},
@@ -610,7 +610,7 @@ func TestAdminRouter_CreateKey_ReturnsPlaintextOnce(t *testing.T) {
 	m, tenants, _, _ := testModule(t)
 	router := authedRouter(m)
 	tenantID := generalutil.NewV7()
-	require.NoError(t, tenants.Create(context.Background(), model.Tenant{ID: tenantID, Status: "active"}))
+	require.NoError(t, tenants.Create(context.Background(), model.Tenant{ID: tenantID, Status: "active", Environment: "sandbox"}))
 
 	rec := doRequest(t, router, http.MethodPost, "/admin/gateway/tenants/"+tenantID.String()+"/keys", "admin_maker", map[string]any{
 		"environment": "sandbox", "scopes": []string{"merchant:read"},

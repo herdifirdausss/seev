@@ -296,7 +296,7 @@ func TestB2BRouter_RealStack(t *testing.T) {
 	apiKeys := repository.NewAPIKeyRepository(db)
 	quotas := repository.NewQuotaRepository(db)
 	idemRepo := repository.NewIdempotencyRepository(db)
-	keySvc := auth.NewKeyService(apiKeys, integrationTestPepper)
+	keySvc := auth.NewKeyService(apiKeys, tenants, integrationTestPepper)
 
 	ctx := context.Background()
 	tenantA := uuid.New()
@@ -509,7 +509,7 @@ func TestB2BRouter_MerchantAccountsAndTransfers(t *testing.T) {
 	apiKeys := repository.NewAPIKeyRepository(gatewayDB)
 	quotas := repository.NewQuotaRepository(gatewayDB)
 	idemRepo := repository.NewIdempotencyRepository(gatewayDB)
-	keySvc := auth.NewKeyService(apiKeys, integrationTestPepper)
+	keySvc := auth.NewKeyService(apiKeys, tenants, integrationTestPepper)
 
 	scopes := []string{"merchant:read", "accounts:read", "transactions:read", "transfers:write"}
 
@@ -710,7 +710,7 @@ func TestB2BRouter_GlobalKillSwitchGatesEveryRoute(t *testing.T) {
 	apiKeys := repository.NewAPIKeyRepository(gatewayDB)
 	quotas := repository.NewQuotaRepository(gatewayDB)
 	idemRepo := repository.NewIdempotencyRepository(gatewayDB)
-	keySvc := auth.NewKeyService(apiKeys, integrationTestPepper)
+	keySvc := auth.NewKeyService(apiKeys, tenants, integrationTestPepper)
 	settings := repository.NewSettingsRepository(gatewayDB)
 	globalFlag := auth.NewGlobalFlag(settings)
 
