@@ -54,12 +54,16 @@ Gateway owns `seev_gateway`, containing exactly one table:
 `notif_notifications`. It holds almost no business logic of its own —
 everything it does is validate/compose/forward.
 
-Planned (Plan 57 / track C1, contract locked in T1, not yet implemented):
-`internal/merchant` — a bounded module for the tenant-isolated Merchant/B2B
-API (API-key auth, quota, idempotency, outbound webhook relay, all
-Gateway-owned persistence — no cross-service database access). See
+Implemented (Plan 57 / track C1): `internal/merchant` — a bounded module
+for the tenant-isolated Merchant/B2B API. API-key auth (separate from
+Auth-service's JWT users), per-tenant/per-key quotas, durable
+idempotency, merchant ledger accounts/transfers, merchant pay-in/payout,
+signed outbound webhook relay with retry/dead/replay, tenant
+maker/checker lifecycle, and a global incident-response kill switch — all
+on Gateway-owned persistence (no cross-service database access). See
 [C1 design](c1-b2b-design.md) and
-[docs/roadmap/active/57-c1-merchant-b2b-api.md](../roadmap/active/57-c1-merchant-b2b-api.md).
+[docs/roadmap/active/57-c1-merchant-b2b-api.md](../roadmap/active/57-c1-merchant-b2b-api.md)
+for the full route list, contracts, and verification evidence.
 
 **What it can do**:
 
@@ -72,6 +76,10 @@ Gateway-owned persistence — no cross-service database access). See
 | HTTP (public probes) | `GET /health`, `GET /ready` | none |
 | HTTP (internal ops) | `GET /metrics` on `:8081` | mTLS service identity |
 | Background | RabbitMQ consumer in `internal/notify` | consumes `ledger.transaction.posted.v1` to create in-app notifications |
+| HTTP (public B2B) | `/api/v1/b2b/{merchant,accounts,transactions,transfers,payins,payouts}` | Merchant API key (`Authorization: Bearer mk_live_...`/`mk_sandbox_...`) — `internal/merchant/api` |
+| HTTP (public B2B) | `/api/v1/b2b/webhook-endpoints/*` | Merchant API key — operator-managed outbound webhook subscriptions |
+| HTTP (internal admin) | `/api/v1/admin/gateway/tenants/*`, `/api/v1/admin/gateway/global/b2b-api` | mTLS + JWT `authed` — tenant/key/quota lifecycle, maker/checker, global kill switch |
+| Background | Webhook relay + RabbitMQ consumer in `internal/merchant/webhook` | fans out owner events (`payin.settled.v1`, `transfer.posted.v1`, ...) to subscribed tenant endpoints, HMAC-signed |
 
 **Notably does NOT do**: registration, login, or KYC — those hit
 Auth-service directly on its own public port (`:8082`), not through
