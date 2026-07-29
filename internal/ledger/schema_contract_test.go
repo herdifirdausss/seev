@@ -2435,6 +2435,12 @@ func TestSchemaContract_Schedule_ListDue_PerScheduleKind(t *testing.T) {
 	ctx := context.Background()
 
 	asOf := dateOnly(time.Now())
+	if asOf.Day() > 28 {
+		// day_of_month is CHECK'd to [1,28] (migrations/ledger/000014_scheduled_transactions.up.sql)
+		// since not every month has a 29th-31st. Clamp so the monthly-match
+		// cases below stay constructible regardless of what day this test runs on.
+		asOf = time.Date(asOf.Year(), asOf.Month(), 28, 0, 0, 0, 0, asOf.Location())
+	}
 	otherDayOfMonth := (asOf.Day() % 28) + 1
 	if otherDayOfMonth == asOf.Day() {
 		otherDayOfMonth = (otherDayOfMonth % 28) + 1
