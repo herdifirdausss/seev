@@ -31,7 +31,8 @@
 #   ./scripts/chaos-test.sh 18       # privacy worker restart resumes durable saga state (plan 51)
 #   ./scripts/chaos-test.sh 19       # owner timeout leaves closure resumable (plan 51)
 #   ./scripts/chaos-test.sh 20       # retention/closure race respects closure horizon (plan 51)
-#   ./scripts/chaos-test.sh all      # run all twenty in sequence
+#   ./scripts/chaos-test.sh 21       # merchant B2B transfer kill -9 mid-posting (plan 57 T10)
+#   ./scripts/chaos-test.sh all      # run all twenty-one in sequence
 #
 # Each scenario is independent and re-runs migrations against a throwaway
 # schema state (it does NOT reset the docker volumes — accounts/balances
@@ -1723,6 +1724,113 @@ scenario_20() {
 	fi
 }
 
+# ─── Scenario 21: merchant B2B transfer kill -9 mid-posting (Plan 57 T10) ──
+#
+# Same proof as scenario 1 (a genuine process crash, not a client-side
+# retry, cannot double-post or lose money) but through the NEW merchant
+# B2B surface (internal/merchant/api) instead of the user-facing ledger
+# API — T10's own required chaos matrix (§24) calls for merchant-specific
+# evidence, and this is the one case scripts/merchant-e2e.sh's replay test
+# does not cover: that test proves a client retrying with the same
+# Idempotency-Key is safe, not that the gateway process dying mid-request
+# is safe. execTransfer's guarantees (ordered locks, atomic commit) are
+# shared machinery with user transfers, but the merchant idempotency layer
+# (internal/merchant/api/idempotency.go) sits in front of it and had never
+# been chaos-tested itself.
+
+chaos21_admin_post() {
+	curl_internal -sS -X POST "http://localhost:$INTERNAL_PORT/api/v1/admin/gateway$1" \
+		-H "Authorization: Bearer $CHAOS21_ADMIN_TOKEN" -H "Content-Type: application/json" -d "$2"
+}
+
+scenario_21() {
+	log "=== Scenario 21: merchant B2B transfer kill -9 mid-posting ==="
+	ensure_deps_up
+	build_server
+	start_server
+
+	local nonce="chaos21-$RANDOM"
+	CHAOS21_ADMIN_TOKEN="$(gen_token "$nonce-operator" admin)"
+
+	local tenant_a tenant_b account_a account_b key_a
+	tenant_a="$(chaos21_admin_post "/tenants" "{\"external_code\":\"$nonce-a\",\"name\":\"Chaos21 A\",\"environment\":\"sandbox\",\"default_currency\":\"IDR\"}" | json_field id)"
+	tenant_b="$(chaos21_admin_post "/tenants" "{\"external_code\":\"$nonce-b\",\"name\":\"Chaos21 B\",\"environment\":\"sandbox\",\"default_currency\":\"IDR\"}" | json_field id)"
+	[ -n "$tenant_a" ] && [ -n "$tenant_b" ] || fail "chaos21: tenant provisioning failed (a=$tenant_a b=$tenant_b)"
+
+	account_a="$(chaos21_admin_post "/tenants/$tenant_a/account" '{"currency":"IDR"}' | json_field account_id)"
+	account_b="$(chaos21_admin_post "/tenants/$tenant_b/account" '{"currency":"IDR"}' | json_field account_id)"
+	[ -n "$account_a" ] && [ -n "$account_b" ] || fail "chaos21: account provisioning failed (a=$account_a b=$account_b)"
+
+	key_a="$(chaos21_admin_post "/tenants/$tenant_a/keys" '{"environment":"sandbox","scopes":["merchant:read","accounts:read","transactions:read","transfers:write","payins:write","payins:read"]}' | json_field plaintext)"
+	[ -n "$key_a" ] || fail "chaos21: tenant A key creation failed"
+
+	# Fund tenant A the same way merchant-e2e.sh does: a real merchant payin
+	# settled through mockvendor's signed webhook — a genuine double-entry
+	# transaction, not a raw balance seed (a raw UPDATE would desync
+	# v_account_balance_audit and falsely trip assert_no_inconsistent_projections
+	# below).
+	local payin_json payin_id reference webhook_body sig webhook_code
+	payin_json="$(curl -sS -X POST "http://localhost:$APP_PORT/api/v1/b2b/payins" \
+		-H "Authorization: Bearer $key_a" -H "Idempotency-Key: $nonce-payin" -H "Content-Type: application/json" \
+		-d '{"amount":"1000000","currency":"IDR"}')"
+	payin_id="$(echo "$payin_json" | json_field id)"
+	[ -n "$payin_id" ] || fail "chaos21: merchant payin creation failed: $payin_json"
+	reference="$(psql_exec "$PAYIN_DB_NAME" -tA -c "SELECT reference FROM payin_topup_intents WHERE id = '$payin_id';" | tr -d '[:space:]')"
+	[ -n "$reference" ] || fail "chaos21: could not resolve payin reference for id=$payin_id"
+	webhook_body="{\"event_id\":\"$nonce-payin\",\"external_ref\":\"$reference\",\"user_id\":\"$(uuidgen | tr '[:upper:]' '[:lower:]')\",\"amount\":\"1000000\",\"currency\":\"IDR\",\"occurred_at\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"type\":\"payment.settled\"}"
+	sig="$(printf '%s' "$webhook_body" | openssl dgst -sha256 -hmac "$VENDOR_MOCKVENDOR_SECRET" -r | awk '{print $1}')"
+	webhook_code="$(curl_internal -sS -o /dev/null -w '%{http_code}' -X POST "http://localhost:$VENDOR_APP_PORT/webhooks/mockvendor" \
+		-H "X-Mock-Signature: $sig" -H "Content-Type: application/json" -d "$webhook_body")"
+	[ "${webhook_code:0:1}" = "2" ] || fail "chaos21: mockvendor settlement webhook got $webhook_code, expected 2xx"
+
+	log "firing 40 concurrent merchant transfer requests, killing the server -9 partway through..."
+	local results_file="$WORK_DIR/chaos21_results.txt"
+	: >"$results_file"
+	local transfer_body="{\"destination_account_id\":\"$account_b\",\"amount\":\"1\",\"currency\":\"IDR\"}"
+
+	for i in $(seq 1 40); do
+		(
+			code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$APP_PORT/api/v1/b2b/transfers" \
+				-H "Authorization: Bearer $key_a" -H "Idempotency-Key: $nonce-$i" -H "Content-Type: application/json" \
+				-d "$transfer_body" 2>/dev/null || echo "000")
+			echo "$nonce-$i $code" >>"$results_file"
+		) &
+		if [ "$i" -eq 20 ]; then
+			sleep 0.05
+			kill_server_hard
+		fi
+	done
+	wait
+
+	log "restarting gateway and retrying any requests that didn't get a clean response..."
+	build_server
+	start_gateway
+
+	while read -r idem code; do
+		if [ "${code:0:1}" != "2" ]; then
+			retry_code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$APP_PORT/api/v1/b2b/transfers" \
+				-H "Authorization: Bearer $key_a" -H "Idempotency-Key: $idem" -H "Content-Type: application/json" \
+				-d "$transfer_body" 2>/dev/null || echo "000")
+			log "retried $idem: original=$code retry=$retry_code"
+		fi
+	done <"$results_file"
+
+	sleep 1
+	local balance_a balance_b
+	balance_a="$(curl -sS "http://localhost:$APP_PORT/api/v1/b2b/accounts/$account_a/balance" -H "Authorization: Bearer $key_a" | json_field balance)"
+	balance_b="$(psql_exec "$LEDGER_DB_NAME" -c "SELECT balance FROM account_balances WHERE account_id = '$account_b';")"
+	[ "$balance_a" = "999960" ] && ok "tenant A debited exactly 40 total across all 40 transfers (no double-debit, none lost)" \
+		|| fail "tenant A balance after chaos was '$balance_a', expected 999960"
+	[ "$balance_b" = "40" ] && ok "tenant B credited exactly 40 total (every transfer landed exactly once)" \
+		|| fail "tenant B balance after chaos was '$balance_b', expected 40"
+
+	assert_ledger_balanced
+	assert_no_inconsistent_projections
+	assert_no_stuck_pending_transactions
+
+	stop_server_gracefully
+}
+
 # ─── Main ────────────────────────────────────────────────────────────────────
 
 case "${1:-}" in
@@ -1746,6 +1854,7 @@ case "${1:-}" in
 18) scenario_18 ;;
 19) scenario_19 ;;
 20) scenario_20 ;;
+21) scenario_21 ;;
 all)
 	scenario_1
 	scenario_2
@@ -1767,9 +1876,10 @@ all)
 	scenario_18
 	scenario_19
 	scenario_20
+	scenario_21
 	;;
 *)
-	echo "Usage: $0 {1|2|3|4|5|6|7|8|9|10|11|12|13|14|15|16|17|18|19|20|all}"
+	echo "Usage: $0 {1|2|3|4|5|6|7|8|9|10|11|12|13|14|15|16|17|18|19|20|21|all}"
 	exit 2
 	;;
 esac
