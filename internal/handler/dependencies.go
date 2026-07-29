@@ -7,6 +7,7 @@ import (
 
 	payinv1 "github.com/herdifirdausss/seev/gen/payin/v1"
 	payoutv1 "github.com/herdifirdausss/seev/gen/payout/v1"
+	"github.com/herdifirdausss/seev/internal/merchant"
 	"github.com/herdifirdausss/seev/internal/notify"
 	"github.com/herdifirdausss/seev/pkg/cache"
 	"github.com/herdifirdausss/seev/pkg/database"
@@ -40,6 +41,12 @@ type Dependencies struct {
 	// goroutine (Start/Stop) is driven directly from cmd/gateway/main.go
 	// alongside the other background workers, not through this struct.
 	Notify *notify.Module
+	// Merchant is Plan 57's Gateway-owned Merchant/B2B API module — nil in
+	// any caller that hasn't wired a cryptox ring (e.g. some unit tests).
+	// Its own AdminRouter() is mounted at the internal listener's
+	// /api/v1/admin/gateway/ (Plan 57 T8), behind the same JWT `authed`
+	// chain ledger/payin/payout already use for their own admin routes.
+	Merchant *merchant.Module
 	// B2B serves the Merchant/B2B API surface (Plan 57, roadmap track C1)
 	// at /api/v1/b2b — built by internal/merchant/api.NewRouter in
 	// cmd/gateway/main.go. nil (should never happen in production; only a

@@ -159,6 +159,7 @@ No entry may fully delete a row from these tables — only `retain_permanent`, `
 | `gateway.merchant.event_inbox` | gateway.merchant_event_inbox | internal | processed_at | 30d | delete | 500 | none |
 | `gateway.merchant.idempotency_records` | gateway.merchant_idempotency_records | sensitive | expires_at | 24h | delete | 500 | subject |
 | `gateway.merchant.quota_policies` | gateway.merchant_quota_policies | internal | — | — | retain_state | — | none |
+| `gateway.merchant.tenant_lifecycle_requests` | gateway.merchant_tenant_lifecycle_requests | internal | — | — | retain_permanent | — | none |
 | `gateway.merchant.tenants` | gateway.merchant_tenants | internal | — | — | retain_state | — | none |
 | `gateway.merchant.webhook_attempts` | gateway.merchant_webhook_attempts | internal | — | — | retain_state | — | none |
 | `gateway.merchant.webhook_deliveries` | gateway.merchant_webhook_deliveries | internal | updated_at | 90d | delete | 500 | subject |
@@ -178,6 +179,8 @@ No entry may fully delete a row from these tables — only `retain_permanent`, `
 **`gateway.merchant.idempotency_records`** — Same expiry-column-driven pattern as ledger.fee_quotes.unconsumed (T2.6 precedent) — purges shortly after the record's own expires_at, not a fixed age from creation. May contain tenant response bodies (sensitive), hence classification.
 
 **`gateway.merchant.quota_policies`** — Live per-tenant quota configuration; no generic age rule applies.
+
+**`gateway.merchant.tenant_lifecycle_requests`** — Plan 57 T8. Maker-checker record for tenant live-mode activation and closure — same shape and rationale as auth.operator_offboarding_requests: requested_by/approved_by are OPERATOR identities (never the tenant's own data), reason is an operator-authored justification, and the row is the permanent two-person-control audit trail proving who proposed and who approved each sensitive tenant transition. Retained permanently, same append-only rationale as auth.retention_audit.
 
 **`gateway.merchant.tenants`** — Live tenant configuration row; no generic age rule. Tenant closure is a future operator workflow, not an automatic purge.
 

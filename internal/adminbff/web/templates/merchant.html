@@ -1,0 +1,144 @@
+{{define "content"}}<h1>Merchant / B2B</h1>
+<p>Forwards to Gateway's internal/merchant admin surface (Plan 57 T8) via the existing generic proxy at <code>/api/v1/admin/gateway/</code> — CSRF and audit-event emission are already handled centrally for every request below.</p>
+
+{{if .IsMaker}}<article><h2>Create sandbox tenant</h2>
+<form method="post" action="/api/v1/admin/gateway/tenants">
+  <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+  <input type="hidden" name="environment" value="sandbox">
+  <label>External code <input name="external_code" required></label>
+  <label>Name <input name="name" required></label>
+  <label>Default currency <input name="default_currency" value="IDR" required></label>
+  <button type="submit">Create sandbox tenant</button>
+</form></article>
+
+<article><h2>Create live tenant (draft)</h2>
+<form method="post" action="/api/v1/admin/gateway/tenants">
+  <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+  <input type="hidden" name="environment" value="live">
+  <label>External code <input name="external_code" required></label>
+  <label>Name <input name="name" required></label>
+  <label>Default currency <input name="default_currency" value="IDR" required></label>
+  <button type="submit">Create live tenant (draft)</button>
+</form></article>{{end}}
+
+<article><h2>Tenant detail</h2>
+<label>Tenant ID <input id="tenant-id" name="tenant_id"></label>
+<button hx-get="/api/v1/admin/gateway/tenants/" hx-vals='js:{}' hx-target="#tenant-detail"
+        onclick="this.setAttribute('hx-get', '/api/v1/admin/gateway/tenants/' + document.getElementById('tenant-id').value); htmx.process(this)">
+  Load tenant
+</button>
+<button hx-get="/api/v1/admin/gateway/tenants/" hx-target="#tenant-detail"
+        onclick="this.setAttribute('hx-get', '/api/v1/admin/gateway/tenants/' + document.getElementById('tenant-id').value + '/account'); htmx.process(this)">
+  Load account
+</button>
+<div id="tenant-detail">Not loaded.</div>
+
+{{if .IsMaker}}<form method="post" action="#" onsubmit="this.action='/api/v1/admin/gateway/tenants/' + document.getElementById('tenant-id').value + '/suspend'">
+  <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+  <button type="submit" class="secondary">Suspend tenant</button>
+</form>
+<form method="post" action="#" onsubmit="this.action='/api/v1/admin/gateway/tenants/' + document.getElementById('tenant-id').value + '/account'">
+  <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+  <button type="submit">Provision ledger account</button>
+</form>{{end}}
+</article>
+
+{{if .IsMaker}}<article><h2>Propose activation or closure</h2>
+<form method="post" action="#" onsubmit="this.action='/api/v1/admin/gateway/tenants/' + document.getElementById('tenant-id').value + '/lifecycle/propose'">
+  <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+  <label>Action <select name="action" required><option value="activate">Activate (go live)</option><option value="close">Close</option></select></label>
+  <label>Reason <textarea name="reason" required></textarea></label>
+  <button type="submit">Propose</button>
+</form></article>{{end}}
+
+<article><h2>Lifecycle requests</h2>
+<button hx-get="/api/v1/admin/gateway/tenants/" hx-target="#lifecycle-list"
+        onclick="this.setAttribute('hx-get', '/api/v1/admin/gateway/tenants/' + document.getElementById('tenant-id').value + '/lifecycle'); htmx.process(this)">
+  Load lifecycle requests
+</button>
+<div id="lifecycle-list">Not loaded.</div>
+{{if .IsChecker}}<form method="post" action="/api/v1/admin/gateway/lifecycle/">
+  <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+  <label>Lifecycle request ID <input id="lifecycle-id" name="request_id" required></label>
+  <button type="submit" formaction="#" onclick="this.form.action='/api/v1/admin/gateway/lifecycle/' + document.getElementById('lifecycle-id').value + '/approve'">Approve</button>
+  <button type="submit" class="secondary" formaction="#" onclick="this.form.action='/api/v1/admin/gateway/lifecycle/' + document.getElementById('lifecycle-id').value + '/reject'">Reject</button>
+</form>{{end}}
+</article>
+
+{{if .IsMaker}}<article><h2>API keys</h2>
+<form method="post" action="#" onsubmit="this.action='/api/v1/admin/gateway/tenants/' + document.getElementById('tenant-id').value + '/keys'">
+  <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+  <label>Environment <select name="environment"><option value="sandbox">sandbox</option><option value="live">live</option></select></label>
+  <fieldset>
+    <legend>Scopes</legend>
+    <label><input type="checkbox" name="scopes" value="merchant:read" checked> merchant:read</label>
+    <label><input type="checkbox" name="scopes" value="accounts:read" checked> accounts:read</label>
+    <label><input type="checkbox" name="scopes" value="transactions:read"> transactions:read</label>
+    <label><input type="checkbox" name="scopes" value="transfers:write"> transfers:write</label>
+    <label><input type="checkbox" name="scopes" value="payins:read"> payins:read</label>
+    <label><input type="checkbox" name="scopes" value="payins:write"> payins:write</label>
+    <label><input type="checkbox" name="scopes" value="payouts:read"> payouts:read</label>
+    <label><input type="checkbox" name="scopes" value="payouts:write"> payouts:write</label>
+    <label><input type="checkbox" name="scopes" value="webhooks:read"> webhooks:read</label>
+    <label><input type="checkbox" name="scopes" value="webhooks:write"> webhooks:write</label>
+  </fieldset>
+  <button type="submit">Create key</button>
+</form>
+<p><strong>The plaintext key is shown exactly once, in the raw response below — copy it now. It is never re-fetchable.</strong></p>{{end}}
+<button hx-get="/api/v1/admin/gateway/tenants/" hx-target="#key-list"
+        onclick="this.setAttribute('hx-get', '/api/v1/admin/gateway/tenants/' + document.getElementById('tenant-id').value + '/keys'); htmx.process(this)">
+  Load keys
+</button>
+<div id="key-list">Not loaded.</div>
+</article>
+
+<article><h2>Quota</h2>
+<button hx-get="/api/v1/admin/gateway/tenants/" hx-target="#quota-detail"
+        onclick="this.setAttribute('hx-get', '/api/v1/admin/gateway/tenants/' + document.getElementById('tenant-id').value + '/quota'); htmx.process(this)">
+  Load quota
+</button>
+<div id="quota-detail">Not loaded.</div>
+<form method="post" action="#" onsubmit="this.action='/api/v1/admin/gateway/tenants/' + document.getElementById('tenant-id').value + '/quota'; this.method='put'">
+  <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+  <label>Requests per minute <input name="requests_per_minute" inputmode="numeric" value="60" required></label>
+  <label>Burst <input name="burst" inputmode="numeric" value="60" required></label>
+  <label><input type="checkbox" name="is_enabled" value="true" checked> Enabled</label>
+  <button type="submit">Update quota</button>
+  <small>Raising either value above the default baseline (60/60) requires a checker.</small>
+</form>
+</article>
+
+<article><h2>Webhook endpoints and deliveries</h2>
+<button hx-get="/api/v1/admin/gateway/tenants/" hx-target="#webhook-list"
+        onclick="this.setAttribute('hx-get', '/api/v1/admin/gateway/tenants/' + document.getElementById('tenant-id').value + '/webhooks'); htmx.process(this)">
+  Load endpoints
+</button>
+<button hx-get="/api/v1/admin/gateway/tenants/" hx-target="#delivery-list"
+        onclick="this.setAttribute('hx-get', '/api/v1/admin/gateway/tenants/' + document.getElementById('tenant-id').value + '/deliveries'); htmx.process(this)">
+  Load deliveries
+</button>
+<div id="webhook-list">Not loaded.</div>
+<div id="delivery-list">Not loaded.</div>
+{{if .IsMaker}}
+<form method="post" action="#" onsubmit="this.action='/api/v1/admin/gateway/tenants/' + document.getElementById('tenant-id').value + '/webhooks'">
+  <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+  <label>Endpoint URL <input name="url" type="url" required></label>
+  <label>Environment <select name="environment"><option value="sandbox">sandbox</option><option value="live">live</option></select></label>
+  <label><input type="checkbox" name="subscribed_events" value="transaction.posted.v1" checked> transaction.posted.v1</label>
+  <button type="submit">Create webhook endpoint</button>
+</form>
+<p><strong>The plaintext signing secret is shown exactly once, in the raw response below.</strong></p>
+<form method="post" action="/api/v1/admin/gateway/tenants/">
+  <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+  <label>Endpoint ID <input id="endpoint-id" name="endpoint_id" required></label>
+  <label>Reason (required to disable) <input name="reason" required></label>
+  <button type="submit" class="secondary" onclick="this.form.action='/api/v1/admin/gateway/tenants/' + document.getElementById('tenant-id').value + '/webhooks/' + document.getElementById('endpoint-id').value + '/disable'">Disable endpoint</button>
+</form>
+<form method="post" action="/api/v1/admin/gateway/tenants/">
+  <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+  <label>Delivery ID <input id="delivery-id" name="delivery_id" required></label>
+  <label>Reason (required to replay) <input name="reason" required></label>
+  <button type="submit" onclick="this.form.action='/api/v1/admin/gateway/tenants/' + document.getElementById('tenant-id').value + '/deliveries/' + document.getElementById('delivery-id').value + '/replay'">Replay delivery</button>
+</form>{{end}}
+</article>
+{{end}}

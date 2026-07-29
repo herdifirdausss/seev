@@ -8,7 +8,7 @@ import (
 )
 
 func TestRenderOperationsPages(t *testing.T) {
-	for _, page := range []string{"dashboard", "maker", "payout", "recon"} {
+	for _, page := range []string{"dashboard", "maker", "payout", "recon", "catalog", "merchant"} {
 		t.Run(page, func(t *testing.T) {
 			response := httptest.NewRecorder()
 			err := Render(response, page, PageData{Title: page, CSRFToken: "csrf", Role: "admin_maker", IsMaker: true})

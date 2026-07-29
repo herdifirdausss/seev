@@ -28,6 +28,7 @@ import (
 	"github.com/herdifirdausss/seev/pkg/cache"
 	"github.com/herdifirdausss/seev/pkg/database"
 	"github.com/herdifirdausss/seev/pkg/grpcx"
+	"github.com/herdifirdausss/seev/pkg/ledgerclient"
 	"github.com/herdifirdausss/seev/pkg/logger"
 	"github.com/herdifirdausss/seev/pkg/messaging"
 	"github.com/herdifirdausss/seev/pkg/tlsx"
@@ -142,19 +143,33 @@ func main() {
 	payinGRPCClient := payinv1.NewPayinServiceClient(payinConn)
 	payoutGRPCClient := payoutv1.NewPayoutServiceClient(payoutConn)
 
-	// ─── Merchant/B2B API module (Plan 57, roadmap track C1) ───────────────────
-	// First wiring of internal/merchant.Module into cmd/gateway — T2 through
-	// T7 built the module, auth/quota/idempotency middleware, owner-service
-	// RPCs, and the outbound webhook relay, but none of it was ever started
-	// here before now. This wiring covers only the payin/payout HTTP surface
-	// (POST/GET /api/v1/b2b/payins, /payouts); the webhook relay/consumer
-	// remain their own separate follow-up (Plan 57 T7's own Result notes).
+	// ─── Merchant/B2B module (Plan 57, roadmap track C1) ───────────────────────
+	// cryptox is required unconditionally — webhook endpoint secrets (T7)
+	// have no plaintext fallback, same "money-safety, never optional"
+	// posture every other cryptox-dependent service in this repo already
+	// enforces at boot. ledgerConn is reused directly (no second dial) for
+	// account provisioning (T8's admin surface). This is the first wiring
+	// of internal/merchant.Module into cmd/gateway — T2 through T7 built
+	// the module, auth/quota/idempotency middleware, owner-service RPCs,
+	// and the outbound webhook relay, but none of it was ever started here
+	// before now.
 	cryptoxRing, err := cfg.Cryptox.Ring()
 	if err != nil {
 		log.Error("failed to build cryptox ring", "error", err)
 		os.Exit(1)
 	}
-	merchantModule := merchant.NewModule(db, cryptoxRing)
+	merchantModule := merchant.NewModule(db, cryptoxRing, cfg.Merchant.APIKeyPepper, ledgerclient.New(ledgerConn))
+	stopWebhookRelay := merchantModule.StartWebhookRelay(ctx, merchant.DefaultWebhookRelayInterval)
+	stopWebhookConsumer, err := merchantModule.StartWebhookConsumer(ctx, mq, log)
+	if err != nil {
+		log.Error("failed to start merchant webhook consumer", "error", err)
+	}
+	stopMerchantRetention, err := merchantModule.StartRetentionRunner(redisClientOrNil(redisCache), log)
+	if err != nil {
+		log.Error("failed to start merchant data retention worker", "error", err)
+	}
+
+	// ─── Merchant/B2B API HTTP surface (POST/GET /api/v1/b2b/payins, /payouts) ──
 	// idempotencyLeaseOwner is observability-only (see
 	// merchant.Module.StartRetentionRunner's identical instanceID
 	// construction) — TakeoverExpiredLease's own WHERE clause is what
@@ -212,6 +227,7 @@ func main() {
 		Payin:       payinGRPCClient,
 		Payout:      payoutGRPCClient,
 		Notify:      notifyModule,
+		Merchant:    merchantModule,
 		B2B:         b2bRouter,
 	}
 
@@ -247,6 +263,17 @@ func main() {
 		if stopRetention != nil {
 			log.Info("cleanup: stopping data retention worker")
 			stopRetention()
+		}
+
+		log.Info("cleanup: stopping merchant webhook relay")
+		stopWebhookRelay()
+		if stopWebhookConsumer != nil {
+			log.Info("cleanup: stopping merchant webhook consumer")
+			stopWebhookConsumer()
+		}
+		if stopMerchantRetention != nil {
+			log.Info("cleanup: stopping merchant data retention worker")
+			stopMerchantRetention()
 		}
 
 		log.Info("cleanup: closing ledger grpc connection")

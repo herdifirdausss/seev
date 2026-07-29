@@ -558,6 +558,18 @@ entries:
     notes: "Requires status IN ('delivered','dead') — a pending/failed (still retrying) delivery is never purged regardless of age. merchant_webhook_attempts cascade-delete with their parent row (ON DELETE CASCADE), so they need no independent purge function."
 
   - owner: gateway
+    class: gateway.merchant.tenant_lifecycle_requests
+    table: gateway.merchant_tenant_lifecycle_requests
+    classification: internal
+    terminal_timestamp: null
+    duration: null
+    action: retain_permanent
+    batch_size: 0
+    hold_scope: none
+    policy_version: 1
+    notes: "Plan 57 T8. Maker-checker record for tenant live-mode activation and closure — same shape and rationale as auth.operator_offboarding_requests: requested_by/approved_by are OPERATOR identities (never the tenant's own data), reason is an operator-authored justification, and the row is the permanent two-person-control audit trail proving who proposed and who approved each sensitive tenant transition. Retained permanently, same append-only rationale as auth.retention_audit."
+
+  - owner: gateway
     class: gateway.merchant.webhook_attempts
     table: gateway.merchant_webhook_attempts
     classification: internal

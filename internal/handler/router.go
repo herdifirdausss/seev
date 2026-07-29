@@ -192,6 +192,21 @@ func NewInternalRouter(cfg *config.Config, deps *Dependencies, logger *slog.Logg
 
 	apiMux := httpcontract.New(httpcontract.Options{Owner: "gateway", Audience: "internal", Contract: "internal-v1"})
 
+	// Plan 57 T8: Admin BFF's own generic proxy already targets
+	// /api/v1/admin/gateway/ (internal/adminbff/module.go) — mount
+	// internal/merchant.Module's AdminRouter() here, gated by the same
+	// JWT `authed` chain ledger/payin/payout already use for their own
+	// admin routes (this listener had no JWT chain at all before this;
+	// every other route on it authenticates via mTLS identity alone).
+	if deps.Merchant != nil {
+		authed := middleware.Chain(middleware.WithAuth(cfg.JWT.Secret, cfg.JWT.Issuer), middleware.RequireJSON())
+		// apiMux is itself mounted at apiRoot's "/api/v1/" with that prefix
+		// already stripped (below), so AdminRouter()'s own routes — already
+		// registered at the full "/admin/gateway/..." pattern — are reached
+		// unmodified from here; no further StripPrefix needed.
+		apiMux.Handle("/admin/gateway/", authed(deps.Merchant.AdminRouter()))
+	}
+
 	apiRoot.Handle("/api/v1/", http.StripPrefix("/api/v1", apiMux))
 	apiRoot.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)

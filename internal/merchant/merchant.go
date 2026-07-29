@@ -18,13 +18,27 @@ import (
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 
+	"github.com/herdifirdausss/seev/internal/merchant/auth"
+	"github.com/herdifirdausss/seev/internal/merchant/lifecycle"
 	"github.com/herdifirdausss/seev/internal/merchant/repository"
 	"github.com/herdifirdausss/seev/internal/merchant/webhook"
 	"github.com/herdifirdausss/seev/pkg/cryptox"
 	"github.com/herdifirdausss/seev/pkg/database"
+	"github.com/herdifirdausss/seev/pkg/ledgerclient"
 	"github.com/herdifirdausss/seev/pkg/retentionworker"
 	"github.com/herdifirdausss/seev/pkg/scheduler"
 )
+
+// LedgerClient is the subset of pkg/ledgerclient.Client the T8 admin HTTP
+// surface needs for account provisioning/inspection — a narrow structural
+// interface (this codebase's own established pattern, e.g. internal/notify's
+// Broker) so a nil client is a valid, explicit "account provisioning
+// unavailable" state instead of forcing every caller of NewModule to dial
+// Ledger first. currency is always the tenant's own DefaultCurrency.
+type LedgerClient interface {
+	ProvisionMerchant(ctx context.Context, tenantID uuid.UUID, currency string) (uuid.UUID, error)
+	GetMerchantAccount(ctx context.Context, tenantID uuid.UUID) (ledgerclient.MerchantAccount, error)
+}
 
 // Module is the Merchant/B2B API's facade — constructed with Gateway's own
 // database.DatabaseSQL, never a second connection or a different service's
@@ -40,6 +54,7 @@ type Module struct {
 	Idempotency repository.IdempotencyRepository
 	EventInbox  repository.EventInboxRepository
 	Webhooks    repository.WebhookRepository
+	Lifecycle   repository.LifecycleRepository
 
 	// WebhookService is T7's tenant-facing endpoint management surface
 	// (create/rotate/list/delete endpoints, list/get deliveries, replay) —
@@ -47,34 +62,62 @@ type Module struct {
 	WebhookService *webhook.Service
 	webhookRelay   *webhook.RelayWorker
 	webhookConsume *webhook.Consumer
+
+	// LifecycleService is T8's maker-checker gate on live-mode activation
+	// and tenant closure — see internal/merchant/lifecycle's own doc
+	// comment.
+	LifecycleService *lifecycle.Service
+
+	// KeyService is T3's key create/rotate/revoke application service —
+	// its own doc comment says "called by Admin BFF (T8), never directly
+	// by a merchant," which is exactly what adminhttp.go now does.
+	KeyService *auth.KeyService
+
+	// Ledger is nil when NewModule's caller has no Ledger connection to
+	// offer (e.g. a unit test constructing a Module without dialing
+	// Ledger) — every adminhttp.go handler that needs it nil-checks
+	// explicitly and returns 503 rather than panicking.
+	Ledger LedgerClient
 }
 
-// NewModule panics if db or ring is nil — matches this repository's own
-// established convention (A8 T2.5b: construct now, not "construct then
-// wire later"). ring is required unconditionally, same posture as every
-// other encrypted-at-rest field in this codebase (webhook endpoint secrets,
-// T7): there is no valid "cryptox unconfigured" mode to construct this
-// module in.
-func NewModule(db database.DatabaseSQL, ring *cryptox.Ring) *Module {
+// NewModule panics if db, ring, or apiKeyPepper is nil/empty — matches this
+// repository's own established convention (A8 T2.5b: construct now, not
+// "construct then wire later"). ring is required unconditionally, same
+// posture as every other encrypted-at-rest field in this codebase (webhook
+// endpoint secrets, T7): there is no valid "cryptox unconfigured" mode to
+// construct this module in. ledgerClient MAY be nil (see the Ledger field's
+// own doc comment) — account-provisioning routes are the only thing that
+// degrades, not construction itself.
+func NewModule(db database.DatabaseSQL, ring *cryptox.Ring, apiKeyPepper string, ledgerClient LedgerClient) *Module {
 	if db == nil {
 		panic("merchant: NewModule requires a non-nil database")
 	}
 	if ring == nil {
 		panic("merchant: NewModule requires a non-nil cryptox ring")
 	}
+	if apiKeyPepper == "" {
+		panic("merchant: NewModule requires a non-empty apiKeyPepper")
+	}
 	webhooks := repository.NewWebhookRepository(db)
+	tenants := repository.NewTenantRepository(db)
+	lifecycleRepo := repository.NewLifecycleRepository(db)
+	apiKeys := repository.NewAPIKeyRepository(db)
 	return &Module{
 		db:          db,
 		ring:        ring,
-		Tenants:     repository.NewTenantRepository(db),
-		APIKeys:     repository.NewAPIKeyRepository(db),
+		Tenants:     tenants,
+		APIKeys:     apiKeys,
 		Quotas:      repository.NewQuotaRepository(db),
 		Idempotency: repository.NewIdempotencyRepository(db),
 		EventInbox:  repository.NewEventInboxRepository(db),
 		Webhooks:    webhooks,
+		Lifecycle:   lifecycleRepo,
 
-		WebhookService: webhook.NewService(webhooks, ring),
-		webhookRelay:   webhook.NewRelayWorker(webhooks, ring, nil),
+		WebhookService:   webhook.NewService(webhooks, ring),
+		webhookRelay:     webhook.NewRelayWorker(webhooks, ring, nil),
+		LifecycleService: lifecycle.NewService(lifecycleRepo, tenants),
+		KeyService:       auth.NewKeyService(apiKeys, apiKeyPepper),
+		Ledger:           ledgerClient,
 	}
 }
 
