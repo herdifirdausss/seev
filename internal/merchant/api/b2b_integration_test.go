@@ -328,6 +328,7 @@ func TestB2BRouter_RealStack(t *testing.T) {
 		APIKeyPepper:  integrationTestPepper,
 		QuotaEnforcer: quota.NewEnforcer(quotas, nil),
 		Idempotency:   idempotency.NewService(idemRepo, 24*time.Hour, "test"),
+		GlobalFlag:    auth.NewGlobalFlag(repository.NewSettingsRepository(db)),
 		Payin:         client.NewPayinClient(startBufconnPayin(t, payinFake)),
 		Payout:        client.NewPayoutClient(startBufconnPayout(t, payoutFake)),
 	})
@@ -544,6 +545,7 @@ func TestB2BRouter_MerchantAccountsAndTransfers(t *testing.T) {
 		APIKeyPepper:  integrationTestPepper,
 		QuotaEnforcer: quota.NewEnforcer(quotas, nil),
 		Idempotency:   idempotency.NewService(idemRepo, 24*time.Hour, "test"),
+		GlobalFlag:    auth.NewGlobalFlag(repository.NewSettingsRepository(gatewayDB)),
 		Payin:         client.NewPayinClient(startBufconnPayin(t, newFakePayinServer())),
 		Payout:        client.NewPayoutClient(startBufconnPayout(t, newFakePayoutServer())),
 		Ledger:        client.NewLedgerClient(ledgerHarness),
@@ -689,4 +691,61 @@ func TestB2BRouter_MerchantAccountsAndTransfers(t *testing.T) {
 		require.Len(t, data.Data, 1)
 		assert.Equal(t, transferID, data.Data[0].ID)
 	})
+}
+
+// TestB2BRouter_GlobalKillSwitchGatesEveryRoute proves T9's own "global
+// route-disable control" actually gates THIS router — found live while
+// writing scripts/merchant-e2e.sh that it never was: T9's own Result
+// section documented the flag as "structurally correct but not yet
+// load-bearing" because no B2B HTTP route existed yet to gate, and it
+// was STILL never wired in once T10's follow-up built this router.
+// NewRouter now panics on a nil GlobalFlag (the same "required, never
+// optional" posture as every other money-safety Deps field here), and
+// RequireB2BEnabled runs first in the middleware chain, before auth.
+func TestB2BRouter_GlobalKillSwitchGatesEveryRoute(t *testing.T) {
+	gatewayDB, _ := setupGatewayTestDB(t)
+	ctx := context.Background()
+
+	tenants := repository.NewTenantRepository(gatewayDB)
+	apiKeys := repository.NewAPIKeyRepository(gatewayDB)
+	quotas := repository.NewQuotaRepository(gatewayDB)
+	idemRepo := repository.NewIdempotencyRepository(gatewayDB)
+	keySvc := auth.NewKeyService(apiKeys, integrationTestPepper)
+	settings := repository.NewSettingsRepository(gatewayDB)
+	globalFlag := auth.NewGlobalFlag(settings)
+
+	tenantID := uuid.New()
+	require.NoError(t, tenants.Create(ctx, model.Tenant{
+		ID: tenantID, PublicID: "mrc_" + uuid.NewString()[:16], ExternalCode: "ext-killswitch-" + tenantID.String(),
+		Name: "Kill Switch Test Merchant", Environment: "live", Status: "active", DefaultCurrency: "IDR", CreatedBy: "test",
+	}))
+	disableQuota(t, quotas, tenantID)
+	key, _, err := keySvc.CreateKey(ctx, tenantID, "live", []string{"merchant:read"}, "operator")
+	require.NoError(t, err)
+
+	router := merchantapi.NewRouter(merchantapi.Deps{
+		APIKeys:       apiKeys,
+		Tenants:       tenants,
+		APIKeyPepper:  integrationTestPepper,
+		QuotaEnforcer: quota.NewEnforcer(quotas, nil),
+		Idempotency:   idempotency.NewService(idemRepo, 24*time.Hour, "test"),
+		GlobalFlag:    globalFlag,
+		Payin:         client.NewPayinClient(startBufconnPayin(t, newFakePayinServer())),
+		Payout:        client.NewPayoutClient(startBufconnPayout(t, newFakePayoutServer())),
+	})
+	srv := httptest.NewServer(router)
+	t.Cleanup(srv.Close)
+
+	resp, _ := doRequest(t, http.MethodGet, srv.URL+"/merchant", key, "", nil)
+	require.Equal(t, http.StatusOK, resp.StatusCode, "enabled by default — a fresh deployment must serve B2B traffic")
+
+	require.NoError(t, globalFlag.SetEnabled(ctx, false, "test-operator"))
+	disabledResp, disabledEnv := doRequest(t, http.MethodGet, srv.URL+"/merchant", key, "", nil)
+	assert.Equal(t, http.StatusServiceUnavailable, disabledResp.StatusCode, "every B2B route must reject while the kill switch is disabled")
+	require.NotNil(t, disabledEnv.Error)
+	assert.Equal(t, "B2B_API_DISABLED", disabledEnv.Error.Code)
+
+	require.NoError(t, globalFlag.SetEnabled(ctx, true, "test-operator"))
+	reenabledResp, _ := doRequest(t, http.MethodGet, srv.URL+"/merchant", key, "", nil)
+	assert.Equal(t, http.StatusOK, reenabledResp.StatusCode, "traffic must recover immediately after re-enabling, no restart needed")
 }

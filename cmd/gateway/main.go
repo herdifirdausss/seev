@@ -193,6 +193,7 @@ func main() {
 		Payin:         merchantclient.NewPayinClient(payinGRPCClient),
 		Payout:        merchantclient.NewPayoutClient(payoutGRPCClient),
 		Ledger:        merchantclient.NewLedgerClient(merchantLedgerClient),
+		GlobalFlag:    merchantModule.GlobalFlag,
 	})
 
 	// Plan 57 T9: periodic gauge refresh for idempotency stuck-lease and

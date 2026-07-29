@@ -102,7 +102,7 @@ tenant_json_b="$(admin_post "/tenants" "{\"external_code\":\"e2e-b-$RUN_ID\",\"n
 TENANT_B="$(echo "$tenant_json_b" | nested_field id)"
 [ -n "$TENANT_B" ] && ok "sandbox tenant B created ($TENANT_B)" || fail "sandbox tenant B creation failed: $tenant_json_b"
 admin_post "/tenants/$TENANT_B/account" '{"currency":"IDR"}' >/dev/null
-key_json_b="$(admin_post "/tenants/$TENANT_B/keys" '{"environment":"sandbox","scopes":["merchant:read","accounts:read","transactions:read","transfers:write"]}')"
+key_json_b="$(admin_post "/tenants/$TENANT_B/keys" '{"environment":"sandbox","scopes":["merchant:read","accounts:read","transactions:read","transfers:write","payins:write","payins:read"]}')"
 KEY_B="$(echo "$key_json_b" | nested_field plaintext)"
 [ -n "$KEY_B" ] && ok "tenant B's API key created" || fail "tenant B key creation failed: $key_json_b"
 
@@ -153,7 +153,7 @@ reference="$(psql_exec "$PAYIN_DB_NAME" -tA -c "SELECT reference FROM payin_topu
 	|| fail "could not resolve payin_topup_intents.reference for id=$PAYIN_ID"
 
 webhook_body="{\"event_id\":\"e2e-merchant-payin-$RUN_ID\",\"external_ref\":\"$reference\",\"user_id\":\"$(uuidgen | tr '[:upper:]' '[:lower:]')\",\"amount\":\"100000\",\"currency\":\"IDR\",\"occurred_at\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"type\":\"payment.settled\"}"
-sig="$(printf '%s' "$webhook_body" | openssl dgst -sha256 -hmac "$MOCKVENDOR_SECRET" -r | awk '{print $1}')"
+sig="$(printf '%s' "$webhook_body" | openssl dgst -sha256 -hmac "$VENDOR_MOCKVENDOR_SECRET" -r | awk '{print $1}')"
 webhook_code="$(curl_internal -sS -o /dev/null -w '%{http_code}' -X POST "http://localhost:$VENDOR_APP_PORT/webhooks/mockvendor" \
 	-H "X-Mock-Signature: $sig" -H "Content-Type: application/json" -d "$webhook_body")"
 [ "${webhook_code:0:1}" = "2" ] && ok "signed mockvendor webhook accepted (code=$webhook_code)" \
@@ -183,10 +183,11 @@ balance_b_after_xfer="$(b2b_get "/accounts/$ACCOUNT_B/balance" "$KEY_B" | nested
 [ "$balance_a_after_xfer" = "70000" ] && ok "tenant A debited to 70000" || fail "tenant A balance after transfer was '$balance_a_after_xfer', expected 70000"
 [ "$balance_b_after_xfer" = "30000" ] && ok "tenant B credited to 30000" || fail "tenant B balance after transfer was '$balance_b_after_xfer', expected 30000"
 
-replay_json="$(b2b_post "/transfers" "$KEY_A" "e2e-xfer-$RUN_ID" "$transfer_body")"
+replay_code="$(b2b_post_code "/transfers" "$KEY_A" "e2e-xfer-$RUN_ID" "$transfer_body")"
+replay_json="$(cat "$WORK_DIR/last_b2b_response.json")"
 replay_id="$(echo "$replay_json" | nested_field id)"
-[ "$replay_id" = "$TRANSFER_ID" ] && ok "replayed transfer (same idempotency key) returns the ORIGINAL transaction" \
-	|| fail "replay returned a different id ($replay_id), expected $TRANSFER_ID"
+[ "$replay_code" = "201" ] && [ "$replay_id" = "$TRANSFER_ID" ] && ok "replayed transfer (same idempotency key) returns the ORIGINAL transaction (code=$replay_code)" \
+	|| fail "replay expected 201 with id=$TRANSFER_ID, got code=$replay_code body=$replay_json"
 
 balance_a_after_replay="$(b2b_get "/accounts/$ACCOUNT_A/balance" "$KEY_A" | nested_field balance)"
 [ "$balance_a_after_replay" = "70000" ] && ok "tenant A's balance UNCHANGED after replay — no double-debit" \

@@ -1136,9 +1136,15 @@ account_balance() {
 
 # json_field extracts "key":"value" (string fields only) from a JSON blob
 # read on stdin — good enough for this repo's flat response shapes, avoids
-# a jq dependency. Shared by every script that curls the JSON API.
+# a jq dependency. Shared by every script that curls the JSON API. Tolerates
+# optional whitespace after the colon (found live, Plan 57 T10's
+# merchant-e2e.sh): an idempotent-replayed response is stored/re-read
+# through a Postgres JSONB column, which reformats with a space after every
+# colon ({"id": "x"}) — cosmetically different from the ORIGINAL compact
+# json.Marshal bytes ({"id":"x"}) a fresh (non-replayed) response has, even
+# though both are the identical JSON value.
 json_field() {
-	sed -n "s/.*\"$1\":\"\([^\"]*\)\".*/\1/p"
+	sed -n "s/.*\"$1\": *\"\([^\"]*\)\".*/\1/p"
 }
 
 # wait_for_payout_status polls payout_requests.status until it matches want

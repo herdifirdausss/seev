@@ -28,6 +28,15 @@ type Deps struct {
 	// profile/accounts/transactions/transfers surface (§6.4) that T5/T6
 	// built the owner-service RPCs for but never wired to HTTP.
 	Ledger *client.LedgerClient
+	// GlobalFlag is T9's own incident-response kill switch
+	// (internal/merchant/auth.GlobalFlag) — T9's own Result section
+	// documented this as "structurally correct but not yet load-bearing"
+	// since no B2B HTTP route existed yet to gate; found live while
+	// writing scripts/merchant-e2e.sh that it was STILL never wired in
+	// once this router was built. Required: NewRouter panics without it,
+	// the same "money-safety control, never optional" posture as every
+	// other required Deps field here.
+	GlobalFlag *auth.GlobalFlag
 }
 
 // NewRouter builds the B2B payin/payout HTTP surface
@@ -44,12 +53,21 @@ type Deps struct {
 // no HTTP wrapper, only Begin/Complete/Fail), since a read has nothing to
 // claim.
 func NewRouter(deps Deps) http.Handler {
+	if deps.GlobalFlag == nil {
+		panic("merchant/api: NewRouter requires a non-nil GlobalFlag")
+	}
 	requireAuth := auth.RequireMerchantAuth(deps.APIKeys, deps.Tenants, deps.APIKeyPepper)
+	// T9's kill switch runs BEFORE auth (internal/merchant/auth.GlobalFlag's
+	// own doc comment) — a disabled B2B surface rejects every request
+	// uniformly, without spending an API-key lookup on a call that will be
+	// refused regardless of whether the key is even valid.
+	requireEnabled := auth.RequireB2BEnabled(deps.GlobalFlag)
 
 	mux := httpcontract.New(httpcontract.Options{Owner: "gateway", Audience: "merchant", Contract: "b2b-v1"})
 
 	route := func(pattern, operationID, quotaClass string, isWrite bool, handler http.Handler) {
 		chain := middleware.Chain(
+			requireEnabled,
 			requireAuth,
 			auth.RequireScope(operationID),
 			quota.RequireQuota(deps.QuotaEnforcer, quotaClass, isWrite),
