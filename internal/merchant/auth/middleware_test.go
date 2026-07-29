@@ -119,8 +119,11 @@ func TestRequireMerchantAuth_ValidKey_PopulatesPrincipal(t *testing.T) {
 }
 
 // TestRequireMerchantAuth_FailsClosed proves T3's own required failure
-// matrix: invalid, expired, revoked, wrong-environment, and
-// suspended-tenant keys must ALL fail closed (T3 acceptance).
+// matrix: invalid, expired, revoked, and wrong-environment keys must ALL
+// fail closed (T3 acceptance). Suspended tenants are deliberately NOT in
+// this table — §23.7 requires their reads to keep authenticating; see
+// TestRequireMerchantAuth_SuspendedTenant_StillAuthenticates and
+// TestRequireTenantNotSuspendedForWrites below.
 func TestRequireMerchantAuth_FailsClosed(t *testing.T) {
 	past := time.Now().Add(-time.Hour)
 
@@ -167,14 +170,6 @@ func TestRequireMerchantAuth_FailsClosed(t *testing.T) {
 				return plaintext
 			},
 			wantStatus: http.StatusUnauthorized,
-		},
-		{
-			name: "suspended tenant",
-			setup: func(t *testing.T, keys *fakeKeyRepo, tenants *fakeTenantRepo) string {
-				plaintext, _, _ := seedKeyAndTenant(t, keys, tenants, "suspended", "active", nil, nil)
-				return plaintext
-			},
-			wantStatus: http.StatusForbidden, // distinguishable per the failure matrix — the key itself is valid
 		},
 		{
 			name: "draft tenant (not yet active)",
@@ -299,6 +294,73 @@ func TestRequireScope_NoPrincipalInContext_Unauthorized(t *testing.T) {
 		t.Fatal("handler must not run without an authenticated principal")
 	}))
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	assert.Equal(t, http.StatusUnauthorized, rec.Code)
+}
+
+// TestRequireMerchantAuth_SuspendedTenant_StillAuthenticates proves §23.7's
+// "suspended tenant reads" half of the policy: RequireMerchantAuth alone
+// (no RequireTenantNotSuspendedForWrites in the chain) must let a
+// suspended tenant's otherwise-valid key through, with
+// Principal.TenantSuspended set — the read/write split is a SEPARATE
+// middleware's job (found live while auditing T10's §23.7 matrix that the
+// old code rejected suspended tenants uniformly, including reads).
+func TestRequireMerchantAuth_SuspendedTenant_StillAuthenticates(t *testing.T) {
+	keys, tenants := newFakeKeyRepo(), newFakeTenantRepo()
+	plaintext, _, _ := seedKeyAndTenant(t, keys, tenants, "suspended", "active", nil, []string{"merchant:read"})
+
+	var gotPrincipal Principal
+	handler := RequireMerchantAuth(keys, tenants, testPepper)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPrincipal, _ = PrincipalFromContext(r.Context())
+		w.WriteHeader(http.StatusOK)
+	}))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, newAuthedRequest(plaintext))
+
+	assert.Equal(t, http.StatusOK, rec.Code, "a suspended tenant's valid key must still authenticate for reads")
+	assert.True(t, gotPrincipal.TenantSuspended)
+}
+
+// TestRequireTenantNotSuspendedForWrites proves the other half: reads pass
+// regardless of suspension, writes are denied only when TenantSuspended is
+// true.
+func TestRequireTenantNotSuspendedForWrites(t *testing.T) {
+	cases := []struct {
+		name       string
+		suspended  bool
+		isWrite    bool
+		wantStatus int
+	}{
+		{"active tenant, read", false, false, http.StatusOK},
+		{"active tenant, write", false, true, http.StatusOK},
+		{"suspended tenant, read", true, false, http.StatusOK},
+		{"suspended tenant, write", true, true, http.StatusForbidden},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			called := false
+			handler := RequireTenantNotSuspendedForWrites(tc.isWrite)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				called = true
+				w.WriteHeader(http.StatusOK)
+			}))
+			principal := Principal{TenantID: uuid.New(), TenantSuspended: tc.suspended}
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			req = req.WithContext(WithPrincipal(req.Context(), principal))
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+
+			assert.Equal(t, tc.wantStatus, rec.Code)
+			assert.Equal(t, tc.wantStatus == http.StatusOK, called)
+		})
+	}
+}
+
+func TestRequireTenantNotSuspendedForWrites_NoPrincipalInContext_Unauthorized(t *testing.T) {
+	handler := RequireTenantNotSuspendedForWrites(true)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("handler must not run without an authenticated principal")
+	}))
+	req := httptest.NewRequest(http.MethodPost, "/", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	assert.Equal(t, http.StatusUnauthorized, rec.Code)

@@ -47,8 +47,9 @@ type Deps struct {
 // nesting (apiMux under apiRoot).
 //
 // Every route shares the identical T3/T4 middleware ORDER (§7.2: "scope
-// evaluation occurs after key and tenant validation"): auth ->
-// scope -> quota. Idempotency is NOT a middleware — it is a service each
+// evaluation occurs after key and tenant validation"): auth -> suspension
+// (§23.7: reads survive a suspended tenant, writes don't) -> scope ->
+// quota. Idempotency is NOT a middleware — it is a service each
 // create handler calls directly (internal/merchant/idempotency.Service has
 // no HTTP wrapper, only Begin/Complete/Fail), since a read has nothing to
 // claim.
@@ -69,6 +70,7 @@ func NewRouter(deps Deps) http.Handler {
 		chain := middleware.Chain(
 			requireEnabled,
 			requireAuth,
+			auth.RequireTenantNotSuspendedForWrites(isWrite),
 			auth.RequireScope(operationID),
 			quota.RequireQuota(deps.QuotaEnforcer, quotaClass, isWrite),
 		)

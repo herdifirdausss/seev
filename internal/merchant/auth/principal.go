@@ -17,6 +17,15 @@ type Principal struct {
 	KeyID       uuid.UUID
 	Environment string // "sandbox" | "live"
 	Scopes      []string
+	// TenantSuspended is true when the owning tenant's status is
+	// "suspended" — §23.7's policy is reads remain available (for
+	// reconciliation) while writes are denied, so RequireMerchantAuth lets
+	// a suspended tenant's otherwise-valid key authenticate; a suspended
+	// tenant must never be treated as simply "not found" the way
+	// draft/closed tenants are. RequireTenantNotSuspendedForWrites is the
+	// middleware that actually enforces the read/write split using this
+	// field.
+	TenantSuspended bool
 }
 
 // HasScope reports whether the principal was issued the given scope.

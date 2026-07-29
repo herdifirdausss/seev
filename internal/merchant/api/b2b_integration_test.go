@@ -749,3 +749,60 @@ func TestB2BRouter_GlobalKillSwitchGatesEveryRoute(t *testing.T) {
 	reenabledResp, _ := doRequest(t, http.MethodGet, srv.URL+"/merchant", key, "", nil)
 	assert.Equal(t, http.StatusOK, reenabledResp.StatusCode, "traffic must recover immediately after re-enabling, no restart needed")
 }
+
+// TestB2BRouter_SuspendedTenant_ReadsAllowedWritesDenied proves §23.7's
+// suspension policy through the ACTUAL assembled router, over real HTTP,
+// against real Postgres: found while auditing T10's cross-tenant matrix
+// that the old code rejected a suspended tenant's requests uniformly,
+// including reads — the plan's own stated default policy is "read access
+// may remain available for reconciliation" while financial/management
+// writes are denied.
+func TestB2BRouter_SuspendedTenant_ReadsAllowedWritesDenied(t *testing.T) {
+	gatewayDB, _ := setupGatewayTestDB(t)
+	ctx := context.Background()
+
+	tenants := repository.NewTenantRepository(gatewayDB)
+	apiKeys := repository.NewAPIKeyRepository(gatewayDB)
+	quotas := repository.NewQuotaRepository(gatewayDB)
+	idemRepo := repository.NewIdempotencyRepository(gatewayDB)
+	keySvc := auth.NewKeyService(apiKeys, tenants, integrationTestPepper)
+
+	tenantID := uuid.New()
+	require.NoError(t, tenants.Create(ctx, model.Tenant{
+		ID: tenantID, PublicID: "mrc_" + uuid.NewString()[:16], ExternalCode: "ext-suspend-" + tenantID.String(),
+		Name: "Suspension Test Merchant", Environment: "live", Status: "active", DefaultCurrency: "IDR", CreatedBy: "test",
+	}))
+	disableQuota(t, quotas, tenantID)
+	key, _, err := keySvc.CreateKey(ctx, tenantID, "live", []string{"merchant:read", "payins:write", "payins:read"}, "operator")
+	require.NoError(t, err)
+
+	router := merchantapi.NewRouter(merchantapi.Deps{
+		APIKeys:       apiKeys,
+		Tenants:       tenants,
+		APIKeyPepper:  integrationTestPepper,
+		QuotaEnforcer: quota.NewEnforcer(quotas, nil),
+		Idempotency:   idempotency.NewService(idemRepo, 24*time.Hour, "test"),
+		GlobalFlag:    auth.NewGlobalFlag(repository.NewSettingsRepository(gatewayDB)),
+		Payin:         client.NewPayinClient(startBufconnPayin(t, newFakePayinServer())),
+		Payout:        client.NewPayoutClient(startBufconnPayout(t, newFakePayoutServer())),
+	})
+	srv := httptest.NewServer(router)
+	t.Cleanup(srv.Close)
+
+	preResp, _ := doRequest(t, http.MethodGet, srv.URL+"/merchant", key, "", nil)
+	require.Equal(t, http.StatusOK, preResp.StatusCode, "an active tenant must read successfully before suspension")
+
+	require.NoError(t, tenants.UpdateStatus(ctx, tenantID, "suspended", "test-operator"))
+
+	readResp, _ := doRequest(t, http.MethodGet, srv.URL+"/merchant", key, "", nil)
+	assert.Equal(t, http.StatusOK, readResp.StatusCode, "a suspended tenant must still be able to read, per §23.7")
+
+	writeResp, writeEnv := doRequest(t, http.MethodPost, srv.URL+"/payins", key, "suspend-write-1", []byte(`{"amount":"1000","currency":"IDR"}`))
+	assert.Equal(t, http.StatusForbidden, writeResp.StatusCode, "a suspended tenant's writes must be denied")
+	require.NotNil(t, writeEnv.Error)
+	assert.Equal(t, "TENANT_SUSPENDED", writeEnv.Error.Code)
+
+	require.NoError(t, tenants.UpdateStatus(ctx, tenantID, "active", "test-operator"))
+	resumedResp, _ := doRequest(t, http.MethodPost, srv.URL+"/payins", key, "suspend-write-2", []byte(`{"amount":"1000","currency":"IDR"}`))
+	assert.Equal(t, http.StatusCreated, resumedResp.StatusCode, "writes must recover immediately once the tenant is reactivated")
+}

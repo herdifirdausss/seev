@@ -21,9 +21,11 @@ const lastUsedSampleInterval = 5 * time.Minute
 // middleware: parse -> prefix lookup -> digest compare -> tenant/key/
 // expiry checks -> construct Principal. Every failure path returns 401
 // (never leaking WHICH check failed in the response body — only in
-// server-side logs) except a suspended tenant, which is 403
-// TENANT_SUSPENDED (§ failure matrix: distinct from authentication
-// failure because the KEY itself is valid).
+// server-side logs). A suspended tenant is NOT a failure here — the key
+// itself is valid and §23.7 requires reads to keep working for
+// reconciliation — it authenticates with Principal.TenantSuspended set;
+// RequireTenantNotSuspendedForWrites is what turns that into a 403 for
+// writes.
 //
 // pepper must be non-empty — RequireMerchantAuth panics at construction
 // (boot time) otherwise, matching this repository's fail-closed
@@ -99,17 +101,16 @@ func RequireMerchantAuth(keys repository.APIKeyRepository, tenants repository.Te
 				response.Unauthorized(w, "invalid API key")
 				return
 			}
-			if tenant.Status == "suspended" {
-				response.Forbidden(w, "tenant suspended")
-				return
-			}
-			if tenant.Status != "active" {
-				// draft/closed: fail closed identically to "not found" —
-				// only "suspended" gets its own distinguishable code,
-				// matching §failure-matrix's explicit TENANT_SUSPENDED
-				// entry; every other non-active status has no such
-				// carve-out in the plan and defaults to the generic
-				// unauthenticated response.
+			// §23.7's suspension policy is "reads remain available for
+			// reconciliation, writes are denied" — a suspended tenant's
+			// otherwise-valid key must still authenticate here so a GET
+			// can proceed; RequireTenantNotSuspendedForWrites (mounted
+			// per-route, since only the router knows isWrite) is what
+			// actually blocks writes. draft/closed tenants get no such
+			// carve-out: fail closed identically to "not found", matching
+			// every other non-active, non-suspended status.
+			suspended := tenant.Status == "suspended"
+			if tenant.Status != "active" && !suspended {
 				response.Unauthorized(w, "invalid API key")
 				return
 			}
@@ -121,8 +122,32 @@ func RequireMerchantAuth(keys repository.APIKeyRepository, tenants repository.Te
 				_ = keys.TouchLastUsed(r.Context(), key.ID)
 			}
 
-			principal := Principal{TenantID: tenant.ID, KeyID: key.ID, Environment: key.Environment, Scopes: key.Scopes}
+			principal := Principal{TenantID: tenant.ID, KeyID: key.ID, Environment: key.Environment, Scopes: key.Scopes, TenantSuspended: suspended}
 			next.ServeHTTP(w, r.WithContext(WithPrincipal(r.Context(), principal)))
+		})
+	}
+}
+
+// RequireTenantNotSuspendedForWrites enforces §23.7's suspension policy on
+// a single route: a suspended tenant's reads remain available (for
+// reconciliation) but every write is denied. Must run after
+// RequireMerchantAuth (reads Principal.TenantSuspended from context) —
+// isWrite comes from the route table, the same way quota.RequireQuota
+// already receives it, since suspension enforcement needs to know per
+// ROUTE, not per tenant, whether a request is a write.
+func RequireTenantNotSuspendedForWrites(isWrite bool) middleware.Middleware {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			principal, ok := PrincipalFromContext(r.Context())
+			if !ok {
+				response.Unauthorized(w, "authentication required")
+				return
+			}
+			if principal.TenantSuspended && isWrite {
+				response.ErrorStatus(w, http.StatusForbidden, "TENANT_SUSPENDED", "tenant suspended: financial and management writes are denied")
+				return
+			}
+			next.ServeHTTP(w, r)
 		})
 	}
 }
