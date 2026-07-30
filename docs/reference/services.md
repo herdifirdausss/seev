@@ -77,9 +77,8 @@ for the full route list, contracts, and verification evidence.
 | HTTP (internal ops) | `GET /metrics` on `:8081` | mTLS service identity |
 | Background | RabbitMQ consumer in `internal/notify` | consumes `ledger.transaction.posted.v1` to create in-app notifications |
 | HTTP (public B2B) | `/api/v1/b2b/{merchant,accounts,transactions,transfers,payins,payouts}` | Merchant API key (`Authorization: Bearer mk_live_...`/`mk_sandbox_...`) — `internal/merchant/api` |
-| HTTP (public B2B) | `/api/v1/b2b/webhook-endpoints/*` | Merchant API key — operator-managed outbound webhook subscriptions |
-| HTTP (internal admin) | `/api/v1/admin/gateway/tenants/*`, `/api/v1/admin/gateway/global/b2b-api` | mTLS + JWT `authed` — tenant/key/quota lifecycle, maker/checker, global kill switch |
-| Background | Webhook relay + RabbitMQ consumer in `internal/merchant/webhook` | fans out owner events (`payin.settled.v1`, `transfer.posted.v1`, ...) to subscribed tenant endpoints, HMAC-signed |
+| HTTP (internal admin) | `/api/v1/admin/gateway/tenants/*`, `/api/v1/admin/gateway/tenants/{id}/webhooks`, `/api/v1/admin/gateway/global/b2b-api` | mTLS + JWT `authed` — tenant/key/quota lifecycle, webhook endpoint management (operator-managed, no merchant self-service route), maker/checker, global kill switch |
+| Background | Webhook relay + RabbitMQ consumer in `internal/merchant/webhook` | fans out `transaction.posted.v1` (the one external event type) to subscribed tenant endpoints, HMAC-signed |
 
 **Notably does NOT do**: registration, login, or KYC — those hit
 Auth-service directly on its own public port (`:8082`), not through

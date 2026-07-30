@@ -32,7 +32,9 @@
 #   ./scripts/chaos-test.sh 19       # owner timeout leaves closure resumable (plan 51)
 #   ./scripts/chaos-test.sh 20       # retention/closure race respects closure horizon (plan 51)
 #   ./scripts/chaos-test.sh 21       # merchant B2B transfer kill -9 mid-posting (plan 57 T10)
-#   ./scripts/chaos-test.sh all      # run all twenty-one in sequence
+#   ./scripts/chaos-test.sh 22       # merchant quota Redis outage (plan 57 T10b)
+#   ./scripts/chaos-test.sh 23       # merchant webhook relay survives a RabbitMQ outage (plan 57 T10b)
+#   ./scripts/chaos-test.sh all      # run all twenty-three in sequence
 #
 # Each scenario is independent and re-runs migrations against a throwaway
 # schema state (it does NOT reset the docker volumes — accounts/balances
@@ -1831,6 +1833,276 @@ scenario_21() {
 	stop_server_gracefully
 }
 
+# ─── Scenario 22: merchant quota Redis outage (Plan 57 T10b) ───────────────
+#
+# T10b's own audit found the merchant quota package's Redis-outage posture
+# (internal/merchant/quota.Enforcer.Check: write fails closed with 503
+# QUOTA_UNAVAILABLE, read degrades to a bounded allow — ErrQuotaBackendUnavailable's
+# own doc comment) was only ever proven against a fake/unreachable client
+# in unit tests, never through the real assembled Gateway with a real
+# Redis container stopped — the same gap scenario 9 already closed for the
+# ledger's own rate limiter/policy counter/fraud velocity primitives.
+
+chaos22_admin_post() {
+	curl_internal -sS -X POST "http://localhost:$INTERNAL_PORT/api/v1/admin/gateway$1" \
+		-H "Authorization: Bearer $CHAOS22_ADMIN_TOKEN" -H "Content-Type: application/json" -d "$2"
+}
+
+scenario_22() {
+	log "=== Scenario 22: merchant quota Redis outage — writes fail closed, reads degrade-allow, recovery without restart ==="
+	ensure_deps_up
+	build_server
+	start_services
+
+	local nonce="chaos22-$RANDOM"
+	CHAOS22_ADMIN_TOKEN="$(gen_token "$nonce-operator" admin)"
+
+	local tenant_id account_id tenant_b account_b key
+	tenant_id="$(chaos22_admin_post "/tenants" "{\"external_code\":\"$nonce\",\"name\":\"Chaos22 Merchant\",\"environment\":\"sandbox\",\"default_currency\":\"IDR\"}" | json_field id)"
+	[ -n "$tenant_id" ] || fail "chaos22: tenant provisioning failed"
+	account_id="$(chaos22_admin_post "/tenants/$tenant_id/account" '{"currency":"IDR"}' | json_field account_id)"
+	[ -n "$account_id" ] || fail "chaos22: account provisioning failed"
+	key="$(chaos22_admin_post "/tenants/$tenant_id/keys" '{"environment":"sandbox","scopes":["merchant:read","accounts:read","transactions:read","transfers:write","payins:write","payins:read"]}' | json_field plaintext)"
+	[ -n "$key" ] || fail "chaos22: key creation failed"
+
+	# A distinct destination tenant/account is required — the ledger
+	# rejects a self-transfer (SELF_TRANSFER) with its own 503 mapped
+	# through OWNER_SERVICE_UNAVAILABLE, which would collide with this
+	# scenario's own "!= 503 means quota allowed it" check below.
+	tenant_b="$(chaos22_admin_post "/tenants" "{\"external_code\":\"$nonce-b\",\"name\":\"Chaos22 Merchant B\",\"environment\":\"sandbox\",\"default_currency\":\"IDR\"}" | json_field id)"
+	[ -n "$tenant_b" ] || fail "chaos22: tenant B provisioning failed"
+	account_b="$(chaos22_admin_post "/tenants/$tenant_b/account" '{"currency":"IDR"}' | json_field account_id)"
+	[ -n "$account_b" ] || fail "chaos22: account B provisioning failed"
+
+	# Fund tenant A the same way scenario 21/merchant-e2e.sh do — a real
+	# merchant payin settled through mockvendor's signed webhook — so the
+	# baseline/recovery transfers below have real money to move (an
+	# unfunded transfer would fail with an unrelated insufficient-funds
+	# error, just as misleading for this scenario's own assertions as the
+	# self-transfer bug this comment block replaced).
+	local payin_json payin_id reference webhook_body sig webhook_code
+	payin_json="$(curl -sS -X POST "http://localhost:$APP_PORT/api/v1/b2b/payins" \
+		-H "Authorization: Bearer $key" -H "Idempotency-Key: $nonce-fund" -H "Content-Type: application/json" \
+		-d '{"amount":"100000","currency":"IDR"}')"
+	payin_id="$(echo "$payin_json" | json_field id)"
+	[ -n "$payin_id" ] || fail "chaos22: funding payin creation failed: $payin_json"
+	reference="$(psql_exec "$PAYIN_DB_NAME" -tA -c "SELECT reference FROM payin_topup_intents WHERE id = '$payin_id';" | tr -d '[:space:]')"
+	[ -n "$reference" ] || fail "chaos22: could not resolve funding payin reference"
+	webhook_body="{\"event_id\":\"$nonce-fund\",\"external_ref\":\"$reference\",\"user_id\":\"$(uuidgen | tr '[:upper:]' '[:lower:]')\",\"amount\":\"100000\",\"currency\":\"IDR\",\"occurred_at\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"type\":\"payment.settled\"}"
+	sig="$(printf '%s' "$webhook_body" | openssl dgst -sha256 -hmac "$VENDOR_MOCKVENDOR_SECRET" -r | awk '{print $1}')"
+	webhook_code="$(curl_internal -sS -o /dev/null -w '%{http_code}' -X POST "http://localhost:$VENDOR_APP_PORT/webhooks/mockvendor" \
+		-H "X-Mock-Signature: $sig" -H "Content-Type: application/json" -d "$webhook_body")"
+	[ "${webhook_code:0:1}" = "2" ] || fail "chaos22: funding settlement webhook got $webhook_code, expected 2xx"
+	ok "tenant A funded for the write assertions below"
+
+	# Same lesson as scenario 9's own comment on the opposite direction:
+	# a container reporting "healthy" is not, by itself, proof THIS
+	# process's redis client pool has a working connection yet — confirm
+	# reachability with a real client before trusting a baseline "success"
+	# result means anything.
+	local redis_up_tries=25
+	while [ "$redis_up_tries" -gt 0 ] && ! redis-cli -h localhost -p "$REDIS_HOST_PORT" ping >/dev/null 2>&1; do
+		sleep 0.2
+		redis_up_tries=$((redis_up_tries - 1))
+	done
+	redis-cli -h localhost -p "$REDIS_HOST_PORT" ping >/dev/null 2>&1 \
+		&& ok "redis confirmed reachable before the baseline checks" \
+		|| fail "redis never became reachable before the baseline checks"
+
+	log "-- baseline (Redis up): read and write both succeed --"
+	local baseline_read_code baseline_write_code
+	baseline_read_code="$(curl -sS -o /dev/null -w '%{http_code}' "http://localhost:$APP_PORT/api/v1/b2b/merchant" -H "Authorization: Bearer $key")"
+	[ "$baseline_read_code" = "200" ] && ok "baseline merchant read succeeded (code=$baseline_read_code)" \
+		|| fail "baseline merchant read got $baseline_read_code, expected 200"
+	baseline_write_code="$(curl -sS -o /dev/null -w '%{http_code}' -X POST "http://localhost:$APP_PORT/api/v1/b2b/transfers" \
+		-H "Authorization: Bearer $key" -H "Idempotency-Key: $nonce-baseline" -H "Content-Type: application/json" \
+		-d "{\"destination_account_id\":\"$account_b\",\"amount\":\"1\",\"currency\":\"IDR\"}")"
+	# Same-account transfer is a validation error from the ledger, not a
+	# quota rejection — RequireQuota runs BEFORE the handler ever calls the
+	# ledger, so any non-503 response here proves quota allowed the
+	# request through, regardless of what the handler itself decides next.
+	[ "$baseline_write_code" != "503" ] && ok "baseline write reached the handler, quota allowed it (code=$baseline_write_code)" \
+		|| fail "baseline write got 503 with Redis still up"
+
+	log "stopping redis..."
+	docker stop "$REDIS_CONTAINER" >/dev/null
+	local redis_down_tries=25
+	while [ "$redis_down_tries" -gt 0 ] && redis-cli -h localhost -p "$REDIS_HOST_PORT" ping >/dev/null 2>&1; do
+		sleep 0.2
+		redis_down_tries=$((redis_down_tries - 1))
+	done
+	redis-cli -h localhost -p "$REDIS_HOST_PORT" ping >/dev/null 2>&1 \
+		&& fail "redis still answered PING after docker stop — the outage below would race a live Redis" \
+		|| ok "redis confirmed unreachable before proceeding"
+
+	log "-- Redis down: write must fail closed with 503 QUOTA_UNAVAILABLE --"
+	local outage_write_code outage_write_body
+	outage_write_body="$(curl -sS -X POST "http://localhost:$APP_PORT/api/v1/b2b/transfers" \
+		-H "Authorization: Bearer $key" -H "Idempotency-Key: $nonce-outage" -H "Content-Type: application/json" \
+		-d "{\"destination_account_id\":\"$account_b\",\"amount\":\"1\",\"currency\":\"IDR\"}")"
+	outage_write_code="$(curl -sS -o /dev/null -w '%{http_code}' -X POST "http://localhost:$APP_PORT/api/v1/b2b/transfers" \
+		-H "Authorization: Bearer $key" -H "Idempotency-Key: $nonce-outage2" -H "Content-Type: application/json" \
+		-d "{\"destination_account_id\":\"$account_b\",\"amount\":\"1\",\"currency\":\"IDR\"}")"
+	[ "$outage_write_code" = "503" ] && ok "write correctly failed closed with 503 during the Redis outage" \
+		|| fail "write during outage got $outage_write_code, expected 503"
+	echo "$outage_write_body" | grep -q "QUOTA_UNAVAILABLE" && ok "outage response carries the QUOTA_UNAVAILABLE code" \
+		|| fail "outage response did not carry QUOTA_UNAVAILABLE: $outage_write_body"
+
+	log "-- Redis down: read must still succeed (bounded degraded allow) --"
+	local outage_read_code
+	outage_read_code="$(curl -sS -o /dev/null -w '%{http_code}' "http://localhost:$APP_PORT/api/v1/b2b/merchant" -H "Authorization: Bearer $key")"
+	[ "$outage_read_code" = "200" ] && ok "read succeeded during the Redis outage (degraded allow)" \
+		|| fail "read during outage got $outage_read_code, expected 200"
+
+	log "restarting redis..."
+	docker start "$REDIS_CONTAINER" >/dev/null
+	wait_for_container_healthy "$REDIS_CONTAINER"
+	redis_up_tries=25
+	while [ "$redis_up_tries" -gt 0 ] && ! redis-cli -h localhost -p "$REDIS_HOST_PORT" ping >/dev/null 2>&1; do
+		sleep 0.2
+		redis_up_tries=$((redis_up_tries - 1))
+	done
+	redis-cli -h localhost -p "$REDIS_HOST_PORT" ping >/dev/null 2>&1 \
+		&& ok "redis confirmed reachable after restart" \
+		|| fail "redis never became reachable after restart"
+
+	# The enforcer makes a fresh EVAL call per request with no persistent
+	# circuit-breaker state (unlike scenario 9's ledger-side primitives,
+	# which have their own probe-loop hysteresis) — recovery should be
+	# immediate, but retry a few times before failing to absorb any
+	# leftover connection-pool churn from the just-restarted container.
+	local recovered_write_code
+	for _ in $(seq 1 10); do
+		recovered_write_code="$(curl -sS -o /dev/null -w '%{http_code}' -X POST "http://localhost:$APP_PORT/api/v1/b2b/transfers" \
+			-H "Authorization: Bearer $key" -H "Idempotency-Key: $nonce-recovered" -H "Content-Type: application/json" \
+			-d "{\"destination_account_id\":\"$account_b\",\"amount\":\"1\",\"currency\":\"IDR\"}")"
+		[ "$recovered_write_code" != "503" ] && break
+		sleep 1
+	done
+	[ "$recovered_write_code" != "503" ] && ok "write recovered after Redis came back, no gateway restart needed (code=$recovered_write_code)" \
+		|| fail "write still got 503 after Redis recovered"
+
+	stop_server_gracefully
+}
+
+# ─── Scenario 23: merchant webhook relay survives a RabbitMQ outage ────────
+# (Plan 57 T10b)
+#
+# Ledger's own outbox->RabbitMQ resilience is already proven generically
+# by scenario 2 (checking outbox_events drains after recovery), but that
+# never confirms the SEPARATE merchant webhook Consumer (its own queue
+# binding on the same exchange, internal/merchant/webhook/consumer.go)
+# also survives the outage and catches up — a distinct consumer with its
+# own dedup/fan-out logic that scenario 2 never exercises.
+
+chaos23_admin_post() {
+	curl_internal -sS -X POST "http://localhost:$INTERNAL_PORT/api/v1/admin/gateway$1" \
+		-H "Authorization: Bearer $CHAOS23_ADMIN_TOKEN" -H "Content-Type: application/json" -d "$2"
+}
+
+scenario_23() {
+	log "=== Scenario 23: merchant webhook relay survives a RabbitMQ outage — event delivered once the broker (and consumer) recover ==="
+	ensure_deps_up
+	build_server
+	start_services
+
+	local nonce="chaos23-$RANDOM"
+	CHAOS23_ADMIN_TOKEN="$(gen_token "$nonce-operator" admin)"
+
+	local tenant_id account_id key
+	tenant_id="$(chaos23_admin_post "/tenants" "{\"external_code\":\"$nonce\",\"name\":\"Chaos23 Merchant\",\"environment\":\"sandbox\",\"default_currency\":\"IDR\"}" | json_field id)"
+	[ -n "$tenant_id" ] || fail "chaos23: tenant provisioning failed"
+	account_id="$(chaos23_admin_post "/tenants/$tenant_id/account" '{"currency":"IDR"}' | json_field account_id)"
+	[ -n "$account_id" ] || fail "chaos23: account provisioning failed"
+	key="$(chaos23_admin_post "/tenants/$tenant_id/keys" '{"environment":"sandbox","scopes":["merchant:read","accounts:read","transactions:read","payins:write","payins:read"]}' | json_field plaintext)"
+	[ -n "$key" ] || fail "chaos23: key creation failed"
+
+	local endpoint_hits_file="$WORK_DIR/chaos23_hits.txt"
+	: >"$endpoint_hits_file"
+	local receiver_pid receiver_port=18199
+	python3 - "$receiver_port" "$endpoint_hits_file" <<'PYEOF' &
+import http.server, sys
+port = int(sys.argv[1])
+hits_file = sys.argv[2]
+class H(http.server.BaseHTTPRequestHandler):
+    def do_POST(self):
+        length = int(self.headers.get('Content-Length', 0))
+        self.rfile.read(length)
+        with open(hits_file, 'a') as f:
+            f.write('hit\n')
+        self.send_response(200)
+        self.end_headers()
+    def log_message(self, *args):
+        pass
+http.server.HTTPServer(('127.0.0.1', port), H).serve_forever()
+PYEOF
+	receiver_pid=$!
+	sleep 1
+
+	# Webhook endpoint management is an operator (admin) operation, not a
+	# merchant-facing API-key route (internal/merchant/adminhttp.go) — the
+	# tenant's own self-service surface has no "/webhook-endpoints" route.
+	local endpoint_create_code
+	# transaction.posted.v1 is the ONE external event type this consumer
+	# fans out (internal/merchant/webhook/envelope.go) — a settled merchant
+	# payin credits the tenant's ledger account, which is what actually
+	# emits this event, not a dedicated "payin.updated" type.
+	endpoint_create_code="$(curl_internal -sS -o /dev/null -w '%{http_code}' -X POST "http://localhost:$INTERNAL_PORT/api/v1/admin/gateway/tenants/$tenant_id/webhooks" \
+		-H "Authorization: Bearer $CHAOS23_ADMIN_TOKEN" -H "Content-Type: application/json" \
+		-d "{\"url\":\"http://127.0.0.1:$receiver_port/hook\",\"environment\":\"sandbox\",\"subscribed_events\":[\"transaction.posted.v1\"]}")"
+	[ "$endpoint_create_code" = "201" ] || fail "chaos23: webhook endpoint creation got $endpoint_create_code, expected 201"
+
+	log "stopping rabbitmq..."
+	docker stop "$RABBITMQ_CONTAINER" >/dev/null
+
+	log "creating and settling a merchant payin while the broker is down (posting must not depend on RabbitMQ being up — outbox decouples it)..."
+	local payin_json payin_id reference webhook_body sig webhook_code
+	payin_json="$(curl -sS -X POST "http://localhost:$APP_PORT/api/v1/b2b/payins" \
+		-H "Authorization: Bearer $key" -H "Idempotency-Key: $nonce-payin" -H "Content-Type: application/json" \
+		-d '{"amount":"50000","currency":"IDR"}')"
+	payin_id="$(echo "$payin_json" | json_field id)"
+	[ -n "$payin_id" ] || fail "chaos23: merchant payin creation failed while broker was down: $payin_json"
+	ok "merchant payin created while the broker was down (outbox decouples posting from publish)"
+
+	reference="$(psql_exec "$PAYIN_DB_NAME" -tA -c "SELECT reference FROM payin_topup_intents WHERE id = '$payin_id';" | tr -d '[:space:]')"
+	[ -n "$reference" ] || fail "chaos23: could not resolve payin reference"
+	webhook_body="{\"event_id\":\"$nonce-payin\",\"external_ref\":\"$reference\",\"user_id\":\"$(uuidgen | tr '[:upper:]' '[:lower:]')\",\"amount\":\"50000\",\"currency\":\"IDR\",\"occurred_at\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"type\":\"payment.settled\"}"
+	sig="$(printf '%s' "$webhook_body" | openssl dgst -sha256 -hmac "$VENDOR_MOCKVENDOR_SECRET" -r | awk '{print $1}')"
+	webhook_code="$(curl_internal -sS -o /dev/null -w '%{http_code}' -X POST "http://localhost:$VENDOR_APP_PORT/webhooks/mockvendor" \
+		-H "X-Mock-Signature: $sig" -H "Content-Type: application/json" -d "$webhook_body")"
+	[ "${webhook_code:0:1}" = "2" ] || fail "chaos23: mockvendor settlement webhook got $webhook_code, expected 2xx (broker being down must not block payin settlement)"
+	ok "merchant payin settled while the broker was still down"
+
+	local balance_during_outage
+	balance_during_outage="$(curl -sS "http://localhost:$APP_PORT/api/v1/b2b/accounts/$account_id/balance" -H "Authorization: Bearer $key" | json_field balance)"
+	[ "$balance_during_outage" = "50000" ] && ok "merchant balance credited correctly even with the broker down (money-posting never depends on RabbitMQ)" \
+		|| fail "merchant balance after settlement was '$balance_during_outage', expected 50000"
+
+	local hits_during_outage
+	hits_during_outage="$(wc -l <"$endpoint_hits_file" | tr -d '[:space:]')"
+	[ "$hits_during_outage" = "0" ] && ok "webhook receiver correctly saw zero hits while the broker was down (nothing to consume yet)" \
+		|| fail "webhook receiver already saw $hits_during_outage hit(s) before the broker even recovered — should be impossible"
+
+	log "restarting rabbitmq and waiting for the merchant webhook consumer to catch up..."
+	docker start "$RABBITMQ_CONTAINER" >/dev/null
+	wait_for_container_healthy "$RABBITMQ_CONTAINER"
+
+	local tries=48 hits=0
+	while [ "$tries" -gt 0 ]; do
+		hits="$(wc -l <"$endpoint_hits_file" | tr -d '[:space:]')"
+		[ "$hits" -ge 1 ] && break
+		sleep 5
+		tries=$((tries - 1))
+	done
+	[ "$hits" -ge 1 ] && ok "merchant webhook consumer caught up after the broker recovered and the relay delivered the event (hits=$hits)" \
+		|| fail "no webhook hit arrived within the wait window after the broker recovered"
+
+	kill "$receiver_pid" 2>/dev/null || true
+	wait "$receiver_pid" 2>/dev/null || true
+
+	stop_server_gracefully
+}
+
 # ─── Main ────────────────────────────────────────────────────────────────────
 
 case "${1:-}" in
@@ -1855,6 +2127,8 @@ case "${1:-}" in
 19) scenario_19 ;;
 20) scenario_20 ;;
 21) scenario_21 ;;
+22) scenario_22 ;;
+23) scenario_23 ;;
 all)
 	scenario_1
 	scenario_2
@@ -1877,9 +2151,11 @@ all)
 	scenario_19
 	scenario_20
 	scenario_21
+	scenario_22
+	scenario_23
 	;;
 *)
-	echo "Usage: $0 {1|2|3|4|5|6|7|8|9|10|11|12|13|14|15|16|17|18|19|20|21|all}"
+	echo "Usage: $0 {1|2|3|4|5|6|7|8|9|10|11|12|13|14|15|16|17|18|19|20|21|22|23|all}"
 	exit 2
 	;;
 esac
