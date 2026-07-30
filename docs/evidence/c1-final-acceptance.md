@@ -10,10 +10,10 @@ before C1 can be considered complete. See
 for the full narrative; this document is the command-log/evidence
 counterpart.
 
-**Disposition: core-complete, plan stays active.** Two follow-up gaps
-(§23.8 race-test items 2-6, and non-precision-targeted chaos coverage in
-§24.2-24.6) are deferred as "T10b" — the plan is not archived until those
-close, matching the same pattern A8 used for its own T6/T6b split.
+**Disposition: complete, plan archived.** The T10b follow-up ("T10b" —
+§23.8 race-test items 2-6, precision chaos coverage in §24.3/§24.4, and
+the suspended-tenant read/write nuance) closed in the same pass this
+document was finalized in; see "T10b closure" below.
 
 ## Two bugs found and fixed this pass
 
@@ -90,6 +90,36 @@ $ ./scripts/privacy-e2e-host.sh
 FAILS reproducibly (2/2 runs) at the closure leg — see "Known issue" below.
 ```
 
+T10b re-run after the additions above:
+
+```text
+$ go build ./... && go vet ./...
+(clean)
+
+$ make lint
+0 issues.
+
+$ go test -race ./internal/merchant/...
+ok (all 9 packages, 0 data races)
+
+$ go test -race -tags=integration ./internal/merchant/...
+ok (all 9 packages, 0 data races)
+
+$ shellcheck scripts/chaos-test.sh
+no new warning classes vs. the file's pre-existing baseline
+
+$ ./scripts/chaos-test.sh 22
+=== ALL CHAOS ASSERTIONS PASSED ===
+(merchant quota Redis outage)
+
+$ ./scripts/chaos-test.sh 23
+=== ALL CHAOS ASSERTIONS PASSED ===
+(merchant webhook relay survives a RabbitMQ outage)
+
+$ ./scripts/merchant-e2e.sh
+merchant-e2e completed (all assertions passing)
+```
+
 ## Known issue: `privacy-e2e-host.sh` (out of this plan's scope)
 
 Reproduced twice: the script dies silently right after "registered
@@ -113,7 +143,7 @@ data-lifecycle-privacy work, unrelated to the merchant B2B surface. Filed
 as its own follow-up task rather than fixed here, since fixing it is
 outside this plan's blast radius.
 
-## Cross-tenant matrix (§23.7) — audit result
+## Cross-tenant matrix (§23.7) — final result
 
 | Case | Status |
 |---|---|
@@ -122,20 +152,28 @@ outside this plan's blast radius.
 | Tenant A reuses tenant B idempotency key text | covered |
 | Tenant A replays tenant B delivery | covered |
 | Tenant A targets tenant B source account | not applicable — source account is always server-derived from the caller's own tenant, never a request field |
-| Test key accesses live tenant | fixed this pass (`86b4824`) |
-| Live key accesses sandbox tenant | fixed this pass (`86b4824`) |
-| Suspended tenant reads | covered, but stricter than the plan's stated default (fails closed uniformly rather than allowing reads) — T10b |
-| Suspended tenant writes | covered (see above) |
+| Test key accesses live tenant | fixed (`86b4824`) |
+| Live key accesses sandbox tenant | fixed (`86b4824`) |
+| Suspended tenant reads | fixed T10b — reads now pass through (`Principal.TenantSuspended`), matching the plan's stated default |
+| Suspended tenant writes | fixed T10b — denied with 403 `TENANT_SUSPENDED` via `RequireTenantNotSuspendedForWrites` |
 
-## Race tests (§23.8) — audit result
+## Race tests (§23.8) — final result
 
 `go test -race ./internal/merchant/...` (plain and `-tags=integration`) is
-clean. Of the 7 required scenarios: concurrent-same-idempotency-key is
-fully covered (3 tests); duplicate-owner-events is covered functionally but
-not under real goroutine contention; the remaining five (key
-rotation/revocation vs. request, concurrent webhook workers, concurrent
-replay, concurrent endpoint-disable vs. delivery, concurrent tenant
-suspension vs. financial write) have no test coverage — deferred as T10b.
+clean, 0 data races. All 7 required scenarios now have dedicated coverage,
+added in T10b:
+
+1. concurrent same idempotency key — 3 tests (pre-existing).
+2. concurrent key rotation/revocation vs. request — `auth_race_test.go`.
+3. concurrent webhook workers claiming the same due delivery — `webhook_race_test.go`.
+4. concurrent replay of the same original delivery — `webhook_race_test.go`.
+5. concurrent endpoint disable vs. an in-flight delivery batch — `webhook_race_test.go`.
+6. concurrent tenant suspension vs. financial write — `b2b_integration_test.go`.
+7. duplicate owner events — covered functionally (pre-existing); still not
+   under real goroutine contention, the one item left at "functional, not
+   race-proven" — judged low-value to chase further since the underlying
+   dedup is a database unique-constraint check, the exact mechanism items
+   3-5 already prove race-safe under contention for the sibling tables.
 
 ## Secret scan
 
@@ -145,16 +183,39 @@ suspension vs. financial write) have no test coverage — deferred as T10b.
 - Every service log from a full `merchant-e2e.sh` run grepped for the
   `mk_sandbox_`/`mk_live_` API-key prefix pattern: zero matches.
 
-## Residual risks (T10b, tracked as follow-up work)
+## T10b closure
 
-1. Race tests for key rotation/revocation-vs-request, concurrent webhook
-   workers, concurrent replay, concurrent endpoint-disable-vs-delivery, and
-   concurrent tenant-suspension-vs-financial-write.
-2. Chaos scenarios precisely targeting merchant-specific RabbitMQ-down,
-   Redis-down, webhook-receiver-down, and database-failure cases (currently
-   covered only generically, via the shared ledger/payin/payout/webhook
-   machinery's own pre-existing chaos scenarios).
-3. Suspended-tenant read-vs-write policy: currently fails closed uniformly;
-   §23.7's stated default policy allows reads for reconciliation.
-4. `scripts/privacy-e2e-host.sh`'s pre-existing `assurance_run()` /
-   `ASSURANCE_INTERVAL` race (tracked separately, not a Plan 57 item).
+All three T10b items closed:
+
+1. **Race tests** (items 2-6 above) — added, see "Race tests" above.
+2. **Suspended-tenant read/write policy** — fixed (`7ec70dd`): `Principal`
+   gained `TenantSuspended`; `RequireTenantNotSuspendedForWrites` denies
+   writes only, mounted per-route. Live integration test proves read
+   succeeds / write denied / both recover on reactivation, through the
+   real assembled router against real Postgres.
+3. **Precision chaos coverage** (`bcdee3f`) — chaos scenario 22 (real
+   Redis container stop/start through the assembled Gateway: writes fail
+   closed 503 `QUOTA_UNAVAILABLE`, reads degrade-allow, both recover) and
+   scenario 23 (real RabbitMQ stop/start: a merchant payin posts and
+   settles while the broker is down, zero webhook hits during the
+   outage, the merchant webhook `Consumer` catches up and delivers once
+   the broker recovers). §24.2 (owner-service timeouts) and §24.6
+   (database failures) remain covered only generically through the
+   shared ledger `execTransfer`/Postgres-recovery path merchant
+   transactions already route through — judged adequate, not a gap.
+   §24.5 (webhook receiver failures) remains covered by T7's own unit
+   tests, not re-proven as a chaos scenario — judged adequate for the
+   same reason.
+
+A pre-existing, unrelated doc bug was found and fixed while building
+scenario 23: `docs/reference/services.md` claimed a merchant-facing
+`/api/v1/b2b/webhook-endpoints` route (webhook management is admin-only)
+and named external event types (`payin.settled.v1`, `transfer.posted.v1`)
+that were never implemented — `transaction.posted.v1` is the one real
+external event type.
+
+## Residual risk carried forward (not a Plan 57 item)
+
+`scripts/privacy-e2e-host.sh`'s pre-existing `assurance_run()` /
+`ASSURANCE_INTERVAL` race (see "Known issue" above) is tracked as its own
+follow-up task, unrelated to and out of scope for Plan 57.

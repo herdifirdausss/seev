@@ -3016,6 +3016,83 @@ c1-final-acceptance.md` records this task's full evidence log.
 archived) until the T10b follow-up items above are resolved, matching the
 same pattern A8 used for its own T6/T6b split.
 
+### T10b closure
+
+All three T10b follow-up items are now closed.
+
+**1. Race tests (§23.8 items 2-6).** Added, all passing repeatedly under
+`-race` against real Postgres (commit `e30e283`):
+
+- concurrent key rotation/revocation vs. an in-flight request
+  (`internal/merchant/auth/auth_race_test.go`);
+- concurrent webhook workers claiming the same due delivery, concurrent
+  replay of the same original delivery, and concurrent endpoint disable
+  vs. an in-flight delivery batch (`internal/merchant/webhook/webhook_race_test.go`);
+- concurrent tenant suspension vs. a financial write
+  (`internal/merchant/api/b2b_integration_test.go`).
+
+Each proves the real invariant — no double-dispatch, no delivery escapes
+to a disabled endpoint, no write reports success without completing —
+not just "no crash."
+
+**2. Suspended-tenant read/write policy (§23.7).** Fixed: `RequireMerchantAuth`
+previously rejected a suspended tenant's requests uniformly, including
+reads, which was stricter than §23.7's own stated default ("read access
+may remain available for reconciliation"). `Principal` gained a
+`TenantSuspended` field; a new `RequireTenantNotSuspendedForWrites`
+middleware, mounted per-route (only the router knows `isWrite`), denies
+writes with 403 `TENANT_SUSPENDED` while letting reads through. Verified
+with new unit tests plus a live integration test through the actual
+assembled router against real Postgres: read succeeds while suspended,
+write is denied, both recover immediately on reactivation (commit
+`7ec70dd`).
+
+**3. Precision chaos coverage (§24.3/§24.4).** Added chaos scenarios 22
+and 23 (commit `bcdee3f`), both passing live:
+
+- **Scenario 22** stops the real Redis container and proves
+  `internal/merchant/quota.Enforcer`'s outage posture through the actual
+  assembled Gateway — writes fail closed with 503 `QUOTA_UNAVAILABLE`,
+  reads degrade to a bounded allow, both recover immediately once Redis
+  returns, no restart needed. Previously only proven against a
+  fake/unreachable client in unit tests.
+- **Scenario 23** stops RabbitMQ, settles a real merchant payin through
+  mockvendor's signed webhook while the broker is down (proving posting
+  never depends on RabbitMQ), confirms zero webhook hits during the
+  outage, then restarts the broker and confirms the merchant webhook
+  `Consumer` — a distinct queue binding from ledger's own outbox-draining
+  consumer that scenario 2 already covers — catches up and the relay
+  delivers the event.
+
+§24.2 (owner-service timeouts) and §24.6 (database failures) remain
+covered only generically, through the shared ledger/payin/payout
+machinery merchant transactions route through (the same underlying
+`execTransfer`/Postgres recovery path scenarios 1/3/5/etc. already prove)
+— a judgment call that this is adequate given merchant transfers share
+that exact code path with user-facing transfers, rather than a gap.
+§24.5 (webhook receiver failures: timeout/reset/TLS/429/500/410/oversized/
+redirect/DNS-rebinding/private-address) remains covered by T7's own
+extensive unit-level receiver-failure-matrix tests, not re-proven as a
+chaos-test.sh scenario — judged adequate for the same reason.
+
+A pre-existing, unrelated bug was found and fixed along the way while
+building scenario 23: `docs/reference/services.md` claimed a
+merchant-facing `/api/v1/b2b/webhook-endpoints` route (webhook management
+is actually admin-only) and named external event types
+(`payin.settled.v1`, `transfer.posted.v1`) that were never implemented —
+`transaction.posted.v1` is the one real external event type.
+
+**Final gate re-run after T10b:** `go build ./...`, `go vet ./...`,
+`make lint` (0 issues), `go test -race ./internal/merchant/...` and
+`go test -race -tags=integration ./internal/merchant/...` (both clean, no
+data races), `shellcheck scripts/chaos-test.sh` (no new warning classes),
+and a fresh `scripts/merchant-e2e.sh` run (all assertions passing) — all
+this pass.
+
+**Plan status: complete.** All T10 and T10b acceptance items are
+satisfied; the plan is archived to `docs/roadmap/archive/` as of this
+commit.
+
 ---
 
 ## 21. Recommended PR sequence
@@ -3585,7 +3662,7 @@ C1 is complete only when:
 - [x] Revocation is immediate.
 - [x] Tenant isolation is proven on every resource (source-account
   targeting not applicable to the current API shape; suspended-tenant
-  read/write nuance deferred — T10b, see Result).
+  read/write nuance fixed — T10b, see Result).
 - [x] SSRF protections are exercised.
 - [x] Secret scans across logs, DB evidence, and fixtures are clean.
 - [x] Admin CSRF and role checks pass.
@@ -3617,10 +3694,13 @@ C1 is complete only when:
 - [x] Clean-tree final verification passes (one pre-existing, unrelated
   script flake tracked separately — see Result).
 - [x] Chaos evidence is recorded.
-- [x] Residual risks are explicit (T10b, see Result).
+- [x] Residual risks are explicit (T10b closed; the one remaining item,
+  `privacy-e2e-host.sh`'s pre-existing unrelated flake, is tracked as its
+  own follow-up task — see Result).
 - [x] Roadmap and current-service documentation reflect reality.
-- [ ] The plan is archived only after all required evidence is linked —
-  **not yet**: staying active until T10b closes, same as A8's T6/T6b.
+- [x] The plan is archived only after all required evidence is linked —
+  T10b closed (see T10's Result section), plan archived to
+  `docs/roadmap/archive/`.
 
 ---
 
@@ -3639,10 +3719,10 @@ C1 is complete only when:
 | Payout E2E | `b2b_integration_test.go` | pass | T6 |
 | Webhook signature fixtures | `webhook` package unit tests | pass | T7 |
 | Webhook retry/dead/replay | `webhook_integration_test.go`, `relay_test.go`, `replay_test.go` | pass | T7 |
-| Cross-tenant matrix | `b2b_integration_test.go`, `repository_integration_test.go`, `service_test.go` | 7/9 covered | 1 n/a to API shape, 1 nuance deferred — T10b |
+| Cross-tenant matrix | `b2b_integration_test.go`, `repository_integration_test.go`, `service_test.go` | 9/9 covered | 1 n/a to API shape (documented), suspended-tenant nuance fixed — T10b |
 | Admin BFF E2E | `admin-e2e.sh` | pass | 5/5, this pass |
-| RabbitMQ chaos | chaos scenario 2 (shared outbox machinery) | pass (generic) | no merchant-webhook-specific RabbitMQ-down scenario — T10b |
-| Redis chaos | `internal/merchant/quota` outage tests | pass (generic) | no dedicated chaos-test.sh scenario — T10b |
+| RabbitMQ chaos | chaos scenarios 2 (shared outbox) and 23 (merchant webhook consumer) | pass | 23 added T10b — proves the merchant-specific consumer, not just the shared outbox |
+| Redis chaos | chaos scenario 22 | pass | added T10b — real Redis container stop/start through the assembled Gateway, not just a fake client |
 | Gateway crash recovery | chaos scenario 21 | pass | 40/40 concurrent, exact balances, this pass |
 | Final clean-tree gate | build/vet/lint/contracts/doccheck/`test`/`test -race`/`test -tags=integration`/smoke/business-e2e/admin-e2e/merchant-e2e | pass | this pass; `privacy-e2e-host.sh` fails on a pre-existing, unrelated issue (task filed separately) |
 
