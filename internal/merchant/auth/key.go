@@ -1,5 +1,5 @@
 // Package auth is internal/merchant's API-key verification and scope
-// package (docs/roadmap/active/57-c1-merchant-b2b-api.md §3.1, T3). It has no
+// package (docs/roadmap/archive/57-c1-merchant-b2b-api.md §3.1, T3). It has no
 // dependency on AuthService or pkg/middleware.Claims — a merchant API key
 // is a distinct machine identity, never an AuthService user (§3.2).
 package auth

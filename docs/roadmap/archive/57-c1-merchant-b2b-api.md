@@ -3553,7 +3553,7 @@ During rollback:
 Add or update:
 
 ```text
-docs/roadmap/active/57-c1-merchant-b2b-api.md
+docs/roadmap/archive/57-c1-merchant-b2b-api.md
 docs/roadmap/README.md
 docs/roadmap/42-long-term-roadmap.md
 docs/reference/current-services.md

@@ -1,12 +1,12 @@
 # C1 Final Acceptance Evidence — Plan 57 T10
 
 > [Documentation home](../../README.md) · [Roadmap](../roadmap/README.md) ·
-> [Plan 57](../roadmap/active/57-c1-merchant-b2b-api.md)
+> [Plan 57](../roadmap/archive/57-c1-merchant-b2b-api.md)
 
 This is the T10 final-verification evidence required by
-[Plan 57 §28](../roadmap/active/57-c1-merchant-b2b-api.md#28-documentation-deliverables)
+[Plan 57 §28](../roadmap/archive/57-c1-merchant-b2b-api.md#28-documentation-deliverables)
 before C1 can be considered complete. See
-[Plan 57's own T10 Result section](../roadmap/active/57-c1-merchant-b2b-api.md#t10--verification-chaos-and-release-evidence)
+[Plan 57's own T10 Result section](../roadmap/archive/57-c1-merchant-b2b-api.md#t10--verification-chaos-and-release-evidence)
 for the full narrative; this document is the command-log/evidence
 counterpart.
 

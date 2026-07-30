@@ -1,5 +1,5 @@
 // Package merchant is the Gateway-owned Merchant/B2B API module
-// (docs/roadmap/active/57-c1-merchant-b2b-api.md, roadmap track C1). T2 wires
+// (docs/roadmap/archive/57-c1-merchant-b2b-api.md, roadmap track C1). T2 wires
 // persistence, configuration, and health/retention plumbing only — API-key
 // auth (T3), quota/idempotency enforcement (T4), owner-service clients
 // (T5/T6), the outbound webhook relay (T7), and HTTP handlers (T3+) are

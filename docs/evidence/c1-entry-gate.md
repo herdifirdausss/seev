@@ -1,10 +1,10 @@
 # C1 Entry-Gate Evidence — Plan 57 T0
 
 > [Documentation home](../../README.md) · [Roadmap](../roadmap/README.md) ·
-> [Plan 57](../roadmap/active/57-c1-merchant-b2b-api.md)
+> [Plan 57](../roadmap/archive/57-c1-merchant-b2b-api.md)
 
 This is the T0 entry-gate re-inventory required by
-[Plan 57 §2.2](../roadmap/active/57-c1-merchant-b2b-api.md#22-required-entry-gate-evidence)
+[Plan 57 §2.2](../roadmap/archive/57-c1-merchant-b2b-api.md#22-required-entry-gate-evidence)
 before any C1 implementation work may merge.
 
 ## Baseline

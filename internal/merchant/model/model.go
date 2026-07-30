@@ -1,4 +1,4 @@
-// Package model holds internal/merchant's own domain types (docs/roadmap/active/57-c1-merchant-b2b-api.md
+// Package model holds internal/merchant's own domain types (docs/roadmap/archive/57-c1-merchant-b2b-api.md
 // §3.1's package boundary) — no repository, no HTTP, no DB driver import.
 package model
 
@@ -8,7 +8,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// Tenant is a merchant tenant (docs/roadmap/active/57-c1-merchant-b2b-api.md §11.1).
+// Tenant is a merchant tenant (docs/roadmap/archive/57-c1-merchant-b2b-api.md §11.1).
 // PrimaryAccountID is an application-level reference to a LedgerService
 // account, never a cross-database foreign key (§11.1's own note).
 //

@@ -2,7 +2,7 @@
 
 // Package repository_test proves internal/merchant/repository's tenant
 // isolation and race-safety guarantees against a real PostgreSQL, per
-// docs/roadmap/active/57-c1-merchant-b2b-api.md T2's acceptance: "Repository
+// docs/roadmap/archive/57-c1-merchant-b2b-api.md T2's acceptance: "Repository
 // integration tests use real PostgreSQL" and "Unique constraints prove
 // race safety."
 package repository_test

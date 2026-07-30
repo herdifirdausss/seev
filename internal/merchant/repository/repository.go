@@ -1,5 +1,5 @@
 // Package repository is internal/merchant's Gateway-owned persistence layer
-// (docs/roadmap/active/57-c1-merchant-b2b-api.md §3.1). Every method for a
+// (docs/roadmap/archive/57-c1-merchant-b2b-api.md §3.1). Every method for a
 // tenant-owned resource takes tenantID explicitly (§7.3's code-review rule:
 // GetTransaction(ctx, transactionID) is rejected, GetTransaction(ctx,
 // tenantID, transactionID) is required) — this is what makes a missing

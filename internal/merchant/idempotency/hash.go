@@ -1,5 +1,5 @@
 // Package idempotency is internal/merchant's durable idempotent-write
-// enforcement (docs/roadmap/active/57-c1-merchant-b2b-api.md §3.1, T4) —
+// enforcement (docs/roadmap/archive/57-c1-merchant-b2b-api.md §3.1, T4) —
 // canonical request hashing, deterministic downstream key derivation, and
 // the claim/lease/complete/replay lifecycle on top of
 // internal/merchant/repository.IdempotencyRepository's persistence.

@@ -16,7 +16,6 @@ trigger, prerequisites, and owner decision are satisfied.
 |---|---|---|---|
 | 35 | [Optional local Kubernetes](active/35-phase6j-kubernetes.md) | Learn local orchestration with kind | Todo |
 | 56 · F0 | [Frontend platform foundation](active/56-f0-frontend-platform-foundation.md) | Establish the browser product and shared frontend rules | Active — ready for execution; implementation not started |
-| 57 · C1 | [Merchant/B2B API](active/57-c1-merchant-b2b-api.md) | Add tenant-isolated merchant access on the existing Gateway and money-owner contracts | Active — T0-T9 complete; T10 (final verification, chaos, release evidence) in progress |
 | 58 · C2 | [Data platform and revenue analytics](active/58-c2-data-platform-revenue-analytics.md) | Build an optional CDC-to-OLAP projection and reconciliation path | Active — ready for execution; implementation not started |
 | 59 · C3 | [Multi-channel notifications](active/59-c3-multi-channel-notifications.md) | Extend Gateway notifications with durable email, push, preferences, and replay | Active — ready for execution; implementation not started |
 | 60 · C4 | [End-to-end multi-currency](active/60-c4-end-to-end-multi-currency.md) | Activate existing currency primitives across the full money journey | Active — ready for execution; implementation not started |
@@ -33,12 +32,13 @@ not a promise that every track will be implemented.
 
 ## Archive
 
+Plan 57 · C1 is complete: [Merchant/B2B API](archive/57-c1-merchant-b2b-api.md).
 Plan 53 · B0 is core done: [Load and capacity gate](archive/53-b0-load-capacity-gate.md).
 Plan 54 is core done: [VendorService boundary](archive/54-vendor-service-boundary.md).
 Plan 52 · A9 is core done: [API contracts and schema evolution](archive/52-a9-api-contracts-schema-evolution.md).
 Plan 51 · A8 is complete: [Data lifecycle and privacy](archive/51-a8-data-lifecycle-privacy.md).
 
-The [archive index](archive/README.md) contains 55 files organized as 53
+The [archive index](archive/README.md) contains 56 files organized as 54
 numbered entries; entry 45 has two supporting review records. Archived plans
 preserve the assumptions and task wording from their original phase. They may
 say “current” while describing an older system shape; use the

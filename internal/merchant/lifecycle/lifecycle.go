@@ -1,5 +1,5 @@
 // Package lifecycle is Plan 57 T8's maker-checker gate on sensitive
-// merchant tenant status transitions (docs/roadmap/active/57-c1-merchant-b2b-api.md
+// merchant tenant status transitions (docs/roadmap/archive/57-c1-merchant-b2b-api.md
 // §16.3: "live-mode activation: checker", "tenant closure: checker") —
 // mirrors internal/auth's own operator-offboarding propose/approve/reject
 // shape, generalized to two Action kinds instead of one hardcoded

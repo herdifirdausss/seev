@@ -9,7 +9,7 @@ system shape.
 Use the current [architecture](../../reference/architecture.md) and
 [services](../../reference/services.md) for runtime truth. Open one archived
 record only when you need the reasoning or acceptance evidence for that phase.
-The directory has 55 files represented by 53 numbered rows because plan 45
+The directory has 56 files represented by 54 numbered rows because plan 45
 links to two supporting review records.
 
 | # | Document | Scope | Final status |
@@ -67,3 +67,4 @@ links to two supporting review records.
 | 52 · A9 | [52-a9-api-contracts-schema-evolution.md](52-a9-api-contracts-schema-evolution.md) | API contracts, compatibility, version rollout, and retirement policy | ✅ Core done — manual chaos gate pending |
 | 53 · B0 | [53-b0-load-capacity-gate.md](53-b0-load-capacity-gate.md) | Disposable load harness, safety boundaries, and capacity evidence protocol | ✅ Core done — canonical measurements pending |
 | 54 | [54-vendor-service-boundary.md](54-vendor-service-boundary.md) | VendorService boundary, normalized callback ingress, and vendor adapter ownership | ✅ Core done — final live/chaos gate pending |
+| 57 · C1 | [57-c1-merchant-b2b-api.md](57-c1-merchant-b2b-api.md) | Tenant-isolated Merchant/B2B API on the existing Gateway: API-key auth, quotas, idempotency, merchant transfers/pay-in/payout, signed outbound webhooks, and maker/checker tenant lifecycle | ✅ Done |

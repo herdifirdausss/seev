@@ -40,7 +40,7 @@ type Deps struct {
 }
 
 // NewRouter builds the B2B payin/payout HTTP surface
-// (docs/roadmap/active/57-c1-merchant-b2b-api.md §6.4). Registered
+// (docs/roadmap/archive/57-c1-merchant-b2b-api.md §6.4). Registered
 // patterns are relative ("/payins", not "/api/v1/b2b/payins") — the caller
 // mounts this behind its own "/api/v1/b2b" StripPrefix, the same
 // convention internal/handler.NewRouter already uses for its own sub-mux

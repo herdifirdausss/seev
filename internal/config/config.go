@@ -62,7 +62,7 @@ type Config struct {
 	// namespace for the same K2 reason as Export above.
 	Closure ClosureConfig
 	Cryptox CryptoxConfig
-	// Merchant is docs/roadmap/active/57-c1-merchant-b2b-api.md T2's config for the
+	// Merchant is docs/roadmap/archive/57-c1-merchant-b2b-api.md T2's config for the
 	// Gateway-owned Merchant/B2B API module.
 	Merchant MerchantConfig
 

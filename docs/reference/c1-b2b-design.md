@@ -1,10 +1,10 @@
 # C1 Merchant/B2B API — Locked Design (Plan 57 T1)
 
 > [Documentation home](../README.md) · [Reference](README.md) ·
-> [Plan 57](../roadmap/active/57-c1-merchant-b2b-api.md)
+> [Plan 57](../roadmap/archive/57-c1-merchant-b2b-api.md)
 
 This is the T1 deliverable required by
-[Plan 57 §20 T1](../roadmap/active/57-c1-merchant-b2b-api.md#t1--lock-contracts-states-and-trust-boundaries):
+[Plan 57 §20 T1](../roadmap/archive/57-c1-merchant-b2b-api.md#t1--lock-contracts-states-and-trust-boundaries):
 public state mappings, the webhook envelope/signature scheme, every required
 sequence diagram, and the failure matrix. The OpenAPI contract itself is
 [api/openapi/b2b-v1.yaml](../../api/openapi/b2b-v1.yaml), registered in

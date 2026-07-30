@@ -1,5 +1,5 @@
 // Package client holds internal/merchant's typed Gateway-side clients to
-// PayinService and PayoutService (docs/roadmap/active/57-c1-merchant-b2b-api.md
+// PayinService and PayoutService (docs/roadmap/archive/57-c1-merchant-b2b-api.md
 // §3.1's package boundary) — Gateway calls these owner services over gRPC,
 // never in-process, since PayinService/PayoutService remain independent
 // processes/binaries that own their own lifecycle state (§3.3).

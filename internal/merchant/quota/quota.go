@@ -1,5 +1,5 @@
 // Package quota is internal/merchant's per-tenant rate-limit enforcement
-// (docs/roadmap/active/57-c1-merchant-b2b-api.md §3.1, T4). It reuses
+// (docs/roadmap/archive/57-c1-merchant-b2b-api.md §3.1, T4). It reuses
 // pkg/cache's existing atomic Redis token-bucket Lua script
 // (pkg/cache.RedisRateLimiter) rather than writing a second one — the only
 // thing this package adds is PER-TENANT dynamic rate/burst (the shared

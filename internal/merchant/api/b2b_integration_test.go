@@ -288,7 +288,7 @@ func doRequest(t *testing.T, method, url, apiKey, idempotencyKey string, body []
 }
 
 // TestB2BRouter_RealStack drives the ENTIRE B2B payin/payout surface
-// (docs/roadmap/active/57-c1-merchant-b2b-api.md §6.4) through the actual
+// (docs/roadmap/archive/57-c1-merchant-b2b-api.md §6.4) through the actual
 // assembled router, over real HTTP, against real PostgreSQL-backed
 // auth/quota/idempotency.
 func TestB2BRouter_RealStack(t *testing.T) {

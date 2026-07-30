@@ -62,7 +62,7 @@ signed outbound webhook relay with retry/dead/replay, tenant
 maker/checker lifecycle, and a global incident-response kill switch — all
 on Gateway-owned persistence (no cross-service database access). See
 [C1 design](c1-b2b-design.md) and
-[docs/roadmap/active/57-c1-merchant-b2b-api.md](../roadmap/active/57-c1-merchant-b2b-api.md)
+[docs/roadmap/archive/57-c1-merchant-b2b-api.md](../roadmap/archive/57-c1-merchant-b2b-api.md)
 for the full route list, contracts, and verification evidence.
 
 **What it can do**:

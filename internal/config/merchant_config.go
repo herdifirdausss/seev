@@ -1,6 +1,6 @@
 package config
 
-// MerchantConfig is docs/roadmap/active/57-c1-merchant-b2b-api.md T2's "configuration
+// MerchantConfig is docs/roadmap/archive/57-c1-merchant-b2b-api.md T2's "configuration
 // with secure defaults" for the Gateway-owned Merchant/B2B API module.
 // APIKeyPepper is T3 §8.2's application pepper for the API-key HMAC-SHA-256
 // digest — it must come from the existing secret-loading boundary (file or

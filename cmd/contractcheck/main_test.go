@@ -87,7 +87,7 @@ func TestCompatibilityRequiresExactApprovedCutover(t *testing.T) {
 
 // TestCompatibilityHandlesMultipleRefParametersOnOneOperation is a
 // regression test for a real bug found while locking the C1 Merchant/B2B
-// contract (docs/roadmap/active/57-c1-merchant-b2b-api.md T1): cmd/contractgenerate's
+// contract (docs/roadmap/archive/57-c1-merchant-b2b-api.md T1): cmd/contractgenerate's
 // bundler represents a resolved $ref as {"$ref": {...resolved...}} rather
 // than replacing the node outright, so a bare object(raw) lookup of
 // "name"/"in" was always nil for a $ref-shaped parameter. With only ONE

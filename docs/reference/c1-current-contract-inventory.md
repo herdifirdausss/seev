@@ -1,7 +1,7 @@
 # C1 Current Contract Inventory — Plan 57 T0
 
 > [Documentation home](../README.md) · [Reference](README.md) ·
-> [Plan 57](../roadmap/active/57-c1-merchant-b2b-api.md)
+> [Plan 57](../roadmap/archive/57-c1-merchant-b2b-api.md)
 
 Snapshot at baseline commit `d20e5295ef0cdbbc44816af239c90c3d7514439b`
 (2026-07-28). See [c1-entry-gate.md](../evidence/c1-entry-gate.md) for the

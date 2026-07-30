@@ -1,5 +1,5 @@
 // Package api holds internal/merchant's HTTP handlers and DTO mapping
-// (docs/roadmap/active/57-c1-merchant-b2b-api.md §3.1's package boundary).
+// (docs/roadmap/archive/57-c1-merchant-b2b-api.md §3.1's package boundary).
 // Every response reuses the repo-wide SuccessEnvelope/ErrorEnvelope
 // (api/openapi/b2b-v1.yaml's own locked decision — see that file's
 // `responses:` section comment) via pkg/response; the B2B-specific
