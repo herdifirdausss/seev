@@ -19,7 +19,7 @@ x-cert-volume: &cert-volume
 services:
   object-store-init:
     profiles: ["app"]
-    image: busybox:1.37
+    image: busybox:1.38
     command: ["sh", "-c", "chown 65532:65532 /objects && chmod 700 /objects"]
     volumes:
       - seev_object_store:/objects
