@@ -3,6 +3,7 @@ package load_test
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -27,13 +28,7 @@ func TestCanonicalScenariosUseOpenArrivalAndNoThinkSleep(t *testing.T) {
 		t.Fatalf("expected at least the seven W1-W7 scenarios, got %d", len(files))
 	}
 	for _, want := range canonical {
-		found := false
-		for _, f := range files {
-			if f == want {
-				found = true
-				break
-			}
-		}
+		found := slices.Contains(files, want)
 		if !found {
 			t.Errorf("canonical scenario %s is missing", want)
 		}

@@ -154,7 +154,7 @@ func serverRecordOutbound(ctx context.Context, db *database.DBSQL, flow, vendor,
 		return
 	}
 	var err error
-	for attempt := 0; attempt < maxRecordOutboundAttempts; attempt++ {
+	for range maxRecordOutboundAttempts {
 		_, err = db.ExecContext(ctx, `INSERT INTO vendor_outbound_attempts
 			(flow, vendor, request_id, vendor_reference, attempt, operation, outcome, sanitized_response)
 			SELECT $1,$2,$3,$4,COALESCE(MAX(attempt),0)+1,$5,$6,$7::jsonb

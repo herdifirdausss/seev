@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strings"
 	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -181,12 +182,12 @@ func contentHash(m Manifest) string {
 		currencies = append(currencies, c)
 	}
 	sort.Strings(currencies)
-	balanceSummary := ""
+	var balanceSummary strings.Builder
 	for _, c := range currencies {
-		balanceSummary += fmt.Sprintf("%s=%s;", c, m.BalanceByCurrency[c])
+		balanceSummary.WriteString(fmt.Sprintf("%s=%s;", c, m.BalanceByCurrency[c]))
 	}
 	canonical := fmt.Sprintf("schema_version=%d;user_accounts=%d;system_accounts=%d;ledger_transactions=%d;ledger_entries=%d;balances=%s",
-		m.SchemaVersion, m.UserAccountCount, m.SystemAccountCount, m.LedgerTransactionCount, m.LedgerEntryCount, balanceSummary)
+		m.SchemaVersion, m.UserAccountCount, m.SystemAccountCount, m.LedgerTransactionCount, m.LedgerEntryCount, balanceSummary.String())
 	sum := sha256.Sum256([]byte(canonical))
 	return "sha256:" + hex.EncodeToString(sum[:])
 }
@@ -204,14 +205,14 @@ func checkTierConformance(m *Manifest, bounds tierBounds) {
 		return
 	}
 	m.TierConformance = "fail"
-	detail := ""
+	var detail strings.Builder
 	for i, f := range failures {
 		if i > 0 {
-			detail += "; "
+			detail.WriteString("; ")
 		}
-		detail += f
+		detail.WriteString(f)
 	}
-	m.TierConformanceDetail = detail
+	m.TierConformanceDetail = detail.String()
 }
 
 func fail(err error) { fmt.Fprintln(os.Stderr, "loaddataset:", err); os.Exit(1) }
