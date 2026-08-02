@@ -184,7 +184,7 @@ func contentHash(m Manifest) string {
 	sort.Strings(currencies)
 	var balanceSummary strings.Builder
 	for _, c := range currencies {
-		balanceSummary.WriteString(fmt.Sprintf("%s=%s;", c, m.BalanceByCurrency[c]))
+		fmt.Fprintf(&balanceSummary, "%s=%s;", c, m.BalanceByCurrency[c])
 	}
 	canonical := fmt.Sprintf("schema_version=%d;user_accounts=%d;system_accounts=%d;ledger_transactions=%d;ledger_entries=%d;balances=%s",
 		m.SchemaVersion, m.UserAccountCount, m.SystemAccountCount, m.LedgerTransactionCount, m.LedgerEntryCount, balanceSummary.String())
