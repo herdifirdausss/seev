@@ -9,6 +9,9 @@ lint:
     # intentionally uses the concise GetTxByIdemKeyRequest wire name.
     - RPC_REQUEST_STANDARD_NAME
     - RPC_RESPONSE_STANDARD_NAME
+    # GetTransactionByIdempotencyKey and GetMerchantTransaction intentionally
+    # return the same locked Transaction message.
+    - RPC_REQUEST_RESPONSE_UNIQUE
 breaking:
   use:
     - FILE
