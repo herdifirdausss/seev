@@ -59,9 +59,9 @@ func TestCanonicalScenariosUseOpenArrivalAndNoThinkSleep(t *testing.T) {
 		// unit, not client think time. Every other scenario must remain free
 		// of sleeps, and W3 must not grow an unbounded or arbitrary delay.
 		if strings.Contains(text, "sleep(") &&
-			!(file == "scenarios/w3-payout.js" &&
-				strings.Count(text, "sleep(") == 1 &&
-				strings.Contains(text, "sleep(POLL_INTERVAL_SECONDS)")) {
+			(file != "scenarios/w3-payout.js" ||
+				strings.Count(text, "sleep(") != 1 ||
+				!strings.Contains(text, "sleep(POLL_INTERVAL_SECONDS)")) {
 			t.Errorf("%s contains forbidden think-time sleep", file)
 		}
 		if strings.Contains(strings.ToLower(text), "real-secret") {
