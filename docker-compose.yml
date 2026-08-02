@@ -176,7 +176,7 @@ services:
           memory: 128M
 
   redis:
-    image: redis:7.4.9-alpine
+    image: redis:8.0.0-alpine
     ports:
       # Host uses 6380 to avoid colliding with a locally installed Redis.
       # Containers keep reaching this service as redis:6379.
