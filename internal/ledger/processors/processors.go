@@ -496,7 +496,7 @@ func NewDefaultRegistry(
 		NewMerchantPayoutSettle(accRepo, txRepo),
 		NewMerchantPayoutCancel(accRepo, txRepo),
 		// Merchant / payment
-		NewRefund(accRepo),
+		NewRefund(accRepo, txRepo),
 		NewFeeCollect(accRepo),
 		NewChargeback(accRepo),
 		// Escrow

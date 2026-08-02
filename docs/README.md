@@ -4,10 +4,11 @@
 > needs to choose where to begin. Plans have their own Current, Target, or
 > Historical status.
 
-> **License and readiness:** Seev is open source under
-> [Apache-2.0](../LICENSE). The license permits production use, but the
-> repository is still under development and makes no production-readiness,
-> certification, or support claim.
+## License and readiness
+
+Seev is open source under [Apache-2.0](../LICENSE). The license permits
+production use, but the repository is still under development and makes no production-readiness,
+certification, or support claim.
 
 Do not read this library from top to bottom. Choose one goal from the table,
 open that page, and return here only when your question changes.
@@ -16,6 +17,7 @@ open that page, and return here only when your question changes.
 
 | Your goal | Open this | Stop when you can… |
 |---|---|---|
+| Decide whether Seev's financial-correctness claims are credible | [Evaluate Seev in Five Minutes](portfolio/engineering-proof.md) | Identify the invariants, executable proofs, measured evidence, and stated limits |
 | Understand Seev without technical knowledge | [Interactive story](index.html) | Retell why plans are not money, repeats happen once, and uncertainty waits for proof |
 | Read with a young child | [Read-aloud story](learn/read-aloud-story.md) | Repeat the three safety promises together |
 | Get a short independent introduction | [Five-minute tour](learn/five-minute-tour.md) | Follow Mia's money from top-up to withdrawal |
@@ -40,6 +42,7 @@ Each directory has one purpose and its own index.
 | [`development/`](development/README.md) | Onboarding, engineering rules, and documentation conventions | Product introductions |
 | [`operations/`](operations/README.md) | Runtime tooling, verification, observability, and runbooks | Future architecture claims |
 | [`performance/`](performance/README.md) | Disposable B0 load protocol, baseline, and redacted evidence | Production-capacity claims |
+| [`portfolio/`](portfolio/README.md) | Curated engineering evidence for a five-minute technical review | A replacement for reference or operations documentation |
 | [`security/`](security/README.md) | Threat model and trust boundaries | Private vulnerability reports |
 | [`roadmap/`](roadmap/README.md) | Strategy, active plans, and archived decisions | Current runtime truth |
 | [`data/`](data/README.md) | The generated data retention/classification matrix | Hand-written policy — edit `config/data-retention.yaml` instead |
@@ -128,6 +131,7 @@ plan status.
 - Operations and performance: [operations](operations/README.md),
   [runbooks](operations/runbooks/README.md), and
   [performance](performance/README.md).
+- Portfolio: [engineering proof](portfolio/engineering-proof.md).
 - Security: [threat model](security/threat-model.md).
 - Roadmap: [roadmap index](roadmap/README.md), [long-term strategy](roadmap/42-long-term-roadmap.md),
   and the [active plans](roadmap/active/README.md).

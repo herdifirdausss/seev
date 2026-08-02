@@ -44,17 +44,17 @@ func (m *MockKYCRepository) EXPECT() *MockKYCRepositoryMockRecorder {
 }
 
 // ApproveKYCSubmission mocks base method.
-func (m *MockKYCRepository) ApproveKYCSubmission(ctx context.Context, id uuid.UUID, decidedBy, providerRef, reason string, applyTier func(context.Context, uuid.UUID, int) error) error {
+func (m *MockKYCRepository) ApproveKYCSubmission(ctx context.Context, id uuid.UUID, decidedBy, providerRef, reason string, validUntil time.Time, applyTier func(context.Context, uuid.UUID, int) error) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ApproveKYCSubmission", ctx, id, decidedBy, providerRef, reason, applyTier)
+	ret := m.ctrl.Call(m, "ApproveKYCSubmission", ctx, id, decidedBy, providerRef, reason, validUntil, applyTier)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // ApproveKYCSubmission indicates an expected call of ApproveKYCSubmission.
-func (mr *MockKYCRepositoryMockRecorder) ApproveKYCSubmission(ctx, id, decidedBy, providerRef, reason, applyTier any) *gomock.Call {
+func (mr *MockKYCRepositoryMockRecorder) ApproveKYCSubmission(ctx, id, decidedBy, providerRef, reason, validUntil, applyTier any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ApproveKYCSubmission", reflect.TypeOf((*MockKYCRepository)(nil).ApproveKYCSubmission), ctx, id, decidedBy, providerRef, reason, applyTier)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ApproveKYCSubmission", reflect.TypeOf((*MockKYCRepository)(nil).ApproveKYCSubmission), ctx, id, decidedBy, providerRef, reason, validUntil, applyTier)
 }
 
 // ClaimKYCApplyRetries mocks base method.
@@ -171,6 +171,21 @@ func (m *MockKYCRepository) GetLatestKYCSubmission(ctx context.Context, userID u
 func (mr *MockKYCRepositoryMockRecorder) GetLatestKYCSubmission(ctx, userID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetLatestKYCSubmission", reflect.TypeOf((*MockKYCRepository)(nil).GetLatestKYCSubmission), ctx, userID)
+}
+
+// ListExpiredKYCUsers mocks base method.
+func (m *MockKYCRepository) ListExpiredKYCUsers(ctx context.Context, limit int) ([]uuid.UUID, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListExpiredKYCUsers", ctx, limit)
+	ret0, _ := ret[0].([]uuid.UUID)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListExpiredKYCUsers indicates an expected call of ListExpiredKYCUsers.
+func (mr *MockKYCRepositoryMockRecorder) ListExpiredKYCUsers(ctx, limit any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListExpiredKYCUsers", reflect.TypeOf((*MockKYCRepository)(nil).ListExpiredKYCUsers), ctx, limit)
 }
 
 // ListKYCRescreenSubjects mocks base method.

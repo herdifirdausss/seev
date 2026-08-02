@@ -86,11 +86,23 @@ func (p Profile) Validate() error {
 	if !p.Disposable {
 		return fmt.Errorf("profile %s must be disposable", p.ID)
 	}
-	// local-small reserves 192 MiB for VendorService because W2 exercises the
-	// real callback boundary. The aggregate remains below the 4 GiB Docker
-	// envelope; keep the cap explicit so adding another container is rejected.
-	if p.Resources.LogicalCPUs != 4 || p.Resources.DockerMemoryMiB != 4096 || p.Resources.TotalContainerMemoryMiB > 3520 || p.Resources.MaxContainerMemoryMiB > 768 {
-		return fmt.Errorf("profile %s violates local-small resource envelope", p.ID)
+	// Self-consistency, not a single hardcoded envelope: a profile's declared
+	// container budget must fit inside its own declared Docker allocation,
+	// and no single service may claim more than the whole container budget.
+	// §15.2's own "Proposed resource profiles" table (local-2c-2g,
+	// local-8c-8g) requires this to accept more than exactly local-small's
+	// 4 CPU / 4096 MiB — this used to hard-reject every other profile by
+	// construction (found, later session, while building Phase 5's
+	// elasticity study: the only profile that could ever pass was the one
+	// whose own numbers were literally copied into this check).
+	if p.Resources.LogicalCPUs <= 0 || p.Resources.DockerMemoryMiB <= 0 {
+		return fmt.Errorf("profile %s must declare positive logical_cpus and docker_memory_mib", p.ID)
+	}
+	if p.Resources.TotalContainerMemoryMiB <= 0 || p.Resources.TotalContainerMemoryMiB > p.Resources.DockerMemoryMiB {
+		return fmt.Errorf("profile %s total_container_memory_mib must be positive and fit within docker_memory_mib", p.ID)
+	}
+	if p.Resources.MaxContainerMemoryMiB <= 0 || p.Resources.MaxContainerMemoryMiB > p.Resources.TotalContainerMemoryMiB {
+		return fmt.Errorf("profile %s max_container_memory_mib must be positive and fit within total_container_memory_mib", p.ID)
 	}
 	if p.Network.PublishedHost != "127.0.0.1" {
 		return fmt.Errorf("published_host must be 127.0.0.1")

@@ -190,6 +190,36 @@ func TestVisualAssetFailuresAcceptsValidSVG(t *testing.T) {
 	}
 }
 
+func TestPortfolioEngineeringProofFailuresEnforcesWordRangeAndEvidenceCount(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	path := filepath.Join(root, "docs", "portfolio", "engineering-proof.md")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("# Too short\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	joined := strings.Join(portfolioEngineeringProofFailures(root), "\n")
+	if !strings.Contains(joined, "want 350–550") {
+		t.Fatalf("expected portfolio word-range failure, got %q", joined)
+	}
+	if !strings.Contains(joined, "measured-evidence links; want 4") {
+		t.Fatalf("expected portfolio evidence-link failure, got %q", joined)
+	}
+}
+
+func TestMarkdownWordsOutsideFences(t *testing.T) {
+	t.Parallel()
+
+	text := "one two\n```mermaid\nthree four\n```\nfive"
+	if got := markdownWordsOutsideFences(text); got != 3 {
+		t.Fatalf("markdownWordsOutsideFences() = %d, want 3", got)
+	}
+}
+
 func TestInteractiveAssetFailuresRejectsIncompleteOrOnlineStory(t *testing.T) {
 	t.Parallel()
 

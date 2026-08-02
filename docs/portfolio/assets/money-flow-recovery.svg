@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1080" viewBox="0 0 1080 1080" role="img" aria-labelledby="title desc">
+  <title id="title">Broker-outage recovery metric snapshot</title>
+  <desc id="desc">A retained local broker-outage run reports ten accepted postings, no failed posting response, a fully drained outbox with no dead events, and no ledger imbalance rows.</desc>
+  <rect width="1080" height="1080" fill="#0b1220"/>
+  <text x="60" y="76" fill="#f8fafc" font-family="Arial, sans-serif" font-size="38" font-weight="700">Broker-outage recovery metrics</text>
+  <text x="60" y="114" fill="#94a3b8" font-family="Arial, sans-serif" font-size="20">Retained local run snapshot · scenario_2 · log and database assertions</text>
+  <text x="60" y="144" fill="#94a3b8" font-family="Arial, sans-serif" font-size="16">Captured: 2026-07-30T02:30:18Z · source: chaos-test recovery events and final assertions</text>
+
+  <rect x="60" y="180" width="960" height="130" rx="14" fill="#172033" stroke="#334155"/>
+  <text x="90" y="225" fill="#94a3b8" font-family="Arial, sans-serif" font-size="18">POSTING HTTP RESULTS WHILE RABBITMQ WAS DOWN</text>
+  <text x="90" y="278" fill="#5eead4" font-family="Arial, sans-serif" font-size="48" font-weight="700">10 accepted</text>
+  <text x="610" y="270" fill="#f8fafc" font-family="Arial, sans-serif" font-size="32" font-weight="700">0 non-2xx</text>
+
+  <rect x="60" y="330" width="960" height="130" rx="14" fill="#172033" stroke="#334155"/>
+  <text x="90" y="375" fill="#94a3b8" font-family="Arial, sans-serif" font-size="18">OUTBOX FINAL STATE AFTER BROKER RECOVERY</text>
+  <text x="90" y="428" fill="#5eead4" font-family="Arial, sans-serif" font-size="44" font-weight="700">0 pending / failed / processing</text>
+  <text x="90" y="452" fill="#cbd5e1" font-family="Arial, sans-serif" font-size="16">The durable relay retried, reconnected, and drained before the assertion passed.</text>
+
+  <rect x="60" y="480" width="960" height="130" rx="14" fill="#172033" stroke="#334155"/>
+  <text x="90" y="525" fill="#94a3b8" font-family="Arial, sans-serif" font-size="18">FINAL INTEGRITY ASSERTIONS</text>
+  <text x="90" y="578" fill="#5eead4" font-family="Arial, sans-serif" font-size="42" font-weight="700">0 dead events</text>
+  <text x="480" y="578" fill="#5eead4" font-family="Arial, sans-serif" font-size="42" font-weight="700">0 ledger imbalance rows</text>
+
+  <text x="60" y="680" fill="#f8fafc" font-family="Arial, sans-serif" font-size="24" font-weight="700">Observed recovery sequence (UTC)</text>
+  <line x1="96" y1="735" x2="984" y2="735" stroke="#475569" stroke-width="5" stroke-linecap="round"/>
+  <circle cx="140" cy="735" r="13" fill="#fb7185"/>
+  <circle cx="405" cy="735" r="13" fill="#fbbf24"/>
+  <circle cx="675" cy="735" r="13" fill="#5eead4"/>
+  <circle cx="940" cy="735" r="13" fill="#5eead4"/>
+  <text x="82" y="782" fill="#f8fafc" font-family="Arial, sans-serif" font-size="20" font-weight="700">02:28:59</text>
+  <text x="82" y="812" fill="#cbd5e1" font-family="Arial, sans-serif" font-size="16">Broker stopped</text>
+  <text x="347" y="782" fill="#f8fafc" font-family="Arial, sans-serif" font-size="20" font-weight="700">02:29:02</text>
+  <text x="310" y="812" fill="#cbd5e1" font-family="Arial, sans-serif" font-size="16">Postings + retry</text>
+  <text x="617" y="782" fill="#f8fafc" font-family="Arial, sans-serif" font-size="20" font-weight="700">02:29:24</text>
+  <text x="603" y="812" fill="#cbd5e1" font-family="Arial, sans-serif" font-size="16">Ledger reconnected</text>
+  <text x="882" y="782" fill="#f8fafc" font-family="Arial, sans-serif" font-size="20" font-weight="700">02:30:18</text>
+  <text x="842" y="812" fill="#cbd5e1" font-family="Arial, sans-serif" font-size="16">Assertions complete</text>
+
+  <rect x="60" y="892" width="960" height="116" rx="12" fill="#132a2f"/>
+  <text x="90" y="938" fill="#d1fae5" font-family="Arial, sans-serif" font-size="17">Evidence source: structured scenario events plus final outbox and ledger database assertions.</text>
+  <text x="90" y="970" fill="#d1fae5" font-family="Arial, sans-serif" font-size="17">This is a metric snapshot, not a Grafana capture or a production-capacity claim.</text>
+</svg>

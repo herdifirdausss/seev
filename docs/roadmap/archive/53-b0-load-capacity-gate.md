@@ -13,6 +13,15 @@
 > a conscious learning decision made on 2026-07-22 after the MVP and its
 > observability foundation. Completing B0 does not activate B1, B2, or B3 by
 > itself; only the locked evidence gates in this plan may do that.
+>
+> **Post-archive update:** the canonical capacity evidence and B1/B2/B3
+> decisions this plan left operator-controlled were subsequently produced —
+> see [`docs/performance/reports/2026-07-31-baseline.md`](../../performance/reports/2026-07-31-baseline.md)
+> for the confirmed staircase-confirm-spike-soak results (S1/S3/S4 pass, S2
+> fails by design) and directly-evidenced B1 (REJECT), B2 (REJECT), and B3
+> (REJECT) decisions. This plan's own task wording and assumptions below are
+> left unchanged as the historical record; the dated report is current
+> evidence.
 
 ## 1. Trigger and objective
 

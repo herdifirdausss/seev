@@ -1,0 +1,1 @@
+ALTER TABLE screening_events DROP CONSTRAINT IF EXISTS chk_screening_events_amount_positive;

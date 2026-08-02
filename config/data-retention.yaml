@@ -90,6 +90,30 @@ entries:
     policy_version: 1
     notes: "Append-only sanitized vendor transport audit; plaintext credentials and full vendor payloads are never stored."
 
+  - owner: vendor
+    class: vendor.retention_holds
+    table: vendor.vendor_retention_holds
+    classification: internal
+    terminal_timestamp: null
+    duration: null
+    action: retain_state
+    batch_size: 0
+    hold_scope: none
+    policy_version: 1
+    notes: "docs/roadmap/archive/51 K5. Same shape/rationale as adminbff.retention_holds."
+
+  - owner: vendor
+    class: vendor.retention_audit
+    table: vendor.vendor_retention_audit
+    classification: internal
+    terminal_timestamp: null
+    duration: null
+    action: retain_permanent
+    batch_size: 0
+    hold_scope: none
+    policy_version: 1
+    notes: "docs/roadmap/archive/51 K4. Same shape/rationale as adminbff.retention_audit."
+
   # ── adminbff ──────────────────────────────────────────────────────────────
   - owner: adminbff
     class: adminbff.sessions
@@ -852,6 +876,30 @@ entries:
     hold_scope: none
     policy_version: 1
     notes: "Not itemized in §4.2 — T0 judgment call. Each row ties to posted_tx_id once posted; treated as permanent financial evidence like disbursement_batches."
+
+  - owner: ledger
+    class: ledger.chargeback_disputes
+    table: ledger.chargeback_disputes
+    classification: financial
+    terminal_timestamp: null
+    duration: null
+    action: retain_permanent
+    batch_size: 0
+    hold_scope: none
+    policy_version: 1
+    notes: "Business-completeness audit finding (migrations/ledger/000035_chargeback_disputes) — card-network dispute case evidence, same permanent-retention posture as disbursement_items/recon_batches: a resolved dispute (won/lost/expired) is exactly the kind of record a card network or regulator can re-open years later."
+
+  - owner: ledger
+    class: ledger.chargeback_dispute_status_changes
+    table: ledger.chargeback_dispute_status_changes
+    classification: financial
+    terminal_timestamp: null
+    duration: null
+    action: retain_permanent
+    batch_size: 0
+    hold_scope: none
+    policy_version: 1
+    notes: "Security audit finding (migrations/ledger/000037_chargeback_dispute_audit_trail) — the actor/history trail for chargeback_disputes resolution; same permanent-retention posture as its parent table (an accountability record has no reason to expire before the case it documents does)."
 
   - owner: ledger
     class: ledger.savings_config

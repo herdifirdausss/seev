@@ -93,6 +93,7 @@ var lifecycleCloseReason = map[string]string{
 	"withdraw_pending_cancel": "cancelled",
 	"escrow_release":          "released",
 	"escrow_refund":           "refunded",
+	"refund":                  "refunded",
 }
 
 // =============================================================================

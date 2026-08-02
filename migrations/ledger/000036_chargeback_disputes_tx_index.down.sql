@@ -1,0 +1,1 @@
+DROP INDEX IF EXISTS idx_chargeback_disputes_chargeback_tx;

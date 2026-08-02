@@ -276,7 +276,7 @@ func TestSubmitKYC_L1AutoApprove(t *testing.T) {
 	kyc.EXPECT().GetLatestKYCSubmission(gomock.Any(), userID).Return(model.KYCSubmission{}, repository.ErrKYCSubmissionNotFound)
 	var submission model.KYCSubmission
 	kyc.EXPECT().CreateKYCSubmission(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, s model.KYCSubmission) error { submission = s; return nil })
-	kyc.EXPECT().ApproveKYCSubmission(gomock.Any(), gomock.Any(), "system", gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, _ uuid.UUID, _ string, _ string, _ string, apply func(context.Context, uuid.UUID, int) error) error {
+	kyc.EXPECT().ApproveKYCSubmission(gomock.Any(), gomock.Any(), "system", gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, _ uuid.UUID, _ string, _ string, _ string, _ time.Time, apply func(context.Context, uuid.UUID, int) error) error {
 		return apply(ctx, userID, 1)
 	})
 
@@ -346,7 +346,7 @@ func TestSubmitKYC_L2ReferThenAdminApprove(t *testing.T) {
 	assert.Zero(t, prov.calls)
 
 	kyc.EXPECT().GetKYCSubmission(gomock.Any(), submissionID).Return(submission, nil)
-	kyc.EXPECT().ApproveKYCSubmission(gomock.Any(), submissionID, "admin-1", gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, _ uuid.UUID, _ string, _ string, _ string, apply func(context.Context, uuid.UUID, int) error) error {
+	kyc.EXPECT().ApproveKYCSubmission(gomock.Any(), submissionID, "admin-1", gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, _ uuid.UUID, _ string, _ string, _ string, _ time.Time, apply func(context.Context, uuid.UUID, int) error) error {
 		return apply(ctx, userID, 2)
 	})
 	require.NoError(t, m.ApproveKYC(context.Background(), submissionID, "admin-1"))
@@ -360,7 +360,7 @@ func TestSubmitKYC_ApplyTierFailureLeavesApprovalPending(t *testing.T) {
 	users.EXPECT().GetUserByID(gomock.Any(), userID).Return(model.User{ID: userID, KYCLevel: 0}, nil)
 	kyc.EXPECT().GetLatestKYCSubmission(gomock.Any(), userID).Return(model.KYCSubmission{}, repository.ErrKYCSubmissionNotFound)
 	kyc.EXPECT().CreateKYCSubmission(gomock.Any(), gomock.Any()).Return(nil)
-	kyc.EXPECT().ApproveKYCSubmission(gomock.Any(), gomock.Any(), "system", gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, _ uuid.UUID, _ string, _ string, _ string, apply func(context.Context, uuid.UUID, int) error) error {
+	kyc.EXPECT().ApproveKYCSubmission(gomock.Any(), gomock.Any(), "system", gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, _ uuid.UUID, _ string, _ string, _ string, _ time.Time, apply func(context.Context, uuid.UUID, int) error) error {
 		return fmt.Errorf("%w: %w", repository.ErrKYCApplyTier, apply(ctx, userID, 1))
 	})
 	kyc.EXPECT().EnqueueKYCApplyRetry(gomock.Any(), gomock.Any()).Return(nil)

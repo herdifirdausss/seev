@@ -48,6 +48,7 @@ func main() {
 	failures = append(failures, documentationLayoutFailures(root)...)
 	failures = append(failures, visualAssetFailures(root)...)
 	failures = append(failures, interactiveAssetFailures(root)...)
+	failures = append(failures, portfolioEngineeringProofFailures(root)...)
 	for _, name := range files {
 		failures = append(failures, languageConsistencyFailures(root, name)...)
 		found, scanErr := links(name)
@@ -413,6 +414,101 @@ func visualAssetFailures(root string) []string {
 			return nil
 		} else if err != nil {
 			return []string{fmt.Sprintf("docs/seev-story.svg: invalid SVG XML: %v", err)}
+		}
+	}
+}
+
+func portfolioEngineeringProofFailures(root string) []string {
+	const name = "docs/portfolio/engineering-proof.md"
+	path := filepath.Join(root, filepath.FromSlash(name))
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		return []string{fmt.Sprintf("%s: required curated evidence page is missing", name)}
+	}
+
+	text := string(contents)
+	var failures []string
+	for _, heading := range []string{
+		"Minute 1 — Problem",
+		"Minute 2 — Architecture",
+		"Minute 3 — Three invariants",
+		"Minute 4 — Three proofs",
+		"Minute 5 — Measured evidence",
+	} {
+		if strings.Count(text, "## "+heading) != 1 {
+			failures = append(failures, fmt.Sprintf("%s: must contain exactly one %q section", name, heading))
+		}
+	}
+	if got := strings.Count(text, "## Minute "); got != 5 {
+		failures = append(failures, fmt.Sprintf("%s: has %d main minute sections; want 5", name, got))
+	}
+	if got := strings.Count(text, "### "); got != 3 {
+		failures = append(failures, fmt.Sprintf("%s: has %d executable proof headings; want 3", name, got))
+	}
+	for _, marker := range []string{
+		"TestIdempotency_ConcurrentRetries_ExactlyOneMonetaryEffect",
+		"`scenario_2`",
+		"`scenario_8`",
+		"verifies that the ledger remains balanced",
+		"../learn/product-tour.md#what-seev-deliberately-does-not-claim",
+		"assets/money-flow-recovery.svg",
+		"assets/payout-unknown-state-timeline.svg",
+	} {
+		if !strings.Contains(text, marker) {
+			failures = append(failures, fmt.Sprintf("%s: required evidence marker %q is missing", name, marker))
+		}
+	}
+
+	measuredEvidence := ""
+	if start := strings.Index(text, "## Minute 5 — Measured evidence"); start >= 0 {
+		measuredEvidence = text[start:]
+	}
+	if got := strings.Count(measuredEvidence, "\n- ["); got != 4 {
+		failures = append(failures, fmt.Sprintf("%s: has %d measured-evidence links; want 4", name, got))
+	}
+	if words := markdownWordsOutsideFences(text); words < 350 || words > 550 {
+		failures = append(failures, fmt.Sprintf("%s: has %d words outside code fences; want 350–550", name, words))
+	}
+
+	for _, asset := range []string{
+		"docs/portfolio/assets/money-flow-recovery.svg",
+		"docs/portfolio/assets/payout-unknown-state-timeline.svg",
+	} {
+		if failure := validateSVG(root, asset); failure != "" {
+			failures = append(failures, failure)
+		}
+	}
+	return failures
+}
+
+func markdownWordsOutsideFences(text string) int {
+	var visible []string
+	inFence := false
+	for line := range strings.SplitSeq(text, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "```") {
+			inFence = !inFence
+			continue
+		}
+		if !inFence {
+			visible = append(visible, line)
+		}
+	}
+	return len(strings.Fields(strings.Join(visible, "\n")))
+}
+
+func validateSVG(root, name string) string {
+	file, err := os.Open(filepath.Join(root, filepath.FromSlash(name)))
+	if err != nil {
+		return fmt.Sprintf("%s: required visual asset is missing", name)
+	}
+	defer file.Close()
+
+	decoder := xml.NewDecoder(file)
+	for {
+		if _, err = decoder.Token(); err == io.EOF {
+			return ""
+		} else if err != nil {
+			return fmt.Sprintf("%s: invalid SVG XML: %v", name, err)
 		}
 	}
 }

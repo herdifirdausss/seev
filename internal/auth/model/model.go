@@ -36,6 +36,12 @@ type User struct {
 	KYCLevel  int
 	CreatedAt time.Time
 	UpdatedAt time.Time
+	// KYCVerifiedUntil is the validity deadline for KYCLevel — nil for level
+	// 0 (nothing to verify) or a level approved before this field existed.
+	// Past this timestamp the level is still enforced (limits don't drop
+	// automatically mid-request) until the periodic expiry worker downgrades
+	// it; see internal/auth/worker/expiry.go.
+	KYCVerifiedUntil *time.Time
 }
 
 type KYCSubmission struct {

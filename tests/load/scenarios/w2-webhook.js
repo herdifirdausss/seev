@@ -1,13 +1,35 @@
-import { semantic, signature, stableKey, iterationOptions, vendorBaseURL, handleSummary } from '../lib/common.js';
-import http from 'k6/http';
+import { semantic, iterationOptions, handleSummary } from '../lib/common.js';
+import { seedWebhookPool, deliverWebhook } from '../lib/seed.js';
 
 export { handleSummary };
 
 export const options = iterationOptions();
-export default function () {
-  const key = stableKey('webhook');
-  const body = JSON.stringify({ event_id: key, external_ref: __ENV.LOAD_TOPUP_REFERENCE || key, user_id: __ENV.LOAD_USER_ID || '00000000-0000-0000-0000-000000000002', amount: '1000', currency: 'IDR', occurred_at: new Date().toISOString(), type: 'payment.settled' });
-  const headers = { 'Content-Type': 'application/json', 'X-Mock-Signature': signature(__ENV.LOAD_VENDOR_SECRET || 'synthetic-vendor-secret', body), 'X-Request-ID': key };
-  const response = http.post(`${vendorBaseURL}/webhooks/mockvendor`, body, { headers, tags: { workload: 'W2', operation: 'webhook' } });
-  semantic(response, 'webhook', [200, 202, 400, 401, 404, 409]);
+
+// setup() pre-creates one pending topup intent per planned iteration
+// (Phase 0 §24.2/§24.1 — tests/load/lib/seed.js) so the load phase measures
+// webhook settlement, not intent-creation cost or manual seeding.
+export function setup() {
+  return seedWebhookPool();
+}
+
+// Every 10th iteration is an exact redelivery: same event_id, same
+// reference as the delivery one iteration earlier in this same VU's own
+// history (k6 iterations within a VU run strictly in order, so that prior
+// delivery has always already happened). This is K7's "separately tagged
+// 10% exact webhook redelivery stream" — real duplicate-delivery traffic,
+// not a second unique event for the same intent.
+const REDELIVERY_EVERY_N = 10;
+
+function eventIDFor(vu, poolIndex) {
+  return `w2-${__ENV.LOAD_RUN_ID || 'unbound'}-vu${vu}-i${poolIndex}`;
+}
+
+export default function (data) {
+  const poolIndex = __ITER % data.intents.length;
+  const isRedelivery = __ITER > 0 && __ITER % REDELIVERY_EVERY_N === REDELIVERY_EVERY_N - 1;
+  const targetIndex = isRedelivery ? (__ITER - 1) % data.intents.length : poolIndex;
+  const intent = data.intents[targetIndex];
+  const eventID = eventIDFor(__VU, targetIndex);
+  const response = deliverWebhook(intent.vendor, intent.reference, intent.amount, eventID);
+  semantic(response, isRedelivery ? 'webhook redelivery' : 'webhook', [200, 201, 202]);
 }

@@ -42,16 +42,19 @@ const (
 // Enforced on BOTH routers as defense in depth, even though the internal
 // router is already network-isolated (docs/roadmap/archive/10 Task T1).
 //
-// adjustment_credit/adjustment_debit are deliberately ABSENT here — as of
-// docs/roadmap/archive/16 Task T1, they aren't merely admin-gated, they are blocked
-// from direct POST entirely (see directPostBlockedTypes below) and only
-// reachable via the maker-checker /admin/adjustments flow.
+// adjustment_credit/adjustment_debit/reversal/chargeback/freeze_confiscate
+// are deliberately ABSENT here — as of docs/roadmap/archive/16 Task T1 (and, for the
+// latter three, a later security audit finding), none of them are merely
+// admin-gated: they are blocked from direct POST entirely (see
+// directPostBlockedTypes below) and only reachable via the maker-checker
+// /admin/adjustments flow. reversal/chargeback/freeze_confiscate moved here
+// because a single admin JWT let one identity both decide AND execute an
+// unrestricted reversal or a permanent fund seizure — no less consequential
+// than a manual balance adjustment, which already required a second
+// identity.
 var adminOnlyTypes = map[string]bool{
-	"freeze_initiate":   true,
-	"freeze_release":    true,
-	"freeze_confiscate": true,
-	"reversal":          true,
-	"chargeback":        true,
+	"freeze_initiate": true,
+	"freeze_release":  true,
 }
 
 // publicUserTypes are the ONLY transaction types reachable from the
@@ -190,8 +193,12 @@ func (h *handler) mux() http.Handler {
 		mux.HandleFunc("POST /admin/schedules/run", h.runSchedulesNow)
 
 		// Batch disbursement (docs/roadmap/archive/19 Task T2) — internal router only,
-		// admin-gated.
+		// admin-gated. approve/reject (maker-checker gate, business-completeness
+		// audit finding) require checker privileges specifically; create
+		// requires maker privileges; run/report stay generic admin.
 		mux.HandleFunc("POST /admin/disbursements", h.createDisbursementBatch)
+		mux.HandleFunc("POST /admin/disbursements/{id}/approve", h.approveDisbursementBatch)
+		mux.HandleFunc("POST /admin/disbursements/{id}/reject", h.rejectDisbursementBatch)
 		mux.HandleFunc("POST /admin/disbursements/{id}/run", h.runDisbursement)
 		mux.HandleFunc("GET /admin/disbursements/{id}", h.getDisbursementReport)
 
@@ -409,13 +416,17 @@ func (h *handler) createQuote(w http.ResponseWriter, r *http.Request) {
 // directPostBlockedTypes are transaction types that must NEVER be posted
 // directly through POST /transactions, on either router — the ONLY path to
 // them is the maker-checker adjustment flow (docs/roadmap/archive/16 Task T1, decision
-// K8). Distinct from adminOnlyTypes: those are gated by role, these are
+// K8; reversal/chargeback/freeze_confiscate added by a later security audit
+// finding). Distinct from adminOnlyTypes: those are gated by role, these are
 // gated out of existence on this endpoint entirely, admin or not.
 var directPostBlockedTypes = map[string]bool{
 	"adjustment_credit":          true,
 	"adjustment_debit":           true,
 	"adjustment_suspense_credit": true,
 	"adjustment_suspense_debit":  true,
+	"reversal":                   true,
+	"chargeback":                 true,
+	"freeze_confiscate":          true,
 }
 
 type handler struct {
@@ -1064,8 +1075,16 @@ func (h *handler) createAdjustment(w http.ResponseWriter, r *http.Request) {
 		response.BadRequest(w, "reason is required")
 		return
 	}
+	var referenceID uuid.UUID
+	if req.ReferenceID != "" {
+		referenceID, err = uuid.Parse(req.ReferenceID)
+		if err != nil {
+			response.BadRequest(w, "reference_id must be a valid UUID")
+			return
+		}
+	}
 
-	id, err := h.svc.CreateAdjustment(r.Context(), requestedBy.String(), req.Type, amount, targetUserID, req.Metadata, req.Reason)
+	id, err := h.svc.CreateAdjustment(r.Context(), requestedBy.String(), req.Type, amount, targetUserID, referenceID, req.Metadata, req.Reason)
 	if err != nil {
 		writeError(w, err)
 		return
@@ -1566,8 +1585,12 @@ func (h *handler) runSchedulesNow(w http.ResponseWriter, r *http.Request) {
 // after a partial run already only re-selects items still pending/failed.
 
 func (h *handler) createDisbursementBatch(w http.ResponseWriter, r *http.Request) {
-	if !isAdmin(r) {
-		response.Forbidden(w, "admin privileges required")
+	// Business-completeness audit finding: maker-gated the same as
+	// createAdjustment — importing a batch alone must never move money, so
+	// the identity that imports it can never also be the one whose
+	// privileges alone unlock Run (see approveDisbursementBatch below).
+	if !isAdminMaker(r) {
+		response.Forbidden(w, "maker privileges required")
 		return
 	}
 	createdBy, ok := currentUserID(r)
@@ -1650,6 +1673,61 @@ func parseDisbursementCSV(r io.Reader) ([]model.DisbursementImportRow, error) {
 		rows = append(rows, model.DisbursementImportRow{UserID: userID, Amount: amount, Note: note})
 	}
 	return rows, nil
+}
+
+// approveDisbursementBatch/rejectDisbursementBatch back the maker-checker
+// gate a business-completeness audit finding added: Import alone never
+// moves money, and Run refuses to process a single item until a DIFFERENT
+// identity (checker privileges, same as approveAdjustment) approves the
+// batch here.
+func (h *handler) approveDisbursementBatch(w http.ResponseWriter, r *http.Request) {
+	if !isAdminChecker(r) {
+		response.Forbidden(w, "checker privileges required")
+		return
+	}
+	approverID, ok := currentUserID(r)
+	if !ok {
+		response.Unauthorized(w, "invalid or missing user identity")
+		return
+	}
+	batchID, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		response.BadRequest(w, "invalid batch id")
+		return
+	}
+
+	if err := h.svc.ApproveDisbursementBatch(r.Context(), batchID, approverID.String()); err != nil {
+		writeError(w, err)
+		return
+	}
+	response.OK(w, approveDisbursementBatchResponse{Approved: true})
+}
+
+func (h *handler) rejectDisbursementBatch(w http.ResponseWriter, r *http.Request) {
+	if !isAdminChecker(r) {
+		response.Forbidden(w, "checker privileges required")
+		return
+	}
+	approverID, ok := currentUserID(r)
+	if !ok {
+		response.Unauthorized(w, "invalid or missing user identity")
+		return
+	}
+	batchID, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		response.BadRequest(w, "invalid batch id")
+		return
+	}
+	var req rejectDisbursementBatchRequest
+	if !response.Decode(w, r, &req) {
+		return
+	}
+
+	if err := h.svc.RejectDisbursementBatch(r.Context(), batchID, approverID.String(), req.Reason); err != nil {
+		writeError(w, err)
+		return
+	}
+	response.OK(w, rejectDisbursementBatchResponse{Rejected: true})
 }
 
 func (h *handler) runDisbursement(w http.ResponseWriter, r *http.Request) {

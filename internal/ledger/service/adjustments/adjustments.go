@@ -46,11 +46,24 @@ type Poster interface {
 // decision K5) extend the same governance path to reconciliation
 // resolution — a discrepancy against a gateway's suspense account, not a
 // specific user's balance, so they take a gateway instead of a target user.
+//
+// reversal/chargeback/freeze_confiscate (security audit finding) join this
+// set for the same reason: each was previously reachable with a single
+// admin JWT (internal/ledger/transport/http.go's adminOnlyTypes) despite
+// being at least as consequential as a manual balance adjustment —
+// reversal can undo ANY prior transaction with no restriction on which
+// one, freeze_confiscate is an explicitly terminal/permanent seizure. They
+// are now blocked from direct POST the same way adjustment_credit/debit
+// already were (see directPostBlockedTypes in transport/http.go) and are
+// reachable ONLY through this maker-checker path.
 var allowedTypes = map[string]bool{
 	"adjustment_credit":          true,
 	"adjustment_debit":           true,
 	"adjustment_suspense_credit": true,
 	"adjustment_suspense_debit":  true,
+	"reversal":                   true,
+	"chargeback":                 true,
+	"freeze_confiscate":          true,
 }
 
 // suspenseTypes require a "gateway" metadata key instead of a target user —
@@ -60,15 +73,25 @@ var suspenseTypes = map[string]bool{
 	"adjustment_suspense_debit":  true,
 }
 
+// referenceIDTypes require a ReferenceID (the transaction being acted on) —
+// see allowedTypes. Only reversal needs one: chargeback/freeze_confiscate
+// identify their target entirely through UserID + Metadata (dispute_ref/
+// card_network, case_id/legal_ref respectively), the same shape every
+// adjustment type already used.
+var referenceIDTypes = map[string]bool{
+	"reversal": true,
+}
+
 // cmdPayload is the JSON shape stored in pending_adjustments.cmd_payload —
 // a deliberately narrow subset of processors.Command (docs/roadmap/archive/16 Task T1
 // step 3): only what an adjustment actually needs, validated at Create time
 // so a malformed request fails fast rather than at approve time.
 type cmdPayload struct {
-	Type     string         `json:"type"`
-	Amount   string         `json:"amount"`
-	UserID   uuid.UUID      `json:"user_id"`
-	Metadata map[string]any `json:"metadata"`
+	Type        string         `json:"type"`
+	Amount      string         `json:"amount"`
+	UserID      uuid.UUID      `json:"user_id"`
+	Metadata    map[string]any `json:"metadata"`
+	ReferenceID uuid.UUID      `json:"reference_id,omitempty"`
 }
 
 type Service struct {
@@ -88,10 +111,12 @@ func New(db DatabaseSQL, repo repository.PendingAdjustmentRepository, txRepo rep
 // optional processor fields (ticket_ref, etc.) but "authorized_by" is
 // always overwritten at approve time with the APPROVER's identity (not the
 // requester's) — the approver is who actually authorizes the money
-// movement in this design.
-func (s *Service) Create(ctx context.Context, requestedBy, adjType string, amount decimal.Decimal, targetUserID uuid.UUID, metadata map[string]any, reason string) (uuid.UUID, error) {
+// movement in this design. referenceID is required for reversal (the
+// transaction being reversed) and ignored for every other type — Reversal
+// resolves its accounts entirely from ReferenceID, never from UserID.
+func (s *Service) Create(ctx context.Context, requestedBy, adjType string, amount decimal.Decimal, targetUserID, referenceID uuid.UUID, metadata map[string]any, reason string) (uuid.UUID, error) {
 	if !allowedTypes[adjType] {
-		return uuid.Nil, fmt.Errorf("%w: type must be one of adjustment_credit, adjustment_debit, adjustment_suspense_credit, adjustment_suspense_debit", apperror.ErrValidation)
+		return uuid.Nil, fmt.Errorf("%w: type must be one of adjustment_credit, adjustment_debit, adjustment_suspense_credit, adjustment_suspense_debit, reversal, chargeback, freeze_confiscate", apperror.ErrValidation)
 	}
 	if !amount.IsPositive() || !amount.Equal(amount.Truncate(0)) {
 		return uuid.Nil, fmt.Errorf("%w: amount must be a positive integer (minor units)", apperror.ErrValidation)
@@ -99,12 +124,17 @@ func (s *Service) Create(ctx context.Context, requestedBy, adjType string, amoun
 	if metadata == nil {
 		metadata = map[string]any{}
 	}
-	if suspenseTypes[adjType] {
+	switch {
+	case suspenseTypes[adjType]:
 		gateway, _ := generalutil.MetaString(metadata, "gateway")
 		if gateway == "" || !constant.ValidGateways[gateway] {
 			return uuid.Nil, fmt.Errorf("%w: %s requires a valid 'gateway' in metadata", apperror.ErrValidation, adjType)
 		}
-	} else if targetUserID == uuid.Nil {
+	case referenceIDTypes[adjType]:
+		if referenceID == uuid.Nil {
+			return uuid.Nil, fmt.Errorf("%w: %s requires reference_id (the transaction being acted on)", apperror.ErrValidation, adjType)
+		}
+	case targetUserID == uuid.Nil:
 		return uuid.Nil, fmt.Errorf("%w: user_id is required", apperror.ErrValidation)
 	}
 	if reason == "" {
@@ -114,7 +144,7 @@ func (s *Service) Create(ctx context.Context, requestedBy, adjType string, amoun
 		return uuid.Nil, fmt.Errorf("%w: requested_by (caller identity) is required", apperror.ErrValidation)
 	}
 
-	payload := cmdPayload{Type: adjType, Amount: amount.String(), UserID: targetUserID, Metadata: metadata}
+	payload := cmdPayload{Type: adjType, Amount: amount.String(), UserID: targetUserID, Metadata: metadata, ReferenceID: referenceID}
 	payloadJSON, err := json.Marshal(payload)
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("marshal adjustment payload: %w", err)
@@ -196,6 +226,7 @@ func (s *Service) Approve(ctx context.Context, id uuid.UUID, approverID string) 
 		Amount:         amount,
 		UserID:         payload.UserID,
 		Metadata:       payload.Metadata,
+		ReferenceID:    payload.ReferenceID,
 	}
 
 	if postErr := s.poster.Handle(ctx, cmd); postErr != nil {

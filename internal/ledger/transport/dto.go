@@ -303,11 +303,15 @@ func toQuoteResponse(q feepolicy.Quote) quoteResponse {
 // ─── Maker-checker adjustments (docs/roadmap/archive/16 Task T1) ──────────────────────
 
 type createAdjustmentRequest struct {
-	Type     string         `json:"type"`
-	Amount   string         `json:"amount"`
-	UserID   string         `json:"user_id"`
-	Metadata map[string]any `json:"metadata,omitempty"`
-	Reason   string         `json:"reason"`
+	Type string `json:"type"`
+	// ReferenceID is required for type "reversal" (the transaction being
+	// reversed) — security audit finding, reversal moved behind
+	// maker-checker alongside the adjustment_* types.
+	ReferenceID string         `json:"reference_id,omitempty"`
+	Amount      string         `json:"amount"`
+	UserID      string         `json:"user_id"`
+	Metadata    map[string]any `json:"metadata,omitempty"`
+	Reason      string         `json:"reason"`
 }
 
 type createAdjustmentResponse struct {
@@ -503,6 +507,22 @@ type runSchedulesResponse struct {
 
 type createDisbursementBatchResponse struct {
 	ID uuid.UUID `json:"id"`
+}
+
+// approveDisbursementBatchResponse/rejectDisbursementBatchRequest/Response
+// back the maker-checker gate a business-completeness audit finding added
+// (migrations/ledger/000038) — same shape as adjustments' own
+// approve/reject responses.
+type approveDisbursementBatchResponse struct {
+	Approved bool `json:"approved"`
+}
+
+type rejectDisbursementBatchRequest struct {
+	Reason string `json:"reason"`
+}
+
+type rejectDisbursementBatchResponse struct {
+	Rejected bool `json:"rejected"`
 }
 
 type disbursementItemResponse struct {

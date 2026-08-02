@@ -2,6 +2,22 @@
 
 Status: **preliminary evidence; not a production-capacity claim**
 
+> **Superseded for numerical claims:** [`2026-07-31-baseline.md`](2026-07-31-baseline.md)
+> runs the staircase, three confirmation runs, spike, and soak this report's
+> own text says B0 still requires, for S1 (P2P), S3 (webhook burst), and S4
+> (mixed) — plus a real B1 hot-account experiment, a real B2 partitioning
+> growth-curve study, a real B3 routing-cache experiment, and a Phase 5
+> resource-elasticity check. It also root-causes and fixes the reason S2
+> (hot-account)'s own soak failed. Read that report for current evidence;
+> this one remains as the historical record of the 2026-07-28 harness state.
+
+> **Historical measurement note:** This report records the harness as it ran
+> on 2026-07-28. The current harness self-seeds W1/W2/W3/W5, gives W2 a pool
+> of unique pending intents plus a tagged 10% exact-redelivery stream, gives
+> W5 one- and two-account variants, and performs post-run outbox-drain and
+> ledger-integrity checks. Those improvements do not retroactively change the
+> measurements below; a new report is required for new numbers.
+
 This report records one short, disposable local run for each requested workload.
 It is useful for finding broken load paths and for making conservative roadmap
 decisions, but it is not the canonical B0 MSSL. B0 still requires a staircase,
@@ -53,7 +69,7 @@ The account count is not a capacity-sized dataset. It contains the platform's
 system accounts and a few synthetic users used to obtain valid JWT, KYC, and
 funded-account journeys.
 
-## B. Scenarios
+## B. Scenarios at measurement time
 
 All rates below are workload units per second (WU/s), not ambiguous HTTP RPS.
 The k6 executor used an open `constant-arrival-rate` model. Each run lasted ten
@@ -67,11 +83,12 @@ intentional and are called out again in the decision section.
 | Webhook burst (`W2`) | One signed VendorService callback for the same pre-settled reference | mTLS callback verification, VendorService inbox, pay-in callback path |
 | Mixed journey (`W4`) | One deterministic weighted action: quote, top-up intent, payout create, notification read, or auth profile read | Shared Gateway, Ledger, Payin, Payout, notification, and Auth paths |
 
-Two scenario limitations matter. W2 used repeated redelivery of one reference
-because the current k6 interface accepts one `LOAD_TOPUP_REFERENCE`; it is not
-a unique-intent settlement benchmark. W5 is currently a top-up-intent proxy,
-not the locked B0 one-gateway versus two-gateway system-account lock experiment.
-Consequently neither run can activate B1.
+Two scenario limitations mattered at measurement time. W2 used repeated
+redelivery of one reference because that harness accepted one
+`LOAD_TOPUP_REFERENCE`; it was not a unique-intent settlement benchmark. W5
+was a top-up-intent proxy, not the locked B0 one-gateway versus two-gateway
+system-account lock experiment. Consequently neither historical run can
+activate B1.
 
 ## C. Numerical results
 
@@ -149,7 +166,8 @@ This run cannot establish:
   time-series were not retained for the run;
 - lock-wait percentage for the canonical account-delta statement, because the
   required alternating W5 one-gateway/two-gateway experiment was not run;
-- unique webhook settlement capacity, because W2 reused one external reference;
+- unique webhook settlement capacity, because this W2 run reused one external
+  reference;
 - payout terminal-state latency at scale, because W4 only exercised a small
   mixed sample and did not run the B0 payout confirmation protocol;
 - a safe extrapolation from this Apple Silicon laptop to production hardware.
@@ -163,7 +181,7 @@ the offered rates.
 
 | Track | Decision | Reason |
 | --- | --- | --- |
-| B1 hot-account sub-sharding | **REJECT** | B0 K11 requires three alternating lock-isolated runs, same-system-account lock-wait evidence, and a one-gateway versus two-gateway delta. We have zero sampled lock waits and only a W5 top-up proxy. |
+| B1 hot-account sub-sharding | **REJECT** | B0 K11 requires three alternating lock-isolated runs, same-system-account lock-wait evidence, and a one-gateway versus two-gateway delta. This historical run has zero sampled lock waits and only a W5 top-up proxy. |
 | B2 ledger partitioning | **REJECT** | The fixture had 28 initial transactions and 56 entries; the ledger database was about 9.7 MB. This is far below the B0 gate of 40 million observed entries or a documented six-month forecast crossing 50 million. |
 | B3 routing cache | **REJECT** | W6 resolver stress and the required database-authoritative versus test-double comparison were not run. No 15% database-time, 80% repeated-key, or 15% throughput-improvement gate is established. |
 
@@ -174,15 +192,16 @@ are satisfied.
 
 ### Required follow-up before calling B0 complete
 
-1. Add deterministic multi-intent/multi-account fixtures and record a dataset
-   hash before warm-up.
+1. Run the current self-seeded scenarios against a declared dataset and record
+   its hash before warm-up.
 2. Run the locked staircase and three confirmation runs for W1–W4, retaining
    CPU, memory, pool, PostgreSQL wait/lock, RabbitMQ, outbox, drain, and ledger
    verifier artifacts.
-3. Replace W5's proxy with the specified one-gateway/two-gateway system-account
-   experiment.
-4. Make W2 verify both callback acknowledgement and eventual pay-in settlement;
-   a 2xx callback alone is not financial correctness evidence.
+3. Run W5's existing one-account/two-account variants in the locked alternating
+   protocol with lock-wait sampling and a throughput/p95 comparison.
+4. Preserve the harness's post-run drain and integrity evidence alongside the
+   scenario-specific measurements; a 2xx callback alone is not financial
+   correctness evidence.
 5. Resolve the observed audit queue/non-posted webhook state before publishing
    any green capacity claim.
 

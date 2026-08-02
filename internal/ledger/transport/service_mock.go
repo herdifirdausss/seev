@@ -60,6 +60,20 @@ func (mr *MockServiceMockRecorder) ApproveAdjustment(ctx, id, approverID any) *g
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ApproveAdjustment", reflect.TypeOf((*MockService)(nil).ApproveAdjustment), ctx, id, approverID)
 }
 
+// ApproveDisbursementBatch mocks base method.
+func (m *MockService) ApproveDisbursementBatch(ctx context.Context, batchID uuid.UUID, approverID string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ApproveDisbursementBatch", ctx, batchID, approverID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// ApproveDisbursementBatch indicates an expected call of ApproveDisbursementBatch.
+func (mr *MockServiceMockRecorder) ApproveDisbursementBatch(ctx, batchID, approverID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ApproveDisbursementBatch", reflect.TypeOf((*MockService)(nil).ApproveDisbursementBatch), ctx, batchID, approverID)
+}
+
 // CanAccessAccount mocks base method.
 func (m *MockService) CanAccessAccount(ctx context.Context, accountID, userID uuid.UUID) (bool, error) {
 	m.ctrl.T.Helper()
@@ -105,18 +119,18 @@ func (mr *MockServiceMockRecorder) CancelSchedule(ctx, id, userID any) *gomock.C
 }
 
 // CreateAdjustment mocks base method.
-func (m *MockService) CreateAdjustment(ctx context.Context, requestedBy, adjType string, amount decimal.Decimal, targetUserID uuid.UUID, metadata map[string]any, reason string) (uuid.UUID, error) {
+func (m *MockService) CreateAdjustment(ctx context.Context, requestedBy, adjType string, amount decimal.Decimal, targetUserID, referenceID uuid.UUID, metadata map[string]any, reason string) (uuid.UUID, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CreateAdjustment", ctx, requestedBy, adjType, amount, targetUserID, metadata, reason)
+	ret := m.ctrl.Call(m, "CreateAdjustment", ctx, requestedBy, adjType, amount, targetUserID, referenceID, metadata, reason)
 	ret0, _ := ret[0].(uuid.UUID)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // CreateAdjustment indicates an expected call of CreateAdjustment.
-func (mr *MockServiceMockRecorder) CreateAdjustment(ctx, requestedBy, adjType, amount, targetUserID, metadata, reason any) *gomock.Call {
+func (mr *MockServiceMockRecorder) CreateAdjustment(ctx, requestedBy, adjType, amount, targetUserID, referenceID, metadata, reason any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateAdjustment", reflect.TypeOf((*MockService)(nil).CreateAdjustment), ctx, requestedBy, adjType, amount, targetUserID, metadata, reason)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateAdjustment", reflect.TypeOf((*MockService)(nil).CreateAdjustment), ctx, requestedBy, adjType, amount, targetUserID, referenceID, metadata, reason)
 }
 
 // CreatePocket mocks base method.
@@ -489,6 +503,20 @@ func (m *MockService) RejectAdjustment(ctx context.Context, id uuid.UUID, approv
 func (mr *MockServiceMockRecorder) RejectAdjustment(ctx, id, approverID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RejectAdjustment", reflect.TypeOf((*MockService)(nil).RejectAdjustment), ctx, id, approverID)
+}
+
+// RejectDisbursementBatch mocks base method.
+func (m *MockService) RejectDisbursementBatch(ctx context.Context, batchID uuid.UUID, approverID, reason string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RejectDisbursementBatch", ctx, batchID, approverID, reason)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// RejectDisbursementBatch indicates an expected call of RejectDisbursementBatch.
+func (mr *MockServiceMockRecorder) RejectDisbursementBatch(ctx, batchID, approverID, reason any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RejectDisbursementBatch", reflect.TypeOf((*MockService)(nil).RejectDisbursementBatch), ctx, batchID, approverID, reason)
 }
 
 // ReplayDeadEvent mocks base method.

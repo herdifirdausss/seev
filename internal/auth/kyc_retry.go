@@ -100,3 +100,21 @@ func (m *Module) NewKYCRescreenJob(redisClient *redis.Client, checker interface 
 	}
 	return worker.NewRescreenJob(m.kyc, checker, lock, m.cfg.DefaultCurrency, interval, logger)
 }
+
+// NewKYCExpiryJob wires the periodic KYC-validity-expiry relay while keeping
+// lock construction inside the auth facade, same posture as the two
+// constructors above. m itself satisfies worker's small downgrader seam via
+// DowngradeKYC (kyc.go).
+func (m *Module) NewKYCExpiryJob(redisClient *redis.Client, interval time.Duration, logger *slog.Logger) *worker.ExpiryJob {
+	var lock scheduler.LockProvider
+	if redisClient != nil {
+		instanceID, err := os.Hostname()
+		if err != nil || instanceID == "" {
+			instanceID = uuid.NewString()
+		}
+		lock = scheduler.NewRedisLock(redisClient, instanceID)
+	} else {
+		lock = scheduler.NewMemoryLock(2 * time.Minute)
+	}
+	return worker.NewExpiryJob(m.kyc, m, lock, interval, logger)
+}

@@ -13,11 +13,16 @@
    `SEEV_LOAD_ACK=disposable-only`; never substitute a shared development or
    production URL/database.
 3. Run `make load-lint`, then `make load-seed LOAD_SEED_KIND=journey` or
-   `LOAD_SEED_KIND=ledger-size`. Keep generated artifacts under
-   `artifacts/load/<run-id>/`.
-4. Run `make load-smoke` to verify bootstrap health and lifecycle cleanup. For
-   a business staircase, restore the declared seed separately and verify its
-   manifest, seed hash, and integrity report before offering measured work.
+   `LOAD_SEED_KIND=ledger-size` only when the declared dataset requires it.
+   Keep generated artifacts under `artifacts/load/<run-id>/`.
+4. Run `make load-smoke` to verify bootstrap health and lifecycle cleanup.
+   W1, W2, W3, and W5 self-seed their disposable business fixtures; W4 and W7
+   still require their declared input token or restored dataset.
+5. For a business staircase, verify the manifest and dataset hash before
+   offering measured work. After every phase, retain `outbox-summary.json`,
+   `integrity-after.json`, `run-status.json`, and the patched k6 summary. A
+   successful integrity check is necessary but does not make `gate_passed`
+   true; resource and lock evidence remains required.
 
 ## Abort and drain
 

@@ -7,9 +7,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 
 	vendorv1 "github.com/herdifirdausss/seev/gen/vendorservice/v1"
 	"github.com/herdifirdausss/seev/pkg/database"
+	"github.com/herdifirdausss/seev/pkg/generalerror"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -134,13 +136,37 @@ func (s *Server) QueryPayout(ctx context.Context, request *vendorv1.QueryPayoutR
 	return &vendorv1.QueryPayoutResponse{Result: result}, nil
 }
 
+// maxRecordOutboundAttempts bounds serverRecordOutbound's retry-on-conflict
+// loop. The next `attempt` number is computed as MAX(attempt)+1 in the same
+// statement that inserts it, so two concurrent calls for the same (flow,
+// request_id, operation) — most commonly overlapping QueryPayout status
+// polls — can compute the same next value and collide on
+// vendor_outbound_attempts's UNIQUE(flow, request_id, attempt, operation)
+// constraint. Discovered live: the losing insert used to be discarded via
+// `_, _ = db.ExecContext(...)`, silently dropping a row from what
+// config/data-retention.yaml declares a permanent audit trail. A retry
+// re-reads MAX(attempt) fresh, which now includes the row the other call
+// just committed, so it picks a new, non-colliding value.
+const maxRecordOutboundAttempts = 3
+
 func serverRecordOutbound(ctx context.Context, db *database.DBSQL, flow, vendor, requestID, vendorReference, operation, outcome string) {
 	if db == nil {
 		return
 	}
-	_, _ = db.ExecContext(ctx, `INSERT INTO vendor_outbound_attempts
-		(flow, vendor, request_id, vendor_reference, attempt, operation, outcome, sanitized_response)
-		SELECT $1,$2,$3,$4,COALESCE(MAX(attempt),0)+1,$5,$6,$7::jsonb
-		FROM vendor_outbound_attempts WHERE flow=$1 AND request_id=$3 AND operation=$5`,
-		flow, vendor, requestID, vendorReference, operation, outcome, `{"outcome":"`+outcome+`"}`)
+	var err error
+	for attempt := 0; attempt < maxRecordOutboundAttempts; attempt++ {
+		_, err = db.ExecContext(ctx, `INSERT INTO vendor_outbound_attempts
+			(flow, vendor, request_id, vendor_reference, attempt, operation, outcome, sanitized_response)
+			SELECT $1,$2,$3,$4,COALESCE(MAX(attempt),0)+1,$5,$6,$7::jsonb
+			FROM vendor_outbound_attempts WHERE flow=$1 AND request_id=$3 AND operation=$5`,
+			flow, vendor, requestID, vendorReference, operation, outcome, `{"outcome":"`+outcome+`"}`)
+		if err == nil {
+			return
+		}
+		if !generalerror.IsDuplicateKey(err) {
+			break
+		}
+	}
+	slog.Default().Error("vendorboundary: record outbound attempt failed",
+		slog.String("flow", flow), slog.String("vendor", vendor), slog.String("operation", operation), slog.Any("error", err))
 }

@@ -44,6 +44,7 @@ func TestValidateCommand_RequiresReferenceID(t *testing.T) {
 		{"withdraw_pending_cancel", (&WithdrawPendingCancel{}).ValidateCommand},
 		{"escrow_release", (&EscrowRelease{}).ValidateCommand},
 		{"escrow_refund", (&EscrowRefund{}).ValidateCommand},
+		{"refund", (&Refund{}).ValidateCommand},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -172,4 +173,54 @@ func TestReversalValidate_PostedNotClosed_OK(t *testing.T) {
 	err := p.Validate(context.Background(), nil, ResolvedCommand{Command: Command{ReferenceID: refID}}, nil)
 
 	assert.NoError(t, err)
+}
+
+// ─── Refund: original-charge lifecycle checks ──────────────────────────────
+
+func TestRefundValidate_AlreadyClosed_Rejected(t *testing.T) {
+	txRepo, ctrl := newMockTransactionRepo(t)
+	defer ctrl.Finish()
+	refID := uuid.New()
+	closedBy := uuid.New()
+	txRepo.EXPECT().GetHeader(gomock.Any(), gomock.Any(), refID).
+		Return("merchant_payin_credit", "posted", decimal.NewFromInt(100), &closedBy, nil)
+
+	p := NewRefund(nil, txRepo)
+	err := p.Validate(context.Background(), nil, ResolvedCommand{Command: Command{ReferenceID: refID}}, nil)
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, apperror.ErrAlreadyClosed)
+}
+
+func TestRefundValidate_NotPosted_Rejected(t *testing.T) {
+	txRepo, ctrl := newMockTransactionRepo(t)
+	defer ctrl.Finish()
+	refID := uuid.New()
+	txRepo.EXPECT().GetHeader(gomock.Any(), gomock.Any(), refID).
+		Return("merchant_payin_credit", "failed", decimal.NewFromInt(100), nil, nil)
+
+	p := NewRefund(nil, txRepo)
+	err := p.Validate(context.Background(), nil, ResolvedCommand{Command: Command{ReferenceID: refID}}, nil)
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, apperror.ErrNotReversible)
+}
+
+func TestRefundValidate_PostedNotClosed_ReachesFundsCheck(t *testing.T) {
+	txRepo, ctrl := newMockTransactionRepo(t)
+	defer ctrl.Finish()
+	refID := uuid.New()
+	acctID := uuid.New()
+	txRepo.EXPECT().GetHeader(gomock.Any(), gomock.Any(), refID).
+		Return("merchant_payin_credit", "posted", decimal.NewFromInt(100), nil, nil)
+
+	p := NewRefund(nil, txRepo)
+	err := p.Validate(context.Background(), nil,
+		ResolvedCommand{Command: Command{ReferenceID: refID, Amount: decimal.NewFromInt(100)}, AccountIDs: []uuid.UUID{acctID, uuid.New()}}, nil)
+
+	// Lifecycle checks pass; MultiValidator's SufficientFundsValidator then
+	// fails fast on the empty balances map — proves the lifecycle guard ran
+	// and didn't short-circuit the rest of Validate.
+	require.Error(t, err)
+	assert.ErrorIs(t, err, apperror.ErrAccountNotFound)
 }

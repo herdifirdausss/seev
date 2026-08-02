@@ -115,14 +115,79 @@ func (s *Service) Import(ctx context.Context, filename string, rows []model.Disb
 	return batchID, nil
 }
 
+// ApproveBatch authorizes a batch for processing — a DIFFERENT identity
+// than the one who called Import must call this before Run will process a
+// single item (business-completeness audit finding: bulk disbursement used
+// to let one operator both import and run, moving platform funds to
+// hundreds of users with no second approval, unlike a manual adjustment).
+// approverID must differ from the original requester — checked here for a
+// clear error, AND enforced by a DB CHECK constraint as the backstop, same
+// posture as adjustments.Service.Approve.
+func (s *Service) ApproveBatch(ctx context.Context, batchID uuid.UUID, approverID string) error {
+	batch, err := s.repo.GetBatch(ctx, batchID)
+	if err != nil {
+		return err
+	}
+	if batch.CreatedBy == approverID {
+		return apperror.NewBizErr(apperror.ErrSelfApproval, "cannot approve your own disbursement batch")
+	}
+	var rows int64
+	err = s.db.WithTx(ctx, nil, func(tx *sql.Tx) error {
+		var err error
+		rows, err = s.repo.ApproveBatch(ctx, tx, batchID, approverID)
+		return err
+	})
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return apperror.NewBizErr(apperror.ErrDisbursementBatchAlreadyDecided, fmt.Sprintf("disbursement batch %s was already decided", batchID))
+	}
+	return nil
+}
+
+// RejectBatch declines a batch — no items are ever processed. approverID
+// must differ from the requester, same as ApproveBatch.
+func (s *Service) RejectBatch(ctx context.Context, batchID uuid.UUID, approverID, reason string) error {
+	batch, err := s.repo.GetBatch(ctx, batchID)
+	if err != nil {
+		return err
+	}
+	if batch.CreatedBy == approverID {
+		return apperror.NewBizErr(apperror.ErrSelfApproval, "cannot reject your own disbursement batch")
+	}
+	if reason == "" {
+		return fmt.Errorf("%w: reason is required", apperror.ErrValidation)
+	}
+	var rows int64
+	err = s.db.WithTx(ctx, nil, func(tx *sql.Tx) error {
+		var err error
+		rows, err = s.repo.RejectBatch(ctx, tx, batchID, approverID, reason)
+		return err
+	})
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return apperror.NewBizErr(apperror.ErrDisbursementBatchAlreadyDecided, fmt.Sprintf("disbursement batch %s was already decided", batchID))
+	}
+	return nil
+}
+
 // Run processes up to maxItemsPerRun items still needing a Post attempt.
 // Call repeatedly until Done is true. retryFailed additionally reprocesses
 // items already marked 'failed' (docs/roadmap/archive/19 Task T2 step 4) — omit it to
-// only advance items that have never been attempted.
+// only advance items that have never been attempted. The batch must already
+// be 'processing' (i.e. ApproveBatch has run) — business-completeness audit
+// finding, see ApproveBatch's own doc comment.
 func (s *Service) Run(ctx context.Context, batchID uuid.UUID, retryFailed bool) (model.DisbursementRunResult, error) {
 	batch, err := s.repo.GetBatch(ctx, batchID)
 	if err != nil {
 		return model.DisbursementRunResult{}, err
+	}
+	if batch.Status != "processing" {
+		return model.DisbursementRunResult{}, apperror.NewBizErr(apperror.ErrDisbursementBatchNotApproved,
+			fmt.Sprintf("disbursement batch %s is %q, must be approved before it can run", batchID, batch.Status))
 	}
 
 	items, err := s.repo.ListItemsToProcess(ctx, batchID, retryFailed, s.maxItemsPerRun)

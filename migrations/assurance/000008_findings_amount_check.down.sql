@@ -1,0 +1,1 @@
+ALTER TABLE assurance_findings DROP CONSTRAINT IF EXISTS chk_assurance_findings_amount_minor_nonnegative;

@@ -122,6 +122,11 @@ type AuthConfig struct {
 	KYCProviderURL   string
 	KYCProviderToken string
 	KYCProviderName  string
+	// KYCValidityTTL is how long an approved KYC level stays valid before
+	// the periodic expiry worker downgrades it back to L0, forcing
+	// re-verification (business-completeness audit finding — kyc_level
+	// never used to expire at all).
+	KYCValidityTTL time.Duration
 }
 
 // VendorConfig configures the payin webhook vendor registry (docs/roadmap/archive/22
@@ -692,6 +697,7 @@ func loadFromEnvMode(getenv func(string) string, requireRabbitMQ bool) (*Config,
 			KYCProviderURL:           getenv("KYC_PROVIDER_URL"),
 			KYCProviderToken:         getenv("KYC_PROVIDER_TOKEN"),
 			KYCProviderName:          getWithDefault(getenv, "KYC_PROVIDER_NAME", "http-kyc"),
+			KYCValidityTTL:           parseDuration(getenv("KYC_VALIDITY_TTL"), 365*24*time.Hour),
 		},
 		AdminBFF: AdminBFFConfig{
 			AuthServiceURL:      getWithDefault(getenv, "AUTH_SERVICE_URL", "http://localhost:8082"),

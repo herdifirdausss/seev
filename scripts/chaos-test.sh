@@ -130,6 +130,11 @@ scenario_1() {
 # ─── Scenario 2: broker (RabbitMQ) down ─────────────────────────────────────
 
 scenario_2() {
+	recovery_event() {
+		printf '{"scenario":"broker-outage-recovery","at":"%s","event":"%s"}\n' \
+			"$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1"
+	}
+
 	log "=== Scenario 2: broker down, posting must still succeed ==="
 	ensure_deps_up
 	build_server
@@ -144,6 +149,7 @@ scenario_2() {
 	token="$(gen_token "$user_id")"
 
 	log "stopping rabbitmq..."
+	recovery_event "broker_stopping"
 	docker stop "$RABBITMQ_CONTAINER" >/dev/null
 
 	log "posting 10 transactions while broker is down (must all succeed — outbox decouples posting from publish)..."
@@ -159,6 +165,7 @@ scenario_2() {
 	done
 	if [ "$all_2xx" = "1" ]; then
 		ok "all 10 postings succeeded with the broker down"
+		recovery_event "ten_postings_committed_while_broker_down"
 	else
 		fail "some postings failed while the broker was down — outbox pattern not decoupling correctly"
 	fi
@@ -166,6 +173,7 @@ scenario_2() {
 	log "restarting rabbitmq and waiting for the relay to drain the outbox..."
 	docker start "$RABBITMQ_CONTAINER" >/dev/null
 	wait_for_container_healthy "$RABBITMQ_CONTAINER"
+	recovery_event "broker_healthy_again"
 
 	# RabbitMQ recovery can race the ledger relay's reconnect/backoff and the
 	# service restart churn in the preceding setup.  Wait four minutes for the
@@ -183,6 +191,7 @@ scenario_2() {
 	dead="$(psql_exec "$LEDGER_DB_NAME" -c "SELECT count(*) FROM outbox_events WHERE status = 'dead';" | tr -d '[:space:]')"
 	if [ "$pending_or_failed" = "0" ] && [ "$dead" = "0" ]; then
 		ok "all outbox events reached 'published' after the broker recovered (none dead)"
+		recovery_event "outbox_drained_no_dead_events"
 	else
 		fail "outbox did not fully drain: pending/failed=$pending_or_failed dead=$dead"
 		psql_exec "$LEDGER_DB_NAME" -c "SELECT id, event_type, status, retry_count FROM outbox_events WHERE status != 'published';"
@@ -840,6 +849,11 @@ scenario_7() {
 # the doc's own shorthand "priority 2" (which would have made mockvendor2
 # tried FIRST, backwards from the scenario's intent) for that reason.
 scenario_8() {
+	timeline_event() {
+		printf '{"scenario":"payout-unknown-state-recovery","at":"%s","event":"%s","payout_id":"%s"}\n' \
+			"$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "$2"
+	}
+
 	log "=== Scenario 8: vendor failover — force-fail mockvendor, new payout routes to mockvendor2, in-flight payout stays pinned, resume settles it once recovered ==="
 	export BREAKER_FAILURE_THRESHOLD=1
 	ensure_deps_up
@@ -880,6 +894,7 @@ scenario_8() {
 		-d '{"amount":"10000","destination":{"bank_code":"014","account_no":"1"}}')"
 	id1="$(echo "$resp1" | json_field id)"
 	[ -n "$id1" ] && ok "payout #1 created ($id1)" || fail "payout #1 create did not return an id: $resp1"
+	timeline_event "payout_created_and_funds_held" "$id1"
 
 	# docs/roadmap/archive/45 Task T1: dispatch is async now (the relay's own ~1s poll
 	# interval) — Create returns the instant hold+enqueue lands, before the
@@ -887,6 +902,7 @@ scenario_8() {
 	# durable evidence (the recorded 'uncertain' outcome) before reading
 	# status/vendor/breaker state that only exists after that dispatch.
 	wait_for_vendor_call "$id1" "uncertain" 15
+	timeline_event "vendor_submission_persisted_then_timed_out" "$id1"
 
 	vendor1="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT vendor FROM payout_requests WHERE id = '$id1';")"
 	local status1
@@ -899,6 +915,7 @@ scenario_8() {
 	outcome1="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT outcome FROM payout_vendor_calls WHERE payout_request_id = '$id1' ORDER BY created_at DESC LIMIT 1;")"
 	[ "$outcome1" = "uncertain" ] && ok "payout #1's vendor call recorded outcome='uncertain'" \
 		|| fail "payout #1's latest vendor call outcome was '$outcome1', expected 'uncertain'"
+	timeline_event "outcome_uncertain_vendor_pinned" "$id1"
 
 	log "-- asserting admin health reports mockvendor open --"
 	local health_resp
@@ -945,6 +962,7 @@ scenario_8() {
 		|| fail "payout #1 final status was '$final_status1', expected 'settled'"
 	[ "$final_vendor1" = "mockvendor" ] && ok "payout #1's vendor column never changed — stayed pinned to mockvendor throughout" \
 		|| fail "payout #1's vendor column changed to '$final_vendor1' — it must NEVER fail over once uncertain"
+	timeline_event "same_vendor_retry_settled" "$id1"
 
 	log "-- asserting no payout ever received two settles --"
 	local settle_count1 settle_count2
@@ -961,6 +979,7 @@ scenario_8() {
 		|| fail "unexpected cash balance $after, expected 480000"
 
 	assert_ledger_balanced
+	timeline_event "single_settlement_and_ledger_balanced" "$id1"
 	assert_no_inconsistent_projections
 	stop_services
 	unset BREAKER_FAILURE_THRESHOLD

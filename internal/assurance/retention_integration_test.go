@@ -151,6 +151,47 @@ func TestRetention_RunsSucceeded_DryRunMatchesReal(t *testing.T) {
 	require.Equal(t, 3, affected)
 }
 
+// TestRetention_RunsSucceeded_SkipsRowStillReferencedByCursor proves the
+// schema audit fix (migrations/assurance/000009): a succeeded run still
+// referenced by assurance_cursors.updated_by_run_id must survive purge
+// (and must NOT abort the whole batch on the FK constraint, the failure
+// mode before the NOT EXISTS guard was added) — a source that stops
+// scanning for 90+ days would otherwise leave its cursor pointing at a
+// row the very next retention cycle tries to delete.
+func TestRetention_RunsSucceeded_SkipsRowStillReferencedByCursor(t *testing.T) {
+	db := setupAssuranceTestDB(t)
+	ctx := context.Background()
+
+	eligible := time.Now().Add(-91 * 24 * time.Hour)
+	referenced := insertAssuranceRun(t, db, "succeeded", &eligible)
+	unreferenced := insertAssuranceRun(t, db, "succeeded", &eligible)
+
+	_, err := db.ExecContext(ctx, `
+		INSERT INTO assurance_cursors (source, updated_by_run_id) VALUES ('payin', $1)
+		ON CONFLICT (source) DO UPDATE SET updated_by_run_id = EXCLUDED.updated_by_run_id`, referenced)
+	require.NoError(t, err)
+
+	var dryRun int
+	require.NoError(t, db.QueryRowContext(ctx,
+		`SELECT fn_retention_purge_runs_succeeded($1, 500, true)`, uuid.New()).Scan(&dryRun))
+	require.Equal(t, 1, dryRun, "only the unreferenced eligible run should count")
+
+	var affected int
+	require.NoError(t, db.QueryRowContext(ctx,
+		`SELECT fn_retention_purge_runs_succeeded($1, 500, false)`, uuid.New()).Scan(&affected))
+	require.Equal(t, 1, affected)
+
+	var stillThere int
+	require.NoError(t, db.QueryRowContext(ctx,
+		`SELECT count(*) FROM assurance_runs WHERE id = $1`, referenced).Scan(&stillThere))
+	require.Equal(t, 1, stillThere, "the cursor-referenced run must survive")
+
+	var deleted int
+	require.NoError(t, db.QueryRowContext(ctx,
+		`SELECT count(*) FROM assurance_runs WHERE id = $1`, unreferenced).Scan(&deleted))
+	require.Zero(t, deleted, "the unreferenced eligible run must be purged")
+}
+
 func TestRetention_AlertDeliveries_TerminalStateOnly(t *testing.T) {
 	db := setupAssuranceTestDB(t)
 	ctx := context.Background()

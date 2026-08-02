@@ -8,6 +8,11 @@ import (
 )
 
 // DisbursementBatch is one imported CSV manifest (docs/roadmap/archive/19 Task T2).
+// Business-completeness audit finding: Import alone never moves money —
+// a batch starts 'pending_approval' and Run refuses to process any item
+// until a DIFFERENT identity calls Approve (migrations/ledger/000038),
+// the same maker-checker shape pending_adjustments already required for a
+// manual balance adjustment.
 type DisbursementBatch struct {
 	ID             uuid.UUID
 	SourceFilename string
@@ -15,6 +20,9 @@ type DisbursementBatch struct {
 	Status         string
 	CreatedBy      string
 	CreatedAt      time.Time
+	ApprovedBy     string
+	ApprovedAt     *time.Time
+	DecisionReason string
 }
 
 // DisbursementItem is one row of a batch — one user, one amount.

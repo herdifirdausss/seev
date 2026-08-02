@@ -210,6 +210,8 @@ No entry may fully delete a row from these tables — only `retain_permanent`, `
 | `ledger.account_balance_snapshots` | ledger.account_balance_snapshots | financial | — | — | retain_permanent | — | none |
 | `ledger.account_balances` | ledger.account_balances | financial | — | — | retain_permanent | — | none |
 | `ledger.accounts` | ledger.accounts | financial | — | — | retain_permanent | — | none |
+| `ledger.chargeback_dispute_status_changes` | ledger.chargeback_dispute_status_changes | financial | — | — | retain_permanent | — | none |
+| `ledger.chargeback_disputes` | ledger.chargeback_disputes | financial | — | — | retain_permanent | — | none |
 | `ledger.currencies` | ledger.currencies | public | — | — | retain_state | — | none |
 | `ledger.disbursement_batches` | ledger.disbursement_batches | internal | — | — | retain_permanent | — | none |
 | `ledger.disbursement_items` | ledger.disbursement_items | financial | — | — | retain_permanent | — | none |
@@ -237,6 +239,10 @@ No entry may fully delete a row from these tables — only `retain_permanent`, `
 **`ledger.account_balances`** — Current-state balance projection; not an event history row.
 
 **`ledger.accounts`** — owner_id is pseudonymized (not purged) by the T5 closure saga per K10/K11; otherwise never age-purged.
+
+**`ledger.chargeback_dispute_status_changes`** — Security audit finding (migrations/ledger/000037_chargeback_dispute_audit_trail) — the actor/history trail for chargeback_disputes resolution; same permanent-retention posture as its parent table (an accountability record has no reason to expire before the case it documents does).
+
+**`ledger.chargeback_disputes`** — Business-completeness audit finding (migrations/ledger/000035_chargeback_disputes) — card-network dispute case evidence, same permanent-retention posture as disbursement_items/recon_batches: a resolved dispute (won/lost/expired) is exactly the kind of record a card network or regulator can re-open years later.
 
 **`ledger.currencies`** — Static reference table.
 
@@ -373,8 +379,14 @@ No entry may fully delete a row from these tables — only `retain_permanent`, `
 |---|---|---|---|---|---|---|---|
 | `vendor.callback_inbox` | vendor.vendor_callback_inbox | sensitive | updated_at | 30d | redact | 500 | none |
 | `vendor.outbound_attempts` | vendor.vendor_outbound_attempts | internal | — | — | retain_permanent | — | none |
+| `vendor.retention_audit` | vendor.vendor_retention_audit | internal | — | — | retain_permanent | — | none |
+| `vendor.retention_holds` | vendor.vendor_retention_holds | internal | — | — | retain_state | — | none |
 
 **`vendor.callback_inbox`** — Raw callback bytes are redacted after the investigation window; sanitized correlation fields remain for reconciliation.
 
 **`vendor.outbound_attempts`** — Append-only sanitized vendor transport audit; plaintext credentials and full vendor payloads are never stored.
+
+**`vendor.retention_audit`** — docs/roadmap/archive/51 K4. Same shape/rationale as adminbff.retention_audit.
+
+**`vendor.retention_holds`** — docs/roadmap/archive/51 K5. Same shape/rationale as adminbff.retention_holds.
 

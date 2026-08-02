@@ -50,7 +50,16 @@ func (unavailableKYCProvider) Verify(context.Context, kycvendor.Submission) (kyc
 type KYCStatus struct {
 	Level      int
 	Submission *model.KYCSubmission
+	// VerifiedUntil is Level's validity deadline (nil for L0 or a level
+	// approved before kyc_verified_until existed). Past this timestamp the
+	// level is still enforced until the expiry worker downgrades it.
+	VerifiedUntil *time.Time
 }
+
+// defaultKYCValidityTTL is used whenever Config.KYCValidityTTL is unset
+// (zero) — every Config{} literal that predates this field keeps working
+// with a sane default rather than expiring KYC approvals immediately.
+const defaultKYCValidityTTL = 365 * 24 * time.Hour
 
 func (m *Module) SubmitKYC(ctx context.Context, userID uuid.UUID, levelRequested int, payload map[string]any) (model.KYCSubmission, error) {
 	user, err := m.users.GetUserByID(ctx, userID)
@@ -121,7 +130,7 @@ func (m *Module) KYC(ctx context.Context, userID uuid.UUID) (KYCStatus, error) {
 	if err != nil {
 		return KYCStatus{}, err
 	}
-	result := KYCStatus{Level: u.KYCLevel}
+	result := KYCStatus{Level: u.KYCLevel, VerifiedUntil: u.KYCVerifiedUntil}
 	if s, err := m.kyc.GetLatestKYCSubmission(ctx, userID); err == nil {
 		result.Submission = &s
 	} else if !errors.Is(err, repository.ErrKYCSubmissionNotFound) {
@@ -135,7 +144,12 @@ func (m *Module) ListKYCSubmissions(ctx context.Context, status string) ([]model
 }
 
 func (m *Module) approveSubmission(ctx context.Context, submission model.KYCSubmission, decidedBy string) error {
-	err := m.kyc.ApproveKYCSubmission(ctx, submission.ID, decidedBy, submission.ProviderRef, submission.DecisionReason, m.provisioner.ApplyKycTier)
+	ttl := m.cfg.KYCValidityTTL
+	if ttl == 0 {
+		ttl = defaultKYCValidityTTL
+	}
+	validUntil := time.Now().Add(ttl)
+	err := m.kyc.ApproveKYCSubmission(ctx, submission.ID, decidedBy, submission.ProviderRef, submission.DecisionReason, validUntil, m.provisioner.ApplyKycTier)
 	if err == nil || !errors.Is(err, repository.ErrKYCApplyTier) {
 		return err
 	}

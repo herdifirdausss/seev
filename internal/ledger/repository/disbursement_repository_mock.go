@@ -43,6 +43,21 @@ func (m *MockDisbursementRepository) EXPECT() *MockDisbursementRepositoryMockRec
 	return m.recorder
 }
 
+// ApproveBatch mocks base method.
+func (m *MockDisbursementRepository) ApproveBatch(ctx context.Context, tx *sql.Tx, batchID uuid.UUID, approverID string) (int64, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ApproveBatch", ctx, tx, batchID, approverID)
+	ret0, _ := ret[0].(int64)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ApproveBatch indicates an expected call of ApproveBatch.
+func (mr *MockDisbursementRepositoryMockRecorder) ApproveBatch(ctx, tx, batchID, approverID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ApproveBatch", reflect.TypeOf((*MockDisbursementRepository)(nil).ApproveBatch), ctx, tx, batchID, approverID)
+}
+
 // CreateBatchWithItems mocks base method.
 func (m *MockDisbursementRepository) CreateBatchWithItems(ctx context.Context, tx *sql.Tx, batch model.DisbursementBatch, items []model.DisbursementItem) error {
 	m.ctrl.T.Helper()
@@ -143,6 +158,21 @@ func (m *MockDisbursementRepository) MarkItemPosted(ctx context.Context, tx *sql
 func (mr *MockDisbursementRepositoryMockRecorder) MarkItemPosted(ctx, tx, itemID, txID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MarkItemPosted", reflect.TypeOf((*MockDisbursementRepository)(nil).MarkItemPosted), ctx, tx, itemID, txID)
+}
+
+// RejectBatch mocks base method.
+func (m *MockDisbursementRepository) RejectBatch(ctx context.Context, tx *sql.Tx, batchID uuid.UUID, approverID, reason string) (int64, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RejectBatch", ctx, tx, batchID, approverID, reason)
+	ret0, _ := ret[0].(int64)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// RejectBatch indicates an expected call of RejectBatch.
+func (mr *MockDisbursementRepositoryMockRecorder) RejectBatch(ctx, tx, batchID, approverID, reason any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RejectBatch", reflect.TypeOf((*MockDisbursementRepository)(nil).RejectBatch), ctx, tx, batchID, approverID, reason)
 }
 
 // UpdateBatchStatus mocks base method.

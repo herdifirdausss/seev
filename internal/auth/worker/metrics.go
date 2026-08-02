@@ -22,4 +22,12 @@ var (
 		Namespace: "auth", Subsystem: "kyc", Name: "sanctions_rescreen_subjects_total",
 		Help: "Approved KYC subjects submitted to periodic sanctions re-screening.",
 	})
+	kycExpiryRunsTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: "auth", Subsystem: "kyc", Name: "expiry_check_runs_total",
+		Help: "Periodic KYC expiry check passes executed.",
+	})
+	kycExpiryDowngradesTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: "auth", Subsystem: "kyc", Name: "expiry_downgrades_total",
+		Help: "Users auto-downgraded to L0 after their KYC validity window expired.",
+	})
 )

@@ -38,6 +38,7 @@ import (
 	"github.com/herdifirdausss/seev/internal/ledger/service/accrual"
 	"github.com/herdifirdausss/seev/internal/ledger/service/adjustments"
 	"github.com/herdifirdausss/seev/internal/ledger/service/disbursement"
+	"github.com/herdifirdausss/seev/internal/ledger/service/dispute"
 	ledgerhandle "github.com/herdifirdausss/seev/internal/ledger/service/handle"
 	"github.com/herdifirdausss/seev/internal/ledger/service/provision"
 	"github.com/herdifirdausss/seev/internal/ledger/service/recon"
@@ -227,17 +228,40 @@ func createUserCashAccount(t *testing.T, db *database.DBSQL, userID uuid.UUID) u
 	return accountID
 }
 
-// seedCreditEntry directly inserts a fake posted transaction + a single
-// credit ledger_entries row at a controlled createdAt — used by the balance
-// snapshot tests (docs/roadmap/archive/15 Task T1) to simulate ledger activity spread
-// across specific calendar days/times, which the normal posting engine has
-// no way to backdate. Also updates account_balances.balance to
-// balanceAfter. Note: account_balances.updated_at ends up as the REAL
-// current time regardless of createdAt — trg_balances_ua (migrations/000001)
-// unconditionally stamps now() on any UPDATE — so callers that need
-// updated_at to reflect a specific historical moment can't get that via this
-// helper; use "today" as createdAt if a test depends on freshness filtering.
-func seedCreditEntry(t *testing.T, db *database.DBSQL, accountID uuid.UUID, amount, balanceAfter int64, createdAt time.Time) {
+// createThrowawayFundingAccount creates one 'user'/'cash' account meant to
+// supply seedCreditEntry's matching debit leg — call it ONCE per test and
+// reuse the returned ID across every seedCreditEntry call in that test, not
+// a fresh one per call: InsertForDate/statement queries below count
+// DISTINCT accounts with activity on a given day, and a fresh account per
+// call would inflate that count unpredictably (by the number of calls that
+// day) instead of by a constant, easy-to-account-for +1.
+func createThrowawayFundingAccount(t *testing.T, db *database.DBSQL) uuid.UUID {
+	t.Helper()
+	ctx := context.Background()
+	acct := uuid.New()
+	_, err := db.ExecContext(ctx, `
+		INSERT INTO accounts (id, owner_id, owner_type, type, currency, status, created_by)
+		VALUES ($1, $2, 'user', 'cash', 'IDR', 'active', 'schema_contract_test')`, acct, uuid.New())
+	require.NoError(t, err)
+	return acct
+}
+
+// seedCreditEntry directly inserts a fake posted transaction + a credit
+// ledger_entries row on accountID at a controlled createdAt — used by the
+// balance snapshot tests (docs/roadmap/archive/15 Task T1) to simulate
+// ledger activity spread across specific calendar days/times, which the
+// normal posting engine has no way to backdate. Also updates
+// account_balances.balance to balanceAfter. Note: account_balances.updated_at
+// ends up as the REAL current time regardless of createdAt —
+// trg_balances_ua (migrations/000001) unconditionally stamps now() on any
+// UPDATE — so callers that need updated_at to reflect a specific historical
+// moment can't get that via this helper; use "today" as createdAt if a test
+// depends on freshness filtering. Balanced by a matching debit on
+// sourceAcct (trg_ledger_entries_balanced, migrations/000034, requires
+// sum(debit)==sum(credit) per transaction) — see
+// createThrowawayFundingAccount's own comment for why sourceAcct is a
+// caller-supplied, test-shared account rather than created fresh here.
+func seedCreditEntry(t *testing.T, db *database.DBSQL, sourceAcct, accountID uuid.UUID, amount, balanceAfter int64, createdAt time.Time) {
 	t.Helper()
 	ctx := context.Background()
 	txID := uuid.New()
@@ -250,8 +274,10 @@ func seedCreditEntry(t *testing.T, db *database.DBSQL, accountID uuid.UUID, amou
 
 	_, err = db.ExecContext(ctx, `
 		INSERT INTO ledger_entries (id, transaction_id, account_id, direction, amount, balance_after, created_at)
-		VALUES ($1, $2, $3, 'credit', $4, $5, $6)`,
-		uuid.New(), txID, accountID, amount, balanceAfter, createdAt)
+		VALUES ($1, $2, $3, 'debit', $4, 0, $5),
+		       ($6, $2, $7, 'credit', $4, $8, $5)`,
+		uuid.New(), txID, sourceAcct, amount, createdAt,
+		uuid.New(), accountID, balanceAfter)
 	require.NoError(t, err)
 
 	_, err = db.ExecContext(ctx,
@@ -297,6 +323,17 @@ func newReconService(db *database.DBSQL) (*recon.Service, *adjustments.Service, 
 	adjSvc, accRepo := newAdjustmentsService(db)
 	reconRepo := repository.NewReconRepository(db, schemaTestCryptoxRing())
 	return recon.New(db, reconRepo, adjSvc), adjSvc, accRepo
+}
+
+// newDisputeService wires the chargeback dispute case-management service
+// (business-completeness audit finding) against real repositories, reusing
+// newService's posting engine (to post the charge being disputed) and a
+// fresh TransactionRepository as the dispute service's own OriginalTxReader.
+func newDisputeService(db *database.DBSQL) (*dispute.Service, *ledgerhandle.Service, repository.AccountRepository) {
+	handleSvc, accRepo := newService(db)
+	disputeRepo := repository.NewChargebackDisputeRepository(db)
+	txRepo := repository.NewTransactionRepository(db, schemaTestDigestRing())
+	return dispute.New(disputeRepo, txRepo), handleSvc, accRepo
 }
 
 // newScheduleService wires the scheduled-transaction service (docs/roadmap/archive/19
@@ -672,6 +709,177 @@ func TestSchemaContract_ConcurrentReversal_NoDoubleClose(t *testing.T) {
 	require.NoError(t, rows.Err())
 }
 
+// TestSchemaContract_Refund_LinksToOriginalCharge proves the business-
+// completeness audit finding: a merchant refund must close the original
+// charge it refunds at the DB level (closed_by_tx_id/closed_reason), the
+// same lifecycle-guard mechanism Reversal/EscrowRefund/WithdrawSettle
+// already use, so double-refunding the same charge is impossible even
+// under a race — CloseOriginal's atomic UPDATE is shared infra, already
+// proven race-proof by TestSchemaContract_ConcurrentReversal_NoDoubleClose
+// above; this test only proves Refund itself is wired into it.
+func TestSchemaContract_Refund_LinksToOriginalCharge(t *testing.T) {
+	db := setupSchemaTestDB(t)
+	svc, _ := newService(db)
+	ctx := context.Background()
+
+	userA := uuid.New()
+	cashA := createUserCashAccount(t, db, userA)
+	merchantOwner := uuid.New()
+	merchantCash := createUserCashAccount(t, db, merchantOwner)
+
+	// Stand-in "original charge" that credited the merchant — Refund's
+	// lifecycle guard (like Reversal's) checks status/closed_by only, not a
+	// specific original type, since a real charge can arrive via several
+	// transaction types (merchant_payin_credit, transfer_p2p, ...).
+	require.NoError(t, svc.Handle(ctx, processors.Command{
+		IdempotencyKey: "charge-1", Type: "money_in", Amount: decimal.NewFromInt(100_000),
+		UserID: merchantOwner, Metadata: map[string]any{"gateway": "bca"},
+	}))
+	var originalTxID uuid.UUID
+	require.NoError(t, db.QueryRowContext(ctx,
+		`SELECT id FROM ledger_transactions WHERE idempotency_key = $1`, "charge-1",
+	).Scan(&originalTxID))
+
+	require.NoError(t, svc.Handle(ctx, processors.Command{
+		IdempotencyKey: "refund-1", Type: "refund", Amount: decimal.NewFromInt(100_000),
+		TargetUserID: userA, ReferenceID: originalTxID,
+		Metadata: map[string]any{"merchant_account_id": merchantCash.String()},
+	}))
+
+	var closedByTxID uuid.UUID
+	var closedReason sql.NullString
+	require.NoError(t, db.QueryRowContext(ctx,
+		`SELECT closed_by_tx_id, closed_reason FROM ledger_transactions WHERE id = $1`, originalTxID,
+	).Scan(&closedByTxID, &closedReason))
+	assert.NotEqual(t, uuid.Nil, closedByTxID, "original charge must be closed by the refund transaction")
+	assert.True(t, closedReason.Valid && closedReason.String == "refunded")
+
+	assert.True(t, getBalance(t, db, cashA).Equal(decimal.NewFromInt(100_000)))
+	assert.True(t, getBalance(t, db, merchantCash).IsZero())
+
+	// A second refund against the same charge must be rejected — the original
+	// is already closed.
+	err := svc.Handle(ctx, processors.Command{
+		IdempotencyKey: "refund-2", Type: "refund", Amount: decimal.NewFromInt(100_000),
+		TargetUserID: userA, ReferenceID: originalTxID,
+		Metadata: map[string]any{"merchant_account_id": merchantCash.String()},
+	})
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, apperror.ErrAlreadyClosed), "double-refund of the same charge must fail with ErrAlreadyClosed, got: %v", err)
+}
+
+// TestSchemaContract_ChargebackDispute_FullLifecycle proves the
+// business-completeness audit finding end to end against real Postgres: a
+// case can be opened against a real posted charge, evidence submitted,
+// resolved, and linked to the chargeback processor's own money-movement
+// transaction once it posts — the queryable case record
+// internal/ledger/processors/chargeback.go never had on its own.
+func TestSchemaContract_ChargebackDispute_FullLifecycle(t *testing.T) {
+	db := setupSchemaTestDB(t)
+	disputeSvc, handleSvc, _ := newDisputeService(db)
+	ctx := context.Background()
+
+	userA := uuid.New()
+	cashA := createUserCashAccount(t, db, userA)
+	require.NoError(t, handleSvc.Handle(ctx, processors.Command{
+		IdempotencyKey: "cb-charge-1", Type: "money_in", Amount: decimal.NewFromInt(200_000),
+		UserID: userA, Metadata: map[string]any{"gateway": "bca"},
+	}))
+	var originalTxID uuid.UUID
+	require.NoError(t, db.QueryRowContext(ctx,
+		`SELECT id FROM ledger_transactions WHERE idempotency_key = $1`, "cb-charge-1",
+	).Scan(&originalTxID))
+
+	dueAt := time.Now().Add(14 * 24 * time.Hour)
+	disputeID, err := disputeSvc.OpenDispute(ctx, originalTxID, "dp-ref-1", "visa", "10.4",
+		decimal.NewFromInt(200_000), "IDR", &dueAt, "ops-1")
+	require.NoError(t, err)
+
+	// Opening a second case with the SAME dispute_ref must fail — one case
+	// per external dispute (idempotency, uq_chargeback_disputes_dispute_ref).
+	_, err = disputeSvc.OpenDispute(ctx, originalTxID, "dp-ref-1", "visa", "10.4",
+		decimal.NewFromInt(200_000), "IDR", &dueAt, "ops-1")
+	require.Error(t, err)
+	assert.ErrorIs(t, err, apperror.ErrValidation)
+
+	got, err := disputeSvc.GetDispute(ctx, disputeID)
+	require.NoError(t, err)
+	assert.Equal(t, "open", got.Status)
+	assert.Equal(t, originalTxID, got.OriginalTxID)
+	assert.Nil(t, got.ChargebackTxID)
+
+	open, err := disputeSvc.ListOpenDisputes(ctx, 0, 0)
+	require.NoError(t, err)
+	require.Len(t, open, 1)
+	assert.Equal(t, disputeID, open[0].ID)
+
+	require.NoError(t, disputeSvc.SubmitEvidence(ctx, disputeID, "s3://evidence/dp-ref-1.zip", "ops-1"))
+	got, err = disputeSvc.GetDispute(ctx, disputeID)
+	require.NoError(t, err)
+	assert.Equal(t, "evidence_submitted", got.Status)
+	assert.Equal(t, "s3://evidence/dp-ref-1.zip", got.EvidenceRef)
+
+	// Post the actual forced-debit money movement, exactly like production
+	// ops would after the network rules against the merchant, then link it.
+	require.NoError(t, handleSvc.Handle(ctx, processors.Command{
+		IdempotencyKey: "cb-post-1", Type: "chargeback", Amount: decimal.NewFromInt(200_000),
+		UserID: userA, Metadata: map[string]any{"dispute_ref": "dp-ref-1", "card_network": "visa"},
+	}))
+	var chargebackTxID uuid.UUID
+	require.NoError(t, db.QueryRowContext(ctx,
+		`SELECT id FROM ledger_transactions WHERE idempotency_key = $1`, "cb-post-1",
+	).Scan(&chargebackTxID))
+	assert.True(t, getBalance(t, db, cashA).Equal(decimal.Zero), "chargeback must have pulled the funds back")
+
+	require.NoError(t, disputeSvc.LinkChargebackTx(ctx, disputeID, chargebackTxID))
+	got, err = disputeSvc.GetDispute(ctx, disputeID)
+	require.NoError(t, err)
+	require.NotNil(t, got.ChargebackTxID)
+	assert.Equal(t, chargebackTxID, *got.ChargebackTxID)
+
+	// A second link attempt must be rejected — already linked.
+	err = disputeSvc.LinkChargebackTx(ctx, disputeID, uuid.New())
+	require.Error(t, err)
+	assert.ErrorIs(t, err, apperror.ErrChargebackDisputeAlreadyResolved)
+
+	require.NoError(t, disputeSvc.ResolveDispute(ctx, disputeID, "lost", "ops-2", "network upheld the cardholder's claim"))
+	got, err = disputeSvc.GetDispute(ctx, disputeID)
+	require.NoError(t, err)
+	assert.Equal(t, "lost", got.Status)
+	require.NotNil(t, got.ResolvedAt)
+	assert.Equal(t, "ops-2", got.ResolvedBy)
+	assert.Equal(t, "network upheld the cardholder's claim", got.ResolutionReason)
+
+	// Resolved cases drop out of the open queue.
+	open, err = disputeSvc.ListOpenDisputes(ctx, 0, 0)
+	require.NoError(t, err)
+	assert.Empty(t, open)
+
+	// The full transition history must be reconstructable: who moved the
+	// case at each step, and from what prior status (security audit
+	// finding — this used to be unrecoverable).
+	changes, err := disputeSvc.ListStatusChanges(ctx, disputeID)
+	require.NoError(t, err)
+	require.Len(t, changes, 2)
+	assert.Equal(t, "open", changes[0].FromStatus)
+	assert.Equal(t, "evidence_submitted", changes[0].ToStatus)
+	assert.Equal(t, "ops-1", changes[0].ChangedBy)
+	assert.Equal(t, "evidence_submitted", changes[1].FromStatus)
+	assert.Equal(t, "lost", changes[1].ToStatus)
+	assert.Equal(t, "ops-2", changes[1].ChangedBy)
+	assert.Equal(t, "network upheld the cardholder's claim", changes[1].Reason)
+
+	// A second resolve attempt must be rejected — already terminal.
+	err = disputeSvc.ResolveDispute(ctx, disputeID, "won", "ops-3", "re-appeal")
+	require.Error(t, err)
+	assert.ErrorIs(t, err, apperror.ErrChargebackDisputeAlreadyResolved)
+
+	byTx, err := disputeSvc.ListDisputesForTransaction(ctx, originalTxID)
+	require.NoError(t, err)
+	require.Len(t, byTx, 1)
+	assert.Equal(t, disputeID, byTx[0].ID)
+}
+
 // TestSchemaContract_LifecycleGuard_SettleAfterCancel_Rejected proves finding
 // N3 (docs/roadmap/archive/13): once a withdraw_initiate has been cancelled,
 // withdraw_settle against the same ReferenceID must be rejected — it can no
@@ -1021,17 +1229,23 @@ func TestSchemaContract_BalanceSnapshot_MultiDay(t *testing.T) {
 
 	userA := uuid.New()
 	cashA := createUserCashAccount(t, db, userA)
+	funding := createThrowawayFundingAccount(t, db)
 
 	day1 := time.Date(2026, 6, 1, 10, 0, 0, 0, loc)
 	day2 := time.Date(2026, 6, 2, 10, 0, 0, 0, loc) // deliberately no activity
 	day3 := time.Date(2026, 6, 3, 10, 0, 0, 0, loc)
 
-	seedCreditEntry(t, db, cashA, 10_000, 10_000, day1)
-	seedCreditEntry(t, db, cashA, 5_000, 15_000, day3)
+	seedCreditEntry(t, db, funding, cashA, 10_000, 10_000, day1)
+	seedCreditEntry(t, db, funding, cashA, 5_000, 15_000, day3)
 
+	// 2, not 1: cashA (the credit leg) plus funding (the matching debit
+	// leg) both have activity on this day now that entries must balance
+	// (trg_ledger_entries_balanced, migrations/000034) — InsertForDate
+	// counts distinct accounts with activity, not just the one this test
+	// cares about.
 	n1, err := repo.InsertForDate(ctx, day1)
 	require.NoError(t, err)
-	require.Equal(t, 1, n1)
+	require.Equal(t, 2, n1)
 
 	n2, err := repo.InsertForDate(ctx, day2)
 	require.NoError(t, err)
@@ -1039,7 +1253,7 @@ func TestSchemaContract_BalanceSnapshot_MultiDay(t *testing.T) {
 
 	n3, err := repo.InsertForDate(ctx, day3)
 	require.NoError(t, err)
-	require.Equal(t, 1, n3)
+	require.Equal(t, 2, n3)
 
 	// GetLatestBefore(day2) must walk back to day1's snapshot — no row
 	// exists for day2 itself.
@@ -1085,19 +1299,22 @@ func TestSchemaContract_BalanceSnapshot_TimezoneBoundary(t *testing.T) {
 
 	userA := uuid.New()
 	cashA := createUserCashAccount(t, db, userA)
+	funding := createThrowawayFundingAccount(t, db)
 
 	day1 := time.Date(2026, 6, 10, 23, 30, 0, 0, loc) // 2026-06-10 23:30 WIB = 16:30 UTC same day
 	day2 := time.Date(2026, 6, 11, 0, 30, 0, 0, loc)  // 2026-06-11 00:30 WIB = 17:30 UTC — SAME UTC day as above
 
-	seedCreditEntry(t, db, cashA, 1_000, 1_000, day1)
-	seedCreditEntry(t, db, cashA, 2_000, 3_000, day2)
+	seedCreditEntry(t, db, funding, cashA, 1_000, 1_000, day1)
+	seedCreditEntry(t, db, funding, cashA, 2_000, 3_000, day2)
 
+	// 2, not 1 — see TestSchemaContract_BalanceSnapshot_MultiDay's own
+	// comment: cashA and funding both have activity on each day now.
 	n1, err := repo.InsertForDate(ctx, day1)
 	require.NoError(t, err)
-	require.Equal(t, 1, n1)
+	require.Equal(t, 2, n1)
 	n2, err := repo.InsertForDate(ctx, day2)
 	require.NoError(t, err)
-	require.Equal(t, 1, n2)
+	require.Equal(t, 2, n2)
 
 	var entryCount1, entryCount2 int
 	var closing1, closing2 int64
@@ -1146,13 +1363,16 @@ func TestSchemaContract_BalanceSnapshot_MismatchDetected(t *testing.T) {
 
 	userA := uuid.New()
 	cashA := createUserCashAccount(t, db, userA)
+	funding := createThrowawayFundingAccount(t, db)
 
 	day1 := time.Now().In(loc)
-	seedCreditEntry(t, db, cashA, 7_000, 7_000, day1)
+	seedCreditEntry(t, db, funding, cashA, 7_000, 7_000, day1)
 
+	// 2, not 1 — see TestSchemaContract_BalanceSnapshot_MultiDay's own
+	// comment: cashA and funding both have activity on this day now.
 	n, err := repo.InsertForDate(ctx, day1)
 	require.NoError(t, err)
-	require.Equal(t, 1, n)
+	require.Equal(t, 2, n)
 
 	// Consistent so far — VerifyDate must find nothing.
 	clean, err := repo.VerifyDate(ctx, day1)
@@ -1193,8 +1413,9 @@ func TestSchemaContract_BalanceSnapshot_LatestDate_EmptyTable(t *testing.T) {
 
 	userA := uuid.New()
 	cashA := createUserCashAccount(t, db, userA)
+	funding := createThrowawayFundingAccount(t, db)
 	day1 := time.Now().In(loc)
-	seedCreditEntry(t, db, cashA, 1_000, 1_000, day1)
+	seedCreditEntry(t, db, funding, cashA, 1_000, 1_000, day1)
 	_, err = repo.InsertForDate(ctx, day1)
 	require.NoError(t, err)
 
@@ -1222,14 +1443,15 @@ func TestSchemaContract_Statement_PeriodOpeningClosing(t *testing.T) {
 
 	userA := uuid.New()
 	cashA := createUserCashAccount(t, db, userA)
+	funding := createThrowawayFundingAccount(t, db)
 
 	day1 := time.Date(2026, 5, 1, 10, 0, 0, 0, loc)
 	day2 := time.Date(2026, 5, 2, 10, 0, 0, 0, loc)
 	day3 := time.Date(2026, 5, 3, 10, 0, 0, 0, loc)
 
-	seedCreditEntry(t, db, cashA, 10_000, 10_000, day1) // opening baseline
-	seedCreditEntry(t, db, cashA, 3_000, 13_000, day2)  // in-period
-	seedCreditEntry(t, db, cashA, 2_000, 15_000, day3)  // in-period
+	seedCreditEntry(t, db, funding, cashA, 10_000, 10_000, day1) // opening baseline
+	seedCreditEntry(t, db, funding, cashA, 3_000, 13_000, day2)  // in-period
+	seedCreditEntry(t, db, funding, cashA, 2_000, 15_000, day3)  // in-period
 
 	_, err := snapshotRepo.InsertForDate(ctx, day1)
 	require.NoError(t, err)
@@ -1271,13 +1493,14 @@ func TestSchemaContract_Statement_RangeTooLarge_LimitPlusOne(t *testing.T) {
 
 	userA := uuid.New()
 	cashA := createUserCashAccount(t, db, userA)
+	funding := createThrowawayFundingAccount(t, db)
 
 	const maxRows = 5
 	day1 := time.Date(2026, 5, 10, 8, 0, 0, 0, loc)
 	balance := int64(0)
 	for i := 0; i < maxRows+1; i++ {
 		balance += 100
-		seedCreditEntry(t, db, cashA, 100, balance, day1.Add(time.Duration(i)*time.Minute))
+		seedCreditEntry(t, db, funding, cashA, 100, balance, day1.Add(time.Duration(i)*time.Minute))
 	}
 
 	entries, err := entryRepo.ListByAccountRange(ctx, cashA, day1, day1, loc, maxRows+1)
@@ -1320,7 +1543,7 @@ func TestSchemaContract_PendingAdjustment_ConcurrentApprove_ExactlyOneWins(t *te
 
 	targetUser := uuid.New()
 	createUserCashAccount(t, db, targetUser)
-	id, err := adjSvc.Create(ctx, "requester", "adjustment_credit", decimal.NewFromInt(10_000), targetUser, nil, "concurrent-approve-test")
+	id, err := adjSvc.Create(ctx, "requester", "adjustment_credit", decimal.NewFromInt(10_000), targetUser, uuid.Nil, nil, "concurrent-approve-test")
 	require.NoError(t, err)
 
 	const attempts = 8
@@ -1359,7 +1582,7 @@ func TestSchemaContract_PendingAdjustment_RetryApprove_NoDoublePost(t *testing.T
 
 	targetUser := uuid.New()
 	createUserCashAccount(t, db, targetUser)
-	id, err := adjSvc.Create(ctx, "requester", "adjustment_credit", decimal.NewFromInt(5_000), targetUser, nil, "retry-test")
+	id, err := adjSvc.Create(ctx, "requester", "adjustment_credit", decimal.NewFromInt(5_000), targetUser, uuid.Nil, nil, "retry-test")
 	require.NoError(t, err)
 
 	txID1, err := adjSvc.Approve(ctx, id, "approver-1")
@@ -1396,7 +1619,7 @@ func TestSchemaContract_PendingAdjustment_FullFlow_MovesBalance(t *testing.T) {
 	targetUser := uuid.New()
 	cashID := createUserCashAccount(t, db, targetUser)
 
-	id, err := adjSvc.Create(ctx, "ops-1", "adjustment_credit", decimal.NewFromInt(25_000), targetUser, nil, "compensation for outage")
+	id, err := adjSvc.Create(ctx, "ops-1", "adjustment_credit", decimal.NewFromInt(25_000), targetUser, uuid.Nil, nil, "compensation for outage")
 	require.NoError(t, err)
 
 	pending, err := adjSvc.Get(ctx, id)
@@ -1441,6 +1664,60 @@ func TestSchemaContract_PendingAdjustment_FullFlow_MovesBalance(t *testing.T) {
 	require.Equal(t, txID, *decidedEvent.ExecutedTxID)
 }
 
+// TestSchemaContract_PendingReversal_FullFlow_MakerCheckerRequired proves
+// the security audit fix end to end against real Postgres: reversal (an
+// unrestricted undo of ANY prior transaction) now goes through the exact
+// same maker-checker path as adjustment_credit — a single identity can
+// Create it, but only a DIFFERENT identity's Approve actually reverses the
+// money, and the stored reference_id survives the JSON round-trip into a
+// real posted reversal.
+func TestSchemaContract_PendingReversal_FullFlow_MakerCheckerRequired(t *testing.T) {
+	db := setupSchemaTestDB(t)
+	handleSvc, _ := newService(db)
+	adjSvc, _ := newAdjustmentsService(db)
+	ctx := context.Background()
+
+	userA := uuid.New()
+	cashA := createUserCashAccount(t, db, userA)
+	require.NoError(t, handleSvc.Handle(ctx, processors.Command{
+		IdempotencyKey: "rev-mc-charge-1", Type: "money_in", Amount: decimal.NewFromInt(75_000),
+		UserID: userA, Metadata: map[string]any{"gateway": "bca"},
+	}))
+	var originalTxID uuid.UUID
+	require.NoError(t, db.QueryRowContext(ctx,
+		`SELECT id FROM ledger_transactions WHERE idempotency_key = $1`, "rev-mc-charge-1",
+	).Scan(&originalTxID))
+	require.True(t, getBalance(t, db, cashA).Equal(decimal.NewFromInt(75_000)))
+
+	// Create alone must never move money.
+	id, err := adjSvc.Create(ctx, "ops-1", "reversal", decimal.NewFromInt(75_000), uuid.Nil, originalTxID, nil, "duplicate charge, must undo")
+	require.NoError(t, err)
+	require.True(t, getBalance(t, db, cashA).Equal(decimal.NewFromInt(75_000)), "Create must not move any money")
+
+	// The same identity approving its own request must be rejected.
+	_, err = adjSvc.Approve(ctx, id, "ops-1")
+	require.Error(t, err)
+	assert.ErrorIs(t, err, apperror.ErrSelfApproval)
+	require.True(t, getBalance(t, db, cashA).Equal(decimal.NewFromInt(75_000)))
+
+	// A different identity's approval actually reverses the charge.
+	reversalTxID, err := adjSvc.Approve(ctx, id, "ops-2")
+	require.NoError(t, err)
+	require.True(t, getBalance(t, db, cashA).IsZero(), "approval must have actually reversed the original money_in")
+
+	var reversalType string
+	require.NoError(t, db.QueryRowContext(ctx,
+		`SELECT type FROM ledger_transactions WHERE id = $1`, reversalTxID,
+	).Scan(&reversalType))
+	assert.Equal(t, "reversal", reversalType)
+
+	var closedByTxID uuid.UUID
+	require.NoError(t, db.QueryRowContext(ctx,
+		`SELECT closed_by_tx_id FROM ledger_transactions WHERE id = $1`, originalTxID,
+	).Scan(&closedByTxID))
+	assert.Equal(t, reversalTxID, closedByTxID, "the original transaction must be closed by the reversal maker-checker actually posted")
+}
+
 // TestSchemaContract_PendingAdjustment_Reject_NoMoneyMoves proves rejecting
 // a pending adjustment never touches any balance.
 func TestSchemaContract_PendingAdjustment_Reject_NoMoneyMoves(t *testing.T) {
@@ -1451,7 +1728,7 @@ func TestSchemaContract_PendingAdjustment_Reject_NoMoneyMoves(t *testing.T) {
 	targetUser := uuid.New()
 	cashID := createUserCashAccount(t, db, targetUser)
 
-	id, err := adjSvc.Create(ctx, "ops-1", "adjustment_credit", decimal.NewFromInt(9_999), targetUser, nil, "should be rejected")
+	id, err := adjSvc.Create(ctx, "ops-1", "adjustment_credit", decimal.NewFromInt(9_999), targetUser, uuid.Nil, nil, "should be rejected")
 	require.NoError(t, err)
 
 	require.NoError(t, adjSvc.Reject(ctx, id, "ops-2"))
@@ -1674,7 +1951,7 @@ func TestSchemaContract_AppServiceRole_FullFlowSucceeds(t *testing.T) {
 	}))
 	require.True(t, getBalance(t, dbs.appDB, cashB).Equal(decimal.NewFromInt(10_000)))
 
-	adjID, err := adjSvc.Create(ctx, "ops-1", "adjustment_credit", decimal.NewFromInt(1_000), userB, nil, "app_service grant test")
+	adjID, err := adjSvc.Create(ctx, "ops-1", "adjustment_credit", decimal.NewFromInt(1_000), userB, uuid.Nil, nil, "app_service grant test")
 	require.NoError(t, err)
 	_, err = adjSvc.Approve(ctx, adjID, "ops-2")
 	require.NoError(t, err)
@@ -1801,7 +2078,7 @@ func TestSchemaContract_RebuildProjection(t *testing.T) {
 		IdempotencyKey: "rebuild-2", Type: "transfer_p2p", Amount: decimal.NewFromInt(30_000),
 		UserID: userA, TargetUserID: userB,
 	}))
-	adjID, err := adjSvc.Create(ctx, "ops-1", "adjustment_credit", decimal.NewFromInt(5_000), userB, nil, "rebuild test")
+	adjID, err := adjSvc.Create(ctx, "ops-1", "adjustment_credit", decimal.NewFromInt(5_000), userB, uuid.Nil, nil, "rebuild test")
 	require.NoError(t, err)
 	_, err = adjSvc.Approve(ctx, adjID, "ops-2")
 	require.NoError(t, err)
@@ -2525,6 +2802,7 @@ func TestSchemaContract_Disbursement_ImportThenRun_AllPostedAcrossMultipleCalls(
 
 	batchID, err := svc.Import(ctx, "payroll.csv", rows, "ops")
 	require.NoError(t, err)
+	require.NoError(t, svc.ApproveBatch(ctx, batchID, "ops-2"))
 
 	result1, err := svc.Run(ctx, batchID, false)
 	require.NoError(t, err)
@@ -2551,6 +2829,84 @@ func TestSchemaContract_Disbursement_ImportThenRun_AllPostedAcrossMultipleCalls(
 
 func fmtInt(n int) string { return fmt.Sprintf("%d", n) }
 
+// TestSchemaContract_Disbursement_MakerCheckerRequired proves the
+// business-completeness audit fix end to end against real Postgres: Import
+// alone never moves money (batch starts 'pending_approval'), Run refuses
+// to process a single item until approved, the same identity approving its
+// own batch is rejected, and a different identity's approval actually
+// unlocks Run.
+func TestSchemaContract_Disbursement_MakerCheckerRequired(t *testing.T) {
+	db := setupSchemaTestDB(t)
+	svc, _ := newDisbursementService(db, 100)
+	ctx := context.Background()
+
+	user := uuid.New()
+	cash := createUserCashAccount(t, db, user)
+	rows := []model.DisbursementImportRow{{UserID: user, Amount: decimal.NewFromInt(1_000)}}
+
+	batchID, err := svc.Import(ctx, "mc.csv", rows, "ops-1")
+	require.NoError(t, err)
+
+	var status string
+	require.NoError(t, db.QueryRowContext(ctx, `SELECT status FROM disbursement_batches WHERE id = $1`, batchID).Scan(&status))
+	require.Equal(t, "pending_approval", status, "Import alone must never authorize processing")
+
+	// Run must refuse — not yet approved.
+	_, err = svc.Run(ctx, batchID, false)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, apperror.ErrDisbursementBatchNotApproved)
+	require.True(t, getBalance(t, db, cash).IsZero(), "a blocked Run must not have moved any money")
+
+	// The same identity approving its own batch must be rejected.
+	err = svc.ApproveBatch(ctx, batchID, "ops-1")
+	require.Error(t, err)
+	assert.ErrorIs(t, err, apperror.ErrSelfApproval)
+
+	// A different identity's approval unlocks Run.
+	require.NoError(t, svc.ApproveBatch(ctx, batchID, "ops-2"))
+	require.NoError(t, db.QueryRowContext(ctx, `SELECT status FROM disbursement_batches WHERE id = $1`, batchID).Scan(&status))
+	require.Equal(t, "processing", status)
+
+	result, err := svc.Run(ctx, batchID, false)
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.Posted)
+	require.True(t, getBalance(t, db, cash).Equal(decimal.NewFromInt(1_000)))
+
+	// A second approval attempt on an already-decided batch must be rejected.
+	err = svc.ApproveBatch(ctx, batchID, "ops-3")
+	require.Error(t, err)
+	assert.ErrorIs(t, err, apperror.ErrDisbursementBatchAlreadyDecided)
+}
+
+// TestSchemaContract_Disbursement_RejectedBatch_NeverRuns proves rejecting
+// a batch leaves it permanently un-runnable and moves no money.
+func TestSchemaContract_Disbursement_RejectedBatch_NeverRuns(t *testing.T) {
+	db := setupSchemaTestDB(t)
+	svc, _ := newDisbursementService(db, 100)
+	ctx := context.Background()
+
+	user := uuid.New()
+	cash := createUserCashAccount(t, db, user)
+	rows := []model.DisbursementImportRow{{UserID: user, Amount: decimal.NewFromInt(1_000)}}
+
+	batchID, err := svc.Import(ctx, "rej.csv", rows, "ops-1")
+	require.NoError(t, err)
+
+	require.NoError(t, svc.RejectBatch(ctx, batchID, "ops-2", "duplicate of an earlier payroll run"))
+
+	var status, reason string
+	require.NoError(t, db.QueryRowContext(ctx,
+		`SELECT status, decision_reason FROM disbursement_batches WHERE id = $1`, batchID,
+	).Scan(&status, &reason))
+	assert.Equal(t, "rejected", status)
+	assert.Equal(t, "duplicate of an earlier payroll run", reason)
+
+	_, err = svc.Run(ctx, batchID, false)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, apperror.ErrDisbursementBatchNotApproved)
+	require.True(t, getBalance(t, db, cash).IsZero())
+}
+
 // TestSchemaContract_Disbursement_Resume_NoDoublePost is docs/roadmap/archive/19 Task
 // T2's resume integration test: simulate a "process died mid-batch" state
 // by posting item 5 directly (bypassing Run) before ever calling Run, then
@@ -2573,6 +2929,7 @@ func TestSchemaContract_Disbursement_Resume_NoDoublePost(t *testing.T) {
 
 	batchID, err := svc.Import(ctx, "payroll2.csv", rows, "ops")
 	require.NoError(t, err)
+	require.NoError(t, svc.ApproveBatch(ctx, batchID, "ops-2"))
 
 	// Simulate item 5 having already posted in a prior (crashed) run —
 	// post directly with the deterministic key Run would use, then mark it
@@ -2635,6 +2992,7 @@ func TestSchemaContract_Disbursement_BusinessFailure_OtherItemsStillProcess(t *t
 	}
 	batchID, err := svc.Import(ctx, "payroll3.csv", rows, "ops")
 	require.NoError(t, err)
+	require.NoError(t, svc.ApproveBatch(ctx, batchID, "ops-2"))
 
 	result, err := svc.Run(ctx, batchID, false)
 	require.NoError(t, err)

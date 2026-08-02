@@ -30,7 +30,8 @@ func writeError(w http.ResponseWriter, err error) {
 		errors.Is(err, apperror.ErrOutboxEventNotFound),
 		errors.Is(err, apperror.ErrPendingAdjustmentNotFound),
 		errors.Is(err, apperror.ErrReconBatchNotFound),
-		errors.Is(err, apperror.ErrReconItemNotFound):
+		errors.Is(err, apperror.ErrReconItemNotFound),
+		errors.Is(err, apperror.ErrChargebackDisputeNotFound):
 		response.NotFound(w, err.Error())
 
 	case errors.Is(err, apperror.ErrInsufficientFunds),
@@ -56,7 +57,10 @@ func writeError(w http.ResponseWriter, err error) {
 		errors.Is(err, apperror.ErrPreviousFailed),
 		errors.Is(err, apperror.ErrAdjustmentAlreadyDecided),
 		errors.Is(err, apperror.ErrReconItemAlreadyResolved),
-		errors.Is(err, apperror.ErrIdempotencyConflict):
+		errors.Is(err, apperror.ErrIdempotencyConflict),
+		errors.Is(err, apperror.ErrChargebackDisputeAlreadyResolved),
+		errors.Is(err, apperror.ErrDisbursementBatchAlreadyDecided),
+		errors.Is(err, apperror.ErrDisbursementBatchNotApproved):
 		response.Conflict(w, err.Error())
 
 	default:

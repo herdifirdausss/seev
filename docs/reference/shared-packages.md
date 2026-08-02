@@ -392,7 +392,37 @@ locked profile and per-run manifest, `loadmetrics` defines bounded load
 measurements, and `loadreport` validates and aggregates redacted run
 summaries without averaging percentiles. They refuse unsafe databases, paths,
 profiles, or production-like targets and must not be used to claim production
-capacity from a local run.
+capacity from a local run. After k6 exits, `scripts/load-test.sh` keeps the
+disposable stack alive long enough to record outbox drain and ledger-integrity
+evidence, then patches those facts into the redacted summary. It deliberately
+leaves `gate_passed=false` until resource and lock evidence is collected.
+
+`pkg/loadlab.Profile.Validate()` checks a resource profile's own internal
+consistency (declared container memory fits inside declared Docker memory,
+no single service exceeds the container budget) rather than one hardcoded
+envelope — it used to reject any profile that wasn't byte-identical to
+`local-small`'s own 4 vCPU/4096 MiB numbers, which meant no other profile
+could ever pass validation. `deploy/load/compose.load.yaml`'s per-service
+memory limits are now parameterized by environment variable (defaults
+unchanged); `postgres` and `ledger-service` additionally carry a real `cpus`
+limit (every other service stays uncapped, matching prior behavior) —
+`local-2c-2g`/`local-8c-8g` profiles exist as a result
+(`deploy/load/profiles/`).
+
+`cmd/loaddataset` is a read-only observer, the same posture as
+`cmd/loadprobe`, that summarizes the REAL dataset a run's self-seeding
+(`tests/load/lib/seed.js`) produced — account/entry counts, balances by
+currency, schema version, and a content hash over the dataset's logical
+shape, with an optional D0/D1/D2 tier-conformance check. It is distinct from
+`cmd/loadseed` (synthetic JSONL, never written to a database) and from
+`scripts/load-snapshot.sh` (hashes the raw `pg_dump` bytes, not a semantic
+summary) — see `cmd/loaddataset/README.md`. `scripts/load-test.sh`'s
+`run`/`smoke` commands call it automatically after every run.
+`cmd/loadprobe`'s polling interval is exposed to the harness via
+`SEEV_LOAD_PROBE_INTERVAL` (default `1s`, safe for long runs; set finer for
+short/high-intensity scenarios) — see `cmd/loadprobe/README.md` for why a
+lock-wait sample reporting `relation: "unknown"` is a real
+`transactionid`-wait signal, not a collector failure.
 
 ### `pkg/cryptox`
 

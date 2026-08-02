@@ -59,9 +59,12 @@ type Service interface {
 	// CreateAdjustment/ApproveAdjustment/RejectAdjustment/GetAdjustment/
 	// ListAdjustments back the maker-checker adjustment endpoints
 	// (docs/roadmap/archive/16 Task T1) — internal router only, admin-gated. This is
-	// the ONLY reachable path to adjustment_credit/adjustment_debit; direct
-	// POST /transactions with those types is rejected (decision K8).
-	CreateAdjustment(ctx context.Context, requestedBy, adjType string, amount decimal.Decimal, targetUserID uuid.UUID, metadata map[string]any, reason string) (uuid.UUID, error)
+	// the ONLY reachable path to adjustment_credit/adjustment_debit/reversal/
+	// chargeback/freeze_confiscate; direct POST /transactions with those
+	// types is rejected (decision K8; reversal/chargeback/freeze_confiscate
+	// added by a later security audit finding). referenceID is required for
+	// type "reversal", ignored otherwise.
+	CreateAdjustment(ctx context.Context, requestedBy, adjType string, amount decimal.Decimal, targetUserID, referenceID uuid.UUID, metadata map[string]any, reason string) (uuid.UUID, error)
 	ApproveAdjustment(ctx context.Context, id uuid.UUID, approverID string) (uuid.UUID, error)
 	RejectAdjustment(ctx context.Context, id uuid.UUID, approverID string) error
 	GetAdjustment(ctx context.Context, id uuid.UUID) (model.PendingAdjustment, error)
@@ -91,10 +94,16 @@ type Service interface {
 	CancelSchedule(ctx context.Context, id, userID uuid.UUID) error
 	RunSchedulesNow(ctx context.Context, asOf time.Time) (executed, failed int, err error)
 
-	// ImportDisbursementBatch/RunDisbursement/GetDisbursementReport back
-	// batch disbursement (docs/roadmap/archive/19 Task T2) — internal router only,
-	// admin-gated in every handler.
+	// ImportDisbursementBatch/ApproveDisbursementBatch/RejectDisbursementBatch/
+	// RunDisbursement/GetDisbursementReport back batch disbursement
+	// (docs/roadmap/archive/19 Task T2) — internal router only, admin-gated in every
+	// handler. ApproveDisbursementBatch/RejectDisbursementBatch are the
+	// maker-checker gate a business-completeness audit finding added: Run
+	// always rejects a batch that hasn't been approved by an identity
+	// different from the one that imported it.
 	ImportDisbursementBatch(ctx context.Context, filename string, rows []model.DisbursementImportRow, createdBy string) (uuid.UUID, error)
+	ApproveDisbursementBatch(ctx context.Context, batchID uuid.UUID, approverID string) error
+	RejectDisbursementBatch(ctx context.Context, batchID uuid.UUID, approverID, reason string) error
 	RunDisbursement(ctx context.Context, batchID uuid.UUID, retryFailed bool) (model.DisbursementRunResult, error)
 	GetDisbursementReport(ctx context.Context, batchID uuid.UUID, status string, limit, offset int) (model.DisbursementBatchReport, error)
 

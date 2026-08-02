@@ -583,6 +583,9 @@ services:
       VENDOR_MOCKVENDOR_SECRET: ${VENDOR_MOCKVENDOR_SECRET:-change-me-mockvendor-secret}
       MOCKVENDOR2_ENABLED: "true"
       MOCKVENDOR2_SECRET: ${MOCKVENDOR2_SECRET:-change-me-mockvendor2-secret}
+      CRYPTOX_KEY_V1_FILE: /run/secrets/cryptox_key_v1
+    secrets:
+      - cryptox_key_v1
     volumes: *cert-volume
     ports:
       - "127.0.0.1:8098:8098"

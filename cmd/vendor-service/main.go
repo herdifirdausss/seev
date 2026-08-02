@@ -100,6 +100,22 @@ func run(parent context.Context) error {
 	}
 	defer db.Close()
 
+	// Security audit finding: vendor_callback_inbox.raw_body/selected_headers
+	// had no cryptox protection at all, unlike every other raw-payload
+	// column in the codebase — required unconditionally here, same
+	// "money-safety, never optional" posture cmd/auth-service and
+	// cmd/ledger-service already hold their own rings to.
+	cryptoxRing, err := cfg.Cryptox.Ring()
+	if err != nil {
+		return fmt.Errorf("build cryptox ring: %w", err)
+	}
+
+	stopRetention, err := internalvendor.StartRetentionRunner(db, nil, log)
+	if err != nil {
+		return fmt.Errorf("start retention runner: %w", err)
+	}
+	defer stopRetention()
+
 	grpcServer, err := grpcx.NewServer(log, cfg.InternalGRPCToken, tlsx.ServerConfig(certSrc, []string{tlsx.IdentityPayin, tlsx.IdentityPayout}))
 	if err != nil {
 		return fmt.Errorf("create grpc server: %w", err)
@@ -127,7 +143,7 @@ func run(parent context.Context) error {
 		return fmt.Errorf("create payout callback client: %w", err)
 	}
 	defer func() { _ = payoutConn.Close() }()
-	callbackHandler, err := internalvendor.NewCallbackHandler(db, registry, payinv1.NewPayinServiceClient(payinConn), payoutv1.NewPayoutServiceClient(payoutConn), os.Getenv("VENDOR_CALLBACK_CIDRS"), os.Getenv("VENDOR_CALLBACK_TRUSTED_PROXY_CIDRS"))
+	callbackHandler, err := internalvendor.NewCallbackHandler(db, cryptoxRing, registry, payinv1.NewPayinServiceClient(payinConn), payoutv1.NewPayoutServiceClient(payoutConn), os.Getenv("VENDOR_CALLBACK_CIDRS"), os.Getenv("VENDOR_CALLBACK_TRUSTED_PROXY_CIDRS"))
 	if err != nil {
 		return err
 	}

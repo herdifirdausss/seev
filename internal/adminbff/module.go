@@ -114,7 +114,20 @@ func (m *Module) AdminRouter() http.Handler {
 	mux.Handle("/api/v1/admin/recon/batches", m.reconUploadProxy())
 	// The BFF exposes a stable operator namespace while each downstream keeps
 	// its existing internal admin route. No domain repository is opened here.
-	mux.Handle("/api/v1/admin/ledger/", m.proxy("ledger", m.clients.Ledger, "/api/v1/admin/ledger/", "/api/v1/admin/ledger/"))
+	//
+	// downstreamPrefix is "/api/v1/ledger/admin/", NOT "/api/v1/admin/ledger/"
+	// (a load-testing session's routing-bug finding, docs/roadmap performance
+	// baseline report): cmd/ledger-service/main.go mounts module.InternalRouter()
+	// (whose own routes are all "/admin/*", e.g. "/admin/disbursements") at TWO
+	// external prefixes — "/api/v1/ledger/" (strips cleanly to "/admin/...",
+	// works) and "/api/v1/admin/ledger/" (strips only "/api/v1", leaving
+	// "/admin/ledger/..." — an extra "/ledger" segment InternalRouter() never
+	// registered, so every request 404s). There is no StripPrefix length that
+	// fixes the second mount: "admin" and "ledger" appear in the wrong order
+	// for any single contiguous strip to produce "/admin/...". The first mount
+	// is correct, so this proxy targets it instead — the same rewrite pattern
+	// adjustments/recon above already use for exactly this reason.
+	mux.Handle("/api/v1/admin/ledger/", m.proxy("ledger", m.clients.Ledger, "/api/v1/admin/ledger/", "/api/v1/ledger/admin/"))
 	mux.Handle("/api/v1/admin/policy/", m.proxy("ledger", m.clients.Ledger, "/api/v1/admin/policy/", "/api/v1/admin/policy/"))
 	mux.Handle("/api/v1/admin/payin/", m.proxy("payin", m.clients.Payin, "/api/v1/admin/payin/", "/admin/payin/"))
 	mux.Handle("/api/v1/admin/payout/", m.proxy("payout", m.clients.Payout, "/api/v1/admin/payout/", "/admin/payout/"))

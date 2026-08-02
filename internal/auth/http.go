@@ -217,8 +217,9 @@ func toKYCSubmissionResponse(s model.KYCSubmission) kycSubmissionResponse {
 }
 
 type kycStatusResponse struct {
-	Level      int                    `json:"kyc_level"`
-	Submission *kycSubmissionResponse `json:"latest_submission,omitempty"`
+	Level         int                    `json:"kyc_level"`
+	Submission    *kycSubmissionResponse `json:"latest_submission,omitempty"`
+	VerifiedUntil *time.Time             `json:"kyc_verified_until,omitempty"`
 }
 
 func (m *Module) SubmitKYCHandler() http.HandlerFunc {
@@ -262,7 +263,7 @@ func (m *Module) KYCStatusHandler() http.HandlerFunc {
 			writeAuthError(w, err)
 			return
 		}
-		out := kycStatusResponse{Level: status.Level}
+		out := kycStatusResponse{Level: status.Level, VerifiedUntil: status.VerifiedUntil}
 		if status.Submission != nil {
 			converted := toKYCSubmissionResponse(*status.Submission)
 			out.Submission = &converted

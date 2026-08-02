@@ -4,8 +4,8 @@
 services:
   object-store-init:
     profiles: [load]
-    mem_limit: 16m
-    deploy: {resources: {limits: {memory: 16M}}}
+    mem_limit: ${SEEV_LOAD_MEM_OBJECT_STORE_INIT:-16m}
+    deploy: {resources: {limits: {memory: "${SEEV_LOAD_MEM_OBJECT_STORE_INIT:-16M}"}}}
 
   postgres:
     profiles: [load]
@@ -24,26 +24,42 @@ services:
       - seev_load_postgres_data:/var/lib/postgresql/data
       - ./scripts/load-postgres-init:/docker-entrypoint-initdb.d:ro
       - ./migrations:/migrations:ro
-    ports: !reset
+    # Phase 0 §24.4: !reset means "clear to null," not "replace with this
+    # list" — the compose-spec merge tag for "these values instead of the
+    # base file's" is !override. With !reset, this list was silently
+    # dropped and the port was never actually published (discovered live:
+    # cmd/loadprobe, the first thing this session needed to connect via the
+    # published host port rather than `compose exec` inside the network,
+    # got "connection refused"). Same fix applies to prometheus below.
+    ports: !override
       - "127.0.0.1:${SEEV_LOAD_POSTGRES_PORT:-15433}:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $${POSTGRES_USER:-seev} -d seev_load_control"]
-    mem_limit: 640m
-    deploy: {resources: {limits: {memory: 640M}}}
+    mem_limit: ${SEEV_LOAD_MEM_POSTGRES:-640m}
+    # Phase 5 resource elasticity study (§15.2) — postgres is one of the two
+    # services (with ledger-service) every prior bottleneck finding in this
+    # report points to as capacity-determining. cpus defaults to "100" (no
+    # container ever needs 100 CPUs, so this is unlimited in practice) —
+    # Docker Compose has no clean way to conditionally OMIT the cpus key
+    # via env-var substitution, and "0" is not a valid "unlimited" sentinel
+    # for --cpus. Every other service is left uncapped on CPU entirely, same
+    # as before this variable existed, since they were never the limiting
+    # component.
+    deploy: {resources: {limits: {memory: "${SEEV_LOAD_MEM_POSTGRES:-640M}", cpus: "${SEEV_LOAD_CPUS_POSTGRES:-100}"}}}
 
   redis:
     # The disposable load network reaches Redis by service name. Do not
     # publish the development host port: a developer's local stack may already
     # own it, and exposing it is unnecessary for the load generator.
     ports: !reset []
-    mem_limit: 128m
-    deploy: {resources: {limits: {memory: 128M}}}
+    mem_limit: ${SEEV_LOAD_MEM_REDIS:-128m}
+    deploy: {resources: {limits: {memory: "${SEEV_LOAD_MEM_REDIS:-128M}"}}}
   rabbitmq:
     # Same isolation rule as Redis; AMQP is internal to the disposable
     # project during load runs.
     ports: !reset []
-    mem_limit: 256m
-    deploy: {resources: {limits: {memory: 256M}}}
+    mem_limit: ${SEEV_LOAD_MEM_RABBITMQ:-256m}
+    deploy: {resources: {limits: {memory: "${SEEV_LOAD_MEM_RABBITMQ:-256M}"}}}
 
   ledger-service:
     profiles: [load]
@@ -52,8 +68,16 @@ services:
       RATE_LIMIT_REQUESTS: ${SEEV_LOAD_RATE_LIMIT_REQUESTS:-5000}
       RATE_LIMIT_PER: ${SEEV_LOAD_RATE_LIMIT_PER:-1m}
       RATE_LIMIT_BURST: ${SEEV_LOAD_RATE_LIMIT_BURST:-5000}
-    mem_limit: 512m
-    deploy: {resources: {limits: {memory: 512M}}}
+      # B3 experiment only (docs/performance/reports/2026-xx-baseline.md §22)
+      # — empty by default, byte-identical to before this variable existed.
+      # internal/ledger/ledger.go reads this directly (never through
+      # internal/config); set to e.g. "5s" for the cached A/B variant run.
+      FEE_RESOLVER_CACHE_TTL: ${SEEV_LOAD_FEE_RESOLVER_CACHE_TTL:-}
+    mem_limit: ${SEEV_LOAD_MEM_LEDGER:-512m}
+    # Phase 5 resource elasticity study (§15.2) — see postgres' own comment
+    # above on cpus' "100" default and why only these two services are
+    # CPU-capped.
+    deploy: {resources: {limits: {memory: "${SEEV_LOAD_MEM_LEDGER:-512M}", cpus: "${SEEV_LOAD_CPUS_LEDGER:-100}"}}}
   auth-service:
     profiles: [load]
     environment:
@@ -61,8 +85,30 @@ services:
       RATE_LIMIT_REQUESTS: ${SEEV_LOAD_RATE_LIMIT_REQUESTS:-5000}
       RATE_LIMIT_PER: ${SEEV_LOAD_RATE_LIMIT_PER:-1m}
       RATE_LIMIT_BURST: ${SEEV_LOAD_RATE_LIMIT_BURST:-5000}
-    mem_limit: 384m
-    deploy: {resources: {limits: {memory: 384M}}}
+      # Phase 0 §24.1: an admin identity the load-generator's k6 setup()
+      # logs in as to provision topup routing rules for self-seeded
+      # scenarios (tests/load/lib/seed.js). Disposable-stack only — the base
+      # docker-compose.yml never sets these for the dev/prod "app" profile.
+      AUTH_BOOTSTRAP_ADMIN_EMAIL: ${SEEV_LOAD_ADMIN_EMAIL:-load-admin@example.invalid}
+      AUTH_BOOTSTRAP_ADMIN_PASSWORD: ${SEEV_LOAD_ADMIN_PASSWORD:-LoadAdminDisposable2026}
+      # A second, distinct identity for disbursement-burst.js's own
+      # seedDisbursementBatches — the maker-checker gate added later this
+      # session (ApproveDisbursementBatch's own doc comment: "approverID
+      # must differ from the identity that called ImportDisbursementBatch")
+      # made the single admin identity above insufficient for that scenario
+      # once it started requiring approval before Run.
+      AUTH_BOOTSTRAP_CHECKER_EMAIL: ${SEEV_LOAD_CHECKER_EMAIL:-load-checker@example.invalid}
+      AUTH_BOOTSTRAP_CHECKER_PASSWORD: ${SEEV_LOAD_CHECKER_PASSWORD:-LoadCheckerDisposable2026}
+      # Scenario setup() mints each sender's access token once and reuses it
+      # for the whole run — the production 5m default (JWT_ACCESS_EXPIRY,
+      # internal/config/config.go) expires mid-run for anything past a short
+      # smoke/staircase probe, surfacing as a mass 401 cascade indistinguishable
+      # from a real capacity knee (discovered live: a 15-minute Phase 3
+      # confirmation run showed ~69% unexpected_failures purely from this).
+      # Disposable load stack only — production's default is untouched.
+      JWT_ACCESS_EXPIRY: ${SEEV_LOAD_JWT_ACCESS_EXPIRY:-6h}
+    mem_limit: ${SEEV_LOAD_MEM_AUTH:-384m}
+    deploy: {resources: {limits: {memory: "${SEEV_LOAD_MEM_AUTH:-384M}"}}}
   payin-service:
     profiles: [load]
     environment:
@@ -70,8 +116,18 @@ services:
       RATE_LIMIT_REQUESTS: ${SEEV_LOAD_RATE_LIMIT_REQUESTS:-5000}
       RATE_LIMIT_PER: ${SEEV_LOAD_RATE_LIMIT_PER:-1m}
       RATE_LIMIT_BURST: ${SEEV_LOAD_RATE_LIMIT_BURST:-5000}
-    mem_limit: 256m
-    deploy: {resources: {limits: {memory: 256M}}}
+      # Phase 0 §24.2/K11: base docker-compose.yml disables mockvendor2 for
+      # payin (registry.AddPayin gated by cfg.Vendor.Mockvendor2Enabled,
+      # cmd/payin-service/main.go) — W5's two-gateway control needs a
+      # second registered vendor to route half its pool to. The secret is
+      # also mandatory here — payin boot-fails fail-closed
+      # ("MOCKVENDOR2_SECRET must be set when MOCKVENDOR2_ENABLED=true")
+      # without it, discovered live (must match vendor-service's own
+      # MOCKVENDOR2_SECRET below, same shell-expansion-time value).
+      MOCKVENDOR2_ENABLED: "true"
+      MOCKVENDOR2_SECRET: ${MOCKVENDOR2_SECRET:-change-me-mockvendor2-secret}
+    mem_limit: ${SEEV_LOAD_MEM_PAYIN:-256m}
+    deploy: {resources: {limits: {memory: "${SEEV_LOAD_MEM_PAYIN:-256M}"}}}
   payout-service:
     profiles: [load]
     environment:
@@ -79,8 +135,8 @@ services:
       RATE_LIMIT_REQUESTS: ${SEEV_LOAD_RATE_LIMIT_REQUESTS:-5000}
       RATE_LIMIT_PER: ${SEEV_LOAD_RATE_LIMIT_PER:-1m}
       RATE_LIMIT_BURST: ${SEEV_LOAD_RATE_LIMIT_BURST:-5000}
-    mem_limit: 256m
-    deploy: {resources: {limits: {memory: 256M}}}
+    mem_limit: ${SEEV_LOAD_MEM_PAYOUT:-256m}
+    deploy: {resources: {limits: {memory: "${SEEV_LOAD_MEM_PAYOUT:-256M}"}}}
   fraud-service:
     profiles: [load]
     environment:
@@ -88,8 +144,8 @@ services:
       RATE_LIMIT_REQUESTS: ${SEEV_LOAD_RATE_LIMIT_REQUESTS:-5000}
       RATE_LIMIT_PER: ${SEEV_LOAD_RATE_LIMIT_PER:-1m}
       RATE_LIMIT_BURST: ${SEEV_LOAD_RATE_LIMIT_BURST:-5000}
-    mem_limit: 256m
-    deploy: {resources: {limits: {memory: 256M}}}
+    mem_limit: ${SEEV_LOAD_MEM_FRAUD:-256m}
+    deploy: {resources: {limits: {memory: "${SEEV_LOAD_MEM_FRAUD:-256M}"}}}
   gateway-service:
     profiles: [load]
     environment:
@@ -97,8 +153,8 @@ services:
       RATE_LIMIT_REQUESTS: ${SEEV_LOAD_RATE_LIMIT_REQUESTS:-5000}
       RATE_LIMIT_PER: ${SEEV_LOAD_RATE_LIMIT_PER:-1m}
       RATE_LIMIT_BURST: ${SEEV_LOAD_RATE_LIMIT_BURST:-5000}
-    mem_limit: 256m
-    deploy: {resources: {limits: {memory: 256M}}}
+    mem_limit: ${SEEV_LOAD_MEM_GATEWAY:-256m}
+    deploy: {resources: {limits: {memory: "${SEEV_LOAD_MEM_GATEWAY:-256M}"}}}
   vendor-service:
     profiles: [load]
     environment:
@@ -109,8 +165,8 @@ services:
       VENDOR_MOCKVENDOR_ENABLED: "true"
       VENDOR_MOCKVENDOR_SECRET: ${VENDOR_MOCKVENDOR_SECRET:-synthetic-vendor-secret}
       VENDOR_CALLBACK_CIDRS: 172.16.0.0/12
-    mem_limit: 192m
-    deploy: {resources: {limits: {memory: 192M}}}
+    mem_limit: ${SEEV_LOAD_MEM_VENDOR:-192m}
+    deploy: {resources: {limits: {memory: "${SEEV_LOAD_MEM_VENDOR:-192M}"}}}
 
   prometheus:
     profiles: [load]
@@ -118,10 +174,10 @@ services:
       - ./deploy/load/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./deploy/certs:/certs:ro
       - seev_load_prometheus_data:/prometheus
-    ports: !reset
+    ports: !override
       - "127.0.0.1:${SEEV_LOAD_PROMETHEUS_PORT:-19090}:9090"
-    mem_limit: 128m
-    deploy: {resources: {limits: {memory: 128M}}}
+    mem_limit: ${SEEV_LOAD_MEM_PROMETHEUS:-128m}
+    deploy: {resources: {limits: {memory: "${SEEV_LOAD_MEM_PROMETHEUS:-128M}"}}}
 
   load-generator:
     profiles: [load]
@@ -145,12 +201,45 @@ services:
       LOAD_DURATION: ${SEEV_LOAD_DURATION:-1s}
       LOAD_DATASET_HASH: ${SEEV_LOAD_DATASET_HASH:-sha256:0000000000000000000000000000000000000000000000000000000000000000}
       LOAD_SUMMARY_FILE: /results/summary.json
+      # Phase 0 §24.1 self-seeding (tests/load/lib/seed.js) — must match
+      # auth-service's AUTH_BOOTSTRAP_ADMIN_EMAIL/PASSWORD above exactly.
+      LOAD_ADMIN_EMAIL: ${SEEV_LOAD_ADMIN_EMAIL:-load-admin@example.invalid}
+      LOAD_ADMIN_PASSWORD: ${SEEV_LOAD_ADMIN_PASSWORD:-LoadAdminDisposable2026}
+      # disbursement-burst.js's own maker-checker approval step — must match
+      # auth-service's AUTH_BOOTSTRAP_CHECKER_EMAIL/PASSWORD above exactly.
+      LOAD_CHECKER_EMAIL: ${SEEV_LOAD_CHECKER_EMAIL:-load-checker@example.invalid}
+      LOAD_CHECKER_PASSWORD: ${SEEV_LOAD_CHECKER_PASSWORD:-LoadCheckerDisposable2026}
+      LOAD_PAYIN_ADMIN_BASE_URL: https://payin-service:8092
+      LOAD_AUTH_INTERNAL_BASE_URL: https://auth-service:8083
+      LOAD_VENDOR2_SECRET: ${MOCKVENDOR2_SECRET:-change-me-mockvendor2-secret}
+      LOAD_HOTSPOT_VARIANT: ${SEEV_LOAD_HOTSPOT_VARIANT:-one}
+      # w6-resolver.js / B3 experiment only (§22) — distinct
+      # (transaction_type, amount) combinations repeated per run.
+      LOAD_KEY_CARDINALITY: ${SEEV_LOAD_KEY_CARDINALITY:-10}
+      # ledger-service's own INTERNAL :8091 listener, not its public :8090
+      # one — /api/v1/admin/ledger/ (disbursements included) is mounted on
+      # internalRouter (cmd/ledger-service/main.go:332-338), bound to
+      # InternalPort, not publicRouter's :8090 (discovered live: pointing
+      # this at :8090 404s, since publicRouter only serves /api/v1/ledger/).
+      # gateway-service does not forward this path either. Reachable with
+      # the same dev-operator mTLS identity LOAD_TLS_CERT_FILE/KEY_FILE
+      # already establish (ledger's internal listener allows
+      # IdentityDevOperator, IdentityPrometheus, IdentityAdminBFF —
+      # cmd/ledger-service/main.go:287-289).
+      LOAD_LEDGER_BASE_URL: https://ledger-service:8091
     volumes:
       - ./tests/load:/scripts:ro
       - ./deploy/certs:/certs:ro
       - ./${SEEV_LOAD_ARTIFACT_ROOT:-artifacts/load/unbound}:/results:rw
-    mem_limit: 240m
-    deploy: {resources: {limits: {memory: 240M}}}
+    # k6's own process memory grows with sustained iteration count and
+    # accumulated trend/check metrics — W4's six action types accumulate
+    # more k6-side state per iteration than the single-action scenarios, so
+    # the old 240m cap OOM-killed it (docker events: "container oom") around
+    # minute 13-14 of a 15-minute run at 80 WU/s, discovered live during
+    # Phase 3 confirmation — independent of the Docker Desktop VM's own
+    # memory ceiling (raising 3.83GB->5.79GB had no effect on this).
+    mem_limit: ${SEEV_LOAD_MEM_LOAD_GENERATOR:-1536m}
+    deploy: {resources: {limits: {memory: "${SEEV_LOAD_MEM_LOAD_GENERATOR:-1536M}"}}}
 
 volumes:
   seev_load_postgres_data:

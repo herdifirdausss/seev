@@ -238,7 +238,7 @@ func TestWithMaxItemsPerRun_Overrides(t *testing.T) {
 	defer ctrl2.Finish()
 
 	batchID := uuid.New()
-	repo.EXPECT().GetBatch(gomock.Any(), batchID).Return(model.DisbursementBatch{ID: batchID}, nil)
+	repo.EXPECT().GetBatch(gomock.Any(), batchID).Return(model.DisbursementBatch{ID: batchID, Status: "processing"}, nil)
 	repo.EXPECT().ListItemsToProcess(gomock.Any(), batchID, false, 3).Return(nil, nil)
 	repo.EXPECT().ListItemsToProcess(gomock.Any(), batchID, false, 1).Return(nil, nil)
 	repo.EXPECT().GetCounts(gomock.Any(), batchID).Return(map[string]int{}, nil)
@@ -247,4 +247,118 @@ func TestWithMaxItemsPerRun_Overrides(t *testing.T) {
 	svc := New(mockDB{}, repo, txRepo, &fakePoster{}, WithMaxItemsPerRun(3))
 	_, err := svc.Run(context.Background(), batchID, false)
 	require.NoError(t, err)
+}
+
+// ─── Maker-checker: business-completeness audit finding ─────────────────────
+// Import alone must never move money; Run must refuse to process any item
+// until a DIFFERENT identity approves the batch — same posture as
+// pending_adjustments already required for a manual balance adjustment.
+
+func TestRun_NotApproved_Rejected(t *testing.T) {
+	repo, ctrl := newMockDisbursementRepo(t)
+	defer ctrl.Finish()
+	txRepo, ctrl2 := newMockTxRepo(t)
+	defer ctrl2.Finish()
+
+	batchID := uuid.New()
+	repo.EXPECT().GetBatch(gomock.Any(), batchID).Return(model.DisbursementBatch{ID: batchID, Status: "pending_approval"}, nil)
+
+	svc := New(mockDB{}, repo, txRepo, &fakePoster{})
+	_, err := svc.Run(context.Background(), batchID, false)
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, apperror.ErrDisbursementBatchNotApproved)
+}
+
+func TestRun_Rejected_Rejected(t *testing.T) {
+	repo, ctrl := newMockDisbursementRepo(t)
+	defer ctrl.Finish()
+	txRepo, ctrl2 := newMockTxRepo(t)
+	defer ctrl2.Finish()
+
+	batchID := uuid.New()
+	repo.EXPECT().GetBatch(gomock.Any(), batchID).Return(model.DisbursementBatch{ID: batchID, Status: "rejected"}, nil)
+
+	svc := New(mockDB{}, repo, txRepo, &fakePoster{})
+	_, err := svc.Run(context.Background(), batchID, false)
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, apperror.ErrDisbursementBatchNotApproved)
+}
+
+func TestApproveBatch_SelfApproval_Rejected(t *testing.T) {
+	repo, ctrl := newMockDisbursementRepo(t)
+	defer ctrl.Finish()
+	txRepo, ctrl2 := newMockTxRepo(t)
+	defer ctrl2.Finish()
+
+	batchID := uuid.New()
+	repo.EXPECT().GetBatch(gomock.Any(), batchID).Return(model.DisbursementBatch{ID: batchID, CreatedBy: "ops-1", Status: "pending_approval"}, nil)
+
+	svc := New(mockDB{}, repo, txRepo, &fakePoster{})
+	err := svc.ApproveBatch(context.Background(), batchID, "ops-1")
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, apperror.ErrSelfApproval)
+}
+
+func TestApproveBatch_DifferentApprover_Succeeds(t *testing.T) {
+	repo, ctrl := newMockDisbursementRepo(t)
+	defer ctrl.Finish()
+	txRepo, ctrl2 := newMockTxRepo(t)
+	defer ctrl2.Finish()
+
+	batchID := uuid.New()
+	repo.EXPECT().GetBatch(gomock.Any(), batchID).Return(model.DisbursementBatch{ID: batchID, CreatedBy: "ops-1", Status: "pending_approval"}, nil)
+	repo.EXPECT().ApproveBatch(gomock.Any(), gomock.Any(), batchID, "ops-2").Return(int64(1), nil)
+
+	svc := New(mockDB{}, repo, txRepo, &fakePoster{})
+	require.NoError(t, svc.ApproveBatch(context.Background(), batchID, "ops-2"))
+}
+
+func TestApproveBatch_AlreadyDecided_Rejected(t *testing.T) {
+	repo, ctrl := newMockDisbursementRepo(t)
+	defer ctrl.Finish()
+	txRepo, ctrl2 := newMockTxRepo(t)
+	defer ctrl2.Finish()
+
+	batchID := uuid.New()
+	repo.EXPECT().GetBatch(gomock.Any(), batchID).Return(model.DisbursementBatch{ID: batchID, CreatedBy: "ops-1", Status: "processing"}, nil)
+	repo.EXPECT().ApproveBatch(gomock.Any(), gomock.Any(), batchID, "ops-2").Return(int64(0), nil)
+
+	svc := New(mockDB{}, repo, txRepo, &fakePoster{})
+	err := svc.ApproveBatch(context.Background(), batchID, "ops-2")
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, apperror.ErrDisbursementBatchAlreadyDecided)
+}
+
+func TestRejectBatch_MissingReason_Rejected(t *testing.T) {
+	repo, ctrl := newMockDisbursementRepo(t)
+	defer ctrl.Finish()
+	txRepo, ctrl2 := newMockTxRepo(t)
+	defer ctrl2.Finish()
+
+	batchID := uuid.New()
+	repo.EXPECT().GetBatch(gomock.Any(), batchID).Return(model.DisbursementBatch{ID: batchID, CreatedBy: "ops-1", Status: "pending_approval"}, nil)
+
+	svc := New(mockDB{}, repo, txRepo, &fakePoster{})
+	err := svc.RejectBatch(context.Background(), batchID, "ops-2", "")
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, apperror.ErrValidation)
+}
+
+func TestRejectBatch_DifferentApprover_Succeeds(t *testing.T) {
+	repo, ctrl := newMockDisbursementRepo(t)
+	defer ctrl.Finish()
+	txRepo, ctrl2 := newMockTxRepo(t)
+	defer ctrl2.Finish()
+
+	batchID := uuid.New()
+	repo.EXPECT().GetBatch(gomock.Any(), batchID).Return(model.DisbursementBatch{ID: batchID, CreatedBy: "ops-1", Status: "pending_approval"}, nil)
+	repo.EXPECT().RejectBatch(gomock.Any(), gomock.Any(), batchID, "ops-2", "fraud risk").Return(int64(1), nil)
+
+	svc := New(mockDB{}, repo, txRepo, &fakePoster{})
+	require.NoError(t, svc.RejectBatch(context.Background(), batchID, "ops-2", "fraud risk"))
 }

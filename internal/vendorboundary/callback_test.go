@@ -3,10 +3,25 @@ package vendorboundary
 import (
 	"net/http/httptest"
 	"testing"
+
+	"github.com/herdifirdausss/seev/pkg/cryptox"
 )
 
+func testCryptoxRing(t *testing.T) *cryptox.Ring {
+	t.Helper()
+	key := make([]byte, 32)
+	for i := range key {
+		key[i] = byte(i + 11)
+	}
+	ring, err := cryptox.NewRing(map[int][]byte{1: key}, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return ring
+}
+
 func TestCallbackSourcePolicyRequiresAllowlistedPeer(t *testing.T) {
-	handler, err := NewCallbackHandler(nil, NewRegistry(), nil, nil, "127.0.0.1/32", "10.0.0.0/8")
+	handler, err := NewCallbackHandler(nil, testCryptoxRing(t), NewRegistry(), nil, nil, "127.0.0.1/32", "10.0.0.0/8")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -22,7 +37,7 @@ func TestCallbackSourcePolicyRequiresAllowlistedPeer(t *testing.T) {
 }
 
 func TestCallbackSourcePolicyUsesForwardedIPOnlyFromTrustedProxy(t *testing.T) {
-	handler, err := NewCallbackHandler(nil, NewRegistry(), nil, nil, "203.0.113.0/24", "10.0.0.0/8")
+	handler, err := NewCallbackHandler(nil, testCryptoxRing(t), NewRegistry(), nil, nil, "203.0.113.0/24", "10.0.0.0/8")
 	if err != nil {
 		t.Fatal(err)
 	}

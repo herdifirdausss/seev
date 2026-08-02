@@ -124,6 +124,90 @@ func TestAuth_KYC_Reject_LevelUnchangedNoLedgerCall(t *testing.T) {
 	assert.Zero(t, rowCount, "a rejected submission must never create policy_limits rows")
 }
 
+// TestAuth_KYC_ApprovalSetsVerifiedUntil proves ApproveKYCSubmission writes
+// a real kyc_verified_until deadline (migrations/auth/000018_kyc_expiry) —
+// the gap the business-completeness audit found: KYC used to never expire.
+func TestAuth_KYC_ApprovalSetsVerifiedUntil(t *testing.T) {
+	db := setupAuthTestDB(t)
+	ledgerModule := testutil.NewLedgerHarness(db)
+	m := auth.NewModule(db, ledgerModule, auth.Config{
+		JWTSecret: testJWTSecretIT, JWTIssuer: "seev-test",
+		AccessExpiry: 15 * time.Minute, RefreshExpiry: 7 * 24 * time.Hour,
+		DefaultCurrency: "IDR", KYCValidityTTL: 30 * 24 * time.Hour,
+	}, nil, cryptoxTestRing, cryptoxTestLookup, mockkyc.New())
+	ctx := context.Background()
+
+	before := time.Now()
+	u, _, err := m.Register(ctx, "kyc-verified-until@example.com", "hunter22!", "KYC VerifiedUntil")
+	require.NoError(t, err)
+	_, err = m.SubmitKYC(ctx, u.ID, 1, map[string]any{"name": "KYC VerifiedUntil"})
+	require.NoError(t, err)
+
+	status, err := m.KYC(ctx, u.ID)
+	require.NoError(t, err)
+	require.NotNil(t, status.VerifiedUntil, "an approved level must carry a validity deadline")
+	assert.WithinDuration(t, before.Add(30*24*time.Hour), *status.VerifiedUntil, time.Minute)
+}
+
+// TestAuth_KYC_ExpiredLevel_DowngradedByExpiryWorker proves the periodic
+// expiry worker (internal/auth/worker/expiry.go) closes the loop: an
+// expired level gets downgraded to L0, kyc_verified_until clears, and the
+// REAL ledger's policy_limits drop back to L0's caps — reusing DowngradeKYC's
+// existing limits-first path end to end, not just a unit-level fake.
+func TestAuth_KYC_ExpiredLevel_DowngradedByExpiryWorker(t *testing.T) {
+	db := setupAuthTestDB(t)
+	ledgerModule := testutil.NewLedgerHarness(db)
+	m := auth.NewModule(db, ledgerModule, auth.Config{
+		JWTSecret: testJWTSecretIT, JWTIssuer: "seev-test",
+		AccessExpiry: 15 * time.Minute, RefreshExpiry: 7 * 24 * time.Hour,
+		DefaultCurrency: "IDR", KYCValidityTTL: -time.Hour, // already expired at approval time
+	}, nil, cryptoxTestRing, cryptoxTestLookup, mockkyc.New())
+	ctx := context.Background()
+
+	u, _, err := m.Register(ctx, "kyc-expired@example.com", "hunter22!", "KYC Expired")
+	require.NoError(t, err)
+	submission, err := m.SubmitKYC(ctx, u.ID, 1, map[string]any{"name": "KYC Expired"})
+	require.NoError(t, err)
+	require.Equal(t, "approved", submission.Status)
+	require.Equal(t, int64(1_000_000), policyLimitMaxPerTxIT(t, db, u.ID.String(), "transfer_p2p"))
+
+	job := m.NewKYCExpiryJob(nil, time.Hour, nil)
+	require.NoError(t, job.RunOnce(ctx))
+
+	status, err := m.KYC(ctx, u.ID)
+	require.NoError(t, err)
+	assert.Equal(t, 0, status.Level, "expiry worker must downgrade back to L0")
+	assert.Nil(t, status.VerifiedUntil, "downgrade clears the validity deadline")
+	assert.Equal(t, int64(0), policyLimitMaxPerTxIT(t, db, u.ID.String(), "transfer_p2p"),
+		"the real ledger's policy_limits must be re-materialized to L0")
+
+	// Second pass is a no-op: the user is no longer above L0.
+	require.NoError(t, job.RunOnce(ctx))
+	status, err = m.KYC(ctx, u.ID)
+	require.NoError(t, err)
+	assert.Equal(t, 0, status.Level)
+}
+
+// TestAuth_KYC_NotYetExpired_UntouchedByExpiryWorker proves the worker only
+// acts on genuinely expired rows.
+func TestAuth_KYC_NotYetExpired_UntouchedByExpiryWorker(t *testing.T) {
+	db := setupAuthTestDB(t)
+	m, _ := newAuthModuleWithMockKYC(db)
+	ctx := context.Background()
+
+	u, _, err := m.Register(ctx, "kyc-not-expired@example.com", "hunter22!", "KYC NotExpired")
+	require.NoError(t, err)
+	_, err = m.SubmitKYC(ctx, u.ID, 1, nil)
+	require.NoError(t, err)
+
+	job := m.NewKYCExpiryJob(nil, time.Hour, nil)
+	require.NoError(t, job.RunOnce(ctx))
+
+	status, err := m.KYC(ctx, u.ID)
+	require.NoError(t, err)
+	assert.Equal(t, 1, status.Level, "a level well within its validity window must not be downgraded")
+}
+
 func TestAuth_KYC_DowngradeL0_HardPolicyBeatsStaleToken(t *testing.T) {
 	db := setupAuthTestDB(t)
 	m, _ := newAuthModuleWithMockKYC(db)

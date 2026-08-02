@@ -21,6 +21,8 @@ trigger, prerequisites, and owner decision are satisfied.
 | 60 · C4 | [End-to-end multi-currency](active/60-c4-end-to-end-multi-currency.md) | Activate existing currency primitives across the full money journey | Active — ready for execution; implementation not started |
 | 61 · C5 | [Advanced financial products and period close](active/61-c5-advanced-financial-products-period-close.md) | Add controlled accrual, scheduled-failure policy, and top-up fees | Active — ready for execution; implementation not started |
 | 62 · C6 | [Zero-downtime migration engine](active/62-c6-zero-downtime-migration-engine.md) | Build evidence-driven expand/contract and cutover machinery | Active — ready for execution; implementation not started |
+| 64 · K0 | [Deployment inventory and Kubernetes readiness baseline](active/64-k0-deployment-inventory-baseline.md) | Freeze and verify the runtime contract before Kubernetes manifests | Active — ready for execution; implementation not started |
+| 65 · A11 | [Database audit and hardening](active/65-a11-database-audit-and-hardening.md) | Repeated schema-safety, security, and business-completeness audit passes | In progress — Rounds 1–2 fixed; Round 3 findings documented, not yet fixed |
 
 The same list is available in the [active-plan folder](active/README.md).
 
@@ -29,6 +31,11 @@ The same list is available in the [active-plan folder](active/README.md).
 [Plan 42](42-long-term-roadmap.md) defines post-MVP tracks, activation
 triggers, anti-scope, and evidence requirements. It is a planning framework,
 not a promise that every track will be implemented.
+
+[Plan 63](63-kubernetes-cloud-deployment-roadmap-v2.md) is the revised
+cloud-deployment learning roadmap. Its first executable gate is active
+[plan 64 · K0](active/64-k0-deployment-inventory-baseline.md); neither plan
+claims that Kubernetes or cloud deployment exists today.
 
 ## Archive
 

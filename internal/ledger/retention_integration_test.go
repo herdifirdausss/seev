@@ -205,7 +205,9 @@ func TestRetention_FeeQuotesConsumed_ProofAware(t *testing.T) {
 	require.NoError(t, err)
 	_, err = db.ExecContext(ctx, `
 		INSERT INTO ledger_entries (id, transaction_id, account_id, direction, amount, balance_after, created_at)
-		VALUES ($1, $2, $3, 'credit', 500, 500, now() - interval '400 days')`, uuid.New(), matchingTx, feeAcct)
+		VALUES ($1, $2, $3, 'debit', 500, 500, now() - interval '400 days'),
+		       ($4, $2, $5, 'credit', 500, 500, now() - interval '400 days')`,
+		uuid.New(), matchingTx, cashAcct, uuid.New(), feeAcct)
 	require.NoError(t, err)
 
 	consumedAt := time.Now().Add(-400 * 24 * time.Hour)

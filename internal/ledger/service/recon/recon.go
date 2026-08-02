@@ -41,7 +41,7 @@ type DatabaseSQL interface {
 // property K5 step 5 requires ("funds must not move without human approval
 // kedua").
 type AdjustmentCreator interface {
-	Create(ctx context.Context, requestedBy, adjType string, amount decimal.Decimal, targetUserID uuid.UUID, metadata map[string]any, reason string) (uuid.UUID, error)
+	Create(ctx context.Context, requestedBy, adjType string, amount decimal.Decimal, targetUserID, referenceID uuid.UUID, metadata map[string]any, reason string) (uuid.UUID, error)
 }
 
 // ImportRow is model.ReconImportRow's alias in this package — parsing/
@@ -227,7 +227,7 @@ func (s *Service) ResolveItem(ctx context.Context, itemID uuid.UUID, requestedBy
 	}
 
 	metadata := map[string]any{"gateway": batch.Gateway}
-	adjustmentID, err := s.adj.Create(ctx, requestedBy, adjType, amount, uuid.Nil, metadata, reason)
+	adjustmentID, err := s.adj.Create(ctx, requestedBy, adjType, amount, uuid.Nil, uuid.Nil, metadata, reason)
 	if err != nil {
 		return uuid.Nil, err
 	}

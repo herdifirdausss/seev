@@ -91,11 +91,19 @@ func seedPostedTransfer(t *testing.T, db *sql.DB, userID uuid.UUID, amount int64
 		txID, "itest-"+txID.String(), amount, userCash, otherCash); err != nil {
 		t.Fatalf("insert transaction: %v", err)
 	}
-	if _, err := db.Exec(`INSERT INTO ledger_entries (transaction_id, account_id, direction, amount, balance_after) VALUES ($1, $2, 'debit', $3, $4)`, txID, userCash, amount, 100000-amount); err != nil {
-		t.Fatalf("insert debit entry: %v", err)
-	}
-	if _, err := db.Exec(`INSERT INTO ledger_entries (transaction_id, account_id, direction, amount, balance_after) VALUES ($1, $2, 'credit', $3, $3)`, txID, otherCash, amount); err != nil {
-		t.Fatalf("insert credit entry: %v", err)
+	// trg_ledger_entries_balanced (migrations/000034) is DEFERRABLE
+	// INITIALLY DEFERRED, checked at commit — but db.Exec runs each
+	// statement in its own auto-committed transaction (this function never
+	// opens an explicit *sql.Tx), so two separate Exec calls here would
+	// each commit, and be checked, on their own: exactly the unbalanced
+	// state the trigger exists to prevent, discovered live when the debit
+	// leg alone was rejected before the credit leg's own statement ever
+	// ran. One multi-row INSERT — the same shape
+	// ledger_entry_repository.InsertEntries always uses in production —
+	// keeps both legs in the single transaction this Exec call commits.
+	if _, err := db.Exec(`INSERT INTO ledger_entries (transaction_id, account_id, direction, amount, balance_after) VALUES ($1, $2, 'debit', $3, $4), ($1, $5, 'credit', $3, $3)`,
+		txID, userCash, amount, 100000-amount, otherCash); err != nil {
+		t.Fatalf("insert entries: %v", err)
 	}
 	return txID
 }

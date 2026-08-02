@@ -23,7 +23,7 @@ func TestStart_RejectsUnknownOwnerJitter(t *testing.T) {
 }
 
 func TestStart_EveryRealOwnerHasADistinctJitterMinute(t *testing.T) {
-	owners := []string{"adminbff", "assurance", "auth", "fraud", "gateway", "ledger", "payin", "payout"}
+	owners := []string{"adminbff", "assurance", "auth", "fraud", "gateway", "ledger", "payin", "payout", "vendor"}
 	seen := map[int]string{}
 	for _, o := range owners {
 		jitter, ok := serviceJitterMinutes[o]

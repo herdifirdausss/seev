@@ -188,9 +188,10 @@ func TestResolvedAccounts_Refund(t *testing.T) {
 	repo.EXPECT().GetAccountID(gomock.Any(), gomock.Any(), constant.AccountTypeCash).Return(userCashID, nil)
 	repo.EXPECT().GetAccountCurrency(gomock.Any(), userCashID).Return("IDR", nil)
 
-	p := NewRefund(repo)
+	p := NewRefund(repo, nil)
 	ra, _, err := p.ResolveAccounts(context.Background(), Command{
 		TargetUserID: uuid.New(),
+		ReferenceID:  uuid.New(),
 		Metadata:     map[string]any{"merchant_account_id": merchantID.String()},
 	})
 

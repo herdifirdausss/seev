@@ -28,12 +28,14 @@ func (mockDB) WithTx(_ context.Context, _ *sql.TxOptions, fn func(*sql.Tx) error
 // fakePoster is a hand-written test double for Poster — a single method
 // doesn't earn a generated mock.
 type fakePoster struct {
-	called bool
-	err    error
+	called  bool
+	err     error
+	lastCmd processors.Command
 }
 
-func (f *fakePoster) Handle(_ context.Context, _ processors.Command) error {
+func (f *fakePoster) Handle(_ context.Context, cmd processors.Command) error {
 	f.called = true
+	f.lastCmd = cmd
 	return f.err
 }
 
@@ -175,7 +177,7 @@ func TestCreate_InvalidType_Rejected(t *testing.T) {
 	defer ctrl3.Finish()
 
 	svc := New(mockDB{}, adjRepo, txRepo, outbox, &fakePoster{})
-	_, err := svc.Create(context.Background(), "user-A", "money_in", decimal.NewFromInt(100), uuid.New(), nil, "reason")
+	_, err := svc.Create(context.Background(), "user-A", "money_in", decimal.NewFromInt(100), uuid.New(), uuid.Nil, nil, "reason")
 
 	require.Error(t, err)
 	assert.ErrorIs(t, err, apperror.ErrValidation)
@@ -190,7 +192,7 @@ func TestCreate_NonIntegralAmount_Rejected(t *testing.T) {
 	defer ctrl3.Finish()
 
 	svc := New(mockDB{}, adjRepo, txRepo, outbox, &fakePoster{})
-	_, err := svc.Create(context.Background(), "user-A", "adjustment_credit", decimal.RequireFromString("100.5"), uuid.New(), nil, "reason")
+	_, err := svc.Create(context.Background(), "user-A", "adjustment_credit", decimal.RequireFromString("100.5"), uuid.New(), uuid.Nil, nil, "reason")
 
 	require.Error(t, err)
 	assert.ErrorIs(t, err, apperror.ErrValidation)
@@ -205,7 +207,7 @@ func TestCreate_MissingReason_Rejected(t *testing.T) {
 	defer ctrl3.Finish()
 
 	svc := New(mockDB{}, adjRepo, txRepo, outbox, &fakePoster{})
-	_, err := svc.Create(context.Background(), "user-A", "adjustment_credit", decimal.NewFromInt(100), uuid.New(), nil, "")
+	_, err := svc.Create(context.Background(), "user-A", "adjustment_credit", decimal.NewFromInt(100), uuid.New(), uuid.Nil, nil, "")
 
 	require.Error(t, err)
 	assert.ErrorIs(t, err, apperror.ErrValidation)
@@ -222,8 +224,100 @@ func TestCreate_Valid_Succeeds(t *testing.T) {
 	adjRepo.EXPECT().Create(gomock.Any(), gomock.Any(), gomock.Any(), "user-A", gomock.Any(), "compensation").Return(nil)
 
 	svc := New(mockDB{}, adjRepo, txRepo, outbox, &fakePoster{})
-	id, err := svc.Create(context.Background(), "user-A", "adjustment_credit", decimal.NewFromInt(100), uuid.New(), nil, "compensation")
+	id, err := svc.Create(context.Background(), "user-A", "adjustment_credit", decimal.NewFromInt(100), uuid.New(), uuid.Nil, nil, "compensation")
 
 	require.NoError(t, err)
 	assert.NotEqual(t, uuid.Nil, id)
+}
+
+// ─── reversal/chargeback/freeze_confiscate: security audit finding ─────────
+// These three used to be directly postable with a single admin JWT
+// (internal/ledger/transport/http.go's old adminOnlyTypes) — now routed
+// through the same maker-checker path as adjustment_credit/debit.
+
+func TestCreate_Reversal_MissingReferenceID_Rejected(t *testing.T) {
+	adjRepo, ctrl := newMockAdjRepo(t)
+	defer ctrl.Finish()
+	txRepo, ctrl2 := newMockTxRepo(t)
+	defer ctrl2.Finish()
+	outbox, ctrl3 := newMockOutboxRepo(t)
+	defer ctrl3.Finish()
+
+	svc := New(mockDB{}, adjRepo, txRepo, outbox, &fakePoster{})
+	// referenceID left uuid.Nil — reversal has no UserID to fall back to.
+	_, err := svc.Create(context.Background(), "user-A", "reversal", decimal.NewFromInt(1000), uuid.Nil, uuid.Nil, nil, "undo double post")
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, apperror.ErrValidation)
+}
+
+func TestCreate_Reversal_WithReferenceID_Succeeds(t *testing.T) {
+	adjRepo, ctrl := newMockAdjRepo(t)
+	defer ctrl.Finish()
+	txRepo, ctrl2 := newMockTxRepo(t)
+	defer ctrl2.Finish()
+	outbox, ctrl3 := newMockOutboxRepo(t)
+	defer ctrl3.Finish()
+
+	adjRepo.EXPECT().Create(gomock.Any(), gomock.Any(), gomock.Any(), "user-A", gomock.Any(), "undo double post").Return(nil)
+
+	svc := New(mockDB{}, adjRepo, txRepo, outbox, &fakePoster{})
+	originalTxID := uuid.New()
+	id, err := svc.Create(context.Background(), "user-A", "reversal", decimal.NewFromInt(1000), uuid.Nil, originalTxID, nil, "undo double post")
+
+	require.NoError(t, err)
+	assert.NotEqual(t, uuid.Nil, id)
+}
+
+func TestCreate_ChargebackAndFreezeConfiscate_RequireUserID(t *testing.T) {
+	for _, adjType := range []string{"chargeback", "freeze_confiscate"} {
+		t.Run(adjType, func(t *testing.T) {
+			adjRepo, ctrl := newMockAdjRepo(t)
+			defer ctrl.Finish()
+			txRepo, ctrl2 := newMockTxRepo(t)
+			defer ctrl2.Finish()
+			outbox, ctrl3 := newMockOutboxRepo(t)
+			defer ctrl3.Finish()
+
+			svc := New(mockDB{}, adjRepo, txRepo, outbox, &fakePoster{})
+			_, err := svc.Create(context.Background(), "user-A", adjType, decimal.NewFromInt(1000), uuid.Nil, uuid.Nil, nil, "reason")
+
+			require.Error(t, err)
+			assert.ErrorIs(t, err, apperror.ErrValidation)
+		})
+	}
+}
+
+// TestApprove_Reversal_ThreadsReferenceIDIntoPostedCommand proves Approve
+// carries a reversal's stored ReferenceID through into the actual posted
+// processors.Command — without this, Reversal.ResolveAccounts (which reads
+// ONLY cmd.ReferenceID, never cmd.UserID) would always fail validation.
+func TestApprove_Reversal_ThreadsReferenceIDIntoPostedCommand(t *testing.T) {
+	adjRepo, ctrl := newMockAdjRepo(t)
+	defer ctrl.Finish()
+	txRepo, ctrl2 := newMockTxRepo(t)
+	defer ctrl2.Finish()
+	outbox, ctrl3 := newMockOutboxRepo(t)
+	defer ctrl3.Finish()
+	poster := &fakePoster{}
+
+	id := uuid.New()
+	originalTxID := uuid.New()
+	payload := []byte(`{"type":"reversal","amount":"1000","user_id":"00000000-0000-0000-0000-000000000000","metadata":{},"reference_id":"` + originalTxID.String() + `"}`)
+	adjRepo.EXPECT().GetByID(gomock.Any(), id).Return(model.PendingAdjustment{
+		ID: id, RequestedBy: "user-A", Status: "pending", CmdPayload: payload,
+	}, nil)
+	adjRepo.EXPECT().MarkApproved(gomock.Any(), gomock.Any(), id, "user-B").Return(int64(1), nil)
+	adjRepo.EXPECT().MarkExecuted(gomock.Any(), gomock.Any(), id, gomock.Any()).Return(nil)
+	txID := uuid.New()
+	txRepo.EXPECT().GetByIdempotencyKey(gomock.Any(), "adj:"+id.String(), nil).
+		Return(model.LedgerTransaction{ID: txID}, nil)
+	outbox.EXPECT().InsertEvents(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+
+	svc := New(mockDB{}, adjRepo, txRepo, outbox, poster)
+	_, err := svc.Approve(context.Background(), id, "user-B")
+
+	require.NoError(t, err)
+	assert.Equal(t, originalTxID, poster.lastCmd.ReferenceID)
+	assert.Equal(t, "reversal", poster.lastCmd.Type)
 }

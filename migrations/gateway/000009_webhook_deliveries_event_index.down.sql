@@ -1,0 +1,1 @@
+DROP INDEX IF EXISTS idx_merchant_webhook_deliveries_event;

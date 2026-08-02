@@ -335,7 +335,16 @@ func internalRouter(cfg *config.Config, module *ledger.Module, policyHandler *po
 	authed := middleware.Chain(middleware.WithAuth(cfg.JWT.Secret, cfg.JWT.Issuer), middleware.RequireJSON())
 	api := httpcontract.New(httpcontract.Options{Owner: "ledger", Audience: "internal", Contract: "internal-v1"})
 	api.Handle("/api/v1/ledger/", authed(http.StripPrefix("/api/v1/ledger", module.InternalRouter())))
-	api.Handle("/api/v1/admin/ledger/", authed(http.StripPrefix("/api/v1", module.InternalRouter())))
+	// A load-testing session's routing-bug finding (docs/roadmap performance
+	// baseline report): a second mount used to exist here at
+	// "/api/v1/admin/ledger/" stripping only "/api/v1", leaving
+	// "/admin/ledger/..." for InternalRouter() — whose own routes are all
+	// "/admin/..." (no "/ledger" segment) — so every request 404s. No
+	// StripPrefix length can fix it (the URL's "admin"/"ledger" order doesn't
+	// match InternalRouter()'s route table for any contiguous strip); the
+	// "/api/v1/ledger/" mount above already serves every InternalRouter()
+	// route correctly. Removed rather than "fixed" — admin-bff's proxy
+	// (internal/adminbff/module.go) now targets the working mount instead.
 	api.Handle("/api/v1/admin/policy/", authed(http.StripPrefix("/api/v1", policyHandler.Mux())))
 	// docs/roadmap/archive/51 T5 (K10): closure prepare/commit are called by
 	// auth-service's own saga worker, never by an end-user JWT — gated by

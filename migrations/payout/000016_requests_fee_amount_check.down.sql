@@ -1,0 +1,1 @@
+ALTER TABLE payout_requests DROP CONSTRAINT IF EXISTS chk_payout_requests_fee_amount_nonnegative;

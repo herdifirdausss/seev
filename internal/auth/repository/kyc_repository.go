@@ -28,8 +28,15 @@ type KYCRepository interface {
 	ListKYCRescreenSubjects(ctx context.Context, limit int) ([]model.KYCRescreenSubject, error)
 	// ApproveKYCSubmission runs applyTier while the pending row is locked and
 	// commits the auth level/submission decision only after it succeeds.
-	ApproveKYCSubmission(ctx context.Context, id uuid.UUID, decidedBy, providerRef, reason string, applyTier func(context.Context, uuid.UUID, int) error) error
+	// validUntil becomes auth_users.kyc_verified_until — the deadline the
+	// periodic expiry worker (internal/auth/worker/expiry.go) downgrades
+	// against.
+	ApproveKYCSubmission(ctx context.Context, id uuid.UUID, decidedBy, providerRef, reason string, validUntil time.Time, applyTier func(context.Context, uuid.UUID, int) error) error
 	RejectKYCSubmission(ctx context.Context, id uuid.UUID, decidedBy, reason string) error
+	// ListExpiredKYCUsers returns ids of users whose current kyc_level's
+	// validity window (kyc_verified_until) has passed — the periodic expiry
+	// worker's source query.
+	ListExpiredKYCUsers(ctx context.Context, limit int) ([]uuid.UUID, error)
 
 	// KYC apply retry intents use a short lease rather than a processing status:
 	// a crashed worker leaves the row pending and it becomes claimable again
@@ -227,7 +234,38 @@ func (r *kycRepo) ListKYCRescreenSubjects(ctx context.Context, limit int) ([]mod
 	return subjects, nil
 }
 
-func (r *kycRepo) ApproveKYCSubmission(ctx context.Context, id uuid.UUID, decidedBy, providerRef, reason string, applyTier func(context.Context, uuid.UUID, int) error) error {
+// ListExpiredKYCUsers returns users above L0 whose kyc_verified_until has
+// passed. Unlocked read — the expiry worker's distributed lock already
+// serializes RunOnce across replicas (mirrors ListKYCRescreenSubjects), and
+// DowngradeKYCLevel re-checks/locks the row itself before writing.
+func (r *kycRepo) ListExpiredKYCUsers(ctx context.Context, limit int) ([]uuid.UUID, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id FROM auth_users
+		WHERE kyc_level > 0 AND kyc_verified_until IS NOT NULL AND kyc_verified_until <= now()
+		ORDER BY kyc_verified_until ASC
+		LIMIT $1`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("auth: list expired kyc users: %w", err)
+	}
+	defer rows.Close()
+	var out []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("auth: scan expired kyc user: %w", err)
+		}
+		out = append(out, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("auth: iterate expired kyc users: %w", err)
+	}
+	return out, nil
+}
+
+func (r *kycRepo) ApproveKYCSubmission(ctx context.Context, id uuid.UUID, decidedBy, providerRef, reason string, validUntil time.Time, applyTier func(context.Context, uuid.UUID, int) error) error {
 	return r.db.WithTx(ctx, nil, func(tx *sql.Tx) error {
 		var userID uuid.UUID
 		var level int
@@ -258,7 +296,7 @@ func (r *kycRepo) ApproveKYCSubmission(ctx context.Context, id uuid.UUID, decide
 		if currentLevel+1 != level {
 			return ErrKYCTierConflict
 		}
-		result, err := tx.ExecContext(ctx, `UPDATE auth_users SET kyc_level = $1, updated_at = now() WHERE id = $2 AND kyc_level + 1 = $1`, level, userID)
+		result, err := tx.ExecContext(ctx, `UPDATE auth_users SET kyc_level = $1, updated_at = now(), kyc_verified_until = $3 WHERE id = $2 AND kyc_level + 1 = $1`, level, userID, validUntil)
 		if err != nil {
 			return fmt.Errorf("auth: update kyc level: %w", err)
 		}
@@ -353,7 +391,11 @@ func (r *kycRepo) DowngradeKYCLevel(ctx context.Context, userID uuid.UUID, level
 		if current <= level {
 			return ErrKYCTierConflict
 		}
-		if _, err := tx.ExecContext(ctx, `UPDATE auth_users SET kyc_level = $1, updated_at = now() WHERE id = $2 AND kyc_level > $1`, level, userID); err != nil {
+		// kyc_verified_until always clears on downgrade — even a partial
+		// downgrade (e.g. 2->1) has no record of when the SURVIVING level was
+		// itself independently verified, so only a fresh approval sets a new
+		// deadline (migrations/auth/000018_kyc_expiry.up.sql).
+		if _, err := tx.ExecContext(ctx, `UPDATE auth_users SET kyc_level = $1, updated_at = now(), kyc_verified_until = NULL WHERE id = $2 AND kyc_level > $1`, level, userID); err != nil {
 			return fmt.Errorf("auth: downgrade kyc level: %w", err)
 		}
 		if _, err := tx.ExecContext(ctx, `

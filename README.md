@@ -103,6 +103,7 @@ symbol for compatibility; it is not an active fallback.
 
 | Your goal | Open only this |
 |---|---|
+| Evaluate the engineering evidence in five minutes | [Engineering proof](docs/portfolio/engineering-proof.md) |
 | Choose a chapter and follow the illustrated panels | [Interactive story](docs/index.html) |
 | Read with a young child | [Read-aloud story](docs/learn/read-aloud-story.md) |
 | Learn independently with no technical background | [Five-minute tour](docs/learn/five-minute-tour.md) |
@@ -244,7 +245,10 @@ changes must keep their inventory and compatibility gate evidence together.
 
 Capacity work is disposable and profile-bound. Use `make load-lint` for fast
 checks; use `SEEV_LOAD_ACK=disposable-only make load-smoke` only with the
-documented `local-small` load profile. B0 results and safety limits are in
+documented `local-small` load profile. W1, W2, W3, and W5 create their own
+disposable fixtures; each load run then records outbox-drain and ledger-
+integrity evidence before teardown. Those checks do not establish capacity by
+themselves. B0 results and safety limits are in
 [performance evidence](docs/performance/README.md).
 
 Integration tests use build tags and require Docker:

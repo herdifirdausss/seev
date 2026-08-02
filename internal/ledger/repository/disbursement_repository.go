@@ -32,6 +32,19 @@ type DisbursementRepository interface {
 	// once every item has left 'pending' (or, when retryFailed, 'failed' too).
 	UpdateBatchStatus(ctx context.Context, tx *sql.Tx, batchID uuid.UUID, status string) error
 
+	// ApproveBatch transitions 'pending_approval' -> 'processing', the
+	// maker-checker gate Run requires before it will process any item
+	// (business-completeness audit finding, migrations/ledger/000038).
+	// The status guard is in the WHERE clause (K3's atomic-UPDATE pattern) —
+	// rows==0 tells the caller the batch didn't exist or wasn't pending
+	// approval. The approver-not-creator guard is a DB CHECK constraint, the
+	// backstop behind the service layer's own check.
+	ApproveBatch(ctx context.Context, tx *sql.Tx, batchID uuid.UUID, approverID string) (int64, error)
+
+	// RejectBatch transitions 'pending_approval' -> 'rejected' — no items are
+	// ever processed for a rejected batch.
+	RejectBatch(ctx context.Context, tx *sql.Tx, batchID uuid.UUID, approverID, reason string) (int64, error)
+
 	// GetCounts returns a count of items per status for a batch (docs/roadmap/archive/19
 	// Task T2 step 5, report summary).
 	GetCounts(ctx context.Context, batchID uuid.UUID) (map[string]int, error)
@@ -66,7 +79,7 @@ func NewDisbursementRepository(db database.DatabaseSQL) DisbursementRepository {
 func (r *disbursementRepo) CreateBatchWithItems(ctx context.Context, tx *sql.Tx, batch model.DisbursementBatch, items []model.DisbursementItem) error {
 	_, err := tx.ExecContext(ctx, `
 		INSERT INTO disbursement_batches (id, source_filename, row_count, status, created_by, created_at)
-		VALUES ($1, $2, $3, 'processing', $4, now())`,
+		VALUES ($1, $2, $3, 'pending_approval', $4, now())`,
 		batch.ID, batch.SourceFilename, batch.RowCount, batch.CreatedBy,
 	)
 	if err != nil {
@@ -87,15 +100,25 @@ func (r *disbursementRepo) CreateBatchWithItems(ctx context.Context, tx *sql.Tx,
 
 func (r *disbursementRepo) GetBatch(ctx context.Context, id uuid.UUID) (model.DisbursementBatch, error) {
 	var b model.DisbursementBatch
+	var approvedBy, decisionReason sql.NullString
+	var approvedAt sql.NullTime
 	err := r.db.QueryRowContext(ctx, `
-		SELECT id, source_filename, row_count, status, created_by, created_at
+		SELECT id, source_filename, row_count, status, created_by, created_at,
+			COALESCE(approved_by, ''), approved_at, COALESCE(decision_reason, '')
 		FROM disbursement_batches WHERE id = $1`, id,
-	).Scan(&b.ID, &b.SourceFilename, &b.RowCount, &b.Status, &b.CreatedBy, &b.CreatedAt)
+	).Scan(&b.ID, &b.SourceFilename, &b.RowCount, &b.Status, &b.CreatedBy, &b.CreatedAt,
+		&approvedBy, &approvedAt, &decisionReason)
 	if errors.Is(err, sql.ErrNoRows) {
 		return model.DisbursementBatch{}, fmt.Errorf("%w: %s", apperror.ErrDisbursementBatchNotFound, id)
 	}
 	if err != nil {
 		return model.DisbursementBatch{}, fmt.Errorf("get disbursement batch: %w", err)
+	}
+	b.ApprovedBy = approvedBy.String
+	b.DecisionReason = decisionReason.String
+	if approvedAt.Valid {
+		t := approvedAt.Time
+		b.ApprovedAt = &t
 	}
 	return b, nil
 }
@@ -106,6 +129,36 @@ func (r *disbursementRepo) UpdateBatchStatus(ctx context.Context, tx *sql.Tx, ba
 		return fmt.Errorf("update disbursement batch status: %w", err)
 	}
 	return nil
+}
+
+func (r *disbursementRepo) ApproveBatch(ctx context.Context, tx *sql.Tx, batchID uuid.UUID, approverID string) (int64, error) {
+	result, err := tx.ExecContext(ctx, `
+		UPDATE disbursement_batches
+		SET status = 'processing', approved_by = $1, approved_at = now()
+		WHERE id = $2 AND status = 'pending_approval'`, approverID, batchID)
+	if err != nil {
+		return 0, fmt.Errorf("approve disbursement batch: %w", err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("approve disbursement batch rows: %w", err)
+	}
+	return rows, nil
+}
+
+func (r *disbursementRepo) RejectBatch(ctx context.Context, tx *sql.Tx, batchID uuid.UUID, approverID, reason string) (int64, error) {
+	result, err := tx.ExecContext(ctx, `
+		UPDATE disbursement_batches
+		SET status = 'rejected', approved_by = $1, approved_at = now(), decision_reason = NULLIF($2, '')
+		WHERE id = $3 AND status = 'pending_approval'`, approverID, reason, batchID)
+	if err != nil {
+		return 0, fmt.Errorf("reject disbursement batch: %w", err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("reject disbursement batch rows: %w", err)
+	}
+	return rows, nil
 }
 
 func (r *disbursementRepo) GetCounts(ctx context.Context, batchID uuid.UUID) (map[string]int, error) {

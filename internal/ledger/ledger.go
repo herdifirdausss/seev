@@ -36,6 +36,7 @@ import (
 	"github.com/herdifirdausss/seev/internal/ledger/service/adjustments"
 	"github.com/herdifirdausss/seev/internal/ledger/service/closure"
 	"github.com/herdifirdausss/seev/internal/ledger/service/disbursement"
+	"github.com/herdifirdausss/seev/internal/ledger/service/dispute"
 	ledgerhandle "github.com/herdifirdausss/seev/internal/ledger/service/handle"
 	"github.com/herdifirdausss/seev/internal/ledger/service/provision"
 	"github.com/herdifirdausss/seev/internal/ledger/service/recon"
@@ -110,6 +111,15 @@ type (
 	// can name CreateQuote's return type without importing the
 	// module-private internal/ledger/feepolicy package directly.
 	Quote = feepolicy.Quote
+	// ChargebackDispute is one card-network dispute case-management record
+	// (business-completeness audit finding — migrations/ledger/000035_
+	// chargeback_disputes), separate from the chargeback processor's own
+	// money-movement transaction.
+	ChargebackDispute = model.ChargebackDispute
+	// ChargebackDisputeStatusChange is one row of a dispute's append-only
+	// status-transition audit trail (security audit finding —
+	// migrations/ledger/000037_chargeback_dispute_audit_trail).
+	ChargebackDisputeStatusChange = model.ChargebackDisputeStatusChange
 )
 
 // ErrAlreadyClosed is returned by Post when a lifecycle-closing command
@@ -165,6 +175,7 @@ type Module struct {
 	disbursementSvc *disbursement.Service
 	accrualSvc      *accrual.Service
 	closureSvc      *closure.Service
+	disputeSvc      *dispute.Service
 
 	accountRepo      repository.AccountRepository
 	balanceRepo      repository.BalanceRepository
@@ -255,8 +266,23 @@ func NewModule(db database.DatabaseSQL, broker messaging.Broker, redisClient *re
 	savingsRepo := repository.NewSavingsRepository(db)
 	reportingRepo := repository.NewReportingRepository(db)
 	kycTierRepo := repository.NewKycTierRepository(db)
+	disputeRepo := repository.NewChargebackDisputeRepository(db)
 
-	feeQuotePolicy := feepolicy.New(db, repository.NewFeeRepository(db))
+	feeRepo := repository.NewFeeRepository(db)
+	// FEE_RESOLVER_CACHE_TTL is a B3 load-test-experiment escape hatch
+	// (docs/performance/reports/2026-xx-baseline.md §22), not product
+	// configuration — deliberately read directly via os.Getenv rather than
+	// threaded through internal/config or NewModule's own (already long)
+	// parameter list, so it stays invisible to every normal deployment path
+	// and every existing NewModule call site. Absent or invalid = today's
+	// unchanged behavior (feepolicy.Policy's own doc comment: "no
+	// process-local cache: admin changes take effect on the next request").
+	if raw := os.Getenv("FEE_RESOLVER_CACHE_TTL"); raw != "" {
+		if ttl, parseErr := time.ParseDuration(raw); parseErr == nil && ttl > 0 {
+			feeRepo = feepolicy.NewCachingFeeRepository(feeRepo, ttl)
+		}
+	}
+	feeQuotePolicy := feepolicy.New(db, feeRepo)
 	handleSvc := ledgerhandle.New(db, txRepo, balanceRepo, entryRepo, outboxRepo, registry, logger, maxAmountPerTx, feeQuotePolicy)
 	adjustmentsSvc := adjustments.New(db, adjRepo, txRepo, outboxRepo, handleSvc)
 	scheduleSvc := schedule.New(db, scheduleRepo, handleSvc, logger)
@@ -273,6 +299,7 @@ func NewModule(db database.DatabaseSQL, broker messaging.Broker, redisClient *re
 		disbursementSvc:   disbursementSvc,
 		accrualSvc:        accrualSvc,
 		closureSvc:        closure.New(db),
+		disputeSvc:        dispute.New(disputeRepo, txRepo),
 		accountRepo:       accountRepo,
 		balanceRepo:       balanceRepo,
 		txRepo:            txRepo,
@@ -800,10 +827,14 @@ func (m *Module) ReplayDeadEvents(ctx context.Context, olderThan time.Time) (int
 
 // CreateAdjustment requests a manual balance adjustment — it does NOT move
 // any money, only records the request for a second identity to approve
-// (docs/roadmap/archive/16 Task T1, decision K8). adjType must be "adjustment_credit"
-// or "adjustment_debit".
-func (m *Module) CreateAdjustment(ctx context.Context, requestedBy, adjType string, amount decimal.Decimal, targetUserID uuid.UUID, metadata map[string]any, reason string) (uuid.UUID, error) {
-	return m.adjustmentsSvc.Create(ctx, requestedBy, adjType, amount, targetUserID, metadata, reason)
+// (docs/roadmap/archive/16 Task T1, decision K8). adjType must be one of
+// adjustment_credit, adjustment_debit, adjustment_suspense_credit,
+// adjustment_suspense_debit, reversal, chargeback, freeze_confiscate
+// (security audit finding — the last three used to be directly postable
+// with a single admin JWT). referenceID is required for reversal (the
+// transaction being reversed) and ignored otherwise.
+func (m *Module) CreateAdjustment(ctx context.Context, requestedBy, adjType string, amount decimal.Decimal, targetUserID, referenceID uuid.UUID, metadata map[string]any, reason string) (uuid.UUID, error) {
+	return m.adjustmentsSvc.Create(ctx, requestedBy, adjType, amount, targetUserID, referenceID, metadata, reason)
 }
 
 // ApproveAdjustment authorizes and executes a pending adjustment. Returns
@@ -857,6 +888,67 @@ func (m *Module) ResolveReconItem(ctx context.Context, itemID uuid.UUID, request
 	return m.reconSvc.ResolveItem(ctx, itemID, requestedBy, adjType, amount, reason)
 }
 
+// OpenChargebackDispute opens a new case-management record against a posted
+// charge (business-completeness audit finding). It does NOT move any money
+// — posting the `chargeback` transaction and calling LinkChargebackTx once
+// it lands are separate ops steps.
+func (m *Module) OpenChargebackDispute(ctx context.Context, originalTxID uuid.UUID, disputeRef, cardNetwork, reasonCode string,
+	amount decimal.Decimal, currency string, evidenceDueAt *time.Time, createdBy string) (uuid.UUID, error) {
+	return m.disputeSvc.OpenDispute(ctx, originalTxID, disputeRef, cardNetwork, reasonCode, amount, currency, evidenceDueAt, createdBy)
+}
+
+// GetChargebackDispute returns one case by id.
+func (m *Module) GetChargebackDispute(ctx context.Context, id uuid.UUID) (ChargebackDispute, error) {
+	return m.disputeSvc.GetDispute(ctx, id)
+}
+
+// GetChargebackDisputeByRef returns one case by its external dispute_ref —
+// the idempotent lookup a card network's webhook/report retry uses.
+func (m *Module) GetChargebackDisputeByRef(ctx context.Context, disputeRef string) (ChargebackDispute, error) {
+	return m.disputeSvc.GetDisputeByRef(ctx, disputeRef)
+}
+
+// ListChargebackDisputesForTransaction returns every case opened against
+// one charge — a charge can accumulate more than one over time
+// (re-presentment, then a second dispute).
+func (m *Module) ListChargebackDisputesForTransaction(ctx context.Context, originalTxID uuid.UUID) ([]ChargebackDispute, error) {
+	return m.disputeSvc.ListDisputesForTransaction(ctx, originalTxID)
+}
+
+// ListOpenChargebackDisputes returns 'open'/'evidence_submitted' cases
+// ordered by evidence deadline — the ops queue.
+func (m *Module) ListOpenChargebackDisputes(ctx context.Context, limit, offset int) ([]ChargebackDispute, error) {
+	return m.disputeSvc.ListOpenDisputes(ctx, limit, offset)
+}
+
+// SubmitChargebackDisputeEvidence records the ops team's evidence package
+// reference and moves the case from 'open' to 'evidence_submitted'.
+// changedBy is recorded in the case's status-change audit trail.
+func (m *Module) SubmitChargebackDisputeEvidence(ctx context.Context, id uuid.UUID, evidenceRef, changedBy string) error {
+	return m.disputeSvc.SubmitEvidence(ctx, id, evidenceRef, changedBy)
+}
+
+// ResolveChargebackDispute closes a case with the card network's final
+// decision (status must be won/lost/expired). resolvedBy is recorded on the
+// case itself and in the status-change audit trail (security audit
+// finding: resolution previously recorded no actor at all).
+func (m *Module) ResolveChargebackDispute(ctx context.Context, id uuid.UUID, status, resolvedBy, reason string) error {
+	return m.disputeSvc.ResolveDispute(ctx, id, status, resolvedBy, reason)
+}
+
+// LinkChargebackDisputeTx records the `chargeback` processor's transaction
+// id once its forced-debit money movement posts, closing the loop between
+// the case and the actual funds pulled.
+func (m *Module) LinkChargebackDisputeTx(ctx context.Context, id, chargebackTxID uuid.UUID) error {
+	return m.disputeSvc.LinkChargebackTx(ctx, id, chargebackTxID)
+}
+
+// ListChargebackDisputeStatusChanges returns a case's full transition
+// history, oldest first — the audit trail security audit finding fixed.
+func (m *Module) ListChargebackDisputeStatusChanges(ctx context.Context, disputeID uuid.UUID) ([]ChargebackDisputeStatusChange, error) {
+	return m.disputeSvc.ListStatusChanges(ctx, disputeID)
+}
+
 // CreateSchedule stores a recurring/deferred user transaction request — it
 // does NOT post anything (docs/roadmap/archive/19 Task T1); the daily schedule runner
 // (or the admin RunSchedulesNow endpoint) executes it once due.
@@ -895,16 +987,32 @@ func (m *Module) RunSchedulesNow(ctx context.Context, asOf time.Time) (executed,
 }
 
 // ImportDisbursementBatch validates and persists a new batch — it does NOT
-// post anything (docs/roadmap/archive/19 Task T2); call RunDisbursement to start (or
-// resume) processing.
+// post anything (docs/roadmap/archive/19 Task T2); a SECOND identity must call
+// ApproveDisbursementBatch before RunDisbursement will process any item
+// (business-completeness audit finding — decision K8's own maker-checker
+// posture, previously only applied to manual adjustments).
 func (m *Module) ImportDisbursementBatch(ctx context.Context, filename string, rows []DisbursementImportRow, createdBy string) (uuid.UUID, error) {
 	return m.disbursementSvc.Import(ctx, filename, rows, createdBy)
+}
+
+// ApproveDisbursementBatch authorizes a batch for processing. approverID
+// must differ from the identity that called ImportDisbursementBatch.
+func (m *Module) ApproveDisbursementBatch(ctx context.Context, batchID uuid.UUID, approverID string) error {
+	return m.disbursementSvc.ApproveBatch(ctx, batchID, approverID)
+}
+
+// RejectDisbursementBatch declines a batch — no items are ever processed.
+// approverID must differ from the requester, same as ApproveDisbursementBatch.
+func (m *Module) RejectDisbursementBatch(ctx context.Context, batchID uuid.UUID, approverID, reason string) error {
+	return m.disbursementSvc.RejectBatch(ctx, batchID, approverID, reason)
 }
 
 // RunDisbursement processes up to 500 items still needing a Post attempt —
 // call repeatedly until Done is true. There is no separate "resume"
 // endpoint: calling this again after a partial run IS resuming, since an
-// already-'posted' item is never reselected (docs/roadmap/archive/19 Task T2).
+// already-'posted' item is never reselected (docs/roadmap/archive/19 Task T2). The
+// batch must already be approved (ApproveDisbursementBatch) — it always
+// rejects a still-pending or rejected batch.
 func (m *Module) RunDisbursement(ctx context.Context, batchID uuid.UUID, retryFailed bool) (DisbursementRunResult, error) {
 	return m.disbursementSvc.Run(ctx, batchID, retryFailed)
 }

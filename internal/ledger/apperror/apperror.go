@@ -158,6 +158,25 @@ var (
 	// ErrSavingsConfigNotFound is returned when a savings config lookup
 	// targets an account id that was never registered (docs/roadmap/archive/19 Task T3).
 	ErrSavingsConfigNotFound = errors.New("SAVINGS_CONFIG_NOT_FOUND")
+	// ErrChargebackDisputeNotFound is returned when a get/evidence/resolve
+	// request targets a dispute id (or dispute_ref) that doesn't exist
+	// (migrations/ledger/000035_chargeback_disputes).
+	ErrChargebackDisputeNotFound = errors.New("CHARGEBACK_DISPUTE_NOT_FOUND")
+	// ErrChargebackDisputeAlreadyResolved is returned when evidence-submit,
+	// resolve, or link-transaction targets a case not in the status that
+	// action requires (already past 'open', already resolved, or already
+	// linked) — same atomic-UPDATE-with-status-guard pattern as
+	// ErrScheduledTransactionAlreadyTerminal.
+	ErrChargebackDisputeAlreadyResolved = errors.New("CHARGEBACK_DISPUTE_ALREADY_RESOLVED")
+	// ErrDisbursementBatchAlreadyDecided is returned when Approve/Reject
+	// targets a batch not in 'pending_approval' (business-completeness audit
+	// finding, migrations/ledger/000038) — same atomic-UPDATE-with-status-
+	// guard pattern as ErrAdjustmentAlreadyDecided.
+	ErrDisbursementBatchAlreadyDecided = errors.New("DISBURSEMENT_BATCH_ALREADY_DECIDED")
+	// ErrDisbursementBatchNotApproved is returned when Run is called on a
+	// batch still 'pending_approval' or 'rejected' — Run must never process
+	// an item until a second identity has approved the batch.
+	ErrDisbursementBatchNotApproved = errors.New("DISBURSEMENT_BATCH_NOT_APPROVED")
 )
 
 // Idempotency sentinels.
@@ -196,6 +215,8 @@ var businessRejectionSentinels = []error{
 	ErrLifecycleAmountMismatch, ErrUnbalancedEntries, ErrScreeningBlocked,
 	ErrQuoteExpired, ErrQuoteMismatch, ErrStillProcessing, ErrPreviousFailed,
 	ErrAdjustmentAlreadyDecided, ErrReconItemAlreadyResolved, ErrIdempotencyConflict,
+	ErrChargebackDisputeNotFound, ErrChargebackDisputeAlreadyResolved,
+	ErrDisbursementBatchAlreadyDecided, ErrDisbursementBatchNotApproved,
 }
 
 // IsBusinessRejection reports whether err is a valid business/input outcome

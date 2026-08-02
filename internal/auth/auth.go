@@ -68,6 +68,12 @@ type Config struct {
 	AccessExpiry    time.Duration // e.g. 15m
 	RefreshExpiry   time.Duration // e.g. 168h
 	DefaultCurrency string        // currency ProvisionUser uses for new users, e.g. "IDR"
+	// KYCValidityTTL is how long an approved KYC level stays valid before the
+	// periodic expiry worker (internal/auth/worker/expiry.go) downgrades it
+	// back to L0, forcing re-verification. Zero defaults to 365 days
+	// (approveSubmission) — every existing Config{} literal in this repo
+	// predates this field and keeps working unchanged.
+	KYCValidityTTL time.Duration
 }
 
 // Module is the public facade for the auth module.

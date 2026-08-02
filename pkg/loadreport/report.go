@@ -37,24 +37,31 @@ type Thresholds struct {
 }
 
 type Summary struct {
-	SchemaVersion       int                `json:"schema_version"`
-	RunID               string             `json:"run_id"`
-	ProfileID           string             `json:"profile_id"`
-	Workload            string             `json:"workload"`
-	WorkloadVersion     string             `json:"workload_version"`
-	DatasetHash         string             `json:"dataset_hash"`
-	OfferedWUPerSecond  float64            `json:"offered_wu_per_second"`
-	AchievedWUPerSecond float64            `json:"achieved_wu_per_second"`
-	DroppedIterations   int64              `json:"dropped_iterations"`
-	UnexpectedFailures  int64              `json:"unexpected_failures"`
-	TotalIterations     int64              `json:"total_iterations"`
-	PercentilesMS       map[string]float64 `json:"percentiles_ms"`
-	DrainSeconds        float64            `json:"drain_seconds"`
-	IntegrityPassed     bool               `json:"integrity_passed"`
-	GatePassed          bool               `json:"gate_passed"`
-	ArtifactHashes      map[string]string  `json:"artifact_hashes"`
-	GateFailures        []string           `json:"gate_failures,omitempty"`
-	GateInputs          *GateInputs        `json:"gate_inputs,omitempty"`
+	SchemaVersion       int     `json:"schema_version"`
+	RunID               string  `json:"run_id"`
+	ProfileID           string  `json:"profile_id"`
+	Workload            string  `json:"workload"`
+	WorkloadVersion     string  `json:"workload_version"`
+	DatasetHash         string  `json:"dataset_hash"`
+	OfferedWUPerSecond  float64 `json:"offered_wu_per_second"`
+	AchievedWUPerSecond float64 `json:"achieved_wu_per_second"`
+	DroppedIterations   int64   `json:"dropped_iterations"`
+	UnexpectedFailures  int64   `json:"unexpected_failures"`
+	TotalIterations     int64   `json:"total_iterations"`
+	// TotalHTTPReqs/HTTPReqsPerSecond distinguish HTTP request volume from
+	// WU/s (§1.1's own terminology: one workload unit may issue several
+	// HTTP requests) — absent (zero value) on summaries captured before
+	// tests/load/lib/common.js started surfacing k6's built-in http_reqs
+	// metric; never backfilled for historical runs.
+	TotalHTTPReqs     int64              `json:"total_http_reqs,omitempty"`
+	HTTPReqsPerSecond float64            `json:"http_reqs_per_second,omitempty"`
+	PercentilesMS     map[string]float64 `json:"percentiles_ms"`
+	DrainSeconds      float64            `json:"drain_seconds"`
+	IntegrityPassed   bool               `json:"integrity_passed"`
+	GatePassed        bool               `json:"gate_passed"`
+	ArtifactHashes    map[string]string  `json:"artifact_hashes"`
+	GateFailures      []string           `json:"gate_failures,omitempty"`
+	GateInputs        *GateInputs        `json:"gate_inputs,omitempty"`
 }
 
 func LoadThresholds(path string) (Thresholds, error) {

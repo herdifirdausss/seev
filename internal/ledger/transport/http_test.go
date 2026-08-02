@@ -453,10 +453,14 @@ func TestPostTransaction_AdminOnlyType_AllowedForAdmin(t *testing.T) {
 
 	svc.EXPECT().Post(gomock.Any(), gomock.Any()).Return(nil)
 
-	// chargeback, not adjustment_credit/debit — those are blocked from
-	// direct POST entirely as of docs/roadmap/archive/16 Task T1, admin or not (see
-	// TestPostTransaction_AdjustmentType_BlockedEvenForAdmin below).
-	body := `{"idempotency_key":"abc12345","type":"chargeback","amount":"1000"}`
+	// freeze_initiate, not adjustment_credit/debit/reversal/chargeback/
+	// freeze_confiscate — those are blocked from direct POST entirely (see
+	// TestPostTransaction_AdjustmentType_BlockedEvenForAdmin and
+	// TestPostTransaction_MakerCheckerType_BlockedEvenForAdmin below).
+	// freeze_initiate/freeze_release stay single-admin-gated: they're
+	// reversible holds, unlike the terminal/unrestricted actions that moved
+	// behind maker-checker.
+	body := `{"idempotency_key":"abc12345","type":"freeze_initiate","amount":"1000"}`
 	w := doReq(t, h, http.MethodPost, "/transactions", tokenFor(t, userID.String(), "admin"), body)
 	assert.Equal(t, http.StatusCreated, w.Code)
 }
@@ -471,6 +475,26 @@ func TestPostTransaction_AdjustmentType_BlockedEvenForAdmin(t *testing.T) {
 	w := doReq(t, h, http.MethodPost, "/transactions", tokenFor(t, userID.String(), "admin"), body)
 	assert.Equal(t, http.StatusForbidden, w.Code)
 	assert.Contains(t, w.Body.String(), "/admin/adjustments")
+}
+
+// TestPostTransaction_MakerCheckerType_BlockedEvenForAdmin proves the
+// security audit fix: reversal (an unrestricted undo of any prior
+// transaction), chargeback, and freeze_confiscate (a terminal fund seizure)
+// are no longer directly postable with a single admin JWT — only reachable
+// via POST /admin/adjustments, same as adjustment_credit/debit.
+func TestPostTransaction_MakerCheckerType_BlockedEvenForAdmin(t *testing.T) {
+	for _, txType := range []string{"reversal", "chargeback", "freeze_confiscate"} {
+		t.Run(txType, func(t *testing.T) {
+			h, _, ctrl := newInternalTestHandler(t)
+			defer ctrl.Finish()
+			userID := uuid.New()
+
+			body := `{"idempotency_key":"abc12345","type":"` + txType + `","amount":"1000"}`
+			w := doReq(t, h, http.MethodPost, "/transactions", tokenFor(t, userID.String(), "admin"), body)
+			assert.Equal(t, http.StatusForbidden, w.Code)
+			assert.Contains(t, w.Body.String(), "/admin/adjustments")
+		})
+	}
 }
 
 // TestPostTransaction_SuspenseAdjustmentType_BlockedEvenForAdmin is

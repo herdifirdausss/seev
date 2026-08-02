@@ -174,6 +174,7 @@ func run(parent context.Context) error {
 		JWTSecret: cfg.JWT.Secret, JWTIssuer: cfg.JWT.Issuer,
 		AccessExpiry: cfg.JWT.AccessExpiry, RefreshExpiry: cfg.JWT.RefreshExpiry,
 		DefaultCurrency: cfg.Auth.DefaultCurrency,
+		KYCValidityTTL:  cfg.Auth.KYCValidityTTL,
 	}, log, cryptoxRing, cryptoxLookup, kycProvider)
 	// docs/roadmap/archive/51 T2.2: KYC document object encryption is a SEPARATE
 	// concern from the field-level ring above (document blobs, not
@@ -277,8 +278,29 @@ func run(parent context.Context) error {
 		closeAuthDependencies(log, ledgerConn.Close, closeFraud, redisCache, db, shutdownTracing)
 		return fmt.Errorf("start kyc apply retry worker: %w", err)
 	}
+	// Business-completeness audit finding: KYC never used to expire.
+	// KYC_EXPIRY_CHECK_INTERVAL follows the same ad hoc override convention
+	// as KYC_RESCREEN_INTERVAL below; unlike rescreen this worker doesn't
+	// depend on fraudConn, so it always starts.
+	expiryInterval := time.Hour
+	if raw := os.Getenv("KYC_EXPIRY_CHECK_INTERVAL"); raw != "" {
+		parsed, parseErr := time.ParseDuration(raw)
+		if parseErr != nil || parsed <= 0 {
+			retryJob.Stop()
+			closeAuthDependencies(log, ledgerConn.Close, closeFraud, redisCache, db, shutdownTracing)
+			return fmt.Errorf("invalid KYC_EXPIRY_CHECK_INTERVAL %q", raw)
+		}
+		expiryInterval = parsed
+	}
+	expiryJob := module.NewKYCExpiryJob(redisClientClient(redisCache), expiryInterval, log)
+	if err := expiryJob.Start(ctx); err != nil {
+		retryJob.Stop()
+		closeAuthDependencies(log, ledgerConn.Close, closeFraud, redisCache, db, shutdownTracing)
+		return fmt.Errorf("start kyc expiry worker: %w", err)
+	}
 	stopRetention, err := module.StartRetentionRunner(redisClientClient(redisCache), log)
 	if err != nil {
+		expiryJob.Stop()
 		retryJob.Stop()
 		closeAuthDependencies(log, ledgerConn.Close, closeFraud, redisCache, db, shutdownTracing)
 		return fmt.Errorf("start data retention worker: %w", err)
@@ -290,12 +312,14 @@ func run(parent context.Context) error {
 	stopObjectOutbox, err := module.StartObjectOutboxWorker(ctx, log)
 	if err != nil {
 		stopRetention()
+		expiryJob.Stop()
 		retryJob.Stop()
 		closeAuthDependencies(log, ledgerConn.Close, closeFraud, redisCache, db, shutdownTracing)
 		return fmt.Errorf("start object delete outbox worker: %w", err)
 	}
 	if startRescreen != nil {
 		if err := startRescreen(); err != nil {
+			expiryJob.Stop()
 			retryJob.Stop()
 			closeAuthDependencies(log, ledgerConn.Close, closeFraud, redisCache, db, shutdownTracing)
 			return fmt.Errorf("start kyc sanctions rescreen worker: %w", err)
@@ -306,6 +330,7 @@ func run(parent context.Context) error {
 	// stopObjectOutbox above, never nil otherwise.
 	stopPrivacyExport, err := module.StartPrivacyExportWorker(ctx, log)
 	if err != nil {
+		expiryJob.Stop()
 		retryJob.Stop()
 		closeAuthDependencies(log, ledgerConn.Close, closeFraud, redisCache, db, shutdownTracing)
 		return fmt.Errorf("start privacy export worker: %w", err)
@@ -314,6 +339,7 @@ func run(parent context.Context) error {
 	// or ledger client is configured — same optionality as stopPrivacyExport.
 	stopClosureWorker, err := module.StartClosureWorker(ctx, log)
 	if err != nil {
+		expiryJob.Stop()
 		retryJob.Stop()
 		closeAuthDependencies(log, ledgerConn.Close, closeFraud, redisCache, db, shutdownTracing)
 		return fmt.Errorf("start closure saga worker: %w", err)
@@ -339,6 +365,7 @@ func run(parent context.Context) error {
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), cfg.App.ShutdownTimeout)
 	defer shutdownCancel()
 	retryJob.Stop()
+	expiryJob.Stop()
 	stopRetention()
 	if stopObjectOutbox != nil {
 		stopObjectOutbox()

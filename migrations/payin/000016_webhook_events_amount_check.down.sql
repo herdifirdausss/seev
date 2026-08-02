@@ -1,0 +1,1 @@
+ALTER TABLE payin_webhook_events DROP CONSTRAINT IF EXISTS chk_payin_webhook_events_amount_positive;

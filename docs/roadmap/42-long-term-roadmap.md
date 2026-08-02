@@ -27,7 +27,7 @@ When a trigger is met:
 | ID | Track | Horizon | Activation trigger | Status |
 |---|---|---|---|---|
 | A1 | Observability: dashboards, SLOs, alerts, logs, traces | H1 | Cross-service debugging takes more than 30 minutes | Complete via [43](archive/43-a1-observability.md) |
-| A2 | Delivery pipeline and local Kubernetes | H1 | CI can be improved anytime; Kubernetes when useful to learn | CI complete via [44](archive/44-a2-ci-pipeline.md); kind remains optional via [35](active/35-phase6j-kubernetes.md) |
+| A2 | Delivery pipeline and local Kubernetes | H1 | CI can be improved anytime; Kubernetes when useful to learn | CI complete via [44](archive/44-a2-ci-pipeline.md); kind remains optional via [35](active/35-phase6j-kubernetes.md); cloud scope begins with [64](active/64-k0-deployment-inventory-baseline.md) under [63](63-kubernetes-cloud-deployment-roadmap-v2.md) |
 | A3 | External dependency resilience | H1 | Plan 40 complete and real integration is desired | Core complete via [45](archive/45-2-a3-core-execution-reviewed.md) |
 | A4 | Advanced compliance | H1 | Plan 39 complete and compliance engineering is desired | Complete via [46](archive/46-a4-compliance.md) |
 | A5 | Admin console | H1 | Manual operations become painful or BFF learning is desired | Complete via [47](archive/47-a5-admin-console.md) |
@@ -36,10 +36,11 @@ When a trigger is met:
 | A8 | Data lifecycle and privacy | H1 | After MVP; quote cleanup can start earlier | Complete via [51](archive/51-a8-data-lifecycle-privacy.md) |
 | A9 | API contracts and schema evolution | H1 | First silent consumer-breaking payload change; mandatory before B2B | Core done via [52](archive/52-a9-api-contracts-schema-evolution.md); manual chaos gate pending |
 | A10 | Product assurance and emergency intake control | H1 | Prove consistency across payin, payout, and ledger | Complete via [48](archive/48-a10-product-assurance.md) |
-| B0 | Load harness and capacity model | H2 gate | Before any measured scale work | Core done via [53](archive/53-b0-load-capacity-gate.md); canonical measurements and decisions pending |
-| B1 | Hot-account sub-sharding | H2 | B0 proves lock contention in delta application | Future |
-| B2 | Ledger-entry partitioning and archival | H2 | Approximately 50 million ledger entries or equivalent forecast | Future |
-| B3 | Fee and routing resolution cache | H2 | B0 proves per-call resolution is a hotspot | Future |
+| A11 | Database audit and hardening | H1 | Ongoing — repeated end-to-end schema/security/business-completeness passes | In progress via [65](active/65-a11-database-audit-and-hardening.md); Rounds 1–2 fixed, Round 3 documented and open |
+| B0 | Load harness and capacity model | H2 gate | Before any measured scale work | Core done via [53](archive/53-b0-load-capacity-gate.md); canonical measurements and decisions recorded in [2026-07-31 baseline](../performance/reports/2026-07-31-baseline.md) |
+| B1 | Hot-account sub-sharding | H2 | B0 proves lock contention in delta application | **REJECT** — real evidence, [2026-07-31 baseline §20](../performance/reports/2026-07-31-baseline.md#20-b1--hot-account-sub-sharding): lock-wait never exceeded 2.24% against a 20% threshold; the split-account variant was measurably worse, not better |
+| B2 | Ledger-entry partitioning and archival | H2 | Approximately 50 million ledger entries or equivalent forecast | **REJECT** — real evidence, [2026-07-31 baseline §21](../performance/reports/2026-07-31-baseline.md#21-b2--partitioning): a real D0→D1→D2 growth-curve study found linear ~484 bytes/entry and sub-ms indexed queries through 5M entries, extrapolating to an unremarkable ~19.4GB at the 40M-row gate |
+| B3 | Fee and routing resolution cache | H2 | B0 proves per-call resolution is a hotspot | **REJECT** — real evidence, [2026-07-31 baseline §22](../performance/reports/2026-07-31-baseline.md#22-b3--routing-cache): a live cached-vs-uncached A/B against the real fee resolver hit 99.5% cache hit rate with zero throughput gain and worse p95/p99 — the resolver was never the bottleneck |
 | C1 | Merchant/B2B API | H3 | A6 and A9 complete | Complete — [plan 57](archive/57-c1-merchant-b2b-api.md) archived |
 | C2 | Data platform and revenue analytics | H3 | Analytics queries affect OLTP or CDC learning is desired | Active via [plan 58](active/58-c2-data-platform-revenue-analytics.md); implementation not started |
 | C3 | Multi-channel notifications | H3 | User-facing delivery pipeline learning is desired | Active via [plan 59](active/59-c3-multi-channel-notifications.md); implementation not started |
@@ -60,8 +61,11 @@ integration tests, and a nine-image container smoke gate; a weekly and
 manually dispatchable workflow runs the business journey and all chaos
 scenarios. Locally, `make verify-full` covers the repeatable non-chaos gate and
 `make verify-chaos` is the operator-controlled recovery gate. Documentation-only
-changes use a fast path. Local kind work remains the optional plan 35. Do not
-expand this into cloud CD, GitOps, or multi-cluster operations.
+changes use a fast path. Local kind work remains the optional plan 35. The
+cloud-learning scope is separately reviewed in [plan 63](63-kubernetes-cloud-deployment-roadmap-v2.md),
+with [plan 64 · K0](active/64-k0-deployment-inventory-baseline.md) as its
+inventory-only first gate. Do not expand this into cloud CD, GitOps, or
+multi-cluster operations before those plans' gates pass.
 
 ### A3 — External resilience
 
@@ -101,17 +105,46 @@ Continuously compare payin and payout lifecycle state with ledger evidence witho
 
 Build k6 scenarios for P2P posting, webhook bursts, payout batches, and mixed MVP journeys. Measure throughput, latency, outbox lag, database pool saturation, and lock waits. Produce numerical thresholds that either activate or reject B1–B3. Execution is recorded in [archived plan 53](archive/53-b0-load-capacity-gate.md).
 
-### B1 — Hot-account sub-sharding
+### B1 — Hot-account sub-sharding — **REJECT**
 
-Only after B0 proves system-account lock contention, design account shards, aggregate reads, backfill safely, and compare before/after verifier and snapshot behavior. Never shard user accounts without evidence.
+Decided: [2026-07-31 baseline §16.3, §20](../performance/reports/2026-07-31-baseline.md#20-b1--hot-account-sub-sharding).
+Six alternating one-account/two-account runs at the confirmed hot-account
+MSSL, with `cmd/loadprobe` extended to sample `wait_event_type = 'Lock'`
+specifically, found lock-wait share never exceeded 2.24% against the 20%
+activation threshold, and the split-account variant was measurably *worse*
+on throughput and p95, not better. Do not reopen without a materially
+different, larger-scale signal (e.g. real production contention data) — a
+re-run of this same experiment on the same profile would not be new
+evidence.
 
-### B2 — Ledger partitioning and archival
+### B2 — Ledger partitioning and archival — **REJECT**
 
-Only near the documented row threshold, validate the old partitioning guide against the split ledger schema, perform time-range partitioning and archival, preserve snapshot/as-of queries, and drill restore. This is not horizontal database sharding.
+Decided: [2026-07-31 baseline §21](../performance/reports/2026-07-31-baseline.md#21-b2--partitioning).
+A real bulk-loaded, balance-verified D0→D1→D2 growth-curve study (up to
+5,000,000 ledger entries) found linear ~484 bytes/entry growth (table+index
+combined) and stable sub-millisecond indexed queries at every scale tested —
+extrapolating linearly to the ~40M-row activation gate gives an unremarkable
+~19.4GB for a single table, with no measured query-degradation symptom to
+independently justify partitioning. Dataset scale in this codebase's own
+self-seeded scenarios also remains three-plus orders of magnitude below the
+threshold. Reopen only if real production volume approaches the documented
+row threshold *and* a real symptom (vacuum pressure, retention pain, a
+specific degraded query) is observed — size alone at this profile's own
+measured growth rate does not justify it.
 
-### B3 — Fee and routing cache
+### B3 — Fee and routing cache — **REJECT**
 
-Measure first. If resolution is a proven hotspot, add a short-lived cache with explicit invalidation and hit-rate metrics. Fee quotes remain authoritative, so cached rules can never reprice an already quoted transaction.
+Decided: [2026-07-31 baseline §22](../performance/reports/2026-07-31-baseline.md#22-b3--routing-cache).
+A real `CachingFeeRepository` test-double was built and run against the
+actual fee-quote resolver: a 5s-TTL cache achieved a 99.5% cache hit rate
+(far above the 80% cacheability threshold) yet produced statistically zero
+throughput change and *worse* p95/p99 than the uncached baseline at the
+tested load — the resolver's own cost (~0.06ms) is negligible against total
+request latency (~3ms) at that load level, so eliminating 99.5% of its calls
+was undetectable end to end. Reopen only with evidence the resolver is
+contended at a load level where its cost is no longer negligible relative to
+total request latency — this experiment does not rule that out at higher
+load, only at the load actually tested.
 
 ## Horizon 3 — Business enablement
 
@@ -129,9 +162,10 @@ complete. A7, A8, A9, B0, and the VendorService boundary now have archived
 core foundations, with their remaining live evidence explicitly tracked in
 those records. F0 and C1–C6 have active execution documents; each still
 requires its own entry gate and implementation evidence before it becomes
-current runtime behavior. B1, B2, and B3 remain conditional: create an
-execution plan only for a gate whose measured result is `ACTIVATE`; a
-`REJECT` result closes that candidate without implementation.
+current runtime behavior. B1, B2, and B3 were each gated on a measured
+result before implementation, per the rule that only `ACTIVATE` opens an
+execution plan; all three measured `REJECT` (§B1–B3 above), so none has an
+implementation plan and none should get one without new evidence.
 
 ## Global anti-goals
 

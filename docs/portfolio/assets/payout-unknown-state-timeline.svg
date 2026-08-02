@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1080" viewBox="0 0 1080 1080" role="img" aria-labelledby="title desc">
+  <title id="title">Payout unknown-state recovery timeline</title>
+  <desc id="desc">A local chaos run records a payout hold, an uncertain vendor result, vendor pinning, same-vendor recovery, one settlement, and a balanced ledger.</desc>
+  <rect width="1080" height="1080" fill="#0b1220"/>
+  <text x="60" y="76" fill="#f8fafc" font-family="Arial, sans-serif" font-size="38" font-weight="700">Payout unknown-state recovery</text>
+  <text x="60" y="114" fill="#94a3b8" font-family="Arial, sans-serif" font-size="20">Log-derived timeline · chaos scenario 8 · local-small</text>
+  <text x="60" y="144" fill="#94a3b8" font-family="Arial, sans-serif" font-size="16">Source state: e4fc90c + local evidence instrumentation · Captured: 2026-07-30T03:22:23Z</text>
+
+  <line x1="150" y1="215" x2="150" y2="874" stroke="#475569" stroke-width="5" stroke-linecap="round"/>
+
+  <circle cx="150" cy="220" r="14" fill="#5eead4"/>
+  <text x="200" y="214" fill="#f8fafc" font-family="Arial, sans-serif" font-size="22" font-weight="700">03:21:12Z — Payout created and funds held</text>
+  <text x="200" y="246" fill="#cbd5e1" font-family="Arial, sans-serif" font-size="18">The durable withdrawal initiation posting completed before vendor delivery.</text>
+
+  <circle cx="150" cy="350" r="14" fill="#fbbf24"/>
+  <text x="200" y="344" fill="#f8fafc" font-family="Arial, sans-serif" font-size="22" font-weight="700">03:21:13Z — Submission persisted, then timed out</text>
+  <text x="200" y="376" fill="#cbd5e1" font-family="Arial, sans-serif" font-size="18">The durable vendor-call outcome became uncertain; timeout was not treated as rejection.</text>
+
+  <circle cx="150" cy="480" r="14" fill="#fb7185"/>
+  <text x="200" y="474" fill="#f8fafc" font-family="Arial, sans-serif" font-size="22" font-weight="700">03:21:13Z — Payout pinned to mockvendor</text>
+  <text x="200" y="506" fill="#cbd5e1" font-family="Arial, sans-serif" font-size="18">A healthy fallback was available only for a new payout; this in-flight one could not fail over.</text>
+
+  <circle cx="150" cy="610" r="14" fill="#94a3b8"/>
+  <text x="200" y="604" fill="#f8fafc" font-family="Arial, sans-serif" font-size="22" font-weight="700">03:21:16Z — Original vendor recovered</text>
+  <text x="200" y="636" fill="#cbd5e1" font-family="Arial, sans-serif" font-size="18">The retry remained eligible only with the original vendor.</text>
+
+  <circle cx="150" cy="740" r="14" fill="#5eead4"/>
+  <text x="200" y="734" fill="#f8fafc" font-family="Arial, sans-serif" font-size="22" font-weight="700">03:21:36Z — Same-vendor retry settled</text>
+  <text x="200" y="766" fill="#cbd5e1" font-family="Arial, sans-serif" font-size="18">The original payout settled once; its independent fallback payout also settled once.</text>
+
+  <circle cx="150" cy="870" r="14" fill="#5eead4"/>
+  <text x="200" y="864" fill="#f8fafc" font-family="Arial, sans-serif" font-size="22" font-weight="700">03:22:23Z — Assertions complete</text>
+  <text x="200" y="896" fill="#cbd5e1" font-family="Arial, sans-serif" font-size="18">One settlement per payout; the ledger verifier returned zero imbalance rows.</text>
+
+  <rect x="60" y="942" width="960" height="78" rx="12" fill="#132a2f"/>
+  <text x="90" y="988" fill="#d1fae5" font-family="Arial, sans-serif" font-size="17">Bounded local recovery evidence from retained test logs and database assertions; not a production-readiness claim.</text>
+</svg>

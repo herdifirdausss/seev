@@ -178,7 +178,7 @@ contracts: contract-lint contract-breaking contract-test
 
 ## load-lint: Validate B0 profiles, safety schemas, and helper/scenario tests without Docker mutation
 load-lint:
-	go test ./pkg/loadlab ./pkg/loadreport ./pkg/loadmetrics ./cmd/loadcheck ./cmd/loadseed ./cmd/loadreport ./cmd/loadprobe ./tests/load
+	go test ./pkg/loadlab ./pkg/loadreport ./pkg/loadmetrics ./cmd/loadcheck ./cmd/loadseed ./cmd/loadreport ./cmd/loadprobe ./cmd/loaddataset ./tests/load
 	go run ./cmd/loadcheck -profile deploy/load/profiles/local-small.yaml
 
 ## load-test: Fast B0 helper/analyzer/safety tests; this does not claim capacity

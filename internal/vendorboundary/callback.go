@@ -15,6 +15,7 @@ import (
 	payinv1 "github.com/herdifirdausss/seev/gen/payin/v1"
 	payoutv1 "github.com/herdifirdausss/seev/gen/payout/v1"
 	"github.com/herdifirdausss/seev/internal/vendorgw"
+	"github.com/herdifirdausss/seev/pkg/cryptox"
 	"github.com/herdifirdausss/seev/pkg/database"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -57,7 +58,10 @@ type CallbackHandler struct {
 	trusted  []*net.IPNet
 }
 
-func NewCallbackHandler(db *database.DBSQL, registry *Registry, payin PayinCallbackClient, payout PayoutCallbackClient, allowedCIDRs, trustedProxyCIDRs string) (*CallbackHandler, error) {
+func NewCallbackHandler(db *database.DBSQL, ring *cryptox.Ring, registry *Registry, payin PayinCallbackClient, payout PayoutCallbackClient, allowedCIDRs, trustedProxyCIDRs string) (*CallbackHandler, error) {
+	if ring == nil {
+		return nil, fmt.Errorf("vendorboundary: NewCallbackHandler requires a non-nil cryptox ring")
+	}
 	allowed, err := parseCIDRs(allowedCIDRs, []string{"127.0.0.1/32", "::1/128"})
 	if err != nil {
 		return nil, fmt.Errorf("parse callback allowlist: %w", err)
@@ -66,7 +70,7 @@ func NewCallbackHandler(db *database.DBSQL, registry *Registry, payin PayinCallb
 	if err != nil {
 		return nil, fmt.Errorf("parse callback trusted proxies: %w", err)
 	}
-	return &CallbackHandler{store: &InboxStore{db: db}, registry: registry, payin: payin, payout: payout, allowed: allowed, trusted: trusted}, nil
+	return &CallbackHandler{store: &InboxStore{db: db, ring: ring}, registry: registry, payin: payin, payout: payout, allowed: allowed, trusted: trusted}, nil
 }
 
 func (h *CallbackHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -267,8 +271,22 @@ type inboxRecord struct {
 }
 
 // InboxStore is the durable callback inbox. Raw bytes never leave this
-// package except for the database insert.
-type InboxStore struct{ db *database.DBSQL }
+// package except for the database insert, and never leave this process in
+// plaintext at all — raw_body/selected_headers are sealed under ring before
+// the INSERT (security audit finding: this was the one raw-payload column
+// in the codebase with no cryptox protection).
+type InboxStore struct {
+	db   *database.DBSQL
+	ring *cryptox.Ring
+}
+
+func rawBodyAAD(id uuid.UUID) cryptox.AAD {
+	return cryptox.AAD{Service: "vendor", Table: "vendor_callback_inbox", Column: "raw_body", RowID: id.String()}
+}
+
+func selectedHeadersAAD(id uuid.UUID) cryptox.AAD {
+	return cryptox.AAD{Service: "vendor", Table: "vendor_callback_inbox", Column: "selected_headers", RowID: id.String()}
+}
 
 func (s *InboxStore) Ensure(ctx context.Context, callback *NormalizedCallback, raw []byte, headers map[string]string, source string) (inboxRecord, error) {
 	encodedHeaders, err := json.Marshal(headers)
@@ -276,10 +294,19 @@ func (s *InboxStore) Ensure(ctx context.Context, callback *NormalizedCallback, r
 		return inboxRecord{}, err
 	}
 	id := uuid.New()
+	rawCiphertext, err := s.ring.Seal(rawBodyAAD(id), raw)
+	if err != nil {
+		return inboxRecord{}, fmt.Errorf("encrypt callback raw body: %w", err)
+	}
+	headersCiphertext, err := s.ring.Seal(selectedHeadersAAD(id), encodedHeaders)
+	if err != nil {
+		return inboxRecord{}, fmt.Errorf("encrypt callback headers: %w", err)
+	}
+	v := s.ring.CurrentVersion()
 	result, err := s.db.ExecContext(ctx, `INSERT INTO vendor_callback_inbox
-		(id, vendor, vendor_event_id, external_reference, amount, currency, normalized_status, unknown_vendor_status, occurred_at, raw_body, selected_headers, source_policy)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) ON CONFLICT (vendor, vendor_event_id) DO NOTHING`,
-		id, callback.Vendor, callback.VendorEventID, callback.ExternalReference, callback.Amount, callback.Currency, callback.Status, callback.UnknownStatus, callback.OccurredAt, raw, encodedHeaders, source)
+		(id, vendor, vendor_event_id, external_reference, amount, currency, normalized_status, unknown_vendor_status, occurred_at, raw_body_ciphertext, raw_body_key_version, selected_headers_ciphertext, selected_headers_key_version, source_policy)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) ON CONFLICT (vendor, vendor_event_id) DO NOTHING`,
+		id, callback.Vendor, callback.VendorEventID, callback.ExternalReference, callback.Amount, callback.Currency, callback.Status, callback.UnknownStatus, callback.OccurredAt, rawCiphertext, v, headersCiphertext, v, source)
 	if err != nil {
 		return inboxRecord{}, err
 	}

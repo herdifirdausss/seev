@@ -36,7 +36,7 @@ type fakeAdjustmentCreator struct {
 	lastMetadata map[string]any
 }
 
-func (f *fakeAdjustmentCreator) Create(_ context.Context, _, adjType string, amount decimal.Decimal, _ uuid.UUID, metadata map[string]any, _ string) (uuid.UUID, error) {
+func (f *fakeAdjustmentCreator) Create(_ context.Context, _, adjType string, amount decimal.Decimal, _, _ uuid.UUID, metadata map[string]any, _ string) (uuid.UUID, error) {
 	f.called = true
 	f.lastAdjType = adjType
 	f.lastAmount = amount

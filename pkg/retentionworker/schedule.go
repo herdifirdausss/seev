@@ -40,6 +40,7 @@ var serviceJitterMinutes = map[string]int{
 	"gateway":   5,
 	"adminbff":  6,
 	"assurance": 7,
+	"vendor":    8,
 }
 
 // JobName is the fixed name every owner's scheduled retention job registers

@@ -13,6 +13,24 @@ import (
 	"github.com/herdifirdausss/seev/pkg/response"
 )
 
+// rewriteProxyPath maps an incoming public-facing request path to the
+// downstream service path — the sole piece of arithmetic behind every
+// proxy() route registration below, and the exact place a mismatched
+// publicPrefix/downstreamPrefix pair silently 404s (a load-testing
+// session's routing-bug finding: "/api/v1/admin/ledger/" used to pass its
+// own path straight through unchanged instead of rewriting to
+// "/api/v1/ledger/admin/", the one downstream mount that actually strips
+// cleanly to ledger-service's own "/admin/*" route table). Extracted so the
+// rewrite itself is unit-testable without a live downstream.
+func rewriteProxyPath(requestPath, rawQuery, publicPrefix, downstreamPrefix string) string {
+	suffix := strings.TrimPrefix(requestPath, publicPrefix)
+	path := downstreamPrefix + suffix
+	if rawQuery != "" {
+		path += "?" + rawQuery
+	}
+	return path
+}
+
 func (m *Module) proxy(target string, downstream *client.ServiceClient, publicPrefix, downstreamPrefix string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(io.LimitReader(r.Body, 4<<20))
@@ -47,11 +65,7 @@ func (m *Module) proxy(target string, downstream *client.ServiceClient, publicPr
 			response.Unauthorized(w, "authentication required")
 			return
 		}
-		suffix := strings.TrimPrefix(r.URL.Path, publicPrefix)
-		path := downstreamPrefix + suffix
-		if r.URL.RawQuery != "" {
-			path += "?" + r.URL.RawQuery
-		}
+		path := rewriteProxyPath(r.URL.Path, r.URL.RawQuery, publicPrefix, downstreamPrefix)
 		status, headers, responseBody, callErr := downstream.DoRaw(r.Context(), token, r.Method, path, body, contentType)
 		if ct := headers.Get("Content-Type"); ct != "" {
 			w.Header().Set("Content-Type", ct)
