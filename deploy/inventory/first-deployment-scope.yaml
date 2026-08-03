@@ -1,0 +1,96 @@
+version: 1
+baseline_commit: ff21bf186f95431a386b339ee3a1409e49a7e1b0
+purpose: prove container readiness, service connectivity, public routing, callbacks, and synthetic money journeys
+enabled_components:
+  - gateway
+  - auth
+  - ledger
+  - payin
+  - payout
+  - fraud
+  - admin-bff
+  - assurance
+  - vendor
+  - postgres
+  - redis
+  - rabbitmq
+  - migration-job
+  - traefik
+  - calico-network-policy
+  - squid-policy-fixture
+public_routes:
+  - api.local.seev.test /api/v1/auth/*
+  - api.local.seev.test /api/v1/*
+  - callback.local.seev.test /webhooks/{vendor}
+private_surfaces:
+  - admin.local.seev.test /api/v1/admin/*
+  - per-service /ready
+  - per-service /metrics
+  - all gRPC listeners
+  - RabbitMQ management
+  - Postgres
+  - Redis
+feature_flags:
+  real_vendors:
+    enabled: false
+    reason: provider hostname, CIDR, certificate, and certification are UNKNOWN
+  mock_vendors:
+    enabled: true
+    reason: deterministic in-process adapters
+  merchant_b2b:
+    enabled: false
+    reason: public route exists but first-stage scope is user money flow and callback proof
+  privacy_exports:
+    enabled: false
+    reason: requires explicit export key and object-store lifecycle proof
+  privacy_closure_saga:
+    enabled: false
+    reason: requires explicit closure key and certified owner readiness
+  optional_observability:
+    enabled: false
+    reason: measure separately under R6
+  backup_scheduler:
+    enabled: false
+    reason: operations-only and restore evidence is downstream
+workers:
+  enabled_in_first_deployment:
+    - ledger outbox relay and integrity/scheduled jobs
+    - auth retry, expiry, rescreen, retention, and local object outbox
+    - payin retention
+    - payout recovery, vendor relay, and retention
+    - fraud velocity consumer, spill flusher, and retention
+    - gateway notification and merchant webhook workers
+    - admin-bff session cleanup and retention
+    - assurance correlation and retention
+    - vendor retention
+  disabled_or_deferred:
+    - auth privacy export
+    - auth closure saga
+    - backup scheduler
+  replica_rule: begin with one replica for memory-lock jobs; scale only after K3 lock and lease inputs are applied
+data_policy:
+  production_data: false
+  synthetic_users_only: true
+  synthetic_money_only: true
+  synthetic_documents_only: true
+  disposable_volumes_only: true
+  evidence_payloads: topology, status, counts, and redacted command output only
+acceptance_journeys:
+  - service liveness and readiness
+  - synthetic registration and login
+  - synthetic topup and ledger posting
+  - synthetic payout and mock vendor callback
+  - admin login and read-only/admin decision proof
+  - privacy route negative exposure proof
+explicit_exclusions:
+  - real vendor network calls
+  - production credentials
+  - production or customer data
+  - cloud resource creation
+  - Kubernetes mutation during K0
+sources:
+  - docs/roadmap/active/64-k0-deployment-inventory-baseline.md
+  - deploy/inventory/services.yaml
+  - deploy/inventory/routes.yaml
+  - deploy/inventory/vendor-network.yaml
+  - docs/deployment/public-route-matrix.md

@@ -1,0 +1,10 @@
+<clickhouse>
+    <max_memory_usage>1073741824</max_memory_usage>
+    <max_threads>2</max_threads>
+    <background_pool_size>2</background_pool_size>
+    <background_schedule_pool_size>2</background_schedule_pool_size>
+    <max_partitions_per_insert_block>100</max_partitions_per_insert_block>
+    <merge_tree>
+        <max_bytes_to_merge_at_max_space_in_pool>1073741824</max_bytes_to_merge_at_max_space_in_pool>
+    </merge_tree>
+</clickhouse>

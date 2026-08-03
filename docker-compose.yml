@@ -50,15 +50,23 @@ services:
     secrets:
       - seev_backup_password
       - pgbackrest_repo_passphrase
+    # C2 requires logical WAL for its optional, read-only CDC connectors. Logical
+    # WAL remains compatible with pgBackRest's physical archive; the analytics
+    # profile is not started by the application profile.
     # docs/roadmap/archive/50 K2/K4: continuous WAL archiving via pgBackRest, a 60s
     # archive_timeout so an idle workload still closes the RPO window
     # (K4), and wal_level=replica (pgBackRest's baseline requirement —
-    # logical is not needed here and costs more WAL volume for no benefit
-    # this track uses).
+    # logical is enabled deliberately for the isolated C2 projection.
     command:
       - postgres
       - -c
-      - wal_level=replica
+      - wal_level=logical
+      - -c
+      - max_replication_slots=8
+      - -c
+      - max_wal_senders=8
+      - -c
+      - max_slot_wal_keep_size=2GB
       - -c
       - archive_mode=on
       - -c

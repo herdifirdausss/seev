@@ -1,0 +1,26 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: seev-local
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: seev
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/herdifirdausss/seev.git
+    targetRevision: main
+    path: deploy/helm/seev
+    helm:
+      valueFiles:
+        - values.yaml
+        - values-local.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: seev-app
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

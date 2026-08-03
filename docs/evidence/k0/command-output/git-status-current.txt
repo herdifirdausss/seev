@@ -1,0 +1,23 @@
+ M .gitignore
+ M Makefile
+ M cmd/gateway/main.go
+ M cmd/vendor-service/main.go
+ M internal/config/config.go
+ M scripts/business-e2e.sh
+?? .github/workflows/kubernetes-validate.yml
+?? cmd/migrate/
+?? deploy/README.md
+?? deploy/gitops/
+?? deploy/helm/
+?? deploy/inventory/
+?? deploy/kubernetes/
+?? deploy/terraform/
+?? docs/deployment/
+?? docs/evidence/k0-deployment-inventory.md
+?? docs/evidence/k0/
+?? docs/evidence/plan-63-implementation-status.md
+?? pkg/egressproxy/
+?? scripts/deployment-inventory-check.sh
+?? scripts/deployment-inventory-generate.sh
+?? scripts/deployment-network-probe.sh
+?? scripts/deployment-resource-sample.sh

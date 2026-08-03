@@ -1,0 +1,18 @@
+version: 1
+environment: local-dev
+broker: redpanda:9092
+defaults:
+  partitions: 1
+  replication_factor: 1
+  retention_ms: 604800000
+  cleanup_policy: delete
+topics:
+  - seev.cdc.ledger.public.accounts.v1
+  - seev.cdc.ledger.public.account_balances.v1
+  - seev.cdc.ledger.public.ledger_transactions.v1
+  - seev.cdc.ledger.public.ledger_entries.v1
+  - seev.cdc.ledger.public.fee_quotes.v1
+  - seev.cdc.payin.public.payin_topup_intents.v1
+  - seev.cdc.payin.public.payin_webhook_events.v1
+  - seev.cdc.payout.public.payout_requests.v1
+  - seev.cdc.payout.public.payout_vendor_calls.v1

@@ -1,0 +1,38 @@
+groups:
+  - name: seev-c2-analytics
+    rules:
+      - alert: SeevAnalyticsConnectorDown
+        expr: seev_analytics_connector_up{source!=""} == 0
+        for: 2m
+        labels: {severity: critical, domain: data-platform}
+        annotations:
+          summary: Analytics connector is down
+          runbook: docs/runbooks/analytics-connector-failed.md
+      - alert: SeevAnalyticsCDCLagHigh
+        expr: seev_analytics_cdc_lag_seconds{source!=""} > 120
+        for: 5m
+        labels: {severity: warning, domain: data-platform}
+        annotations:
+          summary: CDC freshness is above the local target
+          runbook: docs/runbooks/analytics-replication-slot-lag.md
+      - alert: SeevAnalyticsWALPressure
+        expr: seev_analytics_slot_retained_bytes{source!=""} > 1073741824
+        for: 5m
+        labels: {severity: critical, domain: data-platform}
+        annotations:
+          summary: A disposable analytics slot is retaining source WAL
+          runbook: docs/runbooks/analytics-source-wal-pressure.md
+      - alert: SeevAnalyticsReconciliationCritical
+        expr: increase(seev_analytics_reconciliation_total{severity="critical",status="failed"}[15m]) > 0
+        for: 1m
+        labels: {severity: critical, domain: data-platform}
+        annotations:
+          summary: Critical analytical reconciliation failed
+          runbook: docs/runbooks/analytics-reconciliation-failed.md
+      - alert: SeevAnalyticsSensitiveColumnDetected
+        expr: increase(seev_analytics_schema_change_total{classification="prohibited"}[5m]) > 0
+        for: 1m
+        labels: {severity: critical, domain: data-platform}
+        annotations:
+          summary: A prohibited source column was detected
+          runbook: docs/runbooks/analytics-sensitive-data-incident.md

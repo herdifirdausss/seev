@@ -1,0 +1,15 @@
+version: 1
+timezone: Asia/Jakarta
+metrics:
+  - {name: payin_gpv_minor, owner: PayinService, formula: sum(successful_payin_amount_minor), source: fact_payin_lifecycle, revenue: false, currency_rule: group_by_currency}
+  - {name: payout_gpv_minor, owner: PayoutService, formula: sum(successful_payout_amount_minor), source: fact_payout_lifecycle, revenue: false, currency_rule: group_by_currency}
+  - {name: successful_transaction_count, owner: Analytics, formula: count(successful_terminal_facts), source: lifecycle_facts, revenue: false, currency_rule: no_money}
+  - {name: recognized_fee_revenue_minor, owner: LedgerService, formula: sum(fee_account_credit_entries)-sum(fee_account_debit_entries), source: fact_fee_revenue, revenue: true, currency_rule: group_by_currency}
+  - {name: fee_quote_conversion_rate, owner: LedgerService, formula: consumed_quotes/created_quotes, source: fact_fee_quote, revenue: false, currency_rule: no_money}
+  - {name: modeled_variable_vendor_cost_minor, owner: Analytics, formula: max(fixed_cost, amount*bps/10000) subject to effective schedule, source: vendor_cost_schedule, revenue: false, currency_rule: group_by_currency}
+  - {name: modeled_contribution_margin_minor, owner: Analytics, formula: recognized_fee_revenue_minor-modeled_variable_vendor_cost_minor, source: mart_unit_economics_daily, revenue: false, currency_rule: matching_currency_only}
+rules:
+  - fee quote values never prove recognized revenue
+  - gross processed volume is never labeled revenue
+  - different currencies are never implicitly summed
+  - modeled cost is never labeled invoiced actuals or net profit

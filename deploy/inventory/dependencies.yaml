@@ -1,0 +1,456 @@
+version: 1
+baseline_commit: ff21bf186f95431a386b339ee3a1409e49a7e1b0
+call_policy:
+  service_to_service: mTLS for HTTP and gRPC; identity is recorded in mtls-identity-matrix.md
+  database: only the owning service writes its PostgreSQL database
+  readiness: dependency checks are bounded and fail closed for money-moving paths
+calls:
+  - name: gateway-to-ledger-grpc
+    caller: gateway
+    target: ledger
+    protocol: grpc
+    port: 9091
+    identity: spiffe://seev.local/ns/seev/sa/gateway
+    timeout: 3s
+    retry: bounded-idempotent-only
+    failure_posture: return dependency error; do not double-submit
+    readiness_class: critical
+    first_deployment: true
+    downstream_owner: K3 and K5
+    sources: [cmd/gateway/main.go, internal/ledgerclient]
+  - name: gateway-to-ledger-http
+    caller: gateway
+    target: ledger
+    protocol: https
+    port: 8091
+    identity: spiffe://seev.local/ns/seev/sa/gateway
+    timeout: 3s
+    retry: bounded-idempotent-only
+    failure_posture: return dependency error
+    readiness_class: critical
+    first_deployment: true
+    downstream_owner: K3 and K5
+    sources: [cmd/gateway/main.go, internal/handler]
+  - name: gateway-to-payin-grpc
+    caller: gateway
+    target: payin
+    protocol: grpc
+    port: 9092
+    identity: spiffe://seev.local/ns/seev/sa/gateway
+    timeout: 5s
+    retry: bounded-idempotent-only
+    failure_posture: return dependency error
+    readiness_class: critical
+    first_deployment: true
+    downstream_owner: K3 and K5
+    sources: [cmd/gateway/main.go, internal/payinclient]
+  - name: gateway-to-payout-grpc
+    caller: gateway
+    target: payout
+    protocol: grpc
+    port: 9093
+    identity: spiffe://seev.local/ns/seev/sa/gateway
+    timeout: 5s
+    retry: bounded-idempotent-only
+    failure_posture: return dependency error
+    readiness_class: critical
+    first_deployment: true
+    downstream_owner: K3 and K5
+    sources: [cmd/gateway/main.go, internal/payoutclient]
+
+  - name: auth-to-ledger-grpc
+    caller: auth
+    target: ledger
+    protocol: grpc
+    port: 9091
+    identity: spiffe://seev.local/ns/seev/sa/auth
+    timeout: 5s
+    retry: bounded-idempotent-only
+    failure_posture: fail authentication-dependent workflow closed
+    readiness_class: critical
+    first_deployment: true
+    downstream_owner: K3 and K5
+    sources: [cmd/auth-service/main.go, internal/auth]
+  - name: auth-to-ledger-http
+    caller: auth
+    target: ledger
+    protocol: https
+    port: 8091
+    identity: spiffe://seev.local/ns/seev/sa/auth
+    timeout: 5s
+    retry: bounded-idempotent-only
+    failure_posture: fail closed
+    readiness_class: critical
+    first_deployment: true
+    downstream_owner: K3 and K5
+    sources: [cmd/auth-service/main.go, internal/auth]
+  - name: auth-to-payin
+    caller: auth
+    target: payin
+    protocol: https
+    port: 8092
+    identity: spiffe://seev.local/ns/seev/sa/auth
+    timeout: 5s
+    retry: bounded-idempotent-only
+    failure_posture: fail closed
+    readiness_class: critical
+    first_deployment: true
+    downstream_owner: K3 and K5
+    sources: [cmd/auth-service/main.go]
+  - name: auth-to-payout
+    caller: auth
+    target: payout
+    protocol: https
+    port: 8093
+    identity: spiffe://seev.local/ns/seev/sa/auth
+    timeout: 5s
+    retry: bounded-idempotent-only
+    failure_posture: fail closed
+    readiness_class: critical
+    first_deployment: true
+    downstream_owner: K3 and K5
+    sources: [cmd/auth-service/main.go]
+  - name: auth-to-fraud
+    caller: auth
+    target: fraud
+    protocol: https
+    port: 8094
+    identity: spiffe://seev.local/ns/seev/sa/auth
+    timeout: 5s
+    retry: bounded-idempotent-only
+    failure_posture: fail closed
+    readiness_class: critical
+    first_deployment: true
+    downstream_owner: K3 and K5
+    sources: [cmd/auth-service/main.go]
+  - name: auth-to-gateway
+    caller: auth
+    target: gateway
+    protocol: https
+    port: 8081
+    identity: spiffe://seev.local/ns/seev/sa/auth
+    timeout: 5s
+    retry: bounded-idempotent-only
+    failure_posture: fail closed
+    readiness_class: critical
+    first_deployment: true
+    downstream_owner: K3 and K5
+    sources: [cmd/auth-service/main.go]
+
+  - name: payin-to-ledger
+    caller: payin
+    target: ledger
+    protocol: grpc
+    port: 9091
+    identity: spiffe://seev.local/ns/seev/sa/payin
+    timeout: 5s
+    retry: idempotency-key-bound
+    failure_posture: no completion without ledger result
+    readiness_class: critical
+    first_deployment: true
+    downstream_owner: K3 and K5
+    sources: [cmd/payin-service/main.go, internal/payin]
+  - name: payin-to-fraud
+    caller: payin
+    target: fraud
+    protocol: grpc
+    port: 9094
+    identity: spiffe://seev.local/ns/seev/sa/payin
+    timeout: 5s
+    retry: bounded
+    failure_posture: fail closed for risk decision
+    readiness_class: critical
+    first_deployment: true
+    downstream_owner: K3 and K5
+    sources: [cmd/payin-service/main.go]
+  - name: payin-to-vendor
+    caller: payin
+    target: vendor
+    protocol: grpc
+    port: 9098
+    identity: spiffe://seev.local/ns/seev/sa/payin
+    timeout: 5s
+    retry: idempotency-key-bound
+    failure_posture: pending state and retry/reconciliation
+    readiness_class: critical
+    first_deployment: true
+    downstream_owner: K3 and K5
+    sources: [cmd/payin-service/main.go, internal/payin]
+
+  - name: payout-to-ledger
+    caller: payout
+    target: ledger
+    protocol: grpc
+    port: 9091
+    identity: spiffe://seev.local/ns/seev/sa/payout
+    timeout: 5s
+    retry: idempotency-key-bound
+    failure_posture: no completion without ledger result
+    readiness_class: critical
+    first_deployment: true
+    downstream_owner: K3 and K5
+    sources: [cmd/payout-service/main.go, internal/payout]
+  - name: payout-to-fraud
+    caller: payout
+    target: fraud
+    protocol: grpc
+    port: 9094
+    identity: spiffe://seev.local/ns/seev/sa/payout
+    timeout: 5s
+    retry: bounded
+    failure_posture: fail closed for risk decision
+    readiness_class: critical
+    first_deployment: true
+    downstream_owner: K3 and K5
+    sources: [cmd/payout-service/main.go]
+  - name: payout-to-vendor
+    caller: payout
+    target: vendor
+    protocol: grpc
+    port: 9098
+    identity: spiffe://seev.local/ns/seev/sa/payout
+    timeout: 5s
+    retry: idempotency-key-bound
+    failure_posture: pending state and recovery worker
+    readiness_class: critical
+    first_deployment: true
+    downstream_owner: K3 and K5
+    sources: [cmd/payout-service/main.go, internal/payout]
+
+  - name: vendor-to-payin
+    caller: vendor
+    target: payin
+    protocol: grpc
+    port: 9092
+    identity: spiffe://seev.local/ns/seev/sa/vendor
+    timeout: 5s
+    retry: bounded
+    failure_posture: record callback failure for retry
+    readiness_class: callback
+    first_deployment: true
+    downstream_owner: K3 and K5
+    sources: [cmd/vendor-service/main.go]
+  - name: vendor-to-payout
+    caller: vendor
+    target: payout
+    protocol: grpc
+    port: 9093
+    identity: spiffe://seev.local/ns/seev/sa/vendor
+    timeout: 5s
+    retry: bounded
+    failure_posture: record callback failure for retry
+    readiness_class: callback
+    first_deployment: true
+    downstream_owner: K3 and K5
+    sources: [cmd/vendor-service/main.go]
+
+  - name: admin-bff-to-auth
+    caller: admin-bff
+    target: auth
+    protocol: https
+    port: 8083
+    identity: spiffe://seev.local/ns/seev/sa/admin-bff
+    timeout: 5s
+    retry: bounded-read-only
+    failure_posture: return admin dependency error
+    readiness_class: admin
+    first_deployment: true
+    downstream_owner: K3 and K5
+    sources: [cmd/admin-bff-service/main.go, internal/adminbff]
+  - name: admin-bff-to-ledger
+    caller: admin-bff
+    target: ledger
+    protocol: https
+    port: 8091
+    identity: spiffe://seev.local/ns/seev/sa/admin-bff
+    timeout: 5s
+    retry: bounded-read-only
+    failure_posture: return admin dependency error
+    readiness_class: admin
+    first_deployment: true
+    downstream_owner: K3 and K5
+    sources: [cmd/admin-bff-service/main.go]
+  - name: admin-bff-to-payin
+    caller: admin-bff
+    target: payin
+    protocol: https
+    port: 8092
+    identity: spiffe://seev.local/ns/seev/sa/admin-bff
+    timeout: 5s
+    retry: bounded-read-only
+    failure_posture: return admin dependency error
+    readiness_class: admin
+    first_deployment: true
+    downstream_owner: K3 and K5
+    sources: [cmd/admin-bff-service/main.go]
+  - name: admin-bff-to-payout
+    caller: admin-bff
+    target: payout
+    protocol: https
+    port: 8093
+    identity: spiffe://seev.local/ns/seev/sa/admin-bff
+    timeout: 5s
+    retry: bounded-read-only
+    failure_posture: return admin dependency error
+    readiness_class: admin
+    first_deployment: true
+    downstream_owner: K3 and K5
+    sources: [cmd/admin-bff-service/main.go]
+  - name: admin-bff-to-fraud
+    caller: admin-bff
+    target: fraud
+    protocol: https
+    port: 8094
+    identity: spiffe://seev.local/ns/seev/sa/admin-bff
+    timeout: 5s
+    retry: bounded-read-only
+    failure_posture: return admin dependency error
+    readiness_class: admin
+    first_deployment: true
+    downstream_owner: K3 and K5
+    sources: [cmd/admin-bff-service/main.go]
+  - name: admin-bff-to-gateway
+    caller: admin-bff
+    target: gateway
+    protocol: https
+    port: 8081
+    identity: spiffe://seev.local/ns/seev/sa/admin-bff
+    timeout: 5s
+    retry: bounded-read-only
+    failure_posture: return admin dependency error
+    readiness_class: admin
+    first_deployment: true
+    downstream_owner: K3 and K5
+    sources: [cmd/admin-bff-service/main.go]
+
+  - name: assurance-to-ledger
+    caller: assurance
+    target: ledger
+    protocol: grpc
+    port: 9091
+    identity: spiffe://seev.local/ns/seev/sa/assurance
+    timeout: 5s
+    retry: bounded-read-only
+    failure_posture: mark correlation pending
+    readiness_class: audit
+    first_deployment: true
+    downstream_owner: K3 and K5
+    sources: [cmd/assurance-service/main.go]
+  - name: assurance-to-payin
+    caller: assurance
+    target: payin
+    protocol: grpc
+    port: 9092
+    identity: spiffe://seev.local/ns/seev/sa/assurance
+    timeout: 5s
+    retry: bounded-read-only
+    failure_posture: mark correlation pending
+    readiness_class: audit
+    first_deployment: true
+    downstream_owner: K3 and K5
+    sources: [cmd/assurance-service/main.go]
+  - name: assurance-to-payout
+    caller: assurance
+    target: payout
+    protocol: grpc
+    port: 9093
+    identity: spiffe://seev.local/ns/seev/sa/assurance
+    timeout: 5s
+    retry: bounded-read-only
+    failure_posture: mark correlation pending
+    readiness_class: audit
+    first_deployment: true
+    downstream_owner: K3 and K5
+    sources: [cmd/assurance-service/main.go]
+
+  - name: services-to-postgres
+    caller: nine application services
+    target: postgres
+    protocol: postgresql
+    port: 5432
+    identity: per-service-database-role
+    timeout: config-driven
+    retry: bounded-connect
+    failure_posture: readiness failure; no cross-owner writes
+    readiness_class: critical
+    first_deployment: true
+    downstream_owner: K2 and K5
+    sources: [internal/config, scripts/postgres-init, migrations]
+  - name: services-to-redis
+    caller: nine application services
+    target: redis
+    protocol: redis
+    port: 6379
+    identity: shared-local-credential-or-network-policy
+    timeout: config-driven
+    retry: bounded
+    failure_posture: feature-specific degradation; money paths fail closed
+    readiness_class: critical
+    first_deployment: true
+    downstream_owner: K2 and K5
+    sources: [internal/config, pkg/cache]
+  - name: services-to-rabbitmq
+    caller: ledger, fraud, gateway
+    target: rabbitmq
+    protocol: amqp
+    port: 5672
+    identity: broker-user
+    timeout: config-driven
+    retry: publisher-confirms-and-consumer-retry
+    failure_posture: durable outbox or retry; no silent loss
+    readiness_class: critical
+    first_deployment: true
+    downstream_owner: K2 and K5
+    sources: [pkg/messaging, docker-compose.yml]
+  - name: services-to-dns
+    caller: all application services
+    target: cluster-dns
+    protocol: dns
+    port: 53
+    identity: pod-resolver
+    timeout: 2s
+    retry: bounded
+    failure_posture: readiness or vendor lookup failure
+    readiness_class: platform
+    first_deployment: true
+    downstream_owner: K2 and K5
+    sources: [docker-compose.yml, deploy/helm/seev]
+  - name: vendor-to-egress-proxy
+    caller: vendor
+    target: squid
+    protocol: http-connect
+    port: 3128
+    identity: vendor-service
+    timeout: config-driven
+    retry: bounded
+    failure_posture: fail closed; direct fallback disabled
+    readiness_class: vendor
+    first_deployment: false
+    downstream_owner: K6
+    sources: [pkg/egressproxy, deploy/kubernetes/squid]
+  - name: services-to-telemetry
+    caller: all application services
+    target: telemetry-collector
+    protocol: otlp-or-prometheus
+    port: UNKNOWN
+    identity: service-identity
+    timeout: config-driven
+    retry: non-blocking
+    failure_posture: business request remains available; telemetry is dropped or buffered
+    readiness_class: optional
+    first_deployment: false
+    downstream_owner: K7 observability
+    sources: [internal/telemetry, docker-compose.yml]
+  - name: vendor-to-real-provider
+    caller: vendor
+    target: real-vendor-provider
+    protocol: https
+    port: 443
+    identity: vendor-service
+    timeout: UNKNOWN
+    retry: UNKNOWN
+    failure_posture: blocked until vendor certification and hostname allowlist
+    readiness_class: deferred
+    first_deployment: false
+    downstream_owner: K6 and vendor-integration owner
+    sources: [internal/vendor, docs/deployment/vendor-network-matrix.md]

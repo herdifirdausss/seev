@@ -1,0 +1,38 @@
+version: 1
+boundary: Kafka Connect SMT before topic publication
+required_secrets:
+  - analytics_pseudonym_salt
+pseudonymized_fields:
+  - {source: user_id, output: user_pseudonym, algorithm: HMAC-SHA-256, salt_source: /run/secrets/analytics_pseudonym_salt, display: prohibited}
+  - {source: customer_id, output: customer_pseudonym, algorithm: HMAC-SHA-256, salt_source: /run/secrets/analytics_pseudonym_salt, display: prohibited}
+prohibited_patterns:
+  - password
+  - password_hash
+  - token
+  - secret
+  - authorization
+  - credential
+  - private_key
+  - access_key
+  - refresh_token
+  - session
+  - cookie
+  - raw_payload
+  - raw_request
+  - raw_response
+  - destination
+  - account_number
+  - document
+  - kyc
+prohibited_actions:
+  - wildcard table capture
+  - wildcard column capture
+  - raw callback or provider body capture
+  - raw payout destination capture
+  - raw error message capture
+  - raw identity display in Metabase
+retention:
+  raw_cdc: 30_days
+  change_history: 90_days
+  control: 180_days
+  curated_financial_marts: 24_months

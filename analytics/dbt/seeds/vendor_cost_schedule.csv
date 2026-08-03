@@ -1,0 +1,4 @@
+effective_from,effective_to,product,vendor,rail,currency,fixed_cost_minor,variable_rate_basis_points,minimum_cost_minor,maximum_cost_minor,source_note,model_version
+2026-01-01,2099-12-31,payin,mockvendor,default,IDR,0,25,0,0,synthetic local learning schedule,v1
+2026-01-01,2099-12-31,payout,mockvendor,default,IDR,0,40,0,0,synthetic local learning schedule,v1
+2026-01-01,2099-12-31,transfer,,internal,IDR,0,0,0,0,internal transfer has no vendor cost in C2,v1

@@ -21,6 +21,7 @@ import (
 	"github.com/herdifirdausss/seev/internal/config"
 	internalvendor "github.com/herdifirdausss/seev/internal/vendorboundary"
 	"github.com/herdifirdausss/seev/pkg/database"
+	"github.com/herdifirdausss/seev/pkg/egressproxy"
 	"github.com/herdifirdausss/seev/pkg/grpcx"
 	"github.com/herdifirdausss/seev/pkg/httpcontract"
 	"github.com/herdifirdausss/seev/pkg/logger"
@@ -79,6 +80,9 @@ func run(parent context.Context) error {
 	}
 	if os.Getenv("GRPC_PORT") == "" {
 		cfg.GRPCPort = "9098"
+	}
+	if _, err := egressproxy.NewClient(cfg.Vendor.EgressProxyURL, cfg.Vendor.EgressProxyRequired, cfg.App.WriteTimeout); err != nil {
+		return fmt.Errorf("configure vendor egress proxy: %w", err)
 	}
 	log := logger.New(cfg.Logger.Pkg())
 	certSrc, err := tlsx.LoadFromDir(cfg.TLSCertDir, "vendor", log)

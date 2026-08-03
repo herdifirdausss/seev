@@ -1,0 +1,1277 @@
+version: 1
+baseline_commit: ff21bf186f95431a386b339ee3a1409e49a7e1b0
+generated: true
+value_policy: configuration names only; values are never recorded
+keys:
+  - name: ADMIN_BFF_DOWNSTREAM_TOKEN_TTL
+    owner: admin-bff
+    sensitive: true
+    kubernetes_target: Secret
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: ADMIN_BFF_SECURE_COOKIE
+    owner: admin-bff
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: ADMIN_BFF_SESSION_ABSOLUTE_TTL
+    owner: admin-bff
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: ADMIN_BFF_SESSION_IDLE_TTL
+    owner: admin-bff
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: ALERT_WEBHOOK_URL
+    owner: assurance
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: APP_BASE_URL
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: APP_ENV
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: APP_IDLE_TIMEOUT
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: APP_NAME
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: APP_PORT
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: APP_READ_TIMEOUT
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: APP_SHUTDOWN_TIMEOUT
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: APP_WRITE_TIMEOUT
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: ASSURANCE_CONCURRENCY
+    owner: assurance
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: ASSURANCE_CONSISTENCY_DELAY
+    owner: assurance
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: ASSURANCE_INTERVAL
+    owner: assurance
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: ASSURANCE_PAGE_SIZE
+    owner: assurance
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: ASSURANCE_RPC_TIMEOUT
+    owner: assurance
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: AUTH_ADMIN_SERVICE_URL
+    owner: auth
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: AUTH_BOOTSTRAP_ADMIN_EMAIL
+    owner: auth
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: AUTH_BOOTSTRAP_ADMIN_PASSWORD
+    owner: auth
+    sensitive: true
+    kubernetes_target: Secret
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: AUTH_BOOTSTRAP_CHECKER_EMAIL
+    owner: auth
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: AUTH_BOOTSTRAP_CHECKER_PASSWORD
+    owner: auth
+    sensitive: true
+    kubernetes_target: Secret
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: AUTH_BOOTSTRAP_MAKER_EMAIL
+    owner: auth
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: AUTH_BOOTSTRAP_MAKER_PASSWORD
+    owner: auth
+    sensitive: true
+    kubernetes_target: Secret
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: AUTH_SERVICE_URL
+    owner: auth
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: BACKUP_REPO_PATH
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: BREAKER_COOLDOWN
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: BREAKER_DISTRIBUTED
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: BREAKER_FAILURE_THRESHOLD
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: CLOSURE_KEK_CURRENT_VERSION
+    owner: auth
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: CLOSURE_KEK_V1
+    owner: auth
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: CONTRACT_MERGE_BASE_REF
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: CORS_ALLOWED_ORIGINS
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: CRYPTOX_KEY_CURRENT_VERSION
+    owner: shared-platform
+    sensitive: true
+    kubernetes_target: Secret
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: CRYPTOX_KEY_V1
+    owner: shared-platform
+    sensitive: true
+    kubernetes_target: Secret
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: CRYPTOX_LOOKUP_KEY
+    owner: shared-platform
+    sensitive: true
+    kubernetes_target: Secret
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: CRYPTOX_LOOKUP_KEY_FILE
+    owner: shared-platform
+    sensitive: true
+    kubernetes_target: Secret
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: DEFAULT_CURRENCY
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: DRRESEED_ALLOW_DEFAULT_REDIS
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: EXPORT_KEK_CURRENT_VERSION
+    owner: auth
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: EXPORT_KEK_V1
+    owner: auth
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: FEE_QUOTE_TTL
+    owner: ledger
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: FEE_RESOLVER_CACHE_TTL
+    owner: ledger
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: FRAUD_DSN
+    owner: fraud
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: FRAUD_GRPC_ADDR
+    owner: fraud
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: FRAUD_INTERNAL_API_URL
+    owner: fraud
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: FRAUD_SERVICE_URL
+    owner: fraud
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: GATEWAY_INTERNAL_API_URL
+    owner: gateway
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: GATEWAY_SERVICE_URL
+    owner: gateway
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: GRPC_PORT
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: HOSTNAME
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: INTERNAL_APP_BIND_ADDR
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: INTERNAL_APP_PORT
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: INTERNAL_GRPC_TOKEN
+    owner: shared-platform
+    sensitive: true
+    kubernetes_target: Secret
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: JWT_ACCESS_EXPIRY
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: JWT_ISSUER
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: JWT_REFRESH_EXPIRY
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: JWT_SECRET
+    owner: shared-platform
+    sensitive: true
+    kubernetes_target: Secret
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: KYC_EXPIRY_CHECK_INTERVAL
+    owner: auth
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: KYC_PROVIDER_NAME
+    owner: auth
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: KYC_PROVIDER_TOKEN
+    owner: auth
+    sensitive: true
+    kubernetes_target: Secret
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: KYC_PROVIDER_URL
+    owner: auth
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: KYC_RESCREEN_INTERVAL
+    owner: auth
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: KYC_VALIDITY_TTL
+    owner: auth
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: LEDGER_DSN
+    owner: ledger
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: LEDGER_GRPC_ADDR
+    owner: ledger
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: LEDGER_IDEMPOTENCY_KEY_CURRENT_VERSION
+    owner: ledger
+    sensitive: true
+    kubernetes_target: Secret
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: LEDGER_IDEMPOTENCY_KEY_V1
+    owner: ledger
+    sensitive: true
+    kubernetes_target: Secret
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: LEDGER_INTERNAL_API_URL
+    owner: ledger
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: LEDGER_MAX_AMOUNT_PER_TX
+    owner: ledger
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: LEDGER_SERVICE_URL
+    owner: ledger
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: LEDGER_USER_API_URL
+    owner: ledger
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: LOG_FORMAT
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: LOG_LEVEL
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: MERCHANT_API_KEY_PEPPER
+    owner: gateway
+    sensitive: true
+    kubernetes_target: Secret
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: MERCHANT_API_KEY_PEPPER_FILE
+    owner: gateway
+    sensitive: true
+    kubernetes_target: Secret
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: MERCHANT_IDEMPOTENCY_DEFAULT_TTL
+    owner: gateway
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: MERCHANT_QUOTA_FAIL_OPEN
+    owner: gateway
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: MIGRATE_SERVICES
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: MOCKVENDOR2_ENABLED
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: MOCKVENDOR2_SECRET
+    owner: shared-platform
+    sensitive: true
+    kubernetes_target: Secret
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: OBJECT_STORE_DIR
+    owner: auth
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: OTEL_EXPORTER_OTLP_ENDPOINT
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: OTEL_EXPORTER_OTLP_INSECURE
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: OTEL_TRACES_SAMPLER_ARG
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: OUTBOX_BATCH_SIZE
+    owner: ledger
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: OUTBOX_POLL_INTERVAL
+    owner: ledger
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: PAYIN_GRPC_ADDR
+    owner: payin
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: PAYIN_INTERNAL_API_URL
+    owner: payin
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: PAYIN_SERVICE_URL
+    owner: payin
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: PAYOUT_GRPC_ADDR
+    owner: payout
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: PAYOUT_INTERNAL_API_URL
+    owner: payout
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: PAYOUT_SERVICE_URL
+    owner: payout
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: POLICY_CACHE_TTL
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: POSTGRES_CONN_MAX_IDLE_TIME
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: POSTGRES_CONN_MAX_LIFETIME
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: POSTGRES_DB
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: POSTGRES_HOST
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: POSTGRES_IDLE_IN_TX_TIMEOUT
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: POSTGRES_LOCK_TIMEOUT
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: POSTGRES_MAX_IDLE_CONNS
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: POSTGRES_MAX_OPEN_CONNS
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: POSTGRES_MIGRATE_PASSWORD
+    owner: shared-platform
+    sensitive: true
+    kubernetes_target: Secret
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: POSTGRES_MIGRATE_USER
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: POSTGRES_PASSWORD
+    owner: shared-platform
+    sensitive: true
+    kubernetes_target: Secret
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: POSTGRES_PORT
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: POSTGRES_SSL_MODE
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: POSTGRES_STATEMENT_TIMEOUT
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: POSTGRES_USER
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: RABBITMQ_APP_ID
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: RABBITMQ_CHANNEL_POOL_SIZE
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: RABBITMQ_DIAL_TIMEOUT
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: RABBITMQ_DRAIN_TIMEOUT
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: RABBITMQ_EXCHANGE
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: RABBITMQ_HOST
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: RABBITMQ_MAX_CONCURRENT_PUBLISH
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: RABBITMQ_MAX_RECONNECT_ATTEMPTS
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: RABBITMQ_PASSWORD
+    owner: shared-platform
+    sensitive: true
+    kubernetes_target: Secret
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: RABBITMQ_PORT
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: RABBITMQ_PUBLISH_TIMEOUT
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: RABBITMQ_RECONNECT_DELAY
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: RABBITMQ_TLS
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: RABBITMQ_USERNAME
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: RABBITMQ_VHOST
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: RATE_LIMIT_BURST
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: RATE_LIMIT_PER
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: RATE_LIMIT_REQUESTS
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: REDIS_ADDR
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: REDIS_DB
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: REDIS_DIAL_TIMEOUT
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: REDIS_ENABLED
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: REDIS_MAX_RETRIES
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: REDIS_MIN_IDLE_CONNS
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: REDIS_PASSWORD
+    owner: shared-platform
+    sensitive: true
+    kubernetes_target: Secret
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: REDIS_POOL_SIZE
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: REDIS_POOL_TIMEOUT
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: REDIS_READ_TIMEOUT
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: REDIS_USERNAME
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: REDIS_WRITE_TIMEOUT
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: SCREENING_AMOUNT_THRESHOLD
+    owner: fraud
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: SCREENING_MODE
+    owner: fraud
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: SCREENING_VELOCITY_MAX_PER_HOUR
+    owner: fraud
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: SEEV_LOAD_OBSERVER_DSN
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: SEEV_LOAD_RUN_ID
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: TLS_CERT_DIR
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: TOPUP_INTENT_TTL
+    owner: payin
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: TRUST_PROXY_HEADERS
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: VAULT_ADDR
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: VAULT_TOKEN
+    owner: shared-platform
+    sensitive: true
+    kubernetes_target: Secret
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: VENDOR_CALLBACK_CIDRS
+    owner: vendor
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: VENDOR_CALLBACK_TRUSTED_PROXY_CIDRS
+    owner: vendor
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: VENDOR_EGRESS_PROXY_REQUIRED
+    owner: vendor
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: VENDOR_EGRESS_PROXY_URL
+    owner: vendor
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: VENDOR_GRPC_ADDR
+    owner: vendor
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: VENDOR_MOCKVENDOR_ENABLED
+    owner: vendor
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: VENDOR_MOCKVENDOR_SECRET
+    owner: vendor
+    sensitive: true
+    kubernetes_target: Secret
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: VENDOR_SERVICE_ENABLED
+    owner: vendor
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: WORKER_ENABLED
+    owner: ledger
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]

@@ -1,0 +1,58 @@
+global:
+  appEnv: staging
+  postgres:
+    # The first cloud proof uses the sandbox in-cluster PostgreSQL StatefulSet.
+    # Add a managed-DB overlay before changing this to require.
+    sslMode: disable
+  telemetry:
+    insecure: "false"
+  image:
+    repository: REGION-docker.pkg.dev/PROJECT/seev-learning-images
+    tag: dev
+    digest: ""
+    pullPolicy: IfNotPresent
+image:
+  repository: REGION-docker.pkg.dev/PROJECT/seev-learning-images
+  tag: dev
+  digest: ""
+  pullPolicy: IfNotPresent
+migrations:
+  image:
+    repository: REGION-docker.pkg.dev/PROJECT/seev-learning-images/migrations
+    tag: dev
+    digest: sha256:REPLACE_WITH_IMMUTABLE_DIGEST
+    pullPolicy: IfNotPresent
+  sslMode: disable
+traefik:
+  publicHost: api.dev.seev.example
+  callbackHost: callback.dev.seev.example
+  allowedCallbackCIDRs:
+    - REPLACE_WITH_VENDOR_CALLBACK_CIDR
+services:
+  gateway:
+    digest: sha256:REPLACE_WITH_GATEWAY_DIGEST
+  auth:
+    digest: sha256:REPLACE_WITH_AUTH_DIGEST
+  ledger:
+    digest: sha256:REPLACE_WITH_LEDGER_DIGEST
+  payin:
+    digest: sha256:REPLACE_WITH_PAYIN_DIGEST
+  payout:
+    digest: sha256:REPLACE_WITH_PAYOUT_DIGEST
+  fraud:
+    digest: sha256:REPLACE_WITH_FRAUD_DIGEST
+  admin-bff:
+    digest: sha256:REPLACE_WITH_ADMIN_BFF_DIGEST
+  assurance:
+    digest: sha256:REPLACE_WITH_ASSURANCE_DIGEST
+  vendor:
+    digest: sha256:REPLACE_WITH_VENDOR_DIGEST
+    callbackCIDRs: REPLACE_WITH_VENDOR_CALLBACK_CIDR
+    trustedProxyCIDRs: 10.24.0.0/14
+    serviceAccountAnnotations:
+      iam.gke.io/gcp-service-account: REPLACE_WITH_GCP_VENDOR_SERVICE_ACCOUNT
+    env:
+      VENDOR_CALLBACK_CIDRS: REPLACE_WITH_VENDOR_CALLBACK_CIDR
+      VENDOR_CALLBACK_TRUSTED_PROXY_CIDRS: 10.24.0.0/14
+      VENDOR_EGRESS_PROXY_URL: http://squid.seev-egress.svc.cluster.local:3128
+      VENDOR_EGRESS_PROXY_REQUIRED: "true"
