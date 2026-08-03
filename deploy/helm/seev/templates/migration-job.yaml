@@ -1,0 +1,57 @@
+{{- if .Values.migrations.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ printf "seev-migrations-%d" .Release.Revision }}
+  namespace: {{ .Values.global.appNamespace }}
+  labels:
+    {{- include "seev.labels" . | nindent 4 }}
+    seev.io/job: migrations
+spec:
+  backoffLimit: {{ .Values.migrations.backoffLimit }}
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: seev
+        seev.io/job: migrations
+        seev.io/db-access: "true"
+    spec:
+      restartPolicy: OnFailure
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: migrations
+          image: {{ include "seev.migrationImage" . | quote }}
+          imagePullPolicy: {{ .Values.migrations.image.pullPolicy }}
+          command: ["/app/migrate"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          env:
+            - name: POSTGRES_HOST
+              value: {{ .Values.global.postgres.host | quote }}
+            - name: POSTGRES_PORT
+              value: {{ .Values.global.postgres.port | quote }}
+            - name: POSTGRES_MIGRATE_USER
+              value: {{ .Values.migrations.user | quote }}
+            - name: POSTGRES_MIGRATE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.global.dataSecret }}
+                  key: postgres-super-password
+            - name: POSTGRES_SSL_MODE
+              value: {{ .Values.migrations.sslMode | quote }}
+            - name: MIGRATE_SERVICES
+              value: ledger,auth,payin,payout,fraud,gateway,vendor,adminbff,assurance
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {cpu: 250m, memory: 256Mi}
+{{- end }}

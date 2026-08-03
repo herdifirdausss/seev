@@ -75,6 +75,13 @@ go.work.sum
 # deterministic summaries under docs/performance/.
 /artifacts/load/*
 
+# Plan 63: Terraform state/plan files and provider credentials are local-only.
+/deploy/terraform/**/*.tfstate
+/deploy/terraform/**/*.tfstate.*
+/deploy/terraform/**/*.tfplan
+/deploy/terraform/**/.terraform/
+/deploy/terraform/**/terraform.tfvars
+
 # Editor/IDE
 # .idea/
 # .vscode/

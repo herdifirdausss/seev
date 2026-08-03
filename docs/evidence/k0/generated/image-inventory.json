@@ -1,0 +1,431 @@
+[
+  {
+    "repo_tags": [
+      "seev/admin-bff-service:dev"
+    ],
+    "repo_digests": [
+      "seev/admin-bff-service@sha256:8af4cb366a937b19da161267dfc50d4e6155ee42f878886ba807cba1e0a6103b"
+    ],
+    "id": "sha256:8af4cb366a937b19da161267dfc50d4e6155ee42f878886ba807cba1e0a6103b",
+    "created": "2026-08-02T16:47:31.355368345Z",
+    "size_bytes": 7847891,
+    "architecture": "arm64",
+    "os": "linux",
+    "user": "nonroot:nonroot",
+    "entrypoint": [
+      "/app/service"
+    ],
+    "working_dir": "/app",
+    "exposed_ports": {
+      "8080/tcp": {},
+      "8081/tcp": {},
+      "8082/tcp": {},
+      "8083/tcp": {},
+      "8090/tcp": {},
+      "8091/tcp": {},
+      "8092/tcp": {},
+      "8093/tcp": {},
+      "8094/tcp": {},
+      "8095/tcp": {},
+      "8096/tcp": {},
+      "8098/tcp": {},
+      "9091/tcp": {},
+      "9092/tcp": {},
+      "9093/tcp": {},
+      "9094/tcp": {},
+      "9098/tcp": {}
+    }
+  },
+  {
+    "repo_tags": [
+      "seev/assurance-service:dev"
+    ],
+    "repo_digests": [
+      "seev/assurance-service@sha256:b8470c585551c52731f3e6c9a003e789aef591189d8a6eda96966daf3e23f6ed"
+    ],
+    "id": "sha256:b8470c585551c52731f3e6c9a003e789aef591189d8a6eda96966daf3e23f6ed",
+    "created": "2026-08-02T16:47:35.958016958Z",
+    "size_bytes": 7640492,
+    "architecture": "arm64",
+    "os": "linux",
+    "user": "nonroot:nonroot",
+    "entrypoint": [
+      "/app/service"
+    ],
+    "working_dir": "/app",
+    "exposed_ports": {
+      "8080/tcp": {},
+      "8081/tcp": {},
+      "8082/tcp": {},
+      "8083/tcp": {},
+      "8090/tcp": {},
+      "8091/tcp": {},
+      "8092/tcp": {},
+      "8093/tcp": {},
+      "8094/tcp": {},
+      "8095/tcp": {},
+      "8096/tcp": {},
+      "8098/tcp": {},
+      "9091/tcp": {},
+      "9092/tcp": {},
+      "9093/tcp": {},
+      "9094/tcp": {},
+      "9098/tcp": {}
+    }
+  },
+  {
+    "repo_tags": [
+      "seev/auth-service:dev"
+    ],
+    "repo_digests": [
+      "seev/auth-service@sha256:369ab0534b51c4d0bf58b40acffd34eda557713a835561ce1093d7ac3ea2c667"
+    ],
+    "id": "sha256:369ab0534b51c4d0bf58b40acffd34eda557713a835561ce1093d7ac3ea2c667",
+    "created": "2026-08-02T16:47:10.197900793Z",
+    "size_bytes": 9296200,
+    "architecture": "arm64",
+    "os": "linux",
+    "user": "nonroot:nonroot",
+    "entrypoint": [
+      "/app/service"
+    ],
+    "working_dir": "/app",
+    "exposed_ports": {
+      "8080/tcp": {},
+      "8081/tcp": {},
+      "8082/tcp": {},
+      "8083/tcp": {},
+      "8090/tcp": {},
+      "8091/tcp": {},
+      "8092/tcp": {},
+      "8093/tcp": {},
+      "8094/tcp": {},
+      "8095/tcp": {},
+      "8096/tcp": {},
+      "8098/tcp": {},
+      "9091/tcp": {},
+      "9092/tcp": {},
+      "9093/tcp": {},
+      "9094/tcp": {},
+      "9098/tcp": {}
+    }
+  },
+  {
+    "repo_tags": [
+      "seev/fraud-service:dev"
+    ],
+    "repo_digests": [
+      "seev/fraud-service@sha256:4d3bfe7cf545844438b781fb3e6cf2fb863f65ce05f8055f32746a6143a0a486"
+    ],
+    "id": "sha256:4d3bfe7cf545844438b781fb3e6cf2fb863f65ce05f8055f32746a6143a0a486",
+    "created": "2026-08-02T16:47:24.76603955Z",
+    "size_bytes": 9264096,
+    "architecture": "arm64",
+    "os": "linux",
+    "user": "nonroot:nonroot",
+    "entrypoint": [
+      "/app/service"
+    ],
+    "working_dir": "/app",
+    "exposed_ports": {
+      "8080/tcp": {},
+      "8081/tcp": {},
+      "8082/tcp": {},
+      "8083/tcp": {},
+      "8090/tcp": {},
+      "8091/tcp": {},
+      "8092/tcp": {},
+      "8093/tcp": {},
+      "8094/tcp": {},
+      "8095/tcp": {},
+      "8096/tcp": {},
+      "8098/tcp": {},
+      "9091/tcp": {},
+      "9092/tcp": {},
+      "9093/tcp": {},
+      "9094/tcp": {},
+      "9098/tcp": {}
+    }
+  },
+  {
+    "repo_tags": [
+      "seev/gateway-service:dev"
+    ],
+    "repo_digests": [
+      "seev/gateway-service@sha256:bdbef63cf8443c05e04d1d4368261dc3982ef6415a128e28e6f14532b36229af"
+    ],
+    "id": "sha256:bdbef63cf8443c05e04d1d4368261dc3982ef6415a128e28e6f14532b36229af",
+    "created": "2026-08-02T15:57:09.681081462Z",
+    "size_bytes": 9509597,
+    "architecture": "arm64",
+    "os": "linux",
+    "user": "nonroot:nonroot",
+    "entrypoint": [
+      "/app/service"
+    ],
+    "working_dir": "/app",
+    "exposed_ports": {
+      "8080/tcp": {},
+      "8081/tcp": {},
+      "8082/tcp": {},
+      "8083/tcp": {},
+      "8090/tcp": {},
+      "8091/tcp": {},
+      "8092/tcp": {},
+      "8093/tcp": {},
+      "8094/tcp": {},
+      "8095/tcp": {},
+      "8096/tcp": {},
+      "8098/tcp": {},
+      "9091/tcp": {},
+      "9092/tcp": {},
+      "9093/tcp": {},
+      "9094/tcp": {},
+      "9098/tcp": {}
+    }
+  },
+  {
+    "repo_tags": [
+      "seev/k8s-migrations-validation:dev"
+    ],
+    "repo_digests": [
+      "seev/k8s-migrations-validation@sha256:effbb59dca274bf3156dd2f06af429e05b60350593f64e4dae6a912fa61e3baa"
+    ],
+    "id": "sha256:effbb59dca274bf3156dd2f06af429e05b60350593f64e4dae6a912fa61e3baa",
+    "created": "2026-08-02T15:57:26.030239928Z",
+    "size_bytes": 3032552,
+    "architecture": "arm64",
+    "os": "linux",
+    "user": "nonroot:nonroot",
+    "entrypoint": [
+      "/app/migrate"
+    ],
+    "working_dir": "/app",
+    "exposed_ports": {}
+  },
+  {
+    "repo_tags": [
+      "seev/k8s-validation:dev"
+    ],
+    "repo_digests": [
+      "seev/k8s-validation@sha256:053405138bca14dc852c79b8f5e1b1bf8fb1396461dad2ca7cbac403913edffd"
+    ],
+    "id": "sha256:053405138bca14dc852c79b8f5e1b1bf8fb1396461dad2ca7cbac403913edffd",
+    "created": "2026-08-02T15:57:09.681081462Z",
+    "size_bytes": 9509606,
+    "architecture": "arm64",
+    "os": "linux",
+    "user": "nonroot:nonroot",
+    "entrypoint": [
+      "/app/service"
+    ],
+    "working_dir": "/app",
+    "exposed_ports": {
+      "8080/tcp": {},
+      "8081/tcp": {},
+      "8082/tcp": {},
+      "8083/tcp": {},
+      "8090/tcp": {},
+      "8091/tcp": {},
+      "8092/tcp": {},
+      "8093/tcp": {},
+      "8094/tcp": {},
+      "8095/tcp": {},
+      "8096/tcp": {},
+      "8098/tcp": {},
+      "9091/tcp": {},
+      "9092/tcp": {},
+      "9093/tcp": {},
+      "9094/tcp": {},
+      "9098/tcp": {}
+    }
+  },
+  {
+    "repo_tags": [
+      "seev/ledger-service:dev"
+    ],
+    "repo_digests": [
+      "seev/ledger-service@sha256:51780087909443452b8eb7fa16e9fcfdfd7f071480b5d2584fbaa83f69292b3e"
+    ],
+    "id": "sha256:51780087909443452b8eb7fa16e9fcfdfd7f071480b5d2584fbaa83f69292b3e",
+    "created": "2026-08-02T16:47:13.880650087Z",
+    "size_bytes": 9654913,
+    "architecture": "arm64",
+    "os": "linux",
+    "user": "nonroot:nonroot",
+    "entrypoint": [
+      "/app/service"
+    ],
+    "working_dir": "/app",
+    "exposed_ports": {
+      "8080/tcp": {},
+      "8081/tcp": {},
+      "8082/tcp": {},
+      "8083/tcp": {},
+      "8090/tcp": {},
+      "8091/tcp": {},
+      "8092/tcp": {},
+      "8093/tcp": {},
+      "8094/tcp": {},
+      "8095/tcp": {},
+      "8096/tcp": {},
+      "8098/tcp": {},
+      "9091/tcp": {},
+      "9092/tcp": {},
+      "9093/tcp": {},
+      "9094/tcp": {},
+      "9098/tcp": {}
+    }
+  },
+  {
+    "repo_tags": [
+      "seev/migrations:dev"
+    ],
+    "repo_digests": [
+      "seev/migrations@sha256:61625b4f3e5a76e681a07870be01dd8bbb383dfcece128c710ec2e72e499c9e3"
+    ],
+    "id": "sha256:61625b4f3e5a76e681a07870be01dd8bbb383dfcece128c710ec2e72e499c9e3",
+    "created": "2026-08-02T17:27:54.706954758Z",
+    "size_bytes": 4086270,
+    "architecture": "arm64",
+    "os": "linux",
+    "user": "nonroot:nonroot",
+    "entrypoint": [
+      "/app/migrate"
+    ],
+    "working_dir": "/app",
+    "exposed_ports": {}
+  },
+  {
+    "repo_tags": [
+      "seev/payin-service:dev"
+    ],
+    "repo_digests": [
+      "seev/payin-service@sha256:55b1e0435475716a0ca7391e7798f3f3dec52b62f72c3123c4b0714480e7f457"
+    ],
+    "id": "sha256:55b1e0435475716a0ca7391e7798f3f3dec52b62f72c3123c4b0714480e7f457",
+    "created": "2026-08-02T16:47:17.615575922Z",
+    "size_bytes": 9224772,
+    "architecture": "arm64",
+    "os": "linux",
+    "user": "nonroot:nonroot",
+    "entrypoint": [
+      "/app/service"
+    ],
+    "working_dir": "/app",
+    "exposed_ports": {
+      "8080/tcp": {},
+      "8081/tcp": {},
+      "8082/tcp": {},
+      "8083/tcp": {},
+      "8090/tcp": {},
+      "8091/tcp": {},
+      "8092/tcp": {},
+      "8093/tcp": {},
+      "8094/tcp": {},
+      "8095/tcp": {},
+      "8096/tcp": {},
+      "8098/tcp": {},
+      "9091/tcp": {},
+      "9092/tcp": {},
+      "9093/tcp": {},
+      "9094/tcp": {},
+      "9098/tcp": {}
+    }
+  },
+  {
+    "repo_tags": [
+      "seev/payout-service:dev"
+    ],
+    "repo_digests": [
+      "seev/payout-service@sha256:9baad79d4a6d7b4e1cc12896c877b774bb6083c6c2bec8f5409055cbed0c85ab"
+    ],
+    "id": "sha256:9baad79d4a6d7b4e1cc12896c877b774bb6083c6c2bec8f5409055cbed0c85ab",
+    "created": "2026-08-02T16:47:20.876129215Z",
+    "size_bytes": 9270748,
+    "architecture": "arm64",
+    "os": "linux",
+    "user": "nonroot:nonroot",
+    "entrypoint": [
+      "/app/service"
+    ],
+    "working_dir": "/app",
+    "exposed_ports": {
+      "8080/tcp": {},
+      "8081/tcp": {},
+      "8082/tcp": {},
+      "8083/tcp": {},
+      "8090/tcp": {},
+      "8091/tcp": {},
+      "8092/tcp": {},
+      "8093/tcp": {},
+      "8094/tcp": {},
+      "8095/tcp": {},
+      "8096/tcp": {},
+      "8098/tcp": {},
+      "9091/tcp": {},
+      "9092/tcp": {},
+      "9093/tcp": {},
+      "9094/tcp": {},
+      "9098/tcp": {}
+    }
+  },
+  {
+    "repo_tags": [
+      "seev/postgres-backup:dev"
+    ],
+    "repo_digests": [
+      "seev/postgres-backup@sha256:cde25fa30d7476ee4e47aedd5726856cf1e977296b4a4261da0e56c1c5200435"
+    ],
+    "id": "sha256:cde25fa30d7476ee4e47aedd5726856cf1e977296b4a4261da0e56c1c5200435",
+    "created": "2026-08-01T15:18:49.52459363Z",
+    "size_bytes": 122767367,
+    "architecture": "arm64",
+    "os": "linux",
+    "user": null,
+    "entrypoint": [
+      "seev-backup-entrypoint.sh"
+    ],
+    "working_dir": "/",
+    "exposed_ports": {
+      "5432/tcp": {}
+    }
+  },
+  {
+    "repo_tags": [
+      "seev/vendor-service:dev"
+    ],
+    "repo_digests": [
+      "seev/vendor-service@sha256:f32ceae3dc7380333c079160242b3a68b89f59f2327e83cb3879ea833de32d72"
+    ],
+    "id": "sha256:f32ceae3dc7380333c079160242b3a68b89f59f2327e83cb3879ea833de32d72",
+    "created": "2026-08-02T16:47:28.033659093Z",
+    "size_bytes": 8830677,
+    "architecture": "arm64",
+    "os": "linux",
+    "user": "nonroot:nonroot",
+    "entrypoint": [
+      "/app/service"
+    ],
+    "working_dir": "/app",
+    "exposed_ports": {
+      "8080/tcp": {},
+      "8081/tcp": {},
+      "8082/tcp": {},
+      "8083/tcp": {},
+      "8090/tcp": {},
+      "8091/tcp": {},
+      "8092/tcp": {},
+      "8093/tcp": {},
+      "8094/tcp": {},
+      "8095/tcp": {},
+      "8096/tcp": {},
+      "8098/tcp": {},
+      "9091/tcp": {},
+      "9092/tcp": {},
+      "9093/tcp": {},
+      "9094/tcp": {},
+      "9098/tcp": {}
+    }
+  }
+]

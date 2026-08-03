@@ -1,0 +1,411 @@
+version: 1
+baseline_commit: ff21bf186f95431a386b339ee3a1409e49a7e1b0
+canonical_names:
+  - gateway
+  - auth
+  - ledger
+  - payin
+  - payout
+  - fraud
+  - admin-bff
+  - assurance
+  - vendor
+source_hierarchy:
+  - running behavior and tests
+  - application code
+  - Dockerfile and docker-compose.yml
+  - API contracts and configuration validation
+  - current deployment documentation
+services:
+  - name: gateway
+    current:
+      command: ./cmd/gateway
+      compose_service: gateway-service
+      build_service: gateway
+      image: seev/gateway-service
+      binary: /app/service
+      app_name: gateway-service
+    roles:
+      request_server: true
+      grpc_server: false
+      background_workers: true
+      one_process_per_pod: true
+    ownership:
+      database: seev_gateway
+      business_owner: payments-platform
+    exposure:
+      public: true
+      callback: false
+      admin: true
+      internal: true
+    workers:
+      - merchant-webhook-relay
+      - merchant-webhook-consumer
+      - notification-consumer
+      - retention
+      - observability-refresh
+    first_deployment:
+      enabled: true
+      data_policy: synthetic-only
+    unknowns: []
+    sources:
+      - cmd/gateway/main.go
+      - Dockerfile
+      - docker-compose.yml
+      - internal/handler/router.go
+
+  - name: auth
+    current:
+      command: ./cmd/auth-service
+      compose_service: auth-service
+      build_service: auth-service
+      image: seev/auth-service
+      binary: /app/service
+      app_name: auth-service
+    roles:
+      request_server: true
+      grpc_server: false
+      background_workers: true
+      one_process_per_pod: true
+    ownership:
+      database: seev_auth
+      business_owner: identity
+    exposure:
+      public: true
+      callback: false
+      admin: true
+      internal: true
+    workers:
+      - kyc-apply-retry
+      - kyc-expiry
+      - sanctions-rescreen
+      - retention
+      - object-delete-outbox
+      - privacy-export
+      - closure-saga
+    first_deployment:
+      enabled: true
+      data_policy: synthetic-only
+    unknowns:
+      - real KYC provider endpoint is downstream of K1 and disabled in first deployment
+    sources:
+      - cmd/auth-service/main.go
+      - internal/auth
+      - Dockerfile
+      - docker-compose.yml
+
+  - name: ledger
+    current:
+      command: ./cmd/ledger-service
+      compose_service: ledger-service
+      build_service: ledger-service
+      image: seev/ledger-service
+      binary: /app/service
+      app_name: ledger-service
+    roles:
+      request_server: true
+      grpc_server: true
+      background_workers: true
+      one_process_per_pod: true
+    ownership:
+      database: seev_ledger
+      business_owner: money-movement
+    exposure:
+      public: false
+      callback: false
+      admin: true
+      internal: true
+    workers:
+      - outbox-relay
+      - transaction-verifier
+      - snapshot
+      - scheduled-transactions
+      - interest-accrual
+      - retention
+    first_deployment:
+      enabled: true
+      data_policy: synthetic-only
+    unknowns: []
+    sources:
+      - cmd/ledger-service/main.go
+      - internal/ledger
+      - Dockerfile
+      - docker-compose.yml
+
+  - name: payin
+    current:
+      command: ./cmd/payin-service
+      compose_service: payin-service
+      build_service: payin-service
+      image: seev/payin-service
+      binary: /app/service
+      app_name: payin-service
+    roles:
+      request_server: true
+      grpc_server: true
+      background_workers: true
+      one_process_per_pod: true
+    ownership:
+      database: seev_payin
+      business_owner: money-movement
+    exposure:
+      public: false
+      callback: false
+      admin: true
+      internal: true
+    workers:
+      - retention
+    first_deployment:
+      enabled: true
+      data_policy: synthetic-only
+    unknowns: []
+    sources:
+      - cmd/payin-service/main.go
+      - internal/payin
+      - Dockerfile
+      - docker-compose.yml
+
+  - name: payout
+    current:
+      command: ./cmd/payout-service
+      compose_service: payout-service
+      build_service: payout-service
+      image: seev/payout-service
+      binary: /app/service
+      app_name: payout-service
+    roles:
+      request_server: true
+      grpc_server: true
+      background_workers: true
+      one_process_per_pod: true
+    ownership:
+      database: seev_payout
+      business_owner: money-movement
+    exposure:
+      public: false
+      callback: false
+      admin: true
+      internal: true
+    workers:
+      - recovery
+      - vendor-relay
+      - retention
+    first_deployment:
+      enabled: true
+      data_policy: synthetic-only
+    unknowns: []
+    sources:
+      - cmd/payout-service/main.go
+      - internal/payout
+      - Dockerfile
+      - docker-compose.yml
+
+  - name: fraud
+    current:
+      command: ./cmd/fraud-service
+      compose_service: fraud-service
+      build_service: fraud-service
+      image: seev/fraud-service
+      binary: /app/service
+      app_name: fraud-service
+    roles:
+      request_server: true
+      grpc_server: true
+      background_workers: true
+      one_process_per_pod: true
+    ownership:
+      database: seev_fraud
+      business_owner: risk
+    exposure:
+      public: false
+      callback: false
+      admin: true
+      internal: true
+    workers:
+      - velocity-consumer
+      - spill-flusher
+      - retention
+    first_deployment:
+      enabled: true
+      data_policy: synthetic-only
+    unknowns: []
+    sources:
+      - cmd/fraud-service/main.go
+      - internal/fraud
+      - Dockerfile
+      - docker-compose.yml
+
+  - name: admin-bff
+    current:
+      command: ./cmd/admin-bff-service
+      compose_service: admin-bff-service
+      build_service: admin-bff-service
+      image: seev/admin-bff-service
+      binary: /app/service
+      app_name: admin-bff-service
+    roles:
+      request_server: true
+      grpc_server: false
+      background_workers: true
+      one_process_per_pod: true
+    ownership:
+      database: seev_adminbff
+      business_owner: operations
+    exposure:
+      public: false
+      callback: false
+      admin: true
+      internal: true
+    workers:
+      - session-cleanup
+      - retention
+    first_deployment:
+      enabled: true
+      data_policy: synthetic-only
+    unknowns: []
+    sources:
+      - cmd/admin-bff-service/main.go
+      - internal/adminbff
+      - Dockerfile
+      - docker-compose.yml
+
+  - name: assurance
+    current:
+      command: ./cmd/assurance-service
+      compose_service: assurance-service
+      build_service: assurance-service
+      image: seev/assurance-service
+      binary: /app/service
+      app_name: assurance-service
+    roles:
+      request_server: true
+      grpc_server: true
+      background_workers: true
+      one_process_per_pod: true
+    ownership:
+      database: seev_assurance
+      business_owner: assurance
+    exposure:
+      public: false
+      callback: false
+      admin: true
+      internal: true
+    workers:
+      - correlation
+      - retention
+    first_deployment:
+      enabled: true
+      data_policy: synthetic-only
+    unknowns: []
+    sources:
+      - cmd/assurance-service/main.go
+      - internal/assurance
+      - Dockerfile
+      - docker-compose.yml
+
+  - name: vendor
+    current:
+      command: ./cmd/vendor-service
+      compose_service: vendor-service
+      build_service: vendor-service
+      image: seev/vendor-service
+      binary: /app/service
+      app_name: vendor-service
+    roles:
+      request_server: true
+      grpc_server: true
+      background_workers: true
+      one_process_per_pod: true
+    ownership:
+      database: seev_vendor
+      business_owner: vendor-boundary
+    exposure:
+      public: false
+      callback: true
+      admin: true
+      internal: true
+    workers:
+      - retention
+    first_deployment:
+      enabled: true
+      data_policy: synthetic-only
+    unknowns:
+      - real vendor hostname and CIDR are UNKNOWN; mock adapters are in-process
+    sources:
+      - cmd/vendor-service/main.go
+      - internal/vendor
+      - pkg/egressproxy
+      - Dockerfile
+      - docker-compose.yml
+
+command_classification:
+  long_running_service:
+    - cmd/gateway
+    - cmd/auth-service
+    - cmd/ledger-service
+    - cmd/payin-service
+    - cmd/payout-service
+    - cmd/fraud-service
+    - cmd/admin-bff-service
+    - cmd/assurance-service
+    - cmd/vendor-service
+  one_shot_migration:
+    - cmd/migrate
+  certificate_tool:
+    - cmd/certgen
+  backup_utility:
+    - cmd/backup-agent
+  administrative_cli:
+    - cmd/drreseed
+    - cmd/drverify
+    - cmd/gentoken
+    - cmd/retentionctl
+    - cmd/sanctions-loader
+  test_or_fixture_helper:
+    - cmd/cryptox-fixture
+    - cmd/loadcheck
+    - cmd/loaddataset
+    - cmd/loadprobe
+    - cmd/loadreport
+  validation_or_generator:
+    - cmd/contractcheck
+    - cmd/contractgenerate
+    - cmd/doccheck
+    - cmd/retentioncheck
+  first_deployment_relevance:
+    migration: enabled-as-one-shot-job
+    backup-agent: deferred-operations-only
+    certgen: deferred-build-or-secret-provisioning-tool
+    all-other-non-service-tools: local-or-ci-only
+
+auxiliary_processes:
+  - name: object-store-init
+    compose_service: object-store-init
+    class: one-shot
+    kubernetes_relevance: local-compose-init-only
+    first_deployment: true
+    source: docker-compose.yml
+  - name: migration-runner
+    command: ./cmd/migrate
+    class: one-shot
+    kubernetes_relevance: migration-job
+    first_deployment: true
+    source: cmd/migrate/main.go
+  - name: postgres
+    compose_service: postgres
+    class: stateful-infrastructure
+    kubernetes_relevance: local-compose-dependency
+    first_deployment: true
+    source: docker-compose.yml
+  - name: redis
+    compose_service: redis
+    class: stateful-infrastructure
+    kubernetes_relevance: local-compose-dependency
+    first_deployment: true
+    source: docker-compose.yml
+  - name: rabbitmq
+    compose_service: rabbitmq
+    class: stateful-infrastructure
+    kubernetes_relevance: local-compose-dependency
+    first_deployment: true
+    source: docker-compose.yml

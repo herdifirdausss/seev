@@ -1,0 +1,100 @@
+version: 1
+baseline_commit: ff21bf186f95431a386b339ee3a1409e49a7e1b0
+network_policy:
+  local_rule: mock adapters and callback probes are synthetic-only
+  cloud_rule: real vendor hostnames, ports, CIDRs, DNS, and certificates must be certified before enablement
+  direct_fallback: forbidden for the Kubernetes VendorService workload
+  proxy: explicit HTTP CONNECT proxy seam is available; K6 owns Squid ACLs
+vendors:
+  - name: mockvendor
+    mode: in-process-mock
+    first_deployment: true
+    adapter_owner: vendor
+    callback:
+      path: /webhooks/mockvendor
+      method: POST
+      signature: mock vendor HMAC fixture
+      source_cidrs: ["127.0.0.1/32", "::1/128", "172.16.0.0/12"]
+      trusted_proxy_cidrs: []
+      source_ip_semantics: local-only fixture; not a cloud allowlist
+    callbacks:
+      - route: /webhooks/mockvendor
+        listener: vendor-http
+        ingress_policy: signature plus local fixture source checks
+    outbound:
+      hosts: []
+      ports: []
+      dns: in-process; no network lookup
+      certificate: none
+    proxy_behavior:
+      proxy_required: false
+      proxy_endpoint: not-used-for-in-process-mock
+      direct_fallback_allowed: false
+      failure_behavior: synthetic adapter error
+    source: internal/vendorboundary, cmd/vendor-service/main.go
+
+  - name: mockvendor2
+    mode: in-process-mock
+    first_deployment: true
+    adapter_owner: vendor
+    callback:
+      path: /webhooks/mockvendor2
+      method: POST
+      signature: mock vendor HMAC fixture
+      source_cidrs: ["127.0.0.1/32", "::1/128", "172.16.0.0/12"]
+      trusted_proxy_cidrs: []
+      source_ip_semantics: local-only fixture; not a cloud allowlist
+    callbacks:
+      - route: /webhooks/mockvendor2
+        listener: vendor-http
+        ingress_policy: signature plus local fixture source checks
+    outbound:
+      hosts: []
+      ports: []
+      dns: in-process; no network lookup
+      certificate: none
+    proxy_behavior:
+      proxy_required: false
+      proxy_endpoint: not-used-for-in-process-mock
+      direct_fallback_allowed: false
+      failure_behavior: synthetic adapter error
+    source: internal/vendorboundary, cmd/vendor-service/main.go
+
+  - name: real-vendor-provider
+    mode: external-provider
+    first_deployment: false
+    adapter_owner: vendor-integration-owner
+    callback:
+      path: /webhooks/{vendor}
+      method: POST
+      signature: vendor-specific HMAC or mTLS contract UNKNOWN
+      source_cidrs: UNKNOWN
+      trusted_proxy_cidrs: empty until explicitly reviewed
+      source_ip_semantics: ingress source must be preserved; do not trust arbitrary forwarded headers
+    callbacks:
+      - route: /webhooks/{vendor}
+        listener: vendor-http
+        ingress_policy: certified provider CIDR plus signature verification
+    outbound:
+      hosts: UNKNOWN
+      ports: [443]
+      dns: required and currently UNKNOWN
+      certificate: provider CA and hostname verification required
+    proxy_behavior:
+      proxy_required: true
+      proxy_endpoint: Squid service port 3128
+      direct_fallback_allowed: false
+      failure_behavior: fail closed and retain retryable provider state
+    status: blocked-pending-provider-certification
+    downstream_owner: K6 and vendor-integration owner
+    source: pkg/egressproxy, internal/vendorboundary, docs/roadmap/active/64-k0-deployment-inventory-baseline.md
+endpoint_variables:
+  VENDOR_CALLBACK_CIDRS:
+    local_value_policy: synthetic loopback or Docker test range only
+    cloud_value: UNKNOWN until provider certification
+  VENDOR_CALLBACK_TRUSTED_PROXY_CIDRS:
+    local_value_policy: empty
+    cloud_value: UNKNOWN until ingress architecture is approved
+  VENDOR_EGRESS_PROXY:
+    local_value_policy: optional for in-process mocks
+    cloud_value: required for external provider

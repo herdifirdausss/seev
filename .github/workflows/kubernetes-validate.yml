@@ -1,0 +1,64 @@
+name: Kubernetes deployment validation
+
+on:
+  pull_request:
+    paths:
+      - "deploy/helm/**"
+      - "deploy/kubernetes/**"
+      - "deploy/terraform/**"
+      - "deploy/gitops/**"
+      - "docs/deployment/**"
+      - "pkg/egressproxy/**"
+      - "cmd/migrate/**"
+      - ".github/workflows/kubernetes-validate.yml"
+  push:
+    branches: [main]
+    paths:
+      - "deploy/helm/**"
+      - "deploy/kubernetes/**"
+      - "deploy/terraform/**"
+      - "deploy/gitops/**"
+      - "docs/deployment/**"
+      - "pkg/egressproxy/**"
+      - "cmd/migrate/**"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Read Go version
+        id: goversion
+        run: echo "version=$(awk '$1 == "go" {print $2; exit}' go.mod)" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ steps.goversion.outputs.version }}
+          cache: true
+
+      - name: Test migration and proxy seams
+        run: go test ./cmd/migrate ./pkg/egressproxy ./internal/config ./internal/vendorboundary
+
+      - name: Terraform format
+        run: terraform fmt -check -recursive deploy/terraform
+
+      - name: Helm lint through pinned container
+        run: |
+          docker run --rm -v "$PWD:/work" -w /work alpine/helm:3.17.3 lint deploy/helm/seev
+          docker run --rm -v "$PWD:/work" -w /work alpine/helm:3.17.3 lint deploy/helm/seev -f deploy/helm/seev/values-local.yaml
+          docker run --rm -v "$PWD:/work" -w /work alpine/helm:3.17.3 lint deploy/helm/seev -f deploy/helm/seev/values-gcp-dev.yaml
+          docker run --rm -v "$PWD:/work" -w /work alpine/helm:3.17.3 lint deploy/helm/seev -f deploy/helm/seev/values-aws-dev.yaml
+
+      - name: ShellCheck deployment scripts
+        run: |
+          command -v shellcheck >/dev/null
+          find deploy/kubernetes/scripts -name '*.sh' -print0 | xargs -0 shellcheck --severity=error

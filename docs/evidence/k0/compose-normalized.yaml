@@ -1,0 +1,1383 @@
+---
+name: seev
+networks:
+  default:
+    name: seev_default
+  observability_socket_net:
+    internal: true
+    name: seev_observability_socket_net
+secrets:
+  closure_kek_v1:
+    file: "<redacted>"
+    name: seev_closure_kek_v1
+  cryptox_key_v1:
+    file: "<redacted>"
+    name: seev_cryptox_key_v1
+  cryptox_lookup_key:
+    file: "<redacted>"
+    name: seev_cryptox_lookup_key
+  export_kek_v1:
+    file: "<redacted>"
+    name: seev_export_kek_v1
+  grafana_admin_password:
+    file: "<redacted>"
+    name: seev_grafana_admin_password
+  ledger_idempotency_key_v1:
+    file: "<redacted>"
+    name: seev_ledger_idempotency_key_v1
+  merchant_api_key_pepper:
+    file: "<redacted>"
+    name: seev_merchant_api_key_pepper
+  pgbackrest_repo_passphrase:
+    file: "<redacted>"
+    name: seev_pgbackrest_repo_passphrase
+  seev_backup_password:
+    file: "<redacted>"
+    name: seev_seev_backup_password
+services:
+  admin-bff-service:
+    build:
+      args:
+        SERVICE: admin-bff-service
+      context: "/Users/oyherdifirdaus/Documents/Project/seev"
+      dockerfile: Dockerfile
+    depends_on:
+      auth-service:
+        condition: service_healthy
+        required: true
+      postgres:
+        condition: service_healthy
+        required: true
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+    environment:
+      ADMIN_BFF_SECURE_COOKIE: "<redacted>"
+      APP_NAME: "<redacted>"
+      APP_PORT: "<redacted>"
+      AUTH_ADMIN_SERVICE_URL: "<redacted>"
+      AUTH_SERVICE_URL: "<redacted>"
+      CRYPTOX_KEY_V1_FILE: "<redacted>"
+      FRAUD_SERVICE_URL: "<redacted>"
+      GATEWAY_SERVICE_URL: "<redacted>"
+      JWT_ISSUER: "<redacted>"
+      JWT_SECRET: "<redacted>"
+      LEDGER_SERVICE_URL: "<redacted>"
+      LOG_FORMAT: "<redacted>"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "<redacted>"
+      OTEL_EXPORTER_OTLP_INSECURE: "<redacted>"
+      OTEL_TRACES_SAMPLER: "<redacted>"
+      OTEL_TRACES_SAMPLER_ARG: "<redacted>"
+      PAYIN_SERVICE_URL: "<redacted>"
+      PAYOUT_SERVICE_URL: "<redacted>"
+      POSTGRES_DB: "<redacted>"
+      POSTGRES_HOST: "<redacted>"
+      POSTGRES_PASSWORD: "<redacted>"
+      POSTGRES_PORT: "<redacted>"
+      POSTGRES_SSL_MODE: "<redacted>"
+      POSTGRES_USER: "<redacted>"
+      TLS_CERT_DIR: "<redacted>"
+    healthcheck:
+      interval: 5s
+      retries: 10
+      test:
+      - CMD
+      - "/app/service"
+      - "-healthcheck"
+      timeout: 5s
+    image: seev/admin-bff-service:${SEEV_IMAGE_TAG:-dev}
+    logging:
+      driver: json-file
+      options:
+        max-file: '3'
+        max-size: 10m
+    networks:
+      default:
+    ports:
+    - host_ip: 127.0.0.1
+      mode: ingress
+      protocol: tcp
+      published: '8095'
+      target: 8095
+    profiles:
+    - app
+    secrets:
+    - source: cryptox_key_v1
+      target: "/run/secrets/cryptox_key_v1"
+    volumes:
+    - bind:
+        create_host_path: true
+      read_only: true
+      source: "/Users/oyherdifirdaus/Documents/Project/seev/deploy/certs"
+      target: "/certs"
+      type: bind
+  alloy:
+    cap_drop:
+    - ALL
+    command:
+    - run
+    - "/etc/alloy/config.alloy"
+    - "--storage.path=/var/lib/alloy/data"
+    - "--server.http.listen-addr=127.0.0.1:12345"
+    depends_on:
+      docker-socket-proxy:
+        condition: service_healthy
+        required: true
+      loki:
+        condition: service_started
+        required: true
+    deploy:
+      resources:
+        limits:
+          memory: 192M
+    environment: {}
+    image: grafana/alloy@sha256:491b0578c04983fd54fe99b587b6fab4404dc46d0dc16677bd6b00cc1140b308
+    networks:
+      default:
+      observability_socket_net:
+    profiles:
+    - observability
+    read_only: true
+    security_opt:
+    - no-new-privileges:true
+    tmpfs:
+    - "/tmp"
+    user: 473:473
+    volumes:
+    - bind:
+        create_host_path: true
+      read_only: true
+      source: "/Users/oyherdifirdaus/Documents/Project/seev/deploy/observability/alloy/config.alloy"
+      target: "/etc/alloy/config.alloy"
+      type: bind
+    - source: seev_alloy_data
+      target: "/var/lib/alloy/data"
+      type: volume
+      volume: {}
+  assurance-service:
+    build:
+      args:
+        SERVICE: assurance-service
+      context: "/Users/oyherdifirdaus/Documents/Project/seev"
+      dockerfile: Dockerfile
+    depends_on:
+      ledger-service:
+        condition: service_healthy
+        required: true
+      payin-service:
+        condition: service_healthy
+        required: true
+      payout-service:
+        condition: service_healthy
+        required: true
+      postgres:
+        condition: service_healthy
+        required: true
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+    environment:
+      ALERT_WEBHOOK_URL: "<redacted>"
+      APP_NAME: "<redacted>"
+      APP_PORT: "<redacted>"
+      ASSURANCE_CONCURRENCY: "<redacted>"
+      ASSURANCE_CONSISTENCY_DELAY: "<redacted>"
+      ASSURANCE_INTERVAL: "<redacted>"
+      ASSURANCE_PAGE_SIZE: "<redacted>"
+      ASSURANCE_RPC_TIMEOUT: "<redacted>"
+      INTERNAL_GRPC_TOKEN: "<redacted>"
+      JWT_ISSUER: "<redacted>"
+      JWT_SECRET: "<redacted>"
+      LEDGER_GRPC_ADDR: "<redacted>"
+      LOG_FORMAT: "<redacted>"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "<redacted>"
+      OTEL_EXPORTER_OTLP_INSECURE: "<redacted>"
+      OTEL_TRACES_SAMPLER: "<redacted>"
+      OTEL_TRACES_SAMPLER_ARG: "<redacted>"
+      PAYIN_GRPC_ADDR: "<redacted>"
+      PAYOUT_GRPC_ADDR: "<redacted>"
+      POSTGRES_DB: "<redacted>"
+      POSTGRES_HOST: "<redacted>"
+      POSTGRES_PASSWORD: "<redacted>"
+      POSTGRES_PORT: "<redacted>"
+      POSTGRES_SSL_MODE: "<redacted>"
+      POSTGRES_USER: "<redacted>"
+      TLS_CERT_DIR: "<redacted>"
+    healthcheck:
+      interval: 5s
+      retries: 10
+      test:
+      - CMD
+      - "/app/service"
+      - "-healthcheck"
+      timeout: 5s
+    image: seev/assurance-service:${SEEV_IMAGE_TAG:-dev}
+    logging:
+      driver: json-file
+      options:
+        max-file: '3'
+        max-size: 10m
+    networks:
+      default:
+    ports:
+    - host_ip: 127.0.0.1
+      mode: ingress
+      protocol: tcp
+      published: '8096'
+      target: 8096
+    profiles:
+    - app
+    volumes:
+    - bind:
+        create_host_path: true
+      read_only: true
+      source: "/Users/oyherdifirdaus/Documents/Project/seev/deploy/certs"
+      target: "/certs"
+      type: bind
+  auth-service:
+    build:
+      args:
+        SERVICE: auth-service
+      context: "/Users/oyherdifirdaus/Documents/Project/seev"
+      dockerfile: Dockerfile
+    depends_on:
+      ledger-service:
+        condition: service_healthy
+        required: true
+      object-store-init:
+        condition: service_completed_successfully
+        required: true
+      postgres:
+        condition: service_healthy
+        required: true
+      redis:
+        condition: service_healthy
+        required: true
+    environment:
+      APP_NAME: "<redacted>"
+      APP_PORT: "<redacted>"
+      CLOSURE_KEK_V1_FILE: "<redacted>"
+      CRYPTOX_KEY_V1_FILE: "<redacted>"
+      CRYPTOX_LOOKUP_KEY_FILE: "<redacted>"
+      EXPORT_KEK_V1_FILE: "<redacted>"
+      FRAUD_GRPC_ADDR: "<redacted>"
+      FRAUD_INTERNAL_API_URL: "<redacted>"
+      GATEWAY_INTERNAL_API_URL: "<redacted>"
+      INTERNAL_APP_BIND_ADDR: "<redacted>"
+      INTERNAL_APP_PORT: "<redacted>"
+      INTERNAL_GRPC_TOKEN: "<redacted>"
+      JWT_ISSUER: "<redacted>"
+      JWT_SECRET: "<redacted>"
+      LEDGER_GRPC_ADDR: "<redacted>"
+      LEDGER_INTERNAL_API_URL: "<redacted>"
+      LOG_FORMAT: "<redacted>"
+      OBJECT_STORE_DIR: "<redacted>"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "<redacted>"
+      OTEL_EXPORTER_OTLP_INSECURE: "<redacted>"
+      OTEL_TRACES_SAMPLER: "<redacted>"
+      OTEL_TRACES_SAMPLER_ARG: "<redacted>"
+      PAYIN_INTERNAL_API_URL: "<redacted>"
+      PAYOUT_INTERNAL_API_URL: "<redacted>"
+      POSTGRES_DB: "<redacted>"
+      POSTGRES_HOST: "<redacted>"
+      POSTGRES_PASSWORD: "<redacted>"
+      POSTGRES_PORT: "<redacted>"
+      POSTGRES_SSL_MODE: "<redacted>"
+      POSTGRES_USER: "<redacted>"
+      REDIS_ADDR: "<redacted>"
+      REDIS_ENABLED: "<redacted>"
+      TLS_CERT_DIR: "<redacted>"
+    healthcheck:
+      interval: 5s
+      retries: 10
+      test:
+      - CMD
+      - "/app/service"
+      - "-healthcheck"
+      timeout: 5s
+    image: seev/auth-service:${SEEV_IMAGE_TAG:-dev}
+    logging:
+      driver: json-file
+      options:
+        max-file: '3'
+        max-size: 10m
+    networks:
+      default:
+    ports:
+    - host_ip: 127.0.0.1
+      mode: ingress
+      protocol: tcp
+      published: '8082'
+      target: 8082
+    - host_ip: 127.0.0.1
+      mode: ingress
+      protocol: tcp
+      published: '8083'
+      target: 8083
+    profiles:
+    - app
+    secrets:
+    - source: cryptox_key_v1
+      target: "/run/secrets/cryptox_key_v1"
+    - source: cryptox_lookup_key
+      target: "/run/secrets/cryptox_lookup_key"
+    - source: export_kek_v1
+      target: "/run/secrets/export_kek_v1"
+    - source: closure_kek_v1
+      target: "/run/secrets/closure_kek_v1"
+    volumes:
+    - bind:
+        create_host_path: true
+      read_only: true
+      source: "/Users/oyherdifirdaus/Documents/Project/seev/deploy/certs"
+      target: "/certs"
+      type: bind
+    - source: seev_object_store
+      target: "/var/lib/seev-objects"
+      type: volume
+      volume: {}
+  backup-agent:
+    build:
+      context: "/Users/oyherdifirdaus/Documents/Project/seev"
+      dockerfile: deploy/backup/agent.Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+        required: true
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+    environment:
+      APP_PORT: "<redacted>"
+      BACKUP_DIFF_CRON: "<redacted>"
+      BACKUP_FULL_CRON: "<redacted>"
+      BACKUP_MANIFEST_DIR: "<redacted>"
+      BACKUP_PASSWORD_FILE: "<redacted>"
+      BACKUP_PGBACKREST_CONF: "<redacted>"
+      BACKUP_REPO_PASSPHRASE_FILE: "<redacted>"
+      BACKUP_STANZA: "<redacted>"
+      POSTGRES_HOST: "<redacted>"
+      POSTGRES_PORT: "<redacted>"
+      SOURCE_ENV_LABEL: "<redacted>"
+      TLS_CERT_DIR: "<redacted>"
+    healthcheck:
+      interval: 30s
+      retries: 5
+      start_period: 10s
+      test:
+      - CMD
+      - backup-agent
+      - "-healthcheck"
+      timeout: 5s
+    image: seev/backup-agent:${SEEV_IMAGE_TAG:-dev}
+    logging:
+      driver: json-file
+      options:
+        max-file: '3'
+        max-size: 10m
+    networks:
+      default:
+    ports:
+    - host_ip: 127.0.0.1
+      mode: ingress
+      protocol: tcp
+      published: '18097'
+      target: 8097
+    profiles:
+    - backup
+    secrets:
+    - source: seev_backup_password
+      target: "/run/secrets/seev_backup_password"
+    - source: pgbackrest_repo_passphrase
+      target: "/run/secrets/pgbackrest_repo_passphrase"
+    volumes:
+    - bind:
+        create_host_path: true
+      read_only: true
+      source: "/Users/oyherdifirdaus/Documents/Project/seev/deploy/certs"
+      target: "/certs"
+      type: bind
+    - bind:
+        create_host_path: true
+      read_only: true
+      source: "/Users/oyherdifirdaus/Documents/Project/seev/deploy/backup/pgbackrest.conf"
+      target: "/etc/pgbackrest/pgbackrest.conf"
+      type: bind
+    - source: "${BACKUP_REPO_PATH:-./deploy/backup/repo}"
+      target: "/backup-repo"
+      type: volume
+      volume: {}
+    - bind:
+        create_host_path: true
+      source: "/Users/oyherdifirdaus/Documents/Project/seev/deploy/backup/manifests"
+      target: "/app/manifests"
+      type: bind
+    - source: seev_backup_socket
+      target: "/var/run/postgresql"
+      type: volume
+      volume: {}
+    - read_only: true
+      source: seev_postgres_data
+      target: "/var/lib/postgresql/data"
+      type: volume
+      volume: {}
+  docker-socket-proxy:
+    cap_drop:
+    - ALL
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+    environment:
+      CONTAINERS: "<redacted>"
+      EVENTS: "<redacted>"
+      NETWORKS: "<redacted>"
+      PING: "<redacted>"
+      POST: "<redacted>"
+      VERSION: "<redacted>"
+    healthcheck:
+      interval: 5s
+      retries: 10
+      test:
+      - CMD-SHELL
+      - wget --no-verbose --tries=1 --spider http://localhost:2375/_ping || exit 1
+      timeout: 5s
+    image: ghcr.io/tecnativa/docker-socket-proxy@sha256:1f5038b54f06c3e18422902cf00ba21803d1c97805aae032e5e6673d532d3459
+    networks:
+      observability_socket_net:
+    profiles:
+    - observability
+    read_only: true
+    security_opt:
+    - no-new-privileges:true
+    tmpfs:
+    - "/tmp"
+    - "/run"
+    - "/var/lib/haproxy"
+    volumes:
+    - bind:
+        create_host_path: true
+      read_only: true
+      source: "/var/run/docker.sock"
+      target: "/var/run/docker.sock"
+      type: bind
+  fraud-service:
+    build:
+      args:
+        SERVICE: fraud-service
+      context: "/Users/oyherdifirdaus/Documents/Project/seev"
+      dockerfile: Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+        required: true
+      rabbitmq:
+        condition: service_healthy
+        required: true
+      redis:
+        condition: service_healthy
+        required: true
+    environment:
+      APP_NAME: "<redacted>"
+      APP_PORT: "<redacted>"
+      GRPC_PORT: "<redacted>"
+      INTERNAL_GRPC_TOKEN: "<redacted>"
+      JWT_ISSUER: "<redacted>"
+      JWT_SECRET: "<redacted>"
+      LOG_FORMAT: "<redacted>"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "<redacted>"
+      OTEL_EXPORTER_OTLP_INSECURE: "<redacted>"
+      OTEL_TRACES_SAMPLER: "<redacted>"
+      OTEL_TRACES_SAMPLER_ARG: "<redacted>"
+      POSTGRES_DB: "<redacted>"
+      POSTGRES_HOST: "<redacted>"
+      POSTGRES_PASSWORD: "<redacted>"
+      POSTGRES_PORT: "<redacted>"
+      POSTGRES_SSL_MODE: "<redacted>"
+      POSTGRES_USER: "<redacted>"
+      RABBITMQ_EXCHANGE: "<redacted>"
+      RABBITMQ_HOST: "<redacted>"
+      RABBITMQ_PASSWORD: "<redacted>"
+      RABBITMQ_PORT: "<redacted>"
+      RABBITMQ_USERNAME: "<redacted>"
+      REDIS_ADDR: "<redacted>"
+      REDIS_DB: "<redacted>"
+      REDIS_ENABLED: "<redacted>"
+      SCREENING_AMOUNT_THRESHOLD: "<redacted>"
+      SCREENING_MODE: "<redacted>"
+      SCREENING_VELOCITY_MAX_PER_HOUR: "<redacted>"
+      TLS_CERT_DIR: "<redacted>"
+    healthcheck:
+      interval: 5s
+      retries: 10
+      test:
+      - CMD
+      - "/app/service"
+      - "-healthcheck"
+      timeout: 5s
+    image: seev/fraud-service:${SEEV_IMAGE_TAG:-dev}
+    logging:
+      driver: json-file
+      options:
+        max-file: '3'
+        max-size: 10m
+    networks:
+      default:
+    ports:
+    - host_ip: 127.0.0.1
+      mode: ingress
+      protocol: tcp
+      published: '8094'
+      target: 8094
+    - host_ip: 127.0.0.1
+      mode: ingress
+      protocol: tcp
+      published: '9094'
+      target: 9094
+    profiles:
+    - app
+    volumes:
+    - bind:
+        create_host_path: true
+      read_only: true
+      source: "/Users/oyherdifirdaus/Documents/Project/seev/deploy/certs"
+      target: "/certs"
+      type: bind
+  gateway-service:
+    build:
+      args:
+        SERVICE: gateway
+      context: "/Users/oyherdifirdaus/Documents/Project/seev"
+      dockerfile: Dockerfile
+    depends_on:
+      ledger-service:
+        condition: service_healthy
+        required: true
+      payin-service:
+        condition: service_healthy
+        required: true
+      payout-service:
+        condition: service_healthy
+        required: true
+      postgres:
+        condition: service_healthy
+        required: true
+      rabbitmq:
+        condition: service_healthy
+        required: true
+      redis:
+        condition: service_healthy
+        required: true
+    environment:
+      APP_NAME: "<redacted>"
+      APP_PORT: "<redacted>"
+      CRYPTOX_KEY_V1_FILE: "<redacted>"
+      INTERNAL_APP_BIND_ADDR: "<redacted>"
+      INTERNAL_APP_PORT: "<redacted>"
+      INTERNAL_GRPC_TOKEN: "<redacted>"
+      JWT_ISSUER: "<redacted>"
+      JWT_SECRET: "<redacted>"
+      LEDGER_GRPC_ADDR: "<redacted>"
+      LEDGER_USER_API_URL: "<redacted>"
+      LOG_FORMAT: "<redacted>"
+      MERCHANT_API_KEY_PEPPER_FILE: "<redacted>"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "<redacted>"
+      OTEL_EXPORTER_OTLP_INSECURE: "<redacted>"
+      OTEL_TRACES_SAMPLER: "<redacted>"
+      OTEL_TRACES_SAMPLER_ARG: "<redacted>"
+      PAYIN_GRPC_ADDR: "<redacted>"
+      PAYOUT_GRPC_ADDR: "<redacted>"
+      POSTGRES_DB: "<redacted>"
+      POSTGRES_HOST: "<redacted>"
+      POSTGRES_PASSWORD: "<redacted>"
+      POSTGRES_PORT: "<redacted>"
+      POSTGRES_SSL_MODE: "<redacted>"
+      POSTGRES_USER: "<redacted>"
+      RABBITMQ_EXCHANGE: "<redacted>"
+      RABBITMQ_HOST: "<redacted>"
+      RABBITMQ_PASSWORD: "<redacted>"
+      RABBITMQ_PORT: "<redacted>"
+      RABBITMQ_USERNAME: "<redacted>"
+      REDIS_ADDR: "<redacted>"
+      REDIS_ENABLED: "<redacted>"
+      TLS_CERT_DIR: "<redacted>"
+    healthcheck:
+      interval: 5s
+      retries: 10
+      test:
+      - CMD
+      - "/app/service"
+      - "-healthcheck"
+      timeout: 5s
+    image: seev/gateway-service:${SEEV_IMAGE_TAG:-dev}
+    logging:
+      driver: json-file
+      options:
+        max-file: '3'
+        max-size: 10m
+    networks:
+      default:
+    ports:
+    - host_ip: 127.0.0.1
+      mode: ingress
+      protocol: tcp
+      published: '8080'
+      target: 8080
+    - host_ip: 127.0.0.1
+      mode: ingress
+      protocol: tcp
+      published: '8081'
+      target: 8081
+    profiles:
+    - app
+    secrets:
+    - source: cryptox_key_v1
+      target: "/run/secrets/cryptox_key_v1"
+    - source: merchant_api_key_pepper
+      target: "/run/secrets/merchant_api_key_pepper"
+    volumes:
+    - bind:
+        create_host_path: true
+      read_only: true
+      source: "/Users/oyherdifirdaus/Documents/Project/seev/deploy/certs"
+      target: "/certs"
+      type: bind
+  grafana:
+    cap_drop:
+    - ALL
+    depends_on:
+      loki:
+        condition: service_started
+        required: true
+      prometheus:
+        condition: service_started
+        required: true
+      tempo:
+        condition: service_started
+        required: true
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    environment:
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "<redacted>"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "<redacted>"
+      GF_ANALYTICS_REPORTING_ENABLED: "<redacted>"
+      GF_AUTH_ANONYMOUS_ENABLED: "<redacted>"
+      GF_AUTH_DISABLE_LOGIN_FORM: "<redacted>"
+      GF_SECURITY_ADMIN_PASSWORD__FILE: "<redacted>"
+      GF_SECURITY_ADMIN_USER: "<redacted>"
+      GF_UNIFIED_ALERTING_ENABLED: "<redacted>"
+      GF_USERS_PASSWORD_POLICY: "<redacted>"
+    healthcheck:
+      interval: 5s
+      retries: 10
+      test:
+      - CMD-SHELL
+      - wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit
+        1
+      timeout: 5s
+    image: grafana/grafana@sha256:1c1bd67c54c5fcf6e759897852b5a584191bd6796e8d328a5ace457799801261
+    networks:
+      default:
+    ports:
+    - host_ip: 127.0.0.1
+      mode: ingress
+      protocol: tcp
+      published: '3000'
+      target: 3000
+    profiles:
+    - observability
+    read_only: true
+    secrets:
+    - source: grafana_admin_password
+      target: "/run/secrets/grafana_admin_password"
+    security_opt:
+    - no-new-privileges:true
+    tmpfs:
+    - "/tmp"
+    volumes:
+    - bind:
+        create_host_path: true
+      read_only: true
+      source: "/Users/oyherdifirdaus/Documents/Project/seev/deploy/observability/grafana/provisioning"
+      target: "/etc/grafana/provisioning"
+      type: bind
+    - bind:
+        create_host_path: true
+      read_only: true
+      source: "/Users/oyherdifirdaus/Documents/Project/seev/deploy/observability/grafana/dashboards"
+      target: "/var/lib/grafana/dashboards"
+      type: bind
+    - source: seev_grafana_data
+      target: "/var/lib/grafana"
+      type: volume
+      volume: {}
+  ledger-service:
+    build:
+      args:
+        SERVICE: ledger-service
+      context: "/Users/oyherdifirdaus/Documents/Project/seev"
+      dockerfile: Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+        required: true
+      rabbitmq:
+        condition: service_healthy
+        required: true
+      redis:
+        condition: service_healthy
+        required: true
+    environment:
+      APP_NAME: "<redacted>"
+      APP_PORT: "<redacted>"
+      CRYPTOX_KEY_V1_FILE: "<redacted>"
+      FRAUD_GRPC_ADDR: "<redacted>"
+      GRPC_PORT: "<redacted>"
+      INTERNAL_APP_BIND_ADDR: "<redacted>"
+      INTERNAL_APP_PORT: "<redacted>"
+      INTERNAL_GRPC_TOKEN: "<redacted>"
+      JWT_ISSUER: "<redacted>"
+      JWT_SECRET: "<redacted>"
+      LEDGER_IDEMPOTENCY_KEY_V1_FILE: "<redacted>"
+      LOG_FORMAT: "<redacted>"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "<redacted>"
+      OTEL_EXPORTER_OTLP_INSECURE: "<redacted>"
+      OTEL_TRACES_SAMPLER: "<redacted>"
+      OTEL_TRACES_SAMPLER_ARG: "<redacted>"
+      POSTGRES_DB: "<redacted>"
+      POSTGRES_HOST: "<redacted>"
+      POSTGRES_PASSWORD: "<redacted>"
+      POSTGRES_PORT: "<redacted>"
+      POSTGRES_SSL_MODE: "<redacted>"
+      POSTGRES_USER: "<redacted>"
+      RABBITMQ_EXCHANGE: "<redacted>"
+      RABBITMQ_HOST: "<redacted>"
+      RABBITMQ_PASSWORD: "<redacted>"
+      RABBITMQ_PORT: "<redacted>"
+      RABBITMQ_USERNAME: "<redacted>"
+      REDIS_ADDR: "<redacted>"
+      REDIS_ENABLED: "<redacted>"
+      TLS_CERT_DIR: "<redacted>"
+    healthcheck:
+      interval: 5s
+      retries: 10
+      test:
+      - CMD
+      - "/app/service"
+      - "-healthcheck"
+      timeout: 5s
+    image: seev/ledger-service:${SEEV_IMAGE_TAG:-dev}
+    logging:
+      driver: json-file
+      options:
+        max-file: '3'
+        max-size: 10m
+    networks:
+      default:
+    ports:
+    - host_ip: 127.0.0.1
+      mode: ingress
+      protocol: tcp
+      published: '8090'
+      target: 8090
+    - host_ip: 127.0.0.1
+      mode: ingress
+      protocol: tcp
+      published: '8091'
+      target: 8091
+    - host_ip: 127.0.0.1
+      mode: ingress
+      protocol: tcp
+      published: '9091'
+      target: 9091
+    profiles:
+    - app
+    secrets:
+    - source: cryptox_key_v1
+      target: "/run/secrets/cryptox_key_v1"
+    - source: ledger_idempotency_key_v1
+      target: "/run/secrets/ledger_idempotency_key_v1"
+    volumes:
+    - bind:
+        create_host_path: true
+      read_only: true
+      source: "/Users/oyherdifirdaus/Documents/Project/seev/deploy/certs"
+      target: "/certs"
+      type: bind
+  loki:
+    cap_drop:
+    - ALL
+    command:
+    - "-config.file=/etc/loki/loki.yaml"
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+    environment: {}
+    image: grafana/loki@sha256:87f0a067673756a3cede1bcbf0c74875f7df9b09fddb53e399d0c576f756cfcc
+    networks:
+      default:
+    ports:
+    - host_ip: 127.0.0.1
+      mode: ingress
+      protocol: tcp
+      published: '3100'
+      target: 3100
+    profiles:
+    - observability
+    read_only: true
+    security_opt:
+    - no-new-privileges:true
+    tmpfs:
+    - "/tmp"
+    volumes:
+    - bind:
+        create_host_path: true
+      read_only: true
+      source: "/Users/oyherdifirdaus/Documents/Project/seev/deploy/observability/loki/loki.yaml"
+      target: "/etc/loki/loki.yaml"
+      type: bind
+    - source: seev_loki_data
+      target: "/loki"
+      type: volume
+      volume: {}
+  object-store-init:
+    command:
+    - sh
+    - "-c"
+    - chown 65532:65532 /objects && chmod 700 /objects
+    environment: {}
+    image: busybox:1.38
+    networks:
+      default:
+    profiles:
+    - app
+    restart: 'no'
+    volumes:
+    - source: seev_object_store
+      target: "/objects"
+      type: volume
+      volume: {}
+  payin-service:
+    build:
+      args:
+        SERVICE: payin-service
+      context: "/Users/oyherdifirdaus/Documents/Project/seev"
+      dockerfile: Dockerfile
+    depends_on:
+      ledger-service:
+        condition: service_healthy
+        required: true
+      postgres:
+        condition: service_healthy
+        required: true
+      vendor-service:
+        condition: service_healthy
+        required: true
+    environment:
+      APP_NAME: "<redacted>"
+      APP_PORT: "<redacted>"
+      CRYPTOX_KEY_V1_FILE: "<redacted>"
+      FRAUD_GRPC_ADDR: "<redacted>"
+      GRPC_PORT: "<redacted>"
+      INTERNAL_GRPC_TOKEN: "<redacted>"
+      JWT_ISSUER: "<redacted>"
+      JWT_SECRET: "<redacted>"
+      LEDGER_GRPC_ADDR: "<redacted>"
+      LOG_FORMAT: "<redacted>"
+      MOCKVENDOR2_ENABLED: "<redacted>"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "<redacted>"
+      OTEL_EXPORTER_OTLP_INSECURE: "<redacted>"
+      OTEL_TRACES_SAMPLER: "<redacted>"
+      OTEL_TRACES_SAMPLER_ARG: "<redacted>"
+      POSTGRES_DB: "<redacted>"
+      POSTGRES_HOST: "<redacted>"
+      POSTGRES_PASSWORD: "<redacted>"
+      POSTGRES_PORT: "<redacted>"
+      POSTGRES_SSL_MODE: "<redacted>"
+      POSTGRES_USER: "<redacted>"
+      TLS_CERT_DIR: "<redacted>"
+      VENDOR_GRPC_ADDR: "<redacted>"
+      VENDOR_MOCKVENDOR_ENABLED: "<redacted>"
+      VENDOR_SERVICE_ENABLED: "<redacted>"
+    healthcheck:
+      interval: 5s
+      retries: 10
+      test:
+      - CMD
+      - "/app/service"
+      - "-healthcheck"
+      timeout: 5s
+    image: seev/payin-service:${SEEV_IMAGE_TAG:-dev}
+    logging:
+      driver: json-file
+      options:
+        max-file: '3'
+        max-size: 10m
+    networks:
+      default:
+    ports:
+    - host_ip: 127.0.0.1
+      mode: ingress
+      protocol: tcp
+      published: '8092'
+      target: 8092
+    - host_ip: 127.0.0.1
+      mode: ingress
+      protocol: tcp
+      published: '9092'
+      target: 9092
+    profiles:
+    - app
+    secrets:
+    - source: cryptox_key_v1
+      target: "/run/secrets/cryptox_key_v1"
+    volumes:
+    - bind:
+        create_host_path: true
+      read_only: true
+      source: "/Users/oyherdifirdaus/Documents/Project/seev/deploy/certs"
+      target: "/certs"
+      type: bind
+  payout-service:
+    build:
+      args:
+        SERVICE: payout-service
+      context: "/Users/oyherdifirdaus/Documents/Project/seev"
+      dockerfile: Dockerfile
+    depends_on:
+      ledger-service:
+        condition: service_healthy
+        required: true
+      postgres:
+        condition: service_healthy
+        required: true
+      redis:
+        condition: service_healthy
+        required: true
+      vendor-service:
+        condition: service_healthy
+        required: true
+    environment:
+      APP_NAME: "<redacted>"
+      APP_PORT: "<redacted>"
+      CRYPTOX_KEY_V1_FILE: "<redacted>"
+      FRAUD_GRPC_ADDR: "<redacted>"
+      GRPC_PORT: "<redacted>"
+      INTERNAL_GRPC_TOKEN: "<redacted>"
+      JWT_ISSUER: "<redacted>"
+      JWT_SECRET: "<redacted>"
+      LEDGER_GRPC_ADDR: "<redacted>"
+      LOG_FORMAT: "<redacted>"
+      MOCKVENDOR2_ENABLED: "<redacted>"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "<redacted>"
+      OTEL_EXPORTER_OTLP_INSECURE: "<redacted>"
+      OTEL_TRACES_SAMPLER: "<redacted>"
+      OTEL_TRACES_SAMPLER_ARG: "<redacted>"
+      POSTGRES_DB: "<redacted>"
+      POSTGRES_HOST: "<redacted>"
+      POSTGRES_PASSWORD: "<redacted>"
+      POSTGRES_PORT: "<redacted>"
+      POSTGRES_SSL_MODE: "<redacted>"
+      POSTGRES_USER: "<redacted>"
+      REDIS_ADDR: "<redacted>"
+      REDIS_DB: "<redacted>"
+      REDIS_ENABLED: "<redacted>"
+      TLS_CERT_DIR: "<redacted>"
+      VENDOR_GRPC_ADDR: "<redacted>"
+      VENDOR_MOCKVENDOR_ENABLED: "<redacted>"
+      VENDOR_SERVICE_ENABLED: "<redacted>"
+    healthcheck:
+      interval: 5s
+      retries: 10
+      test:
+      - CMD
+      - "/app/service"
+      - "-healthcheck"
+      timeout: 5s
+    image: seev/payout-service:${SEEV_IMAGE_TAG:-dev}
+    logging:
+      driver: json-file
+      options:
+        max-file: '3'
+        max-size: 10m
+    networks:
+      default:
+    ports:
+    - host_ip: 127.0.0.1
+      mode: ingress
+      protocol: tcp
+      published: '8093'
+      target: 8093
+    - host_ip: 127.0.0.1
+      mode: ingress
+      protocol: tcp
+      published: '9093'
+      target: 9093
+    profiles:
+    - app
+    secrets:
+    - source: cryptox_key_v1
+      target: "/run/secrets/cryptox_key_v1"
+    volumes:
+    - bind:
+        create_host_path: true
+      read_only: true
+      source: "/Users/oyherdifirdaus/Documents/Project/seev/deploy/certs"
+      target: "/certs"
+      type: bind
+  postgres:
+    build:
+      context: "/Users/oyherdifirdaus/Documents/Project/seev/deploy/backup"
+      dockerfile: Dockerfile
+    command:
+    - postgres
+    - "-c"
+    - wal_level=replica
+    - "-c"
+    - archive_mode=on
+    - "-c"
+    - archive_timeout=60
+    - "-c"
+    - archive_command=pgbackrest --stanza=seev --config=/etc/pgbackrest/pgbackrest.conf
+      archive-push %p
+    environment:
+      APP_DB_PASSWORD: "<redacted>"
+      APP_DB_USER: "<redacted>"
+      BACKUP_PASSWORD_FILE: "<redacted>"
+      POSTGRES_DB: "<redacted>"
+      POSTGRES_INITDB_ARGS: "<redacted>"
+      POSTGRES_PASSWORD: "<redacted>"
+      POSTGRES_USER: "<redacted>"
+    healthcheck:
+      interval: 5s
+      retries: 10
+      test:
+      - CMD-SHELL
+      - pg_isready -h 127.0.0.1 -U ${POSTGRES_MIGRATE_USER:-seev} -d ${POSTGRES_DB:-seev}
+      timeout: 5s
+    image: seev/postgres-backup:${SEEV_IMAGE_TAG:-dev}
+    networks:
+      default:
+    ports:
+    - 127.0.0.1:${POSTGRES_PORT:-5433}:5432
+    secrets:
+    - source: seev_backup_password
+      target: "/run/secrets/seev_backup_password"
+    - source: pgbackrest_repo_passphrase
+      target: "/run/secrets/pgbackrest_repo_passphrase"
+    volumes:
+    - source: seev_postgres_data
+      target: "/var/lib/postgresql/data"
+      type: volume
+      volume: {}
+    - bind:
+        create_host_path: true
+      read_only: true
+      source: "/Users/oyherdifirdaus/Documents/Project/seev/scripts/postgres-init"
+      target: "/docker-entrypoint-initdb.d"
+      type: bind
+    - bind:
+        create_host_path: true
+      read_only: true
+      source: "/Users/oyherdifirdaus/Documents/Project/seev/migrations"
+      target: "/migrations"
+      type: bind
+    - bind:
+        create_host_path: true
+      read_only: true
+      source: "/Users/oyherdifirdaus/Documents/Project/seev/deploy/backup/pgbackrest.conf"
+      target: "/etc/pgbackrest/pgbackrest.conf"
+      type: bind
+    - source: "${BACKUP_REPO_PATH:-./deploy/backup/repo}"
+      target: "/backup-repo"
+      type: volume
+      volume: {}
+    - source: seev_backup_socket
+      target: "/var/run/postgresql"
+      type: volume
+      volume: {}
+  prometheus:
+    cap_drop:
+    - ALL
+    command:
+    - "--config.file=/etc/prometheus/prometheus.yml"
+    - "--storage.tsdb.path=/prometheus"
+    - "--storage.tsdb.retention.time=35d"
+    - "--storage.tsdb.retention.size=1GB"
+    - "--web.listen-address=0.0.0.0:9090"
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+    environment: {}
+    image: prom/prometheus@sha256:3c42b892cf723fa54d2f262c37a0e1f80aa8c8ddb1da7b9b0df9455a35a7f893
+    networks:
+      default:
+    ports:
+    - host_ip: 127.0.0.1
+      mode: ingress
+      protocol: tcp
+      published: '9090'
+      target: 9090
+    profiles:
+    - observability
+    read_only: true
+    security_opt:
+    - no-new-privileges:true
+    tmpfs:
+    - "/tmp"
+    volumes:
+    - bind:
+        create_host_path: true
+      read_only: true
+      source: "/Users/oyherdifirdaus/Documents/Project/seev/deploy/observability/prometheus/prometheus.yml"
+      target: "/etc/prometheus/prometheus.yml"
+      type: bind
+    - bind:
+        create_host_path: true
+      read_only: true
+      source: "/Users/oyherdifirdaus/Documents/Project/seev/deploy/observability/prometheus/rules"
+      target: "/etc/prometheus/rules"
+      type: bind
+    - source: seev_prometheus_data
+      target: "/prometheus"
+      type: volume
+      volume: {}
+    - bind:
+        create_host_path: true
+      read_only: true
+      source: "/Users/oyherdifirdaus/Documents/Project/seev/deploy/certs"
+      target: "/certs"
+      type: bind
+  rabbitmq:
+    environment:
+      RABBITMQ_DEFAULT_PASS: "<redacted>"
+      RABBITMQ_DEFAULT_USER: "<redacted>"
+    healthcheck:
+      interval: 5s
+      retries: 10
+      start_period: 10s
+      test:
+      - CMD-SHELL
+      - rabbitmq-diagnostics -q check_running && rabbitmq-diagnostics -q check_port_connectivity
+      timeout: 5s
+    image: rabbitmq:4.3.4-management-alpine
+    networks:
+      default:
+    ports:
+    - host_ip: 127.0.0.1
+      mode: ingress
+      protocol: tcp
+      published: '5672'
+      target: 5672
+    - host_ip: 127.0.0.1
+      mode: ingress
+      protocol: tcp
+      published: '15672'
+      target: 15672
+    volumes:
+    - source: seev_rabbitmq_data
+      target: "/var/lib/rabbitmq"
+      type: volume
+      volume: {}
+  redis:
+    environment: {}
+    healthcheck:
+      interval: 5s
+      retries: 10
+      test:
+      - CMD
+      - redis-cli
+      - ping
+      timeout: 5s
+    image: redis:8.0.0-alpine
+    networks:
+      default:
+    ports:
+    - host_ip: 127.0.0.1
+      mode: ingress
+      protocol: tcp
+      published: '6380'
+      target: 6379
+    volumes:
+    - source: seev_redis_data
+      target: "/data"
+      type: volume
+      volume: {}
+  tempo:
+    cap_drop:
+    - ALL
+    command:
+    - "-config.file=/etc/tempo/tempo.yaml"
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+    environment: {}
+    image: grafana/tempo@sha256:1ce31d6d7ffab62189685e8c47881d4a561c5d38bd0dbd66e40ca83cef07923d
+    networks:
+      default:
+    ports:
+    - host_ip: 127.0.0.1
+      mode: ingress
+      protocol: tcp
+      published: '3200'
+      target: 3200
+    - host_ip: 127.0.0.1
+      mode: ingress
+      protocol: tcp
+      published: '4317'
+      target: 4317
+    profiles:
+    - observability
+    read_only: true
+    security_opt:
+    - no-new-privileges:true
+    tmpfs:
+    - "/tmp"
+    volumes:
+    - bind:
+        create_host_path: true
+      read_only: true
+      source: "/Users/oyherdifirdaus/Documents/Project/seev/deploy/observability/tempo/tempo.yaml"
+      target: "/etc/tempo/tempo.yaml"
+      type: bind
+    - source: seev_tempo_data
+      target: "/var/tempo"
+      type: volume
+      volume: {}
+  vault:
+    cap_add:
+    - IPC_LOCK
+    environment:
+      VAULT_DEV_LISTEN_ADDRESS: "<redacted>"
+      VAULT_DEV_ROOT_TOKEN_ID: "<redacted>"
+    healthcheck:
+      interval: 5s
+      retries: 10
+      start_period: 5s
+      test:
+      - CMD-SHELL
+      - wget -q -O- http://127.0.0.1:8200/v1/sys/health || exit 1
+      timeout: 5s
+    image: hashicorp/vault@sha256:a296a888b118615dc01d5f1a6846e6d4a7277946caaed5b447008fff5fe06b54
+    networks:
+      default:
+    ports:
+    - host_ip: 127.0.0.1
+      mode: ingress
+      protocol: tcp
+      published: '18200'
+      target: 8200
+    profiles:
+    - secrets
+  vendor-service:
+    build:
+      args:
+        SERVICE: vendor-service
+      context: "/Users/oyherdifirdaus/Documents/Project/seev"
+      dockerfile: Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+        required: true
+    environment:
+      APP_NAME: "<redacted>"
+      APP_PORT: "<redacted>"
+      CRYPTOX_KEY_V1_FILE: "<redacted>"
+      GRPC_PORT: "<redacted>"
+      INTERNAL_GRPC_TOKEN: "<redacted>"
+      JWT_ISSUER: "<redacted>"
+      JWT_SECRET: "<redacted>"
+      LOG_FORMAT: "<redacted>"
+      MOCKVENDOR2_ENABLED: "<redacted>"
+      MOCKVENDOR2_SECRET: "<redacted>"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "<redacted>"
+      OTEL_EXPORTER_OTLP_INSECURE: "<redacted>"
+      OTEL_TRACES_SAMPLER: "<redacted>"
+      OTEL_TRACES_SAMPLER_ARG: "<redacted>"
+      PAYIN_GRPC_ADDR: "<redacted>"
+      PAYOUT_GRPC_ADDR: "<redacted>"
+      POSTGRES_DB: "<redacted>"
+      POSTGRES_HOST: "<redacted>"
+      POSTGRES_PASSWORD: "<redacted>"
+      POSTGRES_PORT: "<redacted>"
+      POSTGRES_SSL_MODE: "<redacted>"
+      POSTGRES_USER: "<redacted>"
+      TLS_CERT_DIR: "<redacted>"
+      VENDOR_CALLBACK_CIDRS: "<redacted>"
+      VENDOR_MOCKVENDOR_ENABLED: "<redacted>"
+      VENDOR_MOCKVENDOR_SECRET: "<redacted>"
+    healthcheck:
+      interval: 5s
+      retries: 10
+      test:
+      - CMD
+      - "/app/service"
+      - "-healthcheck"
+      timeout: 5s
+    image: seev/vendor-service:${SEEV_IMAGE_TAG:-dev}
+    logging:
+      driver: json-file
+      options:
+        max-file: '3'
+        max-size: 10m
+    networks:
+      default:
+    ports:
+    - host_ip: 127.0.0.1
+      mode: ingress
+      protocol: tcp
+      published: '8098'
+      target: 8098
+    - host_ip: 127.0.0.1
+      mode: ingress
+      protocol: tcp
+      published: '9098'
+      target: 9098
+    profiles:
+    - app
+    secrets:
+    - source: cryptox_key_v1
+      target: "/run/secrets/cryptox_key_v1"
+    volumes:
+    - bind:
+        create_host_path: true
+      read_only: true
+      source: "/Users/oyherdifirdaus/Documents/Project/seev/deploy/certs"
+      target: "/certs"
+      type: bind
+volumes:
+  seev_alloy_data:
+    name: seev_seev_alloy_data
+  seev_backup_socket:
+    name: seev_seev_backup_socket
+  seev_grafana_data:
+    name: seev_seev_grafana_data
+  seev_loki_data:
+    name: seev_seev_loki_data
+  seev_object_store:
+    name: seev_seev_object_store
+  seev_postgres_data:
+    name: seev_seev_postgres_data
+  seev_prometheus_data:
+    name: seev_seev_prometheus_data
+  seev_rabbitmq_data:
+    name: seev_seev_rabbitmq_data
+  seev_redis_data:
+    name: seev_seev_redis_data
+  seev_tempo_data:
+    name: seev_seev_tempo_data
+x-app-logging:
+  driver: json-file
+  options:
+    max-file: '3'
+    max-size: 10m
+x-cert-volume:
+- "./deploy/certs:/certs:ro"
