@@ -136,6 +136,33 @@ dedicated certificate identity to scrape internal `/metrics` endpoints.
 `cmd/sanctions-loader`, `cmd/certgen`, and `cmd/gentoken` are batch or local
 utilities, not network services.
 
+## 5.1 C3 notification boundary
+
+Gateway's `internal/notify` is a projection and delivery module, not a money
+authority. Ledger facts arrive through the at-least-once
+`ledger.transaction.posted.v1` event; the event inbox and logical uniqueness
+guard handle redelivery and transfer fan-out. Provider calls happen only after
+the Gateway planning transaction commits, so SMTP, push, Auth contact, template,
+or worker failures cannot change balances or block a financial posting.
+
+Notification-specific assets and controls are:
+
+- typed, bounded render context instead of raw event bodies;
+- restricted text/HTML templates with header, HTML, size, and deep-link checks;
+- verified-contact resolution over the existing Auth internal mTLS/token path;
+- encrypted email recipients and device tokens, HMAC fingerprints, and no
+  plaintext in API responses, logs, exports, or metric labels;
+- leased per-channel workers, sanitized attempt evidence, explicit dead/blocked
+  states, and channel pause/drain controls;
+- Admin BFF CSRF, role, maker/checker, and audit boundaries for template changes,
+  replay, and channel control.
+
+The local learning profile uses Mailpit and a deterministic mock push provider.
+Paid provider credentials are not required. External delivery is intentionally
+at-least-once: a provider acceptance followed by a worker crash can produce a
+duplicate, which is recorded as an operational residual risk rather than
+presented as exactly-once delivery.
+
 ## 6. Findings register
 
 Status meanings:
@@ -168,6 +195,9 @@ Status meanings:
 | TM-17 | Plan 57 (C1): a repository method that omits `tenant_id` from its query would leak or mutate another tenant's resource. | High | Resolved | Every merchant-owned repository method takes `tenant_id` explicitly and scopes its SQL with `WHERE tenant_id = $N AND id = $M`; live-Postgres tests prove cross-tenant reads/writes fail as not-found for API keys, idempotency records, webhook endpoints, and Ledger's own `GetMerchantTransaction`/`GetMerchantAccount`. |
 | TM-18 | Plan 57 (C1): webhook endpoint secrets, if stored in plaintext, would let a database read disclose every merchant's signing key. | High | Resolved | `internal/merchant/webhook.Service` encrypts endpoint secrets at rest via `pkg/cryptox`'s existing envelope (same pattern as A8 T2's field encryption) — only the plaintext is ever shown, exactly once, at creation/rotation time. |
 | TM-19 | Plan 57 (C1): an unbounded or misconfigured merchant quota policy could let one tenant exhaust shared Redis/DB capacity affecting other tenants or the user-facing product. | Medium | Resolved | `internal/merchant/quota.Enforcer` enforces atomic per-tenant, per-class token buckets (Redis Lua script) with a conservative secure default when unconfigured; a write-class check fails closed (503) on quota-backend outage rather than falling back to an unlimited/memory path — see [merchant-quota-backend-outage.md](../operations/runbooks/merchant-quota-backend-outage.md). |
+| TM-20 | Plan 59 (C3): raw event bodies, email addresses, or push tokens could leak through notification storage, logs, exports, or metrics. | High | Resolved in code; acceptance pending | New plans store bounded typed context and `{}` legacy payloads; recipients/tokens are encrypted or fingerprinted; export and metrics omit plaintext. Verify with the C3 privacy and secret-scan gates. |
+| TM-21 | Plan 59 (C3): a provider call could block or alter a financial path. | Critical | Resolved in code; acceptance pending | Gateway commits the notification plan before independent email/push workers call providers; the financial journey has no notification dependency. Verify with provider-outage and business-journey gates. |
+| TM-22 | Plan 59 (C3): replay after an ambiguous provider result could duplicate an external message. | Medium | Accepted, documented | Stable email Message-ID, push idempotency key, immutable snapshots, leases, and explicit replay reason reduce the risk but cannot prove provider exactly-once. See the duplicate-delivery runbook. |
 
 The detailed reproduction steps, design decisions, and final isolated gate for
 TM-01 through TM-14 are recorded in

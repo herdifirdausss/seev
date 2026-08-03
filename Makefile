@@ -2,7 +2,7 @@ BINARY          := gateway
 BUILD_DIR       := bin
 CMD_DIR         := ./cmd/gateway
 GO_BUILD_FLAGS  := -trimpath -ldflags="-s -w"
-SERVICE_NAMES   := gateway auth-service ledger-service payin-service payout-service fraud-service admin-bff-service assurance-service vendor-service
+SERVICE_NAMES   := gateway auth-service ledger-service payin-service payout-service fraud-service admin-bff-service assurance-service vendor-service mock-push-provider
 CERT_IDENTITIES := gateway auth ledger payin payout fraud admin-bff assurance vendor dev-operator prometheus backup-agent
 
 .DEFAULT_GOAL := help

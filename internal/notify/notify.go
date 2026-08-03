@@ -10,17 +10,22 @@ package notify
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	amqp "github.com/rabbitmq/amqp091-go"
 
 	"github.com/herdifirdausss/seev/internal/ledger/events"
+	"github.com/herdifirdausss/seev/internal/notify/channel"
 	"github.com/herdifirdausss/seev/internal/notify/model"
+	"github.com/herdifirdausss/seev/internal/notify/registry"
 	"github.com/herdifirdausss/seev/internal/notify/repository"
+	notifytemplate "github.com/herdifirdausss/seev/internal/notify/template"
 	"github.com/herdifirdausss/seev/pkg/database"
 	"github.com/herdifirdausss/seev/pkg/generalutil"
 	"github.com/herdifirdausss/seev/pkg/messaging"
@@ -54,11 +59,16 @@ type Broker interface {
 
 // Module is the notify module's public facade.
 type Module struct {
-	db     database.DatabaseSQL
-	repo   repository.Repository
-	broker Broker
-	logger *slog.Logger
-	cancel context.CancelFunc
+	db            database.DatabaseSQL
+	repo          repository.Repository
+	platform      repository.PlatformRepository
+	broker        Broker
+	logger        *slog.Logger
+	config        Config
+	renderer      *notifytemplate.Renderer
+	contact       ContactResolver
+	cancel        context.CancelFunc
+	workersCancel context.CancelFunc
 }
 
 func NewModule(db database.DatabaseSQL, broker Broker, logger *slog.Logger) *Module {
@@ -66,11 +76,37 @@ func NewModule(db database.DatabaseSQL, broker Broker, logger *slog.Logger) *Mod
 		logger = slog.Default()
 	}
 	return &Module{
-		db:     db,
-		repo:   repository.NewRepository(db),
-		broker: broker,
-		logger: logger,
+		db: db, repo: repository.NewRepository(db), platform: repository.NewPlatformRepository(db), broker: broker,
+		logger: logger, config: DefaultConfig(), renderer: notifytemplate.NewRenderer(0, 0),
 	}
+}
+
+// NewConfiguredModule wires C3's optional external channels. The old
+// NewModule constructor remains valid for callers that only need the inbox.
+func NewConfiguredModule(db database.DatabaseSQL, broker Broker, cfg Config, logger *slog.Logger, contactResolver ContactResolver, emailSender channel.EmailSender, pushSender channel.PushSender) *Module {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	if cfg.DefaultLocale == "" {
+		cfg.DefaultLocale = "en-US"
+	}
+	if cfg.DefaultTimezone == "" {
+		cfg.DefaultTimezone = "Asia/Jakarta"
+	}
+	if cfg.DeliveryBatch <= 0 {
+		cfg.DeliveryBatch = 50
+	}
+	if cfg.DeliveryLease <= 0 {
+		cfg.DeliveryLease = 2 * time.Minute
+	}
+	if cfg.EventPrefetch <= 0 {
+		cfg.EventPrefetch = 10
+	}
+	if cfg.MaxEventAttempts <= 0 {
+		cfg.MaxEventAttempts = 5
+	}
+	cfg.EmailSender, cfg.PushSender = emailSender, pushSender
+	return &Module{db: db, repo: repository.NewRepository(db), platform: repository.NewPlatformRepository(db), broker: broker, logger: logger, config: cfg, renderer: notifytemplate.NewRenderer(0, 0), contact: contactResolver}
 }
 
 // Start declares the queue topology, then launches the consumer in its own
@@ -79,6 +115,9 @@ func NewModule(db database.DatabaseSQL, broker Broker, logger *slog.Logger) *Mod
 // are logged, not returned (it self-heals via messaging.RabbitMQ.Consume's
 // built-in reconnect/backoff loop).
 func (m *Module) Start(ctx context.Context) error {
+	if m.broker == nil {
+		return fmt.Errorf("notify: broker is not configured")
+	}
 	if err := m.broker.DeclareTopology(ctx, messaging.QueueConfig{
 		Queue:       queueName,
 		RoutingKeys: []string{events.TypeTransactionPosted},
@@ -93,12 +132,13 @@ func (m *Module) Start(ctx context.Context) error {
 		if err := m.broker.Consume(consumeCtx, messaging.ConsumeOptions{
 			Queue:               queueName,
 			ConsumerTag:         consumerTag,
-			PrefetchCount:       10,
-			MaxDeliveryAttempts: 5,
+			PrefetchCount:       m.config.EventPrefetch,
+			MaxDeliveryAttempts: m.config.MaxEventAttempts,
 		}, m.handleDelivery); err != nil {
 			m.logger.Error("notify: consumer stopped", "error", err)
 		}
 	}()
+	m.startWorkers(consumeCtx)
 	return nil
 }
 
@@ -107,6 +147,9 @@ func (m *Module) Start(ctx context.Context) error {
 func (m *Module) Stop() {
 	if m.cancel != nil {
 		m.cancel()
+	}
+	if m.workersCancel != nil {
+		m.workersCancel()
 	}
 }
 
@@ -121,6 +164,12 @@ func (m *Module) Stop() {
 // handler needing to distinguish transient from permanent DB failures
 // itself.
 func (m *Module) handleDelivery(ctx context.Context, d amqp.Delivery) error {
+	started := time.Now()
+	result := "error"
+	defer func() {
+		notificationEventsTotal.WithLabelValues("ledger", events.TypeTransactionPosted, result).Inc()
+		notificationEventDuration.WithLabelValues("ledger", events.TypeTransactionPosted, result).Observe(time.Since(started).Seconds())
+	}()
 	var ev events.TransactionPosted
 	if err := json.Unmarshal(d.Body, &ev); err != nil {
 		return fmt.Errorf("notify: decode TransactionPosted: %w", err)
@@ -130,6 +179,8 @@ func (m *Module) handleDelivery(ctx context.Context, d amqp.Delivery) error {
 	}
 
 	if !notifiableTypes[ev.TransactionType] {
+		result = "filtered"
+		notificationEventsFilteredTotal.WithLabelValues("ledger", "transaction_type").Inc()
 		return nil
 	}
 
@@ -142,6 +193,13 @@ func (m *Module) handleDelivery(ctx context.Context, d amqp.Delivery) error {
 		if err != nil {
 			return fmt.Errorf("notify: invalid message id %q: %w", d.MessageId, err)
 		}
+	}
+	if m.platform != nil && m.db != nil {
+		err := m.handleModernDelivery(ctx, d, ev, eventID)
+		if err == nil {
+			result = "processed"
+		}
+		return err
 	}
 
 	for _, rcpt := range recipientsFor(ev) {
@@ -158,7 +216,268 @@ func (m *Module) handleDelivery(ctx context.Context, d amqp.Delivery) error {
 			return fmt.Errorf("notify: insert notification: %w", err)
 		}
 	}
+	result = "processed"
 	return nil
+}
+
+type modernRecipient struct {
+	userID uuid.UUID
+	role   string
+}
+
+func modernRecipientsFor(ev events.TransactionPosted) []modernRecipient {
+	if ev.TransactionType == "transfer_p2p" {
+		out := make([]modernRecipient, 0, 2)
+		if ev.UserID != nil {
+			out = append(out, modernRecipient{userID: *ev.UserID, role: "sender"})
+		}
+		if ev.TargetUserID != nil {
+			out = append(out, modernRecipient{userID: *ev.TargetUserID, role: "receiver"})
+		}
+		return out
+	}
+	if ev.UserID == nil {
+		return nil
+	}
+	return []modernRecipient{{userID: *ev.UserID, role: "owner"}}
+}
+
+func (m *Module) handleModernDelivery(ctx context.Context, d amqp.Delivery, ev events.TransactionPosted, eventID uuid.UUID) (err error) {
+	if !m.config.Enabled || !m.config.InAppEnabled {
+		return nil
+	}
+	failureInbox := model.EventInbox{ID: generalutil.NewV7(), SourceService: "ledger", EventID: eventID,
+		EventType: events.TypeTransactionPosted, SchemaVersion: ev.SchemaVersion, PayloadHash: sha256Bytes(d.Body),
+		Status: "failed", ReceivedAt: time.Now().UTC()}
+	defer func() {
+		if err == nil {
+			return
+		}
+		notificationPlanningFailuresTotal.WithLabelValues("unknown", "planner_error").Inc()
+		if recordErr := m.platform.RecordEventFailure(ctx, failureInbox, "planner_error"); recordErr != nil {
+			m.logger.Warn("notify: record planning failure failed", slog.Any("error", recordErr))
+		}
+	}()
+	for _, recipient := range modernRecipientsFor(ev) {
+		kind, err := registry.KindForTransaction(ev.TransactionType, recipient.role)
+		if err != nil {
+			return err
+		}
+		notificationID := generalutil.NewV7()
+		deepLink := strings.ReplaceAll(kind.DeepLinkPath, "{id}", ev.TxID.String())
+		renderContext := model.RenderContext{
+			NotificationID: notificationID.String(),
+			Amount:         model.MoneyContext{Minor: ev.Amount, Currency: ev.Currency},
+			Transaction:    model.TransactionContext{ID: ev.TxID.String(), PostedAt: ev.OccurredAt},
+			Action:         model.ActionContext{DeepLink: deepLink},
+		}
+		renderContext.Amount.Display = notifytemplate.FormatMoney(renderContext.Amount)
+		contextJSON, err := json.Marshal(renderContext)
+		if err != nil {
+			return fmt.Errorf("notify: encode render context: %w", err)
+		}
+		inAppVersion, ok, err := m.activeTemplate(ctx, kind.Kind, model.ChannelInApp, m.config.DefaultLocale)
+		if err != nil {
+			return fmt.Errorf("notify: load in-app template %s: %w", kind.Kind, err)
+		}
+		if !ok {
+			notificationTemplateMissingTotal.WithLabelValues(model.ChannelInApp, kind.Kind, m.config.DefaultLocale).Inc()
+			notificationPlanningFailuresTotal.WithLabelValues(kind.Kind, "in_app_template_missing").Inc()
+			return fmt.Errorf("notify: missing in-app template for %s", kind.Kind)
+		}
+		inApp, err := m.renderer.Render(inAppVersion, renderContext)
+		if err != nil {
+			notificationTemplateRenderTotal.WithLabelValues(model.ChannelInApp, kind.Kind, m.config.DefaultLocale, "error").Inc()
+			return fmt.Errorf("notify: render in-app %s: %w", kind.Kind, err)
+		}
+		notificationTemplateRenderTotal.WithLabelValues(model.ChannelInApp, kind.Kind, m.config.DefaultLocale, "success").Inc()
+		contentHash := sha256.Sum256(inApp.Payload)
+		notification := model.Notification{
+			ID: notificationID, UserID: recipient.userID, EventID: eventID, Type: ev.TransactionType,
+			Title: inApp.Title, Body: inApp.Text, Payload: []byte(`{}`), EventType: events.TypeTransactionPosted,
+			SourceService: "ledger", Kind: kind.Kind, Category: kind.Category, Priority: kind.Priority,
+			Requirement: kind.Requirement, Locale: m.config.DefaultLocale, TemplateVersionID: &inAppVersion.ID,
+			DeepLink: deepLink, Context: contextJSON, ContentHash: contentHash[:], CreatedAt: time.Now().UTC(),
+		}
+		deliveries := []model.Delivery{{
+			ID: generalutil.NewV7(), NotificationID: &notification.ID, UserID: notification.UserID,
+			Channel: model.ChannelInApp, Status: model.DeliveryDelivered, TemplateVersionID: inAppVersion.ID,
+			Locale: notification.Locale, RenderedTitle: inApp.Title, RenderedText: inApp.Text,
+			ContentHash: inApp.Hash, CreatedAt: time.Now().UTC(),
+		}}
+		settings, err := m.platform.GetSettings(ctx, recipient.userID)
+		if err != nil {
+			return fmt.Errorf("notify: load settings: %w", err)
+		}
+		settings = m.applySettingsDefaults(settings)
+		preferences, err := m.platform.ListPreferences(ctx, recipient.userID)
+		if err != nil {
+			return fmt.Errorf("notify: load preferences: %w", err)
+		}
+		digestItems := make([]model.DigestRequest, 0, 1)
+		for _, channelName := range []string{model.ChannelEmail, model.ChannelPush} {
+			mode := effectiveMode(kind, channelName, preferences, m.config)
+			if mode == model.ModeDisabled {
+				continue
+			}
+			if mode == model.ModeDailyDigest {
+				if channelName != model.ChannelEmail || !kind.DigestEligible || !m.config.DigestEnabled {
+					continue
+				}
+				allowed, controlErr := m.channelAllowsPlanning(ctx, "digest")
+				if controlErr != nil {
+					return controlErr
+				}
+				if !allowed {
+					continue
+				}
+				request, requestErr := newDigestRequest(time.Now().UTC(), notification.ID, notification.UserID, notification.Locale, settings)
+				if requestErr != nil {
+					return requestErr
+				}
+				digestItems = append(digestItems, request)
+				continue
+			}
+			allowed, controlErr := m.channelAllowsPlanning(ctx, channelName)
+			if controlErr != nil {
+				return controlErr
+			}
+			if !allowed {
+				continue
+			}
+			due, err := NextAllowedTime(time.Now().UTC(), settings.Timezone, settings.QuietHoursEnabled, settings.QuietHoursStart, settings.QuietHoursEnd)
+			if err != nil {
+				return err
+			}
+			version, ok, err := m.activeTemplate(ctx, kind.Kind, channelName, notification.Locale)
+			if err != nil {
+				return fmt.Errorf("notify: load %s template %s: %w", channelName, kind.Kind, err)
+			}
+			if !ok {
+				notificationTemplateMissingTotal.WithLabelValues(channelName, kind.Kind, notification.Locale).Inc()
+				notificationBlockedTotal.WithLabelValues(channelName, "template_missing").Inc()
+				// Keep the in-app record and make the missing external template
+				// visible to operators without creating a provider-callable row.
+				if channelName == model.ChannelPush {
+					devices, deviceErr := m.platform.ListActiveDevices(ctx, recipient.userID)
+					if deviceErr != nil {
+						return fmt.Errorf("notify: list active devices for blocked push: %w", deviceErr)
+					}
+					for _, device := range devices {
+						endpointID := device.ID
+						deliveries = append(deliveries, model.Delivery{
+							ID: generalutil.NewV7(), NotificationID: &notification.ID, UserID: notification.UserID,
+							Channel: channelName, EndpointID: &endpointID, EndpointIdentity: device.ID.String(), Status: model.DeliveryBlocked,
+							TemplateVersionID: uuid.Nil, Locale: notification.Locale, RenderedText: "",
+							ContentHash: sha256Bytes(nil), CreatedAt: time.Now().UTC(),
+						})
+						notificationDeliveriesTotal.WithLabelValues(channelName, kind.Kind, "blocked").Inc()
+					}
+				} else {
+					deliveries = append(deliveries, model.Delivery{
+						ID: generalutil.NewV7(), NotificationID: &notification.ID, UserID: notification.UserID,
+						Channel: channelName, EndpointIdentity: "template-missing", Status: model.DeliveryBlocked,
+						TemplateVersionID: uuid.Nil, Locale: notification.Locale, RenderedText: "",
+						ContentHash: sha256Bytes(nil), CreatedAt: time.Now().UTC(),
+					})
+					notificationDeliveriesTotal.WithLabelValues(channelName, kind.Kind, "blocked").Inc()
+				}
+				notificationPlanningFailuresTotal.WithLabelValues(kind.Kind, "external_template_missing").Inc()
+				continue
+			}
+			rendered, err := m.renderer.Render(version, renderContext)
+			if err != nil {
+				notificationTemplateRenderTotal.WithLabelValues(channelName, kind.Kind, notification.Locale, "error").Inc()
+				return fmt.Errorf("notify: render %s %s: %w", channelName, kind.Kind, err)
+			}
+			notificationTemplateRenderTotal.WithLabelValues(channelName, kind.Kind, notification.Locale, "success").Inc()
+			if channelName == model.ChannelEmail {
+				deliveries = append(deliveries, model.Delivery{
+					ID: generalutil.NewV7(), NotificationID: &notification.ID, UserID: notification.UserID,
+					Channel: channelName, EndpointIdentity: "email", Status: model.DeliveryPendingRecipient,
+					TemplateVersionID: version.ID, Locale: notification.Locale, RenderedSubject: rendered.Subject,
+					RenderedTitle: rendered.Title, RenderedText: rendered.Text, RenderedHTML: rendered.HTML,
+					ProviderPayload: rendered.Payload, ContentHash: rendered.Hash, NextAttemptAt: &due, CreatedAt: time.Now().UTC(),
+				})
+				continue
+			}
+			devices, err := m.platform.ListActiveDevices(ctx, recipient.userID)
+			if err != nil {
+				return fmt.Errorf("notify: list active devices: %w", err)
+			}
+			for _, device := range devices {
+				endpointID := device.ID
+				deliveries = append(deliveries, model.Delivery{
+					ID: generalutil.NewV7(), NotificationID: &notification.ID, UserID: notification.UserID,
+					Channel: channelName, EndpointID: &endpointID, EndpointIdentity: device.ID.String(), Status: model.DeliveryScheduled,
+					TemplateVersionID: version.ID, Locale: notification.Locale, RenderedTitle: rendered.Title,
+					RenderedText: rendered.Text, ProviderPayload: rendered.Payload, ContentHash: rendered.Hash,
+					NextAttemptAt: &due, CreatedAt: time.Now().UTC(),
+				})
+			}
+		}
+		inbox := model.EventInbox{ID: generalutil.NewV7(), SourceService: "ledger", EventID: eventID,
+			EventType: events.TypeTransactionPosted, SchemaVersion: ev.SchemaVersion, PayloadHash: sha256Bytes(d.Body),
+			Status: "received", ReceivedAt: time.Now().UTC()}
+		inserted, err := m.platform.Plan(ctx, model.PlannedEvent{Inbox: inbox, Notification: notification, Deliveries: deliveries, DigestItems: digestItems})
+		if err != nil {
+			return fmt.Errorf("notify: plan event: %w", err)
+		}
+		if inserted {
+			notificationLogicalCreatedTotal.WithLabelValues(kind.Kind, kind.Category).Inc()
+		} else {
+			notificationDuplicatesTotal.WithLabelValues("ledger", events.TypeTransactionPosted).Inc()
+		}
+		for range digestItems {
+			notificationDigestItemsTotal.WithLabelValues(kind.Category).Inc()
+		}
+	}
+	return nil
+}
+
+func (m *Module) channelAllowsPlanning(ctx context.Context, channelName string) (bool, error) {
+	control, err := m.platform.GetChannelControl(ctx, channelName)
+	if err != nil {
+		return false, fmt.Errorf("notify: load %s channel control: %w", channelName, err)
+	}
+	observeNotificationChannelControl(control)
+	return control.State == "running" || (control.ExpiresAt != nil && !control.ExpiresAt.After(time.Now().UTC())), nil
+}
+
+func effectiveMode(kind registry.Kind, channelName string, preferences []model.Preference, cfg Config) string {
+	if channelName == model.ChannelInApp {
+		return model.ModeImmediate
+	}
+	if channelName == model.ChannelEmail && !cfg.EmailEnabled {
+		return model.ModeDisabled
+	}
+	if channelName == model.ChannelPush && !cfg.PushEnabled {
+		return model.ModeDisabled
+	}
+	mode := kind.DefaultModes[channelName]
+	for _, preference := range preferences {
+		if preference.Category == kind.Category && preference.Channel == channelName {
+			mode = preference.Mode
+		}
+	}
+	return mode
+}
+
+func sha256Bytes(value []byte) []byte {
+	sum := sha256.Sum256(value)
+	return sum[:]
+}
+
+func (m *Module) activeTemplate(ctx context.Context, kind, channelName, locale string) (notifytemplate.Version, bool, error) {
+	if m.platform != nil && m.db != nil {
+		if version, ok, err := m.platform.GetActiveTemplate(ctx, kind, channelName, locale); err != nil {
+			return notifytemplate.Version{}, false, err
+		} else if ok {
+			return version, true, nil
+		}
+	}
+	version, ok := notifytemplate.Builtin(kind, channelName, locale)
+	return version, ok, nil
 }
 
 type recipient struct {
@@ -231,6 +550,24 @@ func (m *Module) ListNotifications(ctx context.Context, userID uuid.UUID, limit 
 	if limit > 200 {
 		limit = 200
 	}
+	if m.platform != nil && m.db != nil {
+		return m.platform.ListNotifications(ctx, userID, limit, before, false, "", "")
+	}
+	return m.repo.List(ctx, userID, limit, before)
+}
+
+// ListNotificationsFiltered is the additive query surface used by the C3
+// HTTP API. Legacy callers continue to use ListNotifications unchanged.
+func (m *Module) ListNotificationsFiltered(ctx context.Context, userID uuid.UUID, limit int, before time.Time, unread bool, category, kind string) ([]Notification, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 200 {
+		limit = 200
+	}
+	if m.platform != nil && m.db != nil {
+		return m.platform.ListNotifications(ctx, userID, limit, before, unread, category, kind)
+	}
 	return m.repo.List(ctx, userID, limit, before)
 }
 
@@ -238,7 +575,13 @@ func (m *Module) ListNotifications(ctx context.Context, userID uuid.UUID, limit 
 // layer). Returns ErrNotificationNotFound if no such row exists for that
 // (id, userID) pair.
 func (m *Module) MarkRead(ctx context.Context, id, userID uuid.UUID) error {
-	matched, err := m.repo.MarkRead(ctx, id, userID)
+	var matched bool
+	var err error
+	if m.platform != nil && m.db != nil {
+		matched, err = m.platform.MarkRead(ctx, id, userID)
+	} else {
+		matched, err = m.repo.MarkRead(ctx, id, userID)
+	}
 	if err != nil {
 		return err
 	}

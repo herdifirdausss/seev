@@ -167,6 +167,19 @@ No entry may fully delete a row from these tables — only `retain_permanent`, `
 | `gateway.merchant.webhook_endpoints` | gateway.merchant_webhook_endpoints | secret | — | — | retain_state | — | none |
 | `gateway.merchant.webhook_events` | gateway.merchant_webhook_events | sensitive | created_at | 90d | delete | 500 | subject |
 | `gateway.notifications.any` | gateway.notif_notifications | financial | created_at | 365d | delete | 500 | subject |
+| `gateway.notifications.channel_controls` | gateway.notif_channel_controls | internal | — | — | retain_state | — | none |
+| `gateway.notifications.delivery_attempts` | gateway.notif_delivery_attempts | internal | finished_at | 90d | delete | 500 | resource |
+| `gateway.notifications.deliveries` | gateway.notif_deliveries | internal | updated_at | 180d | delete | 500 | subject |
+| `gateway.notifications.device_tokens` | gateway.notif_device_endpoints | secret | revoked_at | 30d | redact | 500 | subject |
+| `gateway.notifications.digest_items` | gateway.notif_digest_items | financial | updated_at | 90d | delete | 500 | subject |
+| `gateway.notifications.digest_windows` | gateway.notif_digest_windows | internal | updated_at | 90d | delete | 500 | subject |
+| `gateway.notifications.event_inbox` | gateway.notif_event_inbox | internal | processed_at | 30d | delete | 500 | resource |
+| `gateway.notifications.event_inbox_failed` | gateway.notif_event_inbox | internal | updated_at | 90d | delete | 500 | resource |
+| `gateway.notifications.preferences` | gateway.notif_preferences | personal | — | — | retain_state | — | subject |
+| `gateway.notifications.recipient_ciphertext` | gateway.notif_deliveries | sensitive | updated_at | 30d | redact | 500 | subject |
+| `gateway.notifications.settings` | gateway.notif_user_settings | personal | — | — | retain_state | — | subject |
+| `gateway.notifications.template_versions` | gateway.notif_template_versions | internal | — | — | retain_permanent | — | none |
+| `gateway.notifications.templates` | gateway.notif_templates | internal | — | — | retain_state | — | none |
 | `gateway.notifications.read` | gateway.notif_notifications | financial | read_at | 180d | delete | 500 | subject |
 | `gateway.retention_audit` | gateway.gateway_retention_audit | internal | — | — | retain_permanent | — | none |
 | `gateway.retention_holds` | gateway.gateway_retention_holds | internal | — | — | retain_state | — | none |
@@ -196,6 +209,32 @@ No entry may fully delete a row from these tables — only `retain_permanent`, `
 **`gateway.merchant.webhook_events`** — Immutable external event bytes, purged once no merchant_webhook_deliveries row still references them (enforced in the purge function itself, not just the age check) — payload may carry tenant transaction data.
 
 **`gateway.notifications.any`** — docs/roadmap/archive/51 §4.2 'Any notification' — backstop rule for unread notifications regardless of read_at.
+
+**`gateway.notifications.channel_controls`** — The current global channel control is live safety state; each change is also recorded by the Admin BFF audit path.
+
+**`gateway.notifications.delivery_attempts`** — Finished provider-attempt evidence is bounded and sanitized; in-flight attempts remain until they finish.
+
+**`gateway.notifications.deliveries`** — Terminal delivery rows and their attempt evidence are removed after the operational evidence window; pending and processing work is never purged.
+
+**`gateway.notifications.device_tokens`** — Invalid or revoked push-token ciphertext is erased after the grace period; endpoint identity and lifecycle status remain.
+
+**`gateway.notifications.digest_items`** — Digest membership is planning metadata and is removed with terminal windows after 90 days.
+
+**`gateway.notifications.digest_windows`** — Terminal local-time digest windows are bounded operational state; delivery evidence has its own longer retention class.
+
+**`gateway.notifications.event_inbox`** — Successful event-inbox rows retain only the deduplication evidence needed for the recovery window; unprocessed rows are never age-purged.
+
+**`gateway.notifications.event_inbox_failed`** — Failed notification planning evidence is retained longer for incident diagnosis; the stored payload is only a hash and approved error code.
+
+**`gateway.notifications.preferences`** — Current category/channel preferences are live user configuration and have no independent age purge.
+
+**`gateway.notifications.recipient_ciphertext`** — Terminal email recipient ciphertext and its fingerprint are erased after the short operational window; delivery status remains.
+
+**`gateway.notifications.settings`** — Current notification settings are live user configuration; account closure pseudonymizes or removes them through the A8 owner workflow.
+
+**`gateway.notifications.template_versions`** — Immutable template versions, hashes, and maker-checker transitions are long-lived operational evidence.
+
+**`gateway.notifications.templates`** — Template catalog rows define the governed notification-kind contract and remain as current operational state.
 
 **`gateway.notifications.read`** — docs/roadmap/archive/51 §4.2 'Read notification'. Requires read_at IS NOT NULL.
 
@@ -389,4 +428,3 @@ No entry may fully delete a row from these tables — only `retain_permanent`, `
 **`vendor.retention_audit`** — docs/roadmap/archive/51 K4. Same shape/rationale as adminbff.retention_audit.
 
 **`vendor.retention_holds`** — docs/roadmap/archive/51 K5. Same shape/rationale as adminbff.retention_holds.
-

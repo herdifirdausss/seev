@@ -710,6 +710,42 @@ services:
         limits:
           memory: 128M
 
+  # C3 local-only external channel sinks. They are deliberately outside the
+  # app profile so a normal stack never starts an external-delivery learning
+  # path by accident. Start with:
+  #   docker compose --profile app --profile notifications up -d
+  mailpit:
+    profiles: ["notifications"]
+    image: axllent/mailpit:v1.21.8
+    environment:
+      MP_MAX_MESSAGES: "1000"
+      MP_DATABASE: /data/mailpit.db
+    volumes:
+      - seev_mailpit_data:/data
+    ports:
+      - "127.0.0.1:1025:1025"
+      - "127.0.0.1:8025:8025"
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
+  mock-push-provider:
+    profiles: ["notifications"]
+    image: seev/mock-push-provider:${SEEV_IMAGE_TAG:-dev}
+    build:
+      context: .
+      args:
+        SERVICE: mock-push-provider
+    environment:
+      MOCK_PUSH_PORT: "8097"
+    ports:
+      - "127.0.0.1:8097:8097"
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+
   gateway-service:
     profiles: ["app"]
     image: seev/gateway-service:${SEEV_IMAGE_TAG:-dev}
@@ -745,6 +781,7 @@ services:
       LEDGER_USER_API_URL: https://ledger-service:8090
       PAYIN_GRPC_ADDR: payin-service:9092
       PAYOUT_GRPC_ADDR: payout-service:9093
+      AUTH_INTERNAL_API_URL: https://auth-service:8083
       INTERNAL_GRPC_TOKEN: ${INTERNAL_GRPC_TOKEN:-change-me-to-a-random-32-plus-character-token}
       TLS_CERT_DIR: /certs
       JWT_SECRET: ${JWT_SECRET:-change-me-to-a-random-32-plus-character-secret}
@@ -755,6 +792,21 @@ services:
       # is the separate HMAC pepper for API-key digests (T3 §8.2).
       CRYPTOX_KEY_V1_FILE: /run/secrets/cryptox_key_v1
       MERCHANT_API_KEY_PEPPER_FILE: /run/secrets/merchant_api_key_pepper
+      NOTIFY_ENABLED: ${NOTIFY_ENABLED:-true}
+      NOTIFY_INAPP_ENABLED: ${NOTIFY_INAPP_ENABLED:-true}
+      NOTIFY_EMAIL_ENABLED: ${NOTIFY_EMAIL_ENABLED:-false}
+      NOTIFY_PUSH_ENABLED: ${NOTIFY_PUSH_ENABLED:-false}
+      NOTIFY_DIGEST_ENABLED: ${NOTIFY_DIGEST_ENABLED:-false}
+      NOTIFY_DEFAULT_LOCALE: ${NOTIFY_DEFAULT_LOCALE:-en-US}
+      NOTIFY_DEFAULT_TIMEZONE: ${NOTIFY_DEFAULT_TIMEZONE:-Asia/Jakarta}
+      NOTIFY_DEFAULT_DIGEST_HOUR: ${NOTIFY_DEFAULT_DIGEST_HOUR:-8}
+      NOTIFY_SMTP_HOST: ${NOTIFY_SMTP_HOST:-mailpit}
+      NOTIFY_SMTP_PORT: ${NOTIFY_SMTP_PORT:-1025}
+      NOTIFY_SMTP_FROM: ${NOTIFY_SMTP_FROM:-seev@localhost.test}
+      NOTIFY_SMTP_TLS_MODE: ${NOTIFY_SMTP_TLS_MODE:-none}
+      NOTIFY_PUSH_PROVIDER_URL: ${NOTIFY_PUSH_PROVIDER_URL:-http://mock-push-provider:8097}
+      NOTIFY_TOKEN_FINGERPRINT_KEY: ${NOTIFY_TOKEN_FINGERPRINT_KEY:-}
+      NOTIFY_MAX_DEVICES: ${NOTIFY_MAX_DEVICES:-10}
     secrets:
       - cryptox_key_v1
       - merchant_api_key_pepper
@@ -1056,3 +1108,4 @@ volumes:
   seev_tempo_data:
   seev_alloy_data:
   seev_object_store:
+  seev_mailpit_data:

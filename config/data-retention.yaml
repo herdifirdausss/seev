@@ -472,6 +472,162 @@ entries:
     policy_version: 1
     notes: "docs/roadmap/archive/51 §4.2 'Any notification' — backstop rule for unread notifications regardless of read_at."
 
+  - owner: gateway
+    class: gateway.notifications.event_inbox
+    table: gateway.notif_event_inbox
+    classification: internal
+    terminal_timestamp: processed_at
+    duration: 30d
+    action: delete
+    batch_size: 500
+    hold_scope: resource
+    policy_version: 1
+    notes: "Successful event-inbox rows retain only the deduplication evidence needed for the recovery window; unprocessed rows are never age-purged."
+
+  - owner: gateway
+    class: gateway.notifications.event_inbox_failed
+    table: gateway.notif_event_inbox
+    classification: internal
+    terminal_timestamp: updated_at
+    duration: 90d
+    action: delete
+    batch_size: 500
+    hold_scope: resource
+    policy_version: 1
+    notes: "Failed notification planning evidence is retained longer for incident diagnosis; the stored payload is only a hash and approved error code."
+
+  - owner: gateway
+    class: gateway.notifications.delivery_attempts
+    table: gateway.notif_delivery_attempts
+    classification: internal
+    terminal_timestamp: finished_at
+    duration: 90d
+    action: delete
+    batch_size: 500
+    hold_scope: resource
+    policy_version: 1
+    notes: "Finished provider-attempt evidence is bounded and sanitized; in-flight attempts remain until they finish."
+
+  - owner: gateway
+    class: gateway.notifications.recipient_ciphertext
+    table: gateway.notif_deliveries
+    classification: sensitive
+    terminal_timestamp: updated_at
+    duration: 30d
+    action: redact
+    batch_size: 500
+    hold_scope: subject
+    policy_version: 1
+    notes: "Terminal email recipient ciphertext and its fingerprint are erased after the short operational window; delivery status remains."
+
+  - owner: gateway
+    class: gateway.notifications.device_tokens
+    table: gateway.notif_device_endpoints
+    classification: secret
+    terminal_timestamp: revoked_at
+    duration: 30d
+    action: redact
+    batch_size: 500
+    hold_scope: subject
+    policy_version: 1
+    notes: "Invalid or revoked push-token ciphertext is erased after the grace period; endpoint identity and lifecycle status remain."
+
+  - owner: gateway
+    class: gateway.notifications.deliveries
+    table: gateway.notif_deliveries
+    classification: internal
+    terminal_timestamp: updated_at
+    duration: 180d
+    action: delete
+    batch_size: 500
+    hold_scope: subject
+    policy_version: 1
+    notes: "Terminal delivery rows and their attempt evidence are removed after the operational evidence window; pending and processing work is never purged."
+
+  - owner: gateway
+    class: gateway.notifications.digest_items
+    table: gateway.notif_digest_items
+    classification: financial
+    terminal_timestamp: updated_at
+    duration: 90d
+    action: delete
+    batch_size: 500
+    hold_scope: subject
+    policy_version: 1
+    notes: "Digest membership is planning metadata and is removed with terminal windows after 90 days."
+
+  - owner: gateway
+    class: gateway.notifications.digest_windows
+    table: gateway.notif_digest_windows
+    classification: internal
+    terminal_timestamp: updated_at
+    duration: 90d
+    action: delete
+    batch_size: 500
+    hold_scope: subject
+    policy_version: 1
+    notes: "Terminal local-time digest windows are bounded operational state; delivery evidence has its own longer retention class."
+
+  - owner: gateway
+    class: gateway.notifications.settings
+    table: gateway.notif_user_settings
+    classification: personal
+    terminal_timestamp: null
+    duration: null
+    action: retain_state
+    batch_size: 0
+    hold_scope: subject
+    policy_version: 1
+    notes: "Current notification settings are live user configuration; account closure pseudonymizes or removes them through the A8 owner workflow."
+
+  - owner: gateway
+    class: gateway.notifications.preferences
+    table: gateway.notif_preferences
+    classification: personal
+    terminal_timestamp: null
+    duration: null
+    action: retain_state
+    batch_size: 0
+    hold_scope: subject
+    policy_version: 1
+    notes: "Current category/channel preferences are live user configuration and have no independent age purge."
+
+  - owner: gateway
+    class: gateway.notifications.templates
+    table: gateway.notif_templates
+    classification: internal
+    terminal_timestamp: null
+    duration: null
+    action: retain_state
+    batch_size: 0
+    hold_scope: none
+    policy_version: 1
+    notes: "Template catalog rows define the governed notification-kind contract and remain as current operational state."
+
+  - owner: gateway
+    class: gateway.notifications.template_versions
+    table: gateway.notif_template_versions
+    classification: internal
+    terminal_timestamp: null
+    duration: null
+    action: retain_permanent
+    batch_size: 0
+    hold_scope: none
+    policy_version: 1
+    notes: "Immutable template versions, hashes, and maker-checker transitions are long-lived operational evidence."
+
+  - owner: gateway
+    class: gateway.notifications.channel_controls
+    table: gateway.notif_channel_controls
+    classification: internal
+    terminal_timestamp: null
+    duration: null
+    action: retain_state
+    batch_size: 0
+    hold_scope: none
+    policy_version: 1
+    notes: "The current global channel control is live safety state; each change is also recorded by the Admin BFF audit path."
+
   # ── gateway.merchant (docs/roadmap/active/57-c1-merchant-b2b-api.md T2) ────────────
   - owner: gateway
     class: gateway.merchant.tenants
