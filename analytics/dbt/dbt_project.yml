@@ -1,0 +1,39 @@
+name: seev_analytics
+version: 1.0.0
+config-version: 2
+
+profile: seev_analytics
+
+model-paths: [models]
+seed-paths: [seeds]
+test-paths: [tests]
+macro-paths: [macros]
+snapshot-paths: [snapshots]
+docs-paths: [docs]
+
+clean-targets:
+  - target
+  - dbt_packages
+
+models:
+  seev_analytics:
+    +persist_docs:
+      relation: true
+      columns: true
+    staging:
+      +schema: staging
+      +materialized: view
+    core:
+      +schema: core
+      +materialized: table
+    marts:
+      +schema: mart
+      +materialized: table
+    control:
+      +schema: control
+      +materialized: table
+
+seeds:
+  seev_analytics:
+    +schema: control
+    +quote_columns: false

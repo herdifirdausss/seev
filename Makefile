@@ -26,7 +26,7 @@ GOLANGCI_LINT := $(GOLANGCI_LINT_DIR)/golangci-lint
 GOVULNCHECK_DIR := $(TOOLS_DIR)/govulncheck-$(GOVULNCHECK_VERSION)
 GOVULNCHECK := $(GOVULNCHECK_DIR)/govulncheck
 
-.PHONY: build build-all run dev test test/cover clean lint modernize-check ci-lint print-golangci-lint-version print-govulncheck-version docs-check tidy tools tools-lint tools-security security-vuln proto proto-lint proto-breaking contract-generate contract-lint contract-breaking contract-test contracts load-lint load-test load-seed load-snapshot load-restore load-smoke load-run load-capacity load-report-check load-clean vet docker-up docker-down smoke-container smoke-test business-e2e admin-e2e privacy-e2e merchant-e2e verify-static verify-full verify-chaos chaos-debug migrate-up migrate-up-all migrate-down grant-app-role observability-secret observability-up observability-down certs backup-secret backup-role-bootstrap backup-checksums-enable backup-stanza-init backup-full backup-diff backup-check backup-status backup-expire cryptox-secret retention-docs retention-check k0-inventory k0-inventory-check k0-resource-sample k0-network-probe helm-lint k8s-preflight k8s-bootstrap k8s-smoke k8s-verify-callback k8s-verify-egress help
+.PHONY: build build-all run dev test test/cover clean lint modernize-check ci-lint print-golangci-lint-version print-govulncheck-version docs-check tidy tools tools-lint tools-security security-vuln proto proto-lint proto-breaking contract-generate contract-lint contract-breaking contract-test contracts load-lint load-test load-seed load-snapshot load-restore load-smoke load-run load-capacity load-report-check load-clean vet docker-up docker-down smoke-container smoke-test business-e2e admin-e2e privacy-e2e merchant-e2e verify-static verify-full verify-chaos chaos-debug migrate-up migrate-up-all migrate-down grant-app-role observability-secret observability-down certs backup-secret backup-role-bootstrap backup-checksums-enable backup-stanza-init backup-full backup-diff backup-check backup-status backup-expire cryptox-secret retention-docs retention-check analytics-secret analytics-config-check analytics-up-core analytics-up-ui analytics-up-ops analytics-health analytics-source-setup analytics-connectors-validate analytics-connectors-apply analytics-connectors-status analytics-connectors-pause analytics-connectors-resume analytics-connectors-delete analytics-clickhouse-migrate analytics-dbt-deps analytics-dbt-build analytics-dbt-test analytics-reconcile analytics-e2e analytics-chaos analytics-reset analytics-down analytics-verify k0-inventory k0-inventory-check k0-resource-sample k0-network-probe helm-lint k8s-preflight k8s-bootstrap k8s-smoke k8s-verify-callback k8s-verify-egress help
 
 ## build: Compile the binary
 build:
@@ -94,6 +94,99 @@ print-govulncheck-version:
 ## docs-check: Validate required guides, local Markdown links, and heading anchors
 docs-check:
 	go run ./cmd/doccheck
+
+## analytics-secret: Generate local-only C2 salt and service passwords
+analytics-secret:
+	@./analytics/scripts/create-secrets.sh
+
+## analytics-config-check: Validate C2 source/privacy/topic contracts and connector allowlists
+analytics-config-check:
+	go run ./analytics/reconciliation/cmd/validate -root analytics
+	@./analytics/connect/scripts/validate-connectors.sh
+
+## analytics-up-core: Start the headless C2 profile only
+analytics-up-core:
+	@./analytics/scripts/compose.sh --profile analytics-core up -d
+
+## analytics-up-ui: Start optional Metabase UI and its ClickHouse dependency
+analytics-up-ui:
+	@./analytics/scripts/compose.sh --profile analytics-ui up -d metabase
+
+## analytics-up-ops: Start optional Redpanda Console diagnostics
+analytics-up-ops:
+	@./analytics/scripts/compose.sh --profile analytics-ops up -d console
+
+## analytics-health: Check Connect and ClickHouse without exposing credentials
+analytics-health:
+	@./analytics/scripts/health.sh
+
+## analytics-source-setup: Create least-privilege source roles and explicit publications
+analytics-source-setup:
+	@./analytics/postgres/apply-replication.sh
+
+## analytics-connectors-validate: Validate connector JSON and allowlists
+analytics-connectors-validate:
+	@./analytics/connect/scripts/validate-connectors.sh
+
+## analytics-connectors-apply: Apply declarative connectors and wait for REST acceptance
+analytics-connectors-apply:
+	@./analytics/connect/scripts/apply-connectors.sh
+
+## analytics-connectors-status: Show bounded connector/task state
+analytics-connectors-status:
+	@./analytics/connect/scripts/status-connectors.sh
+
+## analytics-connectors-pause: Pause CDC without dropping source slots
+analytics-connectors-pause:
+	@./analytics/connect/scripts/pause-connectors.sh
+
+## analytics-connectors-resume: Resume CDC from stored offsets
+analytics-connectors-resume:
+	@./analytics/connect/scripts/resume-connectors.sh
+
+## analytics-connectors-delete: Delete Connect definitions while retaining source slots
+analytics-connectors-delete:
+	@./analytics/connect/scripts/delete-connectors.sh
+
+## analytics-clickhouse-migrate: Create raw, staging, core, mart, and control warehouse layers
+analytics-clickhouse-migrate:
+	@./analytics/scripts/clickhouse-migrate.sh
+
+## analytics-dbt-deps: Resolve the pinned dbt package set
+analytics-dbt-deps:
+	@./analytics/scripts/dbt.sh deps --profiles-dir /workspace
+
+## analytics-dbt-build: Run dbt models and tests through the bounded dbt runner
+analytics-dbt-build:
+	@./analytics/scripts/dbt.sh build --profiles-dir /workspace
+
+## analytics-dbt-test: Run only dbt tests
+analytics-dbt-test:
+	@./analytics/scripts/dbt.sh test --profiles-dir /workspace
+
+## analytics-reconcile: Run safe-cutoff, read-only source-to-warehouse checks
+analytics-reconcile:
+	go run ./analytics/reconciliation/cmd/reconcile
+
+## analytics-e2e: Run the explicit analytical end-to-end journey
+analytics-e2e:
+	@./analytics/scripts/e2e.sh
+
+## analytics-chaos: Run operator-controlled analytics outage drills
+analytics-chaos:
+	@./analytics/scripts/chaos.sh all
+
+## analytics-reset: Remove only analytical containers and volumes
+analytics-reset:
+	@./analytics/scripts/reset-warehouse.sh
+
+## analytics-down: Stop analytics without deleting volumes or source slots
+analytics-down:
+	@./analytics/scripts/compose.sh --profile analytics-core --profile analytics-ui --profile analytics-ops down --remove-orphans
+
+## analytics-verify: Run lightweight static privacy and config checks
+analytics-verify: analytics-config-check
+	@./analytics/scripts/verify-no-sensitive-columns.sh
 
 ## k0-inventory: Generate redacted K0 deployment inventory and baseline evidence
 k0-inventory:
@@ -314,6 +407,7 @@ verify-static:
 	$(MAKE) docs-check
 	$(MAKE) retention-check
 	$(MAKE) contracts
+	$(MAKE) analytics-config-check
 	$(MAKE) load-test
 	go test -tags=loadtest ./...
 	git diff --check

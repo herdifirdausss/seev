@@ -1,0 +1,13 @@
+{
+  "title": "Seev C2 Data Platform Health",
+  "schemaVersion": 39,
+  "tags": ["seev", "analytics", "c2"],
+  "templating": {"list": []},
+  "panels": [
+    {"type": "stat", "title": "Connector up", "targets": [{"expr": "min(seev_analytics_connector_up)", "legendFormat": "all sources"}]},
+    {"type": "timeseries", "title": "CDC lag seconds", "targets": [{"expr": "seev_analytics_cdc_lag_seconds", "legendFormat": "{{source}}"}]},
+    {"type": "timeseries", "title": "Retained WAL bytes", "targets": [{"expr": "seev_analytics_slot_retained_bytes", "legendFormat": "{{source}}"}]},
+    {"type": "stat", "title": "Critical reconciliation failures", "targets": [{"expr": "sum(increase(seev_analytics_reconciliation_total{severity=\"critical\",status=\"failed\"}[1h]))"}]},
+    {"type": "timeseries", "title": "dbt model duration", "targets": [{"expr": "seev_analytics_dbt_model_duration_seconds", "legendFormat": "{{layer}}/{{result}}"}]}
+  ]
+}
