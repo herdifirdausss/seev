@@ -45,7 +45,7 @@ func Transform(source SourceRow, transactionID *uuid.UUID) (TargetRow, error) {
 		target.PendingAmount = source.Balance
 	case "frozen":
 		target.RestrictedAmount = source.Balance
-	case "cash", "pocket", "fee", "settlement", "escrow", "chargeback", "confiscated", "adjustment", "suspense", "fx_conversion", "interest_expense":
+	case "cash", "pocket", "fee", "settlement", "escrow", "chargeback", "confiscated", "adjustment", "suspense", "fx_conversion", "interest_expense", "accrued_interest_payable":
 		target.AvailableAmount = source.Balance
 	default:
 		return TargetRow{}, fmt.Errorf("%w: account type %s", ErrUnsupportedLegacyRow, accountType)
@@ -85,10 +85,10 @@ func ChecksumMatches(target TargetRow) bool {
 	return bytes.Equal(target.ProjectionChecksum, Checksum(target))
 }
 
-	// CompareRows classifies a source/target observation without tolerances. A
-	// target ahead of the authoritative source is a version-regression signal,
-	// not a harmless money mismatch: source ordering is monotonic, so the row
-	// must be blocked until an operator verifies the source/target history.
+// CompareRows classifies a source/target observation without tolerances. A
+// target ahead of the authoritative source is a version-regression signal,
+// not a harmless money mismatch: source ordering is monotonic, so the row
+// must be blocked until an operator verifies the source/target history.
 func CompareRows(source SourceRow, target *TargetRow) Comparison {
 	comparison := Comparison{AccountID: source.AccountID, ResourceLayer: "source_target", SourceVersion: source.SourceVersion}
 	comparison.SourceChecksum = ChecksumForSource(source)

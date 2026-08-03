@@ -67,7 +67,7 @@ type cmdPayload struct {
 }
 
 // C5SchedulePolicyUpdater is implemented by the concrete repository after
-// migration 000039. It is optional so the legacy constructor remains usable
+// migration 000040. It is optional so the legacy constructor remains usable
 // while a deployment is being rolled forward.
 type C5SchedulePolicyUpdater interface {
 	UpdatePolicy(context.Context, uuid.UUID, model.ScheduledPolicy, string, string, string) error

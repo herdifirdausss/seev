@@ -21,7 +21,8 @@ CREATE TABLE account_balances_v2 (
     account_type        TEXT NOT NULL CHECK (account_type IN
                             ('cash','hold','pending','frozen','pocket','fee',
                              'settlement','escrow','chargeback','confiscated',
-                             'adjustment','suspense','fx_conversion','interest_expense')),
+                             'adjustment','suspense','fx_conversion','interest_expense',
+                             'accrued_interest_payable')),
     currency            CHAR(3) NOT NULL,
     allow_negative      BOOLEAN NOT NULL DEFAULT false,
     available_amount    BIGINT NOT NULL DEFAULT 0,
