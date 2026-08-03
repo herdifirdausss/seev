@@ -24,6 +24,7 @@ import (
 	"github.com/herdifirdausss/seev/internal/ledger/model"
 	"github.com/herdifirdausss/seev/internal/ledger/processors"
 	"github.com/herdifirdausss/seev/internal/ledger/repository"
+	currencyreg "github.com/herdifirdausss/seev/pkg/currency"
 	"github.com/herdifirdausss/seev/pkg/generalutil"
 )
 
@@ -94,6 +95,13 @@ func (s *Service) Import(ctx context.Context, filename string, rows []model.Disb
 		if !r.Amount.IsPositive() || !r.Amount.Equal(r.Amount.Truncate(0)) {
 			return uuid.Nil, fmt.Errorf("%w: row %d (user_id=%s) has a non-integral or non-positive amount", apperror.ErrValidation, i+1, r.UserID)
 		}
+		if r.Currency == "" {
+			r.Currency = "IDR"
+			rows[i] = r
+		}
+		if err := currencyreg.ValidateCode(r.Currency); err != nil {
+			return uuid.Nil, fmt.Errorf("%w: row %d has invalid currency: %v", apperror.ErrValidation, i+1, err)
+		}
 	}
 
 	batchID := generalutil.NewV7()
@@ -102,7 +110,7 @@ func (s *Service) Import(ctx context.Context, filename string, rows []model.Disb
 	for i, r := range rows {
 		items[i] = model.DisbursementItem{
 			ID: generalutil.NewV7(), BatchID: batchID, ItemNo: i + 1,
-			UserID: r.UserID, Amount: r.Amount, Note: r.Note,
+			UserID: r.UserID, Amount: r.Amount, Currency: r.Currency, Note: r.Note,
 		}
 	}
 
@@ -203,10 +211,12 @@ func (s *Service) Run(ctx context.Context, batchID uuid.UUID, retryFailed bool) 
 			IdempotencyKey: key,
 			Type:           "disbursement",
 			Amount:         item.Amount,
+			Currency:       item.Currency,
 			UserID:         item.UserID,
 			Metadata: map[string]any{
-				"batch_id": batchID.String(),
-				"item_no":  fmt.Sprintf("%d", item.ItemNo),
+				"batch_id":          batchID.String(),
+				"item_no":           fmt.Sprintf("%d", item.ItemNo),
+				"currency_inflight": true,
 			},
 		}
 		postErr := s.poster.Handle(ctx, cmd)

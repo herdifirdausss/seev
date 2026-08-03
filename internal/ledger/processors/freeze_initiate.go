@@ -33,11 +33,11 @@ func NewFreezeInitiate(r repository.AccountRepository) *FreezeInitiate {
 func (p *FreezeInitiate) Type() string { return "freeze_initiate" }
 
 func (p *FreezeInitiate) ResolveAccounts(ctx context.Context, cmd Command) (ResolvedAccounts, string, error) {
-	cashID, err := p.repo.GetAccountID(ctx, cmd.UserID, constant.AccountTypeCash)
+	cashID, err := userAccountID(ctx, p.repo, cmd.UserID, constant.AccountTypeCash, cmd.Currency)
 	if err != nil {
 		return ResolvedAccounts{}, "", fmt.Errorf("freeze_initiate: user cash: %w", err)
 	}
-	frozenID, err := p.repo.GetAccountID(ctx, cmd.UserID, constant.AccountTypeFrozen)
+	frozenID, err := userAccountID(ctx, p.repo, cmd.UserID, constant.AccountTypeFrozen, cmd.Currency)
 	if err != nil {
 		return ResolvedAccounts{}, "", fmt.Errorf("freeze_initiate: frozen account: %w", err)
 	}

@@ -43,7 +43,10 @@ func requireKYC(min int) middleware.Middleware {
 func requireKYCForLedgerPostings(min int) middleware.Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.Method != http.MethodPost || !strings.HasPrefix(r.URL.Path, "/api/v1/ledger/transactions") {
+			if r.Method != http.MethodPost ||
+				(!strings.HasPrefix(r.URL.Path, "/api/v1/ledger/transactions") &&
+					!strings.HasPrefix(r.URL.Path, "/api/v1/ledger/fx/conversions") &&
+					!strings.HasPrefix(r.URL.Path, "/api/v1/fx/conversions")) {
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -102,6 +105,25 @@ func NewRouter(cfg *config.Config, deps *Dependencies, logger *slog.Logger) http
 	// local /api/v1 prefix is stripped for monolith-owned routes.
 	if deps.LedgerProxy != nil {
 		root.Handle("/api/v1/ledger/", global(authed(requireKYCForLedgerPostings(1)(deps.LedgerProxy))))
+		// C4 keeps Ledger as the sole wallet/FX owner while exposing the
+		// product-facing paths without the internal owner prefix. The alias
+		// rewrites only the downstream path; auth, request IDs, tracing, and
+		// KYC middleware remain identical to /api/v1/ledger/*.
+		ledgerAlias := func(next http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				originalPath, originalRawPath := r.URL.Path, r.URL.RawPath
+				r.URL.Path = "/api/v1/ledger" + strings.TrimPrefix(originalPath, "/api/v1")
+				r.URL.RawPath = ""
+				next.ServeHTTP(w, r)
+				r.URL.Path, r.URL.RawPath = originalPath, originalRawPath
+			})
+		}
+		walletFX := global(authed(requireKYCForLedgerPostings(1)(ledgerAlias(deps.LedgerProxy))))
+		root.Handle("/api/v1/currencies", walletFX)
+		root.Handle("/api/v1/currencies/", walletFX)
+		root.Handle("/api/v1/balances", walletFX)
+		root.Handle("/api/v1/balances/", walletFX)
+		root.Handle("/api/v1/fx/", walletFX)
 	}
 
 	// Payout module — user-facing create/get (docs/roadmap/archive/23 Task T5).

@@ -97,7 +97,9 @@ func (r *accountRepo) GetAccountID(ctx context.Context, userID uuid.UUID, accoun
 	err := r.db.QueryRowContext(ctx, `
 		SELECT id FROM accounts
 		WHERE owner_type = 'user' AND owner_id = $1 AND type = $2
-		  AND pocket_code IS NULL AND status = 'active'`,
+		  AND pocket_code IS NULL AND status = 'active'
+		ORDER BY CASE WHEN currency = 'IDR' THEN 0 ELSE 1 END, currency
+		LIMIT 1`,
 		userID, accountType,
 	).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -105,6 +107,33 @@ func (r *accountRepo) GetAccountID(ctx context.Context, userID uuid.UUID, accoun
 	}
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("get account id: %w", err)
+	}
+	r.userAccountCache.Store(key, id)
+	return id, nil
+}
+
+// GetAccountIDByCurrency resolves a user's standard account without falling
+// back to whichever currency was provisioned first. It is intentionally an
+// additive concrete method so existing repository mocks and legacy callers
+// retain the original GetAccountID contract.
+func (r *accountRepo) GetAccountIDByCurrency(ctx context.Context, userID uuid.UUID, accountType, currency string) (uuid.UUID, error) {
+	key := userID.String() + ":" + accountType + ":" + currency
+	if v, ok := r.userAccountCache.Load(key); ok {
+		return v.(uuid.UUID), nil
+	}
+
+	var id uuid.UUID
+	err := r.db.QueryRowContext(ctx, `
+		SELECT id FROM accounts
+		WHERE owner_type = 'user' AND owner_id = $1 AND type = $2
+		  AND currency = $3 AND pocket_code IS NULL AND status = 'active'`,
+		userID, accountType, currency,
+	).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return uuid.Nil, fmt.Errorf("%w: user %s type %s currency %s", apperror.ErrAccountNotFound, userID, accountType, currency)
+	}
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("get account id by currency: %w", err)
 	}
 	r.userAccountCache.Store(key, id)
 	return id, nil
@@ -128,6 +157,29 @@ func (r *accountRepo) GetPocketAccountID(ctx context.Context, userID uuid.UUID, 
 	}
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("get pocket account id: %w", err)
+	}
+	r.userAccountCache.Store(key, id)
+	return id, nil
+}
+
+func (r *accountRepo) GetPocketAccountIDByCurrency(ctx context.Context, userID uuid.UUID, pocketCode, currency string) (uuid.UUID, error) {
+	key := userID.String() + ":pocket:" + pocketCode + ":" + currency
+	if v, ok := r.userAccountCache.Load(key); ok {
+		return v.(uuid.UUID), nil
+	}
+
+	var id uuid.UUID
+	err := r.db.QueryRowContext(ctx, `
+		SELECT id FROM accounts
+		WHERE owner_type = 'user' AND owner_id = $1 AND type = 'pocket'
+		  AND pocket_code = $2 AND currency = $3 AND status = 'active'`,
+		userID, pocketCode, currency,
+	).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return uuid.Nil, fmt.Errorf("%w: user %s pocket %q currency %s", apperror.ErrAccountNotFound, userID, pocketCode, currency)
+	}
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("get pocket account id by currency: %w", err)
 	}
 	r.userAccountCache.Store(key, id)
 	return id, nil
@@ -209,7 +261,9 @@ func (r *accountRepo) GetMerchantAccountID(ctx context.Context, tenantID uuid.UU
 	err := r.db.QueryRowContext(ctx, `
 		SELECT id FROM accounts
 		WHERE owner_type = 'merchant' AND owner_id = $1 AND type = $2
-		  AND pocket_code IS NULL AND status = 'active'`,
+		  AND pocket_code IS NULL AND status = 'active'
+		ORDER BY CASE WHEN currency = 'IDR' THEN 0 ELSE 1 END, currency
+		LIMIT 1`,
 		tenantID, accountType,
 	).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -217,6 +271,29 @@ func (r *accountRepo) GetMerchantAccountID(ctx context.Context, tenantID uuid.UU
 	}
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("get merchant account id: %w", err)
+	}
+	r.merchantAccountCache.Store(key, id)
+	return id, nil
+}
+
+func (r *accountRepo) GetMerchantAccountIDByCurrency(ctx context.Context, tenantID uuid.UUID, accountType, currency string) (uuid.UUID, error) {
+	key := tenantID.String() + ":" + accountType + ":" + currency
+	if v, ok := r.merchantAccountCache.Load(key); ok {
+		return v.(uuid.UUID), nil
+	}
+
+	var id uuid.UUID
+	err := r.db.QueryRowContext(ctx, `
+		SELECT id FROM accounts
+		WHERE owner_type = 'merchant' AND owner_id = $1 AND type = $2
+		  AND currency = $3 AND pocket_code IS NULL AND status = 'active'`,
+		tenantID, accountType, currency,
+	).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return uuid.Nil, fmt.Errorf("%w: merchant tenant %s type %s currency %s", apperror.ErrAccountNotFound, tenantID, accountType, currency)
+	}
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("get merchant account id by currency: %w", err)
 	}
 	r.merchantAccountCache.Store(key, id)
 	return id, nil

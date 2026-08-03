@@ -10,6 +10,8 @@ import (
 
 	"github.com/herdifirdausss/seev/internal/payout/model"
 	"github.com/herdifirdausss/seev/internal/payout/repository"
+	"github.com/herdifirdausss/seev/internal/vendorgw"
+	currencyreg "github.com/herdifirdausss/seev/pkg/currency"
 	"github.com/herdifirdausss/seev/pkg/generalutil"
 	"github.com/herdifirdausss/seev/pkg/middleware"
 )
@@ -47,8 +49,21 @@ func (m *Module) CreateMerchant(ctx context.Context, tenantID uuid.UUID, environ
 	if downstreamKey == "" {
 		return uuid.Nil, fmt.Errorf("payout: downstreamKey is required")
 	}
+	if err := currencyreg.ValidatePositiveMinorAmount(amount); err != nil {
+		return uuid.Nil, fmt.Errorf("%w: %v", ErrInvalidAmount, err)
+	}
 	if err := m.ensureIntakeOpen(ctx); err != nil {
 		return uuid.Nil, err
+	}
+	if err := currencyreg.ValidateCode(currency); err != nil {
+		return uuid.Nil, fmt.Errorf("payout: invalid currency: %w", err)
+	}
+	if validator, ok := m.poster.(interface {
+		ValidateCurrency(context.Context, string, string) error
+	}); ok {
+		if err := validator.ValidateCurrency(ctx, currency, "payout"); err != nil {
+			return uuid.Nil, fmt.Errorf("payout: currency policy: %w", err)
+		}
 	}
 
 	// Fraud screening is deliberately SKIPPED for merchant-owned payouts
@@ -122,8 +137,12 @@ func (m *Module) GetMerchant(ctx context.Context, tenantID, id uuid.UUID) (model
 // override and no exclusion list (a fresh request).
 func (m *Module) resolveMerchantVendor(ctx context.Context, environment, currency string, amount decimal.Decimal) (string, error) {
 	if environment == "sandbox" {
-		if _, ok := m.registry.Payout(sandboxVendor); !ok {
+		vendor, ok := m.registry.Payout(sandboxVendor)
+		if !ok {
 			return "", ErrSandboxVendorUnavailable
+		}
+		if !vendorgw.SupportsRequestedCurrency(vendor, "payout", currency) {
+			return "", ErrCurrencyRouteUnavailable
 		}
 		return sandboxVendor, nil
 	}

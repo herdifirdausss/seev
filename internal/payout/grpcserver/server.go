@@ -9,11 +9,13 @@ import (
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 	"google.golang.org/grpc/codes"
+	grpcmetadata "google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	payoutv1 "github.com/herdifirdausss/seev/gen/payout/v1"
 	"github.com/herdifirdausss/seev/internal/payout/model"
+	currencyreg "github.com/herdifirdausss/seev/pkg/currency"
 	"github.com/herdifirdausss/seev/pkg/ledgererr"
 )
 
@@ -21,6 +23,8 @@ type Service interface {
 	Create(ctx context.Context, userID uuid.UUID, amount decimal.Decimal, destination []byte, createdBy, quoteID string) (uuid.UUID, error)
 	Get(context.Context, uuid.UUID) (model.PayoutRequest, error)
 }
+
+var errCurrencyAwarePayoutUnavailable = errors.New("currency-aware payout creation unavailable")
 
 type Server struct {
 	payoutv1.UnimplementedPayoutServiceServer
@@ -49,8 +53,24 @@ func (s *Server) CreatePayout(ctx context.Context, request *payoutv1.CreatePayou
 	if len(request.GetDestination()) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "destination is required")
 	}
-	id, callErr := s.service.Create(ctx, userID, amount, request.GetDestination(), request.GetCreatedBy(), request.GetQuoteId())
+	id, callErr := s.createPayout(ctx, userID, amount, request)
 	if callErr != nil {
+		if errors.Is(callErr, errCurrencyAwarePayoutUnavailable) {
+			return nil, status.Error(codes.Unimplemented, errCurrencyAwarePayoutUnavailable.Error())
+		}
+		if errors.Is(callErr, currencyreg.ErrInvalidCurrency) {
+			return nil, status.Error(codes.InvalidArgument, "CURRENCY_INVALID: currency must be exactly three uppercase letters")
+		}
+		var business *ledgererr.LedgerError
+		if errors.As(callErr, &business) {
+			if business.Code == "CURRENCY_INVALID" {
+				return nil, status.Error(codes.InvalidArgument, business.Error())
+			}
+			return nil, status.Error(codes.FailedPrecondition, business.Error())
+		}
+		if status.Code(callErr) == codes.InvalidArgument {
+			return nil, status.Error(codes.InvalidArgument, status.Convert(callErr).Message())
+		}
 		if strings.Contains(callErr.Error(), "intake paused") {
 			return nil, status.Error(codes.FailedPrecondition, "INTAKE_PAUSED")
 		}
@@ -73,10 +93,6 @@ func (s *Server) CreatePayout(ctx context.Context, request *payoutv1.CreatePayou
 			// DIFFERENT message so the gateway can tell them apart.
 			return nil, status.Error(codes.Unavailable, "screening dependency unavailable")
 		}
-		var business *ledgererr.LedgerError
-		if errors.As(callErr, &business) {
-			return nil, status.Error(codes.FailedPrecondition, business.Error())
-		}
 		return nil, status.Error(codes.Internal, "create payout failed")
 	}
 	value, getErr := s.service.Get(ctx, id)
@@ -84,6 +100,20 @@ func (s *Server) CreatePayout(ctx context.Context, request *payoutv1.CreatePayou
 		return nil, status.Error(codes.Internal, "read created payout failed")
 	}
 	return &payoutv1.CreatePayoutResponse{Payout: payoutToProto(value)}, nil
+}
+
+func (s *Server) createPayout(ctx context.Context, userID uuid.UUID, amount decimal.Decimal, request *payoutv1.CreatePayoutRequest) (uuid.UUID, error) {
+	if incoming, ok := grpcmetadata.FromIncomingContext(ctx); ok {
+		if values := incoming.Get("x-seev-currency"); len(values) > 0 && values[0] != "" {
+			if creator, ok := s.service.(interface {
+				CreateWithCurrency(context.Context, uuid.UUID, decimal.Decimal, []byte, string, string, string) (uuid.UUID, error)
+			}); ok {
+				return creator.CreateWithCurrency(ctx, userID, amount, request.GetDestination(), request.GetCreatedBy(), request.GetQuoteId(), values[0])
+			}
+			return uuid.Nil, errCurrencyAwarePayoutUnavailable
+		}
+	}
+	return s.service.Create(ctx, userID, amount, request.GetDestination(), request.GetCreatedBy(), request.GetQuoteId())
 }
 
 // CreateMerchantPayout is Gateway-only (Plan 57, C1) — the merchant
@@ -106,7 +136,7 @@ func (s *Server) CreateMerchantPayout(ctx context.Context, request *payoutv1.Cre
 		return nil, status.Error(codes.InvalidArgument, "tenant_id must be a valid UUID")
 	}
 	amount, err := decimal.NewFromString(request.GetAmount())
-	if err != nil || !amount.IsPositive() || !amount.Equal(amount.Truncate(0)) {
+	if err != nil || currencyreg.ValidatePositiveMinorAmount(amount) != nil {
 		return nil, status.Error(codes.InvalidArgument, "amount must be a positive integer decimal string")
 	}
 	if len(request.GetDestination()) == 0 {
@@ -117,6 +147,9 @@ func (s *Server) CreateMerchantPayout(ctx context.Context, request *payoutv1.Cre
 	}
 	id, callErr := creator.CreateMerchant(ctx, tenantID, request.GetEnvironment(), request.GetCurrency(), amount, request.GetDestination(), request.GetCreatedBy(), request.GetDownstreamKey())
 	if callErr != nil {
+		if errors.Is(callErr, currencyreg.ErrInvalidCurrency) {
+			return nil, status.Error(codes.InvalidArgument, "CURRENCY_INVALID: currency must be exactly three uppercase letters")
+		}
 		if strings.Contains(callErr.Error(), "intake paused") {
 			return nil, status.Error(codes.FailedPrecondition, "INTAKE_PAUSED")
 		}
@@ -133,6 +166,9 @@ func (s *Server) CreateMerchantPayout(ctx context.Context, request *payoutv1.Cre
 		}
 		var business *ledgererr.LedgerError
 		if errors.As(callErr, &business) {
+			if business.Code == "CURRENCY_INVALID" {
+				return nil, status.Error(codes.InvalidArgument, business.Error())
+			}
 			return nil, status.Error(codes.FailedPrecondition, business.Error())
 		}
 		return nil, status.Error(codes.Internal, "create merchant payout failed")
@@ -269,7 +305,7 @@ func parseUserAndAmount(rawUserID, rawAmount string) (uuid.UUID, decimal.Decimal
 		return uuid.Nil, decimal.Zero, status.Error(codes.InvalidArgument, "user_id must be a valid UUID")
 	}
 	amount, err := decimal.NewFromString(rawAmount)
-	if err != nil || !amount.IsPositive() || !amount.Equal(amount.Truncate(0)) {
+	if err != nil || currencyreg.ValidatePositiveMinorAmount(amount) != nil {
 		return uuid.Nil, decimal.Zero, status.Error(codes.InvalidArgument, "amount must be a positive integer decimal string")
 	}
 	return userID, amount, nil

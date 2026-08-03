@@ -38,11 +38,11 @@ func (p *TransferP2P) ResolveAccounts(ctx context.Context, cmd Command) (Resolve
 	if cmd.UserID == cmd.TargetUserID {
 		return ResolvedAccounts{}, "", apperror.NewBizErr(apperror.ErrSelfTransfer, "cannot transfer to yourself")
 	}
-	senderID, err := p.repo.GetAccountID(ctx, cmd.UserID, constant.AccountTypeCash)
+	senderID, err := userAccountID(ctx, p.repo, cmd.UserID, constant.AccountTypeCash, cmd.Currency)
 	if err != nil {
 		return ResolvedAccounts{}, "", fmt.Errorf("transfer_p2p: sender cash: %w", err)
 	}
-	receiverID, err := p.repo.GetAccountID(ctx, cmd.TargetUserID, constant.AccountTypeCash)
+	receiverID, err := userAccountID(ctx, p.repo, cmd.TargetUserID, constant.AccountTypeCash, cmd.Currency)
 	if err != nil {
 		return ResolvedAccounts{}, "", fmt.Errorf("transfer_p2p: receiver cash: %w", err)
 	}

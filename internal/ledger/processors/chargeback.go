@@ -48,7 +48,7 @@ func (p *Chargeback) ResolveAccounts(ctx context.Context, cmd Command) (Resolved
 		return ResolvedAccounts{}, "", fmt.Errorf("%w: chargeback requires metadata 'card_network' (e.g. 'visa', 'mastercard')", apperror.ErrValidation)
 	}
 
-	cashID, err := p.repo.GetAccountID(ctx, cmd.UserID, constant.AccountTypeCash)
+	cashID, err := userAccountID(ctx, p.repo, cmd.UserID, constant.AccountTypeCash, cmd.Currency)
 	if err != nil {
 		return ResolvedAccounts{}, "", fmt.Errorf("chargeback: user cash: %w", err)
 	}

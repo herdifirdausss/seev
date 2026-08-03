@@ -163,6 +163,54 @@ func (m *Module) adjustmentDecisionProxy(action string) http.Handler {
 	})
 }
 
+func (m *Module) fxRateDecisionProxy(action string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			response.BadRequest(w, "invalid form")
+			return
+		}
+		rateID, err := uuid.Parse(r.FormValue("id"))
+		if err != nil {
+			response.BadRequest(w, "invalid rate id")
+			return
+		}
+		token, err := m.MintDownstreamToken(r.Context())
+		if err != nil {
+			response.Unauthorized(w, "authentication required")
+			return
+		}
+		var body []byte
+		contentType := "application/json"
+		if action == "reject" {
+			body, err = json.Marshal(map[string]string{"reason": strings.TrimSpace(r.FormValue("reason"))})
+			if err != nil {
+				response.BadRequest(w, "invalid rejection reason")
+				return
+			}
+		} else {
+			body = []byte("{}")
+		}
+		path := "/api/v1/ledger/admin/fx/rates/" + rateID.String() + "/" + action
+		status, headers, responseBody, callErr := m.clients.Ledger.DoRaw(r.Context(), token, http.MethodPost, path, body, contentType)
+		if callErr != nil && status == 0 {
+			m.AuditMutation(r.Context(), r, "ledger", http.StatusServiceUnavailable, map[string]any{"error": "unavailable", "operation": "fx_rate_" + action})
+			writeJSONError(w, http.StatusServiceUnavailable, "DOWNSTREAM_UNAVAILABLE", "admin service temporarily unavailable")
+			return
+		}
+		if status == 0 {
+			status = http.StatusBadGateway
+		}
+		if ct := headers.Get("Content-Type"); ct != "" {
+			w.Header().Set("Content-Type", ct)
+		} else {
+			w.Header().Set("Content-Type", "application/json")
+		}
+		m.AuditMutation(r.Context(), r, "ledger", status, map[string]any{"downstream_status": status, "operation": "fx_rate_" + action})
+		w.WriteHeader(status)
+		_, _ = w.Write(responseBody)
+	})
+}
+
 func writeJSONError(w http.ResponseWriter, status int, code, message string) {
 	response.ErrorStatus(w, status, code, message)
 }

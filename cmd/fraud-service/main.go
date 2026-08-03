@@ -123,10 +123,15 @@ func run(parent context.Context) error {
 		return fmt.Errorf("connect rabbitmq: %w", err)
 	}
 	store := fraud.NewFailClosedVelocityStore(redisClient, log)
+	amountThresholds := make(map[string]decimal.Decimal, len(cfg.Fraud.ScreeningAmountThresholdByCurrency))
+	for code, amount := range cfg.Fraud.ScreeningAmountThresholdByCurrency {
+		amountThresholds[code] = decimal.NewFromInt(amount)
+	}
 	module := fraud.NewModule(db, store, broker, fraud.Config{
-		Mode:               cfg.Fraud.ScreeningMode,
-		AmountThreshold:    decimal.NewFromInt(cfg.Fraud.ScreeningAmountThreshold),
-		VelocityMaxPerHour: cfg.Fraud.ScreeningVelocityMaxPerHour,
+		Mode:                    cfg.Fraud.ScreeningMode,
+		AmountThreshold:         decimal.NewFromInt(cfg.Fraud.ScreeningAmountThreshold),
+		AmountThresholdByCurrency: amountThresholds,
+		VelocityMaxPerHour:      cfg.Fraud.ScreeningVelocityMaxPerHour,
 	}, log)
 	if err := module.Start(ctx); err != nil {
 		store.Stop()

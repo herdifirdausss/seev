@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/shopspring/decimal"
 
@@ -13,24 +14,38 @@ import (
 )
 
 type AmountThresholdRule struct {
-	threshold decimal.Decimal
-	mode      Mode
-	resolver  ModeResolver
-	repo      repository.ScreeningRepository
-	logger    *slog.Logger
+	threshold             decimal.Decimal
+	thresholdsByCurrency  map[string]decimal.Decimal
+	mode                  Mode
+	resolver              ModeResolver
+	repo                  repository.ScreeningRepository
+	logger                *slog.Logger
 }
 
 func NewAmountThresholdRuleWithResolver(threshold decimal.Decimal, fallback Mode, resolver ModeResolver, repo repository.ScreeningRepository, logger *slog.Logger) *AmountThresholdRule {
-	rule := NewAmountThresholdRule(threshold, fallback, repo, logger)
-	rule.resolver = resolver
-	return rule
+	return NewAmountThresholdRuleWithCurrencyThresholds(threshold, nil, fallback, resolver, repo, logger)
 }
 
 func NewAmountThresholdRule(threshold decimal.Decimal, mode Mode, repo repository.ScreeningRepository, logger *slog.Logger) *AmountThresholdRule {
+	return NewAmountThresholdRuleWithCurrencyThresholds(threshold, nil, mode, nil, repo, logger)
+}
+
+// NewAmountThresholdRuleWithCurrencyThresholds keeps the legacy global
+// threshold as a fallback while allowing each currency to have an independent
+// minor-unit threshold. The map is copied so configuration cannot change a
+// live rule unexpectedly.
+func NewAmountThresholdRuleWithCurrencyThresholds(threshold decimal.Decimal, thresholds map[string]decimal.Decimal, mode Mode, resolver ModeResolver, repo repository.ScreeningRepository, logger *slog.Logger) *AmountThresholdRule {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &AmountThresholdRule{threshold: threshold, mode: mode, repo: repo, logger: logger}
+	copyThresholds := make(map[string]decimal.Decimal, len(thresholds))
+	for code, value := range thresholds {
+		code = strings.ToUpper(strings.TrimSpace(code))
+		if code != "" && value.IsPositive() {
+			copyThresholds[code] = value
+		}
+	}
+	return &AmountThresholdRule{threshold: threshold, thresholdsByCurrency: copyThresholds, mode: mode, resolver: resolver, repo: repo, logger: logger}
 }
 
 func (r *AmountThresholdRule) Name() string { return "amount_threshold" }
@@ -46,11 +61,19 @@ func (r *AmountThresholdRule) Screen(ctx context.Context, input model.ScreenInpu
 	if mode == ModeOff {
 		return model.Verdict{}, nil
 	}
-	if input.Amount.LessThan(r.threshold) {
+	threshold := r.thresholdForCurrency(input.Currency)
+	if !threshold.IsPositive() || input.Amount.LessThan(threshold) {
 		return model.Verdict{}, nil
 	}
-	reason := fmt.Sprintf("amount %s >= threshold %s", input.Amount, r.threshold)
+	reason := fmt.Sprintf("amount %s >= threshold %s", input.Amount, threshold)
 	return r.record(ctx, input, reason, mode)
+}
+
+func (r *AmountThresholdRule) thresholdForCurrency(code string) decimal.Decimal {
+	if threshold, ok := r.thresholdsByCurrency[strings.ToUpper(strings.TrimSpace(code))]; ok {
+		return threshold
+	}
+	return r.threshold
 }
 
 func (r *AmountThresholdRule) record(ctx context.Context, input model.ScreenInput, reason string, mode Mode) (model.Verdict, error) {

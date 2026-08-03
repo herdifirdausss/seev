@@ -103,6 +103,33 @@ var (
 	// input error (InvalidArgument at the gRPC layer), not a business-state
 	// failure, since valid levels are DB-driven, not hardcoded in Go.
 	ErrUnknownKycTier = errors.New("UNKNOWN_KYC_TIER")
+	// Multi-currency capability and FX policy outcomes. These remain stable
+	// sentinels so HTTP, gRPC, metrics, and idempotency callers observe the
+	// same contract regardless of which ledger boundary raised the error.
+	ErrCurrencyInvalid              = errors.New("CURRENCY_INVALID")
+	ErrCurrencyDisabled             = errors.New("CURRENCY_DISABLED")
+	ErrCurrencyOperationDisabled    = errors.New("CURRENCY_OPERATION_DISABLED")
+	ErrCurrencyNotEnabled           = errors.New("CURRENCY_NOT_ENABLED")
+	ErrCurrencyAccountMissing       = errors.New("CURRENCY_ACCOUNT_MISSING")
+	ErrCurrencyAccountInactive      = errors.New("CURRENCY_ACCOUNT_INACTIVE")
+	ErrCurrencySystemAccountMissing = errors.New("CURRENCY_SYSTEM_ACCOUNT_MISSING")
+	ErrCurrencyRouteUnavailable     = errors.New("CURRENCY_ROUTE_UNAVAILABLE")
+	ErrCurrencyLimitExceeded        = errors.New("CURRENCY_LIMIT_EXCEEDED")
+	ErrCrossCurrencyTransferRequiresFX = errors.New("CROSS_CURRENCY_TRANSFER_REQUIRES_FX")
+	ErrFXPairUnavailable         = errors.New("FX_PAIR_UNAVAILABLE")
+	ErrFXDirectionDisabled       = errors.New("FX_DIRECTION_DISABLED")
+	ErrFXRateUnavailable         = errors.New("FX_RATE_UNAVAILABLE")
+	ErrFXQuoteExpired            = errors.New("FX_QUOTE_EXPIRED")
+	ErrFXQuoteAlreadyConsumed    = errors.New("FX_QUOTE_ALREADY_CONSUMED")
+	ErrFXQuoteMismatch           = errors.New("FX_QUOTE_MISMATCH")
+	ErrFXQuoteNotFound          = errors.New("FX_QUOTE_NOT_FOUND")
+	ErrFXConversionNotFound     = errors.New("FX_CONVERSION_NOT_FOUND")
+	ErrFXRateNotFound           = errors.New("FX_RATE_NOT_FOUND")
+	ErrFXRateApprovalConflict   = errors.New("FX_RATE_APPROVAL_CONFLICT")
+	ErrFXPositionLimitExceeded  = errors.New("FX_POSITION_LIMIT_EXCEEDED")
+	ErrFXConversionsPaused       = errors.New("FX_CONVERSIONS_PAUSED")
+	ErrFXTargetAmountZero        = errors.New("FX_TARGET_AMOUNT_ZERO")
+	ErrFXRateInvalid              = errors.New("FX_RATE_INVALID")
 )
 
 // Structural sentinels: programming/infra errors, tx rolled back.
@@ -111,6 +138,7 @@ var (
 	ErrAccountNotFound     = errors.New("ACCOUNT_NOT_FOUND")
 	ErrTransactionNotFound = errors.New("TRANSACTION_NOT_FOUND")
 	ErrCurrencyMismatch    = errors.New("CURRENCY_MISMATCH")
+	ErrFXPairNotFound      = errors.New("FX_PAIR_NOT_FOUND")
 	ErrUnknownProcessor    = errors.New("UNKNOWN_TX_TYPE")
 	ErrUnbalancedEntries   = errors.New("UNBALANCED_ENTRIES")
 	ErrEmptyIdempotencyKey = errors.New("EMPTY_IDEMPOTENCY_KEY")
@@ -120,6 +148,7 @@ var (
 	// is a financial bug, not a UX nicety, so this always surfaces as a
 	// clear error asking the caller to narrow the period.
 	ErrStatementRangeTooLarge = errors.New("STATEMENT_RANGE_TOO_LARGE")
+	ErrMoneyOverflow           = errors.New("MONEY_OVERFLOW")
 	// ErrOutboxEventNotFound is returned when an admin outbox-replay request
 	// (docs/roadmap/archive/12 Task T3) targets an id that doesn't exist or isn't
 	// currently in 'dead' status — replaying a 'pending'/'failed'/
@@ -217,6 +246,16 @@ var businessRejectionSentinels = []error{
 	ErrAdjustmentAlreadyDecided, ErrReconItemAlreadyResolved, ErrIdempotencyConflict,
 	ErrChargebackDisputeNotFound, ErrChargebackDisputeAlreadyResolved,
 	ErrDisbursementBatchAlreadyDecided, ErrDisbursementBatchNotApproved,
+	ErrCurrencyInvalid, ErrCurrencyDisabled, ErrCurrencyOperationDisabled,
+	ErrCurrencyNotEnabled, ErrCurrencyAccountMissing, ErrCurrencyAccountInactive,
+	ErrCurrencySystemAccountMissing, ErrCurrencyRouteUnavailable,
+	ErrCurrencyLimitExceeded, ErrCrossCurrencyTransferRequiresFX,
+	ErrFXPairUnavailable, ErrFXDirectionDisabled, ErrFXRateUnavailable,
+	ErrFXQuoteExpired, ErrFXQuoteAlreadyConsumed, ErrFXQuoteMismatch,
+	ErrFXQuoteNotFound, ErrFXConversionNotFound, ErrFXRateNotFound,
+	ErrFXConversionsPaused, ErrFXTargetAmountZero,
+	ErrFXRateInvalid, ErrFXRateNotFound, ErrFXRateApprovalConflict,
+	ErrFXPositionLimitExceeded, ErrMoneyOverflow,
 }
 
 // IsBusinessRejection reports whether err is a valid business/input outcome

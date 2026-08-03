@@ -24,6 +24,7 @@ import (
 	"github.com/herdifirdausss/seev/internal/payin/repository"
 	"github.com/herdifirdausss/seev/internal/vendorgw"
 	"github.com/herdifirdausss/seev/pkg/cryptox"
+	currencyreg "github.com/herdifirdausss/seev/pkg/currency"
 	"github.com/herdifirdausss/seev/pkg/database"
 	"github.com/herdifirdausss/seev/pkg/fraudcheck"
 	"github.com/herdifirdausss/seev/pkg/generalutil"
@@ -120,8 +121,11 @@ func NewModule(db database.DatabaseSQL, poster Poster, registry *vendorgw.Regist
 // reference and expected vendor/amount/currency; the vendor payload's user id
 // is intentionally unavailable on this path.
 func (m *Module) HandleVendorCallback(ctx context.Context, vendor, vendorEventID, externalReference, amountRaw, currency, status, occurredAt, inboxID, requestID, unknownStatus string) (string, error) {
+	if err := currencyreg.ValidateCode(currency); err != nil {
+		return "", fmt.Errorf("payin: invalid normalized callback currency: %w", err)
+	}
 	amount, err := decimal.NewFromString(amountRaw)
-	if err != nil || !amount.IsPositive() || !amount.Equal(amount.Truncate(0)) {
+	if err != nil || currencyreg.ValidatePositiveMinorAmount(amount) != nil {
 		return "", fmt.Errorf("payin: invalid normalized callback amount")
 	}
 	mapping, found, err := m.routing.GetVendorGateway(ctx, vendor)
@@ -318,9 +322,11 @@ func (m *Module) postAndFinalize(ctx context.Context, ev model.WebhookEvent, gat
 		Type:             "money_in",
 		Amount:           principalAmount,
 		UserID:           ev.UserID,
+		Currency:         ev.Currency,
 		Metadata: map[string]any{
 			"gateway":      gateway,
 			"external_ref": ev.ExternalRef,
+			"currency_inflight": true,
 			"provider_reference": ev.ExternalRef,
 			"currency":      ev.Currency,
 			"total_debit":  totalDebit.String(),

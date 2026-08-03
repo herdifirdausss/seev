@@ -72,6 +72,21 @@ func (mr *MockAccountRepositoryMockRecorder) GetAccountID(ctx, userID, accountTy
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetAccountID", reflect.TypeOf((*MockAccountRepository)(nil).GetAccountID), ctx, userID, accountType)
 }
 
+// GetAccountIDByCurrency mocks base method.
+func (m *MockAccountRepository) GetAccountIDByCurrency(ctx context.Context, userID uuid.UUID, accountType, currency string) (uuid.UUID, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetAccountIDByCurrency", ctx, userID, accountType, currency)
+	ret0, _ := ret[0].(uuid.UUID)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetAccountIDByCurrency indicates an expected call of GetAccountIDByCurrency.
+func (mr *MockAccountRepositoryMockRecorder) GetAccountIDByCurrency(ctx, userID, accountType, currency any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetAccountIDByCurrency", reflect.TypeOf((*MockAccountRepository)(nil).GetAccountIDByCurrency), ctx, userID, accountType, currency)
+}
+
 // GetMerchantAccountID mocks base method.
 func (m *MockAccountRepository) GetMerchantAccountID(ctx context.Context, tenantID uuid.UUID, accountType string) (uuid.UUID, error) {
 	m.ctrl.T.Helper()
@@ -85,6 +100,21 @@ func (m *MockAccountRepository) GetMerchantAccountID(ctx context.Context, tenant
 func (mr *MockAccountRepositoryMockRecorder) GetMerchantAccountID(ctx, tenantID, accountType any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetMerchantAccountID", reflect.TypeOf((*MockAccountRepository)(nil).GetMerchantAccountID), ctx, tenantID, accountType)
+}
+
+// GetMerchantAccountIDByCurrency mocks base method.
+func (m *MockAccountRepository) GetMerchantAccountIDByCurrency(ctx context.Context, tenantID uuid.UUID, accountType, currency string) (uuid.UUID, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetMerchantAccountIDByCurrency", ctx, tenantID, accountType, currency)
+	ret0, _ := ret[0].(uuid.UUID)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetMerchantAccountIDByCurrency indicates an expected call of GetMerchantAccountIDByCurrency.
+func (mr *MockAccountRepositoryMockRecorder) GetMerchantAccountIDByCurrency(ctx, tenantID, accountType, currency any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetMerchantAccountIDByCurrency", reflect.TypeOf((*MockAccountRepository)(nil).GetMerchantAccountIDByCurrency), ctx, tenantID, accountType, currency)
 }
 
 // GetOwnerID mocks base method.
@@ -115,6 +145,21 @@ func (m *MockAccountRepository) GetPocketAccountID(ctx context.Context, userID u
 func (mr *MockAccountRepositoryMockRecorder) GetPocketAccountID(ctx, userID, pocketCode any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetPocketAccountID", reflect.TypeOf((*MockAccountRepository)(nil).GetPocketAccountID), ctx, userID, pocketCode)
+}
+
+// GetPocketAccountIDByCurrency mocks base method.
+func (m *MockAccountRepository) GetPocketAccountIDByCurrency(ctx context.Context, userID uuid.UUID, pocketCode, currency string) (uuid.UUID, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetPocketAccountIDByCurrency", ctx, userID, pocketCode, currency)
+	ret0, _ := ret[0].(uuid.UUID)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetPocketAccountIDByCurrency indicates an expected call of GetPocketAccountIDByCurrency.
+func (mr *MockAccountRepositoryMockRecorder) GetPocketAccountIDByCurrency(ctx, userID, pocketCode, currency any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetPocketAccountIDByCurrency", reflect.TypeOf((*MockAccountRepository)(nil).GetPocketAccountIDByCurrency), ctx, userID, pocketCode, currency)
 }
 
 // GetSystemAccountID mocks base method.

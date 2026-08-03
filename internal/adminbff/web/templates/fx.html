@@ -1,0 +1,50 @@
+{{define "content"}}<h1>FX controls</h1>
+<p>All values remain in their native currency minor units. Mutations are proxied to Ledger and audited by this BFF.</p>
+
+<section>
+  <h2>Currency capabilities</h2>
+  <pre hx-get="/api/v1/admin/fx/currencies" hx-trigger="load, every 30s">Loading currency policy…</pre>
+</section>
+
+<section>
+  <h2>Pairs and directions</h2>
+  <pre hx-get="/api/v1/admin/fx/pairs" hx-trigger="load, every 30s">Loading FX pairs…</pre>
+</section>
+
+<section>
+  <h2>Positions</h2>
+  <pre hx-get="/api/v1/admin/fx/positions" hx-trigger="load, every 15s">Loading FX positions…</pre>
+</section>
+
+<section>
+  <h2>Conversion reconciliation</h2>
+  <pre hx-get="/api/v1/admin/fx/reconciliation" hx-trigger="load, every 30s">Loading FX evidence…</pre>
+</section>
+
+{{if .IsMaker}}<section>
+  <h2>Submit rate for checker approval</h2>
+  <form method="post" action="/api/v1/admin/fx/rates">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <label>Pair ID <input name="pair_id" required></label>
+    <label>Direction ID <input name="direction_id" required></label>
+    <label>Reference rate <input name="reference_rate" inputmode="decimal" required></label>
+    <label>Effective from (RFC3339) <input name="effective_from" placeholder="2026-08-03T00:00:00Z"></label>
+    <button type="submit">Create draft rate</button>
+  </form>
+</section>{{end}}
+
+{{if .IsChecker}}<section>
+  <h2>Approve or reject rate</h2>
+  <form method="post" action="/api/v1/admin/fx/rates/approve">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <label>Rate ID <input name="id" required></label>
+    <button type="submit">Approve</button>
+  </form>
+  <form method="post" action="/api/v1/admin/fx/rates/reject">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <label>Rate ID <input name="id" required></label>
+    <label>Reason <input name="reason" required></label>
+    <button type="submit" class="secondary">Reject</button>
+  </form>
+</section>{{end}}
+{{end}}

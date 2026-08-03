@@ -13,6 +13,7 @@ import (
 	"github.com/herdifirdausss/seev/internal/payout/model"
 	"github.com/herdifirdausss/seev/internal/vendorgw"
 	"github.com/herdifirdausss/seev/pkg/fraudcheck"
+	currencyreg "github.com/herdifirdausss/seev/pkg/currency"
 	"github.com/herdifirdausss/seev/pkg/generalutil"
 	"github.com/herdifirdausss/seev/pkg/ledgerclient"
 	"github.com/herdifirdausss/seev/pkg/ledgererr"
@@ -39,12 +40,50 @@ func cancelIdempotencyKey(id uuid.UUID) string { return "payout:" + id.String() 
 // ID as every subsequent ledger idempotency key; nothing here is a "start
 // over from scratch" operation.
 func (m *Module) Create(ctx context.Context, userID uuid.UUID, amount decimal.Decimal, destination []byte, createdBy, quoteID string) (uuid.UUID, error) {
+	return m.create(ctx, userID, amount, destination, createdBy, quoteID, "")
+}
+
+func (m *Module) CreateWithCurrency(ctx context.Context, userID uuid.UUID, amount decimal.Decimal, destination []byte, createdBy, quoteID, requestedCurrency string) (uuid.UUID, error) {
+	return m.create(ctx, userID, amount, destination, createdBy, quoteID, requestedCurrency)
+}
+
+func (m *Module) create(ctx context.Context, userID uuid.UUID, amount decimal.Decimal, destination []byte, createdBy, quoteID, requestedCurrency string) (uuid.UUID, error) {
+	if err := currencyreg.ValidatePositiveMinorAmount(amount); err != nil {
+		return uuid.Nil, fmt.Errorf("%w: %v", ErrInvalidAmount, err)
+	}
 	if err := m.ensureIntakeOpen(ctx); err != nil {
 		return uuid.Nil, err
 	}
-	currency, err := m.poster.GetUserCurrency(ctx, userID, "")
-	if err != nil {
-		return uuid.Nil, fmt.Errorf("payout: resolve user currency: %w", err)
+	currency := requestedCurrency
+	if currency != "" {
+		if err := currencyreg.ValidateCode(currency); err != nil {
+			return uuid.Nil, fmt.Errorf("payout: invalid currency: %w", err)
+		}
+	}
+	if currency == "" {
+		var err error
+		currency, err = m.poster.GetUserCurrency(ctx, userID, "")
+		if err != nil {
+			return uuid.Nil, fmt.Errorf("payout: resolve user currency: %w", err)
+		}
+	}
+	if validator, ok := m.poster.(interface {
+		ValidateCurrency(context.Context, string, string) error
+	}); ok {
+		if err := validator.ValidateCurrency(ctx, currency, "payout"); err != nil {
+			return uuid.Nil, fmt.Errorf("payout: currency policy: %w", err)
+		}
+	}
+	if accountReader, ok := m.poster.(interface {
+		UserCurrencyEnabled(context.Context, uuid.UUID, string) (bool, error)
+	}); ok {
+		enabled, err := accountReader.UserCurrencyEnabled(ctx, userID, currency)
+		if err != nil {
+			return uuid.Nil, fmt.Errorf("payout: check currency account: %w", err)
+		}
+		if !enabled {
+			return uuid.Nil, &ledgererr.LedgerError{Code: "CURRENCY_NOT_ENABLED", Message: fmt.Sprintf("currency account is not enabled: %s", currency)}
+		}
 	}
 
 	if m.fraudClient != nil {
@@ -143,7 +182,8 @@ func (m *Module) hold(ctx context.Context, req model.PayoutRequest) error {
 	key := holdIdempotencyKey(req.ID)
 	cmd := ledgerclient.Command{
 		IdempotencyKey: key, IdempotencyScope: payoutScope,
-		Type: "withdraw_initiate", Amount: req.Amount, UserID: req.UserID,
+		Type: "withdraw_initiate", Amount: req.Amount, UserID: req.UserID, Currency: req.Currency,
+		Metadata: map[string]any{"currency_inflight": true},
 	}
 	if req.MerchantTenantID != uuid.Nil {
 		// Plan 57 T6: the merchant-owned counterpart of withdraw_initiate.
@@ -253,7 +293,7 @@ func (m *Module) settle(ctx context.Context, id uuid.UUID, gateway string) error
 	}
 
 	key := settleIdempotencyKey(id)
-	metadata := map[string]any{"gateway": gateway}
+	metadata := map[string]any{"gateway": gateway, "currency_inflight": true}
 	// Withdraw fee is priced and charged HERE, on settle, never on hold —
 	// see Poster.ResolveFee's own doc comment for why. Gateway key "" for
 	// the fee lookup: the platform fee doesn't vary by bank rail, only by
@@ -285,7 +325,7 @@ func (m *Module) settle(ctx context.Context, id uuid.UUID, gateway string) error
 	}
 	cmd := ledgerclient.Command{
 		IdempotencyKey: key, IdempotencyScope: payoutScope,
-		Type: "withdraw_settle", Amount: req.Amount, UserID: req.UserID,
+		Type: "withdraw_settle", Amount: req.Amount, UserID: req.UserID, Currency: req.Currency,
 		ReferenceID: *req.HoldTxID, Metadata: metadata,
 	}
 	if req.MerchantTenantID != uuid.Nil {
@@ -328,8 +368,8 @@ func (m *Module) cancel(ctx context.Context, id uuid.UUID, gateway, reason strin
 	key := cancelIdempotencyKey(id)
 	cmd := ledgerclient.Command{
 		IdempotencyKey: key, IdempotencyScope: payoutScope,
-		Type: "withdraw_cancel", Amount: req.Amount, UserID: req.UserID,
-		ReferenceID: *req.HoldTxID, Metadata: map[string]any{"gateway": gateway},
+		Type: "withdraw_cancel", Amount: req.Amount, UserID: req.UserID, Currency: req.Currency,
+		ReferenceID: *req.HoldTxID, Metadata: map[string]any{"gateway": gateway, "currency_inflight": true},
 	}
 	if req.MerchantTenantID != uuid.Nil {
 		// Plan 57 T6: the merchant-owned counterpart of withdraw_cancel.

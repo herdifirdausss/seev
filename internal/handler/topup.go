@@ -2,6 +2,7 @@ package handler
 
 import (
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -13,12 +14,14 @@ import (
 	"google.golang.org/protobuf/reflect/protoreflect"
 
 	payinv1 "github.com/herdifirdausss/seev/gen/payin/v1"
+	currencyreg "github.com/herdifirdausss/seev/pkg/currency"
 	"github.com/herdifirdausss/seev/pkg/middleware"
 	"github.com/herdifirdausss/seev/pkg/response"
 )
 
 type createTopupRequest struct {
 	Amount     string `json:"amount"`
+	Currency   string `json:"currency,omitempty"`
 	FeeQuoteID string `json:"fee_quote_id,omitempty"`
 }
 type topupResponse struct {
@@ -59,6 +62,12 @@ func createTopupIntentHandler(client payinv1.PayinServiceClient) http.HandlerFun
 		if !response.Decode(w, r, &request) {
 			return
 		}
+		if request.Currency != "" {
+			if err := currencyreg.ValidateCode(request.Currency); err != nil {
+				response.ErrorStatus(w, http.StatusBadRequest, "CURRENCY_INVALID", "currency must be exactly three uppercase letters")
+				return
+			}
+		}
 		amount, err := decimal.NewFromString(request.Amount)
 		if err != nil || !amount.Equal(amount.Truncate(0)) {
 			response.BadRequest(w, "amount must be a valid integer decimal string")
@@ -71,6 +80,9 @@ func createTopupIntentHandler(client payinv1.PayinServiceClient) http.HandlerFun
 		protoRequest := &payinv1.CreateTopupIntentRequest{UserId: userID.String(), Amount: amount.String()}
 		setProtoStringField(protoRequest, "fee_quote_id", request.FeeQuoteID)
 		callContext := r.Context()
+		if request.Currency != "" {
+			callContext = metadata.AppendToOutgoingContext(callContext, "x-seev-currency", request.Currency)
+		}
 		if request.FeeQuoteID != "" {
 			// The checked-in generated client may predate the additive proto
 			// field. Carry the same value in internal metadata until generated
@@ -82,12 +94,26 @@ func createTopupIntentHandler(client payinv1.PayinServiceClient) http.HandlerFun
 		result, err := client.CreateTopupIntent(callContext, protoRequest, grpc.Header(&headers))
 		if err != nil {
 			switch status.Code(err) {
-			case codes.FailedPrecondition:
-				if status.Convert(err).Message() == "TOPUP_FEE_QUOTE_REQUIRED" {
-					response.JSON(w, http.StatusUnprocessableEntity, response.Envelope{Success: false, Error: &response.Error{Code: "TOPUP_FEE_QUOTE_REQUIRED", Message: "a valid fee quote is required"}})
-				} else if status.Convert(err).Message() == "INTAKE_PAUSED" {
-					response.JSON(w, http.StatusUnprocessableEntity, response.Envelope{Success: false, Error: &response.Error{Code: "INTAKE_PAUSED", Message: "top-up intake is paused"}})
+			case codes.InvalidArgument:
+				message := status.Convert(err).Message()
+				if strings.HasPrefix(message, "CURRENCY_INVALID") {
+					response.ErrorStatus(w, http.StatusBadRequest, "CURRENCY_INVALID", message)
 				} else {
+					response.BadRequest(w, message)
+				}
+			case codes.FailedPrecondition:
+				if writeLedgerBusinessError(w, err) {
+					return
+				}
+				message := status.Convert(err).Message()
+				switch {
+				case message == "TOPUP_FEE_QUOTE_REQUIRED":
+					response.JSON(w, http.StatusUnprocessableEntity, response.Envelope{Success: false, Error: &response.Error{Code: "TOPUP_FEE_QUOTE_REQUIRED", Message: "a valid fee quote is required"}})
+				case message == "INTAKE_PAUSED":
+					response.JSON(w, http.StatusUnprocessableEntity, response.Envelope{Success: false, Error: &response.Error{Code: "INTAKE_PAUSED", Message: "top-up intake is paused"}})
+				case strings.HasPrefix(message, "["):
+					response.UnprocessableEntity(w, message)
+				default:
 					response.JSON(w, http.StatusUnprocessableEntity, response.Envelope{Success: false, Error: &response.Error{Code: "NO_ROUTE", Message: "no topup route available"}})
 				}
 			case codes.Unavailable:

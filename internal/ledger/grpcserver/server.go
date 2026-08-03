@@ -55,9 +55,26 @@ type Server struct {
 	service Service
 }
 
+var workflowOnlyPostTypes = map[string]struct{}{
+	"adjustment_credit":          {},
+	"adjustment_debit":           {},
+	"adjustment_suspense_credit": {},
+	"adjustment_suspense_debit":  {},
+	"reversal":                   {},
+	"chargeback":                 {},
+	"freeze_confiscate":          {},
+	"fx_rebalance_credit":        {},
+	"fx_rebalance_debit":         {},
+	"fx_out":                     {},
+	"fx_in":                      {},
+}
+
 func New(service Service) *Server { return &Server{service: service} }
 
 func (s *Server) Post(ctx context.Context, req *ledgerv1.PostRequest) (*ledgerv1.PostResponse, error) {
+	if _, blocked := workflowOnlyPostTypes[req.GetType()]; blocked {
+		return nil, status.Error(codes.PermissionDenied, "transaction type must use its governed internal workflow")
+	}
 	amount, err := integralAmount(req.GetAmount())
 	if err != nil {
 		return nil, err
@@ -93,10 +110,16 @@ func (s *Server) Post(ctx context.Context, req *ledgerv1.PostRequest) (*ledgerv1
 		}
 		metadata["request_id"] = id
 	}
+	requestedCurrency := ""
+	if incoming, ok := metadata.FromIncomingContext(ctx); ok {
+		if values := incoming.Get("x-seev-currency"); len(values) > 0 {
+			requestedCurrency = values[0]
+		}
+	}
 	err = s.service.Post(ctx, processors.Command{
 		IdempotencyKey: req.GetIdempotencyKey(), IdempotencyScope: req.GetIdempotencyScope(),
 		Type: req.GetType(), Amount: amount, UserID: userID, TargetUserID: targetUserID,
-		PocketCode: req.GetPocketCode(), ReferenceID: referenceID, Metadata: metadata,
+		PocketCode: req.GetPocketCode(), Currency: requestedCurrency, ReferenceID: referenceID, Metadata: metadata,
 		MerchantTenantID: merchantTenantID,
 	})
 	if err != nil {
@@ -114,6 +137,44 @@ func (s *Server) GetTransactionByIdempotencyKey(ctx context.Context, req *ledger
 }
 
 func (s *Server) GetUserCurrency(ctx context.Context, req *ledgerv1.GetUserCurrencyRequest) (*ledgerv1.GetUserCurrencyResponse, error) {
+	if incoming, ok := metadata.FromIncomingContext(ctx); ok {
+		if values := incoming.Get("x-seev-currency-operation"); len(values) > 0 && values[0] != "" {
+			validator, ok := s.service.(interface {
+				ValidateCurrency(context.Context, string, string) error
+			})
+			if !ok {
+				return nil, status.Error(codes.Unimplemented, "currency policy validation unavailable")
+			}
+			code := ""
+			if currencyValues := incoming.Get("x-seev-currency"); len(currencyValues) > 0 {
+				code = currencyValues[0]
+			}
+			if err := validator.ValidateCurrency(ctx, code, values[0]); err != nil {
+				return nil, mapError(err)
+			}
+			return &ledgerv1.GetUserCurrencyResponse{Currency: code}, nil
+		}
+		if values := incoming.Get("x-seev-currency-check"); len(values) > 0 && values[0] != "" {
+			checker, ok := s.service.(interface {
+				UserCurrencyEnabled(context.Context, uuid.UUID, string) (bool, error)
+			})
+			if !ok {
+				return nil, status.Error(codes.Unimplemented, "user currency account check unavailable")
+			}
+			userID, err := parseUUID(req.GetUserId())
+			if err != nil {
+				return nil, status.Errorf(codes.InvalidArgument, "user_id: %v", err)
+			}
+			enabled, err := checker.UserCurrencyEnabled(ctx, userID, values[0])
+			if err != nil {
+				return nil, mapError(err)
+			}
+			if !enabled {
+				return &ledgerv1.GetUserCurrencyResponse{}, nil
+			}
+			return &ledgerv1.GetUserCurrencyResponse{Currency: values[0]}, nil
+		}
+	}
 	userID, err := parseUUID(req.GetUserId())
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "user_id: %v", err)
@@ -348,7 +409,51 @@ func mapError(err error) error {
 	if isNotFound(err) {
 		return status.Error(codes.NotFound, err.Error())
 	}
+	if errors.Is(err, apperror.ErrValidation) ||
+		errors.Is(err, apperror.ErrCurrencyInvalid) ||
+		errors.Is(err, apperror.ErrEmptyIdempotencyKey) {
+		return status.Error(codes.InvalidArgument, err.Error())
+	}
+	if apperror.IsBusinessRejection(err) {
+		return statusWithInfo(codes.FailedPrecondition, err.Error(), businessReason(err))
+	}
 	return status.Error(codes.Internal, "internal ledger error")
+}
+
+func businessReason(err error) string {
+	for _, reason := range []error{
+		apperror.ErrCurrencyInvalid,
+		apperror.ErrCurrencyDisabled,
+		apperror.ErrCurrencyOperationDisabled,
+		apperror.ErrCurrencyNotEnabled,
+		apperror.ErrCurrencyAccountMissing,
+		apperror.ErrCurrencyAccountInactive,
+		apperror.ErrCurrencySystemAccountMissing,
+		apperror.ErrCurrencyRouteUnavailable,
+		apperror.ErrCurrencyLimitExceeded,
+		apperror.ErrCrossCurrencyTransferRequiresFX,
+		apperror.ErrInsufficientFunds,
+		apperror.ErrAccountSuspended,
+		apperror.ErrAccountClosed,
+		apperror.ErrCurrencyMismatch,
+		apperror.ErrFXQuoteExpired,
+		apperror.ErrFXQuoteAlreadyConsumed,
+		apperror.ErrFXQuoteMismatch,
+		apperror.ErrFXRateUnavailable,
+		apperror.ErrFXRateApprovalConflict,
+		apperror.ErrFXPairUnavailable,
+		apperror.ErrFXDirectionDisabled,
+		apperror.ErrFXConversionsPaused,
+		apperror.ErrFXTargetAmountZero,
+		apperror.ErrFXRateInvalid,
+		apperror.ErrFXPositionLimitExceeded,
+		apperror.ErrMoneyOverflow,
+	} {
+		if errors.Is(err, reason) {
+			return reason.Error()
+		}
+	}
+	return apperror.ErrValidation.Error()
 }
 
 func statusWithInfo(code codes.Code, message, reason string) error {
@@ -361,11 +466,15 @@ func statusWithInfo(code codes.Code, message, reason string) error {
 
 func isNotFound(err error) bool {
 	return errors.Is(err, apperror.ErrAccountNotFound) ||
+		errors.Is(err, apperror.ErrCurrencyAccountMissing) ||
 		errors.Is(err, apperror.ErrTransactionNotFound) ||
 		errors.Is(err, apperror.ErrOriginalNotFound) ||
 		errors.Is(err, apperror.ErrOutboxEventNotFound) ||
 		errors.Is(err, apperror.ErrPendingAdjustmentNotFound) ||
 		errors.Is(err, apperror.ErrReconBatchNotFound) ||
 		errors.Is(err, apperror.ErrReconItemNotFound) ||
-		errors.Is(err, apperror.ErrScheduledTransactionNotFound)
+		errors.Is(err, apperror.ErrScheduledTransactionNotFound) ||
+		errors.Is(err, apperror.ErrFXQuoteNotFound) ||
+		errors.Is(err, apperror.ErrFXConversionNotFound) ||
+		errors.Is(err, apperror.ErrFXRateNotFound)
 }

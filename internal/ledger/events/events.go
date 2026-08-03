@@ -25,10 +25,12 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	currencyreg "github.com/herdifirdausss/seev/pkg/currency"
 )
 
 var (
 	minorAmountPattern = regexp.MustCompile(`^[0-9]+$`)
+	positiveMinorAmountPattern = regexp.MustCompile(`^[0-9]*[1-9][0-9]*$`)
 	currencyPattern    = regexp.MustCompile(`^[A-Z]{3}$`)
 )
 
@@ -54,6 +56,11 @@ const (
 	// governance audit trail (who requested, who decided, what) rides the
 	// same outbox mechanism as every other ledger event.
 	TypeAdjustmentDecided = "ledger.adjustment.decided.v1"
+	// TypeFXConversionPosted is the aggregate event for one atomic FX
+	// conversion. The two leg transaction events are emitted as well, but
+	// consumers that need one user-facing conversion must subscribe to this
+	// event rather than infer an aggregate from two independent postings.
+	TypeFXConversionPosted = "ledger.fx_conversion.posted.v1"
 	// Interest events are emitted by the C5 period-close workflow through the
 	// Ledger outbox.  Their logical EventID is stable for the durable evidence
 	// row, so replaying a worker cannot create a second logical domain event.
@@ -252,6 +259,10 @@ type TransactionPosted struct {
 	TransactionType string `json:"transaction_type"`
 	Amount          string `json:"amount"`
 	Currency        string `json:"currency"`
+	// MinorUnit is optional for backwards compatibility with historical
+	// transaction events. New producers include it when the currency is
+	// registered so consumers can format amounts without guessing.
+	MinorUnit int16 `json:"minor_unit,omitempty"`
 	// SourceAccountID/DestinationAccountID are nil when the transaction
 	// isn't a single source->destination pair (docs/roadmap/archive/14 Task T1,
 	// decision K2 — e.g. Reversal).
@@ -301,9 +312,13 @@ func (e TransactionPosted) Validate() error {
 	if e.SchemaVersion != 1 {
 		return fmt.Errorf("transaction posted: unsupported schema_version %d", e.SchemaVersion)
 	}
-	if e.TxID == uuid.Nil || e.TransactionType == "" || !minorAmountPattern.MatchString(e.Amount) || !currencyPattern.MatchString(e.Currency) || e.OccurredAt.IsZero() {
+	if e.TxID == uuid.Nil || e.TransactionType == "" || !minorAmountPattern.MatchString(e.Amount) || !currencyPattern.MatchString(e.Currency) || e.MinorUnit < 0 || e.OccurredAt.IsZero() {
 		return fmt.Errorf("transaction posted: required fields are invalid")
 	}
+	// MinorUnit is optional on this historical event shape. A zero value is
+	// indistinguishable from an omitted field after JSON decoding, so a
+	// registry comparison here would reject old USD events; consumers fall
+	// back to the registry when the optional field is absent.
 	if (e.FeeAmount != "" && !minorAmountPattern.MatchString(e.FeeAmount)) ||
 		(e.TotalDebit != "" && !minorAmountPattern.MatchString(e.TotalDebit)) {
 		return fmt.Errorf("transaction posted: fee amounts are invalid")
@@ -322,7 +337,7 @@ func (e TransactionPosted) Validate() error {
 		if expected.Cmp(total) != 0 {
 			return fmt.Errorf("transaction posted: total_debit must equal amount plus fee_amount")
 		}
-	}
+		}
 	for i, entry := range e.Entries {
 		if entry.AccountID == uuid.Nil || (entry.Direction != "debit" && entry.Direction != "credit") || !minorAmountPattern.MatchString(entry.Amount) {
 			return fmt.Errorf("transaction posted: invalid entry %d", i)
@@ -346,6 +361,10 @@ func NewTransactionPosted(
 	requestID string,
 	merchantTenantID *uuid.UUID,
 ) TransactionPosted {
+	minorUnit := int16(0)
+	if registeredMinorUnit, ok := currencyreg.MinorUnit(currency); ok {
+		minorUnit = registeredMinorUnit
+	}
 	return TransactionPosted{
 		SchemaVersion:        1,
 		EventID:              logicalEventID(TypeTransactionPosted, txID.String()),
@@ -353,6 +372,7 @@ func NewTransactionPosted(
 		TransactionType:      transactionType,
 		Amount:               amount,
 		Currency:             currency,
+		MinorUnit:            minorUnit,
 		SourceAccountID:      source,
 		DestinationAccountID: destination,
 		Entries:              entries,
@@ -460,6 +480,91 @@ func logicalEventID(eventType, identity string) *uuid.UUID {
 // ToPayload converts an AdjustmentDecided to the map[string]any shape
 // outbox_events.Payload stores — see TransactionPosted.ToPayload.
 func (e AdjustmentDecided) ToPayload() map[string]any { return toPayload(e) }
+
+// FXConversionPosted is the payload for TypeFXConversionPosted. Amounts are
+// strings containing minor units and the client rate is an exact decimal or
+// rational string; neither field is represented as a JSON number.
+type FXConversionPosted struct {
+	SchemaVersion       int        `json:"schema_version"`
+	EventID             *uuid.UUID `json:"event_id,omitempty"`
+	ConversionID        uuid.UUID  `json:"conversion_id"`
+	QuoteID             uuid.UUID  `json:"quote_id"`
+	UserID              uuid.UUID  `json:"user_id"`
+	SourceTransactionID uuid.UUID  `json:"source_transaction_id"`
+	SourceCurrency      string     `json:"source_currency"`
+	SourceMinorUnit     int16      `json:"source_minor_unit"`
+	SourceAmount        string     `json:"source_amount"`
+	TargetTransactionID uuid.UUID  `json:"target_transaction_id"`
+	TargetCurrency      string     `json:"target_currency"`
+	TargetMinorUnit     int16      `json:"target_minor_unit"`
+	TargetAmount        string     `json:"target_amount"`
+	PairID              uuid.UUID  `json:"pair_id"`
+	DirectionID         uuid.UUID  `json:"direction_id"`
+	RateVersionID       uuid.UUID  `json:"rate_version_id"`
+	ClientRate          string     `json:"client_rate"`
+	RateConvention      string     `json:"rate_convention"`
+	PairPolicyVersion   int64      `json:"pair_policy_version"`
+	SpreadBasisPoints   int64      `json:"spread_basis_points"`
+	RoundingMode        string     `json:"rounding_mode"`
+	RoundingRemainder   string     `json:"rounding_remainder"`
+	PostedAt            time.Time  `json:"posted_at"`
+}
+
+// Validate applies the v1 wire invariants before a consumer uses an FX
+// conversion event.
+func (e FXConversionPosted) Validate() error {
+	if e.SchemaVersion != 1 || e.EventID == nil || *e.EventID == uuid.Nil || e.ConversionID == uuid.Nil || e.QuoteID == uuid.Nil || e.UserID == uuid.Nil ||
+		e.SourceTransactionID == uuid.Nil || e.TargetTransactionID == uuid.Nil || e.PairID == uuid.Nil ||
+		e.DirectionID == uuid.Nil || e.RateVersionID == uuid.Nil || !currencyPattern.MatchString(e.SourceCurrency) ||
+		!currencyPattern.MatchString(e.TargetCurrency) || e.SourceCurrency == e.TargetCurrency ||
+		!positiveMinorAmountPattern.MatchString(e.SourceAmount) || !positiveMinorAmountPattern.MatchString(e.TargetAmount) ||
+		e.SourceMinorUnit < 0 || e.TargetMinorUnit < 0 || e.ClientRate == "" || e.RateConvention == "" || e.PairPolicyVersion <= 0 || e.SpreadBasisPoints < 0 || e.SpreadBasisPoints >= 10000 ||
+		e.RoundingMode == "" || e.RoundingRemainder == "" || e.PostedAt.IsZero() {
+		return fmt.Errorf("FX conversion posted: required fields are invalid")
+	}
+	if registeredMinorUnit, ok := currencyreg.MinorUnit(e.SourceCurrency); ok && e.SourceMinorUnit != registeredMinorUnit {
+		return fmt.Errorf("FX conversion posted: source minor_unit %d does not match %s", e.SourceMinorUnit, e.SourceCurrency)
+	}
+	if registeredMinorUnit, ok := currencyreg.MinorUnit(e.TargetCurrency); ok && e.TargetMinorUnit != registeredMinorUnit {
+		return fmt.Errorf("FX conversion posted: target minor_unit %d does not match %s", e.TargetMinorUnit, e.TargetCurrency)
+	}
+	if _, err := currencyreg.ParseRate(e.ClientRate); err != nil {
+		return fmt.Errorf("FX conversion posted: client_rate is not exact: %w", err)
+	}
+	return nil
+}
+
+// NewFXConversionPosted builds an FXConversionPosted at the current schema
+// version. The identity is deterministic for one conversion so consumers can
+// deduplicate redelivery without depending on the outbox row id.
+func NewFXConversionPosted(
+	conversionID, quoteID, userID, sourceTransactionID uuid.UUID,
+	sourceCurrency string, sourceMinorUnit int16, sourceAmount string,
+	targetTransactionID uuid.UUID, targetCurrency string, targetMinorUnit int16, targetAmount string,
+	pairID, directionID, rateVersionID uuid.UUID,
+	clientRate, rateConvention string, pairPolicyVersion, spreadBasisPoints int64,
+	roundingMode, roundingRemainder string,
+	postedAt time.Time,
+) FXConversionPosted {
+	return FXConversionPosted{
+		SchemaVersion: 1,
+		EventID: logicalEventID(TypeFXConversionPosted, conversionID.String()),
+		ConversionID: conversionID, QuoteID: quoteID, UserID: userID,
+		SourceTransactionID: sourceTransactionID, SourceCurrency: sourceCurrency,
+		SourceMinorUnit: sourceMinorUnit, SourceAmount: sourceAmount,
+		TargetTransactionID: targetTransactionID, TargetCurrency: targetCurrency,
+		TargetMinorUnit: targetMinorUnit, TargetAmount: targetAmount,
+		PairID: pairID, DirectionID: directionID, RateVersionID: rateVersionID,
+		ClientRate: clientRate, RateConvention: rateConvention,
+		PairPolicyVersion: pairPolicyVersion, SpreadBasisPoints: spreadBasisPoints,
+		RoundingMode: roundingMode, RoundingRemainder: roundingRemainder,
+		PostedAt: postedAt,
+	}
+}
+
+// ToPayload converts an FXConversionPosted to the map[string]any shape stored
+// in outbox_events.Payload.
+func (e FXConversionPosted) ToPayload() map[string]any { return toPayload(e) }
 
 func toPayload(v any) map[string]any {
 	b, err := json.Marshal(v)

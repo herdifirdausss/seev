@@ -9,6 +9,7 @@ import (
 
 	"github.com/herdifirdausss/seev/internal/payin/model"
 	"github.com/herdifirdausss/seev/internal/payin/repository"
+	currencyreg "github.com/herdifirdausss/seev/pkg/currency"
 	"github.com/herdifirdausss/seev/pkg/generalutil"
 	"github.com/herdifirdausss/seev/pkg/response"
 )
@@ -52,8 +53,8 @@ func (m *Module) validateRulePayload(p routingRulePayload) (model.RoutingRule, s
 	}
 	if p.Currency != nil {
 		c := strings.ToUpper(strings.TrimSpace(*p.Currency))
-		if len(c) != 3 {
-			return model.RoutingRule{}, "currency must be a 3-letter code"
+		if err := currencyreg.ValidateCode(c); err != nil {
+			return model.RoutingRule{}, "currency must be a three-letter uppercase code"
 		}
 		p.Currency = &c
 	}

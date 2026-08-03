@@ -41,7 +41,7 @@ func NewDisbursement(r repository.AccountRepository) *Disbursement { return &Dis
 func (p *Disbursement) Type() string                               { return "disbursement" }
 
 func (p *Disbursement) ResolveAccounts(ctx context.Context, cmd Command) (ResolvedAccounts, string, error) {
-	cashID, err := p.repo.GetAccountID(ctx, cmd.UserID, constant.AccountTypeCash)
+	cashID, err := userAccountID(ctx, p.repo, cmd.UserID, constant.AccountTypeCash, cmd.Currency)
 	if err != nil {
 		return ResolvedAccounts{}, "", fmt.Errorf("disbursement: user cash: %w", err)
 	}

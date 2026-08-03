@@ -83,9 +83,13 @@ func (h *handler) buildMetadata(ctx context.Context, userID uuid.UUID, req postT
 	// for that currency. The real not-found error surfaces properly from
 	// ResolveAccounts a moment later; this lookup must never block a
 	// request just to price a fee.
-	currency, cerr := h.svc.GetUserCurrency(ctx, userID, req.PocketCode)
-	if cerr != nil {
-		currency = ""
+	currency := req.Currency
+	if currency == "" {
+		var cerr error
+		currency, cerr = h.svc.GetUserCurrency(ctx, userID, req.PocketCode)
+		if cerr != nil {
+			currency = ""
+		}
 	}
 	if h.feePolicy != nil && req.QuoteID == "" {
 		if fee, feeGateway, ok := h.feePolicy.Resolve(ctx, userID, req.Type, gateway, currency, amount); ok {

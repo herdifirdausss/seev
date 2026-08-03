@@ -32,7 +32,7 @@ func NewAdjustmentCredit(r repository.AccountRepository) *AdjustmentCredit {
 func (p *AdjustmentCredit) Type() string { return "adjustment_credit" }
 
 func (p *AdjustmentCredit) ResolveAccounts(ctx context.Context, cmd Command) (ResolvedAccounts, string, error) {
-	cashID, err := p.repo.GetAccountID(ctx, cmd.UserID, constant.AccountTypeCash)
+	cashID, err := userAccountID(ctx, p.repo, cmd.UserID, constant.AccountTypeCash, cmd.Currency)
 	if err != nil {
 		return ResolvedAccounts{}, "", fmt.Errorf("adjustment_credit: user cash: %w", err)
 	}

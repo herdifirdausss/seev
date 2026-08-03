@@ -59,3 +59,23 @@ type PayinVerifier interface {
 type PayinVendor interface {
 	Vendor() string
 }
+
+// CurrencyCapability is an additive vendor declaration used by journey
+// routing. Older adapters may omit it and remain compatible with the legacy
+// IDR route; every non-IDR route must explicitly declare the requested
+// operation/currency pair.
+type CurrencyCapability interface {
+	SupportsCurrency(operation, currency string) bool
+}
+
+// SupportsRequestedCurrency preserves the legacy IDR adapter contract while
+// making non-IDR capability declarations mandatory. A route must never infer
+// USD support merely because an adapter happens to implement the older
+// operation interface.
+func SupportsRequestedCurrency(provider any, operation, currency string) bool {
+	if currency == "" || currency == "IDR" {
+		return true
+	}
+	capability, ok := provider.(CurrencyCapability)
+	return ok && capability.SupportsCurrency(operation, currency)
+}

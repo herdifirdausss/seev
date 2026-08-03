@@ -36,7 +36,7 @@ func NewEscrowHold(r repository.AccountRepository) *EscrowHold { return &EscrowH
 func (p *EscrowHold) Type() string                             { return "escrow_hold" }
 
 func (p *EscrowHold) ResolveAccounts(ctx context.Context, cmd Command) (ResolvedAccounts, string, error) {
-	cashID, err := p.repo.GetAccountID(ctx, cmd.UserID, constant.AccountTypeCash)
+	cashID, err := userAccountID(ctx, p.repo, cmd.UserID, constant.AccountTypeCash, cmd.Currency)
 	if err != nil {
 		return ResolvedAccounts{}, "", fmt.Errorf("escrow_hold: buyer cash: %w", err)
 	}

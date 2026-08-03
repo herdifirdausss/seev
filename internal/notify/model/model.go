@@ -54,7 +54,7 @@ type Notification struct {
 	ID        uuid.UUID
 	UserID    uuid.UUID
 	EventID   uuid.UUID
-	Type      string // ledger transaction_type: money_in, transfer_p2p, withdraw_settle, withdraw_cancel
+	Type      string // ledger transaction_type or ledger.fx_conversion.posted.v1
 	Title     string
 	Body      string
 	Payload   []byte // raw JSON — the decoded events.TransactionPosted, forensic/debug only

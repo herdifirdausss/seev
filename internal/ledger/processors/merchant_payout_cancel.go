@@ -35,11 +35,11 @@ func (p *MerchantPayoutCancel) ResolveAccounts(ctx context.Context, cmd Command)
 	if cmd.MerchantTenantID == uuid.Nil {
 		return ResolvedAccounts{}, "", fmt.Errorf("%w: merchant_payout_cancel requires MerchantTenantID", apperror.ErrValidation)
 	}
-	holdID, err := p.repo.GetMerchantAccountID(ctx, cmd.MerchantTenantID, constant.AccountTypeHold)
+	holdID, err := merchantAccountID(ctx, p.repo, cmd.MerchantTenantID, constant.AccountTypeHold, cmd.Currency)
 	if err != nil {
 		return ResolvedAccounts{}, "", fmt.Errorf("merchant_payout_cancel: hold: %w", err)
 	}
-	cashID, err := p.repo.GetMerchantAccountID(ctx, cmd.MerchantTenantID, constant.AccountTypeCash)
+	cashID, err := merchantAccountID(ctx, p.repo, cmd.MerchantTenantID, constant.AccountTypeCash, cmd.Currency)
 	if err != nil {
 		return ResolvedAccounts{}, "", fmt.Errorf("merchant_payout_cancel: cash: %w", err)
 	}

@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"encoding/json"
 	"errors"
 	"time"
 
@@ -53,6 +54,7 @@ type postTransactionRequest struct {
 	IdempotencyScope string         `json:"idempotency_scope,omitempty"`
 	Type             string         `json:"type"`
 	Amount           string         `json:"amount"`
+	Currency         string         `json:"currency,omitempty"`
 	TargetUserID     string         `json:"target_user_id,omitempty"`
 	PocketCode       string         `json:"pocket_code,omitempty"`
 	ReferenceID      string         `json:"reference_id,omitempty"`
@@ -447,6 +449,7 @@ type resolveReconItemResponse struct {
 type createScheduleRequest struct {
 	Type         string         `json:"type"`
 	Amount       string         `json:"amount"`
+	Currency     string         `json:"currency,omitempty"`
 	TargetUserID string         `json:"target_user_id,omitempty"`
 	PocketCode   string         `json:"pocket_code,omitempty"`
 	Metadata     map[string]any `json:"metadata,omitempty"`
@@ -485,6 +488,7 @@ type createScheduleResponse struct {
 type scheduleResponse struct {
 	ID           uuid.UUID `json:"id"`
 	UserID       uuid.UUID `json:"user_id"`
+	Currency     string    `json:"currency,omitempty"`
 	ScheduleKind string    `json:"schedule_kind"`
 	RunAtDate    string    `json:"run_at_date"`
 	DayOfMonth   *int      `json:"day_of_month,omitempty"`
@@ -523,6 +527,12 @@ func toScheduleResponse(st model.ScheduledTransaction) scheduleResponse {
 		ConsecutiveFailureCount: st.ConsecutiveFailureCount, LastPlannedAt: st.LastPlannedAt,
 		Version: st.Version, PausedReason: st.PausedReason,
 		CreatedAt: st.CreatedAt, UpdatedAt: st.UpdatedAt,
+	}
+	var payload struct {
+		Currency string `json:"currency"`
+	}
+	if err := json.Unmarshal(st.CmdPayload, &payload); err == nil {
+		out.Currency = payload.Currency
 	}
 	if st.LastRunDate != nil {
 		out.LastRunDate = st.LastRunDate.Format("2006-01-02")
@@ -582,6 +592,7 @@ type disbursementItemResponse struct {
 	ItemNo     int       `json:"item_no"`
 	UserID     uuid.UUID `json:"user_id"`
 	Amount     string    `json:"amount"`
+	Currency   string    `json:"currency"`
 	Note       string    `json:"note,omitempty"`
 	Status     string    `json:"status"`
 	Error      string    `json:"error,omitempty"`
@@ -591,7 +602,7 @@ type disbursementItemResponse struct {
 func toDisbursementItemResponse(it model.DisbursementItem) disbursementItemResponse {
 	out := disbursementItemResponse{
 		ID: it.ID, BatchID: it.BatchID, ItemNo: it.ItemNo, UserID: it.UserID,
-		Amount: it.Amount.String(), Note: it.Note, Status: it.Status,
+		Amount: it.Amount.String(), Currency: it.Currency, Note: it.Note, Status: it.Status,
 	}
 	if it.Error != nil {
 		out.Error = *it.Error

@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/herdifirdausss/seev/internal/vendorgw"
 	"github.com/herdifirdausss/seev/pkg/loadmetrics"
 	"github.com/shopspring/decimal"
 )
@@ -24,14 +25,25 @@ func (m *Module) ResolveTopupRoute(ctx context.Context, userID uuid.UUID, curren
 	if len(candidates) == 0 {
 		return "", "", ErrNoRoute
 	}
+	sawCurrencyMismatch := false
+	sawCurrencyCapable := false
 	for _, c := range candidates {
-		if _, ok := m.registry.Payin(c.Vendor); !ok {
+		vendor, ok := m.registry.Payin(c.Vendor)
+		if !ok {
 			continue
 		}
+		if !vendorgw.SupportsRequestedCurrency(vendor, "topup", currency) {
+			sawCurrencyMismatch = true
+			continue
+		}
+		sawCurrencyCapable = true
 		if m.breaker != nil && !m.breaker.Allow(ctx, c.Vendor) {
 			continue
 		}
 		return c.Vendor, c.Gateway, nil
+	}
+	if currency != "" && currency != "IDR" && sawCurrencyMismatch && !sawCurrencyCapable {
+		return "", "", ErrCurrencyRouteUnavailable
 	}
 	return "", "", ErrNoVendorAvailable
 }

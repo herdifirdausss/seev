@@ -31,7 +31,7 @@ func NewFreezeConfiscate(r repository.AccountRepository) *FreezeConfiscate {
 func (p *FreezeConfiscate) Type() string { return "freeze_confiscate" }
 
 func (p *FreezeConfiscate) ResolveAccounts(ctx context.Context, cmd Command) (ResolvedAccounts, string, error) {
-	frozenID, err := p.repo.GetAccountID(ctx, cmd.UserID, constant.AccountTypeFrozen)
+	frozenID, err := userAccountID(ctx, p.repo, cmd.UserID, constant.AccountTypeFrozen, cmd.Currency)
 	if err != nil {
 		return ResolvedAccounts{}, "", fmt.Errorf("freeze_confiscate: frozen account: %w", err)
 	}

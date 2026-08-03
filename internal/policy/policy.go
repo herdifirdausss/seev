@@ -170,6 +170,21 @@ func (e *Engine) fireFailOpenAlert(reason string) {
 // either calls Record (a small race) — accepted deliberately, same
 // reasoning as above.
 func (e *Engine) Check(ctx context.Context, userID uuid.UUID, txType string, amount decimal.Decimal) (allowed bool, rule string, detail string, err error) {
+	return e.check(ctx, userID, txType, amount, "")
+}
+
+// CheckWithCurrency is the additive multi-currency policy path. Existing IDR
+// callers retain the historical counter key; non-IDR callers use a separate
+// key so amounts in different minor-unit systems can never contribute to one
+// velocity total.
+func (e *Engine) CheckWithCurrency(ctx context.Context, userID uuid.UUID, txType string, amount decimal.Decimal, currency string) (allowed bool, rule string, detail string, err error) {
+	if currency == "" || currency == "IDR" {
+		return e.Check(ctx, userID, txType, amount)
+	}
+	return e.check(ctx, userID, txType, amount, currency)
+}
+
+func (e *Engine) check(ctx context.Context, userID uuid.UUID, txType string, amount decimal.Decimal, currency string) (allowed bool, rule string, detail string, err error) {
 	limit, found, err := e.getLimit(ctx, userID, txType)
 	if err != nil {
 		e.logger.Warn("policy: load limit failed, failing open", slog.Any("error", err), slog.String("user_id", userID.String()), slog.String("type", txType))
@@ -190,7 +205,7 @@ func (e *Engine) Check(ctx context.Context, userID uuid.UUID, txType string, amo
 	now := time.Now().In(e.loc)
 
 	if limit.MaxDailyAmount != nil {
-		cur, err := e.counter.Get(ctx, DailyAmountKey(userID, txType, now))
+		cur, err := e.counter.Get(ctx, dailyAmountKey(userID, txType, currency, now))
 		if err != nil {
 			e.logger.Warn("policy: read daily amount counter failed, failing open", slog.Any("error", err), slog.String("user_id", userID.String()), slog.String("type", txType))
 			e.fireFailOpenAlert("read daily amount counter failed: " + err.Error())
@@ -201,7 +216,7 @@ func (e *Engine) Check(ctx context.Context, userID uuid.UUID, txType string, amo
 		}
 	}
 	if limit.MaxDailyCount != nil {
-		cur, err := e.counter.Get(ctx, DailyCountKey(userID, txType, now))
+		cur, err := e.counter.Get(ctx, dailyCountKey(userID, txType, currency, now))
 		if err != nil {
 			e.logger.Warn("policy: read daily count counter failed, failing open", slog.Any("error", err), slog.String("user_id", userID.String()), slog.String("type", txType))
 			e.fireFailOpenAlert("read daily count counter failed: " + err.Error())
@@ -212,7 +227,7 @@ func (e *Engine) Check(ctx context.Context, userID uuid.UUID, txType string, amo
 		}
 	}
 	if limit.MaxMonthlyAmount != nil {
-		cur, err := e.counter.Get(ctx, MonthlyAmountKey(userID, txType, now))
+		cur, err := e.counter.Get(ctx, monthlyAmountKey(userID, txType, currency, now))
 		if err != nil {
 			e.logger.Warn("policy: read monthly amount counter failed, failing open", slog.Any("error", err), slog.String("user_id", userID.String()), slog.String("type", txType))
 			e.fireFailOpenAlert("read monthly amount counter failed: " + err.Error())
@@ -233,16 +248,31 @@ func (e *Engine) Check(ctx context.Context, userID uuid.UUID, txType string, amo
 // returned, since the money movement itself already happened and cannot be
 // undone by a bookkeeping-counter error.
 func (e *Engine) Record(ctx context.Context, userID uuid.UUID, txType string, amount decimal.Decimal) {
+	e.record(ctx, userID, txType, amount, "")
+}
+
+// RecordWithCurrency records a successfully posted non-IDR operation in its
+// currency-specific velocity buckets. It is intentionally additive so the
+// existing Record contract and its IDR recovery keys remain unchanged.
+func (e *Engine) RecordWithCurrency(ctx context.Context, userID uuid.UUID, txType string, amount decimal.Decimal, currency string) {
+	if currency == "" || currency == "IDR" {
+		e.Record(ctx, userID, txType, amount)
+		return
+	}
+	e.record(ctx, userID, txType, amount, currency)
+}
+
+func (e *Engine) record(ctx context.Context, userID uuid.UUID, txType string, amount decimal.Decimal, currency string) {
 	now := time.Now().In(e.loc)
 	amt := amount.IntPart()
 
-	if _, err := e.counter.IncrBy(ctx, DailyAmountKey(userID, txType, now), amt, 48*time.Hour); err != nil {
+	if _, err := e.counter.IncrBy(ctx, dailyAmountKey(userID, txType, currency, now), amt, 48*time.Hour); err != nil {
 		e.logger.Error("policy: record daily amount failed", slog.Any("error", err), slog.String("user_id", userID.String()), slog.String("type", txType))
 	}
-	if _, err := e.counter.IncrBy(ctx, DailyCountKey(userID, txType, now), 1, 48*time.Hour); err != nil {
+	if _, err := e.counter.IncrBy(ctx, dailyCountKey(userID, txType, currency, now), 1, 48*time.Hour); err != nil {
 		e.logger.Error("policy: record daily count failed", slog.Any("error", err), slog.String("user_id", userID.String()), slog.String("type", txType))
 	}
-	if _, err := e.counter.IncrBy(ctx, MonthlyAmountKey(userID, txType, now), amt, 35*24*time.Hour); err != nil {
+	if _, err := e.counter.IncrBy(ctx, monthlyAmountKey(userID, txType, currency, now), amt, 35*24*time.Hour); err != nil {
 		e.logger.Error("policy: record monthly amount failed", slog.Any("error", err), slog.String("user_id", userID.String()), slog.String("type", txType))
 	}
 }
@@ -285,4 +315,41 @@ func DailyCountKey(userID uuid.UUID, txType string, t time.Time) string {
 }
 func MonthlyAmountKey(userID uuid.UUID, txType string, t time.Time) string {
 	return fmt.Sprintf("pol:%s:%s:m:%s:amt", userID, txType, t.Format("2006-01"))
+}
+
+// DailyAmountKeyForCurrency, DailyCountKeyForCurrency, and
+// MonthlyAmountKeyForCurrency are used for non-IDR operations. IDR callers
+// deliberately keep the original key shape for compatibility with existing
+// counters and disaster-recovery tooling.
+func DailyAmountKeyForCurrency(userID uuid.UUID, txType, currency string, t time.Time) string {
+	return fmt.Sprintf("pol:%s:%s:ccy:%s:d:%s:amt", userID, txType, currency, t.Format("2006-01-02"))
+}
+
+func DailyCountKeyForCurrency(userID uuid.UUID, txType, currency string, t time.Time) string {
+	return fmt.Sprintf("pol:%s:%s:ccy:%s:d:%s:cnt", userID, txType, currency, t.Format("2006-01-02"))
+}
+
+func MonthlyAmountKeyForCurrency(userID uuid.UUID, txType, currency string, t time.Time) string {
+	return fmt.Sprintf("pol:%s:%s:ccy:%s:m:%s:amt", userID, txType, currency, t.Format("2006-01"))
+}
+
+func dailyAmountKey(userID uuid.UUID, txType, currency string, t time.Time) string {
+	if currency == "" || currency == "IDR" {
+		return DailyAmountKey(userID, txType, t)
+	}
+	return DailyAmountKeyForCurrency(userID, txType, currency, t)
+}
+
+func dailyCountKey(userID uuid.UUID, txType, currency string, t time.Time) string {
+	if currency == "" || currency == "IDR" {
+		return DailyCountKey(userID, txType, t)
+	}
+	return DailyCountKeyForCurrency(userID, txType, currency, t)
+}
+
+func monthlyAmountKey(userID uuid.UUID, txType, currency string, t time.Time) string {
+	if currency == "" || currency == "IDR" {
+		return MonthlyAmountKey(userID, txType, t)
+	}
+	return MonthlyAmountKeyForCurrency(userID, txType, currency, t)
 }

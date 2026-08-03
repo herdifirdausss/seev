@@ -12,7 +12,9 @@ import (
 	"github.com/herdifirdausss/seev/internal/payin/model"
 	"github.com/herdifirdausss/seev/internal/payin/repository"
 	"github.com/herdifirdausss/seev/pkg/generalutil"
+	"github.com/herdifirdausss/seev/pkg/ledgererr"
 	"github.com/herdifirdausss/seev/pkg/middleware"
+	currencyreg "github.com/herdifirdausss/seev/pkg/currency"
 )
 
 // Re-exported so callers never need to import internal/payin/model.
@@ -50,7 +52,11 @@ type feeQuoteIntentLookup interface {
 // vendor never learns the internal user_id, only this opaque reference,
 // which travels back in the settling webhook's existing ExternalRef field.
 func (m *Module) CreateTopupIntent(ctx context.Context, userID uuid.UUID, amount decimal.Decimal) (TopupIntent, error) {
-	return m.createTopupIntent(ctx, userID, amount, nil)
+	return m.createTopupIntent(ctx, userID, amount, "", nil)
+}
+
+func (m *Module) CreateTopupIntentWithCurrency(ctx context.Context, userID uuid.UUID, amount decimal.Decimal, requestedCurrency string) (TopupIntent, error) {
+	return m.createTopupIntent(ctx, userID, amount, requestedCurrency, nil)
 }
 
 // CreateTopupIntentWithFeeQuote consumes a Ledger-owned, single-use quote
@@ -61,19 +67,61 @@ func (m *Module) CreateTopupIntentWithFeeQuote(ctx context.Context, userID uuid.
 	if quoteID == uuid.Nil {
 		return TopupIntent{}, fmt.Errorf("payin: fee quote id is required")
 	}
-	return m.createTopupIntent(ctx, userID, amount, &quoteID)
+	return m.createTopupIntent(ctx, userID, amount, "", &quoteID)
 }
 
-func (m *Module) createTopupIntent(ctx context.Context, userID uuid.UUID, amount decimal.Decimal, quoteID *uuid.UUID) (TopupIntent, error) {
+// CreateTopupIntentWithCurrencyAndFeeQuote combines the additive currency
+// metadata bridge with the C5 fee-quote flow.
+func (m *Module) CreateTopupIntentWithCurrencyAndFeeQuote(ctx context.Context, userID uuid.UUID, amount decimal.Decimal, requestedCurrency string, quoteID uuid.UUID) (TopupIntent, error) {
+	if quoteID == uuid.Nil {
+		return TopupIntent{}, fmt.Errorf("payin: fee quote id is required")
+	}
+	return m.createTopupIntent(ctx, userID, amount, requestedCurrency, &quoteID)
+}
+
+func (m *Module) createTopupIntent(ctx context.Context, userID uuid.UUID, amount decimal.Decimal, requestedCurrency string, quoteID *uuid.UUID) (TopupIntent, error) {
+	if userID == uuid.Nil {
+		return TopupIntent{}, fmt.Errorf("%w: user id is required", ErrInvalidAmount)
+	}
+	if err := currencyreg.ValidatePositiveMinorAmount(amount); err != nil {
+		return TopupIntent{}, fmt.Errorf("%w: %v", ErrInvalidAmount, err)
+	}
+	if !amount.BigInt().IsInt64() {
+		return TopupIntent{}, fmt.Errorf("%w: amount must fit Ledger int64", ErrInvalidAmount)
+	}
 	if err := m.ensureIntakeOpen(ctx); err != nil {
 		return TopupIntent{}, err
 	}
-	if userID == uuid.Nil || amount.IsNegative() || !amount.IsPositive() || !amount.Equal(amount.Truncate(0)) || !amount.BigInt().IsInt64() {
-		return TopupIntent{}, fmt.Errorf("payin: amount must be a positive integer within int64")
+	currency := requestedCurrency
+	if currency != "" {
+		if err := currencyreg.ValidateCode(currency); err != nil {
+			return TopupIntent{}, fmt.Errorf("payin: invalid currency: %w", err)
+		}
 	}
-	currency, err := m.poster.GetUserCurrency(ctx, userID, "")
-	if err != nil {
-		return TopupIntent{}, fmt.Errorf("payin: resolve user currency: %w", err)
+	if currency == "" {
+		var err error
+		currency, err = m.poster.GetUserCurrency(ctx, userID, "")
+		if err != nil {
+			return TopupIntent{}, fmt.Errorf("payin: resolve user currency: %w", err)
+		}
+	}
+	if validator, ok := m.poster.(interface {
+		ValidateCurrency(context.Context, string, string) error
+	}); ok {
+		if err := validator.ValidateCurrency(ctx, currency, "topup"); err != nil {
+			return TopupIntent{}, fmt.Errorf("payin: currency policy: %w", err)
+		}
+	}
+	if accountReader, ok := m.poster.(interface {
+		UserCurrencyEnabled(context.Context, uuid.UUID, string) (bool, error)
+	}); ok {
+		enabled, err := accountReader.UserCurrencyEnabled(ctx, userID, currency)
+		if err != nil {
+			return TopupIntent{}, fmt.Errorf("payin: check currency account: %w", err)
+		}
+		if !enabled {
+			return TopupIntent{}, &ledgererr.LedgerError{Code: "CURRENCY_NOT_ENABLED", Message: fmt.Sprintf("currency account is not enabled: %s", currency)}
+		}
 	}
 	vendor, gateway, err := m.ResolveTopupRoute(ctx, userID, currency, amount)
 	if err != nil {

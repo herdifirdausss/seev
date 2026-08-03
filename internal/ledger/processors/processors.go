@@ -25,6 +25,10 @@ type Command struct {
 	UserID           uuid.UUID
 	TargetUserID     uuid.UUID
 	PocketCode       string
+	// Currency is optional for legacy single-currency callers. When present,
+	// every user account lookup for this command is constrained to the exact
+	// currency rather than selecting an arbitrary cash account.
+	Currency         string
 	ReferenceID      uuid.UUID
 	Metadata         map[string]any
 	// QuoteID (docs/roadmap/archive/38 Task T4), when non-empty, tells execTransfer to
@@ -447,6 +451,15 @@ type TxProcessor interface {
 	ValidateCommand(ctx context.Context, cmd Command) error // optional pre-DB validation, e.g. check required metadata keys
 }
 
+// BeforeBalanceLockValidator is an optional processor hook for invariants that
+// must lock their own coordination rows before the generic posting path locks
+// account balances. FX rebalance uses this to acquire the position-limit row
+// before validating the projected synthetic balance; the ordering matches the
+// FX conversion path and avoids a balance/limit lock inversion.
+type BeforeBalanceLockValidator interface {
+	ValidateBeforeBalanceLocks(ctx context.Context, tx *sql.Tx, cmd ResolvedCommand) error
+}
+
 // ProcessorRegistry is read-only after construction — safe for concurrent use.
 type ProcessorRegistry struct {
 	processors map[string]TxProcessor
@@ -538,6 +551,8 @@ func NewDefaultRegistry(
 		NewAdjustmentDebit(accRepo),
 		NewAdjustmentSuspenseCredit(accRepo),
 		NewAdjustmentSuspenseDebit(accRepo),
+		NewFXRebalanceCredit(accRepo),
+		NewFXRebalanceDebit(accRepo),
 		// FX orchestration primitives (docs/roadmap/archive/18 Task T3) — internal
 		// router only, never added to publicUserTypes.
 		NewFxOut(accRepo),

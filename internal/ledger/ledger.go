@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"os"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -40,6 +41,7 @@ import (
 	"github.com/herdifirdausss/seev/internal/ledger/service/closure"
 	"github.com/herdifirdausss/seev/internal/ledger/service/disbursement"
 	"github.com/herdifirdausss/seev/internal/ledger/service/dispute"
+	fxservice "github.com/herdifirdausss/seev/internal/ledger/service/fx"
 	ledgerhandle "github.com/herdifirdausss/seev/internal/ledger/service/handle"
 	interestservice "github.com/herdifirdausss/seev/internal/ledger/service/interest"
 	"github.com/herdifirdausss/seev/internal/ledger/service/provision"
@@ -107,6 +109,17 @@ type (
 	ReportDailyPosition = model.ReportDailyPosition
 	ReportDailyMutation = model.ReportDailyMutation
 	ReportReconSummary  = model.ReportReconSummary
+	CurrencyInfo        = model.CurrencyInfo
+	CurrencyBalance     = model.CurrencyBalance
+	FXPair              = model.FXPair
+	FXDirection         = model.FXDirection
+	FXQuote             = model.FXQuote
+	FXConversion        = model.FXConversion
+	FXRateVersion       = model.FXRateVersion
+	FXPosition          = model.FXPosition
+	FXDailyPosition     = model.FXDailyPosition
+	FXConversionReconciliation = model.FXConversionReconciliation
+	FXReconciliationReport     = model.FXReconciliationReport
 	// PolicyChecker is satisfied structurally by internal/policy.Engine
 	// (docs/roadmap/archive/17 Task T1) — re-exported so callers can name the type
 	// without importing internal/ledger/transport; they never need to
@@ -199,6 +212,7 @@ type Module struct {
 	interestSvc     *interestservice.Service
 	closureSvc      *closure.Service
 	disputeSvc      *dispute.Service
+	fxSvc           *fxservice.Service
 
 	accountRepo      repository.AccountRepository
 	balanceRepo      repository.BalanceRepository
@@ -312,7 +326,8 @@ func NewModule(db database.DatabaseSQL, broker messaging.Broker, redisClient *re
 		}
 	}
 	feeQuotePolicy := feepolicy.New(db, feeRepo)
-	handleSvc := ledgerhandle.New(db, txRepo, balanceRepo, entryRepo, outboxRepo, registry, logger, maxAmountPerTx, feeQuotePolicy)
+	fxSvc := fxservice.New(db, txRepo, balanceRepo, entryRepo, outboxRepo)
+	handleSvc := ledgerhandle.New(db, txRepo, balanceRepo, entryRepo, outboxRepo, registry, logger, maxAmountPerTx, feeQuotePolicy, fxSvc)
 	balanceV2Runtime := balancev2.NewRuntime(db, workerCfg.BalanceV2, logger)
 	handleSvc.SetProjectionV2Writer(balanceV2Runtime)
 	adjustmentsSvc := adjustments.New(db, adjRepo, txRepo, outboxRepo, handleSvc)
@@ -341,6 +356,7 @@ func NewModule(db database.DatabaseSQL, broker messaging.Broker, redisClient *re
 		interestSvc:       interestSvc,
 		closureSvc:        closure.New(db),
 		disputeSvc:        dispute.New(disputeRepo, txRepo),
+		fxSvc:             fxSvc,
 		accountRepo:       accountRepo,
 		balanceRepo:       balanceRepo,
 		txRepo:            txRepo,
@@ -776,15 +792,177 @@ func (m *Module) ClosureRouter() http.Handler {
 // silently rejecting or accepting everything is worse than refusing to
 // start.
 func (m *Module) LoadCurrencies(ctx context.Context) error {
-	list, err := m.currencyRepo.ListEnabled(ctx)
+	// ListRegistered is an additive capability. Keeping it optional preserves
+	// the small repository boundary for existing embedders and test doubles;
+	// the SQL repository provides it so disabled, already-registered currencies
+	// remain available for in-flight work.
+	var (
+		list []currency.Currency
+		err  error
+	)
+	if repo, ok := m.currencyRepo.(interface {
+		ListRegistered(context.Context) ([]currency.Currency, error)
+	}); ok {
+		list, err = repo.ListRegistered(ctx)
+	} else {
+		list, err = m.currencyRepo.ListEnabled(ctx)
+	}
 	if err != nil {
 		return fmt.Errorf("load currencies: %w", err)
 	}
 	if len(list) == 0 {
-		return fmt.Errorf("load currencies: no enabled currencies found in the currencies table")
+		return fmt.Errorf("load currencies: no registered currencies found in the currencies table")
 	}
 	currency.Load(list)
 	return nil
+}
+
+// ListCurrencies returns the database-managed currency registry together
+// with the caller's enablement state. Capability flags are explicit; callers
+// must not infer that a registered currency may be used for every operation.
+func (m *Module) ListCurrencies(ctx context.Context, userID uuid.UUID) ([]CurrencyInfo, error) {
+	return m.fxSvc.ListCurrencies(ctx, userID)
+}
+
+// ListCurrencyBalances returns one isolated balance row per currency. It does
+// not calculate or expose a cross-currency total.
+func (m *Module) ListCurrencyBalances(ctx context.Context, userID uuid.UUID) ([]CurrencyBalance, error) {
+	return m.fxSvc.ListBalances(ctx, userID)
+}
+
+func (m *Module) GetCurrencyBalance(ctx context.Context, userID uuid.UUID, code string) (CurrencyBalance, error) {
+	return m.fxSvc.GetBalance(ctx, userID, code)
+}
+
+func (m *Module) ValidateCurrency(ctx context.Context, code, operation string) error {
+	return m.fxSvc.ValidateCurrency(ctx, code, operation)
+}
+
+func (m *Module) UserCurrencyEnabled(ctx context.Context, userID uuid.UUID, code string) (bool, error) {
+	return m.fxSvc.UserCurrencyEnabled(ctx, userID, code)
+}
+
+func (m *Module) EnableUserCurrency(ctx context.Context, userID uuid.UUID, code string) ([]Account, error) {
+	if err := m.fxSvc.ValidateCurrency(ctx, code, "account_enable"); err != nil {
+		fxservice.ObserveCurrencyAccountProvision(code, err)
+		return nil, err
+	}
+	accounts, err := m.ProvisionUser(ctx, userID, code)
+	fxservice.ObserveCurrencyAccountProvision(code, err)
+	return accounts, err
+}
+
+func (m *Module) ListFXPairs(ctx context.Context) ([]FXPair, error) {
+	return m.fxSvc.ListPairs(ctx)
+}
+
+func (m *Module) CreateFXQuote(ctx context.Context, userID uuid.UUID, sourceCode, targetCode string, sourceAmount int64, requestKey string) (FXQuote, error) {
+	return m.fxSvc.CreateQuote(ctx, userID, sourceCode, targetCode, sourceAmount, requestKey)
+}
+
+func (m *Module) GetFXQuote(ctx context.Context, userID, quoteID uuid.UUID) (FXQuote, error) {
+	return m.fxSvc.GetQuote(ctx, userID, quoteID)
+}
+
+func (m *Module) GetFXQuoteForAdmin(ctx context.Context, quoteID uuid.UUID) (FXQuote, error) {
+	return m.fxSvc.GetQuoteForAdmin(ctx, quoteID)
+}
+
+func (m *Module) ExecuteFXConversion(ctx context.Context, userID, quoteID uuid.UUID, idempotencyKey string, expectedSource, expectedTarget int64) (FXConversion, error) {
+	return m.fxSvc.ExecuteConversion(ctx, userID, quoteID, idempotencyKey, expectedSource, expectedTarget)
+}
+
+func (m *Module) GetFXConversion(ctx context.Context, userID, conversionID uuid.UUID) (FXConversion, error) {
+	return m.fxSvc.GetConversion(ctx, userID, conversionID)
+}
+
+func (m *Module) GetFXConversionForAdmin(ctx context.Context, conversionID uuid.UUID) (FXConversion, error) {
+	return m.fxSvc.GetConversionForAdmin(ctx, conversionID)
+}
+
+func (m *Module) ListFXPositions(ctx context.Context) ([]FXPosition, error) {
+	return m.fxSvc.ListPositions(ctx)
+}
+
+func (m *Module) GetFXDailyPositionReport(ctx context.Context, from, to time.Time) ([]FXDailyPosition, error) {
+	return m.fxSvc.DailyPositionReport(ctx, from, to)
+}
+
+// ReconcileFXConversions returns read-only evidence for posted and in-flight
+// conversions. It never repairs balances or creates a missing leg; operators
+// and Assurance must handle a critical item through the governed Ledger
+// adjustment path.
+func (m *Module) ReconcileFXConversions(ctx context.Context, from, to time.Time, limit int) (FXReconciliationReport, error) {
+	return m.fxSvc.ReconcileConversions(ctx, from, to, limit)
+}
+
+func (m *Module) UpdateFXCurrencyPolicy(ctx context.Context, code, status string, operations map[string]bool, actor string) error {
+	return m.fxSvc.UpdateCurrencyPolicy(ctx, code, status, operations, actor)
+}
+
+func (m *Module) UpdateFXPairStatus(ctx context.Context, pairID uuid.UUID, status, actor string) error {
+	return m.fxSvc.UpdatePairStatus(ctx, pairID, status, actor)
+}
+
+func (m *Module) UpdateFXDirectionControls(ctx context.Context, directionID uuid.UUID, enabled, newQuotesPaused, conversionsPaused bool, minimum, maximum, spreadBasisPoints int64, actor string) error {
+	return m.fxSvc.UpdateDirectionControls(ctx, directionID, enabled, newQuotesPaused, conversionsPaused, minimum, maximum, spreadBasisPoints, actor)
+}
+
+func (m *Module) ListFXRateVersions(ctx context.Context, pairID, directionID uuid.UUID) ([]FXRateVersion, error) {
+	return m.fxSvc.ListRateVersions(ctx, pairID, directionID)
+}
+
+func (m *Module) UpdateFXPairControls(ctx context.Context, pairID uuid.UUID, newQuotesPaused, conversionsPaused bool, actor string) error {
+	return m.fxSvc.UpdatePairControls(ctx, pairID, newQuotesPaused, conversionsPaused, actor)
+}
+
+func (m *Module) UpdateFXPositionLimit(ctx context.Context, pairID uuid.UUID, currency string, minimum, maximum int64, actor string) error {
+	return m.fxSvc.UpdatePositionLimit(ctx, pairID, currency, minimum, maximum, actor)
+}
+
+// CreateFXRebalance creates a pending, maker-checker governed synthetic
+// position adjustment. Approval posts fx_rebalance_credit/debit through the
+// ordinary Ledger pipeline; this method never edits account_balances.
+func (m *Module) CreateFXRebalance(ctx context.Context, requestedBy string, pairID uuid.UUID, code string, amount int64, increase bool, reason, ticketRef string) (uuid.UUID, error) {
+	if amount <= 0 {
+		return uuid.Nil, fmt.Errorf("%w: rebalance amount must be positive", apperror.ErrValidation)
+	}
+	qualifier, code, err := m.fxSvc.ResolveRebalanceTarget(ctx, pairID, code)
+	if err != nil {
+		return uuid.Nil, err
+	}
+	metadata := map[string]any{
+		"pair":     qualifier,
+		"currency": strings.ToUpper(strings.TrimSpace(code)),
+	}
+	if strings.TrimSpace(ticketRef) != "" {
+		metadata["ticket_ref"] = strings.TrimSpace(ticketRef)
+	}
+	adjType := "fx_rebalance_debit"
+	if increase {
+		adjType = "fx_rebalance_credit"
+	}
+	return m.adjustmentsSvc.Create(ctx, requestedBy, adjType, decimal.NewFromInt(amount), uuid.Nil, uuid.Nil, metadata, reason)
+}
+
+func (m *Module) CreateFXRate(ctx context.Context, pairID, directionID uuid.UUID, referenceRate string, effectiveFrom time.Time, effectiveTo *time.Time, actor string) (FXRateVersion, error) {
+	return m.fxSvc.CreateRate(ctx, pairID, directionID, referenceRate, effectiveFrom, effectiveTo, actor)
+}
+
+func (m *Module) SubmitFXRate(ctx context.Context, rateID uuid.UUID, actor string) (FXRateVersion, error) {
+	return m.fxSvc.SubmitRate(ctx, rateID, actor)
+}
+
+func (m *Module) ApproveFXRate(ctx context.Context, rateID uuid.UUID, actor string) (FXRateVersion, error) {
+	return m.fxSvc.ApproveRate(ctx, rateID, actor)
+}
+
+func (m *Module) RejectFXRate(ctx context.Context, rateID uuid.UUID, actor, reason string) (FXRateVersion, error) {
+	return m.fxSvc.RejectRate(ctx, rateID, actor, reason)
+}
+
+func (m *Module) RetireFXRate(ctx context.Context, rateID uuid.UUID, actor string) (FXRateVersion, error) {
+	return m.fxSvc.RetireRate(ctx, rateID, actor)
 }
 
 // ledgerEventsQueue is a durable catch-all queue bound to the broker's
@@ -1005,10 +1183,17 @@ func (m *Module) ListEntries(ctx context.Context, accountID uuid.UUID, beforeCre
 // primary account id, matching the existing gRPC contract
 // (ProvisionMerchantResponse.account_id).
 func (m *Module) ProvisionMerchant(ctx context.Context, tenantID uuid.UUID, currency string) (Account, error) {
+	if err := m.fxSvc.ValidateCurrency(ctx, currency, "account_enable"); err != nil {
+		fxservice.ObserveCurrencyAccountProvision(currency, err)
+		return Account{}, err
+	}
 	if _, err := m.provisionSvc.ProvisionMerchantHoldAccount(ctx, tenantID, currency); err != nil {
+		fxservice.ObserveCurrencyAccountProvision(currency, err)
 		return Account{}, fmt.Errorf("provision merchant hold account: %w", err)
 	}
-	return m.provisionSvc.ProvisionMerchantAccount(ctx, tenantID, currency)
+	account, err := m.provisionSvc.ProvisionMerchantAccount(ctx, tenantID, currency)
+	fxservice.ObserveCurrencyAccountProvision(currency, err)
+	return account, err
 }
 
 // GetMerchantAccount resolves a tenant's cash account and its current
@@ -1261,7 +1446,40 @@ func (m *Module) CreateSchedule(
 	targetUserID uuid.UUID, pocketCode string, metadata map[string]any,
 	kind string, runAtDate time.Time, dayOfMonth *int, createdBy string,
 ) (uuid.UUID, error) {
-	return m.scheduleSvc.Create(ctx, userID, txType, amount, targetUserID, pocketCode, metadata, kind, runAtDate, dayOfMonth, createdBy)
+	// Legacy callers omit currency. Resolve the same active source account they
+	// would have used historically, then persist that currency so the deferred
+	// execution cannot later resolve a different account after another currency
+	// is provisioned for the user.
+	requestedCurrency, err := m.GetUserCurrency(ctx, userID, pocketCode)
+	if err != nil {
+		return uuid.Nil, err
+	}
+	if err := m.fxSvc.ValidateCurrency(ctx, requestedCurrency, "transfer"); err != nil {
+		return uuid.Nil, err
+	}
+	return m.scheduleSvc.CreateWithCurrency(ctx, userID, txType, amount, targetUserID, pocketCode, metadata, kind, runAtDate, dayOfMonth, createdBy, requestedCurrency)
+}
+
+// CreateScheduleWithCurrency persists a scheduled transfer with an explicit
+// source/target currency. Validate the live currency policy and the user's
+// source cash account at scheduling time; RunDue still revalidates through the
+// ordinary posting pipeline, so a later policy/account change fails safely.
+func (m *Module) CreateScheduleWithCurrency(
+	ctx context.Context, userID uuid.UUID, txType string, amount decimal.Decimal,
+	targetUserID uuid.UUID, pocketCode string, metadata map[string]any,
+	kind string, runAtDate time.Time, dayOfMonth *int, createdBy, requestedCurrency string,
+) (uuid.UUID, error) {
+	if err := m.fxSvc.ValidateCurrency(ctx, requestedCurrency, "transfer"); err != nil {
+		return uuid.Nil, err
+	}
+	enabled, err := m.fxSvc.UserCurrencyEnabled(ctx, userID, requestedCurrency)
+	if err != nil {
+		return uuid.Nil, err
+	}
+	if !enabled {
+		return uuid.Nil, fmt.Errorf("%w: user %s has no active %s cash account", apperror.ErrCurrencyNotEnabled, userID, requestedCurrency)
+	}
+	return m.scheduleSvc.CreateWithCurrency(ctx, userID, txType, amount, targetUserID, pocketCode, metadata, kind, runAtDate, dayOfMonth, createdBy, requestedCurrency)
 }
 
 func (m *Module) CreateScheduleWithPolicy(
@@ -1338,6 +1556,23 @@ func (m *Module) ConfirmScheduledFeeCap(ctx context.Context, scheduleID, userID 
 // (business-completeness audit finding — decision K8's own maker-checker
 // posture, previously only applied to manual adjustments).
 func (m *Module) ImportDisbursementBatch(ctx context.Context, filename string, rows []DisbursementImportRow, createdBy string) (uuid.UUID, error) {
+	// Validate each distinct manifest currency at intake time. Run still marks
+	// the posting as in-flight, so a policy change after import cannot strand
+	// an already accepted batch.
+	checked := make(map[string]struct{})
+	for _, row := range rows {
+		code := row.Currency
+		if code == "" {
+			code = "IDR"
+		}
+		if _, ok := checked[code]; ok {
+			continue
+		}
+		if err := m.fxSvc.ValidateCurrency(ctx, code, "payout"); err != nil {
+			return uuid.Nil, err
+		}
+		checked[code] = struct{}{}
+	}
 	return m.disbursementSvc.Import(ctx, filename, rows, createdBy)
 }
 

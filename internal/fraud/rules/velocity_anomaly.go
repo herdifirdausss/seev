@@ -51,7 +51,7 @@ func (r *VelocityAnomalyRule) Screen(ctx context.Context, input model.ScreenInpu
 	if mode == ModeOff {
 		return model.Verdict{}, nil
 	}
-	count, err := r.counter.Get(ctx, VelocityKey(input.UserID.String(), r.now()))
+	count, err := r.counter.Get(ctx, CurrencyVelocityKey(input.UserID.String(), input.Currency, r.now()))
 	if err != nil {
 		return model.Verdict{}, fmt.Errorf("velocity counter: %w", err)
 	}
@@ -79,4 +79,14 @@ func (r *VelocityAnomalyRule) Screen(ctx context.Context, input model.ScreenInpu
 
 func VelocityKey(userID string, at time.Time) string {
 	return fmt.Sprintf("fraud:velocity:%s:%s", userID, at.UTC().Format("2006-01-02-15"))
+}
+
+// CurrencyVelocityKey keeps the historical IDR counter key stable while
+// preventing postings in different currencies from sharing one velocity
+// bucket. FX conversions call this once for each currency leg.
+func CurrencyVelocityKey(userID, currency string, at time.Time) string {
+	if currency == "" || currency == "IDR" {
+		return VelocityKey(userID, at)
+	}
+	return fmt.Sprintf("fraud:velocity:%s:%s:%s", userID, currency, at.UTC().Format("2006-01-02-15"))
 }

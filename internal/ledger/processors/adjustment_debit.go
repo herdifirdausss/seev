@@ -28,7 +28,7 @@ func NewAdjustmentDebit(r repository.AccountRepository) *AdjustmentDebit {
 func (p *AdjustmentDebit) Type() string { return "adjustment_debit" }
 
 func (p *AdjustmentDebit) ResolveAccounts(ctx context.Context, cmd Command) (ResolvedAccounts, string, error) {
-	cashID, err := p.repo.GetAccountID(ctx, cmd.UserID, constant.AccountTypeCash)
+	cashID, err := userAccountID(ctx, p.repo, cmd.UserID, constant.AccountTypeCash, cmd.Currency)
 	if err != nil {
 		return ResolvedAccounts{}, "", fmt.Errorf("adjustment_debit: user cash: %w", err)
 	}

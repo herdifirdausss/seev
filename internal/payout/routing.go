@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/herdifirdausss/seev/internal/vendorgw"
 	"github.com/herdifirdausss/seev/pkg/loadmetrics"
 	"github.com/shopspring/decimal"
 )
@@ -27,6 +28,8 @@ func (m *Module) ResolvePayoutRoute(ctx context.Context, userID uuid.UUID, curre
 	if len(candidates) == 0 {
 		return "", "", ErrNoRoute
 	}
+	sawCurrencyMismatch := false
+	sawCurrencyCapable := false
 	excluded := make(map[string]bool, len(exclude))
 	for _, v := range exclude {
 		excluded[v] = true
@@ -35,13 +38,22 @@ func (m *Module) ResolvePayoutRoute(ctx context.Context, userID uuid.UUID, curre
 		if excluded[c.Vendor] {
 			continue
 		}
-		if _, ok := m.registry.Payout(c.Vendor); !ok {
+		vendor, ok := m.registry.Payout(c.Vendor)
+		if !ok {
 			continue
 		}
+		if !vendorgw.SupportsRequestedCurrency(vendor, "payout", currency) {
+			sawCurrencyMismatch = true
+			continue
+		}
+		sawCurrencyCapable = true
 		if m.breaker != nil && !m.breaker.Allow(ctx, c.Vendor) {
 			continue
 		}
 		return c.Vendor, c.Gateway, nil
+	}
+	if currency != "" && currency != "IDR" && sawCurrencyMismatch && !sawCurrencyCapable {
+		return "", "", ErrCurrencyRouteUnavailable
 	}
 	return "", "", ErrNoVendorAvailable
 }

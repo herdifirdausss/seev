@@ -36,9 +36,17 @@ func (a *MockAdapter) VerifyAndNormalize(headers http.Header, raw []byte) (*Norm
 	return &NormalizedCallback{Flow: "payin", Vendor: a.name, VendorEventID: event.VendorEventID, ExternalReference: event.ExternalRef, Amount: event.Amount.String(), Currency: event.Currency, Status: "settled", OccurredAt: event.OccurredAt}, nil
 }
 
+func (a *MockAdapter) SupportsCurrency(operation, currency string) bool {
+	return (operation == "topup" || operation == "payout" || operation == "callback") &&
+		(currency == "IDR" || currency == "USD")
+}
+
 func (a *MockAdapter) CreatePayinSession(_ context.Context, request *vendorv1.CreatePayinSessionRequest) (*vendorv1.CreatePayinSessionResponse, error) {
 	if request.GetIntentId() == "" {
 		return nil, fmt.Errorf("mockvendor: intent id is required")
+	}
+	if !a.SupportsCurrency("topup", request.GetCurrency()) {
+		return nil, fmt.Errorf("mockvendor: unsupported topup currency %q", request.GetCurrency())
 	}
 	return &vendorv1.CreatePayinSessionResponse{
 		Vendor:          a.name,
@@ -49,6 +57,9 @@ func (a *MockAdapter) CreatePayinSession(_ context.Context, request *vendorv1.Cr
 }
 
 func (a *MockAdapter) SubmitPayout(ctx context.Context, request *vendorv1.SubmitPayoutRequest) (*vendorv1.PayoutResult, error) {
+	if !a.SupportsCurrency("payout", request.GetCurrency()) {
+		return nil, fmt.Errorf("mockvendor: unsupported payout currency %q", request.GetCurrency())
+	}
 	amount, err := decimal.NewFromString(request.GetAmount())
 	if err != nil {
 		return nil, fmt.Errorf("mockvendor: parse amount: %w", err)

@@ -132,7 +132,8 @@ func run(parent context.Context) error {
 	if cfg.Assurance.AlertWebhookURL != "" {
 		alertFn = alerting.NewWebhookAlerterForService(cfg.Assurance.AlertWebhookURL, "seev-assurance", nil)
 	}
-	module := assurance.NewModule(db, cfg.Assurance, payinv1.NewPayinServiceClient(payinConn), payoutv1.NewPayoutServiceClient(payoutConn), ledgerv1.NewLedgerServiceClient(ledgerConn), alertFn, log)
+	fxReader := assurance.NewFXReconciliationClient(cfg.LedgerInternalAPIURL, cfg.InternalGRPCToken, tlsx.HTTPClient(certSrc, tlsx.IdentityLedger, 5*time.Second))
+	module := assurance.NewModule(db, cfg.Assurance, payinv1.NewPayinServiceClient(payinConn), payoutv1.NewPayoutServiceClient(payoutConn), ledgerv1.NewLedgerServiceClient(ledgerConn), alertFn, log, fxReader)
 	module.Start(ctx)
 	defer module.Stop()
 	stopRetention, err := module.StartRetentionRunner(log)

@@ -32,6 +32,7 @@ type DisbursementItem struct {
 	ItemNo     int
 	UserID     uuid.UUID
 	Amount     decimal.Decimal
+	Currency   string
 	Note       string
 	Status     string
 	Error      *string
@@ -41,9 +42,10 @@ type DisbursementItem struct {
 // DisbursementImportRow is one CSV row before it's assigned an item number
 // and inserted (docs/roadmap/archive/19 Task T2 step 2).
 type DisbursementImportRow struct {
-	UserID uuid.UUID
-	Amount decimal.Decimal
-	Note   string
+	UserID   uuid.UUID
+	Amount   decimal.Decimal
+	Currency string
+	Note     string
 }
 
 // DisbursementBatchReport is a batch's header plus a count per item status

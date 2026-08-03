@@ -23,6 +23,7 @@ import (
 	"github.com/herdifirdausss/seev/internal/ledger/model"
 	"github.com/herdifirdausss/seev/internal/ledger/processors"
 	"github.com/herdifirdausss/seev/internal/ledger/repository"
+	currencyreg "github.com/herdifirdausss/seev/pkg/currency"
 	"github.com/herdifirdausss/seev/pkg/generalerror"
 	"github.com/herdifirdausss/seev/pkg/generalutil"
 	"github.com/shopspring/decimal"
@@ -71,8 +72,14 @@ type Service struct {
 	// simply be ignored (no caller in this codebase does that: transport
 	// only sets QuoteID after this Service was constructed with a real
 	// feePolicy — see internal/ledger.NewModule).
-	feePolicy       *feepolicy.Policy
+	feePolicy        *feepolicy.Policy
+	currencyValidator CurrencyValidator
 	projectionWriter ProjectionWriter
+}
+
+type CurrencyValidator interface {
+	ValidateCurrency(context.Context, string, string) error
+}
 }
 
 // New constructs the posting service. AML/fraud screening no longer runs
@@ -84,11 +91,15 @@ func New(db DatabaseSQL, txRepo repository.TransactionRepository,
 	balanceRepo repository.BalanceRepository,
 	entryRepo repository.EntryRepository,
 	outboxRepo repository.OutboxRepository, registry *processors.ProcessorRegistry, logger *slog.Logger,
-	maxAmountPerTx decimal.Decimal, feePolicy *feepolicy.Policy) *Service {
+	maxAmountPerTx decimal.Decimal, feePolicy *feepolicy.Policy, validators ...CurrencyValidator) *Service {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Service{db: db, txRepo: txRepo, balanceRepo: balanceRepo, entryRepo: entryRepo, outboxRepo: outboxRepo, registry: registry, logger: logger, maxAmountPerTx: maxAmountPerTx, feePolicy: feePolicy}
+	var currencyValidator CurrencyValidator
+	if len(validators) > 0 {
+		currencyValidator = validators[0]
+	}
+	return &Service{db: db, txRepo: txRepo, balanceRepo: balanceRepo, entryRepo: entryRepo, outboxRepo: outboxRepo, registry: registry, logger: logger, maxAmountPerTx: maxAmountPerTx, feePolicy: feePolicy, currencyValidator: currencyValidator}
 }
 
 func (s *Service) SetProjectionV2Writer(writer ProjectionWriter) {
@@ -152,11 +163,21 @@ func (s *Service) Handle(ctx context.Context, cmd processors.Command) (err error
 	if strings.TrimSpace(cmd.IdempotencyKey) == "" {
 		return apperror.ErrEmptyIdempotencyKey
 	}
+	if cmd.Currency != "" {
+		if _, err := currencyreg.Normalize(cmd.Currency); err != nil {
+			return fmt.Errorf("%w: currency: %v", apperror.ErrCurrencyInvalid, err)
+		}
+	}
 
 	// Amounts are minor-unit integers (decision D2, docs/roadmap/archive/01) — reject
 	// fractional amounts before any DB work, not just at the entry-building stage.
 	if !cmd.Amount.IsInteger() {
 		return fmt.Errorf("%w: amount must be an integer (minor units), got %s", apperror.ErrValidation, cmd.Amount)
+	}
+	maxMinor := decimal.NewFromInt(int64(^uint64(0) >> 1))
+	minMinor := decimal.NewFromInt(-int64(^uint64(0)>>1) - 1)
+	if cmd.Amount.GreaterThan(maxMinor) || cmd.Amount.LessThan(minMinor) {
+		return fmt.Errorf("%w: amount %s is outside signed 64-bit minor-unit range", apperror.ErrMoneyOverflow, cmd.Amount)
 	}
 
 	// Global safety ceiling (docs/roadmap/archive/10 Task T5) — checked before any DB
@@ -220,10 +241,16 @@ func (s *Service) Handle(ctx context.Context, cmd processors.Command) (err error
 		return fmt.Errorf("validate command: %w", err)
 	}
 
+	requestedCurrency := strings.TrimSpace(cmd.Currency)
 	resolved, currency, err := processor.ResolveAccounts(ctx, cmd)
 	if err != nil {
 		return fmt.Errorf("resolve accounts: %w", err)
 	}
+	currency = strings.TrimSpace(currency)
+	if requestedCurrency != "" && requestedCurrency != currency {
+		return fmt.Errorf("%w: command expects %s, resolved accounts use %s", apperror.ErrCurrencyMismatch, requestedCurrency, currency)
+	}
+	cmd.Currency = currency
 
 	// [docs/roadmap/archive/14 Task T1] Source/Destination are explicit now (not
 	// inferred from position) but MUST still point at accounts the
@@ -374,6 +401,22 @@ func (s *Service) execTransfer(ctx context.Context, cmd processors.ResolvedComma
 			}
 			_, _ = tx.ExecContext(ctx, `RELEASE SAVEPOINT sp_idem`)
 
+			if s.currencyValidator != nil {
+				if operation := currencyOperation(cmd.Type, cmd.Metadata); operation != "" {
+					var validationErr error
+					if txValidator, ok := s.currencyValidator.(interface {
+						ValidateCurrencyTx(context.Context, *sql.Tx, string, string) error
+					}); ok {
+						validationErr = txValidator.ValidateCurrencyTx(ctx, tx, cmd.Currency, operation)
+					} else {
+						validationErr = s.currencyValidator.ValidateCurrency(ctx, cmd.Currency, operation)
+					}
+					if validationErr != nil {
+						return currencyPolicyBusinessError(validationErr)
+					}
+				}
+			}
+
 			// ── 1b. FEE QUOTE CONSUMPTION (docs/roadmap/archive/38 Task T4) ──────────────
 			// SEGERA after the idempotency gate and BEFORE LockBalances (step
 			// 2) — fail fast without ever holding a balance lock. Unlike a
@@ -465,6 +508,23 @@ func (s *Service) execTransfer(ctx context.Context, cmd processors.ResolvedComma
 					if fee, feeErr := generalutil.MetaDecimal(cmd.Metadata, "fee_amount"); feeErr == nil && fee.IsPositive() {
 						return apperror.NewBizErr(apperror.ErrQuoteMismatch, "top-up fee snapshot is missing fee_quote_id")
 					}
+				}
+			}
+
+			// Some processors have a coordination row that must be acquired
+			// before the generic account-balance phase. FX rebalance locks its
+			// position-limit row here, so its projected-balance check is
+			// serialized in the same order as an FX conversion.
+			if pre, ok := p.(processors.BeforeBalanceLockValidator); ok {
+				if err := pre.ValidateBeforeBalanceLocks(ctx, tx, cmd); err != nil {
+					if !apperror.IsBusinessRejection(err) {
+						return err
+					}
+					if markErr := s.markFailed(ctx, tx, txID, err.Error()); markErr != nil {
+						return fmt.Errorf("mark failed after pre-balance validation: %w", markErr)
+					}
+					businessErr = err
+					return nil // → WithTx commits with status='failed'
 				}
 			}
 
@@ -661,6 +721,53 @@ func (s *Service) execTransfer(ctx context.Context, cmd processors.ResolvedComma
 		return dbErr
 	}
 	return businessErr
+}
+
+func currencyOperation(txType string, metadata map[string]any) string {
+	operation := ""
+	switch txType {
+	case "money_in", "merchant_payin_credit":
+		operation = "topup"
+	case "money_out", "withdraw_initiate", "withdraw_pending", "withdraw_pending_settle",
+		"withdraw_settle", "withdraw_cancel", "withdraw_pending_cancel",
+		"merchant_payout_hold", "merchant_payout_settle", "merchant_payout_cancel":
+		operation = "payout"
+	case "transfer_p2p", "transfer_pocket", "merchant_transfer", "escrow_hold", "escrow_release", "escrow_refund", "refund":
+		operation = "transfer"
+	case "disbursement":
+		operation = "payout"
+	}
+	if operation != "" {
+		inflight, _ := metadata["currency_inflight"].(bool)
+		// These commands close or advance an already accepted workflow. They
+		// must remain finishable after intake is paused/disabled even when an
+		// older caller did not attach the optional metadata marker.
+		switch txType {
+		case "withdraw_pending", "withdraw_pending_settle", "withdraw_pending_cancel",
+			"withdraw_settle", "withdraw_cancel",
+			"merchant_payout_settle", "merchant_payout_cancel",
+			"escrow_release", "escrow_refund", "refund":
+			inflight = true
+		}
+		if inflight {
+			operation += "_inflight"
+		}
+	}
+	return operation
+}
+
+func currencyPolicyBusinessError(err error) error {
+	for _, sentinel := range []error{
+		apperror.ErrCurrencyDisabled,
+		apperror.ErrCurrencyOperationDisabled,
+		apperror.ErrCurrencyNotEnabled,
+		apperror.ErrCurrencyLimitExceeded,
+	} {
+		if errors.Is(err, sentinel) {
+			return apperror.NewBizErr(sentinel, err.Error())
+		}
+	}
+	return err
 }
 
 // truncatedIdemKey returns a short, non-replayable prefix of an

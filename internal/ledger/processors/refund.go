@@ -47,7 +47,7 @@ func (p *Refund) ResolveAccounts(ctx context.Context, cmd Command) (ResolvedAcco
 	if err != nil {
 		return ResolvedAccounts{}, "", fmt.Errorf("refund: %w", err)
 	}
-	userCashID, err := p.repo.GetAccountID(ctx, cmd.TargetUserID, constant.AccountTypeCash)
+	userCashID, err := userAccountID(ctx, p.repo, cmd.TargetUserID, constant.AccountTypeCash, cmd.Currency)
 	if err != nil {
 		return ResolvedAccounts{}, "", fmt.Errorf("refund: user cash: %w", err)
 	}

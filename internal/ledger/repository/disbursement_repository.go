@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
@@ -87,9 +88,9 @@ func (r *disbursementRepo) CreateBatchWithItems(ctx context.Context, tx *sql.Tx,
 	}
 	for _, it := range items {
 		_, err := tx.ExecContext(ctx, `
-			INSERT INTO disbursement_items (id, batch_id, item_no, user_id, amount, note, status)
-			VALUES ($1, $2, $3, $4, $5, $6, 'pending')`,
-			it.ID, it.BatchID, it.ItemNo, it.UserID, it.Amount.IntPart(), it.Note,
+			INSERT INTO disbursement_items (id, batch_id, item_no, user_id, amount, currency, note, status)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending')`,
+			it.ID, it.BatchID, it.ItemNo, it.UserID, it.Amount.IntPart(), it.Currency, it.Note,
 		)
 		if err != nil {
 			return fmt.Errorf("insert disbursement item %d: %w", it.ItemNo, err)
@@ -190,10 +191,11 @@ func scanDisbursementItem(scan func(dest ...any) error) (model.DisbursementItem,
 		errMsg     sql.NullString
 		postedTxID sql.NullString
 	)
-	err := scan(&it.ID, &it.BatchID, &it.ItemNo, &it.UserID, &amount, &it.Note, &it.Status, &errMsg, &postedTxID)
+	err := scan(&it.ID, &it.BatchID, &it.ItemNo, &it.UserID, &amount, &it.Currency, &it.Note, &it.Status, &errMsg, &postedTxID)
 	if err != nil {
 		return model.DisbursementItem{}, err
 	}
+	it.Currency = strings.TrimSpace(it.Currency)
 	it.Amount = decimal.NewFromInt(amount)
 	if errMsg.Valid {
 		it.Error = &errMsg.String
@@ -208,7 +210,7 @@ func scanDisbursementItem(scan func(dest ...any) error) (model.DisbursementItem,
 	return it, nil
 }
 
-const disbursementItemColumns = `id, batch_id, item_no, user_id, amount, note, status, error, posted_tx_id`
+const disbursementItemColumns = `id, batch_id, item_no, user_id, amount, currency, note, status, error, posted_tx_id`
 
 func (r *disbursementRepo) ListItems(ctx context.Context, batchID uuid.UUID, status string, limit, offset int) ([]model.DisbursementItem, error) {
 	var rows *sql.Rows

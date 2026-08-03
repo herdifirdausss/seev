@@ -55,7 +55,7 @@ func (p *MerchantTransfer) ResolveAccounts(ctx context.Context, cmd Command) (Re
 	if err != nil {
 		return ResolvedAccounts{}, "", fmt.Errorf("merchant_transfer: %w", err)
 	}
-	sourceID, err := p.repo.GetMerchantAccountID(ctx, cmd.MerchantTenantID, constant.AccountTypeCash)
+	sourceID, err := merchantAccountID(ctx, p.repo, cmd.MerchantTenantID, constant.AccountTypeCash, cmd.Currency)
 	if err != nil {
 		return ResolvedAccounts{}, "", fmt.Errorf("merchant_transfer: source cash: %w", err)
 	}

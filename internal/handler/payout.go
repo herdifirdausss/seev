@@ -9,15 +9,18 @@ import (
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
 	payoutv1 "github.com/herdifirdausss/seev/gen/payout/v1"
+	currencyreg "github.com/herdifirdausss/seev/pkg/currency"
 	"github.com/herdifirdausss/seev/pkg/middleware"
 	"github.com/herdifirdausss/seev/pkg/response"
 )
 
 type createPayoutRequest struct {
 	Amount      string          `json:"amount"`
+	Currency    string          `json:"currency,omitempty"`
 	Destination json.RawMessage `json:"destination"`
 	// QuoteID (docs/roadmap/archive/38 Task T5), when set, consumes a fee quote
 	// BEFORE the hold is posted — the fee it locks in is honored at settle
@@ -53,6 +56,12 @@ func createPayoutHandler(client payoutv1.PayoutServiceClient) http.HandlerFunc {
 		if !response.Decode(w, r, &request) {
 			return
 		}
+		if request.Currency != "" {
+			if err := currencyreg.ValidateCode(request.Currency); err != nil {
+				response.ErrorStatus(w, http.StatusBadRequest, "CURRENCY_INVALID", "currency must be exactly three uppercase letters")
+				return
+			}
+		}
 		if len(request.Destination) == 0 {
 			response.BadRequest(w, "destination is required")
 			return
@@ -66,10 +75,24 @@ func createPayoutHandler(client payoutv1.PayoutServiceClient) http.HandlerFunc {
 			response.BadRequest(w, "amount must be positive")
 			return
 		}
-		result, err := client.CreatePayout(r.Context(), &payoutv1.CreatePayoutRequest{UserId: userID.String(), Amount: amount.String(), Destination: request.Destination, CreatedBy: userID.String(), QuoteId: request.QuoteID})
+		callCtx := r.Context()
+		if request.Currency != "" {
+			callCtx = metadata.AppendToOutgoingContext(callCtx, "x-seev-currency", request.Currency)
+		}
+		result, err := client.CreatePayout(callCtx, &payoutv1.CreatePayoutRequest{UserId: userID.String(), Amount: amount.String(), Destination: request.Destination, CreatedBy: userID.String(), QuoteId: request.QuoteID})
 		if err != nil {
 			switch status.Code(err) {
+			case codes.InvalidArgument:
+				message := status.Convert(err).Message()
+				if strings.HasPrefix(message, "CURRENCY_INVALID") {
+					response.ErrorStatus(w, http.StatusBadRequest, "CURRENCY_INVALID", message)
+				} else {
+					response.BadRequest(w, message)
+				}
 			case codes.FailedPrecondition:
+				if writeLedgerBusinessError(w, err) {
+					return
+				}
 				msg := status.Convert(err).Message()
 				switch {
 				case msg == "no payout route available":

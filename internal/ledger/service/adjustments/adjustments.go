@@ -11,6 +11,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -22,6 +23,7 @@ import (
 	"github.com/herdifirdausss/seev/internal/ledger/model"
 	"github.com/herdifirdausss/seev/internal/ledger/processors"
 	"github.com/herdifirdausss/seev/internal/ledger/repository"
+	currencyreg "github.com/herdifirdausss/seev/pkg/currency"
 	"github.com/herdifirdausss/seev/pkg/generalutil"
 )
 
@@ -64,6 +66,8 @@ var allowedTypes = map[string]bool{
 	"reversal":                   true,
 	"chargeback":                 true,
 	"freeze_confiscate":          true,
+	"fx_rebalance_credit":        true,
+	"fx_rebalance_debit":         true,
 }
 
 // suspenseTypes require a "gateway" metadata key instead of a target user —
@@ -71,6 +75,11 @@ var allowedTypes = map[string]bool{
 var suspenseTypes = map[string]bool{
 	"adjustment_suspense_credit": true,
 	"adjustment_suspense_debit":  true,
+}
+
+var fxRebalanceTypes = map[string]bool{
+	"fx_rebalance_credit": true,
+	"fx_rebalance_debit":  true,
 }
 
 // referenceIDTypes require a ReferenceID (the transaction being acted on) —
@@ -92,6 +101,7 @@ type cmdPayload struct {
 	UserID      uuid.UUID      `json:"user_id"`
 	Metadata    map[string]any `json:"metadata"`
 	ReferenceID uuid.UUID      `json:"reference_id,omitempty"`
+	Currency    string         `json:"currency,omitempty"`
 }
 
 type Service struct {
@@ -116,13 +126,21 @@ func New(db DatabaseSQL, repo repository.PendingAdjustmentRepository, txRepo rep
 // resolves its accounts entirely from ReferenceID, never from UserID.
 func (s *Service) Create(ctx context.Context, requestedBy, adjType string, amount decimal.Decimal, targetUserID, referenceID uuid.UUID, metadata map[string]any, reason string) (uuid.UUID, error) {
 	if !allowedTypes[adjType] {
-		return uuid.Nil, fmt.Errorf("%w: type must be one of adjustment_credit, adjustment_debit, adjustment_suspense_credit, adjustment_suspense_debit, reversal, chargeback, freeze_confiscate", apperror.ErrValidation)
+		return uuid.Nil, fmt.Errorf("%w: type is not an approved adjustment or FX rebalance type", apperror.ErrValidation)
 	}
 	if !amount.IsPositive() || !amount.Equal(amount.Truncate(0)) {
 		return uuid.Nil, fmt.Errorf("%w: amount must be a positive integer (minor units)", apperror.ErrValidation)
 	}
 	if metadata == nil {
 		metadata = map[string]any{}
+	}
+	currencyCode := ""
+	if rawCurrency, rawErr := generalutil.MetaString(metadata, "currency"); rawErr == nil && strings.TrimSpace(rawCurrency) != "" {
+		currencyCode = strings.ToUpper(strings.TrimSpace(rawCurrency))
+		if err := currencyreg.ValidateCode(currencyCode); err != nil {
+			return uuid.Nil, fmt.Errorf("%w: %v", apperror.ErrCurrencyInvalid, err)
+		}
+		metadata["currency"] = currencyCode
 	}
 	switch {
 	case suspenseTypes[adjType]:
@@ -134,6 +152,11 @@ func (s *Service) Create(ctx context.Context, requestedBy, adjType string, amoun
 		if referenceID == uuid.Nil {
 			return uuid.Nil, fmt.Errorf("%w: %s requires reference_id (the transaction being acted on)", apperror.ErrValidation, adjType)
 		}
+	case fxRebalanceTypes[adjType]:
+		pair, _ := generalutil.MetaString(metadata, "pair")
+		if strings.TrimSpace(pair) == "" || currencyCode == "" {
+			return uuid.Nil, fmt.Errorf("%w: %s requires metadata 'pair' and 'currency'", apperror.ErrValidation, adjType)
+		}
 	case targetUserID == uuid.Nil:
 		return uuid.Nil, fmt.Errorf("%w: user_id is required", apperror.ErrValidation)
 	}
@@ -144,7 +167,7 @@ func (s *Service) Create(ctx context.Context, requestedBy, adjType string, amoun
 		return uuid.Nil, fmt.Errorf("%w: requested_by (caller identity) is required", apperror.ErrValidation)
 	}
 
-	payload := cmdPayload{Type: adjType, Amount: amount.String(), UserID: targetUserID, Metadata: metadata, ReferenceID: referenceID}
+	payload := cmdPayload{Type: adjType, Amount: amount.String(), UserID: targetUserID, Metadata: metadata, ReferenceID: referenceID, Currency: currencyCode}
 	payloadJSON, err := json.Marshal(payload)
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("marshal adjustment payload: %w", err)
@@ -225,6 +248,7 @@ func (s *Service) Approve(ctx context.Context, id uuid.UUID, approverID string) 
 		Type:           payload.Type,
 		Amount:         amount,
 		UserID:         payload.UserID,
+		Currency:       payload.Currency,
 		Metadata:       payload.Metadata,
 		ReferenceID:    payload.ReferenceID,
 	}
