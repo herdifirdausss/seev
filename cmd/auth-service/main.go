@@ -349,7 +349,7 @@ func run(parent context.Context) error {
 	// exception); only the internal :8083 listener flips to mTLS.
 	publicServer := newHTTPServer(cfg.App, ":"+cfg.App.Port, publicRouter(cfg, module, redisCache, log), nil)
 	internalServer := newHTTPServer(cfg.App, cfg.App.InternalBindAddr+":"+cfg.App.InternalPort, internalRouter(cfg, module), tlsx.ServerConfig(certSrc, []string{
-		tlsx.IdentityDevOperator, tlsx.IdentityPrometheus, tlsx.IdentityAdminBFF,
+		tlsx.IdentityDevOperator, tlsx.IdentityPrometheus, tlsx.IdentityAdminBFF, tlsx.IdentityGateway,
 	}))
 	errCh := make(chan error, 2)
 	go serveHTTP(publicServer, errCh)

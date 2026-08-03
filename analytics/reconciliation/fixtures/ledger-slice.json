@@ -1,0 +1,20 @@
+{
+  "environment": "fixture",
+  "currency": "IDR",
+  "transactions": [
+    {"id": "10000000-0000-0000-0000-000000000001", "status": "posted", "amount_minor": 100000},
+    {"id": "10000000-0000-0000-0000-000000000002", "status": "posted", "amount_minor": 25000},
+    {"id": "10000000-0000-0000-0000-000000000003", "status": "failed", "amount_minor": 50000}
+  ],
+  "entries": [
+    {"id": "20000000-0000-0000-0000-000000000001", "transaction_id": "10000000-0000-0000-0000-000000000001", "direction": "debit", "amount_minor": 100000},
+    {"id": "20000000-0000-0000-0000-000000000002", "transaction_id": "10000000-0000-0000-0000-000000000001", "direction": "credit", "amount_minor": 100000},
+    {"id": "20000000-0000-0000-0000-000000000003", "transaction_id": "10000000-0000-0000-0000-000000000002", "direction": "debit", "amount_minor": 25000},
+    {"id": "20000000-0000-0000-0000-000000000004", "transaction_id": "10000000-0000-0000-0000-000000000002", "direction": "credit", "amount_minor": 25000}
+  ],
+  "expected": {
+    "posted_transaction_count": 2,
+    "posted_amount_minor": 125000,
+    "unbalanced_transaction_count": 0
+  }
+}

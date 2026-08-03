@@ -126,7 +126,17 @@ func NewRouter(cfg *config.Config, deps *Dependencies, logger *slog.Logger) http
 	// direct-registration pattern as Payout/Payin above.
 	if deps.Notify != nil {
 		apiMux.Handle("GET /notifications", authed(deps.Notify.ListHandler()))
+		apiMux.Handle("GET /notifications/{id}", authed(deps.Notify.DetailHandler()))
+		apiMux.Handle("GET /notifications/unread-count", authed(deps.Notify.UnreadCountHandler()))
 		apiMux.Handle("POST /notifications/{id}/read", authed(deps.Notify.MarkReadHandler()))
+		apiMux.Handle("POST /notifications/read-all", authed(deps.Notify.MarkAllReadHandler()))
+		apiMux.Handle("GET /notification-settings", authed(deps.Notify.SettingsHandler()))
+		apiMux.Handle("PUT /notification-settings", authed(deps.Notify.SettingsHandler()))
+		apiMux.Handle("GET /notification-preferences", authed(deps.Notify.PreferencesHandler()))
+		apiMux.Handle("PUT /notification-preferences", authed(deps.Notify.PreferencesHandler()))
+		apiMux.Handle("GET /notification-devices", authed(deps.Notify.DevicesHandler()))
+		apiMux.Handle("POST /notification-devices", authed(deps.Notify.DevicesHandler()))
+		apiMux.Handle("DELETE /notification-devices/{id}", authed(deps.Notify.RevokeDeviceHandler()))
 	}
 
 	// Merchant/B2B API (Plan 57, roadmap track C1) — mounted UNAUTHENTICATED
@@ -205,6 +215,10 @@ func NewInternalRouter(cfg *config.Config, deps *Dependencies, logger *slog.Logg
 		// registered at the full "/admin/gateway/..." pattern — are reached
 		// unmodified from here; no further StripPrefix needed.
 		apiMux.Handle("/admin/gateway/", authed(deps.Merchant.AdminRouter()))
+	}
+	if deps.Notify != nil {
+		authed := middleware.Chain(middleware.WithAuth(cfg.JWT.Secret, cfg.JWT.Issuer), middleware.WithRole("admin", "admin_maker", "admin_checker"), middleware.RequireJSON())
+		apiMux.Handle("/admin/gateway/notifications/", authed(http.StripPrefix("/admin/gateway", deps.Notify.AdminRouter())))
 	}
 
 	apiRoot.Handle("/api/v1/", http.StripPrefix("/api/v1", apiMux))

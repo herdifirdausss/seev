@@ -1,0 +1,214 @@
+version: 1
+environment: local-dev
+timezone: Asia/Jakarta
+policy:
+  capture_mode: explicit_allowlist
+  no_wildcards: true
+  source_of_truth: PostgreSQL service databases
+  analytical_store_is_read_only: true
+
+sources:
+  - service: ledger
+    database: seev_ledger
+    schema: public
+    table: accounts
+    owner: LedgerService
+    primary_key: [id]
+    capture_mode: full_row_allowlisted
+    classification: financial_reference
+    retention_class: financial_analytics
+    excluded_columns: [owner_id, created_by]
+    columns:
+      - {name: id, action: include, purpose: account reconciliation identity, classification: financial_identifier, retention: 24_months, join_behavior: exact, expected_type: uuid, nullable: false, transformation: unchanged}
+      - {name: owner_type, action: include, purpose: account ownership class, classification: financial_reference, retention: 24_months, join_behavior: dimension, expected_type: text, nullable: false, transformation: unchanged}
+      - {name: type, action: include, purpose: account type and fee-account mapping, classification: financial_reference, retention: 24_months, join_behavior: dimension, expected_type: text, nullable: false, transformation: unchanged}
+      - {name: currency, action: include, purpose: currency partitioning, classification: financial, retention: 24_months, join_behavior: dimension, expected_type: char(3), nullable: false, transformation: uppercase}
+      - {name: pocket_code, action: include, purpose: approved account classification, classification: financial_reference, retention: 24_months, join_behavior: dimension, expected_type: varchar(32), nullable: true, transformation: unchanged}
+      - {name: system_qualifier, action: include, purpose: fee and settlement account grouping, classification: financial_reference, retention: 24_months, join_behavior: dimension, expected_type: text, nullable: true, transformation: unchanged}
+      - {name: status, action: include, purpose: account lifecycle, classification: financial_reference, retention: 24_months, join_behavior: dimension, expected_type: text, nullable: false, transformation: unchanged}
+      - {name: created_at, action: include, purpose: account creation time, classification: operational, retention: 24_months, join_behavior: time, expected_type: timestamptz, nullable: false, transformation: utc}
+      - {name: updated_at, action: include, purpose: account change ordering, classification: operational, retention: 24_months, join_behavior: time, expected_type: timestamptz, nullable: false, transformation: utc}
+
+  - service: ledger
+    database: seev_ledger
+    schema: public
+    table: account_balances
+    owner: LedgerService
+    primary_key: [account_id]
+    capture_mode: full_row_allowlisted
+    classification: financial_projection
+    retention_class: financial_analytics
+    excluded_columns: []
+    columns:
+      - {name: account_id, action: include, purpose: balance reconciliation identity, classification: financial_identifier, retention: 24_months, join_behavior: exact, expected_type: uuid, nullable: false, transformation: unchanged}
+      - {name: balance, action: include, purpose: projection comparison in minor units, classification: financial, retention: 24_months, join_behavior: exact, expected_type: bigint, nullable: false, transformation: integer_minor_units}
+      - {name: allow_negative, action: include, purpose: balance invariant interpretation, classification: financial_reference, retention: 24_months, join_behavior: dimension, expected_type: boolean, nullable: false, transformation: unchanged}
+      - {name: updated_at, action: include, purpose: projection freshness, classification: operational, retention: 24_months, join_behavior: time, expected_type: timestamptz, nullable: false, transformation: utc}
+
+  - service: ledger
+    database: seev_ledger
+    schema: public
+    table: ledger_transactions
+    owner: LedgerService
+    primary_key: [id]
+    capture_mode: full_row_allowlisted
+    classification: financial
+    retention_class: financial_analytics
+    excluded_columns: [idempotency_key, idempotency_scope, idempotency_key_digest, idempotency_key_version, conflict_fingerprint, error_message]
+    columns:
+      - {name: id, action: include, purpose: immutable transaction identity, classification: financial_identifier, retention: 24_months, join_behavior: exact, expected_type: uuid, nullable: false, transformation: unchanged}
+      - {name: type, action: include, purpose: transaction product and posting rule, classification: financial_reference, retention: 24_months, join_behavior: dimension, expected_type: text, nullable: false, transformation: unchanged}
+      - {name: status, action: include, purpose: posted and lifecycle filtering, classification: financial_reference, retention: 24_months, join_behavior: dimension, expected_type: text, nullable: false, transformation: unchanged}
+      - {name: amount, action: include, purpose: transaction amount in minor units, classification: financial, retention: 24_months, join_behavior: exact, expected_type: bigint, nullable: false, transformation: integer_minor_units}
+      - {name: currency, action: include, purpose: currency partitioning, classification: financial, retention: 24_months, join_behavior: dimension, expected_type: char(3), nullable: false, transformation: uppercase}
+      - {name: source_account_id, action: include, purpose: documented source-account correlation, classification: financial_identifier, retention: 24_months, join_behavior: exact, expected_type: uuid, nullable: true, transformation: unchanged}
+      - {name: destination_account_id, action: include, purpose: documented destination-account correlation, classification: financial_identifier, retention: 24_months, join_behavior: exact, expected_type: uuid, nullable: true, transformation: unchanged}
+      - {name: external_ref, action: include, purpose: approved external correlation, classification: operational_identifier, retention: 24_months, join_behavior: exact, expected_type: text, nullable: true, transformation: unchanged}
+      - {name: gateway, action: include, purpose: approved gateway dimension, classification: operational_reference, retention: 24_months, join_behavior: dimension, expected_type: text, nullable: true, transformation: unchanged}
+      - {name: request_id, action: include, purpose: bounded trace correlation, classification: operational_identifier, retention: 90_days, join_behavior: exact, expected_type: text, nullable: true, transformation: unchanged}
+      - {name: closed_by_tx_id, action: include, purpose: reversal and refund correlation, classification: financial_identifier, retention: 24_months, join_behavior: exact, expected_type: uuid, nullable: true, transformation: unchanged}
+      - {name: closed_reason, action: include, purpose: reversal lifecycle classification, classification: financial_reference, retention: 24_months, join_behavior: dimension, expected_type: text, nullable: true, transformation: unchanged}
+      - {name: created_at, action: include, purpose: transaction source time, classification: financial, retention: 24_months, join_behavior: time, expected_type: timestamptz, nullable: false, transformation: utc}
+      - {name: updated_at, action: include, purpose: transaction change ordering, classification: operational, retention: 24_months, join_behavior: time, expected_type: timestamptz, nullable: false, transformation: utc}
+
+  - service: ledger
+    database: seev_ledger
+    schema: public
+    table: ledger_entries
+    owner: LedgerService
+    primary_key: [id]
+    capture_mode: full_row_allowlisted
+    classification: financial_immutable
+    retention_class: financial_analytics
+    immutable: true
+    excluded_columns: [note]
+    columns:
+      - {name: id, action: include, purpose: immutable entry identity, classification: financial_identifier, retention: 24_months, join_behavior: exact, expected_type: uuid, nullable: false, transformation: unchanged}
+      - {name: transaction_id, action: include, purpose: transaction relationship, classification: financial_identifier, retention: 24_months, join_behavior: exact, expected_type: uuid, nullable: false, transformation: unchanged}
+      - {name: account_id, action: include, purpose: debit and credit reconciliation, classification: financial_identifier, retention: 24_months, join_behavior: exact, expected_type: uuid, nullable: false, transformation: unchanged}
+      - {name: direction, action: include, purpose: debit-credit invariant, classification: financial_reference, retention: 24_months, join_behavior: dimension, expected_type: text, nullable: false, transformation: unchanged}
+      - {name: amount, action: include, purpose: exact entry amount in minor units, classification: financial, retention: 24_months, join_behavior: exact, expected_type: bigint, nullable: false, transformation: integer_minor_units}
+      - {name: balance_after, action: include, purpose: account projection evidence, classification: financial, retention: 24_months, join_behavior: exact, expected_type: bigint, nullable: false, transformation: integer_minor_units}
+      - {name: created_at, action: include, purpose: immutable posting time, classification: financial, retention: 24_months, join_behavior: time, expected_type: timestamptz, nullable: false, transformation: utc}
+
+  - service: ledger
+    database: seev_ledger
+    schema: public
+    table: fee_quotes
+    owner: LedgerService
+    primary_key: [id]
+    capture_mode: full_row_allowlisted
+    classification: pricing_intent
+    retention_class: financial_analytics
+    excluded_columns: []
+    columns:
+      - {name: id, action: include, purpose: quote identity, classification: operational_identifier, retention: 24_months, join_behavior: exact, expected_type: uuid, nullable: false, transformation: unchanged}
+      - {name: user_id, action: pseudonymize, purpose: quote conversion cohort without raw identity, classification: pseudonymous_identity, retention: 24_months, join_behavior: pseudonymized, expected_type: uuid, nullable: false, transformation: hmac_sha256_salt_file}
+      - {name: transaction_type, action: include, purpose: quote product, classification: pricing_intent, retention: 24_months, join_behavior: dimension, expected_type: text, nullable: false, transformation: unchanged}
+      - {name: gateway, action: include, purpose: quote route, classification: operational_reference, retention: 24_months, join_behavior: dimension, expected_type: text, nullable: false, transformation: unchanged}
+      - {name: currency, action: include, purpose: quote currency, classification: financial, retention: 24_months, join_behavior: dimension, expected_type: text, nullable: false, transformation: uppercase}
+      - {name: amount, action: include, purpose: quoted amount in minor units, classification: financial, retention: 24_months, join_behavior: exact, expected_type: bigint, nullable: false, transformation: integer_minor_units}
+      - {name: fee_amount, action: include, purpose: quoted fee intent, classification: pricing_intent, retention: 24_months, join_behavior: exact, expected_type: bigint, nullable: false, transformation: integer_minor_units}
+      - {name: fee_gateway, action: include, purpose: fee route intent, classification: pricing_intent, retention: 24_months, join_behavior: dimension, expected_type: text, nullable: false, transformation: unchanged}
+      - {name: expires_at, action: include, purpose: quote expiry, classification: operational, retention: 24_months, join_behavior: time, expected_type: timestamptz, nullable: false, transformation: utc}
+      - {name: consumed_at, action: include, purpose: quote conversion time, classification: operational, retention: 24_months, join_behavior: time, expected_type: timestamptz, nullable: true, transformation: utc}
+      - {name: consumed_by_ref, action: include, purpose: deterministic quote consumer link, classification: operational_identifier, retention: 24_months, join_behavior: exact, expected_type: text, nullable: true, transformation: unchanged}
+      - {name: created_at, action: include, purpose: quote source time, classification: operational, retention: 24_months, join_behavior: time, expected_type: timestamptz, nullable: false, transformation: utc}
+
+  - service: payin
+    database: seev_payin
+    schema: public
+    table: payin_topup_intents
+    owner: PayinService
+    primary_key: [id]
+    capture_mode: full_row_allowlisted
+    classification: payment_lifecycle
+    retention_class: financial_analytics
+    excluded_columns: []
+    columns:
+      - {name: id, action: include, purpose: payin identity, classification: financial_identifier, retention: 24_months, join_behavior: exact, expected_type: uuid, nullable: false, transformation: unchanged}
+      - {name: reference, action: include, purpose: deterministic vendor correlation, classification: operational_identifier, retention: 24_months, join_behavior: exact, expected_type: text, nullable: false, transformation: unchanged}
+      - {name: user_id, action: pseudonymize, purpose: lifecycle cohort without raw identity, classification: pseudonymous_identity, retention: 24_months, join_behavior: pseudonymized, expected_type: uuid, nullable: false, transformation: hmac_sha256_salt_file}
+      - {name: amount, action: include, purpose: payin amount in minor units, classification: financial, retention: 24_months, join_behavior: exact, expected_type: bigint, nullable: false, transformation: integer_minor_units}
+      - {name: currency, action: include, purpose: payin currency, classification: financial, retention: 24_months, join_behavior: dimension, expected_type: char(3), nullable: false, transformation: uppercase}
+      - {name: vendor, action: include, purpose: provider dimension, classification: operational_reference, retention: 24_months, join_behavior: dimension, expected_type: text, nullable: false, transformation: unchanged}
+      - {name: status, action: include, purpose: payin lifecycle status, classification: operational_reference, retention: 24_months, join_behavior: dimension, expected_type: text, nullable: false, transformation: unchanged}
+      - {name: settled_event_id, action: include, purpose: deterministic callback correlation, classification: operational_identifier, retention: 24_months, join_behavior: exact, expected_type: uuid, nullable: true, transformation: unchanged}
+      - {name: expires_at, action: include, purpose: payin expiry time, classification: operational, retention: 24_months, join_behavior: time, expected_type: timestamptz, nullable: false, transformation: utc}
+      - {name: request_id, action: include, purpose: bounded trace correlation, classification: operational_identifier, retention: 90_days, join_behavior: exact, expected_type: text, nullable: true, transformation: unchanged}
+      - {name: merchant_tenant_id, action: include, purpose: merchant scope without display identity, classification: financial_identifier, retention: 24_months, join_behavior: exact, expected_type: uuid, nullable: false, transformation: unchanged}
+      - {name: downstream_key, action: include, purpose: deterministic owner-service idempotency correlation, classification: operational_identifier, retention: 90_days, join_behavior: exact, expected_type: text, nullable: true, transformation: unchanged}
+      - {name: created_at, action: include, purpose: payin source time, classification: operational, retention: 24_months, join_behavior: time, expected_type: timestamptz, nullable: false, transformation: utc}
+      - {name: updated_at, action: include, purpose: payin change ordering, classification: operational, retention: 24_months, join_behavior: time, expected_type: timestamptz, nullable: false, transformation: utc}
+
+  - service: payin
+    database: seev_payin
+    schema: public
+    table: payin_webhook_events
+    owner: PayinService
+    primary_key: [id]
+    capture_mode: full_row_allowlisted
+    classification: payment_callback_metadata
+    retention_class: financial_analytics
+    excluded_columns: [raw, raw_ciphertext, raw_key_version, error_message]
+    columns:
+      - {name: id, action: include, purpose: callback event identity, classification: operational_identifier, retention: 24_months, join_behavior: exact, expected_type: uuid, nullable: false, transformation: unchanged}
+      - {name: vendor, action: include, purpose: provider dimension, classification: operational_reference, retention: 24_months, join_behavior: dimension, expected_type: text, nullable: false, transformation: unchanged}
+      - {name: vendor_event_id, action: include, purpose: callback dedup identity, classification: operational_identifier, retention: 24_months, join_behavior: exact, expected_type: text, nullable: false, transformation: unchanged}
+      - {name: external_ref, action: include, purpose: approved callback correlation, classification: operational_identifier, retention: 24_months, join_behavior: exact, expected_type: text, nullable: false, transformation: unchanged}
+      - {name: user_id, action: pseudonymize, purpose: callback cohort without raw identity, classification: pseudonymous_identity, retention: 24_months, join_behavior: pseudonymized, expected_type: uuid, nullable: true, transformation: hmac_sha256_salt_file}
+      - {name: amount, action: include, purpose: callback amount in minor units, classification: financial, retention: 24_months, join_behavior: exact, expected_type: bigint, nullable: false, transformation: integer_minor_units}
+      - {name: currency, action: include, purpose: callback currency, classification: financial, retention: 24_months, join_behavior: dimension, expected_type: char(3), nullable: false, transformation: uppercase}
+      - {name: status, action: include, purpose: callback processing status, classification: operational_reference, retention: 24_months, join_behavior: dimension, expected_type: text, nullable: false, transformation: unchanged}
+      - {name: request_id, action: include, purpose: bounded trace correlation, classification: operational_identifier, retention: 90_days, join_behavior: exact, expected_type: text, nullable: true, transformation: unchanged}
+      - {name: merchant_tenant_id, action: include, purpose: merchant scope without display identity, classification: financial_identifier, retention: 24_months, join_behavior: exact, expected_type: uuid, nullable: false, transformation: unchanged}
+      - {name: created_at, action: include, purpose: callback receipt time, classification: operational, retention: 24_months, join_behavior: time, expected_type: timestamptz, nullable: false, transformation: utc}
+      - {name: updated_at, action: include, purpose: callback state ordering, classification: operational, retention: 24_months, join_behavior: time, expected_type: timestamptz, nullable: false, transformation: utc}
+
+  - service: payout
+    database: seev_payout
+    schema: public
+    table: payout_requests
+    owner: PayoutService
+    primary_key: [id]
+    capture_mode: full_row_allowlisted
+    classification: payment_lifecycle
+    retention_class: financial_analytics
+    excluded_columns: [destination, destination_ciphertext, destination_key_version, created_by, error_message]
+    columns:
+      - {name: id, action: include, purpose: payout identity, classification: financial_identifier, retention: 24_months, join_behavior: exact, expected_type: uuid, nullable: false, transformation: unchanged}
+      - {name: user_id, action: pseudonymize, purpose: lifecycle cohort without raw identity, classification: pseudonymous_identity, retention: 24_months, join_behavior: pseudonymized, expected_type: uuid, nullable: false, transformation: hmac_sha256_salt_file}
+      - {name: amount, action: include, purpose: payout amount in minor units, classification: financial, retention: 24_months, join_behavior: exact, expected_type: bigint, nullable: false, transformation: integer_minor_units}
+      - {name: currency, action: include, purpose: payout currency, classification: financial, retention: 24_months, join_behavior: dimension, expected_type: char(3), nullable: false, transformation: uppercase}
+      - {name: vendor, action: include, purpose: provider dimension, classification: operational_reference, retention: 24_months, join_behavior: dimension, expected_type: text, nullable: false, transformation: unchanged}
+      - {name: status, action: include, purpose: payout lifecycle status, classification: operational_reference, retention: 24_months, join_behavior: dimension, expected_type: text, nullable: false, transformation: unchanged}
+      - {name: hold_tx_id, action: include, purpose: deterministic hold Ledger correlation, classification: financial_identifier, retention: 24_months, join_behavior: exact, expected_type: uuid, nullable: true, transformation: unchanged}
+      - {name: settle_tx_id, action: include, purpose: deterministic settlement Ledger correlation, classification: financial_identifier, retention: 24_months, join_behavior: exact, expected_type: uuid, nullable: true, transformation: unchanged}
+      - {name: vendor_ref, action: include, purpose: provider reference without payload, classification: operational_identifier, retention: 24_months, join_behavior: exact, expected_type: text, nullable: true, transformation: unchanged}
+      - {name: fee_quote_id, action: include, purpose: deterministic quote correlation, classification: financial_identifier, retention: 24_months, join_behavior: exact, expected_type: uuid, nullable: true, transformation: unchanged}
+      - {name: fee_amount, action: include, purpose: quoted fee intent in minor units, classification: pricing_intent, retention: 24_months, join_behavior: exact, expected_type: bigint, nullable: true, transformation: integer_minor_units}
+      - {name: fee_gateway, action: include, purpose: fee route intent, classification: pricing_intent, retention: 24_months, join_behavior: dimension, expected_type: text, nullable: true, transformation: unchanged}
+      - {name: request_id, action: include, purpose: bounded trace correlation, classification: operational_identifier, retention: 90_days, join_behavior: exact, expected_type: text, nullable: true, transformation: unchanged}
+      - {name: merchant_tenant_id, action: include, purpose: merchant scope without display identity, classification: financial_identifier, retention: 24_months, join_behavior: exact, expected_type: uuid, nullable: false, transformation: unchanged}
+      - {name: downstream_key, action: include, purpose: deterministic owner-service idempotency correlation, classification: operational_identifier, retention: 90_days, join_behavior: exact, expected_type: text, nullable: true, transformation: unchanged}
+      - {name: created_at, action: include, purpose: payout source time, classification: operational, retention: 24_months, join_behavior: time, expected_type: timestamptz, nullable: false, transformation: utc}
+      - {name: updated_at, action: include, purpose: payout change ordering, classification: operational, retention: 24_months, join_behavior: time, expected_type: timestamptz, nullable: false, transformation: utc}
+
+  - service: payout
+    database: seev_payout
+    schema: public
+    table: payout_vendor_calls
+    owner: PayoutService
+    primary_key: [id]
+    capture_mode: full_row_allowlisted
+    classification: provider_attempt_metadata
+    retention_class: financial_analytics
+    excluded_columns: [req_summary, error]
+    columns:
+      - {name: id, action: include, purpose: provider attempt identity, classification: operational_identifier, retention: 24_months, join_behavior: exact, expected_type: uuid, nullable: false, transformation: unchanged}
+      - {name: payout_request_id, action: include, purpose: payout attempt relationship, classification: financial_identifier, retention: 24_months, join_behavior: exact, expected_type: uuid, nullable: false, transformation: unchanged}
+      - {name: vendor, action: include, purpose: provider dimension, classification: operational_reference, retention: 24_months, join_behavior: dimension, expected_type: text, nullable: false, transformation: unchanged}
+      - {name: attempt, action: include, purpose: provider attempt ordinal, classification: operational, retention: 24_months, join_behavior: exact, expected_type: integer, nullable: false, transformation: unchanged}
+      - {name: resp_status, action: include, purpose: bounded provider status class, classification: operational_reference, retention: 24_months, join_behavior: dimension, expected_type: text, nullable: true, transformation: status_class}
+      - {name: outcome, action: include, purpose: provider result category, classification: operational_reference, retention: 24_months, join_behavior: dimension, expected_type: text, nullable: false, transformation: unchanged}
+      - {name: created_at, action: include, purpose: provider attempt time, classification: operational, retention: 24_months, join_behavior: time, expected_type: timestamptz, nullable: false, transformation: utc}
