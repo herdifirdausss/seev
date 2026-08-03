@@ -58,7 +58,7 @@ func (p *FxOut) ResolveAccounts(ctx context.Context, cmd Command) (ResolvedAccou
 	if err != nil || pair == "" {
 		return ResolvedAccounts{}, "", fmt.Errorf("%w: fx_out requires metadata 'pair' (e.g. 'IDRUSD')", apperror.ErrValidation)
 	}
-	cashID, err := p.repo.GetAccountID(ctx, cmd.UserID, constant.AccountTypeCash)
+	cashID, err := userAccountID(ctx, p.repo, cmd.UserID, constant.AccountTypeCash, cmd.Currency)
 	if err != nil {
 		return ResolvedAccounts{}, "", fmt.Errorf("fx_out: user cash: %w", err)
 	}

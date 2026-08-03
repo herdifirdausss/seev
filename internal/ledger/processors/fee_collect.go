@@ -54,7 +54,7 @@ func (p *FeeCollect) ResolveAccounts(ctx context.Context, cmd Command) (Resolved
 	if err != nil || feeGateway == "" {
 		return ResolvedAccounts{}, "", fmt.Errorf("%w: fee_collect requires metadata 'fee_gateway' (e.g. 'platform', 'bca')", apperror.ErrValidation)
 	}
-	userCashID, err := p.repo.GetAccountID(ctx, cmd.UserID, constant.AccountTypeCash)
+	userCashID, err := userAccountID(ctx, p.repo, cmd.UserID, constant.AccountTypeCash, cmd.Currency)
 	if err != nil {
 		return ResolvedAccounts{}, "", fmt.Errorf("fee_collect: user cash: %w", err)
 	}

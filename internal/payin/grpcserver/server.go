@@ -9,17 +9,22 @@ import (
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 	"google.golang.org/grpc/codes"
+	grpcmetadata "google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	payinv1 "github.com/herdifirdausss/seev/gen/payin/v1"
 	"github.com/herdifirdausss/seev/internal/payin/model"
+	currencyreg "github.com/herdifirdausss/seev/pkg/currency"
+	"github.com/herdifirdausss/seev/pkg/ledgererr"
 )
 
 type Service interface {
 	CreateTopupIntent(context.Context, uuid.UUID, decimal.Decimal) (model.TopupIntent, error)
 	GetTopupIntent(context.Context, uuid.UUID) (model.TopupIntent, error)
 }
+
+var errCurrencyAwareTopupUnavailable = errors.New("currency-aware topup creation unavailable")
 
 type Server struct {
 	payinv1.UnimplementedPayinServiceServer
@@ -75,8 +80,24 @@ func (s *Server) CreateTopupIntent(ctx context.Context, request *payinv1.CreateT
 	if err != nil {
 		return nil, err
 	}
-	intent, callErr := s.service.CreateTopupIntent(ctx, userID, amount)
+	intent, callErr := s.createTopupIntent(ctx, userID, amount)
 	if callErr != nil {
+		if errors.Is(callErr, errCurrencyAwareTopupUnavailable) {
+			return nil, status.Error(codes.Unimplemented, errCurrencyAwareTopupUnavailable.Error())
+		}
+		if errors.Is(callErr, currencyreg.ErrInvalidCurrency) {
+			return nil, status.Error(codes.InvalidArgument, "CURRENCY_INVALID: currency must be exactly three uppercase letters")
+		}
+		var business *ledgererr.LedgerError
+		if errors.As(callErr, &business) {
+			if business.Code == "CURRENCY_INVALID" {
+				return nil, status.Error(codes.InvalidArgument, business.Error())
+			}
+			return nil, status.Error(codes.FailedPrecondition, business.Error())
+		}
+		if status.Code(callErr) == codes.InvalidArgument {
+			return nil, status.Error(codes.InvalidArgument, status.Convert(callErr).Message())
+		}
 		if strings.Contains(callErr.Error(), "intake paused") {
 			return nil, status.Error(codes.FailedPrecondition, "INTAKE_PAUSED")
 		}
@@ -93,6 +114,20 @@ func (s *Server) CreateTopupIntent(ctx context.Context, request *payinv1.CreateT
 		return nil, status.Error(codes.Internal, "create topup intent failed")
 	}
 	return &payinv1.CreateTopupIntentResponse{Intent: intentToProto(intent)}, nil
+}
+
+func (s *Server) createTopupIntent(ctx context.Context, userID uuid.UUID, amount decimal.Decimal) (model.TopupIntent, error) {
+	if incoming, ok := grpcmetadata.FromIncomingContext(ctx); ok {
+		if values := incoming.Get("x-seev-currency"); len(values) > 0 && values[0] != "" {
+			if creator, ok := s.service.(interface {
+				CreateTopupIntentWithCurrency(context.Context, uuid.UUID, decimal.Decimal, string) (model.TopupIntent, error)
+			}); ok {
+				return creator.CreateTopupIntentWithCurrency(ctx, userID, amount, values[0])
+			}
+			return model.TopupIntent{}, errCurrencyAwareTopupUnavailable
+		}
+	}
+	return s.service.CreateTopupIntent(ctx, userID, amount)
 }
 
 func (s *Server) GetTopupIntent(ctx context.Context, request *payinv1.GetTopupIntentRequest) (*payinv1.GetTopupIntentResponse, error) {
@@ -134,7 +169,7 @@ func (s *Server) CreateMerchantTopupIntent(ctx context.Context, request *payinv1
 		return nil, status.Error(codes.InvalidArgument, "tenant_id must be a valid UUID")
 	}
 	amount, err := decimal.NewFromString(request.GetAmount())
-	if err != nil || !amount.Equal(amount.Truncate(0)) || !amount.IsPositive() {
+	if err != nil || currencyreg.ValidatePositiveMinorAmount(amount) != nil {
 		return nil, status.Error(codes.InvalidArgument, "amount must be a positive integer decimal string")
 	}
 	if request.GetDownstreamKey() == "" {
@@ -142,6 +177,9 @@ func (s *Server) CreateMerchantTopupIntent(ctx context.Context, request *payinv1
 	}
 	intent, callErr := creator.CreateMerchantTopupIntent(ctx, tenantID, request.GetEnvironment(), request.GetCurrency(), amount, request.GetDownstreamKey())
 	if callErr != nil {
+		if errors.Is(callErr, currencyreg.ErrInvalidCurrency) {
+			return nil, status.Error(codes.InvalidArgument, "CURRENCY_INVALID: currency must be exactly three uppercase letters")
+		}
 		if strings.Contains(callErr.Error(), "intake paused") {
 			return nil, status.Error(codes.FailedPrecondition, "INTAKE_PAUSED")
 		}
@@ -155,6 +193,13 @@ func (s *Server) CreateMerchantTopupIntent(ctx context.Context, request *payinv1
 			// A sandbox tenant must fail closed if the mock vendor isn't
 			// registered — distinct from a live "no route" config problem.
 			return nil, status.Error(codes.FailedPrecondition, "SANDBOX_VENDOR_UNAVAILABLE")
+		}
+		var business *ledgererr.LedgerError
+		if errors.As(callErr, &business) {
+			if business.Code == "CURRENCY_INVALID" {
+				return nil, status.Error(codes.InvalidArgument, business.Error())
+			}
+			return nil, status.Error(codes.FailedPrecondition, business.Error())
 		}
 		return nil, status.Error(codes.Internal, "create merchant topup intent failed")
 	}
@@ -233,7 +278,7 @@ func parseUserAndAmount(rawUserID, rawAmount string) (uuid.UUID, decimal.Decimal
 		return uuid.Nil, decimal.Zero, status.Error(codes.InvalidArgument, "user_id must be a valid UUID")
 	}
 	amount, err := decimal.NewFromString(rawAmount)
-	if err != nil || !amount.Equal(amount.Truncate(0)) || !amount.IsPositive() {
+	if err != nil || currencyreg.ValidatePositiveMinorAmount(amount) != nil {
 		return uuid.Nil, decimal.Zero, status.Error(codes.InvalidArgument, "amount must be a positive integer decimal string")
 	}
 	return userID, amount, nil

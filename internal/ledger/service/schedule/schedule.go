@@ -26,6 +26,7 @@ import (
 	"github.com/herdifirdausss/seev/internal/ledger/model"
 	"github.com/herdifirdausss/seev/internal/ledger/processors"
 	"github.com/herdifirdausss/seev/internal/ledger/repository"
+	currencyreg "github.com/herdifirdausss/seev/pkg/currency"
 	"github.com/herdifirdausss/seev/pkg/generalutil"
 )
 
@@ -58,6 +59,7 @@ var allowedKinds = map[string]bool{"once": true, "daily": true, "monthly": true}
 type cmdPayload struct {
 	Type         string         `json:"type"`
 	Amount       string         `json:"amount"`
+	Currency     string         `json:"currency,omitempty"`
 	TargetUserID uuid.UUID      `json:"target_user_id,omitempty"`
 	PocketCode   string         `json:"pocket_code,omitempty"`
 	Metadata     map[string]any `json:"metadata,omitempty"`
@@ -83,6 +85,26 @@ func (s *Service) Create(
 	ctx context.Context, userID uuid.UUID, txType string, amount decimal.Decimal,
 	targetUserID uuid.UUID, pocketCode string, metadata map[string]any,
 	kind string, runAtDate time.Time, dayOfMonth *int, createdBy string,
+) (uuid.UUID, error) {
+	return s.create(ctx, userID, txType, amount, targetUserID, pocketCode, metadata, kind, runAtDate, dayOfMonth, createdBy, "")
+}
+
+// CreateWithCurrency is the currency-aware scheduled transaction entry point.
+// The legacy Create method intentionally remains unchanged: an omitted
+// currency preserves the original IDR account-resolution behavior for old
+// callers and old cmd_payload rows.
+func (s *Service) CreateWithCurrency(
+	ctx context.Context, userID uuid.UUID, txType string, amount decimal.Decimal,
+	targetUserID uuid.UUID, pocketCode string, metadata map[string]any,
+	kind string, runAtDate time.Time, dayOfMonth *int, createdBy, requestedCurrency string,
+) (uuid.UUID, error) {
+	return s.create(ctx, userID, txType, amount, targetUserID, pocketCode, metadata, kind, runAtDate, dayOfMonth, createdBy, requestedCurrency)
+}
+
+func (s *Service) create(
+	ctx context.Context, userID uuid.UUID, txType string, amount decimal.Decimal,
+	targetUserID uuid.UUID, pocketCode string, metadata map[string]any,
+	kind string, runAtDate time.Time, dayOfMonth *int, createdBy, requestedCurrency string,
 ) (uuid.UUID, error) {
 	if !allowedTypes[txType] {
 		return uuid.Nil, fmt.Errorf("%w: type must be one of transfer_p2p, transfer_pocket", apperror.ErrValidation)
@@ -114,8 +136,13 @@ func (s *Service) Create(
 	if createdBy == "" {
 		return uuid.Nil, fmt.Errorf("%w: created_by (caller identity) is required", apperror.ErrValidation)
 	}
+	if requestedCurrency != "" {
+		if err := currencyreg.ValidateCode(requestedCurrency); err != nil {
+			return uuid.Nil, fmt.Errorf("%w: currency: %v", apperror.ErrValidation, err)
+		}
+	}
 
-	payload := cmdPayload{Type: txType, Amount: amount.String(), TargetUserID: targetUserID, PocketCode: pocketCode, Metadata: metadata}
+	payload := cmdPayload{Type: txType, Amount: amount.String(), Currency: requestedCurrency, TargetUserID: targetUserID, PocketCode: pocketCode, Metadata: metadata}
 	payloadJSON, err := json.Marshal(payload)
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("marshal schedule payload: %w", err)
@@ -206,12 +233,17 @@ func (s *Service) RunDue(ctx context.Context, asOf time.Time) (executed, failed 
 		if metadata == nil {
 			metadata = map[string]any{}
 		}
+		// A schedule was accepted before this execution attempt. Treat the
+		// resulting posting as in-flight so an intake pause/disable cannot
+		// strand an already durable scheduled instruction.
+		metadata["currency_inflight"] = true
 
 		cmd := processors.Command{
 			IdempotencyKey:   scheduleIdempotencyKey(row.ID, asOf),
 			IdempotencyScope: row.UserID.String(),
 			Type:             payload.Type,
 			Amount:           amount,
+			Currency:         payload.Currency,
 			UserID:           row.UserID,
 			TargetUserID:     payload.TargetUserID,
 			PocketCode:       payload.PocketCode,

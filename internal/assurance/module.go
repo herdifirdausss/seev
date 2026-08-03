@@ -27,6 +27,7 @@ type Module struct {
 	payin   payinReader
 	payout  payoutReader
 	ledger  ledgerReader
+	fx      FXReconciliationReader
 	alertFn alerting.AlertFunc
 
 	stopOnce sync.Once
@@ -47,11 +48,15 @@ type ledgerReader interface {
 	BatchGetAssuranceTransactions(context.Context, *ledgerv1.BatchGetAssuranceTransactionsRequest, ...grpc.CallOption) (*ledgerv1.BatchGetAssuranceTransactionsResponse, error)
 }
 
-func NewModule(db database.DatabaseSQL, cfg config.AssuranceConfig, payin payinReader, payout payoutReader, ledger ledgerReader, alertFn alerting.AlertFunc, logger *slog.Logger) *Module {
+func NewModule(db database.DatabaseSQL, cfg config.AssuranceConfig, payin payinReader, payout payoutReader, ledger ledgerReader, alertFn alerting.AlertFunc, logger *slog.Logger, fxReaders ...FXReconciliationReader) *Module {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Module{db: db, cfg: cfg, logger: logger, payin: payin, payout: payout, ledger: ledger, alertFn: alertFn, stopCh: make(chan struct{}), doneCh: make(chan struct{})}
+	var fxReader FXReconciliationReader
+	if len(fxReaders) > 0 {
+		fxReader = fxReaders[0]
+	}
+	return &Module{db: db, cfg: cfg, logger: logger, payin: payin, payout: payout, ledger: ledger, fx: fxReader, alertFn: alertFn, stopCh: make(chan struct{}), doneCh: make(chan struct{})}
 }
 
 func (m *Module) Start(ctx context.Context) {
@@ -128,6 +133,13 @@ func (m *Module) Run(ctx context.Context, mode string) (RunSummary, error) {
 		return m.failRun(ctx, run, err)
 	} else {
 		run.RecordsScanned += n
+	}
+	if m.fx != nil {
+		if n, err := m.scanFX(ctx, run.ID, cutoff, mode == "backfill"); err != nil {
+			return m.failRun(ctx, run, err)
+		} else {
+			run.RecordsScanned += n
+		}
 	}
 	if mode == "backfill" {
 		if err := m.markBackfillComplete(ctx, "ledger", run.ID); err != nil {

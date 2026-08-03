@@ -55,3 +55,18 @@ func (mr *MockCurrencyRepositoryMockRecorder) ListEnabled(ctx any) *gomock.Call 
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListEnabled", reflect.TypeOf((*MockCurrencyRepository)(nil).ListEnabled), ctx)
 }
+
+// ListRegistered mocks base method.
+func (m *MockCurrencyRepository) ListRegistered(ctx context.Context) ([]currency.Currency, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListRegistered", ctx)
+	ret0, _ := ret[0].([]currency.Currency)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListRegistered indicates an expected call of ListRegistered.
+func (mr *MockCurrencyRepositoryMockRecorder) ListRegistered(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListRegistered", reflect.TypeOf((*MockCurrencyRepository)(nil).ListRegistered), ctx)
+}

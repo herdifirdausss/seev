@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -62,13 +63,13 @@ func ReconstructPolicyCounters(ctx context.Context, ledgerDB *sql.DB, counter ca
 		}
 
 		if err := reconstructWindow(ctx, ledgerDB, counter, txType, accountColumn, dayStart, dayEnd,
-			func(userID uuid.UUID) string { return policy.DailyAmountKey(userID, txType, now) },
-			func(userID uuid.UUID) string { return policy.DailyCountKey(userID, txType, now) },
+			func(userID uuid.UUID, currency string) string { return policyKeyDailyAmount(userID, txType, currency, now) },
+			func(userID uuid.UUID, currency string) string { return policyKeyDailyCount(userID, txType, currency, now) },
 			dailyCounterTTL, report); err != nil {
 			return fmt.Errorf("reconstruct daily policy counters for %s: %w", txType, err)
 		}
 		if err := reconstructWindow(ctx, ledgerDB, counter, txType, accountColumn, monthStart, monthEnd,
-			func(userID uuid.UUID) string { return policy.MonthlyAmountKey(userID, txType, now) },
+			func(userID uuid.UUID, currency string) string { return policyKeyMonthlyAmount(userID, txType, currency, now) },
 			nil, monthlyCounterTTL, report); err != nil {
 			return fmt.Errorf("reconstruct monthly policy counters for %s: %w", txType, err)
 		}
@@ -82,14 +83,14 @@ func ReconstructPolicyCounters(ctx context.Context, ledgerDB *sql.DB, counter ca
 // Redis this behaves exactly like a plain SET (IncrBy against a
 // non-existent key both creates it at the given value and, via ExpireNX,
 // sets its TTL), so no separate "absolute set" primitive is needed.
-func reconstructWindow(ctx context.Context, ledgerDB *sql.DB, counter cache.Counter, txType, accountColumn string, windowStart, windowEnd time.Time, amountKey func(uuid.UUID) string, countKey func(uuid.UUID) string, ttl time.Duration, report *Report) error {
+func reconstructWindow(ctx context.Context, ledgerDB *sql.DB, counter cache.Counter, txType, accountColumn string, windowStart, windowEnd time.Time, amountKey func(uuid.UUID, string) string, countKey func(uuid.UUID, string) string, ttl time.Duration, report *Report) error {
 	query := fmt.Sprintf(`
-		SELECT a.owner_id, SUM(lt.amount), COUNT(*)
+		SELECT a.owner_id, lt.currency, SUM(lt.amount), COUNT(*)
 		FROM ledger_transactions lt
 		JOIN accounts a ON a.id = lt.%s
 		WHERE lt.type = $1 AND lt.status = 'posted' AND lt.created_at >= $2 AND lt.created_at < $3
 		  AND a.owner_id IS NOT NULL
-		GROUP BY a.owner_id`, accountColumn)
+		GROUP BY a.owner_id, lt.currency`, accountColumn)
 	rows, err := ledgerDB.QueryContext(ctx, query, txType, windowStart, windowEnd)
 	if err != nil {
 		return fmt.Errorf("aggregate posted transactions: %w", err)
@@ -98,15 +99,17 @@ func reconstructWindow(ctx context.Context, ledgerDB *sql.DB, counter cache.Coun
 
 	type aggregate struct {
 		userID uuid.UUID
+		currency string
 		amount int64
 		count  int64
 	}
 	var aggregates []aggregate
 	for rows.Next() {
 		var a aggregate
-		if err := rows.Scan(&a.userID, &a.amount, &a.count); err != nil {
+		if err := rows.Scan(&a.userID, &a.currency, &a.amount, &a.count); err != nil {
 			return fmt.Errorf("scan aggregate: %w", err)
 		}
+		a.currency = strings.TrimSpace(a.currency)
 		aggregates = append(aggregates, a)
 	}
 	if err := rows.Err(); err != nil {
@@ -114,16 +117,37 @@ func reconstructWindow(ctx context.Context, ledgerDB *sql.DB, counter cache.Coun
 	}
 
 	for _, a := range aggregates {
-		if _, err := counter.IncrBy(ctx, amountKey(a.userID), a.amount, ttl); err != nil {
+		if _, err := counter.IncrBy(ctx, amountKey(a.userID, a.currency), a.amount, ttl); err != nil {
 			return fmt.Errorf("write amount counter for user %s: %w", a.userID, err)
 		}
 		report.PolicyCountersWritten++
 		if countKey != nil {
-			if _, err := counter.IncrBy(ctx, countKey(a.userID), a.count, ttl); err != nil {
+			if _, err := counter.IncrBy(ctx, countKey(a.userID, a.currency), a.count, ttl); err != nil {
 				return fmt.Errorf("write count counter for user %s: %w", a.userID, err)
 			}
 			report.PolicyCountersWritten++
 		}
 	}
 	return nil
+}
+
+func policyKeyDailyAmount(userID uuid.UUID, txType, currency string, now time.Time) string {
+	if currency == "" || currency == "IDR" {
+		return policy.DailyAmountKey(userID, txType, now)
+	}
+	return policy.DailyAmountKeyForCurrency(userID, txType, currency, now)
+}
+
+func policyKeyDailyCount(userID uuid.UUID, txType, currency string, now time.Time) string {
+	if currency == "" || currency == "IDR" {
+		return policy.DailyCountKey(userID, txType, now)
+	}
+	return policy.DailyCountKeyForCurrency(userID, txType, currency, now)
+}
+
+func policyKeyMonthlyAmount(userID uuid.UUID, txType, currency string, now time.Time) string {
+	if currency == "" || currency == "IDR" {
+		return policy.MonthlyAmountKey(userID, txType, now)
+	}
+	return policy.MonthlyAmountKeyForCurrency(userID, txType, currency, now)
 }

@@ -46,12 +46,12 @@ func (p *MoneyIn) ResolveAccounts(ctx context.Context, cmd Command) (ResolvedAcc
 	}
 	var destID uuid.UUID
 	if cmd.PocketCode != "" {
-		destID, err = p.repo.GetPocketAccountID(ctx, cmd.UserID, cmd.PocketCode)
+		destID, err = userPocketAccountID(ctx, p.repo, cmd.UserID, cmd.PocketCode, cmd.Currency)
 		if err != nil {
 			return ResolvedAccounts{}, "", fmt.Errorf("money_in: pocket %q: %w", cmd.PocketCode, err)
 		}
 	} else {
-		destID, err = p.repo.GetAccountID(ctx, cmd.UserID, constant.AccountTypeCash)
+		destID, err = userAccountID(ctx, p.repo, cmd.UserID, constant.AccountTypeCash, cmd.Currency)
 		if err != nil {
 			return ResolvedAccounts{}, "", fmt.Errorf("money_in: cash account: %w", err)
 		}

@@ -38,14 +38,14 @@ func (p *WithdrawInitiate) ResolveAccounts(ctx context.Context, cmd Command) (Re
 	var srcID uuid.UUID
 	var err error
 	if cmd.PocketCode != "" {
-		srcID, err = p.repo.GetPocketAccountID(ctx, cmd.UserID, cmd.PocketCode)
+		srcID, err = userPocketAccountID(ctx, p.repo, cmd.UserID, cmd.PocketCode, cmd.Currency)
 	} else {
-		srcID, err = p.repo.GetAccountID(ctx, cmd.UserID, constant.AccountTypeCash)
+		srcID, err = userAccountID(ctx, p.repo, cmd.UserID, constant.AccountTypeCash, cmd.Currency)
 	}
 	if err != nil {
 		return ResolvedAccounts{}, "", fmt.Errorf("withdraw_initiate: source: %w", err)
 	}
-	holdID, err := p.repo.GetAccountID(ctx, cmd.UserID, constant.AccountTypeHold)
+	holdID, err := userAccountID(ctx, p.repo, cmd.UserID, constant.AccountTypeHold, cmd.Currency)
 	if err != nil {
 		return ResolvedAccounts{}, "", fmt.Errorf("withdraw_initiate: hold: %w", err)
 	}

@@ -44,7 +44,7 @@ func (p *MerchantPayoutSettle) ResolveAccounts(ctx context.Context, cmd Command)
 	if err != nil {
 		return ResolvedAccounts{}, "", err
 	}
-	holdID, err := p.repo.GetMerchantAccountID(ctx, cmd.MerchantTenantID, constant.AccountTypeHold)
+	holdID, err := merchantAccountID(ctx, p.repo, cmd.MerchantTenantID, constant.AccountTypeHold, cmd.Currency)
 	if err != nil {
 		return ResolvedAccounts{}, "", fmt.Errorf("merchant_payout_settle: hold: %w", err)
 	}

@@ -19,6 +19,7 @@ import (
 	"github.com/shopspring/decimal"
 
 	"github.com/herdifirdausss/seev/internal/vendorgw"
+	currencyreg "github.com/herdifirdausss/seev/pkg/currency"
 )
 
 // VendorName is this verifier's registry name.
@@ -48,6 +49,13 @@ func New(name, secret string) *Verifier {
 }
 
 func (v *Verifier) Vendor() string { return v.name }
+
+// SupportsCurrency declares the synthetic corridors this mock verifier can
+// represent. The declaration is intentionally narrow: it is a local fixture,
+// not a claim about a real payment rail.
+func (v *Verifier) SupportsCurrency(operation, code string) bool {
+	return operation == "topup" && (code == "IDR" || code == "USD")
+}
 
 // webhookPayload is mockvendor's made-up wire format. Amount is a string,
 // not a JSON number — a JSON number decodes to float64, which is exactly
@@ -90,6 +98,12 @@ func (v *Verifier) VerifyAndParse(headers http.Header, rawBody []byte) (*vendorg
 	amount, err := decimal.NewFromString(payload.Amount)
 	if err != nil {
 		return nil, fmt.Errorf("mockvendor: parse amount: %w", err)
+	}
+	if err := currencyreg.ValidatePositiveMinorAmount(amount); err != nil {
+		return nil, fmt.Errorf("mockvendor: invalid amount: %w", err)
+	}
+	if !v.SupportsCurrency("topup", payload.Currency) {
+		return nil, fmt.Errorf("mockvendor: unsupported topup currency %q", payload.Currency)
 	}
 	return &vendorgw.PayinEvent{
 		Vendor:        v.name,

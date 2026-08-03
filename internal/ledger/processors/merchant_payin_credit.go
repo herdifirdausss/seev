@@ -50,7 +50,7 @@ func (p *MerchantPayinCredit) ResolveAccounts(ctx context.Context, cmd Command) 
 	if err != nil {
 		return ResolvedAccounts{}, "", err
 	}
-	destID, err := p.repo.GetMerchantAccountID(ctx, cmd.MerchantTenantID, constant.AccountTypeCash)
+	destID, err := merchantAccountID(ctx, p.repo, cmd.MerchantTenantID, constant.AccountTypeCash, cmd.Currency)
 	if err != nil {
 		return ResolvedAccounts{}, "", fmt.Errorf("merchant_payin_credit: merchant cash: %w", err)
 	}

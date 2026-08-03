@@ -103,6 +103,7 @@ func (m *Module) AdminRouter() http.Handler {
 	mux.Handle("GET /api/v1/admin/maker", m.consolePage("maker"))
 	mux.Handle("GET /api/v1/admin/payout", m.consolePage("payout"))
 	mux.Handle("GET /api/v1/admin/recon", m.consolePage("recon"))
+	mux.Handle("GET /api/v1/admin/fx", m.consolePage("fx"))
 	mux.Handle("GET /api/v1/admin/catalog", m.consolePage("catalog"))
 	mux.Handle("GET /api/v1/admin/merchant", m.consolePage("merchant"))
 	mux.HandleFunc("GET /api/v1/admin/audit", m.auditListHandler)
@@ -128,6 +129,9 @@ func (m *Module) AdminRouter() http.Handler {
 	// is correct, so this proxy targets it instead — the same rewrite pattern
 	// adjustments/recon above already use for exactly this reason.
 	mux.Handle("/api/v1/admin/ledger/", m.proxy("ledger", m.clients.Ledger, "/api/v1/admin/ledger/", "/api/v1/ledger/admin/"))
+	mux.Handle("/api/v1/admin/fx/", m.proxy("ledger", m.clients.Ledger, "/api/v1/admin/fx/", "/api/v1/ledger/admin/fx/"))
+	mux.Handle("POST /api/v1/admin/fx/rates/approve", m.fxRateDecisionProxy("approve"))
+	mux.Handle("POST /api/v1/admin/fx/rates/reject", m.fxRateDecisionProxy("reject"))
 	mux.Handle("/api/v1/admin/policy/", m.proxy("ledger", m.clients.Ledger, "/api/v1/admin/policy/", "/api/v1/admin/policy/"))
 	mux.Handle("/api/v1/admin/payin/", m.proxy("payin", m.clients.Payin, "/api/v1/admin/payin/", "/admin/payin/"))
 	mux.Handle("/api/v1/admin/payout/", m.proxy("payout", m.clients.Payout, "/api/v1/admin/payout/", "/admin/payout/"))

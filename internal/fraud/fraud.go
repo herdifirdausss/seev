@@ -21,9 +21,10 @@ type Verdict = model.Verdict
 type ScreeningEvent = model.ScreeningEvent
 
 type Config struct {
-	Mode               string
-	AmountThreshold    decimal.Decimal
-	VelocityMaxPerHour int64
+	Mode                    string
+	AmountThreshold         decimal.Decimal
+	AmountThresholdByCurrency map[string]decimal.Decimal
+	VelocityMaxPerHour      int64
 }
 
 type Module struct {
@@ -56,8 +57,8 @@ func NewModule(db database.DatabaseSQL, store VelocityStore, broker Broker, cfg 
 	modeRepo := repository.NewRuleModeRepository(db)
 	sanctionsRepo := repository.NewSanctionsRepository(db)
 	module := &Module{db: db, repo: repo, modeRepo: modeRepo, modeResolver: newRuleModeResolver(modeRepo, mode, logger), store: store, broker: broker, logger: logger, spill: newEventSpill()}
-	if cfg.AmountThreshold.IsPositive() {
-		module.rules = append(module.rules, rules.NewAmountThresholdRuleWithResolver(cfg.AmountThreshold, mode, module.modeResolver, repo, logger))
+	if cfg.AmountThreshold.IsPositive() || len(cfg.AmountThresholdByCurrency) > 0 {
+		module.rules = append(module.rules, rules.NewAmountThresholdRuleWithCurrencyThresholds(cfg.AmountThreshold, cfg.AmountThresholdByCurrency, mode, module.modeResolver, repo, logger))
 	}
 	if cfg.VelocityMaxPerHour > 0 && store != nil {
 		module.rules = append(module.rules, rules.NewVelocityAnomalyRuleWithResolver(cfg.VelocityMaxPerHour, mode, module.modeResolver, store, repo, logger))

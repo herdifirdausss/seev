@@ -29,11 +29,11 @@ func (p *TransferPocket) ResolveAccounts(ctx context.Context, cmd Command) (Reso
 	if cmd.PocketCode == "" {
 		return ResolvedAccounts{}, "", fmt.Errorf("transfer_pocket: PocketCode required")
 	}
-	cashID, err := p.repo.GetAccountID(ctx, cmd.UserID, constant.AccountTypeCash)
+	cashID, err := userAccountID(ctx, p.repo, cmd.UserID, constant.AccountTypeCash, cmd.Currency)
 	if err != nil {
 		return ResolvedAccounts{}, "", fmt.Errorf("transfer_pocket: cash: %w", err)
 	}
-	pocketID, err := p.repo.GetPocketAccountID(ctx, cmd.UserID, cmd.PocketCode)
+	pocketID, err := userPocketAccountID(ctx, p.repo, cmd.UserID, cmd.PocketCode, cmd.Currency)
 	if err != nil {
 		return ResolvedAccounts{}, "", fmt.Errorf("transfer_pocket: pocket %q: %w", cmd.PocketCode, err)
 	}

@@ -70,7 +70,7 @@ func (h *LedgerHarness) Post(ctx context.Context, command ledgerclient.Command) 
 	err := h.module.Post(ctx, ledger.Command{
 		IdempotencyKey: command.IdempotencyKey, IdempotencyScope: command.IdempotencyScope,
 		Type: command.Type, Amount: command.Amount, UserID: command.UserID,
-		TargetUserID: command.TargetUserID, PocketCode: command.PocketCode,
+		TargetUserID: command.TargetUserID, PocketCode: command.PocketCode, Currency: command.Currency,
 		ReferenceID: command.ReferenceID, Metadata: command.Metadata,
 		MerchantTenantID: command.MerchantTenantID,
 	})

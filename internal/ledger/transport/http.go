@@ -141,6 +141,19 @@ func (h *handler) mux() http.Handler {
 	mux.HandleFunc("GET /accounts/{id}/statement", h.getStatement)
 	mux.HandleFunc("POST /accounts/pockets", h.createPocket)
 
+	// C4 multi-currency wallet and FX surface. The existing gateway already
+	// forwards /api/v1/ledger/* to this router, so these routes are available
+	// without introducing a second FX service or a second balance owner.
+	mux.HandleFunc("GET /currencies", h.listCurrencies)
+	mux.HandleFunc("GET /balances", h.listCurrencyBalances)
+	mux.HandleFunc("GET /balances/{currency}", h.getCurrencyBalance)
+	mux.HandleFunc("POST /currencies/{currency}/enable", h.enableCurrency)
+	mux.HandleFunc("GET /fx/pairs", h.listFXPairs)
+	mux.HandleFunc("POST /fx/quotes", h.createFXQuote)
+	mux.HandleFunc("GET /fx/quotes/{id}", h.getFXQuote)
+	mux.HandleFunc("POST /fx/conversions", h.createFXConversion)
+	mux.HandleFunc("GET /fx/conversions/{id}", h.getFXConversion)
+
 	// Fee quotes (docs/roadmap/archive/38 Task T3) — PUBLIC router only: this is the
 	// "what will I pay" preview an end user requests before committing to a
 	// transaction. Reachable automatically as
@@ -214,6 +227,28 @@ func (h *handler) mux() http.Handler {
 		mux.HandleFunc("GET /admin/ledger/fee-rules", h.listFeeRules)
 		mux.HandleFunc("POST /admin/ledger/fee-rules", h.createFeeRule)
 		mux.HandleFunc("PUT /admin/ledger/fee-rules/{id}", h.updateFeeRule)
+
+		// FX operator controls stay on Ledger's internal listener. Admin BFF
+		// proxies these routes; it never opens a Ledger database connection.
+		mux.HandleFunc("GET /admin/fx/currencies", h.adminListFXCurrencies)
+		mux.HandleFunc("PUT /admin/fx/currencies/{currency}/policy", h.adminUpdateFXCurrencyPolicy)
+		mux.HandleFunc("GET /admin/fx/pairs", h.adminListFXPairs)
+		mux.HandleFunc("GET /admin/fx/positions", h.adminListFXPositions)
+		mux.HandleFunc("GET /admin/fx/positions/daily", h.adminGetFXDailyPositionReport)
+		mux.HandleFunc("GET /admin/fx/reconciliation", h.adminReconcileFXConversions)
+		mux.HandleFunc("POST /admin/fx/rebalances", h.adminCreateFXRebalance)
+		mux.HandleFunc("GET /admin/fx/rates", h.adminListFXRates)
+		mux.HandleFunc("POST /admin/fx/rates", h.adminCreateFXRate)
+		mux.HandleFunc("POST /admin/fx/rates/{id}/submit", h.adminSubmitFXRate)
+		mux.HandleFunc("POST /admin/fx/rates/{id}/approve", h.adminApproveFXRate)
+		mux.HandleFunc("POST /admin/fx/rates/{id}/reject", h.adminRejectFXRate)
+		mux.HandleFunc("POST /admin/fx/rates/{id}/retire", h.adminRetireFXRate)
+		mux.HandleFunc("PUT /admin/fx/pairs/{id}/controls", h.adminUpdateFXPairControls)
+		mux.HandleFunc("PUT /admin/fx/pairs/{id}/status", h.adminUpdateFXPairStatus)
+		mux.HandleFunc("PUT /admin/fx/directions/{id}/controls", h.adminUpdateFXDirectionControls)
+		mux.HandleFunc("PUT /admin/fx/position-limits", h.adminUpdateFXPositionLimit)
+		mux.HandleFunc("GET /admin/fx/quotes/{id}", h.adminGetFXQuote)
+		mux.HandleFunc("GET /admin/fx/conversions/{id}", h.adminGetFXConversion)
 	}
 
 	return mux
@@ -398,10 +433,34 @@ func (h *handler) createQuote(w http.ResponseWriter, r *http.Request) {
 	}
 
 	quoteCurrency := req.Currency
+	if quoteCurrency != "" {
+		if err := currency.ValidateCode(quoteCurrency); err != nil {
+			response.ErrorStatus(w, http.StatusBadRequest, apperror.ErrCurrencyInvalid.Error(), err.Error())
+			return
+		}
+		if !currency.IsValid(quoteCurrency) {
+			response.ErrorStatus(w, http.StatusBadRequest, apperror.ErrCurrencyInvalid.Error(), "currency is not registered")
+			return
+		}
+	}
 	if quoteCurrency == "" {
 		resolved, cerr := h.svc.GetUserCurrency(r.Context(), userID, "")
 		if cerr == nil {
 			quoteCurrency = resolved
+		}
+	}
+	if err := currency.ValidateCode(quoteCurrency); err != nil || !currency.IsValid(quoteCurrency) {
+		response.ErrorStatus(w, http.StatusBadRequest, apperror.ErrCurrencyInvalid.Error(), "currency is not registered")
+		return
+	}
+	if validator, ok := h.svc.(interface {
+		ValidateCurrency(context.Context, string, string) error
+	}); ok {
+		if operation := feeQuoteCurrencyOperation(req.TransactionType); operation != "" {
+			if err := validator.ValidateCurrency(r.Context(), quoteCurrency, operation); err != nil {
+				writeError(w, err)
+				return
+			}
 		}
 	}
 
@@ -411,6 +470,19 @@ func (h *handler) createQuote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	response.Created(w, toQuoteResponse(q))
+}
+
+func feeQuoteCurrencyOperation(transactionType string) string {
+	switch transactionType {
+	case "money_in":
+		return "topup"
+	case "withdraw_initiate", "withdraw_pending", "withdraw_pending_settle", "withdraw_pending_cancel", "withdraw_settle", "withdraw_cancel", "money_out":
+		return "payout"
+	case "transfer_p2p", "transfer_pocket", "escrow_hold", "escrow_release", "escrow_refund", "refund":
+		return "transfer"
+	default:
+		return ""
+	}
 }
 
 // directPostBlockedTypes are transaction types that must NEVER be posted
@@ -427,6 +499,17 @@ var directPostBlockedTypes = map[string]bool{
 	"reversal":                   true,
 	"chargeback":                 true,
 	"freeze_confiscate":          true,
+	"fx_rebalance_credit":        true,
+	"fx_rebalance_debit":         true,
+	"fx_out":                     true,
+	"fx_in":                      true,
+}
+
+// scheduleCurrencyCreator is optional so existing transport test doubles and
+// older embedders can keep implementing Service without a breaking interface
+// change. The production ledger.Module implements it for explicit currencies.
+type scheduleCurrencyCreator interface {
+	CreateScheduleWithCurrency(ctx context.Context, userID uuid.UUID, txType string, amount decimal.Decimal, targetUserID uuid.UUID, pocketCode string, metadata map[string]any, kind string, runAtDate time.Time, dayOfMonth *int, createdBy, currency string) (uuid.UUID, error)
 }
 
 type handler struct {
@@ -468,6 +551,11 @@ type PolicyChecker interface {
 	// Record registers a transaction that already posted successfully —
 	// callers must NEVER call this for a transaction that failed to post.
 	Record(ctx context.Context, userID uuid.UUID, txType string, amount decimal.Decimal)
+}
+
+type currencyPolicyChecker interface {
+	CheckWithCurrency(ctx context.Context, userID uuid.UUID, txType string, amount decimal.Decimal, currency string) (allowed bool, rule string, detail string, err error)
+	RecordWithCurrency(ctx context.Context, userID uuid.UUID, txType string, amount decimal.Decimal, currency string)
 }
 
 // currentUserID extracts and parses the authenticated user's ID from the JWT
@@ -514,6 +602,12 @@ func (h *handler) postTransaction(w http.ResponseWriter, r *http.Request) {
 	if !response.Decode(w, r, &req) {
 		return
 	}
+	if req.Currency != "" {
+		if err := currency.ValidateCode(req.Currency); err != nil {
+			response.BadRequest(w, "currency must be three uppercase ASCII letters")
+			return
+		}
+	}
 
 	if len(req.IdempotencyKey) < 8 || len(req.IdempotencyKey) > 128 {
 		response.BadRequest(w, "idempotency_key must be between 8 and 128 characters")
@@ -528,7 +622,16 @@ func (h *handler) postTransaction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if directPostBlockedTypes[req.Type] {
-		response.Forbidden(w, "this transaction type cannot be posted directly — use POST /admin/adjustments (requires a second identity to approve)")
+		message := "this transaction type cannot be posted directly"
+		switch req.Type {
+		case "fx_out", "fx_in":
+			message = "FX primitives can only be posted by an atomic FX conversion"
+		case "fx_rebalance_credit", "fx_rebalance_debit":
+			message = "FX rebalances must use POST /admin/fx/rebalances"
+		default:
+			message += " — use POST /admin/adjustments (requires a second identity to approve)"
+		}
+		response.Forbidden(w, message)
 		return
 	}
 	if adminOnlyTypes[req.Type] && !isAdmin(r) {
@@ -573,6 +676,7 @@ func (h *handler) postTransaction(w http.ResponseWriter, r *http.Request) {
 		Type:             req.Type,
 		Amount:           amount,
 		UserID:           userID,
+		Currency:         req.Currency,
 		PocketCode:       req.PocketCode,
 		Metadata:         metadata,
 		QuoteID:          req.QuoteID,
@@ -594,8 +698,21 @@ func (h *handler) postTransaction(w http.ResponseWriter, r *http.Request) {
 		cmd.ReferenceID = refID
 	}
 
+	policyCurrency := req.Currency
+	if policyCurrency == "" {
+		if resolved, resolveErr := h.svc.GetUserCurrency(r.Context(), userID, req.PocketCode); resolveErr == nil {
+			policyCurrency = resolved
+		}
+	}
 	if h.policy != nil {
-		allowed, rule, detail, err := h.policy.Check(r.Context(), userID, req.Type, amount)
+		var allowed bool
+		var rule, detail string
+		var err error
+		if checker, ok := h.policy.(currencyPolicyChecker); ok && policyCurrency != "" {
+			allowed, rule, detail, err = checker.CheckWithCurrency(r.Context(), userID, req.Type, amount, policyCurrency)
+		} else {
+			allowed, rule, detail, err = h.policy.Check(r.Context(), userID, req.Type, amount)
+		}
 		if err != nil {
 			response.InternalServerError(w, err)
 			return
@@ -614,9 +731,13 @@ func (h *handler) postTransaction(w http.ResponseWriter, r *http.Request) {
 	// is nil on the internal router (disbursement/adjustment/system
 	// postings) — screening is a user-flow control, not applied there.
 	if h.fraudClient != nil && h.allowedTypes != nil {
-		screenCurrency, cerr := h.svc.GetUserCurrency(r.Context(), userID, req.PocketCode)
-		if cerr != nil {
-			screenCurrency = ""
+		screenCurrency := req.Currency
+		if screenCurrency == "" {
+			var cerr error
+			screenCurrency, cerr = h.svc.GetUserCurrency(r.Context(), userID, req.PocketCode)
+			if cerr != nil {
+				screenCurrency = ""
+			}
 		}
 		verdict, ferr := h.fraudClient.Check(r.Context(), "p2p_transfer", req.Type, userID, amount, screenCurrency)
 		if ferr != nil {
@@ -644,7 +765,11 @@ func (h *handler) postTransaction(w http.ResponseWriter, r *http.Request) {
 	// Record AFTER Post succeeds — a failed posting must never consume quota
 	// (docs/roadmap/archive/17 Task T1 step 2).
 	if h.policy != nil {
-		h.policy.Record(r.Context(), userID, req.Type, amount)
+		if recorder, ok := h.policy.(currencyPolicyChecker); ok && policyCurrency != "" {
+			recorder.RecordWithCurrency(r.Context(), userID, req.Type, amount, policyCurrency)
+		} else {
+			h.policy.Record(r.Context(), userID, req.Type, amount)
+		}
 	}
 
 	response.Created(w, postTransactionResponse{Status: "posted", IdempotencyKey: req.IdempotencyKey})
@@ -834,6 +959,21 @@ func (h *handler) getStatement(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if !isAdmin(r) {
+		if validator, ok := h.svc.(interface {
+			ValidateCurrency(context.Context, string, string) error
+		}); ok {
+			balance, berr := h.svc.GetBalance(r.Context(), accountID)
+			if berr != nil {
+				writeError(w, berr)
+				return
+			}
+			if verr := validator.ValidateCurrency(r.Context(), balance.Currency, "statement_read"); verr != nil {
+				writeError(w, verr)
+				return
+			}
+		}
+	}
 
 	fromRaw := r.URL.Query().Get("from")
 	toRaw := r.URL.Query().Get("to")
@@ -893,10 +1033,11 @@ func writeStatementCSV(w http.ResponseWriter, stmt model.Statement) {
 	w.WriteHeader(http.StatusOK)
 
 	cw := csv.NewWriter(w)
-	_ = cw.Write([]string{"entry_id", "tx_id", "type", "direction", "amount", "balance_after", "note", "created_at"})
+	minorUnit, _ := currency.MinorUnit(stmt.Currency)
+	_ = cw.Write([]string{"currency", "minor_unit", "entry_id", "tx_id", "type", "direction", "amount", "balance_after", "note", "created_at"})
 	for _, e := range stmt.Entries {
 		_ = cw.Write([]string{
-			e.ID.String(), e.TransactionID.String(), e.TransactionType, string(e.Direction),
+			stmt.Currency, strconv.Itoa(int(minorUnit)), e.ID.String(), e.TransactionID.String(), e.TransactionType, string(e.Direction),
 			e.Amount.String(), e.BalanceAfter.String(), e.Note, e.CreatedAt.Format(time.RFC3339),
 		})
 	}
@@ -1048,6 +1189,10 @@ func (h *handler) createAdjustment(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Type == "" {
 		response.BadRequest(w, "type is required")
+		return
+	}
+	if req.Type == "fx_rebalance_credit" || req.Type == "fx_rebalance_debit" {
+		response.BadRequest(w, "FX rebalances must use /admin/fx/rebalances")
 		return
 	}
 	amount, err := decimalFromString(req.Amount)
@@ -1469,8 +1614,19 @@ func (h *handler) createSchedule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := h.svc.CreateSchedule(r.Context(), userID, req.Type, amount, targetUserID, req.PocketCode, req.Metadata,
-		req.ScheduleKind, runAtDate, req.DayOfMonth, userID.String())
+	var id uuid.UUID
+	if req.Currency == "" {
+		id, err = h.svc.CreateSchedule(r.Context(), userID, req.Type, amount, targetUserID, req.PocketCode, req.Metadata,
+			req.ScheduleKind, runAtDate, req.DayOfMonth, userID.String())
+	} else {
+		creator, ok := h.svc.(scheduleCurrencyCreator)
+		if !ok {
+			response.InternalServerError(w, errors.New("currency-aware schedule service is unavailable"))
+			return
+		}
+		id, err = creator.CreateScheduleWithCurrency(r.Context(), userID, req.Type, amount, targetUserID, req.PocketCode, req.Metadata,
+			req.ScheduleKind, runAtDate, req.DayOfMonth, userID.String(), req.Currency)
+	}
 	if err != nil {
 		writeError(w, err)
 		return
@@ -1607,7 +1763,7 @@ func (h *handler) createDisbursementBatch(w http.ResponseWriter, r *http.Request
 
 	file, header, err := r.FormFile("file")
 	if err != nil {
-		response.BadRequest(w, "file is required (multipart field 'file', CSV columns: user_id,amount,note)")
+		response.BadRequest(w, "file is required (multipart field 'file', CSV columns: user_id,amount,currency,note)")
 		return
 	}
 	defer file.Close()
@@ -1626,9 +1782,9 @@ func (h *handler) createDisbursementBatch(w http.ResponseWriter, r *http.Request
 	response.Created(w, createDisbursementBatchResponse{ID: batchID})
 }
 
-// parseDisbursementCSV streams user_id,amount,note rows — header order is
+// parseDisbursementCSV streams user_id,amount,currency,note rows — header order is
 // flexible (matched by name), amount is validated integral minor-unit
-// before it ever reaches the service layer, and "note" is optional.
+// before it ever reaches the service layer, and "currency"/"note" are optional.
 func parseDisbursementCSV(r io.Reader) ([]model.DisbursementImportRow, error) {
 	cr := csv.NewReader(r)
 	header, err := cr.Read()
@@ -1645,6 +1801,7 @@ func parseDisbursementCSV(r io.Reader) ([]model.DisbursementImportRow, error) {
 		}
 	}
 	noteIdx, hasNote := col["note"]
+	currencyIdx, hasCurrency := col["currency"]
 
 	var rows []model.DisbursementImportRow
 	for {
@@ -1670,7 +1827,14 @@ func parseDisbursementCSV(r io.Reader) ([]model.DisbursementImportRow, error) {
 		if hasNote {
 			note = rec[noteIdx]
 		}
-		rows = append(rows, model.DisbursementImportRow{UserID: userID, Amount: amount, Note: note})
+		currencyCode := "IDR"
+		if hasCurrency {
+			currencyCode = strings.TrimSpace(rec[currencyIdx])
+			if err := currency.ValidateCode(currencyCode); err != nil {
+				return nil, fmt.Errorf("row %d: invalid currency %q: %w", len(rows)+2, currencyCode, err)
+			}
+		}
+		rows = append(rows, model.DisbursementImportRow{UserID: userID, Amount: amount, Currency: currencyCode, Note: note})
 	}
 	return rows, nil
 }

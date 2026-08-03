@@ -9,6 +9,8 @@ import (
 	"github.com/shopspring/decimal"
 
 	"github.com/herdifirdausss/seev/internal/payin/model"
+	"github.com/herdifirdausss/seev/internal/vendorgw"
+	currencyreg "github.com/herdifirdausss/seev/pkg/currency"
 	"github.com/herdifirdausss/seev/pkg/generalutil"
 	"github.com/herdifirdausss/seev/pkg/middleware"
 )
@@ -50,8 +52,21 @@ func (m *Module) CreateMerchantTopupIntent(ctx context.Context, tenantID uuid.UU
 	if downstreamKey == "" {
 		return TopupIntent{}, fmt.Errorf("payin: downstreamKey is required")
 	}
+	if err := currencyreg.ValidatePositiveMinorAmount(amount); err != nil {
+		return TopupIntent{}, fmt.Errorf("%w: %v", ErrInvalidAmount, err)
+	}
 	if err := m.ensureIntakeOpen(ctx); err != nil {
 		return TopupIntent{}, err
+	}
+	if err := currencyreg.ValidateCode(currency); err != nil {
+		return TopupIntent{}, fmt.Errorf("payin: invalid currency: %w", err)
+	}
+	if validator, ok := m.poster.(interface {
+		ValidateCurrency(context.Context, string, string) error
+	}); ok {
+		if err := validator.ValidateCurrency(ctx, currency, "topup"); err != nil {
+			return TopupIntent{}, fmt.Errorf("payin: currency policy: %w", err)
+		}
 	}
 
 	vendor, err := m.resolveMerchantVendor(ctx, environment, currency, amount)
@@ -118,8 +133,12 @@ func (m *Module) GetMerchantTopupIntent(ctx context.Context, tenantID, id uuid.U
 // in this MVP, only the wildcard rules every user already shares).
 func (m *Module) resolveMerchantVendor(ctx context.Context, environment, currency string, amount decimal.Decimal) (string, error) {
 	if environment == "sandbox" {
-		if _, ok := m.registry.Payin(sandboxVendor); !ok {
+		vendor, ok := m.registry.Payin(sandboxVendor)
+		if !ok {
 			return "", ErrSandboxVendorUnavailable
+		}
+		if !vendorgw.SupportsRequestedCurrency(vendor, "topup", currency) {
+			return "", ErrCurrencyRouteUnavailable
 		}
 		return sandboxVendor, nil
 	}

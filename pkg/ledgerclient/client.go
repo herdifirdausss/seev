@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 	"google.golang.org/grpc"
+	grpcmetadata "google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -24,6 +25,7 @@ type Command struct {
 	UserID           uuid.UUID
 	TargetUserID     uuid.UUID
 	PocketCode       string
+	Currency         string
 	ReferenceID      uuid.UUID
 	Metadata         map[string]any
 	// MerchantTenantID (Plan 57 T5) is set ONLY for type="merchant_transfer".
@@ -65,6 +67,9 @@ func New(conn *grpc.ClientConn) *Client {
 }
 
 func (c *Client) Post(ctx context.Context, command Command) error {
+	if command.Currency != "" {
+		ctx = grpcmetadata.AppendToOutgoingContext(ctx, "x-seev-currency", command.Currency)
+	}
 	var metadata *structpb.Struct
 	var err error
 	if command.Metadata != nil {
@@ -101,6 +106,29 @@ func (c *Client) GetUserCurrency(ctx context.Context, userID uuid.UUID, pocketCo
 		return "", ledgererr.FromStatus(err)
 	}
 	return response.GetCurrency(), nil
+}
+
+// ValidateCurrency uses the existing internal Ledger RPC with an explicit
+// metadata mode. This keeps the protobuf surface backward-compatible while
+// allowing split Payin/Payout processes to consult Ledger-owned currency policy.
+func (c *Client) ValidateCurrency(ctx context.Context, code, operation string) error {
+	ctx = grpcmetadata.AppendToOutgoingContext(ctx,
+		"x-seev-currency", code, "x-seev-currency-operation", operation)
+	_, err := c.client.GetUserCurrency(ctx, &ledgerv1.GetUserCurrencyRequest{})
+	return ledgererr.FromStatus(err)
+}
+
+// UserCurrencyEnabled asks Ledger whether the user owns the requested
+// currency-specific account family. A false result is returned as an empty
+// successful response so callers can distinguish a missing account from a
+// transport or Ledger failure.
+func (c *Client) UserCurrencyEnabled(ctx context.Context, userID uuid.UUID, code string) (bool, error) {
+	ctx = grpcmetadata.AppendToOutgoingContext(ctx, "x-seev-currency-check", code)
+	response, err := c.client.GetUserCurrency(ctx, &ledgerv1.GetUserCurrencyRequest{UserId: uuidString(userID)})
+	if err != nil {
+		return false, ledgererr.FromStatus(err)
+	}
+	return response.GetCurrency() == code, nil
 }
 
 func (c *Client) ResolveFee(ctx context.Context, userID uuid.UUID, txType, gateway, currency string, amount decimal.Decimal) (decimal.Decimal, string, bool, error) {

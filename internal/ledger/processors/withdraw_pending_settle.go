@@ -34,7 +34,7 @@ func (p *WithdrawPendingSettle) ResolveAccounts(ctx context.Context, cmd Command
 	if err != nil {
 		return ResolvedAccounts{}, "", err
 	}
-	pendingID, err := p.repo.GetAccountID(ctx, cmd.UserID, constant.AccountTypePending)
+	pendingID, err := userAccountID(ctx, p.repo, cmd.UserID, constant.AccountTypePending, cmd.Currency)
 	if err != nil {
 		return ResolvedAccounts{}, "", fmt.Errorf("withdraw_pending_settle: pending: %w", err)
 	}

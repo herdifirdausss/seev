@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -13,7 +15,128 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	ledgerv1 "github.com/herdifirdausss/seev/gen/ledger/v1"
+	"github.com/herdifirdausss/seev/pkg/httpcontract"
+	"github.com/herdifirdausss/seev/pkg/response"
 )
+
+const maxAssuranceFXWindow = 366 * 24 * time.Hour
+
+// AssuranceRouter is the internal, read-only contract consumed by
+// assurance-service. It is mounted behind the shared internal token and the
+// Ledger listener's mTLS allowlist; it is deliberately separate from the
+// admin router so Assurance does not need an operator JWT.
+func (m *Module) AssuranceRouter() http.Handler {
+	mux := httpcontract.New(httpcontract.Options{Owner: "ledger", Audience: "internal", Contract: "internal-v1"})
+	mux.HandleFunc("GET /assurance/fx/reconciliation", m.handleAssuranceFXReconciliation)
+	return mux
+}
+
+type assuranceFXReconciliationResponse struct {
+	From       time.Time                         `json:"from"`
+	To         time.Time                         `json:"to"`
+	Total      int                              `json:"total"`
+	Reconciled int                              `json:"reconciled"`
+	Critical   int                              `json:"critical"`
+	Items      []assuranceFXReconciliationItem `json:"items"`
+}
+
+type assuranceFXReconciliationItem struct {
+	ResourceType        string    `json:"resource_type"`
+	ResourceID          string    `json:"resource_id"`
+	ConversionID       string    `json:"conversion_id"`
+	QuoteID            string    `json:"quote_id"`
+	SourceCurrency     string    `json:"source_currency"`
+	TargetCurrency     string    `json:"target_currency"`
+	SourceAmount       string    `json:"source_amount"`
+	TargetAmount       string    `json:"target_amount"`
+	SourceTransactionID string    `json:"source_transaction_id,omitempty"`
+	TargetTransactionID string    `json:"target_transaction_id,omitempty"`
+	SourceLegStatus    string    `json:"source_leg_status"`
+	TargetLegStatus    string    `json:"target_leg_status"`
+	SourceLinkValid    bool      `json:"source_link_valid"`
+	TargetLinkValid    bool      `json:"target_link_valid"`
+	SourceLegBalanced  bool      `json:"source_leg_balanced"`
+	TargetLegBalanced  bool      `json:"target_leg_balanced"`
+	QuoteValid         bool      `json:"quote_valid"`
+	PositionAccountsValid bool  `json:"position_accounts_valid"`
+	PositionBalancesValid bool  `json:"position_balances_valid"`
+	AggregateEventPresent bool  `json:"aggregate_event_present"`
+	Status             string    `json:"status"`
+	Reason             string    `json:"reason"`
+	CheckedAt          time.Time `json:"checked_at"`
+}
+
+func (m *Module) handleAssuranceFXReconciliation(w http.ResponseWriter, r *http.Request) {
+	from, to, err := parseAssuranceFXWindow(r.URL.Query().Get("from"), r.URL.Query().Get("to"))
+	if err != nil {
+		response.BadRequest(w, err.Error())
+		return
+	}
+	limit := 1000
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		limit, err = strconv.Atoi(raw)
+		if err != nil || limit <= 0 || limit > 1000 {
+			response.BadRequest(w, "limit must be an integer between 1 and 1000")
+			return
+		}
+	}
+	report, err := m.ReconcileFXConversions(r.Context(), from, to, limit)
+	if err != nil {
+		response.InternalServerError(w, err)
+		return
+	}
+	items := make([]assuranceFXReconciliationItem, 0, len(report.Items))
+	for _, item := range report.Items {
+		value := assuranceFXReconciliationItem{
+			ResourceType: item.ResourceType, ResourceID: item.ResourceID.String(),
+			ConversionID: item.ConversionID.String(), QuoteID: item.QuoteID.String(),
+			SourceCurrency: item.SourceCurrency, TargetCurrency: item.TargetCurrency,
+			SourceAmount: strconv.FormatInt(item.SourceAmount, 10), TargetAmount: strconv.FormatInt(item.TargetAmount, 10),
+			SourceLegStatus: item.SourceLegStatus, TargetLegStatus: item.TargetLegStatus,
+			SourceLinkValid: item.SourceLinkValid, TargetLinkValid: item.TargetLinkValid,
+			SourceLegBalanced: item.SourceLegBalanced, TargetLegBalanced: item.TargetLegBalanced,
+			QuoteValid: item.QuoteValid, PositionAccountsValid: item.PositionAccountsValid,
+			PositionBalancesValid: item.PositionBalancesValid, AggregateEventPresent: item.AggregateEventPresent,
+			Status: item.Status, Reason: item.Reason, CheckedAt: item.CheckedAt,
+		}
+		if item.SourceTransactionID != uuid.Nil {
+			value.SourceTransactionID = item.SourceTransactionID.String()
+		}
+		if item.TargetTransactionID != uuid.Nil {
+			value.TargetTransactionID = item.TargetTransactionID.String()
+		}
+		items = append(items, value)
+	}
+	response.OK(w, assuranceFXReconciliationResponse{
+		From: from, To: to, Total: report.Total, Reconciled: report.Reconciled,
+		Critical: report.Critical, Items: items,
+	})
+}
+
+func parseAssuranceFXWindow(rawFrom, rawTo string) (time.Time, time.Time, error) {
+	now := time.Now().UTC()
+	from, to := now.Add(-24*time.Hour), now
+	var err error
+	if rawFrom != "" {
+		from, err = time.Parse(time.RFC3339Nano, rawFrom)
+		if err != nil {
+			return time.Time{}, time.Time{}, fmt.Errorf("from must be RFC3339")
+		}
+	}
+	if rawTo != "" {
+		to, err = time.Parse(time.RFC3339Nano, rawTo)
+		if err != nil {
+			return time.Time{}, time.Time{}, fmt.Errorf("to must be RFC3339")
+		}
+	}
+	if !to.After(from) {
+		return time.Time{}, time.Time{}, fmt.Errorf("to must be after from")
+	}
+	if to.Sub(from) > maxAssuranceFXWindow {
+		return time.Time{}, time.Time{}, fmt.Errorf("FX reconciliation window cannot exceed %s", maxAssuranceFXWindow)
+	}
+	return from.UTC(), to.UTC(), nil
+}
 
 func (m *Module) BatchGetAssuranceTransactions(ctx context.Context, req *ledgerv1.BatchGetAssuranceTransactionsRequest) (*ledgerv1.BatchGetAssuranceTransactionsResponse, error) {
 	if req == nil {

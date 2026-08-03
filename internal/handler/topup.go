@@ -2,20 +2,24 @@ package handler
 
 import (
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
 	payinv1 "github.com/herdifirdausss/seev/gen/payin/v1"
+	currencyreg "github.com/herdifirdausss/seev/pkg/currency"
 	"github.com/herdifirdausss/seev/pkg/middleware"
 	"github.com/herdifirdausss/seev/pkg/response"
 )
 
 type createTopupRequest struct {
 	Amount string `json:"amount"`
+	Currency string `json:"currency,omitempty"`
 }
 type topupResponse struct {
 	ID        uuid.UUID `json:"id"`
@@ -47,6 +51,12 @@ func createTopupIntentHandler(client payinv1.PayinServiceClient) http.HandlerFun
 		if !response.Decode(w, r, &request) {
 			return
 		}
+		if request.Currency != "" {
+			if err := currencyreg.ValidateCode(request.Currency); err != nil {
+				response.ErrorStatus(w, http.StatusBadRequest, "CURRENCY_INVALID", "currency must be exactly three uppercase letters")
+				return
+			}
+		}
 		amount, err := decimal.NewFromString(request.Amount)
 		if err != nil || !amount.Equal(amount.Truncate(0)) {
 			response.BadRequest(w, "amount must be a valid integer decimal string")
@@ -56,10 +66,29 @@ func createTopupIntentHandler(client payinv1.PayinServiceClient) http.HandlerFun
 			response.BadRequest(w, "amount must be positive")
 			return
 		}
-		result, err := client.CreateTopupIntent(r.Context(), &payinv1.CreateTopupIntentRequest{UserId: userID.String(), Amount: amount.String()})
+		callCtx := r.Context()
+		if request.Currency != "" {
+			callCtx = metadata.AppendToOutgoingContext(callCtx, "x-seev-currency", request.Currency)
+		}
+		result, err := client.CreateTopupIntent(callCtx, &payinv1.CreateTopupIntentRequest{UserId: userID.String(), Amount: amount.String()})
 		if err != nil {
 			switch status.Code(err) {
+			case codes.InvalidArgument:
+				message := status.Convert(err).Message()
+				if strings.HasPrefix(message, "CURRENCY_INVALID") {
+					response.ErrorStatus(w, http.StatusBadRequest, "CURRENCY_INVALID", message)
+				} else {
+					response.BadRequest(w, message)
+				}
 			case codes.FailedPrecondition:
+				if writeLedgerBusinessError(w, err) {
+					return
+				}
+				message := status.Convert(err).Message()
+				if strings.HasPrefix(message, "[") {
+					response.UnprocessableEntity(w, message)
+					return
+				}
 				response.JSON(w, http.StatusUnprocessableEntity, response.Envelope{Success: false, Error: &response.Error{Code: "NO_ROUTE", Message: "no topup route available"}})
 			case codes.Unavailable:
 				// docs/roadmap/archive/40 Task T2 — every candidate vendor is

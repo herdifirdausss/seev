@@ -37,6 +37,10 @@ func NewPayinAvailability(name string) vendorgw.PayinVendor { return PayinAvaila
 
 func (a PayinAvailability) Vendor() string { return a.name }
 
+func (a PayinAvailability) SupportsCurrency(operation, currency string) bool {
+	return operation == "topup" && (currency == "IDR" || currency == "USD")
+}
+
 func (c *Client) CreatePayinSession(ctx context.Context, vendor, intentID string, amount decimal.Decimal, currency, requestID string) error {
 	if c == nil || c.rpc == nil {
 		return fmt.Errorf("vendorboundary: nil VendorService client")
@@ -67,6 +71,10 @@ func NewPayoutProvider(name string, rpc vendorv1.VendorServiceClient) *PayoutPro
 }
 
 func (p *PayoutProvider) Vendor() string { return p.name }
+
+func (p *PayoutProvider) SupportsCurrency(operation, currency string) bool {
+	return operation == "payout" && (currency == "IDR" || currency == "USD")
+}
 
 // SetForceFail is test-only chaos control retained at the payout boundary. It
 // fails before the RPC, so the relay can exercise breaker/failover behavior

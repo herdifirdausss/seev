@@ -85,7 +85,7 @@ func (c *LedgerClient) CreateTransfer(ctx context.Context, tenantID, destination
 	scope := tenantID.String()
 	err := c.ledger.Post(ctx, ledgerclient.Command{
 		IdempotencyKey: downstreamKey, IdempotencyScope: scope, Type: merchantTransferType,
-		Amount: amount, MerchantTenantID: tenantID,
+		Amount: amount, Currency: currency, MerchantTenantID: tenantID,
 		Metadata: map[string]any{"destination_account_id": destinationAccountID.String()},
 	})
 	if err != nil {

@@ -9,7 +9,10 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/shopspring/decimal"
 	vendorv1 "github.com/herdifirdausss/seev/gen/vendorservice/v1"
+	"github.com/herdifirdausss/seev/internal/vendorgw"
+	currencyreg "github.com/herdifirdausss/seev/pkg/currency"
 	"github.com/herdifirdausss/seev/pkg/database"
 	"github.com/herdifirdausss/seev/pkg/generalerror"
 	"google.golang.org/grpc/codes"
@@ -83,9 +86,15 @@ func (s *Server) CreatePayinSession(ctx context.Context, request *vendorv1.Creat
 	if request.GetVendor() == "" || request.GetIntentId() == "" || request.GetRequestId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "vendor, intent_id, and request_id are required")
 	}
+	if err := validateVendorAmount(request.GetAmount(), request.GetCurrency()); err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
 	adapter, err := s.adapter(request.GetVendor())
 	if err != nil {
 		return nil, status.Error(codes.NotFound, "unknown vendor")
+	}
+	if !vendorgw.SupportsRequestedCurrency(adapter, "topup", request.GetCurrency()) {
+		return nil, status.Error(codes.FailedPrecondition, "vendor does not support requested currency")
 	}
 	result, err := adapter.CreatePayinSession(ctx, request)
 	if err != nil || result == nil {
@@ -102,9 +111,15 @@ func (s *Server) SubmitPayout(ctx context.Context, request *vendorv1.SubmitPayou
 	if request.GetVendor() == "" || request.GetRequestId() == "" || request.GetAmount() == "" || request.GetCurrency() == "" || len(request.GetDestination()) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "vendor, request_id, amount, currency, and destination are required")
 	}
+	if err := validateVendorAmount(request.GetAmount(), request.GetCurrency()); err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
 	adapter, err := s.adapter(request.GetVendor())
 	if err != nil {
 		return nil, status.Error(codes.NotFound, "unknown vendor")
+	}
+	if !vendorgw.SupportsRequestedCurrency(adapter, "payout", request.GetCurrency()) {
+		return nil, status.Error(codes.FailedPrecondition, "vendor does not support requested currency")
 	}
 	result, err := adapter.SubmitPayout(ctx, request)
 	if err != nil || result == nil {
@@ -115,6 +130,17 @@ func (s *Server) SubmitPayout(ctx context.Context, request *vendorv1.SubmitPayou
 	vendorOutboundAttempts.WithLabelValues("payout", request.GetVendor(), "submit_payout", "accepted").Inc()
 	serverRecordOutbound(ctx, s.db, "payout", request.GetVendor(), request.GetRequestId(), result.GetVendorReference(), "submit_payout", "accepted")
 	return &vendorv1.SubmitPayoutResponse{Result: result}, nil
+}
+
+func validateVendorAmount(rawAmount, code string) error {
+	if err := currencyreg.ValidateCode(code); err != nil {
+		return fmt.Errorf("currency must be three uppercase ASCII letters")
+	}
+	amount, err := decimal.NewFromString(rawAmount)
+	if err != nil || currencyreg.ValidatePositiveMinorAmount(amount) != nil {
+		return fmt.Errorf("amount must be a positive integer minor-unit string")
+	}
+	return nil
 }
 
 func (s *Server) QueryPayout(ctx context.Context, request *vendorv1.QueryPayoutRequest) (*vendorv1.QueryPayoutResponse, error) {

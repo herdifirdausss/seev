@@ -44,7 +44,7 @@ func (p *WithdrawSettle) ResolveAccounts(ctx context.Context, cmd Command) (Reso
 	if err != nil {
 		return ResolvedAccounts{}, "", err
 	}
-	holdID, err := p.repo.GetAccountID(ctx, cmd.UserID, constant.AccountTypeHold)
+	holdID, err := userAccountID(ctx, p.repo, cmd.UserID, constant.AccountTypeHold, cmd.Currency)
 	if err != nil {
 		return ResolvedAccounts{}, "", fmt.Errorf("withdraw_settle: hold: %w", err)
 	}

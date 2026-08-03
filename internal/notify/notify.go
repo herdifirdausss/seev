@@ -17,10 +17,12 @@ import (
 
 	"github.com/google/uuid"
 	amqp "github.com/rabbitmq/amqp091-go"
+	"github.com/shopspring/decimal"
 
 	"github.com/herdifirdausss/seev/internal/ledger/events"
 	"github.com/herdifirdausss/seev/internal/notify/model"
 	"github.com/herdifirdausss/seev/internal/notify/repository"
+	currencyreg "github.com/herdifirdausss/seev/pkg/currency"
 	"github.com/herdifirdausss/seev/pkg/database"
 	"github.com/herdifirdausss/seev/pkg/generalutil"
 	"github.com/herdifirdausss/seev/pkg/messaging"
@@ -81,7 +83,7 @@ func NewModule(db database.DatabaseSQL, broker Broker, logger *slog.Logger) *Mod
 func (m *Module) Start(ctx context.Context) error {
 	if err := m.broker.DeclareTopology(ctx, messaging.QueueConfig{
 		Queue:       queueName,
-		RoutingKeys: []string{events.TypeTransactionPosted},
+		RoutingKeys: []string{events.TypeTransactionPosted, events.TypeFXConversionPosted},
 	}); err != nil {
 		return fmt.Errorf("notify: declare topology: %w", err)
 	}
@@ -121,6 +123,10 @@ func (m *Module) Stop() {
 // handler needing to distinguish transient from permanent DB failures
 // itself.
 func (m *Module) handleDelivery(ctx context.Context, d amqp.Delivery) error {
+	if d.RoutingKey == events.TypeFXConversionPosted {
+		return m.handleFXConversionDelivery(ctx, d)
+	}
+
 	var ev events.TransactionPosted
 	if err := json.Unmarshal(d.Body, &ev); err != nil {
 		return fmt.Errorf("notify: decode TransactionPosted: %w", err)
@@ -161,6 +167,33 @@ func (m *Module) handleDelivery(ctx context.Context, d amqp.Delivery) error {
 	return nil
 }
 
+func (m *Module) handleFXConversionDelivery(ctx context.Context, d amqp.Delivery) error {
+	var ev events.FXConversionPosted
+	if err := json.Unmarshal(d.Body, &ev); err != nil {
+		return fmt.Errorf("notify: decode FXConversionPosted: %w", err)
+	}
+	if err := ev.Validate(); err != nil {
+		return fmt.Errorf("notify: validate FXConversionPosted: %w", err)
+	}
+
+	body := fmt.Sprintf("Your %s %s conversion to %s %s was completed.",
+		ev.SourceCurrency, formatMinorAmount(ev.SourceCurrency, ev.SourceAmount, ev.SourceMinorUnit),
+		ev.TargetCurrency, formatMinorAmount(ev.TargetCurrency, ev.TargetAmount, ev.TargetMinorUnit))
+	n := model.Notification{
+		ID:      generalutil.NewV7(),
+		UserID:  ev.UserID,
+		EventID: *ev.EventID,
+		Type:    events.TypeFXConversionPosted,
+		Title:   "Currency conversion completed",
+		Body:    body,
+		Payload: d.Body,
+	}
+	if _, err := m.repo.Insert(ctx, n); err != nil {
+		return fmt.Errorf("notify: insert FX conversion notification: %w", err)
+	}
+	return nil
+}
+
 type recipient struct {
 	userID uuid.UUID
 	title  string
@@ -183,14 +216,14 @@ func recipientsFor(ev events.TransactionPosted) []recipient {
 			out = append(out, recipient{
 				userID: *ev.UserID,
 				title:  "Transfer sent",
-				body:   fmt.Sprintf("Your %s %s transfer was sent successfully.", ev.Currency, ev.Amount),
+				body:   fmt.Sprintf("Your %s %s transfer was sent successfully.", ev.Currency, formatMinorAmount(ev.Currency, ev.Amount, ev.MinorUnit)),
 			})
 		}
 		if ev.TargetUserID != nil {
 			out = append(out, recipient{
 				userID: *ev.TargetUserID,
 				title:  "Transfer received",
-				body:   fmt.Sprintf("You received a %s %s transfer.", ev.Currency, ev.Amount),
+				body:   fmt.Sprintf("You received a %s %s transfer.", ev.Currency, formatMinorAmount(ev.Currency, ev.Amount, ev.MinorUnit)),
 			})
 		}
 	case "money_in":
@@ -198,7 +231,7 @@ func recipientsFor(ev events.TransactionPosted) []recipient {
 			out = append(out, recipient{
 				userID: *ev.UserID,
 				title:  "Funds received",
-				body:   fmt.Sprintf("Your %s %s top-up was successful and your balance increased.", ev.Currency, ev.Amount),
+				body:   fmt.Sprintf("Your %s %s top-up was successful and your balance increased.", ev.Currency, formatMinorAmount(ev.Currency, ev.Amount, ev.MinorUnit)),
 			})
 		}
 	case "withdraw_settle":
@@ -206,7 +239,7 @@ func recipientsFor(ev events.TransactionPosted) []recipient {
 			out = append(out, recipient{
 				userID: *ev.UserID,
 				title:  "Withdrawal successful",
-				body:   fmt.Sprintf("Your %s %s withdrawal was processed successfully.", ev.Currency, ev.Amount),
+				body:   fmt.Sprintf("Your %s %s withdrawal was processed successfully.", ev.Currency, formatMinorAmount(ev.Currency, ev.Amount, ev.MinorUnit)),
 			})
 		}
 	case "withdraw_cancel":
@@ -214,11 +247,33 @@ func recipientsFor(ev events.TransactionPosted) []recipient {
 			out = append(out, recipient{
 				userID: *ev.UserID,
 				title:  "Withdrawal canceled",
-				body:   fmt.Sprintf("Your %s %s withdrawal was canceled and the funds were returned.", ev.Currency, ev.Amount),
+				body:   fmt.Sprintf("Your %s %s withdrawal was canceled and the funds were returned.", ev.Currency, formatMinorAmount(ev.Currency, ev.Amount, ev.MinorUnit)),
 			})
 		}
 	}
 	return out
+}
+
+func formatMinorAmount(code, raw string, declaredMinorUnit int16) string {
+	minorUnit := declaredMinorUnit
+	if declaredMinorUnit > 0 {
+		minorUnit = declaredMinorUnit
+	} else if registeredMinorUnit, ok := currencyreg.MinorUnit(code); ok {
+		minorUnit = registeredMinorUnit
+	} else if minorUnit == 0 && code == "USD" {
+		// Historical USD events predate the optional MinorUnit field. C4's
+		// canonical USD minor unit is two even when the process registry has
+		// not yet been loaded.
+		minorUnit = 2
+	}
+	if minorUnit < 0 {
+		return raw
+	}
+	value, err := decimal.NewFromString(raw)
+	if err != nil {
+		return raw
+	}
+	return value.Shift(-int32(minorUnit)).StringFixed(int32(minorUnit))
 }
 
 // ListNotifications returns userID's own notifications, newest first,

@@ -31,11 +31,11 @@ func NewWithdrawPending(r repository.AccountRepository) *WithdrawPending {
 func (p *WithdrawPending) Type() string { return "withdraw_pending" }
 
 func (p *WithdrawPending) ResolveAccounts(ctx context.Context, cmd Command) (ResolvedAccounts, string, error) {
-	holdID, err := p.repo.GetAccountID(ctx, cmd.UserID, constant.AccountTypeHold)
+	holdID, err := userAccountID(ctx, p.repo, cmd.UserID, constant.AccountTypeHold, cmd.Currency)
 	if err != nil {
 		return ResolvedAccounts{}, "", fmt.Errorf("withdraw_pending: hold: %w", err)
 	}
-	pendingID, err := p.repo.GetAccountID(ctx, cmd.UserID, constant.AccountTypePending)
+	pendingID, err := userAccountID(ctx, p.repo, cmd.UserID, constant.AccountTypePending, cmd.Currency)
 	if err != nil {
 		return ResolvedAccounts{}, "", fmt.Errorf("withdraw_pending: pending: %w", err)
 	}

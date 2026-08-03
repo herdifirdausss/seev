@@ -289,6 +289,9 @@ func run(parent context.Context) error {
 		// docs/roadmap/archive/51 T5 (K10): auth-service calls ClosureRouter's two
 		// prepare/commit endpoints as the closure saga's coordinator.
 		tlsx.IdentityAuth,
+		// assurance-service reads Ledger's bounded FX reconciliation evidence
+		// through the token-gated internal HTTP contract.
+		tlsx.IdentityAssurance,
 	}))
 	errCh := make(chan error, 3)
 	go serveGRPC(grpcServer, grpcListener, errCh)
@@ -351,6 +354,9 @@ func internalRouter(cfg *config.Config, module *ledger.Module, policyHandler *po
 	// the shared internal token (not `authed`'s JWT check) plus this
 	// listener's own mTLS identity allowlist above.
 	api.Handle("/privacy/", middleware.WithInternalToken(cfg.InternalGRPCToken)(module.ClosureRouter()))
+	// Assurance's FX proof is read-only and has no operator-JWT dependency;
+	// the caller is authenticated by the shared internal token and mTLS.
+	api.Handle("/assurance/", middleware.WithInternalToken(cfg.InternalGRPCToken)(module.AssuranceRouter()))
 	root.Handle("/", middleware.Chain(
 		middleware.WithRequestID(), middleware.WithRoutePattern(api), middleware.WithTracing(log), middleware.WithHTTPMetrics(), middleware.WithLogger(log), middleware.WithRecovery(),
 		middleware.WithSecurityHeaders(middleware.DefaultSecurityHeadersConfig()), middleware.WithTimeout(30*time.Second),

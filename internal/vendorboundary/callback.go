@@ -12,10 +12,12 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 	payinv1 "github.com/herdifirdausss/seev/gen/payin/v1"
 	payoutv1 "github.com/herdifirdausss/seev/gen/payout/v1"
 	"github.com/herdifirdausss/seev/internal/vendorgw"
 	"github.com/herdifirdausss/seev/pkg/cryptox"
+	currencyreg "github.com/herdifirdausss/seev/pkg/currency"
 	"github.com/herdifirdausss/seev/pkg/database"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -120,6 +122,26 @@ func (h *CallbackHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if normalized == nil {
 		writeCallbackAck(w)
+		return
+	}
+	operation := normalized.Flow
+	if operation == "payin" {
+		operation = "topup"
+	}
+	if !vendorgw.SupportsRequestedCurrency(adapter, operation, normalized.Currency) {
+		vendorCallbackDenied.WithLabelValues("unsupported_currency").Inc()
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	if err := currencyreg.ValidateCode(normalized.Currency); err != nil {
+		vendorCallbackDenied.WithLabelValues("invalid_currency").Inc()
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	amount, err := decimal.NewFromString(normalized.Amount)
+	if err != nil || currencyreg.ValidatePositiveMinorAmount(amount) != nil {
+		vendorCallbackDenied.WithLabelValues("invalid_amount").Inc()
+		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 	if normalized.Vendor == "" {

@@ -32,7 +32,7 @@ func (p *EscrowRefund) ResolveAccounts(ctx context.Context, cmd Command) (Resolv
 	if cmd.TargetUserID == uuid.Nil {
 		return ResolvedAccounts{}, "", fmt.Errorf("escrow_refund: TargetUserID (buyer) required")
 	}
-	buyerCashID, err := p.repo.GetAccountID(ctx, cmd.TargetUserID, constant.AccountTypeCash)
+	buyerCashID, err := userAccountID(ctx, p.repo, cmd.TargetUserID, constant.AccountTypeCash, cmd.Currency)
 	if err != nil {
 		return ResolvedAccounts{}, "", fmt.Errorf("escrow_refund: buyer cash: %w", err)
 	}

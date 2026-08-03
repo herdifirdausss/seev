@@ -222,9 +222,10 @@ type LedgerConfig struct {
 
 // FraudConfig contains fraud-service rule configuration.
 type FraudConfig struct {
-	ScreeningMode               string
-	ScreeningAmountThreshold    int64
-	ScreeningVelocityMaxPerHour int64
+	ScreeningMode                       string
+	ScreeningAmountThreshold            int64
+	ScreeningAmountThresholdByCurrency  map[string]int64
+	ScreeningVelocityMaxPerHour         int64
 }
 
 // AdminBFFConfig contains only BFF-owned session and downstream transport
@@ -664,9 +665,10 @@ func loadFromEnvMode(getenv func(string) string, requireRabbitMQ bool) (*Config,
 			PolicyCacheTTL: parseDuration(getenv("POLICY_CACHE_TTL"), 60*time.Second),
 		},
 		Fraud: FraudConfig{
-			ScreeningMode:               getWithDefault(getenv, "SCREENING_MODE", "off"),
-			ScreeningAmountThreshold:    parseInt64(getenv("SCREENING_AMOUNT_THRESHOLD"), 0),
-			ScreeningVelocityMaxPerHour: parseInt64(getenv("SCREENING_VELOCITY_MAX_PER_HOUR"), 0),
+			ScreeningMode:                      getWithDefault(getenv, "SCREENING_MODE", "off"),
+			ScreeningAmountThreshold:           parseInt64(getenv("SCREENING_AMOUNT_THRESHOLD"), 0),
+			ScreeningAmountThresholdByCurrency: parseCurrencyInt64Map(getenv("SCREENING_AMOUNT_THRESHOLDS")),
+			ScreeningVelocityMaxPerHour:        parseInt64(getenv("SCREENING_VELOCITY_MAX_PER_HOUR"), 0),
 		},
 		Tracing: TracingConfig{
 			OTLPEndpoint: getenv("OTEL_EXPORTER_OTLP_ENDPOINT"),
@@ -1117,6 +1119,33 @@ func parseInt64(s string, fallback int64) int64 {
 		return fallback
 	}
 	return n
+}
+
+// parseCurrencyInt64Map parses SCREENING_AMOUNT_THRESHOLDS values in the form
+// "IDR=100000,USD=100". Values are minor units and are kept separate by
+// currency; malformed or non-positive entries are ignored just like the
+// legacy scalar threshold parser ignores malformed input.
+func parseCurrencyInt64Map(raw string) map[string]int64 {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	result := make(map[string]int64)
+	for _, item := range strings.Split(raw, ",") {
+		parts := strings.SplitN(item, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		code := strings.ToUpper(strings.TrimSpace(parts[0]))
+		value, err := strconv.ParseInt(strings.TrimSpace(parts[1]), 10, 64)
+		if code == "" || err != nil || value <= 0 {
+			continue
+		}
+		result[code] = value
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
 }
 
 func parseFloat(s string, fallback float64) float64 {

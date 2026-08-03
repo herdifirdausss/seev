@@ -26,11 +26,11 @@ func NewFreezeRelease(r repository.AccountRepository) *FreezeRelease { return &F
 func (p *FreezeRelease) Type() string                                { return "freeze_release" }
 
 func (p *FreezeRelease) ResolveAccounts(ctx context.Context, cmd Command) (ResolvedAccounts, string, error) {
-	frozenID, err := p.repo.GetAccountID(ctx, cmd.UserID, constant.AccountTypeFrozen)
+	frozenID, err := userAccountID(ctx, p.repo, cmd.UserID, constant.AccountTypeFrozen, cmd.Currency)
 	if err != nil {
 		return ResolvedAccounts{}, "", fmt.Errorf("freeze_release: frozen account: %w", err)
 	}
-	cashID, err := p.repo.GetAccountID(ctx, cmd.UserID, constant.AccountTypeCash)
+	cashID, err := userAccountID(ctx, p.repo, cmd.UserID, constant.AccountTypeCash, cmd.Currency)
 	if err != nil {
 		return ResolvedAccounts{}, "", fmt.Errorf("freeze_release: user cash: %w", err)
 	}

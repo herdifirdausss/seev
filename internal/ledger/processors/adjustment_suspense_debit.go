@@ -39,7 +39,13 @@ func (p *AdjustmentSuspenseDebit) ResolveAccounts(ctx context.Context, cmd Comma
 	}
 	currency, err := generalutil.MetaString(cmd.Metadata, "currency")
 	if err != nil || currency == "" {
+		currency = cmd.Currency
+	}
+	if currency == "" {
 		currency = "IDR" // see AdjustmentSuspenseCredit's doc comment — no user account to derive currency from
+	}
+	if cmd.Currency != "" && currency != cmd.Currency {
+		return ResolvedAccounts{}, "", fmt.Errorf("%w: adjustment_suspense_debit currency metadata does not match command currency", apperror.ErrCurrencyMismatch)
 	}
 	suspenseID, err := p.repo.GetSystemAccountID(ctx, constant.AccountTypeSuspense, suspenseQualifier(gateway), currency)
 	if err != nil {

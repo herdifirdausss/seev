@@ -12,7 +12,9 @@ import (
 	"github.com/herdifirdausss/seev/internal/payin/model"
 	"github.com/herdifirdausss/seev/internal/payin/repository"
 	"github.com/herdifirdausss/seev/pkg/generalutil"
+	"github.com/herdifirdausss/seev/pkg/ledgererr"
 	"github.com/herdifirdausss/seev/pkg/middleware"
+	currencyreg "github.com/herdifirdausss/seev/pkg/currency"
 )
 
 // Re-exported so callers never need to import internal/payin/model.
@@ -23,12 +25,50 @@ type TopupIntent = model.TopupIntent
 // vendor never learns the internal user_id, only this opaque reference,
 // which travels back in the settling webhook's existing ExternalRef field.
 func (m *Module) CreateTopupIntent(ctx context.Context, userID uuid.UUID, amount decimal.Decimal) (TopupIntent, error) {
+	return m.createTopupIntent(ctx, userID, amount, "")
+}
+
+func (m *Module) CreateTopupIntentWithCurrency(ctx context.Context, userID uuid.UUID, amount decimal.Decimal, requestedCurrency string) (TopupIntent, error) {
+	return m.createTopupIntent(ctx, userID, amount, requestedCurrency)
+}
+
+func (m *Module) createTopupIntent(ctx context.Context, userID uuid.UUID, amount decimal.Decimal, requestedCurrency string) (TopupIntent, error) {
+	if err := currencyreg.ValidatePositiveMinorAmount(amount); err != nil {
+		return TopupIntent{}, fmt.Errorf("%w: %v", ErrInvalidAmount, err)
+	}
 	if err := m.ensureIntakeOpen(ctx); err != nil {
 		return TopupIntent{}, err
 	}
-	currency, err := m.poster.GetUserCurrency(ctx, userID, "")
-	if err != nil {
-		return TopupIntent{}, fmt.Errorf("payin: resolve user currency: %w", err)
+	currency := requestedCurrency
+	if currency != "" {
+		if err := currencyreg.ValidateCode(currency); err != nil {
+			return TopupIntent{}, fmt.Errorf("payin: invalid currency: %w", err)
+		}
+	}
+	if currency == "" {
+		var err error
+		currency, err = m.poster.GetUserCurrency(ctx, userID, "")
+		if err != nil {
+			return TopupIntent{}, fmt.Errorf("payin: resolve user currency: %w", err)
+		}
+	}
+	if validator, ok := m.poster.(interface {
+		ValidateCurrency(context.Context, string, string) error
+	}); ok {
+		if err := validator.ValidateCurrency(ctx, currency, "topup"); err != nil {
+			return TopupIntent{}, fmt.Errorf("payin: currency policy: %w", err)
+		}
+	}
+	if accountReader, ok := m.poster.(interface {
+		UserCurrencyEnabled(context.Context, uuid.UUID, string) (bool, error)
+	}); ok {
+		enabled, err := accountReader.UserCurrencyEnabled(ctx, userID, currency)
+		if err != nil {
+			return TopupIntent{}, fmt.Errorf("payin: check currency account: %w", err)
+		}
+		if !enabled {
+			return TopupIntent{}, &ledgererr.LedgerError{Code: "CURRENCY_NOT_ENABLED", Message: fmt.Sprintf("currency account is not enabled: %s", currency)}
+		}
 	}
 	vendor, _, err := m.ResolveTopupRoute(ctx, userID, currency, amount)
 	if err != nil {

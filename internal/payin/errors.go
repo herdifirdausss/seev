@@ -2,6 +2,8 @@ package payin
 
 import (
 	"errors"
+
+	"github.com/herdifirdausss/seev/pkg/ledgererr"
 )
 
 // ErrAlreadyPosted is returned by ReplayEvent when the event is already
@@ -24,6 +26,17 @@ var ErrTopupIntentMismatch = errors.New("payin: topup intent mismatch")
 // ErrTopupIntentExpired means a settling webhook arrived after the
 // intent's expiry window — also a business failure, not retryable.
 var ErrTopupIntentExpired = errors.New("payin: topup intent expired")
+
+// ErrInvalidAmount means a payin amount is not a positive, integral minor-unit
+// value representable by Ledger's BIGINT contract.
+var ErrInvalidAmount = errors.New("payin: invalid minor-unit amount")
+
+// ErrCurrencyRouteUnavailable is returned when configured payin candidates
+// exist but none explicitly supports the requested non-IDR currency.
+var ErrCurrencyRouteUnavailable = &ledgererr.LedgerError{
+	Code:    "CURRENCY_ROUTE_UNAVAILABLE",
+	Message: "no payin route declares the requested currency",
+}
 
 var ErrNoRoute = errors.New("payin: no route")
 

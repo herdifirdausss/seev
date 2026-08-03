@@ -51,7 +51,13 @@ func (s *Service) CreateUserAccounts(ctx context.Context, userID uuid.UUID, curr
 		return nil, fmt.Errorf("%w: userID is required", apperror.ErrValidation)
 	}
 	if !currencyreg.IsValid(currency) {
-		return nil, fmt.Errorf("%w: unsupported currency %q", apperror.ErrValidation, currency)
+		return nil, fmt.Errorf("%w: unsupported currency %q", apperror.ErrCurrencyInvalid, currency)
+	}
+	if !currencyreg.IsEnabled(currency) {
+		return nil, fmt.Errorf("%w: currency %q is not active", apperror.ErrCurrencyDisabled, currency)
+	}
+	if !currencyreg.Allows(currency, "account_enable") {
+		return nil, fmt.Errorf("%w: account_enable is disabled for %q", apperror.ErrCurrencyOperationDisabled, currency)
 	}
 
 	accounts := make([]model.Account, 0, len(standardAccountTypes))
@@ -82,7 +88,13 @@ func (s *Service) CreatePocket(ctx context.Context, userID uuid.UUID, currency, 
 		return model.Account{}, fmt.Errorf("%w: userID is required", apperror.ErrValidation)
 	}
 	if !currencyreg.IsValid(currency) {
-		return model.Account{}, fmt.Errorf("%w: unsupported currency %q", apperror.ErrValidation, currency)
+		return model.Account{}, fmt.Errorf("%w: unsupported currency %q", apperror.ErrCurrencyInvalid, currency)
+	}
+	if !currencyreg.IsEnabled(currency) {
+		return model.Account{}, fmt.Errorf("%w: currency %q is not active", apperror.ErrCurrencyDisabled, currency)
+	}
+	if !currencyreg.Allows(currency, "account_enable") {
+		return model.Account{}, fmt.Errorf("%w: account_enable is disabled for %q", apperror.ErrCurrencyOperationDisabled, currency)
 	}
 	if !pocketCodePattern.MatchString(pocketCode) {
 		return model.Account{}, fmt.Errorf("%w: pocket_code must match %s, got %q", apperror.ErrValidation, pocketCodePattern.String(), pocketCode)
@@ -127,7 +139,13 @@ func (s *Service) provisionMerchantAccountType(ctx context.Context, tenantID uui
 		return model.Account{}, fmt.Errorf("%w: tenantID is required", apperror.ErrValidation)
 	}
 	if !currencyreg.IsValid(currency) {
-		return model.Account{}, fmt.Errorf("%w: unsupported currency %q", apperror.ErrValidation, currency)
+		return model.Account{}, fmt.Errorf("%w: unsupported currency %q", apperror.ErrCurrencyInvalid, currency)
+	}
+	if !currencyreg.IsEnabled(currency) {
+		return model.Account{}, fmt.Errorf("%w: currency %q is not active", apperror.ErrCurrencyDisabled, currency)
+	}
+	if !currencyreg.Allows(currency, "account_enable") {
+		return model.Account{}, fmt.Errorf("%w: account_enable is disabled for %q", apperror.ErrCurrencyOperationDisabled, currency)
 	}
 
 	var acc model.Account

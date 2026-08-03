@@ -36,6 +36,7 @@ import (
 	"github.com/herdifirdausss/seev/internal/payout/worker"
 	"github.com/herdifirdausss/seev/internal/vendorgw"
 	"github.com/herdifirdausss/seev/pkg/cryptox"
+	currencyreg "github.com/herdifirdausss/seev/pkg/currency"
 	"github.com/herdifirdausss/seev/pkg/database"
 	"github.com/herdifirdausss/seev/pkg/fraudcheck"
 	"github.com/herdifirdausss/seev/pkg/ledgerclient"
@@ -60,8 +61,11 @@ const (
 // vendor and vendor reference identify a local payout request. Amount and
 // currency are checked before any Ledger transition.
 func (m *Module) HandleVendorCallback(ctx context.Context, vendor, vendorEventID, externalReference, amountRaw, currency, status, occurredAt, inboxID, requestID, unknownStatus string) (string, error) {
+	if err := currencyreg.ValidateCode(currency); err != nil {
+		return "", fmt.Errorf("payout: invalid normalized callback currency: %w", err)
+	}
 	amount, err := decimal.NewFromString(amountRaw)
-	if err != nil || !amount.IsPositive() || !amount.Equal(amount.Truncate(0)) {
+	if err != nil || currencyreg.ValidatePositiveMinorAmount(amount) != nil {
 		return "", fmt.Errorf("payout: invalid normalized callback amount")
 	}
 	vendorReference := externalReference

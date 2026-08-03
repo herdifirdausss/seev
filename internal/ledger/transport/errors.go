@@ -14,30 +14,38 @@ import (
 func writeError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, apperror.ErrValidation),
+		errors.Is(err, apperror.ErrCurrencyInvalid),
 		errors.Is(err, apperror.ErrEmptyIdempotencyKey),
 		errors.Is(err, apperror.ErrUnknownProcessor),
 		errors.Is(err, apperror.ErrSelfTransfer),
 		errors.Is(err, apperror.ErrStatementRangeTooLarge),
-		errors.Is(err, apperror.ErrCSVTooManyRows):
+		errors.Is(err, apperror.ErrCSVTooManyRows),
+		errors.Is(err, apperror.ErrCurrencyNotEnabled),
+		errors.Is(err, apperror.ErrFXRateInvalid):
 		response.BadRequest(w, err.Error())
 
 	case errors.Is(err, apperror.ErrSelfApproval):
 		response.Forbidden(w, err.Error())
 
 	case errors.Is(err, apperror.ErrAccountNotFound),
+		errors.Is(err, apperror.ErrCurrencyAccountMissing),
 		errors.Is(err, apperror.ErrTransactionNotFound),
 		errors.Is(err, apperror.ErrOriginalNotFound),
 		errors.Is(err, apperror.ErrOutboxEventNotFound),
 		errors.Is(err, apperror.ErrPendingAdjustmentNotFound),
 		errors.Is(err, apperror.ErrReconBatchNotFound),
 		errors.Is(err, apperror.ErrReconItemNotFound),
-		errors.Is(err, apperror.ErrChargebackDisputeNotFound):
+		errors.Is(err, apperror.ErrChargebackDisputeNotFound),
+		errors.Is(err, apperror.ErrFXQuoteNotFound),
+		errors.Is(err, apperror.ErrFXConversionNotFound),
+		errors.Is(err, apperror.ErrFXRateNotFound):
 		response.NotFound(w, err.Error())
 
 	case errors.Is(err, apperror.ErrInsufficientFunds),
 		errors.Is(err, apperror.ErrAccountSuspended),
 		errors.Is(err, apperror.ErrAccountClosed),
 		errors.Is(err, apperror.ErrCurrencyMismatch),
+		errors.Is(err, apperror.ErrCrossCurrencyTransferRequiresFX),
 		errors.Is(err, apperror.ErrAmountTooSmall),
 		errors.Is(err, apperror.ErrAmountTooLarge),
 		errors.Is(err, apperror.ErrDailyLimitExceeded),
@@ -50,7 +58,24 @@ func writeError(w http.ResponseWriter, err error) {
 		errors.Is(err, apperror.ErrUnbalancedEntries),
 		errors.Is(err, apperror.ErrScreeningBlocked),
 		errors.Is(err, apperror.ErrQuoteExpired),
-		errors.Is(err, apperror.ErrQuoteMismatch):
+		errors.Is(err, apperror.ErrQuoteMismatch),
+		errors.Is(err, apperror.ErrCurrencyDisabled),
+		errors.Is(err, apperror.ErrCurrencyOperationDisabled),
+		errors.Is(err, apperror.ErrCurrencyAccountInactive),
+		errors.Is(err, apperror.ErrCurrencySystemAccountMissing),
+		errors.Is(err, apperror.ErrCurrencyRouteUnavailable),
+		errors.Is(err, apperror.ErrCurrencyLimitExceeded),
+		errors.Is(err, apperror.ErrFXPairUnavailable),
+		errors.Is(err, apperror.ErrFXDirectionDisabled),
+		errors.Is(err, apperror.ErrFXRateUnavailable),
+		errors.Is(err, apperror.ErrFXQuoteExpired),
+		errors.Is(err, apperror.ErrFXQuoteAlreadyConsumed),
+		errors.Is(err, apperror.ErrFXQuoteMismatch),
+		errors.Is(err, apperror.ErrFXRateApprovalConflict),
+		errors.Is(err, apperror.ErrFXConversionsPaused),
+		errors.Is(err, apperror.ErrFXTargetAmountZero),
+		errors.Is(err, apperror.ErrFXPositionLimitExceeded),
+		errors.Is(err, apperror.ErrMoneyOverflow):
 		response.UnprocessableEntity(w, err.Error())
 
 	case errors.Is(err, apperror.ErrStillProcessing),

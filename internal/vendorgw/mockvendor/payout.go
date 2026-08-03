@@ -61,6 +61,12 @@ func NewPayoutProvider(name string) *PayoutProvider {
 
 func (p *PayoutProvider) Vendor() string { return p.name }
 
+// SupportsCurrency declares the synthetic payout corridors supported by this
+// mock provider. Both directions are local fixtures only.
+func (p *PayoutProvider) SupportsCurrency(operation, code string) bool {
+	return operation == "payout" && (code == "IDR" || code == "USD")
+}
+
 // SetForceFail flips the vendor-level force-fail switch (docs/roadmap/archive/40 Task
 // T4) — test-only, not part of vendorgw.PayoutProvider. Every Submit while
 // true returns an INFRA error (never cached, same rationale as
@@ -73,9 +79,12 @@ func (p *PayoutProvider) SetForceFail(fail bool) {
 	p.forceFail = fail
 }
 
-func (p *PayoutProvider) Submit(_ context.Context, idempotencyKey string, _ decimal.Decimal, _ string, destination json.RawMessage) (vendorgw.PayoutResult, error) {
+func (p *PayoutProvider) Submit(_ context.Context, idempotencyKey string, _ decimal.Decimal, currency string, destination json.RawMessage) (vendorgw.PayoutResult, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if !p.SupportsCurrency("payout", currency) {
+		return vendorgw.PayoutResult{}, fmt.Errorf("mockvendor: unsupported payout currency %q", currency)
+	}
 
 	if p.forceFail {
 		return vendorgw.PayoutResult{}, fmt.Errorf("mockvendor %s: forced failure (vendor down)", p.name)
