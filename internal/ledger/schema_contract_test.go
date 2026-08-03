@@ -2247,7 +2247,7 @@ func TestSchemaContract_Provisioning_RespectsLoadedCurrencyRegistry(t *testing.T
 
 	_, err = provision.New(db, repository.NewProvisioningRepository()).CreateUserAccounts(ctx, uuid.New(), "XYZ")
 	require.Error(t, err, "a currency absent from the currencies table must still be rejected")
-	require.True(t, errors.Is(err, apperror.ErrValidation))
+	require.True(t, errors.Is(err, apperror.ErrCurrencyInvalid))
 }
 
 // loadFullCurrencyRegistry is docs/roadmap/archive/18 Task T2's own test setup: load

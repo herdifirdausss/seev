@@ -2,7 +2,7 @@
 
 > [Documentation home](../README.md) · [Reference](README.md)
 >
-> **Status: Current. Reviewed: 2026-08-03 against `main` at `1fa9429` and the
+> **Status: Current. Reviewed: 2026-08-03 against the current `main` tip and the
 > working tree.** This is an implementation inventory. “Implemented” means the
 > code, migrations, and local contracts are present; it does not mean runtime
 > acceptance or production readiness is complete.
@@ -59,6 +59,18 @@ The current working tree passes the repository's static gate:
 make verify-static   PASS
 make docs-check      PASS
 ```
+
+The latest focused runtime regression run also passes:
+
+```text
+go test -tags=integration ./internal/payin ./internal/notify ./internal/drreseed -count=1  PASS
+Ledger/Auth currency and multi-owner regression tests                 PASS
+```
+
+These checks cover the post-C4 migration invariants, notification outbox
+delivery, currency-aware policy-counter reseeding, currency error mapping,
+and multi-owner payin/auth journeys. A fresh full `verify-full` run is still
+required before runtime acceptance is declared complete.
 
 This gate covers compilation, vet, module verification, CI lint, safe Go
 modernizers, golangci-lint, vulnerability scanning, contracts, documentation,

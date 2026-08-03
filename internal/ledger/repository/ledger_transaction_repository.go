@@ -10,6 +10,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -17,6 +18,7 @@ import (
 	"github.com/herdifirdausss/seev/internal/ledger/model"
 	"github.com/herdifirdausss/seev/pkg/cryptox"
 	"github.com/herdifirdausss/seev/pkg/database"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/shopspring/decimal"
 )
 
@@ -274,10 +276,32 @@ func (r *transactionRepo) Insert(
 	)
 
 	if err != nil {
+		if isCurrencyConstraintError(err) {
+			return fmt.Errorf("%w: %s", apperror.ErrCurrencyMismatch, currencyConstraintMessage(err))
+		}
 		return err
 	}
 
 	return nil
+}
+
+// isCurrencyConstraintError recognizes the database backstop used by
+// migrations/ledger/000039_c4_multi_currency. The service validates account
+// currencies before posting, but the trigger can still be the first guard to
+// run because the transaction header is inserted before account rows are
+// locked. Preserve the public domain error instead of leaking a raw SQLSTATE.
+func isCurrencyConstraintError(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "P0001" &&
+		strings.Contains(pgErr.Message, "account currency must match transaction currency")
+}
+
+func currencyConstraintMessage(err error) string {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		return pgErr.Message
+	}
+	return err.Error()
 }
 
 func (r *transactionRepo) UpdateStatus(

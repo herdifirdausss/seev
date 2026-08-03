@@ -26,9 +26,9 @@ func TestRetention_WebhookEventsRaw_EligibilityBoundary(t *testing.T) {
 		id := uuid.New()
 		_, err := db.ExecContext(ctx, `
 			INSERT INTO payin_webhook_events
-				(id, vendor, vendor_event_id, external_ref, user_id, amount, currency, status,
-				 created_at, updated_at, raw_ciphertext, raw_key_version)
-			VALUES ($1, 'mockvendor', $2, 'ext', $3, 1000, 'IDR', $4, $5, $5, $6, 1)`,
+				(id, vendor, vendor_event_id, external_ref, user_id, amount, total_debit, currency, status,
+					 created_at, updated_at, raw_ciphertext, raw_key_version)
+			VALUES ($1, 'mockvendor', $2, 'ext', $3, 1000, 1000, 'IDR', $4, $5, $5, $6, 1)`,
 			id, uuid.NewString(), uuid.New(), status, updatedAt, []byte("ciphertext-stand-in"))
 		require.NoError(t, err)
 		return id
@@ -69,8 +69,8 @@ func TestRetention_WebhookEventsRaw_RetentionHoldExcludesRow(t *testing.T) {
 	id := uuid.New()
 	_, err := db.ExecContext(ctx, `
 		INSERT INTO payin_webhook_events
-			(id, vendor, vendor_event_id, external_ref, user_id, amount, currency, status, created_at, updated_at, raw_ciphertext, raw_key_version)
-		VALUES ($1, 'mockvendor', $2, 'ext', $3, 1000, 'IDR', 'posted', $4, $4, $5, 1)`,
+			(id, vendor, vendor_event_id, external_ref, user_id, amount, total_debit, currency, status, created_at, updated_at, raw_ciphertext, raw_key_version)
+		VALUES ($1, 'mockvendor', $2, 'ext', $3, 1000, 1000, 'IDR', 'posted', $4, $4, $5, 1)`,
 		id, uuid.NewString(), heldUser, time.Now().Add(-40*24*time.Hour), []byte("ciphertext-stand-in"))
 	require.NoError(t, err)
 

@@ -27,8 +27,8 @@ func TestListAssuranceRecords_KeysetPaginationWithEqualTimestamps(t *testing.T) 
 		eventID := fmt.Sprintf("assurance-page-%03d-%s", i, id)
 		_, err := db.ExecContext(ctx, `
 			INSERT INTO payin_webhook_events
-			(id, vendor, vendor_event_id, external_ref, user_id, amount, currency, status, request_id, created_at, updated_at)
-			VALUES ($1, 'mockvendor', $2, $2, $3, 1000, 'IDR', 'failed', 'integration-page', $4, $4)`,
+			(id, vendor, vendor_event_id, external_ref, user_id, amount, total_debit, currency, status, request_id, created_at, updated_at)
+			VALUES ($1, 'mockvendor', $2, $2, $3, 1000, 1000, 'IDR', 'failed', 'integration-page', $4, $4)`,
 			id, eventID, uuid.New(), updated)
 		require.NoError(t, err)
 	}

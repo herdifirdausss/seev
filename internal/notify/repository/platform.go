@@ -181,7 +181,7 @@ func insertDelivery(ctx context.Context, tx *sql.Tx, d model.Delivery) error {
 			(id,notification_id,digest_window_id,user_id,channel,endpoint_id,endpoint_identity,status,template_version_id,locale,
 			recipient_ciphertext,recipient_key_version,recipient_fingerprint,rendered_subject,rendered_title,rendered_text,rendered_html,
 			provider_payload,content_hash,attempt_count,next_attempt_at,created_at,updated_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,COALESCE($23,now()),COALESCE($23,now()))
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,COALESCE($22,now()),COALESCE($22,now()))
 		ON CONFLICT (notification_id,channel,endpoint_identity) DO NOTHING`,
 		d.ID, nullableUUID(d.NotificationID), nullableUUID(d.DigestWindowID), d.UserID, d.Channel,
 		nullableUUID(d.EndpointID), d.EndpointIdentity, d.Status, d.TemplateVersionID, d.Locale,

@@ -88,8 +88,8 @@ func TestMultiOwner_Closure_RepointsAllFourNewOwners(t *testing.T) {
 	// rows is already tested elsewhere).
 	webhookEventID := uuid.New()
 	_, err := db.ExecContext(ctx, `
-		INSERT INTO payin_webhook_events (id, vendor, vendor_event_id, external_ref, user_id, amount, currency, status)
-		VALUES ($1, 'mockvendor', 'evt-1', 'ref-1', $2, 50000, 'IDR', 'posted')`, webhookEventID, userID)
+		INSERT INTO payin_webhook_events (id, vendor, vendor_event_id, external_ref, user_id, amount, total_debit, currency, status)
+		VALUES ($1, 'mockvendor', 'evt-1', 'ref-1', $2, 50000, 50000, 'IDR', 'posted')`, webhookEventID, userID)
 	require.NoError(t, err)
 	payoutRequestID := uuid.New()
 	_, err = db.ExecContext(ctx, `
@@ -154,8 +154,8 @@ func TestMultiOwner_Closure_PendingTopupIntentBlocks(t *testing.T) {
 	userID := registerTestUser(t, m, "multiowner-payin-block@example.test", password)
 
 	_, err := db.ExecContext(ctx, `
-		INSERT INTO payin_topup_intents (id, reference, user_id, amount, currency, vendor, status, expires_at)
-		VALUES ($1, 'ref-pending', $2, 10000, 'IDR', 'mockvendor', 'pending', now() + interval '1 hour')`, uuid.New(), userID)
+		INSERT INTO payin_topup_intents (id, reference, user_id, amount, total_debit, currency, vendor, status, expires_at)
+		VALUES ($1, 'ref-pending', $2, 10000, 10000, 'IDR', 'mockvendor', 'pending', now() + interval '1 hour')`, uuid.New(), userID)
 	require.NoError(t, err)
 
 	req, err := m.RequestClosure(ctx, userID, password)
@@ -223,23 +223,23 @@ func TestMultiOwner_Export_IncludesAllRegisteredOwners(t *testing.T) {
 
 	ownEventID := uuid.New()
 	_, err := db.ExecContext(ctx, `
-		INSERT INTO payin_webhook_events (id, vendor, vendor_event_id, external_ref, user_id, amount, currency, status)
-		VALUES ($1, 'mockvendor', 'evt-export', 'ref-export', $2, 75000, 'IDR', 'posted')`, ownEventID, userID)
+		INSERT INTO payin_webhook_events (id, vendor, vendor_event_id, external_ref, user_id, amount, total_debit, currency, status)
+		VALUES ($1, 'mockvendor', 'evt-export', 'ref-export', $2, 75000, 75000, 'IDR', 'posted')`, ownEventID, userID)
 	require.NoError(t, err)
 	// Cross the coordinator's 100-row page boundary. This proves it follows
 	// next_cursor until exhaustion instead of silently truncating one owner.
 	for i := 0; i < 105; i++ {
 		_, err = db.ExecContext(ctx, `
-			INSERT INTO payin_webhook_events (id, vendor, vendor_event_id, external_ref, user_id, amount, currency, status)
-			VALUES ($1, 'mockvendor', $2, $3, $4, 75000, 'IDR', 'posted')`,
+			INSERT INTO payin_webhook_events (id, vendor, vendor_event_id, external_ref, user_id, amount, total_debit, currency, status)
+			VALUES ($1, 'mockvendor', $2, $3, $4, 75000, 75000, 'IDR', 'posted')`,
 			uuid.New(), fmt.Sprintf("evt-page-%03d", i), fmt.Sprintf("ref-page-%03d", i), userID)
 		require.NoError(t, err)
 	}
 	// Another user's row must never leak into the subject's own export.
 	otherEventID := uuid.New()
 	_, err = db.ExecContext(ctx, `
-		INSERT INTO payin_webhook_events (id, vendor, vendor_event_id, external_ref, user_id, amount, currency, status)
-		VALUES ($1, 'mockvendor', 'evt-other', 'ref-other', $2, 1, 'IDR', 'posted')`, otherEventID, otherUserID)
+		INSERT INTO payin_webhook_events (id, vendor, vendor_event_id, external_ref, user_id, amount, total_debit, currency, status)
+		VALUES ($1, 'mockvendor', 'evt-other', 'ref-other', $2, 1, 1, 'IDR', 'posted')`, otherEventID, otherUserID)
 	require.NoError(t, err)
 
 	req, err := m.RequestExport(ctx, userID, password)

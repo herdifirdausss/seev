@@ -138,7 +138,7 @@ func TestReconstructPolicyCountersMatchesPostedTransactions(t *testing.T) {
 	}
 
 	now := time.Now().In(loc)
-	got, err := counter.Get(context.Background(), policy.DailyAmountKey(userID, "transfer_p2p", now))
+	got, err := counter.Get(context.Background(), policy.DailyAmountKeyForCurrency(userID, "transfer_p2p", "USD", now))
 	if err != nil {
 		t.Fatalf("get daily amount: %v", err)
 	}
