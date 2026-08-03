@@ -55,8 +55,8 @@ type listCurrencyBalancesHTTPResponse struct {
 }
 
 type enableCurrencyHTTPResponse struct {
-	Currency string           `json:"currency"`
-	Enabled  bool             `json:"enabled"`
+	Currency string            `json:"currency"`
+	Enabled  bool              `json:"enabled"`
 	Accounts []accountResponse `json:"accounts"`
 }
 
@@ -92,10 +92,10 @@ type fxQuoteHTTPResponse struct {
 }
 
 type createFXConversionHTTPRequest struct {
-	QuoteID             string `json:"quote_id"`
+	QuoteID              string `json:"quote_id"`
 	ExpectedSourceAmount string `json:"expected_source_amount"`
 	ExpectedTargetAmount string `json:"expected_target_amount"`
-	IdempotencyKey      string `json:"idempotency_key,omitempty"`
+	IdempotencyKey       string `json:"idempotency_key,omitempty"`
 }
 
 type fxConversionHTTPResponse struct {
@@ -114,16 +114,16 @@ type fxConversionHTTPResponse struct {
 }
 
 type fxPairHTTPResponse struct {
-	ID                uuid.UUID               `json:"id"`
-	PairCode          string                  `json:"pair_code"`
-	BaseCurrency      string                  `json:"base_currency"`
-	QuoteCurrency     string                  `json:"quote_currency"`
-	RateConvention    string                  `json:"rate_convention"`
-	Status            string                  `json:"status"`
-	RateSource        string                  `json:"rate_source"`
-	QuoteTTLSeconds   int                     `json:"quote_ttl_seconds"`
-	RoundingMode      string                  `json:"rounding_mode"`
-	PairPolicyVersion int64                   `json:"pair_policy_version"`
+	ID                uuid.UUID                 `json:"id"`
+	PairCode          string                    `json:"pair_code"`
+	BaseCurrency      string                    `json:"base_currency"`
+	QuoteCurrency     string                    `json:"quote_currency"`
+	RateConvention    string                    `json:"rate_convention"`
+	Status            string                    `json:"status"`
+	RateSource        string                    `json:"rate_source"`
+	QuoteTTLSeconds   int                       `json:"quote_ttl_seconds"`
+	RoundingMode      string                    `json:"rounding_mode"`
+	PairPolicyVersion int64                     `json:"pair_policy_version"`
 	Directions        []fxDirectionHTTPResponse `json:"directions"`
 }
 
@@ -265,8 +265,8 @@ func (h *handler) listFXPairs(w http.ResponseWriter, r *http.Request) {
 				ID: direction.ID, SourceCurrency: direction.SourceCurrency,
 				TargetCurrency: direction.TargetCurrency, Enabled: direction.Enabled,
 				NewQuotesPaused: direction.NewQuotesPaused, ConversionsPaused: direction.ConversionsPaused,
-				MinSourceAmount: strconv.FormatInt(direction.MinSourceAmount, 10),
-				MaxSourceAmount: strconv.FormatInt(direction.MaxSourceAmount, 10),
+				MinSourceAmount:   strconv.FormatInt(direction.MinSourceAmount, 10),
+				MaxSourceAmount:   strconv.FormatInt(direction.MaxSourceAmount, 10),
 				SpreadBasisPoints: direction.SpreadBasisPoints,
 			})
 		}
@@ -434,7 +434,7 @@ func toFXConversionHTTPResponse(item model.FXConversion) fxConversionHTTPRespons
 		SourceAmount: strconv.FormatInt(item.SourceAmount, 10), TargetAmount: strconv.FormatInt(item.TargetAmount, 10),
 		Status: item.Status, SourceTransactionID: item.SourceTransactionID,
 		TargetTransactionID: item.TargetTransactionID,
-		CreatedAt: item.CreatedAt.UTC().Format(time.RFC3339Nano),
+		CreatedAt:           item.CreatedAt.UTC().Format(time.RFC3339Nano),
 	}
 	if item.PostedAt != nil {
 		result.PostedAt = item.PostedAt.UTC().Format(time.RFC3339Nano)
@@ -456,13 +456,6 @@ func parseUnsignedMinor(raw string) (int64, error) {
 		return 0, errors.New("invalid minor amount")
 	}
 	return value, nil
-}
-
-func parseOptionalMinor(raw string) (int64, error) {
-	if raw == "" {
-		return 0, nil
-	}
-	return parseUnsignedMinor(raw)
 }
 
 func firstNonEmpty(values ...string) string {

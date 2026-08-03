@@ -246,11 +246,12 @@ func TestLoadFromEnv_ProductionRequiresSSL(t *testing.T) {
 
 func TestLoadFromEnv_ProductionWithSSL(t *testing.T) {
 	cfg, err := loadFromEnv(validEnv(map[string]string{
-		"APP_ENV":           "production",
-		"POSTGRES_SSL_MODE": "require",
-		"RABBITMQ_TLS":      "min_version=tls1.2",
-		"RABBITMQ_HOST":     "localhost",
-		"CRYPTOX_KEY_V1":    strings.Repeat("ab", 32),
+		"APP_ENV":                      "production",
+		"POSTGRES_SSL_MODE":            "require",
+		"RABBITMQ_TLS":                 "min_version=tls1.2",
+		"RABBITMQ_HOST":                "localhost",
+		"CRYPTOX_KEY_V1":               strings.Repeat("ab", 32),
+		"NOTIFY_TOKEN_FINGERPRINT_KEY": strings.Repeat("cd", 32),
 	}))
 	require.NoError(t, err)
 	assert.True(t, cfg.IsProduction())

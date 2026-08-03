@@ -711,6 +711,10 @@ type ConsumeFeeQuoteRequest struct {
 	// consumed_by_ref is persisted as fee_quotes.consumed_by_ref for audit —
 	// 'payout:<uuid>' for this caller.
 	ConsumedByRef string `protobuf:"bytes,6,opt,name=consumed_by_ref,json=consumedByRef,proto3" json:"consumed_by_ref,omitempty"`
+	// gateway binds quote consumption to the provider route that was quoted.
+	// It is carried through the compatibility bridge until generated
+	// protobuf artifacts are regenerated.
+	Gateway       string `protobuf:"bytes,7,opt,name=gateway,proto3" json:"gateway,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -783,6 +787,13 @@ func (x *ConsumeFeeQuoteRequest) GetAmount() string {
 func (x *ConsumeFeeQuoteRequest) GetConsumedByRef() string {
 	if x != nil {
 		return x.ConsumedByRef
+	}
+	return ""
+}
+
+func (x *ConsumeFeeQuoteRequest) GetGateway() string {
+	if x != nil {
+		return x.Gateway
 	}
 	return ""
 }
@@ -1866,14 +1877,15 @@ const file_seev_ledger_v1_ledger_proto_rawDesc = "" +
 	"\x14ProvisionUserRequest\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x1a\n" +
 	"\bcurrency\x18\x02 \x01(\tR\bcurrency\"\x17\n" +
-	"\x15ProvisionUserResponse\"\xd3\x01\n" +
+	"\x15ProvisionUserResponse\"\xed\x01\n" +
 	"\x16ConsumeFeeQuoteRequest\x12\x19\n" +
 	"\bquote_id\x18\x01 \x01(\tR\aquoteId\x12\x17\n" +
 	"\auser_id\x18\x02 \x01(\tR\x06userId\x12)\n" +
 	"\x10transaction_type\x18\x03 \x01(\tR\x0ftransactionType\x12\x1a\n" +
 	"\bcurrency\x18\x04 \x01(\tR\bcurrency\x12\x16\n" +
 	"\x06amount\x18\x05 \x01(\tR\x06amount\x12&\n" +
-	"\x0fconsumed_by_ref\x18\x06 \x01(\tR\rconsumedByRef\"Y\n" +
+	"\x0fconsumed_by_ref\x18\x06 \x01(\tR\rconsumedByRef\x12\x18\n" +
+	"\agateway\x18\a \x01(\tR\agateway\"Y\n" +
 	"\x17ConsumeFeeQuoteResponse\x12\x1d\n" +
 	"\n" +
 	"fee_amount\x18\x01 \x01(\tR\tfeeAmount\x12\x1f\n" +

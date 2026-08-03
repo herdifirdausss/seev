@@ -23,13 +23,13 @@ import (
 )
 
 type config struct {
-	LedgerDSN       string
-	ClickHouseURL   string
-	ClickHouseUser  string
-	ClickHousePass   string
-	Environment     string
-	Timeout         time.Duration
-	ReportDate      string
+	LedgerDSN      string
+	ClickHouseURL  string
+	ClickHouseUser string
+	ClickHousePass string
+	Environment    string
+	Timeout        time.Duration
+	ReportDate     string
 }
 
 type ledgerSummary struct {
@@ -110,13 +110,13 @@ func main() {
 		}
 	}
 
-	output := map[string]interface{}{
-		"run_id":           runID.String(),
-		"status":           result.CompletedStatus,
-		"cutoff":           cutoff.Format(time.RFC3339Nano),
+	output := map[string]any{
+		"run_id":            runID.String(),
+		"status":            result.CompletedStatus,
+		"cutoff":            cutoff.Format(time.RFC3339Nano),
 		"critical_failures": result.CriticalFailed,
 		"warning_failures":  result.WarningFailed,
-		"persisted":        !*dryRun,
+		"persisted":         !*dryRun,
 	}
 	encoded, _ := json.Marshal(output)
 	fmt.Println(string(encoded))
@@ -147,8 +147,8 @@ func loadConfig() (config, error) {
 		ClickHouseURL:  strings.TrimRight(defaultString(os.Getenv("ANALYTICS_CLICKHOUSE_URL"), "http://127.0.0.1:8123"), "/"),
 		ClickHouseUser: defaultString(os.Getenv("ANALYTICS_CLICKHOUSE_USER"), "analytics_reconciliation"),
 		ClickHousePass: password,
-		Environment:   defaultString(os.Getenv("ANALYTICS_ENVIRONMENT"), "local-dev"),
-		Timeout:       timeout,
+		Environment:    defaultString(os.Getenv("ANALYTICS_ENVIRONMENT"), "local-dev"),
+		Timeout:        timeout,
 	}
 	if cfg.LedgerDSN == "" {
 		return config{}, errors.New("ANALYTICS_LEDGER_DSN is required; reconciliation never guesses a source connection")
@@ -292,11 +292,11 @@ func clickHouseRequest(ctx context.Context, cfg config, query string, data []byt
 	values := endpoint.Query()
 	values.Set("query", query)
 	endpoint.RawQuery = values.Encode()
-	var body io.Reader
+	var requestBody io.Reader
 	if data != nil {
-		body = strings.NewReader(string(data) + "\n")
+		requestBody = strings.NewReader(string(data) + "\n")
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint.String(), body)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint.String(), requestBody)
 	if err != nil {
 		return nil, fmt.Errorf("build ClickHouse request: %w", err)
 	}
@@ -317,7 +317,7 @@ func clickHouseRequest(ctx context.Context, cfg config, query string, data []byt
 }
 
 func persistResult(ctx context.Context, cfg config, runID uuid.UUID, cutoff time.Time, result reconcile.Result) error {
-	run := map[string]interface{}{
+	run := map[string]any{
 		"run_id": runID.String(), "environment": cfg.Environment, "status": result.CompletedStatus,
 		"cutoff_type": "source_latest_time_minimum", "cutoff_value": cutoff.Format(time.RFC3339Nano),
 		"started_at": time.Now().UTC().Format(time.RFC3339Nano), "finished_at": time.Now().UTC().Format(time.RFC3339Nano),
@@ -332,14 +332,14 @@ func persistResult(ctx context.Context, cfg config, runID uuid.UUID, cutoff time
 		return fmt.Errorf("persist reconciliation run: %w", err)
 	}
 	for _, check := range result.Checks {
-		item := map[string]interface{}{
+		item := map[string]any{
 			"run_id": runID.String(), "check_name": check.Name, "source_service": check.SourceService,
 			"source_table_or_metric": check.Source, "warehouse_model": check.WarehouseModel, "currency": check.Currency,
 			"cutoff_type": "source_latest_time_minimum", "cutoff_value": cutoff.Format(time.RFC3339Nano),
 			"expected_value": check.Expected, "actual_value": check.Actual, "delta_value": core.Delta(check.Expected, check.Actual),
 			"severity": core.SeverityFor(core.Delta(check.Expected, check.Actual), check.Critical),
-			"status": map[bool]string{true: "passed", false: "failed"}[check.Expected == check.Actual],
-			"details": core.RedactDetails(check.Details), "created_at": time.Now().UTC().Format(time.RFC3339Nano),
+			"status":   map[bool]string{true: "passed", false: "failed"}[check.Expected == check.Actual],
+			"details":  core.RedactDetails(check.Details), "created_at": time.Now().UTC().Format(time.RFC3339Nano),
 		}
 		data, err := json.Marshal(item)
 		if err != nil {

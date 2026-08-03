@@ -25,6 +25,7 @@ open that page, and return here only when your question changes.
 | Find code and make a change | [Developer onboarding](development/onboarding.md) | Trace one request through its owner, data, and proof |
 | Run or troubleshoot the stack | [Operations](operations/README.md) | Choose the correct command, signal, or runbook |
 | Review the system design | [Architecture](reference/architecture.md) | Explain ownership, boundaries, and tradeoffs |
+| See what is implemented now | [Current state](reference/current-state.md) | Separate implementation from runtime acceptance |
 | See future work or decision history | [Roadmap](roadmap/README.md) | Distinguish an active plan from archived history |
 
 The [interactive story](index.html) is the primary learning experience. It is
@@ -120,6 +121,7 @@ plan status.
 - Reference: [rationale](reference/rationale.md),
   [glossary](reference/glossary.md),
   [architecture](reference/architecture.md),
+  [current state](reference/current-state.md),
   [services](reference/services.md),
   [shared packages](reference/shared-packages.md),
   [event contract](reference/events.md),

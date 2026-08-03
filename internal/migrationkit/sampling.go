@@ -3,6 +3,7 @@ package migrationkit
 import (
 	"crypto/sha256"
 	"encoding/binary"
+	"strings"
 )
 
 const BasisPoints = 10_000
@@ -28,9 +29,10 @@ func StableKey(parts ...string) string {
 	if len(parts) == 0 {
 		return ""
 	}
-	key := parts[0]
+	var key strings.Builder
+	key.WriteString(parts[0])
 	for _, part := range parts[1:] {
-		key += "\x00" + part
+		key.WriteString("\x00" + part)
 	}
-	return key
+	return key.String()
 }

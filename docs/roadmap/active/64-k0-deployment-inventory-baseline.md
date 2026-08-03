@@ -1,12 +1,17 @@
 # Plan 64 — K0 Deployment Inventory and Kubernetes Readiness Baseline
 
 **Created:** 2026-07-29  
-**Status:** Ready for execution  
+**Status:** Inventory committed; static gate green; runtime acceptance partial
 **Parent roadmap:** Plan 63 v2 — Kubernetes Cloud Deployment Roadmap  
 **Track:** K0 — Freeze deployment scope  
 **Primary objective:** Produce a complete, reproducible, evidence-backed inventory of Seev's deployable runtime before creating Kubernetes manifests  
+
+The inventory artifacts are committed and the current static gate passes. K0
+remains active because local runtime acceptance is partial and the K1 handoff
+has not been authorized; see the [current-state inventory](../../reference/current-state.md)
+and [K0 acceptance record](../../evidence/k0/final-acceptance.md).
 **Repository:** `herdifirdausss/seev`  
-**Expected current topology:** Nine deployable Go services plus PostgreSQL, Redis, RabbitMQ, local object storage, backup tooling, and optional observability  
+**Expected current topology:** Nine core deployable Go services plus the optional local mock push provider, PostgreSQL, Redis, RabbitMQ, local object storage, backup tooling, and optional observability
 **Execution environment:** Disposable local development environment only  
 **Kubernetes changes authorized by this plan:** None  
 **Cloud resources authorized by this plan:** None

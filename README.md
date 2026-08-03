@@ -118,19 +118,24 @@ symbol for compatibility; it is not an active fallback.
 > repository today. Future designs are kept in the
 > [roadmap](docs/roadmap/README.md) and are not presented as implemented.
 
-Nine deployable services are built from this repository:
+Nine core deployable business services are built from this repository:
 
 | Service | Container ports (loopback-published locally) | Database | Primary responsibility |
 |---|---:|---|---|
 | Gateway | 8080, 8081 | seev_gateway | Public API composition, notifications, and ledger event consumption |
 | Auth | 8082, 8083 | seev_auth | Registration, login, refresh tokens, profiles, roles, and KYC state |
-| Ledger | 8090, 8091, gRPC 9091 | seev_ledger | Double-entry postings, policies, fees, reconciliation, reporting, and workers |
+| Ledger | 8090, 8091, gRPC 9091 | seev_ledger | Double-entry postings, currency/FX, financial products, migration controls, reconciliation, reporting, and workers |
 | Pay-in | 8092, gRPC 9092 | seev_payin | Top-up intents, normalized vendor callbacks, and routing |
 | Payout | 8093, gRPC 9093 | seev_payout | Withdrawal orchestration, vendor commands, recovery, and routing |
 | Fraud | 8094, gRPC 9094 | seev_fraud | Synchronous screening rules and asynchronous event enrichment |
 | Admin BFF | 8095 | seev_adminbff | Operator sessions, maker/checker console, typed admin proxy, and audit log |
 | Assurance | 8096 | seev_assurance | Read-only pay-in/payout/ledger assurance, durable findings, alert delivery, and explicit intake controls |
 | VendorService | 8098, gRPC 9098 | seev_vendor | Vendor adapters, outbound attempt records, callback authentication, durable callback inbox, and normalized delivery to Payin/Payout |
+
+The optional `mock-push-provider` is a local C3 support binary on port 8097;
+it is included in the Dockerfile and `make build-all`, but is not a business
+service. The C2 CDC/OLAP stack is also optional infrastructure and does not
+become a source of truth for money.
 
 PostgreSQL stores service-owned data, Redis supports caching, rate limiting,
 velocity checks, and distributed coordination, and RabbitMQ carries ledger
@@ -142,7 +147,7 @@ HTTP or gRPC contracts; services must not query another service's database.
 ~~~text
 .
 ├── api/proto/               # Protobuf service contracts
-├── cmd/                     # Nine service entrypoints plus local utilities
+├── cmd/                     # Nine core service entrypoints plus local support binaries and utilities
 ├── deploy/observability/    # Prometheus, Grafana, Loki, Tempo, and Alloy config
 ├── docs/                    # Documentation home and interactive story
 │   ├── learn/               # Plain-language and product learning paths
@@ -197,10 +202,16 @@ Apply every service migration:
 make migrate-up-all
 ~~~
 
-Build and start all nine application containers:
+Build and start the nine core application containers:
 
 ~~~bash
 docker compose --profile app up --build -d
+~~~
+
+To include the local C3 delivery sinks, add the notifications profile:
+
+~~~bash
+docker compose --profile app --profile notifications up --build -d
 ~~~
 
 Useful local endpoints:
@@ -225,7 +236,7 @@ secrets, and TLS-related settings.
 ## Build and verification
 
 ~~~bash
-make build-all       # build all nine deployable services
+make build-all       # build nine core services plus the local push sink
 make clean            # remove only repository-local build/test artifacts
 make test            # unit tests with race detection and coverage
 make vet             # static checks from the Go toolchain
@@ -335,6 +346,7 @@ to read every document.
   [product tour](docs/learn/product-tour.md), [rationale](docs/reference/rationale.md), and
   [glossary](docs/reference/glossary.md).
 - **Understand and change the code:** [architecture](docs/reference/architecture.md),
+  [current state](docs/reference/current-state.md),
   [services](docs/reference/services.md), [onboarding](docs/development/onboarding.md),
   [shared packages](docs/reference/shared-packages.md), [project rules](docs/development/project-guide.md), and
   [concept-to-code evidence](docs/reference/traceability.md).

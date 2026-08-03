@@ -574,6 +574,7 @@ services:
     environment:
       APP_NAME: "<redacted>"
       APP_PORT: "<redacted>"
+      AUTH_INTERNAL_API_URL: "<redacted>"
       CRYPTOX_KEY_V1_FILE: "<redacted>"
       INTERNAL_APP_BIND_ADDR: "<redacted>"
       INTERNAL_APP_PORT: "<redacted>"
@@ -584,6 +585,21 @@ services:
       LEDGER_USER_API_URL: "<redacted>"
       LOG_FORMAT: "<redacted>"
       MERCHANT_API_KEY_PEPPER_FILE: "<redacted>"
+      NOTIFY_DEFAULT_DIGEST_HOUR: "<redacted>"
+      NOTIFY_DEFAULT_LOCALE: "<redacted>"
+      NOTIFY_DEFAULT_TIMEZONE: "<redacted>"
+      NOTIFY_DIGEST_ENABLED: "<redacted>"
+      NOTIFY_EMAIL_ENABLED: "<redacted>"
+      NOTIFY_ENABLED: "<redacted>"
+      NOTIFY_INAPP_ENABLED: "<redacted>"
+      NOTIFY_MAX_DEVICES: "<redacted>"
+      NOTIFY_PUSH_ENABLED: "<redacted>"
+      NOTIFY_PUSH_PROVIDER_URL: "<redacted>"
+      NOTIFY_SMTP_FROM: "<redacted>"
+      NOTIFY_SMTP_HOST: "<redacted>"
+      NOTIFY_SMTP_PORT: "<redacted>"
+      NOTIFY_SMTP_TLS_MODE: "<redacted>"
+      NOTIFY_TOKEN_FINGERPRINT_KEY: "<redacted>"
       OTEL_EXPORTER_OTLP_ENDPOINT: "<redacted>"
       OTEL_EXPORTER_OTLP_INSECURE: "<redacted>"
       OTEL_TRACES_SAMPLER: "<redacted>"
@@ -846,6 +862,58 @@ services:
       target: "/loki"
       type: volume
       volume: {}
+  mailpit:
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+    environment:
+      MP_DATABASE: "<redacted>"
+      MP_MAX_MESSAGES: "<redacted>"
+    image: axllent/mailpit:v1.21.8
+    networks:
+      default:
+    ports:
+    - host_ip: 127.0.0.1
+      mode: ingress
+      protocol: tcp
+      published: '1025'
+      target: 1025
+    - host_ip: 127.0.0.1
+      mode: ingress
+      protocol: tcp
+      published: '8025'
+      target: 8025
+    profiles:
+    - notifications
+    volumes:
+    - source: seev_mailpit_data
+      target: "/data"
+      type: volume
+      volume: {}
+  mock-push-provider:
+    build:
+      args:
+        SERVICE: mock-push-provider
+      context: "/Users/oyherdifirdaus/Documents/Project/seev"
+      dockerfile: Dockerfile
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+    environment:
+      MOCK_PUSH_PORT: "<redacted>"
+    image: seev/mock-push-provider:${SEEV_IMAGE_TAG:-dev}
+    networks:
+      default:
+    ports:
+    - host_ip: 127.0.0.1
+      mode: ingress
+      protocol: tcp
+      published: '8097'
+      target: 8097
+    profiles:
+    - notifications
   object-store-init:
     command:
     - sh
@@ -1038,7 +1106,13 @@ services:
     command:
     - postgres
     - "-c"
-    - wal_level=replica
+    - wal_level=logical
+    - "-c"
+    - max_replication_slots=8
+    - "-c"
+    - max_wal_senders=8
+    - "-c"
+    - max_slot_wal_keep_size=2GB
     - "-c"
     - archive_mode=on
     - "-c"
@@ -1362,6 +1436,8 @@ volumes:
     name: seev_seev_grafana_data
   seev_loki_data:
     name: seev_seev_loki_data
+  seev_mailpit_data:
+    name: seev_seev_mailpit_data
   seev_object_store:
     name: seev_seev_object_store
   seev_postgres_data:

@@ -14,15 +14,15 @@ import (
 )
 
 const (
-	defaultCatchUpLimit              = 7
-	defaultInfrastructureAttempts    = 5
-	defaultRetryWindow               = 24 * time.Hour
-	defaultFailureThreshold          = 3
-	maximumCatchUpLimit              = 7
-	maximumInfrastructureAttempts    = 20
-	maximumFailureThreshold          = 20
-	maximumSchedulePlanningHorizon   = 3660
-	defaultScheduleLocalTime         = "00:30"
+	defaultCatchUpLimit            = 7
+	defaultInfrastructureAttempts  = 5
+	defaultRetryWindow             = 24 * time.Hour
+	defaultFailureThreshold        = 3
+	maximumCatchUpLimit            = 7
+	maximumInfrastructureAttempts  = 20
+	maximumFailureThreshold        = 20
+	maximumSchedulePlanningHorizon = 3660
+	defaultScheduleLocalTime       = "00:30"
 )
 
 // DefaultPolicy is the compatibility policy for a newly created or migrated
@@ -31,12 +31,12 @@ const (
 // opt-in and always bounded.
 func DefaultPolicy(kind string) model.ScheduledPolicy {
 	policy := model.ScheduledPolicy{
-		MissedRunPolicy:            model.ScheduleMissedRunOnceLatest,
-		CatchUpLimit:               defaultCatchUpLimit,
-		MaxInfrastructureAttempts: defaultInfrastructureAttempts,
-		RetryWindowSeconds:         int64(defaultRetryWindow / time.Second),
+		MissedRunPolicy:             model.ScheduleMissedRunOnceLatest,
+		CatchUpLimit:                defaultCatchUpLimit,
+		MaxInfrastructureAttempts:   defaultInfrastructureAttempts,
+		RetryWindowSeconds:          int64(defaultRetryWindow / time.Second),
 		ConsecutiveFailureThreshold: defaultFailureThreshold,
-		FeeMode:                    "current_policy_with_consent_cap",
+		FeeMode:                     "current_policy_with_consent_cap",
 	}
 	if kind == "daily" {
 		policy.MissedRunPolicy = model.ScheduleMissedSkip
@@ -164,10 +164,7 @@ func PlanMissed(kind string, startDate, asOf time.Time, dayOfMonth *int, policy 
 	case model.ScheduleMissedRunOnceLatest:
 		return OccurrencePlan{Planned: dates[len(dates)-1:], Skipped: dates[:len(dates)-1]}, nil
 	case model.ScheduleMissedCatchUpBounded:
-		limit := policy.CatchUpLimit
-		if limit > len(dates) {
-			limit = len(dates)
-		}
+		limit := min(policy.CatchUpLimit, len(dates))
 		return OccurrencePlan{Planned: dates[len(dates)-limit:], Skipped: dates[:len(dates)-limit]}, nil
 	default:
 		return OccurrencePlan{}, fmt.Errorf("%w: unsupported missed_run_policy", apperror.ErrValidation)

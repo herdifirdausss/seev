@@ -53,23 +53,25 @@ type Topics struct {
 }
 
 type Topic struct {
-	Name       string `yaml:"name"`
-	Owner      string `yaml:"owner"`
+	Name        string `yaml:"name"`
+	Owner       string `yaml:"owner"`
 	SourceTable string `yaml:"source_table"`
-	Connector  string `yaml:"connector"`
-	Key        string `yaml:"key"`
+	Connector   string `yaml:"connector"`
+	Key         string `yaml:"key"`
 }
 
 type ConnectorFile struct {
-	Name   string                 `json:"name"`
-	Config map[string]interface{} `json:"config"`
+	Name   string         `json:"name"`
+	Config map[string]any `json:"config"`
 }
 
 type result struct {
 	errors []string
 }
 
-func (r *result) add(format string, args ...interface{}) { r.errors = append(r.errors, fmt.Sprintf(format, args...)) }
+func (r *result) add(format string, args ...any) {
+	r.errors = append(r.errors, fmt.Sprintf(format, args...))
+}
 
 func Validate(root string) []error {
 	var out result
@@ -117,15 +119,13 @@ func Validate(root string) []error {
 	}
 
 	for _, topic := range topics.Topics {
-		key := topic.Owner
 		if topic.Name == "" || topic.Owner == "" || topic.SourceTable == "" || topic.Connector == "" || topic.Key == "" {
 			out.add("topic %q is missing owner/source table/connector/key", topic.Name)
 		}
 		matched := false
-		for sourceKey, source := range sources {
+		for _, source := range sources {
 			if source.Owner == topic.Owner && source.Table == topic.SourceTable {
 				matched = true
-				key = sourceKey
 				break
 			}
 		}
@@ -151,7 +151,7 @@ func Validate(root string) []error {
 	return errors
 }
 
-func readYAML(path string, target interface{}, out *result) {
+func readYAML(path string, target any, out *result) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		out.add("read %s: %v", path, err)
@@ -190,7 +190,7 @@ func validateConnector(path string, sources map[string]Source, out *result) {
 	}
 	service := connectorService(connector.Name)
 	seenTables := make(map[string]bool)
-	for _, table := range strings.Split(tables, ",") {
+	for table := range strings.SplitSeq(tables, ",") {
 		parts := strings.Split(table, ".")
 		if len(parts) != 2 {
 			out.add("connector %s table %q is not schema.table", connector.Name, table)
@@ -208,7 +208,7 @@ func validateConnector(path string, sources map[string]Source, out *result) {
 			out.add("connector %s table %s has no matching service-owned source contract", connector.Name, table)
 		}
 	}
-	for _, column := range strings.Split(columns, ",") {
+	for column := range strings.SplitSeq(columns, ",") {
 		parts := strings.Split(column, ".")
 		if len(parts) != 3 {
 			out.add("connector %s column %q is not schema.table.column", connector.Name, column)
@@ -274,7 +274,7 @@ func isProhibitedColumn(service, table, column string) bool {
 	return false
 }
 
-func stringConfig(config map[string]interface{}, key string) string {
+func stringConfig(config map[string]any, key string) string {
 	value, ok := config[key]
 	if !ok {
 		return ""

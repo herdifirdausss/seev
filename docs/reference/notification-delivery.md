@@ -44,5 +44,5 @@ Admin BFF exposes sanitized delivery inspection, maker/checker template
 changes, channel `running`/`paused`/`drain_only` controls, and reason-required
 replay for dead/blocked rows. Replaying a blocked row first rebuilds its
 rendered snapshot from the newly active template; it never sends an empty
-snapshot. See the [notification runbooks](../runbooks/notification-provider-outage.md)
-and [duplicate-delivery runbook](../runbooks/notification-duplicate-external-delivery.md).
+snapshot. See the [notification runbooks](../operations/runbooks/notification-provider-outage.md)
+and [duplicate-delivery runbook](../operations/runbooks/notification-duplicate-external-delivery.md).

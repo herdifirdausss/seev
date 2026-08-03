@@ -1,7 +1,7 @@
 # Plan 60 — C4 End-to-End Multi-Currency Activation
 
 **Created:** 2026-07-28
-**Status:** Ready for execution after the C4 entry gate
+**Status:** Implementation present; runtime acceptance evidence pending
 **Roadmap track:** C4 — End-to-end multi-currency activation
 **Activation trigger:** Conscious FX and multi-currency learning decision
 **Initial supported currencies:** IDR and USD
@@ -12,6 +12,10 @@
 **Supporting owners:** FraudService, AssuranceService, notification module
 **Rate source:** Versioned database-managed mock rates
 **No real bank corridor, real market feed, or real-money claim is authorized.**
+
+The implementation is present in the current Ledger, Gateway, Admin BFF, and
+shared currency paths. Keep this plan active until the C4 entry/final evidence
+and runtime journey checks are recorded; see the [current-state inventory](../../reference/current-state.md).
 
 ---
 

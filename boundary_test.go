@@ -25,7 +25,8 @@ const modulePath = "github.com/herdifirdausss/seev"
 // the rules (or no Go code at all).
 var skipDirs = map[string]bool{
 	".git": true, ".github": true, ".claude": true, "docs": true,
-	"api": true, "gen": true, "migrations": true, "scripts": true, "vendor": true,
+	".worktrees": true,
+	"api":        true, "gen": true, "migrations": true, "scripts": true, "vendor": true,
 }
 
 // mutuallyExclusive lists module pairs that must never import each other —
@@ -170,7 +171,7 @@ func TestModuleBoundaries(t *testing.T) {
 			// internal/config. pkg/* and gen/* were handled before this branch.
 			sharedVendorGateway := impMod == "vendorgw" && (command == "payin-service" || command == "payout-service")
 			sharedVendorBoundary := impMod == "vendorboundary" && (command == "payin-service" || command == "payout-service")
-			sharedInfrastructure := impMod == "config" || impMod == "server"
+			sharedInfrastructure := impMod == "config" || impMod == "server" || impMod == "migrationkit"
 			if command != "" && !sharedInfrastructure && !sharedVendorGateway && !sharedVendorBoundary && !serviceModules[command][impMod] {
 				violations = append(violations,
 					rel+" imports "+short+" — cmd/"+command+" does not own internal/"+impMod)

@@ -8,7 +8,9 @@ readiness assertion.
 
 ## Verified baseline
 
-- Nine deployable Go services are built by the root `Dockerfile`.
+- Nine core deployable Go services are built by the root `Dockerfile`; the
+  optional `mock-push-provider` support binary is built for the notifications
+  profile but is not counted as a business service.
 - The runtime image is `gcr.io/distroless/static-debian12:nonroot`, with
   `CGO_ENABLED=0`, `/app/service` as entrypoint, and migrations copied into the
   image.

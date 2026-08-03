@@ -7,7 +7,7 @@
 > observe, or recover the software. Terms are defined in the
 > [glossary](../reference/glossary.md).
 
-[Services](../reference/services.md) covers what the nine services *do*; this
+[Services](../reference/services.md) covers what the nine core services *do*; this
 document covers everything that builds, verifies, runs, and observes
 them: `docker-compose.yml`, `Makefile`, `scripts/`, `.github/` (CI), and
 `deploy/observability/`. Every claim below was checked directly against
@@ -32,7 +32,7 @@ services it exercises.
 
 ## 1. Docker Compose — the local infrastructure
 
-**Problem it solves**: nine services, three default infrastructure
+**Problem it solves**: nine core services, three default infrastructure
 dependencies (Postgres, Redis, RabbitMQ), optional Vault/object-store setup,
 and a six-component observability stack all need to run reproducibly on a laptop,
 without the services accidentally trusting each other more than they
@@ -45,7 +45,7 @@ profiles, so you only start what you actually need:
 |---|---|---|
 | *(default, no profile)* | Postgres, Redis, RabbitMQ | Always — the minimum for running services as host binaries |
 | `secrets` | Vault (dev-mode) | Only when exercising the optional `vaultGetenv` secrets path (`scripts/vault-seed.sh`) |
-| `app` | Object-store initialization plus all 9 services, built from source | Full-stack container testing (`scripts/smoke-container.sh`, CI's `smoke-container` job) |
+| `app` | Object-store initialization plus all 9 core services, built from source | Full-stack container testing (`scripts/smoke-container.sh`, CI's `smoke-container` job) |
 | `observability` | Prometheus, Grafana, Loki, Tempo, Alloy, a restricted Docker socket proxy | Local dashboards/tracing/log exploration — never required to run or test the system |
 
 **How this solves the problem**:
@@ -199,7 +199,7 @@ marked green.
 | `rebuild-projection.sh` (+ `sql/rebuild_projection.sql`) | Point-in-time proof that `account_balances` can be rebuilt 100% from the append-only `ledger_entries` — the empirical backing for "the projection is derived state, the ledger is truth." Refuses to run while the app is live, since rebuilding under concurrent posting traffic would race the posting engine's own balance writes. |
 | `vault-seed.sh` | Idempotently seeds local dev-mode Vault with the subset of secrets safe to source that way — re-running never rotates an already-seeded value. |
 | `product-assurance.sh` | The operator CLI for Assurance's admin surfaces — summary, findings lifecycle, intake pause/resume — documented in [docs/operations/runbooks/product-assurance.md](runbooks/product-assurance.md). |
-| `postgres-init/{01,02,03}-*.sh` | Compose's Postgres bootstrap: create the app role, create each service's own database, run each service's own migration set — this is what turns one Postgres container into nine properly-isolated per-service databases on first boot. |
+| `postgres-init/{01,02,03}-*.sh` | Compose's Postgres bootstrap: create the app role, create each core service's own database, run each service's own migration set — this is what turns one Postgres container into nine properly-isolated per-service databases on first boot. |
 | `ci/check-action-pins.sh` | See §4 — the repo-local supply-chain gate for GitHub Actions. |
 
 ---

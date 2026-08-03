@@ -16,6 +16,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 
 	"github.com/herdifirdausss/seev/internal/notify/model"
 )
@@ -34,6 +36,7 @@ const (
 var headerUnsafe = regexp.MustCompile(`[\r\n]`)
 var minorPattern = regexp.MustCompile(`^-?[0-9]+$`)
 var currencyPattern = regexp.MustCompile(`^[A-Z]{3}$`)
+var titleCaser = cases.Title(language.English)
 
 type Version struct {
 	ID               uuid.UUID
@@ -97,7 +100,7 @@ func (r *Renderer) Render(version Version, context model.RenderContext) (Rendere
 		"formatMoney":    FormatMoney,
 		"formatDate":     func(value time.Time) string { return value.Format("2006-01-02") },
 		"formatDateTime": func(value time.Time) string { return value.UTC().Format(time.RFC3339) },
-		"upper":          strings.ToUpper, "lower": strings.ToLower, "title": strings.Title,
+		"upper":          strings.ToUpper, "lower": strings.ToLower, "title": titleCaser.String,
 	}
 	renderText := func(name, source string) (string, error) {
 		if source == "" {
@@ -139,7 +142,7 @@ func (r *Renderer) Render(version Version, context model.RenderContext) (Rendere
 			"formatMoney":    FormatMoney,
 			"formatDate":     func(value time.Time) string { return value.Format("2006-01-02") },
 			"formatDateTime": func(value time.Time) string { return value.UTC().Format(time.RFC3339) },
-			"upper":          strings.ToUpper, "lower": strings.ToLower, "title": strings.Title,
+			"upper":          strings.ToUpper, "lower": strings.ToLower, "title": titleCaser.String,
 		}
 		t, err := htmltemplate.New("body_html").Option("missingkey=error").Funcs(htmlFuncs).Parse(version.BodyHTMLTemplate)
 		if err != nil {
@@ -182,7 +185,7 @@ func (r *Renderer) RenderDigest(version Version, context model.DigestRenderConte
 	}
 	textFuncs := texttemplate.FuncMap{
 		"formatDate": func(value string) string { return value },
-		"upper":      strings.ToUpper, "lower": strings.ToLower, "title": strings.Title,
+		"upper":      strings.ToUpper, "lower": strings.ToLower, "title": titleCaser.String,
 	}
 	renderText := func(name, source string) (string, error) {
 		if source == "" {
@@ -220,7 +223,7 @@ func (r *Renderer) RenderDigest(version Version, context model.DigestRenderConte
 	if version.BodyHTMLTemplate != "" {
 		t, err := htmltemplate.New("body_html").Option("missingkey=error").Funcs(htmltemplate.FuncMap{
 			"formatDate": func(value string) string { return value },
-			"upper":      strings.ToUpper, "lower": strings.ToLower, "title": strings.Title,
+			"upper":      strings.ToUpper, "lower": strings.ToLower, "title": titleCaser.String,
 		}).Parse(version.BodyHTMLTemplate)
 		if err != nil {
 			return Rendered{}, fmt.Errorf("parse body_html: %w", err)

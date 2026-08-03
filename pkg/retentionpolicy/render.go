@@ -67,7 +67,9 @@ func RenderMarkdown(p *Policy) string {
 		}
 	}
 
-	return b.String()
+	// Keep generated Markdown to one trailing newline so repository-wide
+	// whitespace checks remain clean.
+	return strings.TrimSuffix(b.String(), "\n")
 }
 
 func ownerOrder(entries []Entry) []string {

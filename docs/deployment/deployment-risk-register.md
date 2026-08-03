@@ -15,11 +15,11 @@ converted into a manifest default.
 | K0-F-008 | Backup repository and restore evidence are UNKNOWN | high | K7 | operations-only; no K0 recovery claim |
 | K0-F-009 | Observability stack overhead is not mixed into app baseline | medium | K7 | separate R6 measurement |
 | K0-F-010 | No production data or secret values may enter evidence | blocker | all tracks | validator and evidence policy enforce this |
-| K0-F-011 | The current modified `cmd/gateway/main.go` wires C3 notification channels that are absent from this worktree; `make verify-static` and fresh `make k0-inventory` therefore fail before their gates can complete | blocker | C3 implementation owner / K0 handoff | hold K1; land the missing packages/API or restore compatible gateway wiring, then rerun `make verify-static` and `make k0-inventory` |
+| K0-F-011 | Resolved: the C3 notification channel packages are present in the current checkout, and both `make verify-static` and `make k0-inventory` pass | resolved | C3 implementation owner / K0 handoff | retain the record for traceability; K1 remains conditional on K0 runtime evidence and review |
 
-K0 entry decision: the inventory contract is complete, but K1 is currently
-blocked by K0-F-011. Once the current worktree passes `make verify-static`, the
-first synthetic deployment can proceed to K1–K6 with the remaining
+K0 entry decision: the inventory contract and static gates are complete, but K1
+is still conditional on runtime evidence and human review. Once that decision
+is recorded, the first synthetic deployment can proceed to K1–K6 with the remaining
 downstream-owned findings. The real vendor and production backup paths cannot
 proceed until their rows leave the deferred state.
 

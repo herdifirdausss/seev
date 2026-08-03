@@ -95,9 +95,9 @@ func (s *Server) Post(ctx context.Context, req *ledgerv1.PostRequest) (*ledgerv1
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "merchant_tenant_id: %v", err)
 	}
-	var metadata map[string]any
+	var commandMetadata map[string]any
 	if req.Metadata != nil {
-		metadata = req.Metadata.AsMap()
+		commandMetadata = req.Metadata.AsMap()
 	}
 	// request_id sourced from the gRPC ctx (populated by pkg/grpcx's server
 	// interceptor from the x-request-id metadata the caller's client
@@ -105,10 +105,10 @@ func (s *Server) Post(ctx context.Context, req *ledgerv1.PostRequest) (*ledgerv1
 	// map (AsMap above), not a reference the caller can observe, so setting
 	// it here can't leak into or mutate the caller's own request object.
 	if id := middleware.RequestIDFromCtx(ctx); id != "" {
-		if metadata == nil {
-			metadata = make(map[string]any, 1)
+		if commandMetadata == nil {
+			commandMetadata = make(map[string]any, 1)
 		}
-		metadata["request_id"] = id
+		commandMetadata["request_id"] = id
 	}
 	requestedCurrency := ""
 	if incoming, ok := metadata.FromIncomingContext(ctx); ok {
@@ -119,7 +119,7 @@ func (s *Server) Post(ctx context.Context, req *ledgerv1.PostRequest) (*ledgerv1
 	err = s.service.Post(ctx, processors.Command{
 		IdempotencyKey: req.GetIdempotencyKey(), IdempotencyScope: req.GetIdempotencyScope(),
 		Type: req.GetType(), Amount: amount, UserID: userID, TargetUserID: targetUserID,
-		PocketCode: req.GetPocketCode(), Currency: requestedCurrency, ReferenceID: referenceID, Metadata: metadata,
+		PocketCode: req.GetPocketCode(), Currency: requestedCurrency, ReferenceID: referenceID, Metadata: commandMetadata,
 		MerchantTenantID: merchantTenantID,
 	})
 	if err != nil {

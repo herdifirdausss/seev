@@ -1,5 +1,5 @@
 version: 1
-baseline_commit: ff21bf186f95431a386b339ee3a1409e49a7e1b0
+baseline_commit: 1fa942950145b368fd46058a315ddc163275625d
 generated: true
 value_policy: configuration names only; values are never recorded
 keys:
@@ -203,6 +203,14 @@ keys:
     default: UNKNOWN
     reloadable: UNKNOWN
     source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: AUTH_INTERNAL_API_URL
+    owner: auth
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
   - name: AUTH_SERVICE_URL
     owner: auth
     sensitive: false
@@ -236,6 +244,14 @@ keys:
     reloadable: UNKNOWN
     source_refs: [.env.example, internal/config, Compose/service wiring]
   - name: BREAKER_FAILURE_THRESHOLD
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: C5_FINANCIAL_PRODUCTS_ENABLED
     owner: shared-platform
     sensitive: false
     kubernetes_target: ConfigMap
@@ -303,6 +319,30 @@ keys:
     owner: shared-platform
     sensitive: true
     kubernetes_target: Secret
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: DATA_MIGRATION_DISABLE_TARGET_WRITES
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: DATA_MIGRATION_EMERGENCY_SOURCE_READ
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: DATA_MIGRATION_ENABLED
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
     required: UNKNOWN
     default: UNKNOWN
     reloadable: UNKNOWN
@@ -652,6 +692,254 @@ keys:
     reloadable: UNKNOWN
     source_refs: [.env.example, internal/config, Compose/service wiring]
   - name: MOCKVENDOR2_SECRET
+    owner: shared-platform
+    sensitive: true
+    kubernetes_target: Secret
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: NOTIFY_CONTACT_WORKERS
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: NOTIFY_DEFAULT_DIGEST_HOUR
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: NOTIFY_DEFAULT_LOCALE
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: NOTIFY_DEFAULT_TIMEZONE
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: NOTIFY_DELIVERY_BATCH_SIZE
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: NOTIFY_DELIVERY_LEASE_DURATION
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: NOTIFY_DIGEST_ENABLED
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: NOTIFY_DIGEST_WORKERS
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: NOTIFY_EMAIL_ENABLED
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: NOTIFY_EMAIL_WORKERS
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: NOTIFY_ENABLED
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: NOTIFY_EVENT_MAX_DELIVERY_ATTEMPTS
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: NOTIFY_EVENT_PREFETCH
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: NOTIFY_INAPP_ENABLED
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: NOTIFY_MAX_DEVICES
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: NOTIFY_PROVIDER_TIMEOUT
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: NOTIFY_PUSH_ENABLED
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: NOTIFY_PUSH_PROVIDER_TOKEN
+    owner: shared-platform
+    sensitive: true
+    kubernetes_target: Secret
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: NOTIFY_PUSH_PROVIDER_TOKEN_FILE
+    owner: shared-platform
+    sensitive: true
+    kubernetes_target: Secret
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: NOTIFY_PUSH_PROVIDER_URL
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: NOTIFY_PUSH_WORKERS
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: NOTIFY_SMTP_FROM
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: NOTIFY_SMTP_HOST
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: NOTIFY_SMTP_PASSWORD
+    owner: shared-platform
+    sensitive: true
+    kubernetes_target: Secret
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: NOTIFY_SMTP_PASSWORD_FILE
+    owner: shared-platform
+    sensitive: true
+    kubernetes_target: Secret
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: NOTIFY_SMTP_PORT
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: NOTIFY_SMTP_REPLY_TO
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: NOTIFY_SMTP_TLS_MODE
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: NOTIFY_SMTP_USERNAME
+    owner: shared-platform
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: NOTIFY_TOKEN_FINGERPRINT_KEY
+    owner: shared-platform
+    sensitive: true
+    kubernetes_target: Secret
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: NOTIFY_TOKEN_FINGERPRINT_KEY_FILE
     owner: shared-platform
     sensitive: true
     kubernetes_target: Secret
@@ -1124,6 +1412,14 @@ keys:
     reloadable: UNKNOWN
     source_refs: [.env.example, internal/config, Compose/service wiring]
   - name: SCREENING_AMOUNT_THRESHOLD
+    owner: fraud
+    sensitive: false
+    kubernetes_target: ConfigMap
+    required: UNKNOWN
+    default: UNKNOWN
+    reloadable: UNKNOWN
+    source_refs: [.env.example, internal/config, Compose/service wiring]
+  - name: SCREENING_AMOUNT_THRESHOLDS
     owner: fraud
     sensitive: false
     kubernetes_target: ConfigMap

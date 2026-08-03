@@ -7,6 +7,7 @@ one according to the question you are answering.
 
 | Question | Document |
 |---|---|
+| What is implemented and verified in the current checkout? | [Current state](current-state.md) |
 | Why is the system designed this way? | [Architecture](architecture.md) |
 | What does each service own and expose? | [Services](services.md) |
 | What belongs in shared `pkg/` code? | [Shared packages](shared-packages.md) |

@@ -25,38 +25,38 @@ type FXReconciliationReader interface {
 }
 
 type FXReconciliationReport struct {
-	From       time.Time                 `json:"from"`
-	To         time.Time                 `json:"to"`
-	Total      int                      `json:"total"`
-	Reconciled int                      `json:"reconciled"`
-	Critical   int                      `json:"critical"`
+	From       time.Time                  `json:"from"`
+	To         time.Time                  `json:"to"`
+	Total      int                        `json:"total"`
+	Reconciled int                        `json:"reconciled"`
+	Critical   int                        `json:"critical"`
 	Items      []FXReconciliationEvidence `json:"items"`
 }
 
 type FXReconciliationEvidence struct {
-	ResourceType           string    `json:"resource_type"`
-	ResourceID             string    `json:"resource_id"`
-	ConversionID        string    `json:"conversion_id"`
-	QuoteID             string    `json:"quote_id"`
-	SourceCurrency      string    `json:"source_currency"`
-	TargetCurrency      string    `json:"target_currency"`
-	SourceAmount        string    `json:"source_amount"`
-	TargetAmount        string    `json:"target_amount"`
-	SourceTransactionID  string    `json:"source_transaction_id"`
-	TargetTransactionID  string    `json:"target_transaction_id"`
-	SourceLegStatus     string    `json:"source_leg_status"`
-	TargetLegStatus     string    `json:"target_leg_status"`
-	SourceLinkValid     bool      `json:"source_link_valid"`
-	TargetLinkValid     bool      `json:"target_link_valid"`
-	SourceLegBalanced   bool      `json:"source_leg_balanced"`
-	TargetLegBalanced   bool      `json:"target_leg_balanced"`
-	QuoteValid          bool      `json:"quote_valid"`
-	PositionAccountsValid bool    `json:"position_accounts_valid"`
-	PositionBalancesValid bool    `json:"position_balances_valid"`
-	AggregateEventPresent bool   `json:"aggregate_event_present"`
-	Status              string    `json:"status"`
-	Reason              string    `json:"reason"`
-	CheckedAt           time.Time `json:"checked_at"`
+	ResourceType          string    `json:"resource_type"`
+	ResourceID            string    `json:"resource_id"`
+	ConversionID          string    `json:"conversion_id"`
+	QuoteID               string    `json:"quote_id"`
+	SourceCurrency        string    `json:"source_currency"`
+	TargetCurrency        string    `json:"target_currency"`
+	SourceAmount          string    `json:"source_amount"`
+	TargetAmount          string    `json:"target_amount"`
+	SourceTransactionID   string    `json:"source_transaction_id"`
+	TargetTransactionID   string    `json:"target_transaction_id"`
+	SourceLegStatus       string    `json:"source_leg_status"`
+	TargetLegStatus       string    `json:"target_leg_status"`
+	SourceLinkValid       bool      `json:"source_link_valid"`
+	TargetLinkValid       bool      `json:"target_link_valid"`
+	SourceLegBalanced     bool      `json:"source_leg_balanced"`
+	TargetLegBalanced     bool      `json:"target_leg_balanced"`
+	QuoteValid            bool      `json:"quote_valid"`
+	PositionAccountsValid bool      `json:"position_accounts_valid"`
+	PositionBalancesValid bool      `json:"position_balances_valid"`
+	AggregateEventPresent bool      `json:"aggregate_event_present"`
+	Status                string    `json:"status"`
+	Reason                string    `json:"reason"`
+	CheckedAt             time.Time `json:"checked_at"`
 }
 
 type fxReconciliationHTTPClient struct {
@@ -94,12 +94,12 @@ func (c *fxReconciliationHTTPClient) ReconcileFXConversions(ctx context.Context,
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
-		return FXReconciliationReport{}, fmt.Errorf("build Ledger FX reconciliation request: %w", err)
+		return FXReconciliationReport{}, fmt.Errorf("build ledger FX reconciliation request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+c.token)
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return FXReconciliationReport{}, fmt.Errorf("Ledger FX reconciliation request: %w", err)
+		return FXReconciliationReport{}, fmt.Errorf("ledger FX reconciliation request: %w", err)
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
@@ -107,21 +107,23 @@ func (c *fxReconciliationHTTPClient) ReconcileFXConversions(ctx context.Context,
 		return FXReconciliationReport{}, fmt.Errorf("read Ledger FX reconciliation response: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return FXReconciliationReport{}, fmt.Errorf("Ledger FX reconciliation returned %s: %s", resp.Status, bytes.TrimSpace(body))
+		return FXReconciliationReport{}, fmt.Errorf("ledger FX reconciliation returned %s: %s", resp.Status, bytes.TrimSpace(body))
 	}
 	var wire struct {
 		Success bool                   `json:"success"`
 		Data    FXReconciliationReport `json:"data"`
-		Error   *struct{ Message string `json:"message"` } `json:"error,omitempty"`
+		Error   *struct {
+			Message string `json:"message"`
+		} `json:"error,omitempty"`
 	}
 	if err := json.Unmarshal(body, &wire); err != nil {
-		return FXReconciliationReport{}, fmt.Errorf("decode Ledger FX reconciliation response: %w", err)
+		return FXReconciliationReport{}, fmt.Errorf("decode ledger FX reconciliation response: %w", err)
 	}
 	if !wire.Success {
 		if wire.Error != nil && wire.Error.Message != "" {
-			return FXReconciliationReport{}, fmt.Errorf("Ledger FX reconciliation failed: %s", wire.Error.Message)
+			return FXReconciliationReport{}, fmt.Errorf("ledger FX reconciliation failed: %s", wire.Error.Message)
 		}
-		return FXReconciliationReport{}, errors.New("Ledger FX reconciliation failed")
+		return FXReconciliationReport{}, errors.New("ledger FX reconciliation failed")
 	}
 	return wire.Data, nil
 }
@@ -209,21 +211,21 @@ func fxFinding(item FXReconciliationEvidence, resourceID string) (Finding, bool,
 		reason = "FX conversion reconciliation discrepancy"
 	}
 	evidence := map[string]string{
-		"resource_type":          item.ResourceType,
-		"resource_id":            resourceID,
-		"status":              item.Status,
-		"reason":              reason,
-		"quote_id":            item.QuoteID,
-		"source_currency":     item.SourceCurrency,
-		"target_currency":     item.TargetCurrency,
-		"source_amount":       item.SourceAmount,
-		"target_amount":       item.TargetAmount,
-		"source_leg_status":    item.SourceLegStatus,
-		"target_leg_status":    item.TargetLegStatus,
-		"source_link_valid":    fmt.Sprintf("%t", item.SourceLinkValid),
-		"target_link_valid":    fmt.Sprintf("%t", item.TargetLinkValid),
-		"source_leg_balanced":  fmt.Sprintf("%t", item.SourceLegBalanced),
-		"target_leg_balanced":  fmt.Sprintf("%t", item.TargetLegBalanced),
+		"resource_type":           item.ResourceType,
+		"resource_id":             resourceID,
+		"status":                  item.Status,
+		"reason":                  reason,
+		"quote_id":                item.QuoteID,
+		"source_currency":         item.SourceCurrency,
+		"target_currency":         item.TargetCurrency,
+		"source_amount":           item.SourceAmount,
+		"target_amount":           item.TargetAmount,
+		"source_leg_status":       item.SourceLegStatus,
+		"target_leg_status":       item.TargetLegStatus,
+		"source_link_valid":       fmt.Sprintf("%t", item.SourceLinkValid),
+		"target_link_valid":       fmt.Sprintf("%t", item.TargetLinkValid),
+		"source_leg_balanced":     fmt.Sprintf("%t", item.SourceLegBalanced),
+		"target_leg_balanced":     fmt.Sprintf("%t", item.TargetLegBalanced),
 		"quote_valid":             fmt.Sprintf("%t", item.QuoteValid),
 		"position_accounts_valid": fmt.Sprintf("%t", item.PositionAccountsValid),
 		"position_balances_valid": fmt.Sprintf("%t", item.PositionBalancesValid),

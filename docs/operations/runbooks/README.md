@@ -36,6 +36,9 @@ and [Services](../../reference/services.md) for that.
 | Merchant webhook deliveries are backing up or dead-lettering | [Merchant webhook backlog](merchant-webhook-backlog.md) | Diagnose the endpoint before replaying; replay reuses the original event id |
 | A merchant reports a leaked webhook signing secret | [Merchant webhook secret compromise](merchant-webhook-secret-compromise.md) | In-flight retries keep using the old secret until they drain |
 | Ledger/Payin/Payout is unreachable from merchant traffic | [Merchant owner-service outage](merchant-owner-service-outage.md) | Merchants must retry with the SAME idempotency key, never a new one |
+| Analytics CDC or OLAP ingestion is stalled | [Analytics ingestion](analytics-clickhouse-ingestion-stalled.md) | Keep the OLTP source authoritative; do not repair facts in the warehouse |
+| Analytics replication, connector, or dbt health is degraded | [Analytics connector](analytics-connector-failed.md), [source WAL](analytics-source-wal-pressure.md), or [dbt failure](analytics-dbt-failure.md) | Check lag and retention before restarting or rebuilding |
+| A notification queue, template, provider, or recipient flow is failing | [Notification provider](notification-provider-outage.md), [delivery backlog](notification-email-backlog.md), or [template incident](notification-template-incident.md) | Preserve the durable notification state; do not send outside the delivery ledger |
 
 | Runbook | Covers |
 |---|---|
@@ -43,7 +46,7 @@ and [Services](../../reference/services.md) for that.
 | [cryptox-key-rotation.md](cryptox-key-rotation.md) | Rotating the shared pkg/cryptox encryption key ring (expand/backfill/contract) |
 | [handshake-failure-response.md](handshake-failure-response.md) | Responding to a rise in mTLS handshake failures (`tlsx_handshake_failures_total`) |
 | [ledger-integrity-alert.md](ledger-integrity-alert.md) | Responding to a trial-balance or projection-audit discrepancy alert |
-| [dr-restore-drill.md](dr-restore-drill.md) | Restoring all nine service databases from backup (latest or PITR) and proving it's safe to serve traffic again |
+| [dr-restore-drill.md](dr-restore-drill.md) | Restoring all nine core service databases from backup (latest or PITR) and proving it's safe to serve traffic again |
 | [backup-failure.md](backup-failure.md) | Recovering from a missed or failed scheduled full/differential backup |
 | [wal-archive-lag.md](wal-archive-lag.md) | Recovering from stalled continuous WAL archiving before the RPO budget is exceeded |
 | [repository-corruption.md](repository-corruption.md) | Handling a pgBackRest repository check failure without losing the other retained chain |
@@ -64,6 +67,8 @@ and [Services](../../reference/services.md) for that.
 | [merchant-webhook-backlog.md](merchant-webhook-backlog.md) | Diagnosing webhook delivery backlog/dead-letters and replaying eligible deliveries |
 | [merchant-webhook-secret-compromise.md](merchant-webhook-secret-compromise.md) | Rotating a merchant webhook endpoint's signing secret and handling the in-flight overlap window |
 | [merchant-owner-service-outage.md](merchant-owner-service-outage.md) | Merchant-facing impact of a Ledger/Payin/Payout outage and why same-key retries are safe |
+| [analytics-*.md](.) | C2 CDC, OLAP ingestion, dbt, reconciliation, rebuild, and sensitive-data incident procedures |
+| [notification-*.md](.) | C3 notification event, template, provider, channel, backlog, and recipient-protection procedures |
 
 Each runbook is self-contained: what triggers it, what to check, and the
 exact commands to run — no need to read another document first to act on

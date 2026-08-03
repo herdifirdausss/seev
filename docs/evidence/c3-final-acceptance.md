@@ -2,10 +2,10 @@
 
 ## Current disposition
 
-Implementation and operational artifacts are present in the C3 worktree. This
-record remains **pending acceptance** because the requested pass was limited to
-code changes and deliberately did not run tests, builds, migrations, services,
-provider journeys, load checks, or chaos drills.
+Implementation and operational artifacts are present in the current main
+checkout. This record remains **pending acceptance** because the static gate
+does not replace tests, migrations, services, provider journeys, load checks,
+or chaos drills.
 
 ## Evidence checklist
 
@@ -20,7 +20,7 @@ provider journeys, load checks, or chaos drills.
 | mock push | pending | accepted, duplicate, invalid-token, and outage assertions |
 | digest | pending | timezone/window/empty-window/recovery assertions |
 | retention and privacy closure/export | pending | closure/export evidence and retention checks |
-| observability and runbooks | implemented as artifacts | [alerts](../../deploy/observability/prometheus/rules/notifications.yml), [dashboard](../../deploy/observability/grafana/dashboards/notifications-c3.json), [runbooks](../runbooks/notification-provider-outage.md) |
+| observability and runbooks | implemented as artifacts | [alerts](../../deploy/observability/prometheus/rules/notifications.yml), [dashboard](../../deploy/observability/grafana/dashboards/notifications-c3.json), [runbooks](../operations/runbooks/notification-provider-outage.md) |
 
 The plan must remain active until the pending rows have reproducible command
 logs and residual risks are reviewed. No financial correctness claim depends on

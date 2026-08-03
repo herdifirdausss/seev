@@ -1,23 +1,123 @@
- M .gitignore
+ M Dockerfile
  M Makefile
- M cmd/gateway/main.go
- M cmd/vendor-service/main.go
+ M README.md
+ M analytics/reconciliation/cmd/reconcile/main.go
+ M analytics/reconciliation/internal/contract/validate.go
+ M analytics/reconciliation/internal/contract/validate_test.go
+ M api/contracts/surfaces.yaml
+ M api/openapi/dist/internal-v1.yaml
+ M api/openapi/dist/public-v1.yaml
+ M api/openapi/public-v1.yaml
+ M boundary_test.go
+ M config/data-retention.yaml
+ M deploy/inventory/configuration.yaml
+ M docs/README.md
+ M docs/data/retention.md
+ M docs/deployment/deployment-risk-register.md
+ M docs/deployment/feature-scope.md
+ M docs/deployment/k1-input-contract.md
+ M docs/deployment/service-runtime-inventory.md
+ M docs/development/project-guide.md
+ M docs/evidence/c2-final-acceptance.md
+ M docs/evidence/c3-entry-gate.md
+ M docs/evidence/c3-final-acceptance.md
+ M docs/evidence/k0-deployment-inventory.md
+ M docs/evidence/k0/baseline.md
+ M docs/evidence/k0/command-output/cmd-directories.txt
+ M docs/evidence/k0/command-output/configuration-key-sources.txt
+ M docs/evidence/k0/command-output/filesystem-free-space.txt
+ M docs/evidence/k0/command-output/git-log-1.txt
+ M docs/evidence/k0/command-output/git-rev-parse-head.txt
+ M docs/evidence/k0/command-output/git-status-current.txt
+ M docs/evidence/k0/command-output/go-cmd-packages.txt
+ M docs/evidence/k0/compose-normalized.yaml
+ M docs/evidence/k0/final-acceptance.md
+ M docs/evidence/k0/generated/compose-runtime-shape.json
+ M docs/evidence/k0/generated/configuration-key-names.txt
+ M docs/evidence/k0/generated/inventory-sha256.txt
+ M docs/evidence/k0/verification/static-gate-summary.md
+ M docs/evidence/plan-63-implementation-status.md
+ M docs/learn/beginner-guide.md
+ M docs/operations/README.md
+ M docs/operations/runbooks/README.md
+R  docs/runbooks/analytics-clickhouse-ingestion-stalled.md -> docs/operations/runbooks/analytics-clickhouse-ingestion-stalled.md
+R  docs/runbooks/analytics-connector-failed.md -> docs/operations/runbooks/analytics-connector-failed.md
+R  docs/runbooks/analytics-dbt-failure.md -> docs/operations/runbooks/analytics-dbt-failure.md
+R  docs/runbooks/analytics-full-rebuild.md -> docs/operations/runbooks/analytics-full-rebuild.md
+R  docs/runbooks/analytics-metabase-outage.md -> docs/operations/runbooks/analytics-metabase-outage.md
+R  docs/runbooks/analytics-reconciliation-failed.md -> docs/operations/runbooks/analytics-reconciliation-failed.md
+R  docs/runbooks/analytics-redpanda-outage.md -> docs/operations/runbooks/analytics-redpanda-outage.md
+R  docs/runbooks/analytics-replication-slot-lag.md -> docs/operations/runbooks/analytics-replication-slot-lag.md
+R  docs/runbooks/analytics-schema-change.md -> docs/operations/runbooks/analytics-schema-change.md
+R  docs/runbooks/analytics-sensitive-data-incident.md -> docs/operations/runbooks/analytics-sensitive-data-incident.md
+R  docs/runbooks/analytics-source-wal-pressure.md -> docs/operations/runbooks/analytics-source-wal-pressure.md
+R  docs/runbooks/notification-auth-contact-outage.md -> docs/operations/runbooks/notification-auth-contact-outage.md
+R  docs/runbooks/notification-channel-pause.md -> docs/operations/runbooks/notification-channel-pause.md
+R  docs/runbooks/notification-dead-delivery.md -> docs/operations/runbooks/notification-dead-delivery.md
+R  docs/runbooks/notification-device-token-compromise.md -> docs/operations/runbooks/notification-device-token-compromise.md
+R  docs/runbooks/notification-digest-lag.md -> docs/operations/runbooks/notification-digest-lag.md
+R  docs/runbooks/notification-duplicate-external-delivery.md -> docs/operations/runbooks/notification-duplicate-external-delivery.md
+R  docs/runbooks/notification-email-backlog.md -> docs/operations/runbooks/notification-email-backlog.md
+R  docs/runbooks/notification-event-dlq.md -> docs/operations/runbooks/notification-event-dlq.md
+R  docs/runbooks/notification-provider-outage.md -> docs/operations/runbooks/notification-provider-outage.md
+R  docs/runbooks/notification-push-backlog.md -> docs/operations/runbooks/notification-push-backlog.md
+R  docs/runbooks/notification-recipient-data-exposure.md -> docs/operations/runbooks/notification-recipient-data-exposure.md
+R  docs/runbooks/notification-template-incident.md -> docs/operations/runbooks/notification-template-incident.md
+R  docs/runbooks/notification-template-missing.md -> docs/operations/runbooks/notification-template-missing.md
+ M docs/reference/README.md
+ M docs/reference/analytics-source-inventory.md
+ M docs/reference/current-services.md
+ M docs/reference/notification-delivery.md
+ M docs/reference/services.md
+ M docs/reference/traceability.md
+ M docs/roadmap/42-long-term-roadmap.md
+ M docs/roadmap/README.md
+ M docs/roadmap/active/58-c2-data-platform-revenue-analytics.md
+ M docs/roadmap/active/59-c3-multi-channel-notifications.md
+ M docs/roadmap/active/60-c4-end-to-end-multi-currency.md
+ M docs/roadmap/active/61-c5-advanced-financial-products-period-close.md
+ M docs/roadmap/active/62-c6-zero-downtime-migration-engine.md
+ M docs/roadmap/active/64-k0-deployment-inventory-baseline.md
+ M docs/security/threat-model.md
+ M internal/assurance/fx.go
  M internal/config/config.go
- M scripts/business-e2e.sh
-?? .github/workflows/kubernetes-validate.yml
-?? cmd/migrate/
-?? deploy/README.md
-?? deploy/gitops/
-?? deploy/helm/
-?? deploy/inventory/
-?? deploy/kubernetes/
-?? deploy/terraform/
-?? docs/deployment/
-?? docs/evidence/k0-deployment-inventory.md
-?? docs/evidence/k0/
-?? docs/evidence/plan-63-implementation-status.md
-?? pkg/egressproxy/
-?? scripts/deployment-inventory-check.sh
-?? scripts/deployment-inventory-generate.sh
-?? scripts/deployment-network-probe.sh
-?? scripts/deployment-resource-sample.sh
+ M internal/config/config_test.go
+ M internal/ledger/feepolicy/cache.go
+ M internal/ledger/grpcserver/server.go
+ M internal/ledger/migration/balancev2/control.go
+ M internal/ledger/migration/balancev2/metrics.go
+ M internal/ledger/migration/balancev2/repository.go
+ M internal/ledger/migration/balancev2/runtime.go
+ M internal/ledger/migration/balancev2/types.go
+ M internal/ledger/migration/balancev2/worker.go
+ M internal/ledger/processors/fx_rebalance.go
+ M internal/ledger/service/fx/admin.go
+ M internal/ledger/service/fx/reconciliation.go
+ M internal/ledger/service/fx/service.go
+ M internal/ledger/service/handle/service.go
+ M internal/ledger/service/interest/service.go
+ M internal/ledger/service/provision/provision_test.go
+ M internal/ledger/service/schedule/c5_policy.go
+ M internal/ledger/service/schedule/durable.go
+ M internal/ledger/transport/c5_http.go
+ M internal/ledger/transport/dto.go
+ M internal/ledger/transport/http.go
+ M internal/ledger/transport/http_multi_currency.go
+ M internal/migrationkit/sampling.go
+ M internal/notify/admin_http.go
+ M internal/notify/delivery.go
+ M internal/notify/registry/registry.go
+ M internal/notify/repository/platform.go
+ M internal/notify/template/renderer.go
+ M internal/payin/grpcserver/server.go
+ M internal/payin/http_test.go
+ M internal/payin/merchant_test.go
+ M internal/payin/payin.go
+ M internal/payin/payin_test.go
+ M internal/payout/payout_test.go
+ M pkg/currency/currency.go
+ M pkg/currency/money.go
+ M pkg/retentionpolicy/render.go
+ M pkg/retentionworker/worker.go
+?? .worktrees/
+?? docs/reference/current-state.md

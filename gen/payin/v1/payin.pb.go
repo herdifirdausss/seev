@@ -397,9 +397,12 @@ func (x *HandleVendorCallbackResponse) GetResult() VendorCallbackResult {
 }
 
 type CreateTopupIntentRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
-	Amount        string                 `protobuf:"bytes,2,opt,name=amount,proto3" json:"amount,omitempty"`
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	UserId string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	Amount string                 `protobuf:"bytes,2,opt,name=amount,proto3" json:"amount,omitempty"`
+	// Ledger-owned fee quote. Required when the current top-up policy resolves
+	// a non-zero fee; omission remains compatible with fee-free legacy routes.
+	FeeQuoteId    string `protobuf:"bytes,3,opt,name=fee_quote_id,json=feeQuoteId,proto3" json:"fee_quote_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -444,6 +447,13 @@ func (x *CreateTopupIntentRequest) GetUserId() string {
 func (x *CreateTopupIntentRequest) GetAmount() string {
 	if x != nil {
 		return x.Amount
+	}
+	return ""
+}
+
+func (x *CreateTopupIntentRequest) GetFeeQuoteId() string {
+	if x != nil {
+		return x.FeeQuoteId
 	}
 	return ""
 }
@@ -589,19 +599,24 @@ func (x *GetTopupIntentResponse) GetIntent() *TopupIntent {
 }
 
 type TopupIntent struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Reference     string                 `protobuf:"bytes,2,opt,name=reference,proto3" json:"reference,omitempty"`
-	UserId        string                 `protobuf:"bytes,3,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
-	Amount        string                 `protobuf:"bytes,4,opt,name=amount,proto3" json:"amount,omitempty"`
-	Currency      string                 `protobuf:"bytes,5,opt,name=currency,proto3" json:"currency,omitempty"`
-	Vendor        string                 `protobuf:"bytes,6,opt,name=vendor,proto3" json:"vendor,omitempty"`
-	Status        string                 `protobuf:"bytes,7,opt,name=status,proto3" json:"status,omitempty"`
-	ExpiresAt     *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
-	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Id             string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Reference      string                 `protobuf:"bytes,2,opt,name=reference,proto3" json:"reference,omitempty"`
+	UserId         string                 `protobuf:"bytes,3,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	Amount         string                 `protobuf:"bytes,4,opt,name=amount,proto3" json:"amount,omitempty"`
+	Currency       string                 `protobuf:"bytes,5,opt,name=currency,proto3" json:"currency,omitempty"`
+	Vendor         string                 `protobuf:"bytes,6,opt,name=vendor,proto3" json:"vendor,omitempty"`
+	Status         string                 `protobuf:"bytes,7,opt,name=status,proto3" json:"status,omitempty"`
+	ExpiresAt      *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	CreatedAt      *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt      *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	FeeAmount      string                 `protobuf:"bytes,11,opt,name=fee_amount,json=feeAmount,proto3" json:"fee_amount,omitempty"`
+	TotalDebit     string                 `protobuf:"bytes,12,opt,name=total_debit,json=totalDebit,proto3" json:"total_debit,omitempty"`
+	FeeGateway     string                 `protobuf:"bytes,13,opt,name=fee_gateway,json=feeGateway,proto3" json:"fee_gateway,omitempty"`
+	FeeQuoteId     string                 `protobuf:"bytes,14,opt,name=fee_quote_id,json=feeQuoteId,proto3" json:"fee_quote_id,omitempty"`
+	FeeApplication string                 `protobuf:"bytes,15,opt,name=fee_application,json=feeApplication,proto3" json:"fee_application,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *TopupIntent) Reset() {
@@ -702,6 +717,41 @@ func (x *TopupIntent) GetUpdatedAt() *timestamppb.Timestamp {
 		return x.UpdatedAt
 	}
 	return nil
+}
+
+func (x *TopupIntent) GetFeeAmount() string {
+	if x != nil {
+		return x.FeeAmount
+	}
+	return ""
+}
+
+func (x *TopupIntent) GetTotalDebit() string {
+	if x != nil {
+		return x.TotalDebit
+	}
+	return ""
+}
+
+func (x *TopupIntent) GetFeeGateway() string {
+	if x != nil {
+		return x.FeeGateway
+	}
+	return ""
+}
+
+func (x *TopupIntent) GetFeeQuoteId() string {
+	if x != nil {
+		return x.FeeQuoteId
+	}
+	return ""
+}
+
+func (x *TopupIntent) GetFeeApplication() string {
+	if x != nil {
+		return x.FeeApplication
+	}
+	return ""
 }
 
 type CreateMerchantTopupIntentRequest struct {
@@ -1510,17 +1560,19 @@ const file_seev_payin_v1_payin_proto_rawDesc = "" +
 	"\x15unknown_vendor_status\x18\n" +
 	" \x01(\tR\x13unknownVendorStatus\"[\n" +
 	"\x1cHandleVendorCallbackResponse\x12;\n" +
-	"\x06result\x18\x01 \x01(\x0e2#.seev.payin.v1.VendorCallbackResultR\x06result\"K\n" +
+	"\x06result\x18\x01 \x01(\x0e2#.seev.payin.v1.VendorCallbackResultR\x06result\"m\n" +
 	"\x18CreateTopupIntentRequest\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x16\n" +
-	"\x06amount\x18\x02 \x01(\tR\x06amount\"@\n" +
+	"\x06amount\x18\x02 \x01(\tR\x06amount\x12 \n" +
+	"\ffee_quote_id\x18\x03 \x01(\tR\n" +
+	"feeQuoteId\"@\n" +
 	"\x15GetTopupIntentRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
 	"\auser_id\x18\x02 \x01(\tR\x06userId\"O\n" +
 	"\x19CreateTopupIntentResponse\x122\n" +
 	"\x06intent\x18\x01 \x01(\v2\x1a.seev.payin.v1.TopupIntentR\x06intent\"L\n" +
 	"\x16GetTopupIntentResponse\x122\n" +
-	"\x06intent\x18\x01 \x01(\v2\x1a.seev.payin.v1.TopupIntentR\x06intent\"\xe9\x02\n" +
+	"\x06intent\x18\x01 \x01(\v2\x1a.seev.payin.v1.TopupIntentR\x06intent\"\x95\x04\n" +
 	"\vTopupIntent\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1c\n" +
 	"\treference\x18\x02 \x01(\tR\treference\x12\x17\n" +
@@ -1535,7 +1587,16 @@ const file_seev_payin_v1_payin_proto_rawDesc = "" +
 	"created_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
 	"updated_at\x18\n" +
-	" \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\xbc\x01\n" +
+	" \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12\x1d\n" +
+	"\n" +
+	"fee_amount\x18\v \x01(\tR\tfeeAmount\x12\x1f\n" +
+	"\vtotal_debit\x18\f \x01(\tR\n" +
+	"totalDebit\x12\x1f\n" +
+	"\vfee_gateway\x18\r \x01(\tR\n" +
+	"feeGateway\x12 \n" +
+	"\ffee_quote_id\x18\x0e \x01(\tR\n" +
+	"feeQuoteId\x12'\n" +
+	"\x0ffee_application\x18\x0f \x01(\tR\x0efeeApplication\"\xbc\x01\n" +
 	" CreateMerchantTopupIntentRequest\x12\x1b\n" +
 	"\ttenant_id\x18\x01 \x01(\tR\btenantId\x12 \n" +
 	"\venvironment\x18\x02 \x01(\tR\venvironment\x12\x1a\n" +

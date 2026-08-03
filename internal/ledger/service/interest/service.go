@@ -21,11 +21,11 @@ import (
 )
 
 var (
-	ErrSnapshotMissing       = errors.New("interest snapshot missing")
-	ErrSavingsRateMissing    = errors.New("savings rate missing")
+	ErrSnapshotMissing        = errors.New("interest snapshot missing")
+	ErrSavingsRateMissing     = errors.New("savings rate missing")
 	ErrPriorAccrualIncomplete = errors.New("prior interest accrual is incomplete")
-	ErrPeriodNotReady        = errors.New("interest period not ready")
-	ErrClosedPeriodImmutable = errors.New("closed interest period is immutable")
+	ErrPeriodNotReady         = errors.New("interest period not ready")
+	ErrClosedPeriodImmutable  = errors.New("closed interest period is immutable")
 )
 
 type DatabaseSQL interface {
@@ -108,12 +108,12 @@ func (s *Service) RetryPeriodItem(ctx context.Context, id uuid.UUID) error {
 }
 
 type DailyRunSummary struct {
-	Date       time.Time
-	Completed  int
+	Date          time.Time
+	Completed     int
 	CompletedZero int
-	RetryWait  int
-	Blocked    int
-	Failed     int
+	RetryWait     int
+	Blocked       int
+	Failed        int
 }
 
 // RunDaily creates a durable row for every active enrollment and processes the
@@ -399,21 +399,21 @@ func (s *Service) ensurePeriodForDate(ctx context.Context, product model.Savings
 }
 
 type PeriodPreview struct {
-	PeriodID             uuid.UUID `json:"period_id"`
-	EligibleEnrollments  int      `json:"eligible_enrollments"`
-	ExpectedItems        int64    `json:"expected_items"`
-	DailyAccruals        int      `json:"daily_accruals"`
-	ZeroAccruals         int      `json:"zero_accruals"`
-	PostedLiability      int64    `json:"posted_liability_amount"`
-	BlockedItems         int      `json:"blocked_items"`
-	MissingItems         int      `json:"missing_items"`
-	ExpectedCapitalization int64  `json:"expected_capitalization_amount"`
-	SnapshotComplete      bool     `json:"snapshot_complete"`
-	CarryChainContinuous  bool     `json:"carry_chain_continuous"`
-	RateCoverageComplete  bool     `json:"rate_coverage_complete"`
-	AccountCloseBlocked   bool     `json:"account_close_blocked"`
-	Ready                bool     `json:"ready"`
-	Reason               string   `json:"reason,omitempty"`
+	PeriodID               uuid.UUID `json:"period_id"`
+	EligibleEnrollments    int       `json:"eligible_enrollments"`
+	ExpectedItems          int64     `json:"expected_items"`
+	DailyAccruals          int       `json:"daily_accruals"`
+	ZeroAccruals           int       `json:"zero_accruals"`
+	PostedLiability        int64     `json:"posted_liability_amount"`
+	BlockedItems           int       `json:"blocked_items"`
+	MissingItems           int       `json:"missing_items"`
+	ExpectedCapitalization int64     `json:"expected_capitalization_amount"`
+	SnapshotComplete       bool      `json:"snapshot_complete"`
+	CarryChainContinuous   bool      `json:"carry_chain_continuous"`
+	RateCoverageComplete   bool      `json:"rate_coverage_complete"`
+	AccountCloseBlocked    bool      `json:"account_close_blocked"`
+	Ready                  bool      `json:"ready"`
+	Reason                 string    `json:"reason,omitempty"`
 }
 
 func (s *Service) PreviewPeriodClose(ctx context.Context, periodID uuid.UUID) (PeriodPreview, error) {
@@ -465,13 +465,13 @@ func (s *Service) PreviewPeriodClose(ctx context.Context, periodID uuid.UUID) (P
 		switch item.Status {
 		case model.InterestAccrualCompletedZero:
 			preview.ZeroAccruals++
-	case model.InterestAccrualCompletedPosted, model.InterestAccrualAdjusted:
-		if item.RecognizedAmount != nil {
-			preview.PostedLiability += *item.RecognizedAmount
-		}
-		if item.Status == model.InterestAccrualCompletedPosted && item.RecognizedAmount != nil && *item.RecognizedAmount > 0 && item.LedgerTransactionID == nil {
-			preview.MissingItems++
-		}
+		case model.InterestAccrualCompletedPosted, model.InterestAccrualAdjusted:
+			if item.RecognizedAmount != nil {
+				preview.PostedLiability += *item.RecognizedAmount
+			}
+			if item.Status == model.InterestAccrualCompletedPosted && item.RecognizedAmount != nil && *item.RecognizedAmount > 0 && item.LedgerTransactionID == nil {
+				preview.MissingItems++
+			}
 		case model.InterestAccrualBlocked, model.InterestAccrualFailed:
 			preview.BlockedItems++
 		default:
@@ -492,34 +492,48 @@ func (s *Service) PreviewPeriodClose(ctx context.Context, periodID uuid.UUID) (P
 	}
 	if period.Status != model.InterestPeriodClosed {
 		inventoryStatus := "pass"
-		if preview.BlockedItems > 0 || preview.MissingItems > 0 || preview.AccountCloseBlocked || !preview.SnapshotComplete || !preview.CarryChainContinuous || !preview.RateCoverageComplete { inventoryStatus = "fail" }
+		if preview.BlockedItems > 0 || preview.MissingItems > 0 || preview.AccountCloseBlocked || !preview.SnapshotComplete || !preview.CarryChainContinuous || !preview.RateCoverageComplete {
+			inventoryStatus = "fail"
+		}
 		if err := s.repo.PutPeriodCheck(ctx, model.InterestPeriodCheck{
 			ID: generalutil.NewV7(), PeriodID: period.ID, CheckName: "daily_accrual_inventory",
-			Status: inventoryStatus, ExpectedValue: stringPtr(fmt.Sprintf("%d", period.ExpectedItemCount)),
-			ActualValue: stringPtr(fmt.Sprintf("%d", len(accruals))), Severity: "critical",
+			Status: inventoryStatus, ExpectedValue: new(fmt.Sprintf("%d", period.ExpectedItemCount)),
+			ActualValue: new(fmt.Sprintf("%d", len(accruals))), Severity: "critical",
 			Details: nil, CheckedAt: time.Now().UTC(),
-		}); err != nil { return PeriodPreview{}, err }
+		}); err != nil {
+			return PeriodPreview{}, err
+		}
 		liabilityStatus := "pass"
-		if period.TotalAccruedAmount != preview.PostedLiability { liabilityStatus = "fail" }
+		if period.TotalAccruedAmount != preview.PostedLiability {
+			liabilityStatus = "fail"
+		}
 		if err := s.repo.PutPeriodCheck(ctx, model.InterestPeriodCheck{
 			ID: generalutil.NewV7(), PeriodID: period.ID, CheckName: "liability_reconciliation",
-			Status: liabilityStatus, ExpectedValue: stringPtr(fmt.Sprintf("%d", period.TotalAccruedAmount)),
-			ActualValue: stringPtr(fmt.Sprintf("%d", preview.PostedLiability)), Severity: "critical",
+			Status: liabilityStatus, ExpectedValue: new(fmt.Sprintf("%d", period.TotalAccruedAmount)),
+			ActualValue: new(fmt.Sprintf("%d", preview.PostedLiability)), Severity: "critical",
 			Details: nil, CheckedAt: time.Now().UTC(),
-		}); err != nil { return PeriodPreview{}, err }
+		}); err != nil {
+			return PeriodPreview{}, err
+		}
 	}
 	previousClosed := true
 	if period.Status != model.InterestPeriodClosed {
 		previousClosed, err = s.repo.IsPreviousPeriodClosed(ctx, period.ID)
-		if err != nil { return PeriodPreview{}, err }
+		if err != nil {
+			return PeriodPreview{}, err
+		}
 		previousStatus := "pass"
-		if !previousClosed { previousStatus = "fail" }
+		if !previousClosed {
+			previousStatus = "fail"
+		}
 		if err := s.repo.PutPeriodCheck(ctx, model.InterestPeriodCheck{
 			ID: generalutil.NewV7(), PeriodID: period.ID, CheckName: "previous_period_closed",
-			Status: previousStatus, ExpectedValue: stringPtr("true"),
-			ActualValue: stringPtr(fmt.Sprintf("%t", previousClosed)), Severity: "critical",
+			Status: previousStatus, ExpectedValue: new("true"),
+			ActualValue: new(fmt.Sprintf("%t", previousClosed)), Severity: "critical",
 			CheckedAt: time.Now().UTC(),
-		}); err != nil { return PeriodPreview{}, err }
+		}); err != nil {
+			return PeriodPreview{}, err
+		}
 	}
 	if preview.BlockedItems == 0 && preview.MissingItems == 0 && !preview.AccountCloseBlocked && preview.SnapshotComplete && preview.CarryChainContinuous && preview.RateCoverageComplete && period.Status != model.InterestPeriodClosed {
 		if !previousClosed {
@@ -661,10 +675,12 @@ func (s *Service) ClosePeriod(ctx context.Context, periodID uuid.UUID, actor str
 	}
 	if err := s.repo.PutPeriodCheck(ctx, model.InterestPeriodCheck{
 		ID: generalutil.NewV7(), PeriodID: periodID, CheckName: "capitalization_reconciliation",
-		Status: "pass", ExpectedValue: stringPtr(fmt.Sprintf("%d", finalPeriod.TotalAccruedAmount)),
-		ActualValue: stringPtr(fmt.Sprintf("%d", finalPeriod.TotalCapitalizedAmount)), Severity: "critical",
+		Status: "pass", ExpectedValue: new(fmt.Sprintf("%d", finalPeriod.TotalAccruedAmount)),
+		ActualValue: new(fmt.Sprintf("%d", finalPeriod.TotalCapitalizedAmount)), Severity: "critical",
 		CheckedAt: time.Now().UTC(),
-	}); err != nil { return failClose(err) }
+	}); err != nil {
+		return failClose(err)
+	}
 	closedAt := time.Now().UTC()
 	return s.db.WithTx(ctx, nil, func(tx *sql.Tx) error {
 		if err := s.repo.MarkPeriodStatus(ctx, tx, periodID, model.InterestPeriodClosed, ""); err != nil {
@@ -744,32 +760,46 @@ func (s *Service) ApproveAdjustment(ctx context.Context, id uuid.UUID, checker s
 		return fmt.Errorf("%w: adjustment checker is required", apperror.ErrValidation)
 	}
 	adjustment, err := s.repo.GetAdjustment(ctx, id)
-	if err != nil { return err }
-	if adjustment.Status == "posted" { return nil }
+	if err != nil {
+		return err
+	}
+	if adjustment.Status == "posted" {
+		return nil
+	}
 	if adjustment.Status == "pending_approval" {
-		if err := s.repo.ApproveAdjustment(ctx, id, checker); err != nil { return err }
+		if err := s.repo.ApproveAdjustment(ctx, id, checker); err != nil {
+			return err
+		}
 		adjustment, err = s.repo.GetAdjustment(ctx, id)
-		if err != nil { return err }
+		if err != nil {
+			return err
+		}
 	}
 	if adjustment.Status != "approved" {
 		return fmt.Errorf("%w: adjustment is not approved", apperror.ErrValidation)
 	}
 	enrollment, err := s.repo.GetEnrollment(ctx, adjustment.EnrollmentID)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	product, err := s.repo.GetProduct(ctx, enrollment.ProductID)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	key := "interest-adjustment:" + adjustment.ID.String()
 	postErr := s.poster.Handle(ctx, processors.Command{
 		IdempotencyKey: key, IdempotencyScope: "interest-adjustment:" + adjustment.ID.String(),
 		Type: "interest_adjustment", Amount: decimal.NewFromInt(adjustment.Amount), UserID: enrollment.UserID,
 		Metadata: map[string]any{
-				"account_id": enrollment.AccountID.String(), "adjustment_id": adjustment.ID.String(),
-				"period_id": adjustment.SourcePeriodID.String(), "enrollment_id": adjustment.EnrollmentID.String(),
-				"direction": adjustment.Direction, "reason": adjustment.Reason,
-				"correction_stage": adjustmentStage(adjustment),
-			},
+			"account_id": enrollment.AccountID.String(), "adjustment_id": adjustment.ID.String(),
+			"period_id": adjustment.SourcePeriodID.String(), "enrollment_id": adjustment.EnrollmentID.String(),
+			"direction": adjustment.Direction, "reason": adjustment.Reason,
+			"correction_stage": adjustmentStage(adjustment),
+		},
 	})
-	if postErr != nil && !errors.Is(postErr, apperror.ErrAlreadyPosted) { return postErr }
+	if postErr != nil && !errors.Is(postErr, apperror.ErrAlreadyPosted) {
+		return postErr
+	}
 	var txID *uuid.UUID
 	if s.txLookup != nil {
 		tx, lookupErr := s.txLookup.GetTransactionByIdempotencyKey(ctx, key, "interest-adjustment:"+adjustment.ID.String())
@@ -817,8 +847,6 @@ func (s *Service) ApproveAdjustment(ctx context.Context, id uuid.UUID, checker s
 }
 
 func NewAdjustmentID() uuid.UUID { return generalutil.NewV7() }
-
-func stringPtr(value string) *string { return &value }
 
 func adjustmentStage(adjustment model.InterestAdjustment) string {
 	if adjustment.SourceAccrualID != nil {

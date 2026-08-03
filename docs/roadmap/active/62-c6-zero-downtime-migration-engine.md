@@ -1,7 +1,7 @@
 # Plan 62 — C6 Zero-Downtime Migration Engine
 
 **Created:** 2026-07-28
-**Status:** Ready for execution after the C6 entry gate
+**Status:** Implementation present; runtime acceptance evidence pending
 **Roadmap track:** C6 — Zero-downtime migration engine
 **Activation trigger:** Intentional migration-practice decision
 **Reference migration:** Ledger balance projection v1 → v2
@@ -55,7 +55,7 @@ C6 must preserve the following principles:
 10. A rollback never deletes target data or rewrites immutable financial
     history.
 11. Every migration run has a durable identity, state machine, checkpoints, and
-    evidence.
+evidence.
 12. Backfill and repair are idempotent.
 13. Live writes and backfill may race without losing a newer target value.
 14. A migration may not depend on row timestamps alone when a stronger source
@@ -81,6 +81,10 @@ C6 must preserve the following principles:
 30. C6 does not replace C2 analytical CDC.
 31. C6 does not move regulatory or financial authority silently.
 32. Existing money journeys remain available throughout the drill.
+
+The `account_balances_v2` migration control plane is present in Ledger,
+including backfill, comparison, cutover, repair, and rollback paths. Keep this
+plan active until runtime evidence is recorded; see the [current-state inventory](../../reference/current-state.md).
 
 ---
 

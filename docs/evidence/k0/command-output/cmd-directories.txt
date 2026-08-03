@@ -19,6 +19,7 @@
 /Users/oyherdifirdaus/Documents/Project/seev/cmd/loadreport
 /Users/oyherdifirdaus/Documents/Project/seev/cmd/loadseed
 /Users/oyherdifirdaus/Documents/Project/seev/cmd/migrate
+/Users/oyherdifirdaus/Documents/Project/seev/cmd/mock-push-provider
 /Users/oyherdifirdaus/Documents/Project/seev/cmd/payin-service
 /Users/oyherdifirdaus/Documents/Project/seev/cmd/payout-service
 /Users/oyherdifirdaus/Documents/Project/seev/cmd/retentioncheck

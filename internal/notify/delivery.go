@@ -287,12 +287,6 @@ func firstNonEmpty(values ...string) string {
 	}
 	return "unknown"
 }
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
 
 func (m *Module) digestLoop(ctx context.Context, suffix string) {
 	ticker := time.NewTicker(time.Minute)
@@ -312,7 +306,7 @@ func (m *Module) digestLoop(ctx context.Context, suffix string) {
 			if control.State == "paused" && (control.ExpiresAt == nil || control.ExpiresAt.After(time.Now().UTC())) {
 				continue
 			}
-			windows, err := m.platform.ClaimDigestWindows(ctx, m.config.DigestWorkers, owner, m.config.DeliveryLease)
+			windows, err := m.platform.ClaimDigestWindows(ctx, m.config.DigestWorkers, owner, time.Now().UTC().Add(m.config.DeliveryLease))
 			if err != nil {
 				m.logger.Error("notify: digest claim failed", slog.Any("error", err))
 				continue
@@ -349,14 +343,8 @@ func (m *Module) processDigestWindow(ctx context.Context, window model.DigestWin
 	if len(shown) > maxRenderedItems {
 		shown = shown[:maxRenderedItems]
 	}
-	sourceCount := window.ItemCount
-	if sourceCount > maxSourceItems {
-		sourceCount = maxSourceItems
-	}
-	moreCount := sourceCount - len(shown)
-	if moreCount < 0 {
-		moreCount = 0
-	}
+	sourceCount := min(window.ItemCount, maxSourceItems)
+	moreCount := max(sourceCount-len(shown), 0)
 	digestContext := model.DigestRenderContext{
 		WindowDate: window.LocalWindowDate.Format("2006-01-02"),
 		Items:      make([]model.DigestItemContext, 0, len(shown)),

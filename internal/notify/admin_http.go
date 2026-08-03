@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -416,12 +417,7 @@ func hasRole(r *http.Request, roles ...string) bool {
 	if claims == nil {
 		return false
 	}
-	for _, role := range roles {
-		if claims.Role == role {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(roles, claims.Role)
 }
 func isOperatorMutation(r *http.Request) bool {
 	return hasRole(r, "admin", "admin_maker", "admin_checker")
@@ -430,9 +426,6 @@ func fingerprintSuffix(value []byte) string {
 	if len(value) == 0 {
 		return ""
 	}
-	start := len(value) - 4
-	if start < 0 {
-		start = 0
-	}
+	start := max(len(value)-4, 0)
 	return fmt.Sprintf("%x", value[start:])
 }

@@ -33,7 +33,7 @@ build:
 	@mkdir -p "$(BUILD_DIR)"
 	go build $(GO_BUILD_FLAGS) -o "$(BUILD_DIR)/$(BINARY)" "$(CMD_DIR)"
 
-## build-all: Compile all nine deployable service binaries
+## build-all: Compile nine core service binaries plus the local push sink
 build-all:
 	@mkdir -p "$(BUILD_DIR)"
 	go build $(GO_BUILD_FLAGS) -o "$(BUILD_DIR)/" $(addprefix ./cmd/,$(SERVICE_NAMES))
@@ -409,7 +409,7 @@ verify-static:
 	$(MAKE) contracts
 	$(MAKE) analytics-config-check
 	$(MAKE) load-test
-	go test -tags=loadtest ./...
+	go test -tags=loadtest $$(go list ./... | grep -v '/\.worktrees/')
 	git diff --check
 
 # This is what docs/development/project-guide.md's "Build and verification"

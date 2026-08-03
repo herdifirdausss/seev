@@ -9,7 +9,7 @@
 > [glossary](glossary.md) for unfamiliar terms.
 
 [Architecture](architecture.md) covers the system as a whole; this
-document goes one level deeper into **each of the nine services**: the
+document goes one level deeper into **each of the nine core services**. The
 specific problem it exists to solve, what data it owns, everything it can
 actually do (every HTTP/gRPC endpoint and background job), and how it
 depends on — or is depended on by — the others. Read this when you need to
@@ -19,6 +19,8 @@ area first.
 
 Every code reference below was checked directly against the current
 routers, gRPC servers, and migrations — not assumed from a plan document.
+The optional local `mock-push-provider` is described under supporting
+utilities; it is a notification sink, not a business service.
 
 ## How to read a service section
 
@@ -178,7 +180,9 @@ Owns `seev_ledger`: `accounts`, `account_balances`,
 `currencies`, `policy_limits`, `policy_tier_limits`, `fee_rules`,
 `fee_quotes`, `outbox_events`, `pending_adjustments`, `recon_batches`,
 `recon_items`, `scheduled_transactions`, `disbursement_batches`,
-`disbursement_items`, `savings_config`.
+`disbursement_items`, `savings_config`, C4 FX/currency control tables, C5
+savings-product/rate/accrual/period and schedule-occurrence tables, and C6
+`data_migrations_*` / `account_balances_v2` tables.
 
 **What it can do**:
 
@@ -189,6 +193,8 @@ Owns `seev_ledger`: `accounts`, `account_balances`,
 | HTTP (public-proxied) | `POST /accounts/pockets` (named sub-wallets) | JWT |
 | HTTP (public-proxied) | `POST /fees/quote` (exact, enforceable fee quotes) | JWT |
 | HTTP (public-proxied) | `GET/POST /schedules`, `POST /schedules/{id}/{cancel,pause,resume}` | JWT — recurring/scheduled transactions |
+| HTTP (public-proxied) | `GET /currencies`, `GET /balances[/{currency}]`, `POST /currencies/{currency}/enable`, `GET /fx/pairs`, `POST /fx/quotes`, `GET /fx/quotes/{id}`, `POST /fx/conversions`, `GET /fx/conversions/{id}` | JWT — explicit IDR/USD currency and FX journeys; ordinary postings remain single-currency |
+| HTTP (public-proxied) | `GET /savings/{products,enrollments}`, `GET /savings/enrollments/{id}[/{accruals,periods}]`, schedule occurrence/execution reads, and fee-cap confirmation | JWT — C5 product, accrual, period-close, and durable-schedule reads |
 | HTTP (admin) | `GET /admin/adjustments[/{id}]`, `POST /admin/adjustments`, `POST .../{id}/{approve,reject}` | maker-checker enforced *inside this service*, not just gated by role |
 | HTTP (admin) | `POST /admin/disbursements`, `GET /admin/disbursements/{id}`, `POST .../{id}/run` | admin — batch payouts (e.g. interest, refund runs) |
 | HTTP (admin) | `GET /admin/recon/batches[/{id}]`, `POST /admin/recon/batches`, `POST /admin/recon/items/{id}/resolve` | admin — external settlement reconciliation |
@@ -196,6 +202,9 @@ Owns `seev_ledger`: `accounts`, `account_balances`,
 | HTTP (admin) | `GET/POST /admin/ledger/fee-rules`, `PUT /admin/ledger/fee-rules/{id}` | admin — database-driven fee rule CRUD |
 | HTTP (admin) | `GET /admin/outbox/dead`, `POST .../replay-all`, `POST .../{id}/replay` | admin — dead-letter recovery for the event relay |
 | HTTP (admin) | `GET /admin/savings`, `PUT /admin/savings/{account_id}` | admin — interest-bearing savings configuration |
+| HTTP (admin) | `/admin/fx/*` | admin — currency policy, rates, pairs, positions, rebalances, and reconciliation |
+| HTTP (admin) | `/admin/savings/*` | admin — product/rate maker-checker, enrollment, daily interest, period close, and corrections |
+| HTTP (admin) | `/admin/migrations/*` | admin — typed C6 migration state, cutover, reconciliation, repair, and rollback controls |
 | HTTP (admin) | `GET/PUT /admin/policy/limits` | admin — per-user transaction limits |
 | HTTP (admin) | `GET /admin/reports/{kind}` | admin — read-only regulatory/compliance reporting |
 | gRPC (internal) | `Post`, `GetTransactionByIdempotencyKey` | the only way any other service moves money |
@@ -440,6 +449,8 @@ local copy.
 | HTTP (proxy) | `/api/v1/admin/fraud/...` | reverse-proxied to Fraud |
 | HTTP (proxy) | `/api/v1/admin/kyc/...` | reverse-proxied to Auth's admin API |
 | HTTP (proxy) | `/api/v1/admin/gateway/...` | reverse-proxied to Gateway |
+| HTTP (proxy) | `/api/v1/admin/fx/*`, `POST /api/v1/admin/fx/rates/{approve,reject}`, `GET /api/v1/admin/fx` | typed Ledger FX proxy and operator console |
+| HTTP (proxy) | `/api/v1/admin/migrations/*`, `GET /api/v1/admin/migrations-console` | typed Ledger migration proxy and operator console |
 | Background | Session cleanup cron | every 5 minutes, purges expired sessions |
 
 **Every mutating request through this service is audited**, regardless of
@@ -513,6 +524,7 @@ as the trust layer over everything else.
 | `cmd/doccheck` | Validates local Markdown links and heading anchors with no external runtime dependency; `make docs-check` and CI use it. |
 | `cmd/gentoken` | Mints a JWT for scripts/chaos/smoke tests without going through a real login — a test-harness concern, never used in a request path. |
 | `cmd/sanctions-loader` | Imports an offline sanctions-list export into Fraud's database. No network access by design, so CI stays deterministic and reproducible. |
+| `cmd/mock-push-provider` | Local deterministic push sink for C3 acceptance and outage/invalid-token drills on port 8097; it is not a business service. |
 
 ## Cross-cutting: what's genuinely shared
 
@@ -530,7 +542,7 @@ enforced rule behind all of this: a service must never write another
 service's tables, and cross-service communication only ever happens
 through a published HTTP, gRPC, or event contract — never a direct query.
 
-For how these nine services are actually built, verified, run locally,
+For how these nine core services are actually built, verified, run locally,
 and observed — Docker Compose, the Makefile, every script under
 `scripts/`, CI, and the observability stack — see
 [Operations](../operations/README.md). For what every `pkg/*` package listed

@@ -350,7 +350,8 @@ documents name each policy explicitly as fail-open or fail-closed.
 
 ## Current system and future ideas
 
-The current system has nine deployable services. Documents marked
+The current system has nine core deployable services. The optional local push
+sink is a support process, not a business service. Documents marked
 **Current** must agree with executable code and tests. Documents marked
 **Target** describe a design that still needs implementation. Files under
 `docs/roadmap` are a chronological decision history; an old plan can be useful

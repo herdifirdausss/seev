@@ -4,8 +4,6 @@
 package balancev2
 
 import (
-	"context"
-	"database/sql"
 	"strings"
 	"time"
 
@@ -228,13 +226,13 @@ func (t TargetRow) Balance() int64 {
 
 func (t TargetRow) ToBalance() model.AccountBalance {
 	return model.AccountBalance{
-		AccountID: t.AccountID,
-		Currency: strings.ToUpper(strings.TrimSpace(t.Currency)),
-		Balance: decimal.NewFromInt(t.Balance()),
-		Status: t.Status,
-		Type: t.AccountType,
+		AccountID:     t.AccountID,
+		Currency:      strings.ToUpper(strings.TrimSpace(t.Currency)),
+		Balance:       decimal.NewFromInt(t.Balance()),
+		Status:        t.Status,
+		Type:          t.AccountType,
 		AllowNegative: t.AllowNegative,
-		Version: t.SourceVersion,
+		Version:       t.SourceVersion,
 	}
 }
 
@@ -249,7 +247,7 @@ type Migration struct {
 	State                       string     `json:"state"`
 	PreviousState               string     `json:"previous_state,omitempty"`
 	ReadPercentageBasisPoints   int        `json:"read_percentage_basis_points"`
-	ShadowPercentageBasisPoints int       `json:"shadow_percentage_basis_points"`
+	ShadowPercentageBasisPoints int        `json:"shadow_percentage_basis_points"`
 	StrictDualWrite             bool       `json:"strict_dual_write"`
 	SourceFallbackEnabled       bool       `json:"source_fallback_enabled"`
 	SourceWriteEnabled          bool       `json:"source_write_enabled"`
@@ -270,21 +268,21 @@ type Migration struct {
 }
 
 type Checkpoint struct {
-	ID                uuid.UUID  `json:"id"`
-	MigrationID       uuid.UUID  `json:"migration_id"`
-	WorkerKind        string     `json:"worker_kind"`
-	PartitionKey      string     `json:"partition_key"`
-	LastSourceKey     string     `json:"last_source_key,omitempty"`
-	WatermarkVersion  *int64     `json:"watermark_version,omitempty"`
-	ProcessedCount    int64      `json:"processed_count"`
-	UpdatedCount      int64      `json:"updated_count"`
-	SkippedCount      int64      `json:"skipped_count"`
-	FailedCount       int64      `json:"failed_count"`
-	LeaseOwner        string     `json:"lease_owner,omitempty"`
-	LeaseExpiresAt    *time.Time `json:"lease_expires_at,omitempty"`
-	Status            string     `json:"status"`
-	CreatedAt         time.Time  `json:"created_at"`
-	UpdatedAt         time.Time  `json:"updated_at"`
+	ID               uuid.UUID  `json:"id"`
+	MigrationID      uuid.UUID  `json:"migration_id"`
+	WorkerKind       string     `json:"worker_kind"`
+	PartitionKey     string     `json:"partition_key"`
+	LastSourceKey    string     `json:"last_source_key,omitempty"`
+	WatermarkVersion *int64     `json:"watermark_version,omitempty"`
+	ProcessedCount   int64      `json:"processed_count"`
+	UpdatedCount     int64      `json:"updated_count"`
+	SkippedCount     int64      `json:"skipped_count"`
+	FailedCount      int64      `json:"failed_count"`
+	LeaseOwner       string     `json:"lease_owner,omitempty"`
+	LeaseExpiresAt   *time.Time `json:"lease_expires_at,omitempty"`
+	Status           string     `json:"status"`
+	CreatedAt        time.Time  `json:"created_at"`
+	UpdatedAt        time.Time  `json:"updated_at"`
 }
 
 type Run struct {
@@ -358,27 +356,27 @@ type Transition struct {
 }
 
 type Comparison struct {
-	AccountID      uuid.UUID
+	AccountID uuid.UUID
 	// ResourceLayer separates the source↔target projection check from the
 	// source↔immutable-ledger check. It is intentionally bounded and is never
 	// exposed as an arbitrary caller-controlled label.
-	ResourceLayer  string
-	Result         string
-	Classification string
-	Severity       string
-	FieldMask      int64
-	SourceVersion  int64
-	TargetVersion  int64
+	ResourceLayer    string
+	Result           string
+	Classification   string
+	Severity         string
+	FieldMask        int64
+	SourceVersion    int64
+	TargetVersion    int64
 	TargetVersionSet bool
-	SourceChecksum []byte
-	TargetChecksum []byte
-	ErrorCode      string
+	SourceChecksum   []byte
+	TargetChecksum   []byte
+	ErrorCode        string
 }
 
 type GateSnapshot struct {
-	Passed                 bool      `json:"passed"`
-	FreshAt                time.Time `json:"fresh_at"`
-	UnresolvedCritical     int64     `json:"unresolved_critical"`
+	Passed                bool      `json:"passed"`
+	FreshAt               time.Time `json:"fresh_at"`
+	UnresolvedCritical    int64     `json:"unresolved_critical"`
 	TargetMissingEligible int64     `json:"target_missing_eligible"`
 	ShadowComparisons     int64     `json:"shadow_comparisons"`
 	ShadowMatches         int64     `json:"shadow_matches"`
@@ -390,13 +388,4 @@ type GateSnapshot struct {
 	BackupFresh           bool      `json:"backup_fresh"`
 	PreCutoverComplete    bool      `json:"pre_cutover_complete"`
 	Reason                string    `json:"reason,omitempty"`
-}
-
-type sourceReader interface {
-	GetBalance(context.Context, uuid.UUID) (model.AccountBalance, error)
-}
-
-type projectionWriter interface {
-	WriteForPosting(context.Context, *sql.Tx, []uuid.UUID, uuid.UUID) error
-	EnsureForAccount(context.Context, *sql.Tx, uuid.UUID) error
 }

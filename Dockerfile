@@ -20,7 +20,7 @@ COPY --from=builder /out/${SERVICE} /app/service
 COPY --from=builder /src/migrations /app/migrations
 
 # docs/roadmap/archive/44 K5 — CI's Bake build passes the commit SHA as REVISION so a
-# smoke-container run can assert every one of the eight loaded images was
+# smoke-container run can assert every loaded application image was
 # actually built from the commit under test, not a stale cache hit or a
 # leftover local `:dev` tag from an earlier run.
 ARG REVISION=unknown

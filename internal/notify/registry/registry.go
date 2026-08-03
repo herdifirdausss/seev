@@ -4,6 +4,7 @@ package registry
 
 import (
 	"fmt"
+	"maps"
 
 	"github.com/herdifirdausss/seev/internal/ledger/events"
 	"github.com/herdifirdausss/seev/internal/notify/model"
@@ -126,8 +127,6 @@ func KindForTransaction(transactionType, role string) (Kind, error) {
 
 func cloneModes(in map[string]string) map[string]string {
 	out := make(map[string]string, len(in))
-	for key, value := range in {
-		out[key] = value
-	}
+	maps.Copy(out, in)
 	return out
 }

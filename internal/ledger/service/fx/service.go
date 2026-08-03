@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"math/big"
 	"sort"
 	"strconv"
@@ -31,12 +32,12 @@ import (
 )
 
 type Service struct {
-	db         database.DatabaseSQL
-	now        func() time.Time
-	txRepo     repository.TransactionRepository
+	db          database.DatabaseSQL
+	now         func() time.Time
+	txRepo      repository.TransactionRepository
 	balanceRepo repository.BalanceRepository
-	entryRepo  repository.EntryRepository
-	outboxRepo repository.OutboxRepository
+	entryRepo   repository.EntryRepository
+	outboxRepo  repository.OutboxRepository
 }
 
 func New(
@@ -519,7 +520,7 @@ func (s *Service) createQuote(ctx context.Context, userID uuid.UUID, sourceCode,
 			RETURNING created_at`,
 			quoteID, userID, pairID, directionID, rateVersionID,
 			sourceCode, targetCode, sourcePolicy.MinorUnit, targetPolicy.MinorUnit,
-				sourceAmount, targetMoney.Minor, referenceRateRaw, clientRateText,
+			sourceAmount, targetMoney.Minor, referenceRateRaw, clientRateText,
 			rateConvention, pairPolicyVersion, spread, roundingMode,
 			remainder.Numerator, remainder.Denominator, requestKey, expiresAt,
 		).Scan(&createdAt); err != nil {
@@ -527,15 +528,15 @@ func (s *Service) createQuote(ctx context.Context, userID uuid.UUID, sourceCode,
 		}
 		result = model.FXQuote{
 			ID: quoteID, UserID: userID, PairID: pairID, DirectionID: directionID,
-				RateVersionID: rateVersionID, SourceCurrency: sourceCode,
-				TargetCurrency: targetCode, SourceMinorUnit: sourcePolicy.MinorUnit,
-				TargetMinorUnit: targetPolicy.MinorUnit, SourceAmount: sourceAmount,
-				TargetAmount: targetMoney.Minor, ReferenceRate: referenceRateRaw,
-				ClientRate: clientRateText, RateConvention: rateConvention,
-				PairPolicyVersion: pairPolicyVersion, SpreadBasisPoints: spread,
-			RoundingMode: roundingMode,
+			RateVersionID: rateVersionID, SourceCurrency: sourceCode,
+			TargetCurrency: targetCode, SourceMinorUnit: sourcePolicy.MinorUnit,
+			TargetMinorUnit: targetPolicy.MinorUnit, SourceAmount: sourceAmount,
+			TargetAmount: targetMoney.Minor, ReferenceRate: referenceRateRaw,
+			ClientRate: clientRateText, RateConvention: rateConvention,
+			PairPolicyVersion: pairPolicyVersion, SpreadBasisPoints: spread,
+			RoundingMode:      roundingMode,
 			RoundingRemainder: remainder.Numerator + "/" + remainder.Denominator,
-			RequestKey: requestKey, Status: "active", ExpiresAt: expiresAt,
+			RequestKey:        requestKey, Status: "active", ExpiresAt: expiresAt,
 			CreatedAt: createdAt,
 		}
 		return nil
@@ -732,12 +733,8 @@ func (s *Service) executeConversion(ctx context.Context, userID, quoteID uuid.UU
 			return fmt.Errorf("lock FX position balances: %w", err)
 		}
 		balances := make(map[uuid.UUID]model.AccountBalance, len(userBalances)+len(positionBalances))
-		for accountID, balance := range userBalances {
-			balances[accountID] = balance
-		}
-		for accountID, balance := range positionBalances {
-			balances[accountID] = balance
-		}
+		maps.Copy(balances, userBalances)
+		maps.Copy(balances, positionBalances)
 		if err := validateFXBalances(balances, sourceUserID, targetUserID, sourcePositionID, targetPositionID, quote.SourceCurrency, quote.TargetCurrency); err != nil {
 			return err
 		}
@@ -1204,7 +1201,6 @@ func linkFXTransaction(ctx context.Context, tx *sql.Tx, id, conversionID, quoteI
 	return nil
 }
 
-
 func fxAggregateOutboxEvent(quote model.FXQuote, conversionID, sourceTransactionID, targetTransactionID uuid.UUID, postedAt time.Time) model.OutboxEvent {
 	payload := events.NewFXConversionPosted(
 		conversionID, quote.ID, quote.UserID, sourceTransactionID,
@@ -1343,8 +1339,6 @@ func (s *Service) refreshCurrencyRegistry(ctx context.Context) error {
 
 func cloneOperations(source map[string]bool) map[string]bool {
 	result := make(map[string]bool, len(source))
-	for key, value := range source {
-		result[key] = value
-	}
+	maps.Copy(result, source)
 	return result
 }

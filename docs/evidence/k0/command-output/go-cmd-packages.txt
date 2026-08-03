@@ -19,6 +19,7 @@ github.com/herdifirdausss/seev/cmd/loadprobe
 github.com/herdifirdausss/seev/cmd/loadreport
 github.com/herdifirdausss/seev/cmd/loadseed
 github.com/herdifirdausss/seev/cmd/migrate
+github.com/herdifirdausss/seev/cmd/mock-push-provider
 github.com/herdifirdausss/seev/cmd/payin-service
 github.com/herdifirdausss/seev/cmd/payout-service
 github.com/herdifirdausss/seev/cmd/retentioncheck

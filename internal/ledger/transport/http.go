@@ -750,13 +750,14 @@ func (h *handler) postTransaction(w http.ResponseWriter, r *http.Request) {
 		cmd.ReferenceID = refID
 	}
 
-	policyCurrency := req.Currency
-	if policyCurrency == "" {
-		if resolved, resolveErr := h.svc.GetUserCurrency(r.Context(), userID, req.PocketCode); resolveErr == nil {
-			policyCurrency = resolved
-		}
-	}
+	policyCurrency := ""
 	if h.policy != nil {
+		policyCurrency = req.Currency
+		if policyCurrency == "" {
+			if resolved, resolveErr := h.svc.GetUserCurrency(r.Context(), userID, req.PocketCode); resolveErr == nil {
+				policyCurrency = resolved
+			}
+		}
 		var allowed bool
 		var rule, detail string
 		var err error
@@ -1686,11 +1687,11 @@ func (h *handler) createSchedule(w http.ResponseWriter, r *http.Request) {
 		} else {
 			id, createErr = creator.CreateScheduleWithPolicy(r.Context(), userID, req.Type, amount, targetUserID, req.PocketCode, req.Metadata,
 				req.ScheduleKind, runAtDate, req.DayOfMonth, userID.String(), model.ScheduledPolicy{
-				MissedRunPolicy: req.MissedRunPolicy, CatchUpLimit: req.CatchUpLimit,
-				MaxFeeAmount: req.MaxFeeAmount, MaxInfrastructureAttempts: req.MaxInfrastructureAttempts,
-				RetryWindowSeconds: req.RetryWindowSeconds, FeeMode: req.FeeMode,
-				ConsecutiveFailureThreshold: req.ConsecutiveFailureThreshold,
-			}, req.Currency, req.Timezone, req.LocalTime)
+					MissedRunPolicy: req.MissedRunPolicy, CatchUpLimit: req.CatchUpLimit,
+					MaxFeeAmount: req.MaxFeeAmount, MaxInfrastructureAttempts: req.MaxInfrastructureAttempts,
+					RetryWindowSeconds: req.RetryWindowSeconds, FeeMode: req.FeeMode,
+					ConsecutiveFailureThreshold: req.ConsecutiveFailureThreshold,
+				}, req.Currency, req.Timezone, req.LocalTime)
 		}
 	} else {
 		id, createErr = h.svc.CreateSchedule(r.Context(), userID, req.Type, amount, targetUserID, req.PocketCode, req.Metadata,
@@ -1703,24 +1704,42 @@ func (h *handler) createSchedule(w http.ResponseWriter, r *http.Request) {
 	created := createScheduleResponse{ID: id}
 	if c5Requested {
 		created.Timezone = req.Timezone
-		if created.Timezone == "" { created.Timezone = "Asia/Jakarta" }
+		if created.Timezone == "" {
+			created.Timezone = "Asia/Jakarta"
+		}
 		created.LocalTime = req.LocalTime
-		if created.LocalTime == "" { created.LocalTime = "00:30" }
+		if created.LocalTime == "" {
+			created.LocalTime = "00:30"
+		}
 		created.MissedRunPolicy = req.MissedRunPolicy
 		if created.MissedRunPolicy == "" {
-			if req.ScheduleKind == "daily" { created.MissedRunPolicy = "skip" } else { created.MissedRunPolicy = "run_once_latest" }
+			if req.ScheduleKind == "daily" {
+				created.MissedRunPolicy = "skip"
+			} else {
+				created.MissedRunPolicy = "run_once_latest"
+			}
 		}
 		created.CatchUpLimit = req.CatchUpLimit
-		if created.CatchUpLimit == 0 { created.CatchUpLimit = 7 }
+		if created.CatchUpLimit == 0 {
+			created.CatchUpLimit = 7
+		}
 		created.MaxFeeAmount = req.MaxFeeAmount
 		created.MaxInfrastructureAttempts = req.MaxInfrastructureAttempts
-		if created.MaxInfrastructureAttempts == 0 { created.MaxInfrastructureAttempts = 5 }
-			created.RetryWindowSeconds = req.RetryWindowSeconds
-			if created.RetryWindowSeconds == 0 { created.RetryWindowSeconds = 86400 }
+		if created.MaxInfrastructureAttempts == 0 {
+			created.MaxInfrastructureAttempts = 5
+		}
+		created.RetryWindowSeconds = req.RetryWindowSeconds
+		if created.RetryWindowSeconds == 0 {
+			created.RetryWindowSeconds = 86400
+		}
 		created.FeeMode = req.FeeMode
-		if created.FeeMode == "" { created.FeeMode = "current_policy_with_consent_cap" }
+		if created.FeeMode == "" {
+			created.FeeMode = "current_policy_with_consent_cap"
+		}
 		created.ConsecutiveFailureThreshold = req.ConsecutiveFailureThreshold
-		if created.ConsecutiveFailureThreshold == 0 { created.ConsecutiveFailureThreshold = 3 }
+		if created.ConsecutiveFailureThreshold == 0 {
+			created.ConsecutiveFailureThreshold = 3
+		}
 	}
 	response.Created(w, created)
 }

@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"strings"
 	"time"
 
@@ -38,15 +39,15 @@ type TransactionLookup interface {
 // Scheduler infrastructure calls RunDurable; it does not own any of this
 // state or money-moving policy.
 type DurableService struct {
-	schedules  repository.ScheduledTransactionRepository
+	schedules   repository.ScheduledTransactionRepository
 	occurrences repository.ScheduledOccurrenceRepository
-	poster     Poster
-	fees       FeeResolver
-	txLookup   TransactionLookup
-	db         DatabaseSQL
-	outbox     repository.OutboxRepository
-	logger     *slog.Logger
-	loc        *time.Location
+	poster      Poster
+	fees        FeeResolver
+	txLookup    TransactionLookup
+	db          DatabaseSQL
+	outbox      repository.OutboxRepository
+	logger      *slog.Logger
+	loc         *time.Location
 }
 
 func (s *DurableService) SetTransactionLookup(lookup TransactionLookup) {
@@ -113,7 +114,7 @@ func (s *DurableService) PlanSchedule(ctx context.Context, scheduleID uuid.UUID,
 			ScheduleVersion:    row.Version,
 			ScheduledFor:       scheduledFor,
 			ScheduledLocalDate: date,
-			Status:             model.ScheduledOccurrenceDue,
+			Status:             model.ScheduleOccurrenceDue,
 			IdempotencyKey:     OccurrenceIdempotencyKey(row.ID, date),
 			PolicySnapshot:     snapshot,
 		}
@@ -121,13 +122,14 @@ func (s *DurableService) PlanSchedule(ctx context.Context, scheduleID uuid.UUID,
 		if createErr != nil {
 			return nil, createErr
 		}
-		if containsDate(plan.Skipped, date) && stored.Status == model.ScheduledOccurrencePlanned {
-			skipStatus := model.ScheduledOccurrenceSkippedSuperseded
+		if containsDate(plan.Skipped, date) && stored.Status == model.ScheduleOccurrencePlanned {
+			skipStatus := model.ScheduleOccurrenceSkippedSuperseded
 			skipCode := "MISSED_RUN_SUPERSEDED"
-			if policy.MissedRunPolicy == model.ScheduleMissedSkip {
-				skipStatus = model.ScheduledOccurrenceSkippedMissed
+			switch policy.MissedRunPolicy {
+			case model.ScheduleMissedSkip:
+				skipStatus = model.ScheduleOccurrenceSkippedMissed
 				skipCode = "MISSED_RUN_POLICY"
-			} else if policy.MissedRunPolicy == model.ScheduleMissedCatchUpBounded {
+			case model.ScheduleMissedCatchUpBounded:
 				skipCode = "MISSED_BACKLOG_TRUNCATED"
 			}
 			if statusErr := s.occurrences.SetStatus(ctx, stored.ID, skipStatus, skipCode, nil, nil); statusErr != nil {
@@ -139,9 +141,9 @@ func (s *DurableService) PlanSchedule(ctx context.Context, scheduleID uuid.UUID,
 			stored.Status = skipStatus
 		}
 		if commandErr != nil {
-			if !containsDate(plan.Skipped, date) && (stored.Status == model.ScheduledOccurrencePlanned ||
-				stored.Status == model.ScheduledOccurrenceDue || stored.Status == model.ScheduledOccurrenceReady ||
-				stored.Status == model.ScheduledOccurrenceRetryWait) {
+			if !containsDate(plan.Skipped, date) && (stored.Status == model.ScheduleOccurrencePlanned ||
+				stored.Status == model.ScheduleOccurrenceDue || stored.Status == model.ScheduleOccurrenceReady ||
+				stored.Status == model.ScheduleOccurrenceRetryWait) {
 				finishedAt := time.Now().UTC()
 				errorCode := commandErrorCode
 				if attemptErr := s.occurrences.RecordAttempt(ctx, model.ScheduledExecutionAttempt{
@@ -150,16 +152,16 @@ func (s *DurableService) PlanSchedule(ctx context.Context, scheduleID uuid.UUID,
 				}); attemptErr != nil {
 					return nil, attemptErr
 				}
-				if statusErr := s.occurrences.SetStatus(ctx, stored.ID, model.ScheduledOccurrenceBlocked, commandErrorCode, nil, nil); statusErr != nil {
+				if statusErr := s.occurrences.SetStatus(ctx, stored.ID, model.ScheduleOccurrenceBlocked, commandErrorCode, nil, nil); statusErr != nil {
 					return nil, statusErr
 				}
-				if emitErr := s.emitScheduleFailure(ctx, stored, row, model.ScheduledOccurrenceBlocked, commandErrorCode, false); emitErr != nil {
+				if emitErr := s.emitScheduleFailure(ctx, stored, row, model.ScheduleOccurrenceBlocked, commandErrorCode, false); emitErr != nil {
 					return nil, emitErr
 				}
 			}
 			continue
 		}
-		if stored.Status == model.ScheduledOccurrenceDue || stored.Status == model.ScheduledOccurrencePlanned || stored.Status == model.ScheduledOccurrenceReady || stored.Status == model.ScheduledOccurrenceRetryWait {
+		if stored.Status == model.ScheduleOccurrenceDue || stored.Status == model.ScheduleOccurrencePlanned || stored.Status == model.ScheduleOccurrenceReady || stored.Status == model.ScheduleOccurrenceRetryWait {
 			result = append(result, stored)
 		}
 	}
@@ -202,7 +204,7 @@ func (s *DurableService) RunDurable(ctx context.Context, asOf time.Time) (execut
 			if occurrence.ScheduledFor.After(asOf.UTC()) {
 				continue
 			}
-			if occurrence.Status == model.ScheduledOccurrenceSkippedMissed {
+			if occurrence.Status == model.ScheduleOccurrenceSkippedMissed {
 				_ = s.occurrences.SetScheduleLastRun(ctx, row.ID, occurrence.ScheduledLocalDate, row.ScheduleKind == "once")
 				continue
 			}
@@ -253,7 +255,7 @@ func (s *DurableService) RetryOccurrence(ctx context.Context, occurrenceID uuid.
 	if err != nil {
 		return err
 	}
-	if item.Status != model.ScheduledOccurrenceFailedBusiness && item.Status != model.ScheduledOccurrenceBlocked {
+	if item.Status != model.ScheduleOccurrenceFailedBusiness && item.Status != model.ScheduleOccurrenceBlocked {
 		return fmt.Errorf("%w: occurrence is not retryable", apperror.ErrValidation)
 	}
 	row, err := s.schedules.GetByID(ctx, item.ScheduleID)
@@ -274,7 +276,7 @@ func (s *DurableService) RetryOccurrence(ctx context.Context, occurrenceID uuid.
 		}
 		return nil
 	}
-	return s.occurrences.SetStatus(ctx, occurrenceID, model.ScheduledOccurrenceReady, "", nil, nil)
+	return s.occurrences.SetStatus(ctx, occurrenceID, model.ScheduleOccurrenceReady, "", nil, nil)
 }
 
 // ConfirmFeeCap applies a new user-authorized fee cap and requeues occurrences
@@ -318,10 +320,7 @@ func (s *DurableService) ExecuteOccurrence(ctx context.Context, occurrenceID uui
 		return false, err
 	}
 	attemptStarted := time.Now().UTC()
-	attemptNumber := occurrence.AttemptCount
-	if attemptNumber < 1 {
-		attemptNumber = 1
-	}
+	attemptNumber := max(occurrence.AttemptCount, 1)
 	if attemptErr := s.occurrences.RecordAttempt(ctx, model.ScheduledExecutionAttempt{
 		OccurrenceID: occurrence.ID, AttemptNumber: attemptNumber,
 		Phase: "screening", Result: "started", StartedAt: attemptStarted,
@@ -334,7 +333,7 @@ func (s *DurableService) ExecuteOccurrence(ctx context.Context, occurrenceID uui
 	}
 	if scheduleRow.Status != "active" {
 		_ = s.occurrences.FinishAttempt(ctx, occurrence.ID, time.Now().UTC(), "cancelled", false, "SCHEDULE_NOT_ACTIVE", nil)
-		_ = s.occurrences.SetStatus(ctx, occurrence.ID, model.ScheduledOccurrenceCancelled, "SCHEDULE_NOT_ACTIVE", nil, nil)
+		_ = s.occurrences.SetStatus(ctx, occurrence.ID, model.ScheduleOccurrenceCancelled, "SCHEDULE_NOT_ACTIVE", nil, nil)
 		return false, nil
 	}
 	command, err := commandFromRow(scheduleRow)
@@ -410,7 +409,7 @@ func (s *DurableService) ExecuteOccurrence(ctx context.Context, occurrenceID uui
 		if finishErr := s.occurrences.FinishAttempt(ctx, occurrence.ID, time.Now().UTC(), "succeeded", false, "", txID); finishErr != nil {
 			return false, finishErr
 		}
-		if statusErr := s.occurrences.SetStatus(ctx, occurrence.ID, model.ScheduledOccurrenceSucceeded, "", nil, txID); statusErr != nil {
+		if statusErr := s.occurrences.SetStatus(ctx, occurrence.ID, model.ScheduleOccurrenceSucceeded, "", nil, txID); statusErr != nil {
 			return false, statusErr
 		}
 		if err := s.occurrences.RecordScheduleSuccess(ctx, scheduleRow.ID); err != nil {
@@ -437,10 +436,10 @@ func (s *DurableService) ExecuteOccurrence(ctx context.Context, occurrenceID uui
 	policy := policyFromSchedule(scheduleRow)
 	if occurrence.AttemptCount >= policy.MaxInfrastructureAttempts {
 		_ = s.occurrences.BlockSchedule(ctx, scheduleRow.ID, "infrastructure_retry_exhausted")
-		if statusErr := s.occurrences.SetStatus(ctx, occurrence.ID, model.ScheduledOccurrenceBlocked, "INFRA_RETRY_EXHAUSTED", nil, nil); statusErr != nil {
+		if statusErr := s.occurrences.SetStatus(ctx, occurrence.ID, model.ScheduleOccurrenceBlocked, "INFRA_RETRY_EXHAUSTED", nil, nil); statusErr != nil {
 			return false, statusErr
 		}
-		if emitErr := s.emitScheduleFailure(ctx, occurrence, scheduleRow, model.ScheduledOccurrenceBlocked, "INFRA_RETRY_EXHAUSTED", false); emitErr != nil {
+		if emitErr := s.emitScheduleFailure(ctx, occurrence, scheduleRow, model.ScheduleOccurrenceBlocked, "INFRA_RETRY_EXHAUSTED", false); emitErr != nil {
 			return false, emitErr
 		}
 		if emitErr := s.emitSchedulePaused(ctx, scheduleRow.ID, "infrastructure_retry_exhausted"); emitErr != nil {
@@ -449,7 +448,7 @@ func (s *DurableService) ExecuteOccurrence(ctx context.Context, occurrenceID uui
 		return false, postErr
 	}
 	next := time.Now().UTC().Add(time.Duration(policy.RetryWindowSeconds) * time.Second)
-	if statusErr := s.occurrences.SetStatus(ctx, occurrence.ID, model.ScheduledOccurrenceRetryWait, "LEDGER_INFRA_FAILURE", &next, nil); statusErr != nil {
+	if statusErr := s.occurrences.SetStatus(ctx, occurrence.ID, model.ScheduleOccurrenceRetryWait, "LEDGER_INFRA_FAILURE", &next, nil); statusErr != nil {
 		return false, statusErr
 	}
 	return false, postErr
@@ -458,9 +457,9 @@ func (s *DurableService) ExecuteOccurrence(ctx context.Context, occurrenceID uui
 func (s *DurableService) businessFailure(ctx context.Context, occurrence model.ScheduledOccurrence, scheduleRow model.ScheduledTransaction, code string, cause error) (bool, error) {
 	_ = s.occurrences.FinishAttempt(ctx, occurrence.ID, time.Now().UTC(), "business_failure", false, code, nil)
 	policy := policyFromSchedule(scheduleRow)
-	status := model.ScheduledOccurrenceFailedBusiness
+	status := model.ScheduleOccurrenceFailedBusiness
 	if scheduleRow.ScheduleKind == "once" {
-		status = model.ScheduledOccurrenceFailedTerminal
+		status = model.ScheduleOccurrenceFailedTerminal
 	}
 	blocked, err := s.occurrences.RecordScheduleBusinessFailure(ctx, scheduleRow.ID, code, policy.ConsecutiveFailureThreshold)
 	if err != nil {
@@ -472,9 +471,10 @@ func (s *DurableService) businessFailure(ctx context.Context, occurrence model.S
 		}
 	}
 	pauseReason := ""
-	if code == "SCHEDULE_FEE_CAP_EXCEEDED" || code == "FEE_EXCEEDS_CONSENT" {
+	switch code {
+	case "SCHEDULE_FEE_CAP_EXCEEDED", "FEE_EXCEEDS_CONSENT":
 		pauseReason = "fee_cap_exceeded"
-	} else if code == "SCHEDULE_FEE_CONSENT_REQUIRED" || code == "FEE_CONSENT_REQUIRED" {
+	case "SCHEDULE_FEE_CONSENT_REQUIRED", "FEE_CONSENT_REQUIRED":
 		pauseReason = "fee_consent_required"
 	}
 	if pauseReason != "" {
@@ -484,7 +484,7 @@ func (s *DurableService) businessFailure(ctx context.Context, occurrence model.S
 		blocked = true
 	}
 	if blocked {
-		status = model.ScheduledOccurrenceBlocked
+		status = model.ScheduleOccurrenceBlocked
 	}
 	if statusErr := s.occurrences.SetStatus(ctx, occurrence.ID, status, code, nil, nil); statusErr != nil {
 		return false, statusErr
@@ -512,7 +512,7 @@ func (s *DurableService) emitScheduleFailure(ctx context.Context, occurrence mod
 	return s.emitOutbox(ctx, model.OutboxEvent{
 		AggregateType: "scheduled_occurrence", AggregateID: occurrence.ID,
 		EventType: events.TypeScheduleOccurrenceFailed,
-		Payload: events.NewScheduleOccurrenceFailed(occurrence.ID, row.ID, status, code, retryable, time.Now().UTC()).ToPayload(),
+		Payload:   events.NewScheduleOccurrenceFailed(occurrence.ID, row.ID, status, code, retryable, time.Now().UTC()).ToPayload(),
 	})
 }
 
@@ -520,7 +520,7 @@ func (s *DurableService) emitSchedulePaused(ctx context.Context, scheduleID uuid
 	return s.emitOutbox(ctx, model.OutboxEvent{
 		AggregateType: "scheduled_transaction", AggregateID: scheduleID,
 		EventType: events.TypeSchedulePaused,
-		Payload: events.NewSchedulePaused(scheduleID, reason, time.Now().UTC()).ToPayload(),
+		Payload:   events.NewSchedulePaused(scheduleID, reason, time.Now().UTC()).ToPayload(),
 	})
 }
 
@@ -591,8 +591,8 @@ func policyFromSchedule(row model.ScheduledTransaction) model.ScheduledPolicy {
 	return model.ScheduledPolicy{
 		MissedRunPolicy:             missed,
 		CatchUpLimit:                catchUp,
-		MaxInfrastructureAttempts:  maxInfrastructureAttempts,
-		RetryWindowSeconds:         retryWindowSeconds,
+		MaxInfrastructureAttempts:   maxInfrastructureAttempts,
+		RetryWindowSeconds:          retryWindowSeconds,
 		ConsecutiveFailureThreshold: threshold,
 		MaxFeeAmount:                row.MaxFeeAmount,
 		FeeMode:                     feeMode,
@@ -685,9 +685,7 @@ func scheduleLocation(timezone string, fallback *time.Location) *time.Location {
 
 func cloneMetadata(input map[string]any) map[string]any {
 	result := make(map[string]any, len(input)+4)
-	for key, value := range input {
-		result[key] = value
-	}
+	maps.Copy(result, input)
 	return result
 }
 

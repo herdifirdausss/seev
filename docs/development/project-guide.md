@@ -61,7 +61,7 @@ CI and container builders read the same version.
 - Preserve request authentication and authorization at public and internal
   boundaries. Internal gRPC authentication is not a replacement for user
   authorization.
-- Every internal hop (gRPC and internal HTTP, across all nine services) is
+- Every internal hop (gRPC and internal HTTP, across all nine core services) is
   mutually authenticated with a SPIFFE-style URI SAN identity (pkg/tlsx,
   cmd/certgen — docs/roadmap/archive/49). Identity is the URI SAN, never a Common Name
   or "signed by our CA" alone; a new hop must be added to its listener's

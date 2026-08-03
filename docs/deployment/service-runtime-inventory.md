@@ -1,6 +1,8 @@
 # Service runtime inventory
 
-K0 canonicalizes the nine deployable application processes. Kubernetes names
+K0 canonicalizes the nine core deployable application processes. The optional
+local mock push provider is a support process and is not part of the business
+service count. Kubernetes names
 are intentionally shorter than the current application names; the mTLS
 identity mapping is separate and is recorded in
 [mtls-identity-matrix.md](mtls-identity-matrix.md).

@@ -1,7 +1,7 @@
 # Plan 58 — C2 Data Platform and Revenue Analytics
 
 **Created:** 2026-07-28
-**Status:** Implementation in progress; runtime evidence pending
+**Status:** Implementation present; runtime acceptance evidence pending
 **Roadmap track:** C2 — Data Platform and Revenue Analytics
 **Activation trigger:** Conscious CDC/data-platform learning decision
 **Depends on:** Stable source contracts, A8 observability foundation, A9 contract governance
@@ -10,6 +10,10 @@
 **Deferred source owners:** VendorService, Gateway merchant module, FraudService
 **Analytics stack:** Debezium PostgreSQL connectors, Kafka Connect, Redpanda, ClickHouse, dbt, Metabase
 **No money-movement flow may depend on this platform.**
+
+The C2 code, contracts, connector allowlists, optional stack, and reconciliation
+paths are present in the current main checkout. Keep this plan active until
+runtime and acceptance evidence is recorded; see the [current-state inventory](../../reference/current-state.md).
 
 ---
 

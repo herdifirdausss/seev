@@ -303,7 +303,7 @@ func toQuoteResponse(q feepolicy.Quote) quoteResponse {
 	}
 	return quoteResponse{
 		QuoteID: q.ID, Amount: q.Amount.String(), FeeAmount: q.FeeAmount.String(),
-		Gateway: q.Gateway,
+		Gateway:    q.Gateway,
 		FeeGateway: q.FeeGateway, FeeApplication: feeApplication,
 		TotalDebit: q.Amount.Add(q.FeeAmount).String(), Currency: q.Currency, ExpiresAt: q.ExpiresAt,
 	}
@@ -460,15 +460,14 @@ type createScheduleRequest struct {
 	DayOfMonth *int `json:"day_of_month,omitempty"`
 	// C5 policy fields are optional so legacy schedules retain their original
 	// request shape and missed-run behavior.
-	Currency                    string `json:"currency,omitempty"`
 	Timezone                    string `json:"timezone,omitempty"`
 	LocalTime                   string `json:"local_time,omitempty"`
 	MissedRunPolicy             string `json:"missed_run_policy,omitempty"`
 	CatchUpLimit                int    `json:"catch_up_limit,omitempty"`
 	MaxFeeAmount                *int64 `json:"max_fee_amount,omitempty"`
-	MaxInfrastructureAttempts  int    `json:"max_infrastructure_attempts,omitempty"`
-	RetryWindowSeconds         int64  `json:"retry_window_seconds,omitempty"`
-	FeeMode                    string `json:"fee_mode,omitempty"`
+	MaxInfrastructureAttempts   int    `json:"max_infrastructure_attempts,omitempty"`
+	RetryWindowSeconds          int64  `json:"retry_window_seconds,omitempty"`
+	FeeMode                     string `json:"fee_mode,omitempty"`
 	ConsecutiveFailureThreshold int    `json:"consecutive_failure_threshold,omitempty"`
 }
 
@@ -479,39 +478,38 @@ type createScheduleResponse struct {
 	MissedRunPolicy             string    `json:"missed_run_policy,omitempty"`
 	CatchUpLimit                int       `json:"catch_up_limit,omitempty"`
 	MaxFeeAmount                *int64    `json:"max_fee_amount,omitempty"`
-	MaxInfrastructureAttempts  int       `json:"max_infrastructure_attempts,omitempty"`
-	RetryWindowSeconds         int64     `json:"retry_window_seconds,omitempty"`
-	FeeMode                    string    `json:"fee_mode,omitempty"`
+	MaxInfrastructureAttempts   int       `json:"max_infrastructure_attempts,omitempty"`
+	RetryWindowSeconds          int64     `json:"retry_window_seconds,omitempty"`
+	FeeMode                     string    `json:"fee_mode,omitempty"`
 	ConsecutiveFailureThreshold int       `json:"consecutive_failure_threshold,omitempty"`
 }
 
 type scheduleResponse struct {
-	ID           uuid.UUID `json:"id"`
-	UserID       uuid.UUID `json:"user_id"`
-	Currency     string    `json:"currency,omitempty"`
-	ScheduleKind string    `json:"schedule_kind"`
-	RunAtDate    string    `json:"run_at_date"`
-	DayOfMonth   *int      `json:"day_of_month,omitempty"`
-	Status       string    `json:"status"`
-	LastRunDate  string    `json:"last_run_date,omitempty"`
-	LastError    string    `json:"last_error,omitempty"`
-	CommandType  string    `json:"command_type,omitempty"`
-	Currency     string    `json:"currency,omitempty"`
-	Timezone     string    `json:"timezone,omitempty"`
-	LocalTime    string    `json:"local_time,omitempty"`
-	MissedRunPolicy             string `json:"missed_run_policy,omitempty"`
-	CatchUpLimit                int    `json:"catch_up_limit,omitempty"`
-	MaxFeeAmount                *int64  `json:"max_fee_amount,omitempty"`
-	MaxInfrastructureAttempts  int    `json:"max_infrastructure_attempts,omitempty"`
-	RetryWindowSeconds         int64  `json:"retry_window_seconds,omitempty"`
-	FeeMode                    string `json:"fee_mode,omitempty"`
-	ConsecutiveFailureThreshold int    `json:"consecutive_failure_threshold,omitempty"`
-	ConsecutiveFailureCount     int    `json:"consecutive_failure_count,omitempty"`
+	ID                          uuid.UUID  `json:"id"`
+	UserID                      uuid.UUID  `json:"user_id"`
+	Currency                    string     `json:"currency,omitempty"`
+	ScheduleKind                string     `json:"schedule_kind"`
+	RunAtDate                   string     `json:"run_at_date"`
+	DayOfMonth                  *int       `json:"day_of_month,omitempty"`
+	Status                      string     `json:"status"`
+	LastRunDate                 string     `json:"last_run_date,omitempty"`
+	LastError                   string     `json:"last_error,omitempty"`
+	CommandType                 string     `json:"command_type,omitempty"`
+	Timezone                    string     `json:"timezone,omitempty"`
+	LocalTime                   string     `json:"local_time,omitempty"`
+	MissedRunPolicy             string     `json:"missed_run_policy,omitempty"`
+	CatchUpLimit                int        `json:"catch_up_limit,omitempty"`
+	MaxFeeAmount                *int64     `json:"max_fee_amount,omitempty"`
+	MaxInfrastructureAttempts   int        `json:"max_infrastructure_attempts,omitempty"`
+	RetryWindowSeconds          int64      `json:"retry_window_seconds,omitempty"`
+	FeeMode                     string     `json:"fee_mode,omitempty"`
+	ConsecutiveFailureThreshold int        `json:"consecutive_failure_threshold,omitempty"`
+	ConsecutiveFailureCount     int        `json:"consecutive_failure_count,omitempty"`
 	LastPlannedAt               *time.Time `json:"last_planned_at,omitempty"`
-	Version                     int64  `json:"version,omitempty"`
-	PausedReason                *string `json:"paused_reason,omitempty"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	Version                     int64      `json:"version,omitempty"`
+	PausedReason                *string    `json:"paused_reason,omitempty"`
+	CreatedAt                   time.Time  `json:"created_at"`
+	UpdatedAt                   time.Time  `json:"updated_at"`
 }
 
 func toScheduleResponse(st model.ScheduledTransaction) scheduleResponse {
@@ -522,9 +520,9 @@ func toScheduleResponse(st model.ScheduledTransaction) scheduleResponse {
 		Timezone: st.Timezone, LocalTime: st.LocalTime, MissedRunPolicy: st.MissedRunPolicy,
 		CatchUpLimit: st.CatchUpLimit, MaxFeeAmount: st.MaxFeeAmount,
 		MaxInfrastructureAttempts: st.MaxInfrastructureAttempts, RetryWindowSeconds: st.RetryWindowSeconds,
-		FeeMode: st.FeeMode,
+		FeeMode:                     st.FeeMode,
 		ConsecutiveFailureThreshold: st.ConsecutiveFailureThreshold,
-		ConsecutiveFailureCount: st.ConsecutiveFailureCount, LastPlannedAt: st.LastPlannedAt,
+		ConsecutiveFailureCount:     st.ConsecutiveFailureCount, LastPlannedAt: st.LastPlannedAt,
 		Version: st.Version, PausedReason: st.PausedReason,
 		CreatedAt: st.CreatedAt, UpdatedAt: st.UpdatedAt,
 	}

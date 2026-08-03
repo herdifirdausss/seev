@@ -9,7 +9,7 @@ not a claim of executed runtime success.
 | CDC | snapshot, streaming, restart, delete marker, schema failure, WAL monitoring | pending runtime |
 | Warehouse | raw/staging/core/mart/control, deterministic dedup, integer money, TTL, BI grants | pending runtime |
 | Financial | debit=credit, source cutoff reconciliation, fee-account revenue, reversal behavior | pending runtime |
-| Privacy | no prohibited fields, deterministic pseudonym, no committed secrets | static implementation pending gate |
+| Privacy | no prohibited fields, deterministic pseudonym, no committed secrets | static implementation committed; repository gate passed |
 | Reliability | Connect/Redpanda/ClickHouse/source outage recovery and OLTP green | pending chaos |
 | Operations | lag/WAL/freshness/dbt/reconciliation metrics and runbooks | code committed; wiring verification pending |
 | Documentation | metric/data/dashboard catalog, threat model, residual risks | committed |

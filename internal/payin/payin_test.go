@@ -40,6 +40,9 @@ func discardLogger() *slog.Logger { return slog.New(slog.NewTextHandler(io.Disca
 type stubVerifier struct{ name string }
 
 func (s stubVerifier) Vendor() string { return s.name }
+func (stubVerifier) SupportsCurrency(operation, currency string) bool {
+	return operation == "topup" && (currency == "IDR" || currency == "USD")
+}
 func (s stubVerifier) VerifyAndParse(http.Header, []byte) (*vendorgw.PayinEvent, error) {
 	return nil, errors.New("raw payin callback must be handled by VendorService")
 }
@@ -160,6 +163,7 @@ func TestReplayEvent_FailedEvent_RetriesPost(t *testing.T) {
 	repo := repository.NewMockRepository(ctrl)
 	id := uuid.New()
 	repo.EXPECT().Get(gomock.Any(), id).Return(model.WebhookEvent{ID: id, Vendor: "acme", VendorEventID: "evt-9", ExternalRef: "ref-9", UserID: uuid.New(), Amount: decimal.NewFromInt(1000), Currency: "IDR", Status: "failed"}, nil)
+	repo.EXPECT().GetTopupIntentByReference(gomock.Any(), "ref-9").Return(model.TopupIntent{}, false, nil)
 	repo.EXPECT().MarkPosted(gomock.Any(), id).Return(nil)
 	repo.EXPECT().MarkTopupIntentSettled(gomock.Any(), "ref-9", id).Return(false, nil)
 	m := &Module{repo: repo, poster: stubPoster{fn: func(context.Context, ledgerclient.Command) error { return nil }}, routing: routeTo("acme", "bca"), logger: discardLogger()}

@@ -50,9 +50,10 @@ flowchart LR
 | Where is configuration loaded? | [`internal/config/config.go`](../../internal/config/config.go) |
 | What proves fresh containers can start together? | [`scripts/smoke-container.sh`](../../scripts/smoke-container.sh) |
 
-The executable system currently has nine services. Utilities under `cmd/`,
-such as the certificate generator and documentation checker, are not services
-because they do not keep listening for requests.
+The executable system currently has nine core business services. The optional
+`cmd/mock-push-provider` is a local notification sink, while utilities under
+`cmd/` such as the certificate generator and documentation checker are not
+services because they do not keep listening for business requests.
 
 ## Identity and KYC
 

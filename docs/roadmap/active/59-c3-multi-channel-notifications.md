@@ -12,8 +12,8 @@
 **No paid provider and no new application service are authorized by this plan.**
 
 **Current implementation note:** The C3 code, migrations, local providers,
-operational artifacts, and reference documents are implemented in the
-dedicated worktree. The entry-gate, cutover, and final-acceptance records
+operational artifacts, and reference documents are implemented in the current
+main checkout. The entry-gate, cutover, and final-acceptance records
 intentionally remain pending because this pass changes code only; see
 [C3 entry-gate evidence](../../evidence/c3-entry-gate.md) and
 [C3 final acceptance](../../evidence/c3-final-acceptance.md).
@@ -179,7 +179,7 @@ The following may not merge before the gate is green:
 
 C3 does not create `NotificationService`.
 
-The current nine-service topology remains the baseline. Gateway already owns:
+The current nine-core-service topology remains the baseline. Gateway already owns:
 
 - the public user API;
 - the in-app notification inbox;

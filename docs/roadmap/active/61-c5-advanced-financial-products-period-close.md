@@ -1,7 +1,7 @@
 # Plan 61 — C5 Advanced Financial Products and Period Close
 
 **Created:** 2026-07-28
-**Status:** Ready for execution after the C5 entry gate
+**Status:** Implementation present; runtime acceptance evidence pending
 **Roadmap track:** C5 — Advanced financial products
 **Activation trigger:** Accrual and fee-quote foundations are complete, and
 period-close learning is intentionally activated
@@ -12,6 +12,10 @@ period-close learning is intentionally activated
 **Initial product scope:** Monthly savings-interest capitalization, durable
 scheduled-transaction failure policy, and top-up fees
 **No new application service is authorized by this plan.**
+
+The savings, period-close, durable-schedule, and top-up-fee implementation is
+present in Ledger. Keep this plan active until runtime and acceptance evidence
+is recorded; see the [current-state inventory](../../reference/current-state.md).
 
 ---
 

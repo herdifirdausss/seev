@@ -25,8 +25,8 @@ func newMockDB(t *testing.T) (*database.DBSQL, sqlmock.Sqlmock) {
 func TestCreateUserAccounts_InvalidCurrency_Rejected(t *testing.T) {
 	db, _ := newMockDB(t)
 	svc := New(db, repository.NewProvisioningRepository())
-	_, err := svc.CreateUserAccounts(context.Background(), uuid.New(), "USD")
-	assert.ErrorIs(t, err, apperror.ErrValidation)
+	_, err := svc.CreateUserAccounts(context.Background(), uuid.New(), "XXX")
+	assert.ErrorIs(t, err, apperror.ErrCurrencyInvalid)
 }
 
 func TestCreateUserAccounts_NilUserID_Rejected(t *testing.T) {

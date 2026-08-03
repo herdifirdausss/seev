@@ -327,6 +327,47 @@
         "observability"
       ]
     },
+    "mailpit": {
+      "build_service": null,
+      "depends_on": {},
+      "image": "axllent/mailpit:v1.21.8",
+      "ports": [
+        {
+          "host_ip": "127.0.0.1",
+          "mode": "ingress",
+          "protocol": "tcp",
+          "published": "1025",
+          "target": 1025
+        },
+        {
+          "host_ip": "127.0.0.1",
+          "mode": "ingress",
+          "protocol": "tcp",
+          "published": "8025",
+          "target": 8025
+        }
+      ],
+      "profiles": [
+        "notifications"
+      ]
+    },
+    "mock-push-provider": {
+      "build_service": "mock-push-provider",
+      "depends_on": {},
+      "image": "seev/mock-push-provider:${SEEV_IMAGE_TAG:-dev}",
+      "ports": [
+        {
+          "host_ip": "127.0.0.1",
+          "mode": "ingress",
+          "protocol": "tcp",
+          "published": "8097",
+          "target": 8097
+        }
+      ],
+      "profiles": [
+        "notifications"
+      ]
+    },
     "object-store-init": {
       "build_service": null,
       "depends_on": {},
@@ -560,6 +601,9 @@
     },
     "seev_loki_data": {
       "name": "seev_seev_loki_data"
+    },
+    "seev_mailpit_data": {
+      "name": "seev_seev_mailpit_data"
     },
     "seev_object_store": {
       "name": "seev_seev_object_store"

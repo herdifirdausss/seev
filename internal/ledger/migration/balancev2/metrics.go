@@ -62,14 +62,6 @@ var (
 		Namespace: "seev", Subsystem: "data_migration", Name: "read_percentage",
 		Help: "Current Ledger balance target-read percentage in basis points.",
 	}, []string{"migration"})
-	reconciliationTotal = promauto.NewCounterVec(prometheus.CounterOpts{
-		Namespace: "seev", Subsystem: "data_migration", Name: "reconciliation_total",
-		Help: "Ledger balance migration reconciliation runs.",
-	}, []string{"migration", "type", "result"})
-	checkpointAge = promauto.NewGaugeVec(prometheus.GaugeOpts{
-		Namespace: "seev", Subsystem: "data_migration", Name: "checkpoint_age_seconds",
-		Help: "Age of the Ledger balance migration checkpoint.",
-	}, []string{"migration", "worker"})
 )
 
 var stateNumbers = map[string]float64{

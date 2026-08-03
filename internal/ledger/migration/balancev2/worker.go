@@ -13,10 +13,10 @@ import (
 )
 
 type reconcileStats struct {
-	processed int64
-	matches   int64
+	processed  int64
+	matches    int64
 	mismatches int64
-	errors    int64
+	errors     int64
 }
 
 // BackfillOnce advances one bounded keyset page. It never locks the source
@@ -52,7 +52,7 @@ func (r *Runtime) BackfillOnce(ctx context.Context) error {
 		if len(rows) == 0 {
 			empty = true
 			checkpoint.Status = "completed"
-			checkpoint.LeaseExpiresAt = timePtr(time.Now().UTC())
+			checkpoint.LeaseExpiresAt = new(time.Now().UTC())
 			return r.controls.SaveCheckpointTx(ctx, tx, checkpoint)
 		}
 		for _, source := range rows {
@@ -87,7 +87,7 @@ func (r *Runtime) BackfillOnce(ctx context.Context) error {
 		checkpoint.UpdatedCount += updated
 		checkpoint.FailedCount += failed
 		checkpoint.Status = "running"
-		checkpoint.LeaseExpiresAt = timePtr(time.Now().UTC().Add(r.cfg.BackfillStatementTimeout))
+		checkpoint.LeaseExpiresAt = new(time.Now().UTC().Add(r.cfg.BackfillStatementTimeout))
 		return r.controls.SaveCheckpointTx(ctx, tx, checkpoint)
 	})
 	if err != nil {
@@ -151,8 +151,6 @@ func checkpointLastKey(value string) (*uuid.UUID, error) {
 	}
 	return &id, nil
 }
-
-func timePtr(value time.Time) *time.Time { return &value }
 
 // ReconcileOnce performs one bounded source/target, target/ledger, and
 // source/ledger comparison page. The worker intentionally records hashes,
@@ -263,7 +261,7 @@ func (r *Runtime) reconcilePage(ctx context.Context, migration Migration, checkp
 	if len(rows) == 0 {
 		checkpoint.Status = "completed"
 		checkpoint.LastSourceKey = ""
-		checkpoint.LeaseExpiresAt = timePtr(time.Now().UTC())
+		checkpoint.LeaseExpiresAt = new(time.Now().UTC())
 		if err := r.controls.SaveCheckpoint(ctx, *checkpoint); err != nil {
 			return false, stats, err
 		}
@@ -320,7 +318,7 @@ func (r *Runtime) reconcilePage(ctx context.Context, migration Migration, checkp
 		}
 	}
 	checkpoint.Status = "running"
-	checkpoint.LeaseExpiresAt = timePtr(time.Now().UTC().Add(r.cfg.WorkerInterval * 2))
+	checkpoint.LeaseExpiresAt = new(time.Now().UTC().Add(r.cfg.WorkerInterval * 2))
 	if err := r.controls.SaveCheckpoint(ctx, *checkpoint); err != nil {
 		return false, stats, err
 	}

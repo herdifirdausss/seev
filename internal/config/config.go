@@ -259,10 +259,10 @@ type BalanceV2Config struct {
 
 // FraudConfig contains fraud-service rule configuration.
 type FraudConfig struct {
-	ScreeningMode                       string
-	ScreeningAmountThreshold            int64
-	ScreeningAmountThresholdByCurrency  map[string]int64
-	ScreeningVelocityMaxPerHour         int64
+	ScreeningMode                      string
+	ScreeningAmountThreshold           int64
+	ScreeningAmountThresholdByCurrency map[string]int64
+	ScreeningVelocityMaxPerHour        int64
 }
 
 // AdminBFFConfig contains only BFF-owned session and downstream transport
@@ -529,7 +529,7 @@ func (c RabbitMQConfig) Broker() messaging.BrokerConfig {
 // WorkerConfig tunes the ledger module's background workers (outbox relay +
 // integrity verifier). See docs/roadmap/archive/06-phase-1-workers.md.
 type WorkerConfig struct {
-	Enabled            bool
+	Enabled bool
 	// C5Enabled is deliberately opt-in: migrations and maker/checker controls
 	// can be deployed before durable schedule/interest behavior starts.
 	C5Enabled          bool
@@ -1322,7 +1322,7 @@ func parseCurrencyInt64Map(raw string) map[string]int64 {
 		return nil
 	}
 	result := make(map[string]int64)
-	for _, item := range strings.Split(raw, ",") {
+	for item := range strings.SplitSeq(raw, ",") {
 		parts := strings.SplitN(item, "=", 2)
 		if len(parts) != 2 {
 			continue

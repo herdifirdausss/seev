@@ -232,7 +232,7 @@ func (m *Module) postAndFinalize(ctx context.Context, ev model.WebhookEvent, gat
 	// A retained webhook row is self-describing even when the original intent
 	// is no longer readable. Its legacy Amount column is the provider total;
 	// recover the principal from the additive C5 snapshot before attempting a
-	// replay. The intent path below remains authoritative whenever it exists.
+	// replay. Only legacy rows without that snapshot need an intent lookup.
 	if !ev.TotalDebit.IsZero() {
 		if ev.TotalDebit.IsNegative() || ev.FeeAmount.IsNegative() || ev.FeeAmount.GreaterThanOrEqual(ev.TotalDebit) {
 			return &businessError{err: fmt.Errorf("payin: invalid topup financial snapshot")}
@@ -246,7 +246,7 @@ func (m *Module) postAndFinalize(ctx context.Context, ev model.WebhookEvent, gat
 			feeApplication = ev.FeeApplication
 		}
 	}
-	if ev.ExternalRef != "" {
+	if ev.ExternalRef != "" && ev.TotalDebit.IsZero() {
 		if intent, found, lookupErr := m.repo.GetTopupIntentByReference(ctx, ev.ExternalRef); lookupErr != nil {
 			return fmt.Errorf("payin: load topup financial snapshot: %w", lookupErr)
 		} else if found {
@@ -324,14 +324,14 @@ func (m *Module) postAndFinalize(ctx context.Context, ev model.WebhookEvent, gat
 		UserID:           ev.UserID,
 		Currency:         ev.Currency,
 		Metadata: map[string]any{
-			"gateway":      gateway,
-			"external_ref": ev.ExternalRef,
-			"currency_inflight": true,
+			"gateway":            gateway,
+			"external_ref":       ev.ExternalRef,
+			"currency_inflight":  true,
 			"provider_reference": ev.ExternalRef,
-			"currency":      ev.Currency,
-			"total_debit":  totalDebit.String(),
-			"fee_amount":   feeAmount.String(),
-			"fee_application": feeApplication,
+			"currency":           ev.Currency,
+			"total_debit":        totalDebit.String(),
+			"fee_amount":         feeAmount.String(),
+			"fee_application":    feeApplication,
 		},
 	}
 	if payinID != uuid.Nil {

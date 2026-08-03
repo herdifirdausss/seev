@@ -60,7 +60,7 @@ var ownerPattern = regexp.MustCompile(`^[a-z][a-z0-9]*$`)
 // never user input, but this still guards against a future call site
 // accidentally interpolating something dynamic into the query string built
 // in RunOnce (docs/roadmap/archive/51 K4: "not arbitrary SQL").
-var functionNamePattern = regexp.MustCompile(`^fn_retention_purge_[a-z0-9_]+$`)
+var functionNamePattern = regexp.MustCompile(`^fn_retention_(purge|redact)_[a-z0-9_]+$`)
 
 // Class binds one config/data-retention.yaml policy entry to the Postgres
 // function that implements it. Every retention function shares one fixed

@@ -175,10 +175,7 @@ func (r Rate) DecimalString(maxScale int) (string, error) {
 	if denominator.Cmp(one) != 0 {
 		return "", fmt.Errorf("%w: rate denominator is non-terminating in base 10", ErrInvalidAmount)
 	}
-	scale := twoCount
-	if fiveCount > scale {
-		scale = fiveCount
-	}
+	scale := max(fiveCount, twoCount)
 	if scale > maxScale {
 		return "", fmt.Errorf("%w: rate scale exceeds %d decimal places", ErrInvalidAmount, maxScale)
 	}

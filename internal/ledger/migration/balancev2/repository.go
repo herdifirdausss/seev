@@ -116,8 +116,8 @@ func targetForAccount(ctx context.Context, q queryer, accountID uuid.UUID) (*Tar
 	if err != nil {
 		return nil, fmt.Errorf("balancev2: read target %s: %w", accountID, err)
 	}
-	if strings.ToUpper(strings.TrimSpace(row.Currency)) != strings.ToUpper(strings.TrimSpace(sourceCurrency)) ||
-		strings.ToLower(strings.TrimSpace(row.AccountType)) != strings.ToLower(strings.TrimSpace(sourceType)) ||
+	if !strings.EqualFold(strings.TrimSpace(row.Currency), strings.TrimSpace(sourceCurrency)) ||
+		!strings.EqualFold(strings.TrimSpace(row.AccountType), strings.TrimSpace(sourceType)) ||
 		row.AllowNegative != sourceAllowNegative {
 		return nil, fmt.Errorf("balancev2: target semantic identity mismatch for %s", accountID)
 	}

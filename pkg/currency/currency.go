@@ -9,6 +9,7 @@ package currency
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"regexp"
 	"strings"
 	"sync/atomic"
@@ -55,9 +56,7 @@ func Load(list []Currency) {
 		}
 		if c.Operations != nil {
 			ops := make(map[string]bool, len(c.Operations))
-			for operation, enabled := range c.Operations {
-				ops[operation] = enabled
-			}
+			maps.Copy(ops, c.Operations)
 			c.Operations = ops
 		}
 		m[c.Code] = c

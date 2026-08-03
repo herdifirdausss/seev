@@ -1,9 +1,10 @@
 # C2 source inventory
 
-This is the review baseline derived from the service migrations at commit
-`ff21bf1` in the implementation worktree. Runtime database sizes, PostgreSQL
-image digest, logical-WAL settings, and live migration tables are intentionally
-marked pending until the entry gate is executed.
+This is the review baseline derived from the service migrations. The original
+entry inventory was captured at commit `ff21bf1`; current feature state is
+tracked in [Current State](current-state.md). Runtime database sizes, PostgreSQL
+image digest, logical-WAL settings, and live migration tables remain pending
+until the C2 runtime entry gate is executed.
 
 | Service | Database | Migration head in repository | Initial tables | Owner |
 | --- | --- | ---: | --- | --- |

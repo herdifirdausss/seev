@@ -55,7 +55,7 @@ func (p *FXRebalanceCredit) Validate(ctx context.Context, tx *sql.Tx, cmd Resolv
 	if _, err := generalutil.MetaString(cmd.Metadata, "reason"); err != nil {
 		return fmt.Errorf("%w: fx_rebalance_credit requires metadata 'reason'", apperror.ErrValidation)
 	}
-	if err := MultiValidator{PositiveAmountValidator{}, IntegralAmountValidator{}}.Validate(ctx, tx, cmd, nil); err != nil {
+	if err := (MultiValidator{PositiveAmountValidator{}, IntegralAmountValidator{}}).Validate(ctx, tx, cmd, nil); err != nil {
 		return err
 	}
 	return validateFXRebalancePosition(ctx, tx, cmd, balances, cmd.AccountIDs[1], true)
@@ -121,7 +121,7 @@ func (p *FXRebalanceDebit) Validate(ctx context.Context, tx *sql.Tx, cmd Resolve
 	if _, err := generalutil.MetaString(cmd.Metadata, "reason"); err != nil {
 		return fmt.Errorf("%w: fx_rebalance_debit requires metadata 'reason'", apperror.ErrValidation)
 	}
-	if err := MultiValidator{PositiveAmountValidator{}, IntegralAmountValidator{}}.Validate(ctx, tx, cmd, nil); err != nil {
+	if err := (MultiValidator{PositiveAmountValidator{}, IntegralAmountValidator{}}).Validate(ctx, tx, cmd, nil); err != nil {
 		return err
 	}
 	return validateFXRebalancePosition(ctx, tx, cmd, balances, cmd.AccountIDs[0], false)

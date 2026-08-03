@@ -5,9 +5,10 @@ machine-readable inventories and evidence hashes instead of rediscovering
 baseline facts.
 
 Entry is conditional: [K0 final acceptance](../evidence/k0/final-acceptance.md)
-must report a passing static gate. The current worktree is held at K0 because
-`cmd/gateway/main.go` references notification channel packages that are not
-present; see K0-F-011 in the [risk register](deployment-risk-register.md).
+must report a passing static gate and reviewed runtime boundary. The current
+static and inventory gates pass; K1 remains held until K0's partial runtime
+evidence and human sign-off are resolved. K0-F-011 is retained as a resolved
+finding in the [risk register](deployment-risk-register.md).
 
 | Track | Required input | K0 source |
 |---|---|---|

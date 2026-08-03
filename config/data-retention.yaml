@@ -1069,6 +1069,297 @@ entries:
     policy_version: 1
     notes: "Live per-account interest configuration, not event history."
 
+  # ── ledger: C4 multi-currency ─────────────────────────────────────────────
+  - owner: ledger
+    class: ledger.fx_conversions
+    table: ledger.fx_conversions
+    classification: financial
+    terminal_timestamp: null
+    duration: null
+    action: retain_permanent
+    batch_size: 0
+    hold_scope: none
+    policy_version: 1
+    notes: "Current C4 implementation judgment call: immutable conversion legs and their booked amounts are financial evidence and are retained permanently."
+
+  - owner: ledger
+    class: ledger.fx_quotes
+    table: ledger.fx_quotes
+    classification: financial
+    terminal_timestamp: null
+    duration: null
+    action: retain_permanent
+    batch_size: 0
+    hold_scope: none
+    policy_version: 1
+    notes: "Current C4 implementation judgment call: quotes are retained with their conversion lineage so a booked FX result remains auditable."
+
+  - owner: ledger
+    class: ledger.fx_pair_directions
+    table: ledger.fx_pair_directions
+    classification: financial
+    terminal_timestamp: null
+    duration: null
+    action: retain_state
+    batch_size: 0
+    hold_scope: none
+    policy_version: 1
+    notes: "Current C4 implementation judgment call: live currency-pair direction configuration is retained as state, not treated as an event log."
+
+  - owner: ledger
+    class: ledger.fx_pairs
+    table: ledger.fx_pairs
+    classification: financial
+    terminal_timestamp: null
+    duration: null
+    action: retain_state
+    batch_size: 0
+    hold_scope: none
+    policy_version: 1
+    notes: "Current C4 implementation judgment call: live currency-pair configuration is retained as state, not age-purged."
+
+  - owner: ledger
+    class: ledger.fx_position_limits
+    table: ledger.fx_position_limits
+    classification: financial
+    terminal_timestamp: null
+    duration: null
+    action: retain_state
+    batch_size: 0
+    hold_scope: none
+    policy_version: 1
+    notes: "Current C4 implementation judgment call: position-limit configuration is retained as state and remains available for risk review."
+
+  - owner: ledger
+    class: ledger.fx_rate_versions
+    table: ledger.fx_rate_versions
+    classification: financial
+    terminal_timestamp: null
+    duration: null
+    action: retain_permanent
+    batch_size: 0
+    hold_scope: none
+    policy_version: 1
+    notes: "Current C4 implementation judgment call: versioned FX rates are immutable pricing evidence and are retained permanently."
+
+  # ── ledger: C5 financial products and durable execution ──────────────────
+  - owner: ledger
+    class: ledger.interest_adjustments
+    table: ledger.interest_adjustments
+    classification: financial
+    terminal_timestamp: null
+    duration: null
+    action: retain_permanent
+    batch_size: 0
+    hold_scope: none
+    policy_version: 1
+    notes: "Current C5 implementation judgment call: interest adjustments are financial corrections and are retained permanently."
+
+  - owner: ledger
+    class: ledger.interest_capitalization_items
+    table: ledger.interest_capitalization_items
+    classification: financial
+    terminal_timestamp: null
+    duration: null
+    action: retain_permanent
+    batch_size: 0
+    hold_scope: none
+    policy_version: 1
+    notes: "Current C5 implementation judgment call: capitalization items are financial posting evidence and are retained permanently."
+
+  - owner: ledger
+    class: ledger.interest_daily_accruals
+    table: ledger.interest_daily_accruals
+    classification: financial
+    terminal_timestamp: null
+    duration: null
+    action: retain_permanent
+    batch_size: 0
+    hold_scope: none
+    policy_version: 1
+    notes: "Current C5 implementation judgment call: daily accrual records support interest reconciliation and are retained permanently."
+
+  - owner: ledger
+    class: ledger.interest_period_checks
+    table: ledger.interest_period_checks
+    classification: financial
+    terminal_timestamp: null
+    duration: null
+    action: retain_permanent
+    batch_size: 0
+    hold_scope: none
+    policy_version: 1
+    notes: "Current C5 implementation judgment call: closed-period checks are financial control evidence and are retained permanently."
+
+  - owner: ledger
+    class: ledger.interest_periods
+    table: ledger.interest_periods
+    classification: financial
+    terminal_timestamp: null
+    duration: null
+    action: retain_permanent
+    batch_size: 0
+    hold_scope: none
+    policy_version: 1
+    notes: "Current C5 implementation judgment call: interest-period close state and totals are retained permanently for reconciliation."
+
+  - owner: ledger
+    class: ledger.savings_enrollment_status_history
+    table: ledger.savings_enrollment_status_history
+    classification: financial
+    terminal_timestamp: null
+    duration: null
+    action: retain_permanent
+    batch_size: 0
+    hold_scope: none
+    policy_version: 1
+    notes: "Current C5 implementation judgment call: enrollment status history is an account-product audit trail and is retained permanently."
+
+  - owner: ledger
+    class: ledger.savings_enrollments
+    table: ledger.savings_enrollments
+    classification: financial
+    terminal_timestamp: null
+    duration: null
+    action: retain_state
+    batch_size: 0
+    hold_scope: none
+    policy_version: 1
+    notes: "Current C5 implementation judgment call: the live savings enrollment row is retained as state; historical transitions are covered separately."
+
+  - owner: ledger
+    class: ledger.savings_products
+    table: ledger.savings_products
+    classification: financial
+    terminal_timestamp: null
+    duration: null
+    action: retain_state
+    batch_size: 0
+    hold_scope: none
+    policy_version: 1
+    notes: "Current C5 implementation judgment call: savings-product configuration is retained as state and is not age-purged."
+
+  - owner: ledger
+    class: ledger.savings_rate_versions
+    table: ledger.savings_rate_versions
+    classification: financial
+    terminal_timestamp: null
+    duration: null
+    action: retain_permanent
+    batch_size: 0
+    hold_scope: none
+    policy_version: 1
+    notes: "Current C5 implementation judgment call: versioned savings rates are pricing evidence and are retained permanently."
+
+  - owner: ledger
+    class: ledger.scheduled_execution_attempts
+    table: ledger.scheduled_execution_attempts
+    classification: financial
+    terminal_timestamp: null
+    duration: null
+    action: retain_permanent
+    batch_size: 0
+    hold_scope: none
+    policy_version: 1
+    notes: "Current C5 implementation judgment call: durable schedule execution attempts are retained as financial operational evidence."
+
+  - owner: ledger
+    class: ledger.scheduled_occurrences
+    table: ledger.scheduled_occurrences
+    classification: financial
+    terminal_timestamp: null
+    duration: null
+    action: retain_permanent
+    batch_size: 0
+    hold_scope: none
+    policy_version: 1
+    notes: "Current C5 implementation judgment call: scheduled transfer occurrences are retained permanently for execution and reconciliation evidence."
+
+  # ── ledger: C6 balance projection migration controls ─────────────────────
+  - owner: ledger
+    class: ledger.account_balances_v2
+    table: ledger.account_balances_v2
+    classification: financial
+    terminal_timestamp: null
+    duration: null
+    action: retain_state
+    batch_size: 0
+    hold_scope: none
+    policy_version: 1
+    notes: "Current C6 implementation judgment call: the rebuildable balance projection is retained as current state; source ledger history remains permanent."
+
+  - owner: ledger
+    class: ledger.data_migration_checkpoints
+    table: ledger.data_migration_checkpoints
+    classification: internal
+    terminal_timestamp: null
+    duration: null
+    action: retain_permanent
+    batch_size: 0
+    hold_scope: none
+    policy_version: 1
+    notes: "Current C6 implementation judgment call: migration checkpoints are retained permanently as control-plane evidence."
+
+  - owner: ledger
+    class: ledger.data_migration_mismatches
+    table: ledger.data_migration_mismatches
+    classification: financial
+    terminal_timestamp: null
+    duration: null
+    action: retain_permanent
+    batch_size: 0
+    hold_scope: none
+    policy_version: 1
+    notes: "Current C6 implementation judgment call: balance mismatches are retained permanently as financial migration evidence."
+
+  - owner: ledger
+    class: ledger.data_migration_repairs
+    table: ledger.data_migration_repairs
+    classification: financial
+    terminal_timestamp: null
+    duration: null
+    action: retain_permanent
+    batch_size: 0
+    hold_scope: none
+    policy_version: 1
+    notes: "Current C6 implementation judgment call: migration repairs are retained permanently as financial control evidence."
+
+  - owner: ledger
+    class: ledger.data_migration_runs
+    table: ledger.data_migration_runs
+    classification: internal
+    terminal_timestamp: null
+    duration: null
+    action: retain_permanent
+    batch_size: 0
+    hold_scope: none
+    policy_version: 1
+    notes: "Current C6 implementation judgment call: migration run records are retained permanently for operational accountability."
+
+  - owner: ledger
+    class: ledger.data_migration_transitions
+    table: ledger.data_migration_transitions
+    classification: internal
+    terminal_timestamp: null
+    duration: null
+    action: retain_permanent
+    batch_size: 0
+    hold_scope: none
+    policy_version: 1
+    notes: "Current C6 implementation judgment call: migration state transitions are retained permanently as an audit trail."
+
+  - owner: ledger
+    class: ledger.data_migrations
+    table: ledger.data_migrations
+    classification: internal
+    terminal_timestamp: null
+    duration: null
+    action: retain_permanent
+    batch_size: 0
+    hold_scope: none
+    policy_version: 1
+    notes: "Current C6 implementation judgment call: migration definitions and lifecycle state are retained permanently for auditability."
+
   # ── ledger: policy counters (Redis, not Postgres) ──────────────────────────
   - owner: ledger
     class: ledger.redis_policy_counters

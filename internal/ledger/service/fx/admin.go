@@ -430,7 +430,7 @@ func (s *Service) CreateRate(ctx context.Context, pairID, directionID uuid.UUID,
 				status, effective_from, effective_to, created_by
 			) VALUES ($1, $2, $3, $4, $5, $6, 'draft', $7, $8, $9)
 			RETURNING created_at`, id, pairID, directionID, version, storedRate,
-				rateSource, effectiveFrom, effectiveTo, actor).Scan(&result.CreatedAt); err != nil {
+			rateSource, effectiveFrom, effectiveTo, actor).Scan(&result.CreatedAt); err != nil {
 			return fmt.Errorf("insert FX rate version: %w", err)
 		}
 		result = model.FXRateVersion{
@@ -462,17 +462,19 @@ func (s *Service) ApproveRate(ctx context.Context, rateID uuid.UUID, actor strin
 	var result model.FXRateVersion
 	err := s.db.WithTx(ctx, nil, func(tx *sql.Tx) error {
 		var rate model.FXRateVersion
-		if err := scanFXRateVersion(tx.QueryRowContext(ctx, `
+		scannedRate, scanErr := scanFXRateVersion(tx.QueryRowContext(ctx, `
 			SELECT r.id, r.pair_id, r.direction_id, r.version, r.reference_rate::text,
 			       r.rate_source, r.status, r.effective_from, r.effective_to,
 			       r.created_by, r.submitted_by, r.approved_by, r.created_at,
 			       r.submitted_at, r.approved_at, r.retired_at
-			FROM fx_rate_versions r WHERE r.id = $1 FOR UPDATE`, rateID), &rate); err != nil {
-			if errors.Is(err, sql.ErrNoRows) {
+			FROM fx_rate_versions r WHERE r.id = $1 FOR UPDATE`, rateID))
+		if scanErr != nil {
+			if errors.Is(scanErr, sql.ErrNoRows) {
 				return apperror.ErrFXRateNotFound
 			}
-			return fmt.Errorf("lock FX rate version: %w", err)
+			return fmt.Errorf("lock FX rate version: %w", scanErr)
 		}
+		rate = scannedRate
 		if rate.Status != "pending_approval" {
 			return fmt.Errorf("%w: rate status is %s", apperror.ErrFXRateInvalid, rate.Status)
 		}
@@ -568,7 +570,8 @@ func (s *Service) transitionRateWithReason(ctx context.Context, rateID uuid.UUID
 	args = append(args, rateID, fromStatus)
 	query := `UPDATE fx_rate_versions ` + setClause + ` WHERE id = $` + fmt.Sprint(len(args)-1) + ` AND status = $` + fmt.Sprint(len(args)) + ` RETURNING id, pair_id, direction_id, version, reference_rate::text, rate_source, status, effective_from, effective_to, created_by, submitted_by, approved_by, created_at, submitted_at, approved_at, retired_at`
 	var result model.FXRateVersion
-	if err := scanFXRateVersion(s.db.QueryRowContext(ctx, query, args...)); err != nil {
+	result, err := scanFXRateVersion(s.db.QueryRowContext(ctx, query, args...))
+	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			var exists bool
 			if lookupErr := s.db.QueryRowContext(ctx,

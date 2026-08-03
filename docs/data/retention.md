@@ -168,19 +168,19 @@ No entry may fully delete a row from these tables — only `retain_permanent`, `
 | `gateway.merchant.webhook_events` | gateway.merchant_webhook_events | sensitive | created_at | 90d | delete | 500 | subject |
 | `gateway.notifications.any` | gateway.notif_notifications | financial | created_at | 365d | delete | 500 | subject |
 | `gateway.notifications.channel_controls` | gateway.notif_channel_controls | internal | — | — | retain_state | — | none |
-| `gateway.notifications.delivery_attempts` | gateway.notif_delivery_attempts | internal | finished_at | 90d | delete | 500 | resource |
 | `gateway.notifications.deliveries` | gateway.notif_deliveries | internal | updated_at | 180d | delete | 500 | subject |
+| `gateway.notifications.delivery_attempts` | gateway.notif_delivery_attempts | internal | finished_at | 90d | delete | 500 | resource |
 | `gateway.notifications.device_tokens` | gateway.notif_device_endpoints | secret | revoked_at | 30d | redact | 500 | subject |
 | `gateway.notifications.digest_items` | gateway.notif_digest_items | financial | updated_at | 90d | delete | 500 | subject |
 | `gateway.notifications.digest_windows` | gateway.notif_digest_windows | internal | updated_at | 90d | delete | 500 | subject |
 | `gateway.notifications.event_inbox` | gateway.notif_event_inbox | internal | processed_at | 30d | delete | 500 | resource |
 | `gateway.notifications.event_inbox_failed` | gateway.notif_event_inbox | internal | updated_at | 90d | delete | 500 | resource |
 | `gateway.notifications.preferences` | gateway.notif_preferences | personal | — | — | retain_state | — | subject |
+| `gateway.notifications.read` | gateway.notif_notifications | financial | read_at | 180d | delete | 500 | subject |
 | `gateway.notifications.recipient_ciphertext` | gateway.notif_deliveries | sensitive | updated_at | 30d | redact | 500 | subject |
 | `gateway.notifications.settings` | gateway.notif_user_settings | personal | — | — | retain_state | — | subject |
 | `gateway.notifications.template_versions` | gateway.notif_template_versions | internal | — | — | retain_permanent | — | none |
 | `gateway.notifications.templates` | gateway.notif_templates | internal | — | — | retain_state | — | none |
-| `gateway.notifications.read` | gateway.notif_notifications | financial | read_at | 180d | delete | 500 | subject |
 | `gateway.retention_audit` | gateway.gateway_retention_audit | internal | — | — | retain_permanent | — | none |
 | `gateway.retention_holds` | gateway.gateway_retention_holds | internal | — | — | retain_state | — | none |
 
@@ -212,9 +212,9 @@ No entry may fully delete a row from these tables — only `retain_permanent`, `
 
 **`gateway.notifications.channel_controls`** — The current global channel control is live safety state; each change is also recorded by the Admin BFF audit path.
 
-**`gateway.notifications.delivery_attempts`** — Finished provider-attempt evidence is bounded and sanitized; in-flight attempts remain until they finish.
-
 **`gateway.notifications.deliveries`** — Terminal delivery rows and their attempt evidence are removed after the operational evidence window; pending and processing work is never purged.
+
+**`gateway.notifications.delivery_attempts`** — Finished provider-attempt evidence is bounded and sanitized; in-flight attempts remain until they finish.
 
 **`gateway.notifications.device_tokens`** — Invalid or revoked push-token ciphertext is erased after the grace period; endpoint identity and lifecycle status remain.
 
@@ -228,6 +228,8 @@ No entry may fully delete a row from these tables — only `retain_permanent`, `
 
 **`gateway.notifications.preferences`** — Current category/channel preferences are live user configuration and have no independent age purge.
 
+**`gateway.notifications.read`** — docs/roadmap/archive/51 §4.2 'Read notification'. Requires read_at IS NOT NULL.
+
 **`gateway.notifications.recipient_ciphertext`** — Terminal email recipient ciphertext and its fingerprint are erased after the short operational window; delivery status remains.
 
 **`gateway.notifications.settings`** — Current notification settings are live user configuration; account closure pseudonymizes or removes them through the A8 owner workflow.
@@ -235,8 +237,6 @@ No entry may fully delete a row from these tables — only `retain_permanent`, `
 **`gateway.notifications.template_versions`** — Immutable template versions, hashes, and maker-checker transitions are long-lived operational evidence.
 
 **`gateway.notifications.templates`** — Template catalog rows define the governed notification-kind contract and remain as current operational state.
-
-**`gateway.notifications.read`** — docs/roadmap/archive/51 §4.2 'Read notification'. Requires read_at IS NOT NULL.
 
 **`gateway.retention_audit`** — docs/roadmap/archive/51 K4. Same shape/rationale as adminbff.retention_audit.
 
@@ -248,15 +248,33 @@ No entry may fully delete a row from these tables — only `retain_permanent`, `
 |---|---|---|---|---|---|---|---|
 | `ledger.account_balance_snapshots` | ledger.account_balance_snapshots | financial | — | — | retain_permanent | — | none |
 | `ledger.account_balances` | ledger.account_balances | financial | — | — | retain_permanent | — | none |
+| `ledger.account_balances_v2` | ledger.account_balances_v2 | financial | — | — | retain_state | — | none |
 | `ledger.accounts` | ledger.accounts | financial | — | — | retain_permanent | — | none |
 | `ledger.chargeback_dispute_status_changes` | ledger.chargeback_dispute_status_changes | financial | — | — | retain_permanent | — | none |
 | `ledger.chargeback_disputes` | ledger.chargeback_disputes | financial | — | — | retain_permanent | — | none |
 | `ledger.currencies` | ledger.currencies | public | — | — | retain_state | — | none |
+| `ledger.data_migration_checkpoints` | ledger.data_migration_checkpoints | internal | — | — | retain_permanent | — | none |
+| `ledger.data_migration_mismatches` | ledger.data_migration_mismatches | financial | — | — | retain_permanent | — | none |
+| `ledger.data_migration_repairs` | ledger.data_migration_repairs | financial | — | — | retain_permanent | — | none |
+| `ledger.data_migration_runs` | ledger.data_migration_runs | internal | — | — | retain_permanent | — | none |
+| `ledger.data_migration_transitions` | ledger.data_migration_transitions | internal | — | — | retain_permanent | — | none |
+| `ledger.data_migrations` | ledger.data_migrations | internal | — | — | retain_permanent | — | none |
 | `ledger.disbursement_batches` | ledger.disbursement_batches | internal | — | — | retain_permanent | — | none |
 | `ledger.disbursement_items` | ledger.disbursement_items | financial | — | — | retain_permanent | — | none |
 | `ledger.fee_quotes.consumed` | ledger.fee_quotes | financial | consumed_at | 365d | delete | 500 | none |
 | `ledger.fee_quotes.unconsumed` | ledger.fee_quotes | financial | expires_at | 24h | delete | 500 | none |
 | `ledger.fee_rules` | ledger.fee_rules | financial | — | — | retain_state | — | none |
+| `ledger.fx_conversions` | ledger.fx_conversions | financial | — | — | retain_permanent | — | none |
+| `ledger.fx_pair_directions` | ledger.fx_pair_directions | financial | — | — | retain_state | — | none |
+| `ledger.fx_pairs` | ledger.fx_pairs | financial | — | — | retain_state | — | none |
+| `ledger.fx_position_limits` | ledger.fx_position_limits | financial | — | — | retain_state | — | none |
+| `ledger.fx_quotes` | ledger.fx_quotes | financial | — | — | retain_permanent | — | none |
+| `ledger.fx_rate_versions` | ledger.fx_rate_versions | financial | — | — | retain_permanent | — | none |
+| `ledger.interest_adjustments` | ledger.interest_adjustments | financial | — | — | retain_permanent | — | none |
+| `ledger.interest_capitalization_items` | ledger.interest_capitalization_items | financial | — | — | retain_permanent | — | none |
+| `ledger.interest_daily_accruals` | ledger.interest_daily_accruals | financial | — | — | retain_permanent | — | none |
+| `ledger.interest_period_checks` | ledger.interest_period_checks | financial | — | — | retain_permanent | — | none |
+| `ledger.interest_periods` | ledger.interest_periods | financial | — | — | retain_permanent | — | none |
 | `ledger.ledger_entries` | ledger.ledger_entries | financial | — | — | retain_immutable | — | none |
 | `ledger.ledger_transactions` | ledger.ledger_transactions | financial | — | — | retain_permanent | — | none |
 | `ledger.outbox_events.dead` | ledger.outbox_events | financial | — | — | never_automatic | — | none |
@@ -270,12 +288,20 @@ No entry may fully delete a row from these tables — only `retain_permanent`, `
 | `ledger.retention_audit` | ledger.ledger_retention_audit | internal | — | — | retain_permanent | — | none |
 | `ledger.retention_holds` | ledger.ledger_retention_holds | internal | — | — | retain_state | — | none |
 | `ledger.savings_config` | ledger.savings_config | financial | — | — | retain_state | — | none |
+| `ledger.savings_enrollment_status_history` | ledger.savings_enrollment_status_history | financial | — | — | retain_permanent | — | none |
+| `ledger.savings_enrollments` | ledger.savings_enrollments | financial | — | — | retain_state | — | none |
+| `ledger.savings_products` | ledger.savings_products | financial | — | — | retain_state | — | none |
+| `ledger.savings_rate_versions` | ledger.savings_rate_versions | financial | — | — | retain_permanent | — | none |
+| `ledger.scheduled_execution_attempts` | ledger.scheduled_execution_attempts | financial | — | — | retain_permanent | — | none |
+| `ledger.scheduled_occurrences` | ledger.scheduled_occurrences | financial | — | — | retain_permanent | — | none |
 | `ledger.scheduled_transactions` | ledger.scheduled_transactions | financial | updated_at | 365d | delete | 500 | subject |
 | `ledger.transactions.idempotency_raw` | ledger.ledger_transactions | secret | updated_at | 30d | redact | 500 | none |
 
 **`ledger.account_balance_snapshots`** — Dated historical snapshot; the daily job may DELETE+re-INSERT a single date's rows to correct a bad snapshot, which is a correctness fix, not an age-based retention action.
 
 **`ledger.account_balances`** — Current-state balance projection; not an event history row.
+
+**`ledger.account_balances_v2`** — Current C6 implementation judgment call: the rebuildable balance projection is retained as current state; source ledger history remains permanent.
 
 **`ledger.accounts`** — owner_id is pseudonymized (not purged) by the T5 closure saga per K10/K11; otherwise never age-purged.
 
@@ -284,6 +310,18 @@ No entry may fully delete a row from these tables — only `retain_permanent`, `
 **`ledger.chargeback_disputes`** — Business-completeness audit finding (migrations/ledger/000035_chargeback_disputes) — card-network dispute case evidence, same permanent-retention posture as disbursement_items/recon_batches: a resolved dispute (won/lost/expired) is exactly the kind of record a card network or regulator can re-open years later.
 
 **`ledger.currencies`** — Static reference table.
+
+**`ledger.data_migration_checkpoints`** — Current C6 implementation judgment call: migration checkpoints are retained permanently as control-plane evidence.
+
+**`ledger.data_migration_mismatches`** — Current C6 implementation judgment call: balance mismatches are retained permanently as financial migration evidence.
+
+**`ledger.data_migration_repairs`** — Current C6 implementation judgment call: migration repairs are retained permanently as financial control evidence.
+
+**`ledger.data_migration_runs`** — Current C6 implementation judgment call: migration run records are retained permanently for operational accountability.
+
+**`ledger.data_migration_transitions`** — Current C6 implementation judgment call: migration state transitions are retained permanently as an audit trail.
+
+**`ledger.data_migrations`** — Current C6 implementation judgment call: migration definitions and lifecycle state are retained permanently for auditability.
 
 **`ledger.disbursement_batches`** — Not itemized in §4.2 — T0 judgment call, treated as financial-adjacent batch evidence akin to recon_batches/disbursement_items, retained like other permanent financial batch records.
 
@@ -294,6 +332,28 @@ No entry may fully delete a row from these tables — only `retain_permanent`, `
 **`ledger.fee_quotes.unconsumed`** — docs/roadmap/archive/51 §4.2/K8. Requires consumed_at IS NULL. A quote a concurrent consumer is locking is skipped this run, never deleted underneath consumption (K8).
 
 **`ledger.fee_rules`** — Live pricing configuration, not event history. A disabled/superseded rule needs its own explicit future policy per docs/roadmap/archive/51 §4.2's closing note, not a generic age rule.
+
+**`ledger.fx_conversions`** — Current C4 implementation judgment call: immutable conversion legs and their booked amounts are financial evidence and are retained permanently.
+
+**`ledger.fx_pair_directions`** — Current C4 implementation judgment call: live currency-pair direction configuration is retained as state, not treated as an event log.
+
+**`ledger.fx_pairs`** — Current C4 implementation judgment call: live currency-pair configuration is retained as state, not age-purged.
+
+**`ledger.fx_position_limits`** — Current C4 implementation judgment call: position-limit configuration is retained as state and remains available for risk review.
+
+**`ledger.fx_quotes`** — Current C4 implementation judgment call: quotes are retained with their conversion lineage so a booked FX result remains auditable.
+
+**`ledger.fx_rate_versions`** — Current C4 implementation judgment call: versioned FX rates are immutable pricing evidence and are retained permanently.
+
+**`ledger.interest_adjustments`** — Current C5 implementation judgment call: interest adjustments are financial corrections and are retained permanently.
+
+**`ledger.interest_capitalization_items`** — Current C5 implementation judgment call: capitalization items are financial posting evidence and are retained permanently.
+
+**`ledger.interest_daily_accruals`** — Current C5 implementation judgment call: daily accrual records support interest reconciliation and are retained permanently.
+
+**`ledger.interest_period_checks`** — Current C5 implementation judgment call: closed-period checks are financial control evidence and are retained permanently.
+
+**`ledger.interest_periods`** — Current C5 implementation judgment call: interest-period close state and totals are retained permanently for reconciliation.
 
 **`ledger.ledger_entries`** — docs/roadmap/archive/51 §4.1. DB trigger fn_prevent_entry_mutation rejects UPDATE/DELETE regardless of caller — structurally, not just policy, immutable.
 
@@ -320,6 +380,18 @@ No entry may fully delete a row from these tables — only `retain_permanent`, `
 **`ledger.retention_holds`** — docs/roadmap/archive/51 K5. Same shape/rationale as adminbff.retention_holds.
 
 **`ledger.savings_config`** — Live per-account interest configuration, not event history.
+
+**`ledger.savings_enrollment_status_history`** — Current C5 implementation judgment call: enrollment status history is an account-product audit trail and is retained permanently.
+
+**`ledger.savings_enrollments`** — Current C5 implementation judgment call: the live savings enrollment row is retained as state; historical transitions are covered separately.
+
+**`ledger.savings_products`** — Current C5 implementation judgment call: savings-product configuration is retained as state and is not age-purged.
+
+**`ledger.savings_rate_versions`** — Current C5 implementation judgment call: versioned savings rates are pricing evidence and are retained permanently.
+
+**`ledger.scheduled_execution_attempts`** — Current C5 implementation judgment call: durable schedule execution attempts are retained as financial operational evidence.
+
+**`ledger.scheduled_occurrences`** — Current C5 implementation judgment call: scheduled transfer occurrences are retained permanently for execution and reconciliation evidence.
 
 **`ledger.scheduled_transactions`** — Not itemized in docs/roadmap/archive/51 §4.2 — a T0 judgment call, by analogy to the 365-day "terminal operational row" pattern used for payout_vendor_commands and intake_control_commands. Requires status IN ('finished','failed'). cmd_payload carries the scheduled transfer's own destination/amount, so this class is financial, not merely internal.
 

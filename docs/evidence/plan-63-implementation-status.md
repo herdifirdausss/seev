@@ -34,7 +34,7 @@ Calico, Gateway API v1.4.0, and Traefik v3.6.2. Helm release revision 17
 completed with the public Gateway reporting `Accepted=True` and
 `Programmed=True`. The following checks passed:
 
-- all nine application Deployments, PostgreSQL, Redis, RabbitMQ, Traefik,
+- all nine core application Deployments, PostgreSQL, Redis, RabbitMQ, Traefik,
   Squid, and Prometheus became ready;
 - the public API returned an application response through the Gateway;
 - the callback route rejected an unsigned request and kept the private admin

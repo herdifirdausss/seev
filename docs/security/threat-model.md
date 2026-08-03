@@ -21,7 +21,7 @@ here.
 This model covers:
 
 - public HTTP entry points at Gateway and Auth;
-- gRPC and internal HTTP traffic among the nine deployable services;
+- gRPC and internal HTTP traffic among the nine core deployable services;
 - the Admin BFF operator boundary;
 - service access to PostgreSQL, Redis, RabbitMQ, and the optional local Vault;
 - observability access to service metrics; and
@@ -177,7 +177,7 @@ Status meanings:
 | ID | Finding | Severity | Status | Evidence/current decision |
 |---|---|---:|---|---|
 | TM-01 | Empty internal token disabled RPC authentication. | Critical | Resolved | gRPC server and dial helpers reject an empty token; covered by `TestNewServer_EmptyTokenFailsFast`. |
-| TM-02 | Internal gRPC and HTTP used plaintext transport without service identity. | Critical | Resolved | `pkg/tlsx`, per-hop URI SAN allowlists, and all nine service configurations enforce mTLS. |
+| TM-02 | Internal gRPC and HTTP used plaintext transport without service identity. | Critical | Resolved | `pkg/tlsx`, per-hop URI SAN allowlists, and all nine core service configurations enforce mTLS. |
 | TM-03 | A valid admin JWT could reach internal APIs without proving which service sent it. | High | Resolved | mTLS identity is checked before JWT and role authorization. |
 | TM-04 | Metrics were unauthenticated and scraped over plaintext HTTP. | Medium | Resolved | Internal metrics listeners require mTLS and Prometheus uses its own allowed identity. |
 | TM-05 | Application secrets default to plaintext environment configuration. | High | Partially addressed | Optional Vault loading is available, but production enforcement is intentionally outside this repo. |

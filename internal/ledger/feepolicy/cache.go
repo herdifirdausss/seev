@@ -91,7 +91,7 @@ func (c *CachingFeeRepository) GetQuoteWithGateway(ctx context.Context, quoteID,
 	if ok {
 		return reader.GetQuoteWithGateway(ctx, quoteID, userID)
 	}
-	amount, feeAmount, feeGateway, err = c.FeeRepository.GetQuote(ctx, quoteID, userID)
+	amount, feeAmount, feeGateway, err = c.GetQuote(ctx, quoteID, userID)
 	return amount, feeAmount, feeGateway, "", err
 }
 
@@ -104,7 +104,7 @@ func (c *CachingFeeRepository) TryConsumeQuoteWithGateway(ctx context.Context, e
 	if ok {
 		return consumer.TryConsumeQuoteWithGateway(ctx, exec, quoteID, userID, txType, gateway, currency, amount, ref)
 	}
-	return c.FeeRepository.TryConsumeQuote(ctx, exec, quoteID, userID, txType, currency, amount, ref)
+	return c.TryConsumeQuote(ctx, exec, quoteID, userID, txType, currency, amount, ref)
 }
 
 // ValidateConsumedPayinQuote preserves the Ledger settlement-authority seam

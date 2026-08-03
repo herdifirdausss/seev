@@ -2,7 +2,7 @@
 
 > [Documentation home](../README.md) · [Roadmap](README.md)
 
-Created: 2026-07-16. Last reviewed against the live topology: 2026-07-28.
+Created: 2026-07-16. Last reviewed against the live topology: 2026-08-03.
 
 > Reference only. Do not execute this document directly. New execution plans (43 and later) should be created only when a track's activation trigger is satisfied.
 
@@ -42,11 +42,11 @@ When a trigger is met:
 | B2 | Ledger-entry partitioning and archival | H2 | Approximately 50 million ledger entries or equivalent forecast | **REJECT** — real evidence, [2026-07-31 baseline §21](../performance/reports/2026-07-31-baseline.md#21-b2--partitioning): a real D0→D1→D2 growth-curve study found linear ~484 bytes/entry and sub-ms indexed queries through 5M entries, extrapolating to an unremarkable ~19.4GB at the 40M-row gate |
 | B3 | Fee and routing resolution cache | H2 | B0 proves per-call resolution is a hotspot | **REJECT** — real evidence, [2026-07-31 baseline §22](../performance/reports/2026-07-31-baseline.md#22-b3--routing-cache): a live cached-vs-uncached A/B against the real fee resolver hit 99.5% cache hit rate with zero throughput gain and worse p95/p99 — the resolver was never the bottleneck |
 | C1 | Merchant/B2B API | H3 | A6 and A9 complete | Complete — [plan 57](archive/57-c1-merchant-b2b-api.md) archived |
-| C2 | Data platform and revenue analytics | H3 | Analytics queries affect OLTP or CDC learning is desired | Active via [plan 58](active/58-c2-data-platform-revenue-analytics.md); implementation not started |
-| C3 | Multi-channel notifications | H3 | User-facing delivery pipeline learning is desired | Active via [plan 59](active/59-c3-multi-channel-notifications.md); implementation is in progress and acceptance evidence is pending |
-| C4 | End-to-end multi-currency activation | H3 | FX learning is desired; currency primitives are ready | Active via [plan 60](active/60-c4-end-to-end-multi-currency.md); implementation not started |
-| C5 | Advanced financial products | H3 | Accrual and fee quotes are complete; period-close learning is desired | Active via [plan 61](active/61-c5-advanced-financial-products-period-close.md); implementation not started |
-| C6 | Zero-downtime migration engine | H3 | A large live migration or migration practice is needed | Active via [plan 62](active/62-c6-zero-downtime-migration-engine.md); implementation not started |
+| C2 | Data platform and revenue analytics | H3 | Analytics queries affect OLTP or CDC learning is desired | Active via [plan 58](active/58-c2-data-platform-revenue-analytics.md); implementation committed; runtime acceptance evidence pending |
+| C3 | Multi-channel notifications | H3 | User-facing delivery pipeline learning is desired | Active via [plan 59](active/59-c3-multi-channel-notifications.md); implementation committed; runtime acceptance evidence pending |
+| C4 | End-to-end multi-currency activation | H3 | FX learning is desired; currency primitives are ready | Active via [plan 60](active/60-c4-end-to-end-multi-currency.md); implementation committed; runtime acceptance evidence pending |
+| C5 | Advanced financial products | H3 | Accrual and fee quotes are complete; period-close learning is desired | Active via [plan 61](active/61-c5-advanced-financial-products-period-close.md); implementation committed; runtime acceptance evidence pending |
+| C6 | Zero-downtime migration engine | H3 | A large live migration or migration practice is needed | Active via [plan 62](active/62-c6-zero-downtime-migration-engine.md); implementation committed; runtime acceptance evidence pending |
 
 ## Horizon 1 — Operational foundations
 
@@ -160,9 +160,9 @@ load, only at the load actually tested.
 The original learning-value ranking included A1 and A3, which are now
 complete. A7, A8, A9, B0, and the VendorService boundary now have archived
 core foundations, with their remaining live evidence explicitly tracked in
-those records. F0 and C1–C6 have active execution documents; each still
-requires its own entry gate and implementation evidence before it becomes
-current runtime behavior. B1, B2, and B3 were each gated on a measured
+those records. C2–C6 now have implementation committed, but each remains
+active until its runtime and acceptance evidence is recorded. F0 remains
+planned and C1 is archived. B1, B2, and B3 were each gated on a measured
 result before implementation, per the rule that only `ACTIVATE` opens an
 execution plan; all three measured `REJECT` (§B1–B3 above), so none has an
 implementation plan and none should get one without new evidence.
@@ -173,7 +173,8 @@ implementation plan and none should get one without new evidence.
 - No real-money licensing or formal certification claims.
 - No go-to-market, marketing, or pricing strategy.
 - No additional service extraction without a new evidence-based trigger; the
-  current nine-service topology is the baseline.
+  current nine-core-service topology is the baseline; the local mock push
+  provider is an optional support process, not a new business service.
 
 ## Traceability
 

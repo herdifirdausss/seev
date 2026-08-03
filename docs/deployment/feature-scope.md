@@ -5,7 +5,7 @@ not a production-vendor or observability rollout.
 
 Enabled:
 
-- all nine application services;
+- all nine core application services;
 - PostgreSQL, Redis, RabbitMQ, and the migration Job;
 - Gateway and Auth public API routes;
 - VendorService mock callbacks;

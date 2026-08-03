@@ -1104,6 +1104,76 @@ http:
     lifecycle: active
     contract_version: v1
     source: internal/handler/router.go
+  - id: gateway.ledger.savings.products.list
+    service: gateway
+    method: GET
+    path: /api/v1/ledger/savings/products
+    kind: operation
+    owner: gateway
+    behavior_owner: ledger
+    audience: public
+    artifact: api/openapi/public-v1.yaml
+    auth: user-jwt
+    consumers: [external]
+    lifecycle: active
+    contract_version: v1
+    source: internal/handler/router.go
+  - id: gateway.ledger.savings.enrollments.list
+    service: gateway
+    method: GET
+    path: /api/v1/ledger/savings/enrollments
+    kind: operation
+    owner: gateway
+    behavior_owner: ledger
+    audience: public
+    artifact: api/openapi/public-v1.yaml
+    auth: user-jwt
+    consumers: [external]
+    lifecycle: active
+    contract_version: v1
+    source: internal/handler/router.go
+  - id: gateway.ledger.savings.enrollments.get
+    service: gateway
+    method: GET
+    path: /api/v1/ledger/savings/enrollments/{id}
+    kind: operation
+    owner: gateway
+    behavior_owner: ledger
+    audience: public
+    artifact: api/openapi/public-v1.yaml
+    auth: user-jwt
+    consumers: [external]
+    lifecycle: active
+    contract_version: v1
+    source: internal/handler/router.go
+  - id: gateway.ledger.savings.enrollments.accruals
+    service: gateway
+    method: GET
+    path: /api/v1/ledger/savings/enrollments/{id}/accruals
+    kind: operation
+    owner: gateway
+    behavior_owner: ledger
+    audience: public
+    artifact: api/openapi/public-v1.yaml
+    auth: user-jwt
+    consumers: [external]
+    lifecycle: active
+    contract_version: v1
+    source: internal/handler/router.go
+  - id: gateway.ledger.savings.enrollments.periods
+    service: gateway
+    method: GET
+    path: /api/v1/ledger/savings/enrollments/{id}/periods
+    kind: operation
+    owner: gateway
+    behavior_owner: ledger
+    audience: public
+    artifact: api/openapi/public-v1.yaml
+    auth: user-jwt
+    consumers: [external]
+    lifecycle: active
+    contract_version: v1
+    source: internal/handler/router.go
   - id: gateway.ledger.schedules.list
     service: gateway
     method: GET
@@ -1164,6 +1234,90 @@ http:
     service: gateway
     method: POST
     path: /api/v1/ledger/schedules/{id}/cancel
+    kind: operation
+    owner: gateway
+    behavior_owner: ledger
+    audience: public
+    artifact: api/openapi/public-v1.yaml
+    auth: user-jwt
+    consumers: [external]
+    lifecycle: active
+    contract_version: v1
+    source: internal/handler/router.go
+  - id: gateway.ledger.schedules.confirm-fee-cap
+    service: gateway
+    method: POST
+    path: /api/v1/ledger/schedules/{id}/confirm-fee-cap
+    kind: operation
+    owner: gateway
+    behavior_owner: ledger
+    audience: public
+    artifact: api/openapi/public-v1.yaml
+    auth: user-jwt
+    consumers: [external]
+    lifecycle: active
+    contract_version: v1
+    source: internal/handler/router.go
+  - id: gateway.ledger.schedules.occurrences.list
+    service: gateway
+    method: GET
+    path: /api/v1/ledger/schedules/{id}/occurrences
+    kind: operation
+    owner: gateway
+    behavior_owner: ledger
+    audience: public
+    artifact: api/openapi/public-v1.yaml
+    auth: user-jwt
+    consumers: [external]
+    lifecycle: active
+    contract_version: v1
+    source: internal/handler/router.go
+  - id: gateway.ledger.schedules.occurrences.get
+    service: gateway
+    method: GET
+    path: /api/v1/ledger/schedules/{id}/occurrences/{occurrence_id}
+    kind: operation
+    owner: gateway
+    behavior_owner: ledger
+    audience: public
+    artifact: api/openapi/public-v1.yaml
+    auth: user-jwt
+    consumers: [external]
+    lifecycle: active
+    contract_version: v1
+    source: internal/handler/router.go
+  - id: gateway.scheduled-transactions.executions.list
+    service: gateway
+    method: GET
+    path: /api/v1/scheduled-transactions/{id}/executions
+    kind: operation
+    owner: gateway
+    behavior_owner: ledger
+    audience: public
+    artifact: api/openapi/public-v1.yaml
+    auth: user-jwt
+    consumers: [external]
+    lifecycle: active
+    contract_version: v1
+    source: internal/handler/router.go
+  - id: gateway.scheduled-transactions.executions.get
+    service: gateway
+    method: GET
+    path: /api/v1/scheduled-transactions/{id}/executions/{execution_id}
+    kind: operation
+    owner: gateway
+    behavior_owner: ledger
+    audience: public
+    artifact: api/openapi/public-v1.yaml
+    auth: user-jwt
+    consumers: [external]
+    lifecycle: active
+    contract_version: v1
+    source: internal/handler/router.go
+  - id: gateway.scheduled-transactions.confirm-fee-cap
+    service: gateway
+    method: POST
+    path: /api/v1/scheduled-transactions/{id}/confirm-fee-cap
     kind: operation
     owner: gateway
     behavior_owner: ledger

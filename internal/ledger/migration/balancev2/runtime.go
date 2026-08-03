@@ -59,7 +59,7 @@ func NewRuntime(db database.DatabaseSQL, cfg Config, logger *slog.Logger) *Runti
 	return &Runtime{
 		db: db, controls: NewControlRepository(db), cfg: cfg, logger: logger,
 		owner: "ledger-balance-v2-" + uuid.NewString(),
-		stop: make(chan struct{}), cooldown: make(map[string]time.Time),
+		stop:  make(chan struct{}), cooldown: make(map[string]time.Time),
 	}
 }
 
@@ -208,7 +208,7 @@ func (r *Runtime) WriteForPosting(ctx context.Context, tx *sql.Tx, accountIDs []
 	for _, accountID := range accountIDs {
 		source, sourceErr := readSourceForUpdate(ctx, tx, accountID)
 		if sourceErr != nil {
-			_ = tx.ExecContext(ctx, `ROLLBACK TO SAVEPOINT c6_balance_v2_target_write`)
+			_, _ = tx.ExecContext(ctx, `ROLLBACK TO SAVEPOINT c6_balance_v2_target_write`)
 			dualWriteTotal.WithLabelValues(MigrationName, "source_error", mode).Inc()
 			dualWriteDuration.WithLabelValues(MigrationName, "source_error").Observe(time.Since(started).Seconds())
 			if strict {
@@ -219,7 +219,7 @@ func (r *Runtime) WriteForPosting(ctx context.Context, tx *sql.Tx, accountIDs []
 		sources = append(sources, source)
 		target, transformErr := Transform(source, &transactionID)
 		if transformErr != nil {
-			_ = tx.ExecContext(ctx, `ROLLBACK TO SAVEPOINT c6_balance_v2_target_write`)
+			_, _ = tx.ExecContext(ctx, `ROLLBACK TO SAVEPOINT c6_balance_v2_target_write`)
 			dualWriteTotal.WithLabelValues(MigrationName, "transform_error", mode).Inc()
 			if strict {
 				return transformErr
@@ -227,7 +227,7 @@ func (r *Runtime) WriteForPosting(ctx context.Context, tx *sql.Tx, accountIDs []
 			return r.recordShadowWriteGaps(ctx, migration.ID, sources, accountID, source.SourceVersion)
 		}
 		if _, upsertErr := upsertTarget(ctx, tx, target); upsertErr != nil {
-			_ = tx.ExecContext(ctx, `ROLLBACK TO SAVEPOINT c6_balance_v2_target_write`)
+			_, _ = tx.ExecContext(ctx, `ROLLBACK TO SAVEPOINT c6_balance_v2_target_write`)
 			dualWriteTotal.WithLabelValues(MigrationName, "target_error", mode).Inc()
 			dualWriteDuration.WithLabelValues(MigrationName, "target_error").Observe(time.Since(started).Seconds())
 			if strict {

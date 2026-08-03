@@ -72,14 +72,13 @@ type Service struct {
 	// simply be ignored (no caller in this codebase does that: transport
 	// only sets QuoteID after this Service was constructed with a real
 	// feePolicy — see internal/ledger.NewModule).
-	feePolicy        *feepolicy.Policy
+	feePolicy         *feepolicy.Policy
 	currencyValidator CurrencyValidator
-	projectionWriter ProjectionWriter
+	projectionWriter  ProjectionWriter
 }
 
 type CurrencyValidator interface {
 	ValidateCurrency(context.Context, string, string) error
-}
 }
 
 // New constructs the posting service. AML/fraud screening no longer runs
@@ -658,7 +657,7 @@ func (s *Service) execTransfer(ctx context.Context, cmd processors.ResolvedComma
 			// authoritative projection is mutated. The transaction wrapper then
 			// rolls back the idempotency header and all preceding work.
 			if s.projectionWriter != nil {
-				allowed := true
+				var allowed bool
 				var allowErr error
 				if guard, ok := s.projectionWriter.(transactionalSourceWriteGuard); ok {
 					allowed, allowErr = guard.SourceWriteAllowedTx(ctx, tx)

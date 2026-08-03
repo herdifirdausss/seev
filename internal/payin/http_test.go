@@ -135,6 +135,7 @@ func TestAdminRouter_ReplayEvent_FailedEvent_Success(t *testing.T) {
 		ID: id, Vendor: "mockvendor", VendorEventID: "evt-1", ExternalRef: "ref-1",
 		UserID: uuid.New(), Amount: decimal.NewFromInt(5000), Currency: "IDR", Status: "failed",
 	}, nil)
+	repo.EXPECT().GetTopupIntentByReference(gomock.Any(), "ref-1").Return(model.TopupIntent{}, false, nil)
 	repo.EXPECT().MarkPosted(gomock.Any(), id).Return(nil)
 	repo.EXPECT().MarkTopupIntentSettled(gomock.Any(), "ref-1", id).Return(false, nil)
 

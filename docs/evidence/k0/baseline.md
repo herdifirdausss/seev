@@ -1,16 +1,16 @@
 # K0 baseline evidence
 
-Captured: 2026-08-03T00:49:10Z
+Captured: 2026-08-03T12:20:06Z
 
 ## Pinned baseline
 
-- Commit: ff21bf186f95431a386b339ee3a1409e49a7e1b0
+- Commit: 1fa942950145b368fd46058a315ddc163275625d
 - Branch: main
 - Operator: oyherdifirdaus
 - Machine OS/architecture: Darwin 24.6.0 x86_64
 - CPU count: 8
 - Host memory: 8.00 GiB (raw value is intentionally not repeated)
-- Filesystem: 27Gi available of 228Gi
+- Filesystem: 26Gi available of 228Gi
 - Go: see [go-version.txt](command-output/go-version.txt)
 - Docker engine: see [docker-version.txt](command-output/docker-version.txt) and [docker-info-safe.txt](command-output/docker-info-safe.txt)
 - Docker Compose: see [docker-compose-version.txt](command-output/docker-compose-version.txt)

@@ -93,6 +93,9 @@ type stubPayoutProvider struct {
 }
 
 func (s *stubPayoutProvider) Vendor() string { return s.name }
+func (*stubPayoutProvider) SupportsCurrency(operation, currency string) bool {
+	return operation == "payout" && (currency == "IDR" || currency == "USD")
+}
 func (s *stubPayoutProvider) Submit(ctx context.Context, idempotencyKey string, amount decimal.Decimal, currency string, destination json.RawMessage) (vendorgw.PayoutResult, error) {
 	s.submitted.Add(1)
 	return s.submitFn(ctx, idempotencyKey, amount, currency, destination)

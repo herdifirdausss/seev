@@ -228,7 +228,7 @@ paths:
       x-see-behavior-owner: notify
       x-see-audience: public
       security: [{bearerAuth: []}]
-      parameters: [{name: cursor, in: query, deprecated: true, description: Legacy alias for before., schema: {type: string, format: date-time}}, {name: before, in: query, description: Exclusive created_at timestamp for keyset pagination., schema: {type: string, format: date-time}}, {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 200}}, {name: unread, in: query, schema: {type: boolean}}, {name: category, in: query, schema: {type: string, enum: [money_movement, account, security, compliance, system]}}, {name: kind, in: query, schema: {type: string, maxLength: 64}}]
+      parameters: [{name: cursor, in: query, schema: {type: string, maxLength: 512}}, {name: before, in: query, description: Exclusive created_at timestamp for keyset pagination., schema: {type: string, format: date-time}}, {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100}}, {name: unread, in: query, schema: {type: boolean}}, {name: category, in: query, schema: {type: string, enum: [money_movement, account, security, compliance, system]}}, {name: kind, in: query, schema: {type: string, maxLength: 64}}]
       responses: {'200': {$ref: './components/common.yaml#/components/responses/Success'}, '400': {$ref: './components/common.yaml#/components/responses/BadRequest'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}}
   /api/v1/notifications/{id}:
     get:

@@ -91,20 +91,20 @@ func toC5ProductResponse(product model.SavingsProduct) c5ProductResponse {
 }
 
 type c5EnrollmentResponse struct {
-	ID             uuid.UUID  `json:"id"`
-	PublicID       string     `json:"public_id"`
-	ProductID      uuid.UUID  `json:"product_id"`
-	AccountID      uuid.UUID  `json:"account_id"`
-	UserID         uuid.UUID  `json:"user_id"`
-	Status         string     `json:"status"`
-	Mode           string     `json:"mode"`
-	EffectiveFrom  string     `json:"effective_from"`
-	EffectiveUntil *string    `json:"effective_until,omitempty"`
-	CarryNumerator string     `json:"carry_numerator"`
-	CarryDenominator string   `json:"carry_denominator"`
-	Version        int64      `json:"version"`
-	CreatedAt      time.Time  `json:"created_at"`
-	UpdatedAt      time.Time  `json:"updated_at"`
+	ID               uuid.UUID `json:"id"`
+	PublicID         string    `json:"public_id"`
+	ProductID        uuid.UUID `json:"product_id"`
+	AccountID        uuid.UUID `json:"account_id"`
+	UserID           uuid.UUID `json:"user_id"`
+	Status           string    `json:"status"`
+	Mode             string    `json:"mode"`
+	EffectiveFrom    string    `json:"effective_from"`
+	EffectiveUntil   *string   `json:"effective_until,omitempty"`
+	CarryNumerator   string    `json:"carry_numerator"`
+	CarryDenominator string    `json:"carry_denominator"`
+	Version          int64     `json:"version"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
 }
 
 func toC5EnrollmentResponse(enrollment model.SavingsEnrollment) c5EnrollmentResponse {
@@ -123,23 +123,23 @@ func toC5EnrollmentResponse(enrollment model.SavingsEnrollment) c5EnrollmentResp
 }
 
 type c5OccurrenceResponse struct {
-	ID                 uuid.UUID       `json:"id"`
-	PublicID           string          `json:"public_id"`
-	ScheduleID         uuid.UUID       `json:"schedule_id"`
-	ScheduleVersion    int64           `json:"schedule_version"`
-	ScheduledFor       time.Time       `json:"scheduled_for"`
-	ScheduledLocalDate string          `json:"scheduled_local_date"`
-	Status             string          `json:"status"`
-	IdempotencyKey     string          `json:"idempotency_key"`
-	PolicySnapshot     interface{}     `json:"policy_snapshot"`
-	FeeAmount          *int64          `json:"fee_amount,omitempty"`
-	FeeQuoteID         *uuid.UUID      `json:"fee_quote_id,omitempty"`
-	LedgerTransaction  *uuid.UUID      `json:"ledger_transaction_id,omitempty"`
-	AttemptCount       int             `json:"attempt_count"`
-	NextAttemptAt      *time.Time      `json:"next_attempt_at,omitempty"`
-	ErrorCode          *string         `json:"error_code,omitempty"`
-	CreatedAt          time.Time       `json:"created_at"`
-	UpdatedAt          time.Time       `json:"updated_at"`
+	ID                 uuid.UUID           `json:"id"`
+	PublicID           string              `json:"public_id"`
+	ScheduleID         uuid.UUID           `json:"schedule_id"`
+	ScheduleVersion    int64               `json:"schedule_version"`
+	ScheduledFor       time.Time           `json:"scheduled_for"`
+	ScheduledLocalDate string              `json:"scheduled_local_date"`
+	Status             string              `json:"status"`
+	IdempotencyKey     string              `json:"idempotency_key"`
+	PolicySnapshot     any                 `json:"policy_snapshot"`
+	FeeAmount          *int64              `json:"fee_amount,omitempty"`
+	FeeQuoteID         *uuid.UUID          `json:"fee_quote_id,omitempty"`
+	LedgerTransaction  *uuid.UUID          `json:"ledger_transaction_id,omitempty"`
+	AttemptCount       int                 `json:"attempt_count"`
+	NextAttemptAt      *time.Time          `json:"next_attempt_at,omitempty"`
+	ErrorCode          *string             `json:"error_code,omitempty"`
+	CreatedAt          time.Time           `json:"created_at"`
+	UpdatedAt          time.Time           `json:"updated_at"`
 	Attempts           []c5AttemptResponse `json:"attempts,omitempty"`
 }
 
@@ -179,17 +179,27 @@ func attachC5Attempts(ctx context.Context, reader c5ScheduleReader, items []mode
 	for _, item := range items {
 		responseItem := toC5OccurrenceResponse(item)
 		attempts, err := reader.ListScheduledExecutionAttempts(ctx, item.ID)
-		if err != nil { return nil, err }
+		if err != nil {
+			return nil, err
+		}
 		responseItem.Attempts = make([]c5AttemptResponse, 0, len(attempts))
-		for _, attempt := range attempts { responseItem.Attempts = append(responseItem.Attempts, toC5AttemptResponse(attempt)) }
+		for _, attempt := range attempts {
+			responseItem.Attempts = append(responseItem.Attempts, toC5AttemptResponse(attempt))
+		}
 		out = append(out, responseItem)
 	}
 	return out, nil
 }
 
-type listC5ProductsResponse struct { Products []c5ProductResponse `json:"products"` }
-type listC5EnrollmentsResponse struct { Enrollments []c5EnrollmentResponse `json:"enrollments"` }
-type listC5OccurrencesResponse struct { Occurrences []c5OccurrenceResponse `json:"occurrences"` }
+type listC5ProductsResponse struct {
+	Products []c5ProductResponse `json:"products"`
+}
+type listC5EnrollmentsResponse struct {
+	Enrollments []c5EnrollmentResponse `json:"enrollments"`
+}
+type listC5OccurrencesResponse struct {
+	Occurrences []c5OccurrenceResponse `json:"occurrences"`
+}
 
 type c5AccrualResponse struct {
 	Date                    string `json:"date"`
@@ -212,26 +222,30 @@ type c5PeriodResponse struct {
 	Status                   string     `json:"status"`
 	ExpectedItemCount        int64      `json:"expected_item_count"`
 	CompletedItemCount       int64      `json:"completed_item_count"`
-	BlockedItemCount          int64      `json:"blocked_item_count"`
+	BlockedItemCount         int64      `json:"blocked_item_count"`
 	TotalAccruedAmount       int64      `json:"total_accrued_amount"`
 	TotalCapitalizedAmount   int64      `json:"total_capitalized_amount"`
 	AccruedNotYetCapitalized int64      `json:"accrued_not_yet_capitalized"`
 	ClosedAt                 *time.Time `json:"closed_at,omitempty"`
 }
 
-type listC5AccrualsResponse struct { Accruals []c5AccrualResponse `json:"accruals"` }
-type listC5PeriodsResponse struct { Periods []c5PeriodResponse `json:"periods"` }
+type listC5AccrualsResponse struct {
+	Accruals []c5AccrualResponse `json:"accruals"`
+}
+type listC5PeriodsResponse struct {
+	Periods []c5PeriodResponse `json:"periods"`
+}
 
 type c5ProductRequest struct {
-	ProductCode             string   `json:"product_code"`
-	Name                    string   `json:"name"`
-	Currency                string   `json:"currency"`
-	EligibleAccountTypes    []string `json:"eligible_account_types"`
-	Status                  string   `json:"status"`
-	Timezone                string   `json:"timezone"`
-	MinimumEligibleBalance  int64    `json:"minimum_eligible_balance"`
-	InterestExpenseAccount  string   `json:"interest_expense_account_id"`
-	InterestPayableAccount  string   `json:"interest_payable_account_id"`
+	ProductCode            string   `json:"product_code"`
+	Name                   string   `json:"name"`
+	Currency               string   `json:"currency"`
+	EligibleAccountTypes   []string `json:"eligible_account_types"`
+	Status                 string   `json:"status"`
+	Timezone               string   `json:"timezone"`
+	MinimumEligibleBalance int64    `json:"minimum_eligible_balance"`
+	InterestExpenseAccount string   `json:"interest_expense_account_id"`
+	InterestPayableAccount string   `json:"interest_payable_account_id"`
 }
 
 type c5ProductStatusRequest struct {
@@ -239,10 +253,10 @@ type c5ProductStatusRequest struct {
 }
 
 type c5RateRequest struct {
-	AnnualRateBps int    `json:"annual_rate_bps"`
-	EffectiveFrom string `json:"effective_from"`
+	AnnualRateBps  int    `json:"annual_rate_bps"`
+	EffectiveFrom  string `json:"effective_from"`
 	EffectiveUntil string `json:"effective_until,omitempty"`
-	ContentHash   string `json:"content_hash,omitempty"`
+	ContentHash    string `json:"content_hash,omitempty"`
 }
 
 type c5EnrollmentRequest struct {
@@ -255,13 +269,13 @@ type c5EnrollmentRequest struct {
 }
 
 type c5AdjustmentRequest struct {
-	PeriodID       string `json:"period_id"`
-	EnrollmentID   string `json:"enrollment_id"`
-	AccrualID      string `json:"source_accrual_id,omitempty"`
+	PeriodID         string `json:"period_id"`
+	EnrollmentID     string `json:"enrollment_id"`
+	AccrualID        string `json:"source_accrual_id,omitempty"`
 	CapitalizationID string `json:"source_capitalization_id,omitempty"`
-	Amount         string `json:"amount"`
-	Direction      string `json:"direction"`
-	Reason         string `json:"reason"`
+	Amount           string `json:"amount"`
+	Direction        string `json:"direction"`
+	Reason           string `json:"reason"`
 }
 
 func (h *handler) listC5SavingsProducts(w http.ResponseWriter, r *http.Request) {
@@ -280,57 +294,113 @@ func (h *handler) listC5SavingsProducts(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	out := make([]c5ProductResponse, len(products))
-	for i, product := range products { out[i] = toC5ProductResponse(product) }
+	for i, product := range products {
+		out[i] = toC5ProductResponse(product)
+	}
 	response.OK(w, listC5ProductsResponse{Products: out})
 }
 
 func (h *handler) listC5SavingsEnrollments(w http.ResponseWriter, r *http.Request) {
 	userID, ok := currentUserID(r)
-	if !ok { response.Unauthorized(w, "invalid or missing user identity"); return }
+	if !ok {
+		response.Unauthorized(w, "invalid or missing user identity")
+		return
+	}
 	reader, ok := h.svc.(c5SavingsReader)
-	if !ok { response.JSON(w, http.StatusNotImplemented, map[string]string{"code": "C5_UNAVAILABLE"}); return }
+	if !ok {
+		response.JSON(w, http.StatusNotImplemented, map[string]string{"code": "C5_UNAVAILABLE"})
+		return
+	}
 	enrollments, err := reader.ListSavingsEnrollments(r.Context(), userID)
-	if err != nil { writeError(w, err); return }
+	if err != nil {
+		writeError(w, err)
+		return
+	}
 	out := make([]c5EnrollmentResponse, len(enrollments))
-	for i, enrollment := range enrollments { out[i] = toC5EnrollmentResponse(enrollment) }
+	for i, enrollment := range enrollments {
+		out[i] = toC5EnrollmentResponse(enrollment)
+	}
 	response.OK(w, listC5EnrollmentsResponse{Enrollments: out})
 }
 
 func (h *handler) getC5SavingsEnrollment(w http.ResponseWriter, r *http.Request) {
 	userID, ok := currentUserID(r)
-	if !ok { response.Unauthorized(w, "invalid or missing user identity"); return }
+	if !ok {
+		response.Unauthorized(w, "invalid or missing user identity")
+		return
+	}
 	id, err := uuid.Parse(r.PathValue("id"))
-	if err != nil { response.BadRequest(w, "invalid enrollment id"); return }
+	if err != nil {
+		response.BadRequest(w, "invalid enrollment id")
+		return
+	}
 	reader, ok := h.svc.(c5SavingsReader)
-	if !ok { response.JSON(w, http.StatusNotImplemented, map[string]string{"code": "C5_UNAVAILABLE"}); return }
+	if !ok {
+		response.JSON(w, http.StatusNotImplemented, map[string]string{"code": "C5_UNAVAILABLE"})
+		return
+	}
 	enrollment, err := reader.GetSavingsEnrollment(r.Context(), id)
-	if err != nil { writeError(w, err); return }
-	if enrollment.UserID != userID { response.NotFound(w, "savings enrollment not found"); return }
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	if enrollment.UserID != userID {
+		response.NotFound(w, "savings enrollment not found")
+		return
+	}
 	response.OK(w, toC5EnrollmentResponse(enrollment))
 }
 
 func (h *handler) listC5SavingsAccruals(w http.ResponseWriter, r *http.Request) {
 	userID, ok := currentUserID(r)
-	if !ok { response.Unauthorized(w, "invalid or missing user identity"); return }
+	if !ok {
+		response.Unauthorized(w, "invalid or missing user identity")
+		return
+	}
 	id, err := uuid.Parse(r.PathValue("id"))
-	if err != nil { response.BadRequest(w, "invalid enrollment id"); return }
+	if err != nil {
+		response.BadRequest(w, "invalid enrollment id")
+		return
+	}
 	reader, ok := h.svc.(c5SavingsReader)
-	if !ok { response.JSON(w, http.StatusNotImplemented, map[string]string{"code": "C5_UNAVAILABLE"}); return }
+	if !ok {
+		response.JSON(w, http.StatusNotImplemented, map[string]string{"code": "C5_UNAVAILABLE"})
+		return
+	}
 	enrollment, err := reader.GetSavingsEnrollment(r.Context(), id)
-	if err != nil { writeError(w, err); return }
-	if enrollment.UserID != userID { response.NotFound(w, "savings enrollment not found"); return }
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	if enrollment.UserID != userID {
+		response.NotFound(w, "savings enrollment not found")
+		return
+	}
 	product, err := reader.GetSavingsProduct(r.Context(), enrollment.ProductID)
-	if err != nil { writeError(w, err); return }
+	if err != nil {
+		writeError(w, err)
+		return
+	}
 	accruals, err := reader.ListInterestAccruals(r.Context(), id)
-	if err != nil { writeError(w, err); return }
+	if err != nil {
+		writeError(w, err)
+		return
+	}
 	capitalizations, err := reader.ListInterestCapitalizations(r.Context(), id)
-	if err != nil { writeError(w, err); return }
+	if err != nil {
+		writeError(w, err)
+		return
+	}
 	capitalizationStatus := make(map[uuid.UUID]string, len(capitalizations))
-	for _, item := range capitalizations { capitalizationStatus[item.PeriodID] = item.Status }
+	for _, item := range capitalizations {
+		capitalizationStatus[item.PeriodID] = item.Status
+	}
 	out := make([]c5AccrualResponse, 0, len(accruals))
 	for _, item := range accruals {
 		status := capitalizationStatus[item.PeriodID]
-		if status == "" { status = "not_created" }
+		if status == "" {
+			status = "not_created"
+		}
 		out = append(out, c5AccrualResponse{
 			Date: item.AccrualDate.Format("2006-01-02"), ClosingBalance: item.ClosingBalance,
 			RateBPS: item.AnnualRateBps, RecognizedAccruedAmount: item.RecognizedAmount,
@@ -342,28 +412,45 @@ func (h *handler) listC5SavingsAccruals(w http.ResponseWriter, r *http.Request) 
 
 func (h *handler) listC5SavingsPeriods(w http.ResponseWriter, r *http.Request) {
 	userID, ok := currentUserID(r)
-	if !ok { response.Unauthorized(w, "invalid or missing user identity"); return }
+	if !ok {
+		response.Unauthorized(w, "invalid or missing user identity")
+		return
+	}
 	id, err := uuid.Parse(r.PathValue("id"))
-	if err != nil { response.BadRequest(w, "invalid enrollment id"); return }
+	if err != nil {
+		response.BadRequest(w, "invalid enrollment id")
+		return
+	}
 	reader, ok := h.svc.(c5SavingsReader)
-	if !ok { response.JSON(w, http.StatusNotImplemented, map[string]string{"code": "C5_UNAVAILABLE"}); return }
+	if !ok {
+		response.JSON(w, http.StatusNotImplemented, map[string]string{"code": "C5_UNAVAILABLE"})
+		return
+	}
 	enrollment, err := reader.GetSavingsEnrollment(r.Context(), id)
-	if err != nil { writeError(w, err); return }
-	if enrollment.UserID != userID { response.NotFound(w, "savings enrollment not found"); return }
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	if enrollment.UserID != userID {
+		response.NotFound(w, "savings enrollment not found")
+		return
+	}
 	periods, err := reader.ListInterestPeriods(r.Context(), id)
-	if err != nil { writeError(w, err); return }
+	if err != nil {
+		writeError(w, err)
+		return
+	}
 	out := make([]c5PeriodResponse, 0, len(periods))
 	for _, period := range periods {
-		pending := period.TotalAccruedAmount - period.TotalCapitalizedAmount
-		if pending < 0 { pending = 0 }
+		pending := max(period.TotalAccruedAmount-period.TotalCapitalizedAmount, 0)
 		out = append(out, c5PeriodResponse{
 			ID: period.ID, Currency: period.Currency, PeriodYear: period.PeriodYear,
 			PeriodMonth: period.PeriodMonth, PeriodStartAt: period.PeriodStartAt,
 			PeriodEndAt: period.PeriodEndAt, CloseNotBeforeAt: period.CloseNotBeforeAt,
 			Status: period.Status, ExpectedItemCount: period.ExpectedItemCount,
 			CompletedItemCount: period.CompletedItemCount, BlockedItemCount: period.BlockedItemCount,
-			TotalAccruedAmount: period.TotalAccruedAmount,
-			TotalCapitalizedAmount: period.TotalCapitalizedAmount,
+			TotalAccruedAmount:       period.TotalAccruedAmount,
+			TotalCapitalizedAmount:   period.TotalCapitalizedAmount,
 			AccruedNotYetCapitalized: pending, ClosedAt: period.ClosedAt,
 		})
 	}
@@ -372,70 +459,132 @@ func (h *handler) listC5SavingsPeriods(w http.ResponseWriter, r *http.Request) {
 
 func (h *handler) listScheduledOccurrences(w http.ResponseWriter, r *http.Request) {
 	userID, ok := currentUserID(r)
-	if !ok { response.Unauthorized(w, "invalid or missing user identity"); return }
+	if !ok {
+		response.Unauthorized(w, "invalid or missing user identity")
+		return
+	}
 	scheduleID, err := uuid.Parse(r.PathValue("id"))
-	if err != nil { response.BadRequest(w, "invalid schedule id"); return }
+	if err != nil {
+		response.BadRequest(w, "invalid schedule id")
+		return
+	}
 	reader, ok := h.svc.(c5ScheduleReader)
-	if !ok { response.JSON(w, http.StatusNotImplemented, map[string]string{"code": "C5_UNAVAILABLE"}); return }
+	if !ok {
+		response.JSON(w, http.StatusNotImplemented, map[string]string{"code": "C5_UNAVAILABLE"})
+		return
+	}
 	limit, offset := c5Pagination(r)
 	items, err := reader.ListScheduledOccurrences(r.Context(), scheduleID, userID, limit, offset)
-	if err != nil { writeError(w, err); return }
+	if err != nil {
+		writeError(w, err)
+		return
+	}
 	writeC5Occurrences(w, r.Context(), reader, items)
 }
 
 func (h *handler) getScheduledOccurrence(w http.ResponseWriter, r *http.Request) {
 	userID, ok := currentUserID(r)
-	if !ok { response.Unauthorized(w, "invalid or missing user identity"); return }
+	if !ok {
+		response.Unauthorized(w, "invalid or missing user identity")
+		return
+	}
 	rawID := r.PathValue("occurrence_id")
 	if rawID == "" {
 		rawID = r.PathValue("execution_id")
 	}
 	id, err := uuid.Parse(rawID)
-	if err != nil { response.BadRequest(w, "invalid occurrence id"); return }
+	if err != nil {
+		response.BadRequest(w, "invalid occurrence id")
+		return
+	}
 	reader, ok := h.svc.(c5ScheduleReader)
-	if !ok { response.JSON(w, http.StatusNotImplemented, map[string]string{"code": "C5_UNAVAILABLE"}); return }
+	if !ok {
+		response.JSON(w, http.StatusNotImplemented, map[string]string{"code": "C5_UNAVAILABLE"})
+		return
+	}
 	item, err := reader.GetScheduledOccurrence(r.Context(), id, userID)
-	if err != nil { writeError(w, err); return }
+	if err != nil {
+		writeError(w, err)
+		return
+	}
 	items, err := attachC5Attempts(r.Context(), reader, []model.ScheduledOccurrence{item})
-	if err != nil { writeError(w, err); return }
+	if err != nil {
+		writeError(w, err)
+		return
+	}
 	response.OK(w, items[0])
 }
 
 func (h *handler) listAdminScheduledOccurrences(w http.ResponseWriter, r *http.Request) {
-	if !isAdmin(r) { response.Forbidden(w, "admin privileges required"); return }
+	if !isAdmin(r) {
+		response.Forbidden(w, "admin privileges required")
+		return
+	}
 	scheduleID, err := uuid.Parse(r.PathValue("id"))
-	if err != nil { response.BadRequest(w, "invalid schedule id"); return }
+	if err != nil {
+		response.BadRequest(w, "invalid schedule id")
+		return
+	}
 	reader, ok := h.svc.(c5ScheduleReader)
-	if !ok { response.JSON(w, http.StatusNotImplemented, map[string]string{"code": "C5_UNAVAILABLE"}); return }
+	if !ok {
+		response.JSON(w, http.StatusNotImplemented, map[string]string{"code": "C5_UNAVAILABLE"})
+		return
+	}
 	limit, offset := c5Pagination(r)
 	items, err := reader.ListScheduledOccurrences(r.Context(), scheduleID, uuid.Nil, limit, offset)
-	if err != nil { writeError(w, err); return }
+	if err != nil {
+		writeError(w, err)
+		return
+	}
 	writeC5Occurrences(w, r.Context(), reader, items)
 }
 
 func (h *handler) retryScheduledOccurrence(w http.ResponseWriter, r *http.Request) {
-	if !isAdminChecker(r) { response.Forbidden(w, "checker privileges required"); return }
+	if !isAdminChecker(r) {
+		response.Forbidden(w, "checker privileges required")
+		return
+	}
 	id, err := uuid.Parse(r.PathValue("occurrence_id"))
-	if err != nil { response.BadRequest(w, "invalid occurrence id"); return }
+	if err != nil {
+		response.BadRequest(w, "invalid occurrence id")
+		return
+	}
 	reader, ok := h.svc.(c5ScheduleReader)
-	if !ok { response.JSON(w, http.StatusNotImplemented, map[string]string{"code": "C5_UNAVAILABLE"}); return }
-	if err := reader.RetryScheduledOccurrence(r.Context(), id); err != nil { writeError(w, err); return }
+	if !ok {
+		response.JSON(w, http.StatusNotImplemented, map[string]string{"code": "C5_UNAVAILABLE"})
+		return
+	}
+	if err := reader.RetryScheduledOccurrence(r.Context(), id); err != nil {
+		writeError(w, err)
+		return
+	}
 	response.OK(w, map[string]bool{"retry_queued": true})
 }
 
 func (h *handler) confirmScheduledFeeCap(w http.ResponseWriter, r *http.Request) {
 	userID, ok := currentUserID(r)
-	if !ok { response.Unauthorized(w, "invalid or missing user identity"); return }
+	if !ok {
+		response.Unauthorized(w, "invalid or missing user identity")
+		return
+	}
 	scheduleID, err := uuid.Parse(r.PathValue("id"))
-	if err != nil { response.BadRequest(w, "invalid schedule id"); return }
+	if err != nil {
+		response.BadRequest(w, "invalid schedule id")
+		return
+	}
 	var req c5FeeCapConfirmationRequest
-	if !response.Decode(w, r, &req) { return }
+	if !response.Decode(w, r, &req) {
+		return
+	}
 	if req.MaxFeeAmount == nil || *req.MaxFeeAmount < 0 {
 		response.BadRequest(w, "max_fee_amount must be a non-negative integer")
 		return
 	}
 	reader, ok := h.svc.(c5ScheduleReader)
-	if !ok { response.JSON(w, http.StatusNotImplemented, map[string]string{"code": "C5_UNAVAILABLE"}); return }
+	if !ok {
+		response.JSON(w, http.StatusNotImplemented, map[string]string{"code": "C5_UNAVAILABLE"})
+		return
+	}
 	if err := reader.ConfirmScheduledFeeCap(r.Context(), scheduleID, userID, *req.MaxFeeAmount); err != nil {
 		writeError(w, err)
 		return
@@ -445,47 +594,86 @@ func (h *handler) confirmScheduledFeeCap(w http.ResponseWriter, r *http.Request)
 
 func writeC5Occurrences(w http.ResponseWriter, ctx context.Context, reader c5ScheduleReader, items []model.ScheduledOccurrence) {
 	out, err := attachC5Attempts(ctx, reader, items)
-	if err != nil { writeError(w, err); return }
+	if err != nil {
+		writeError(w, err)
+		return
+	}
 	response.OK(w, listC5OccurrencesResponse{Occurrences: out})
 }
 
 func c5Pagination(r *http.Request) (int, int) {
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
-	if limit <= 0 { limit = 100 }
-	if limit > 500 { limit = 500 }
-	if offset < 0 { offset = 0 }
+	if limit <= 0 {
+		limit = 100
+	}
+	if limit > 500 {
+		limit = 500
+	}
+	if offset < 0 {
+		offset = 0
+	}
 	return limit, offset
 }
 
 func parseC5Date(raw string, required bool) (time.Time, error) {
-	if raw == "" && !required { return time.Time{}, nil }
+	if raw == "" && !required {
+		return time.Time{}, nil
+	}
 	value, err := time.Parse("2006-01-02", raw)
-	if err != nil { return time.Time{}, fmt.Errorf("%w: date must be YYYY-MM-DD", apperror.ErrValidation) }
+	if err != nil {
+		return time.Time{}, fmt.Errorf("%w: date must be YYYY-MM-DD", apperror.ErrValidation)
+	}
 	return value, nil
 }
 
 func parseC5UUID(raw, field string, required bool) (uuid.UUID, error) {
-	if raw == "" && !required { return uuid.Nil, nil }
+	if raw == "" && !required {
+		return uuid.Nil, nil
+	}
 	id, err := uuid.Parse(raw)
-	if err != nil { return uuid.Nil, fmt.Errorf("%w: %s must be a UUID", apperror.ErrValidation, field) }
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("%w: %s must be a UUID", apperror.ErrValidation, field)
+	}
 	return id, nil
 }
 
 func (h *handler) c5AdminService(w http.ResponseWriter) (c5SavingsAdmin, bool) {
 	admin, ok := h.svc.(c5SavingsAdmin)
-	if !ok { response.JSON(w, http.StatusNotImplemented, map[string]string{"code": "C5_UNAVAILABLE"}) }
+	if !ok {
+		response.JSON(w, http.StatusNotImplemented, map[string]string{"code": "C5_UNAVAILABLE"})
+	}
 	return admin, ok
 }
 
 func (h *handler) createC5SavingsProduct(w http.ResponseWriter, r *http.Request) {
-	if !isAdminMaker(r) { response.Forbidden(w, "maker privileges required"); return }
-	actor, ok := currentUserID(r); if !ok { response.Unauthorized(w, "invalid or missing user identity"); return }
-	admin, ok := h.c5AdminService(w); if !ok { return }
+	if !isAdminMaker(r) {
+		response.Forbidden(w, "maker privileges required")
+		return
+	}
+	actor, ok := currentUserID(r)
+	if !ok {
+		response.Unauthorized(w, "invalid or missing user identity")
+		return
+	}
+	admin, ok := h.c5AdminService(w)
+	if !ok {
+		return
+	}
 	var req c5ProductRequest
-	if !response.Decode(w, r, &req) { return }
-	expenseID, err := parseC5UUID(req.InterestExpenseAccount, "interest_expense_account_id", true); if err != nil { writeError(w, err); return }
-	payableID, err := parseC5UUID(req.InterestPayableAccount, "interest_payable_account_id", true); if err != nil { writeError(w, err); return }
+	if !response.Decode(w, r, &req) {
+		return
+	}
+	expenseID, err := parseC5UUID(req.InterestExpenseAccount, "interest_expense_account_id", true)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	payableID, err := parseC5UUID(req.InterestPayableAccount, "interest_payable_account_id", true)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
 	product, err := admin.CreateSavingsProduct(r.Context(), model.SavingsProduct{
 		ProductCode: req.ProductCode, Name: req.Name, Currency: req.Currency,
 		EligibleAccountTypes: req.EligibleAccountTypes, Status: req.Status,
@@ -493,70 +681,191 @@ func (h *handler) createC5SavingsProduct(w http.ResponseWriter, r *http.Request)
 		InterestExpenseAccountID: expenseID, InterestPayableAccountID: payableID,
 		CreatedBy: actor.String(), UpdatedBy: actor.String(),
 	})
-	if err != nil { writeError(w, err); return }
+	if err != nil {
+		writeError(w, err)
+		return
+	}
 	response.Created(w, toC5ProductResponse(product))
 }
 
 func (h *handler) updateC5SavingsProductStatus(w http.ResponseWriter, r *http.Request) {
-	if !isAdminChecker(r) { response.Forbidden(w, "checker privileges required"); return }
-	actor, ok := currentUserID(r); if !ok { response.Unauthorized(w, "invalid or missing user identity"); return }
-	admin, ok := h.c5AdminService(w); if !ok { return }
-	id, err := parseC5UUID(r.PathValue("id"), "product_id", true); if err != nil { writeError(w, err); return }
+	if !isAdminChecker(r) {
+		response.Forbidden(w, "checker privileges required")
+		return
+	}
+	actor, ok := currentUserID(r)
+	if !ok {
+		response.Unauthorized(w, "invalid or missing user identity")
+		return
+	}
+	admin, ok := h.c5AdminService(w)
+	if !ok {
+		return
+	}
+	id, err := parseC5UUID(r.PathValue("id"), "product_id", true)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
 	var req c5ProductStatusRequest
-	if !response.Decode(w, r, &req) { return }
+	if !response.Decode(w, r, &req) {
+		return
+	}
 	product, err := admin.SetSavingsProductStatus(r.Context(), id, req.Status, actor.String())
-	if err != nil { writeError(w, err); return }
+	if err != nil {
+		writeError(w, err)
+		return
+	}
 	response.OK(w, toC5ProductResponse(product))
 }
 
 func (h *handler) createC5SavingsRate(w http.ResponseWriter, r *http.Request) {
-	if !isAdminMaker(r) { response.Forbidden(w, "maker privileges required"); return }
-	actor, ok := currentUserID(r); if !ok { response.Unauthorized(w, "invalid or missing user identity"); return }
-	admin, ok := h.c5AdminService(w); if !ok { return }
-	productID, err := parseC5UUID(r.PathValue("id"), "product_id", true); if err != nil { writeError(w, err); return }
-	var req c5RateRequest; if !response.Decode(w, r, &req) { return }
-	from, err := parseC5Date(req.EffectiveFrom, true); if err != nil { writeError(w, err); return }
-	until, err := parseC5Date(req.EffectiveUntil, false); if err != nil { writeError(w, err); return }
-	var contentHash []byte; if req.ContentHash != "" { contentHash = []byte(req.ContentHash) }
+	if !isAdminMaker(r) {
+		response.Forbidden(w, "maker privileges required")
+		return
+	}
+	actor, ok := currentUserID(r)
+	if !ok {
+		response.Unauthorized(w, "invalid or missing user identity")
+		return
+	}
+	admin, ok := h.c5AdminService(w)
+	if !ok {
+		return
+	}
+	productID, err := parseC5UUID(r.PathValue("id"), "product_id", true)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	var req c5RateRequest
+	if !response.Decode(w, r, &req) {
+		return
+	}
+	from, err := parseC5Date(req.EffectiveFrom, true)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	until, err := parseC5Date(req.EffectiveUntil, false)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	var contentHash []byte
+	if req.ContentHash != "" {
+		contentHash = []byte(req.ContentHash)
+	}
 	rate, err := admin.CreateSavingsRate(r.Context(), model.SavingsRateVersion{ProductID: productID, AnnualRateBps: req.AnnualRateBps, EffectiveFrom: from, EffectiveUntil: timePtr(until), ContentHash: contentHash, CreatedBy: actor.String()})
-	if err != nil { writeError(w, err); return }
+	if err != nil {
+		writeError(w, err)
+		return
+	}
 	response.Created(w, rate)
 }
 
-func (h *handler) submitC5SavingsRate(w http.ResponseWriter, r *http.Request) { h.applyC5RateAction(w, r, "submit") }
-func (h *handler) approveC5SavingsRate(w http.ResponseWriter, r *http.Request) { h.applyC5RateAction(w, r, "approve") }
-func (h *handler) rejectC5SavingsRate(w http.ResponseWriter, r *http.Request) { h.applyC5RateAction(w, r, "reject") }
+func (h *handler) submitC5SavingsRate(w http.ResponseWriter, r *http.Request) {
+	h.applyC5RateAction(w, r, "submit")
+}
+func (h *handler) approveC5SavingsRate(w http.ResponseWriter, r *http.Request) {
+	h.applyC5RateAction(w, r, "approve")
+}
+func (h *handler) rejectC5SavingsRate(w http.ResponseWriter, r *http.Request) {
+	h.applyC5RateAction(w, r, "reject")
+}
 
 func (h *handler) applyC5RateAction(w http.ResponseWriter, r *http.Request, action string) {
-	if (action == "submit" && !isAdminMaker(r)) || (action != "submit" && !isAdminChecker(r)) { response.Forbidden(w, "maker/checker privileges required"); return }
-	actor, ok := currentUserID(r); if !ok { response.Unauthorized(w, "invalid or missing user identity"); return }
-	admin, ok := h.c5AdminService(w); if !ok { return }
-	id, err := parseC5UUID(r.PathValue("id"), "rate_id", true); if err != nil { writeError(w, err); return }
+	if (action == "submit" && !isAdminMaker(r)) || (action != "submit" && !isAdminChecker(r)) {
+		response.Forbidden(w, "maker/checker privileges required")
+		return
+	}
+	actor, ok := currentUserID(r)
+	if !ok {
+		response.Unauthorized(w, "invalid or missing user identity")
+		return
+	}
+	admin, ok := h.c5AdminService(w)
+	if !ok {
+		return
+	}
+	id, err := parseC5UUID(r.PathValue("id"), "rate_id", true)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
 	switch action {
-	case "submit": err = admin.SubmitSavingsRate(r.Context(), id, actor.String())
-	case "approve": err = admin.ApproveSavingsRate(r.Context(), id, actor.String())
+	case "submit":
+		err = admin.SubmitSavingsRate(r.Context(), id, actor.String())
+	case "approve":
+		err = admin.ApproveSavingsRate(r.Context(), id, actor.String())
 	case "reject":
-		var req struct{ Reason string `json:"reason"` }; if !response.Decode(w, r, &req) { return }
+		var req struct {
+			Reason string `json:"reason"`
+		}
+		if !response.Decode(w, r, &req) {
+			return
+		}
 		err = admin.RejectSavingsRate(r.Context(), id, actor.String(), req.Reason)
 	}
-	if err != nil { writeError(w, err); return }
+	if err != nil {
+		writeError(w, err)
+		return
+	}
 	resultKey := map[string]string{"submit": "submitted", "approve": "approved", "reject": "rejected"}[action]
-	if resultKey == "" { resultKey = "applied" }
+	if resultKey == "" {
+		resultKey = "applied"
+	}
 	response.OK(w, map[string]bool{resultKey: true})
 }
 
 func (h *handler) createC5SavingsEnrollment(w http.ResponseWriter, r *http.Request) {
-	if !isAdminMaker(r) { response.Forbidden(w, "maker privileges required"); return }
-	actor, ok := currentUserID(r); if !ok { response.Unauthorized(w, "invalid or missing user identity"); return }
-	admin, ok := h.c5AdminService(w); if !ok { return }
-	var req c5EnrollmentRequest; if !response.Decode(w, r, &req) { return }
-	productID, err := parseC5UUID(req.ProductID, "product_id", true); if err != nil { writeError(w, err); return }
-	accountID, err := parseC5UUID(req.AccountID, "account_id", true); if err != nil { writeError(w, err); return }
-	userID, err := parseC5UUID(req.UserID, "user_id", true); if err != nil { writeError(w, err); return }
-	from, err := parseC5Date(req.EffectiveFrom, true); if err != nil { writeError(w, err); return }
-	until, err := parseC5Date(req.EffectiveUntil, false); if err != nil { writeError(w, err); return }
+	if !isAdminMaker(r) {
+		response.Forbidden(w, "maker privileges required")
+		return
+	}
+	actor, ok := currentUserID(r)
+	if !ok {
+		response.Unauthorized(w, "invalid or missing user identity")
+		return
+	}
+	admin, ok := h.c5AdminService(w)
+	if !ok {
+		return
+	}
+	var req c5EnrollmentRequest
+	if !response.Decode(w, r, &req) {
+		return
+	}
+	productID, err := parseC5UUID(req.ProductID, "product_id", true)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	accountID, err := parseC5UUID(req.AccountID, "account_id", true)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	userID, err := parseC5UUID(req.UserID, "user_id", true)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	from, err := parseC5Date(req.EffectiveFrom, true)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	until, err := parseC5Date(req.EffectiveUntil, false)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
 	enrollment, err := admin.EnrollSavingsAccount(r.Context(), model.SavingsEnrollment{ProductID: productID, AccountID: accountID, UserID: userID, Mode: req.Mode, EffectiveFrom: from, EffectiveUntil: timePtr(until), CreatedBy: actor.String(), UpdatedBy: actor.String()})
-	if err != nil { writeError(w, err); return }
+	if err != nil {
+		writeError(w, err)
+		return
+	}
 	response.Created(w, toC5EnrollmentResponse(enrollment))
 }
 
@@ -609,27 +918,71 @@ func (h *handler) applyC5EnrollmentStatus(w http.ResponseWriter, r *http.Request
 }
 
 func (h *handler) previewC5InterestPeriod(w http.ResponseWriter, r *http.Request) {
-	if !isAdmin(r) { response.Forbidden(w, "admin privileges required"); return }
-	admin, ok := h.c5AdminService(w); if !ok { return }
-	id, err := parseC5UUID(r.PathValue("id"), "period_id", true); if err != nil { writeError(w, err); return }
-	preview, err := admin.PreviewInterestPeriodClose(r.Context(), id); if err != nil { writeError(w, err); return }
+	if !isAdmin(r) {
+		response.Forbidden(w, "admin privileges required")
+		return
+	}
+	admin, ok := h.c5AdminService(w)
+	if !ok {
+		return
+	}
+	id, err := parseC5UUID(r.PathValue("id"), "period_id", true)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	preview, err := admin.PreviewInterestPeriodClose(r.Context(), id)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
 	response.OK(w, preview)
 }
 
 func (h *handler) closeC5InterestPeriod(w http.ResponseWriter, r *http.Request) {
-	if !isAdminChecker(r) { response.Forbidden(w, "checker privileges required"); return }
-	actor, ok := currentUserID(r); if !ok { response.Unauthorized(w, "invalid or missing user identity"); return }
-	admin, ok := h.c5AdminService(w); if !ok { return }
-	id, err := parseC5UUID(r.PathValue("id"), "period_id", true); if err != nil { writeError(w, err); return }
-	if err := admin.RunInterestPeriodClose(r.Context(), id, actor.String()); err != nil { writeError(w, err); return }
+	if !isAdminChecker(r) {
+		response.Forbidden(w, "checker privileges required")
+		return
+	}
+	actor, ok := currentUserID(r)
+	if !ok {
+		response.Unauthorized(w, "invalid or missing user identity")
+		return
+	}
+	admin, ok := h.c5AdminService(w)
+	if !ok {
+		return
+	}
+	id, err := parseC5UUID(r.PathValue("id"), "period_id", true)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	if err := admin.RunInterestPeriodClose(r.Context(), id, actor.String()); err != nil {
+		writeError(w, err)
+		return
+	}
 	response.OK(w, map[string]bool{"closed": true})
 }
 
 func (h *handler) runC5InterestDaily(w http.ResponseWriter, r *http.Request) {
-	if !isAdmin(r) { response.Forbidden(w, "admin privileges required"); return }
-	admin, ok := h.c5AdminService(w); if !ok { return }
+	if !isAdmin(r) {
+		response.Forbidden(w, "admin privileges required")
+		return
+	}
+	admin, ok := h.c5AdminService(w)
+	if !ok {
+		return
+	}
 	date := time.Now()
-	if raw := r.URL.Query().Get("date"); raw != "" { parsed, err := parseC5Date(raw, true); if err != nil { writeError(w, err); return }; date = parsed }
+	if raw := r.URL.Query().Get("date"); raw != "" {
+		parsed, err := parseC5Date(raw, true)
+		if err != nil {
+			writeError(w, err)
+			return
+		}
+		date = parsed
+	}
 	response.OK(w, admin.RunInterestDaily(r.Context(), date))
 }
 
@@ -655,28 +1008,91 @@ func (h *handler) retryC5InterestPeriodItem(w http.ResponseWriter, r *http.Reque
 }
 
 func (h *handler) createC5InterestAdjustment(w http.ResponseWriter, r *http.Request) {
-	if !isAdminMaker(r) { response.Forbidden(w, "maker privileges required"); return }
-	actor, ok := currentUserID(r); if !ok { response.Unauthorized(w, "invalid or missing user identity"); return }
-	admin, ok := h.c5AdminService(w); if !ok { return }
-	var req c5AdjustmentRequest; if !response.Decode(w, r, &req) { return }
-	periodID, err := parseC5UUID(req.PeriodID, "period_id", true); if err != nil { writeError(w, err); return }
-	enrollmentID, err := parseC5UUID(req.EnrollmentID, "enrollment_id", true); if err != nil { writeError(w, err); return }
-	accrualID, err := parseC5UUID(req.AccrualID, "source_accrual_id", false); if err != nil { writeError(w, err); return }
-	capitalizationID, err := parseC5UUID(req.CapitalizationID, "source_capitalization_id", false); if err != nil { writeError(w, err); return }
-	amount, err := decimal.NewFromString(req.Amount); if err != nil || !amount.IsPositive() || !amount.Equal(amount.Truncate(0)) || !amount.BigInt().IsInt64() { response.BadRequest(w, "amount must be a positive integer decimal string"); return }
+	if !isAdminMaker(r) {
+		response.Forbidden(w, "maker privileges required")
+		return
+	}
+	actor, ok := currentUserID(r)
+	if !ok {
+		response.Unauthorized(w, "invalid or missing user identity")
+		return
+	}
+	admin, ok := h.c5AdminService(w)
+	if !ok {
+		return
+	}
+	var req c5AdjustmentRequest
+	if !response.Decode(w, r, &req) {
+		return
+	}
+	periodID, err := parseC5UUID(req.PeriodID, "period_id", true)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	enrollmentID, err := parseC5UUID(req.EnrollmentID, "enrollment_id", true)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	accrualID, err := parseC5UUID(req.AccrualID, "source_accrual_id", false)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	capitalizationID, err := parseC5UUID(req.CapitalizationID, "source_capitalization_id", false)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	amount, err := decimal.NewFromString(req.Amount)
+	if err != nil || !amount.IsPositive() || !amount.Equal(amount.Truncate(0)) || !amount.BigInt().IsInt64() {
+		response.BadRequest(w, "amount must be a positive integer decimal string")
+		return
+	}
 	adjustment, err := admin.CreateInterestAdjustment(r.Context(), model.InterestAdjustment{SourcePeriodID: periodID, EnrollmentID: enrollmentID, SourceAccrualID: uuidPtr(accrualID), SourceCapitalizationID: uuidPtr(capitalizationID), Amount: amount.IntPart(), Direction: req.Direction, Reason: req.Reason, CreatedBy: actor.String()})
-	if err != nil { writeError(w, err); return }
+	if err != nil {
+		writeError(w, err)
+		return
+	}
 	response.Created(w, adjustment)
 }
 
 func (h *handler) approveC5InterestAdjustment(w http.ResponseWriter, r *http.Request) {
-	if !isAdminChecker(r) { response.Forbidden(w, "checker privileges required"); return }
-	actor, ok := currentUserID(r); if !ok { response.Unauthorized(w, "invalid or missing user identity"); return }
-	admin, ok := h.c5AdminService(w); if !ok { return }
-	id, err := parseC5UUID(r.PathValue("id"), "adjustment_id", true); if err != nil { writeError(w, err); return }
-	if err := admin.ApproveInterestAdjustment(r.Context(), id, actor.String()); err != nil { writeError(w, err); return }
+	if !isAdminChecker(r) {
+		response.Forbidden(w, "checker privileges required")
+		return
+	}
+	actor, ok := currentUserID(r)
+	if !ok {
+		response.Unauthorized(w, "invalid or missing user identity")
+		return
+	}
+	admin, ok := h.c5AdminService(w)
+	if !ok {
+		return
+	}
+	id, err := parseC5UUID(r.PathValue("id"), "adjustment_id", true)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	if err := admin.ApproveInterestAdjustment(r.Context(), id, actor.String()); err != nil {
+		writeError(w, err)
+		return
+	}
 	response.OK(w, map[string]bool{"approved": true})
 }
 
-func timePtr(value time.Time) *time.Time { if value.IsZero() { return nil }; return &value }
-func uuidPtr(value uuid.UUID) *uuid.UUID { if value == uuid.Nil { return nil }; return &value }
+func timePtr(value time.Time) *time.Time {
+	if value.IsZero() {
+		return nil
+	}
+	return &value
+}
+func uuidPtr(value uuid.UUID) *uuid.UUID {
+	if value == uuid.Nil {
+		return nil
+	}
+	return &value
+}

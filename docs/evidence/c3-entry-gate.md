@@ -1,8 +1,8 @@
 # C3 Entry-Gate Evidence — Plan 59 T0
 
 This document records the C3 inventory and the boundary decisions before
-acceptance execution. The implementation is present in the dedicated
-`codex/c3-multi-channel-notifications` worktree.
+acceptance execution. The implementation is present in the current main
+checkout; this record remains an acceptance checklist.
 
 ## Scope recorded
 

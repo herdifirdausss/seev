@@ -266,7 +266,7 @@ func (s *Service) ReconcileConversions(ctx context.Context, from, to time.Time, 
 	return report, nil
 }
 
-func (s *Service) appendConsumedQuoteOrphans(ctx context.Context, from, to, limit int, checkedAt time.Time, report *model.FXReconciliationReport) error {
+func (s *Service) appendConsumedQuoteOrphans(ctx context.Context, from, to time.Time, limit int, checkedAt time.Time, report *model.FXReconciliationReport) error {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT q.id, q.consumed_by_conversion_id, q.source_currency, q.target_currency,
 		       q.source_amount, q.target_amount
@@ -311,7 +311,7 @@ func (s *Service) appendConsumedQuoteOrphans(ctx context.Context, from, to, limi
 	return nil
 }
 
-func (s *Service) appendUnlinkedFXLegs(ctx context.Context, from, to, limit int, checkedAt time.Time, report *model.FXReconciliationReport) error {
+func (s *Service) appendUnlinkedFXLegs(ctx context.Context, from, to time.Time, limit int, checkedAt time.Time, report *model.FXReconciliationReport) error {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT lt.id, lt.type, lt.currency, lt.amount, lt.status
 		FROM ledger_transactions lt

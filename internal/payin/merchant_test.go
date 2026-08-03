@@ -42,8 +42,8 @@ func TestHandleVendorCallback_MerchantOwnedIntent_PostsMerchantPayinCredit(t *te
 
 	var posted ledgerclient.Command
 	m := &Module{
-		repo:   repo,
-		poster: stubPoster{fn: func(_ context.Context, cmd ledgerclient.Command) error { posted = cmd; return nil }},
+		repo:    repo,
+		poster:  stubPoster{fn: func(_ context.Context, cmd ledgerclient.Command) error { posted = cmd; return nil }},
 		routing: routeTo(vendor, "bca"), logger: discardLogger(),
 		// A configured fraudClient that would fail the test if ever
 		// invoked — proves merchant events skip screening entirely.
@@ -159,7 +159,7 @@ func TestCreateMerchantTopupIntent_Sandbox_InsertsPendingIntent(t *testing.T) {
 
 	registry := vendorgw.NewRegistry()
 	registry.AddPayin(stubVerifier{name: sandboxVendor})
-	m := &Module{repo: repo, registry: registry, logger: discardLogger()}
+	m := &Module{repo: repo, registry: registry, routing: routeTo(sandboxVendor, "bca"), logger: discardLogger()}
 
 	intent, err := m.CreateMerchantTopupIntent(context.Background(), tenantID, "sandbox", "IDR", decimal.NewFromInt(50000), "downstream-key")
 	require.NoError(t, err)
@@ -189,7 +189,7 @@ func TestCreateMerchantTopupIntent_DownstreamKeyConflict_ReturnsOriginal(t *test
 
 	registry := vendorgw.NewRegistry()
 	registry.AddPayin(stubVerifier{name: sandboxVendor})
-	m := &Module{repo: repo, registry: registry, logger: discardLogger()}
+	m := &Module{repo: repo, registry: registry, routing: routeTo(sandboxVendor, "bca"), logger: discardLogger()}
 
 	intent, err := m.CreateMerchantTopupIntent(context.Background(), tenantID, "sandbox", "IDR", decimal.NewFromInt(50000), "downstream-key")
 	require.NoError(t, err)

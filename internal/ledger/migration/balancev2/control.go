@@ -16,11 +16,11 @@ import (
 )
 
 var (
-	ErrMigrationNotFound = errors.New("balancev2: migration not found")
+	ErrMigrationNotFound  = errors.New("balancev2: migration not found")
 	ErrOptimisticConflict = errors.New("balancev2: migration changed since it was read")
-	ErrGateBlocked         = errors.New("balancev2: migration gate is not satisfied")
-	ErrApprovalRequired    = errors.New("balancev2: checker approval is required")
-	ErrNoActiveMigration   = errors.New("balancev2: no active migration")
+	ErrGateBlocked        = errors.New("balancev2: migration gate is not satisfied")
+	ErrApprovalRequired   = errors.New("balancev2: checker approval is required")
+	ErrNoActiveMigration  = errors.New("balancev2: no active migration")
 )
 
 const migrationColumns = `
@@ -142,11 +142,11 @@ func nullTimePtr(value sql.NullTime) *time.Time {
 }
 
 type TransitionRequest struct {
-	MigrationID  uuid.UUID
-	ToState      string
-	RequestedBy  string
-	ApprovedBy   string
-	Reason       string
+	MigrationID     uuid.UUID
+	ToState         string
+	RequestedBy     string
+	ApprovedBy      string
+	Reason          string
 	ExpectedVersion int64
 }
 
@@ -597,7 +597,8 @@ func (r *ControlRepository) recordComparisonTx(ctx context.Context, tx *sql.Tx, 
 				source_fallback_enabled = true,
 				updated_by = 'worker:balancev2:auto-abort',
 				updated_at = now(), version = version + 1
-			WHERE id = $1 AND read_percentage_basis_points > 0`, migrationID); err != nil {
+		WHERE id = $1 AND read_percentage_basis_points > 0`, migrationID)
+		if err != nil {
 			return fmt.Errorf("balancev2: auto-abort target reads: %w", err)
 		} else if affected, affectedErr := abortResult.RowsAffected(); affectedErr != nil {
 			return fmt.Errorf("balancev2: auto-abort rows affected: %w", affectedErr)
@@ -607,10 +608,10 @@ func (r *ControlRepository) recordComparisonTx(ctx context.Context, tx *sql.Tx, 
 				return fmt.Errorf("balancev2: read auto-aborted migration state: %w", err)
 			}
 			evidence, marshalErr := json.Marshal(map[string]any{
-				"reason": "critical mismatch",
+				"reason":         "critical mismatch",
 				"resource_layer": comparison.ResourceLayer,
 				"classification": comparison.Classification,
-				"field_mask": comparison.FieldMask,
+				"field_mask":     comparison.FieldMask,
 				"source_version": comparison.SourceVersion,
 				"target_version": comparison.TargetVersion,
 			})
@@ -793,9 +794,9 @@ func (r *ControlRepository) Gates(ctx context.Context, migration Migration) (Gat
 		shadowRatio = float64(matches) / float64(comparisons)
 	}
 	snapshot := GateSnapshot{
-		Passed:                 critical == 0 && coverage >= 1 && comparisons > 0 && comparisonErrors == 0 && shadowRatio >= 0.999 && latestType != "" && backupFresh && preCutoverComplete,
+		Passed:                critical == 0 && coverage >= 1 && comparisons > 0 && comparisonErrors == 0 && shadowRatio >= 0.999 && latestType != "" && backupFresh && preCutoverComplete,
 		FreshAt:               time.Now().UTC(),
-		UnresolvedCritical:     critical,
+		UnresolvedCritical:    critical,
 		TargetMissingEligible: targetMissing,
 		ShadowComparisons:     comparisons,
 		ShadowMatches:         matches,
@@ -804,8 +805,8 @@ func (r *ControlRepository) Gates(ctx context.Context, migration Migration) (Gat
 		FallbackRate:          0,
 		TargetCoverageRatio:   coverage,
 		LatestReconciliation:  latestType,
-		BackupFresh:            backupFresh,
-		PreCutoverComplete:     preCutoverComplete,
+		BackupFresh:           backupFresh,
+		PreCutoverComplete:    preCutoverComplete,
 	}
 	unresolvedMismatches.WithLabelValues(MigrationName, "critical").Set(float64(critical))
 	if !snapshot.Passed {
@@ -1008,8 +1009,10 @@ func (r *ControlRepository) ApproveRepair(ctx context.Context, id uuid.UUID, app
 			WHERE id = $3`, approver, boundedErrorCode(reason), id); err != nil {
 			return fmt.Errorf("balancev2: approve repair: %w", err)
 		}
-		repair, err = scanRepairRow(tx.QueryRowContext(ctx, `SELECT `+repairColumns+` FROM data_migration_repairs WHERE id = $1`, id), &repair)
-		return err
+		if err := scanRepairRow(tx.QueryRowContext(ctx, `SELECT `+repairColumns+` FROM data_migration_repairs WHERE id = $1`, id), &repair); err != nil {
+			return err
+		}
+		return nil
 	})
 	return repair, err
 }
