@@ -20,6 +20,7 @@ package events
 import (
 	"encoding/json"
 	"fmt"
+	"math/big"
 	"regexp"
 	"time"
 
@@ -60,7 +61,181 @@ const (
 	// consumers that need one user-facing conversion must subscribe to this
 	// event rather than infer an aggregate from two independent postings.
 	TypeFXConversionPosted = "ledger.fx_conversion.posted.v1"
+	// Interest events are emitted by the C5 period-close workflow through the
+	// Ledger outbox.  Their logical EventID is stable for the durable evidence
+	// row, so replaying a worker cannot create a second logical domain event.
+	TypeInterestAccrued       = "ledger.interest_accrued.v1"
+	TypeInterestCapitalized   = "ledger.interest_capitalized.v1"
+	TypeInterestPeriodClosed  = "ledger.interest_period.closed.v1"
+	TypeInterestAdjusted      = "ledger.interest_adjusted.v1"
+	TypeScheduleOccurrenceSucceeded = "ledger.schedule.occurrence.succeeded.v1"
+	TypeScheduleOccurrenceFailed    = "ledger.schedule.occurrence.failed.v1"
+	TypeSchedulePaused               = "ledger.schedule.paused.v1"
 )
+
+type InterestAccrued struct {
+	SchemaVersion       int        `json:"schema_version"`
+	EventID             *uuid.UUID `json:"event_id,omitempty"`
+	AccrualID           uuid.UUID  `json:"accrual_id"`
+	PeriodID            uuid.UUID  `json:"period_id"`
+	EnrollmentID        uuid.UUID  `json:"enrollment_id"`
+	AccountID           uuid.UUID  `json:"account_id"`
+	AccrualDate         string     `json:"accrual_date"`
+	Amount              string     `json:"amount"`
+	Currency            string     `json:"currency"`
+	LedgerTransactionID *uuid.UUID `json:"ledger_transaction_id,omitempty"`
+	OccurredAt          time.Time  `json:"occurred_at"`
+}
+
+func NewInterestAccrued(accrualID, periodID, enrollmentID, accountID uuid.UUID, accrualDate, amount, currency string, transactionID *uuid.UUID, occurredAt time.Time) InterestAccrued {
+	return InterestAccrued{
+		SchemaVersion: 1,
+		EventID: logicalEventID(TypeInterestAccrued, accrualID.String()),
+		AccrualID: accrualID, PeriodID: periodID, EnrollmentID: enrollmentID,
+		AccountID: accountID, AccrualDate: accrualDate, Amount: amount,
+		Currency: currency, LedgerTransactionID: transactionID, OccurredAt: occurredAt,
+	}
+}
+
+func (e InterestAccrued) ToPayload() map[string]any { return toPayload(e) }
+
+type InterestCapitalized struct {
+	SchemaVersion       int        `json:"schema_version"`
+	EventID             *uuid.UUID `json:"event_id,omitempty"`
+	CapitalizationID    uuid.UUID  `json:"capitalization_id"`
+	PeriodID            uuid.UUID  `json:"period_id"`
+	EnrollmentID        uuid.UUID  `json:"enrollment_id"`
+	AccountID           uuid.UUID  `json:"account_id"`
+	Amount              string     `json:"amount"`
+	Currency            string     `json:"currency"`
+	LedgerTransactionID *uuid.UUID `json:"ledger_transaction_id,omitempty"`
+	OccurredAt          time.Time  `json:"occurred_at"`
+}
+
+func NewInterestCapitalized(capitalizationID, periodID, enrollmentID, accountID uuid.UUID, amount, currency string, transactionID *uuid.UUID, occurredAt time.Time) InterestCapitalized {
+	return InterestCapitalized{
+		SchemaVersion: 1,
+		EventID: logicalEventID(TypeInterestCapitalized, capitalizationID.String()),
+		CapitalizationID: capitalizationID, PeriodID: periodID, EnrollmentID: enrollmentID,
+		AccountID: accountID, Amount: amount, Currency: currency,
+		LedgerTransactionID: transactionID, OccurredAt: occurredAt,
+	}
+}
+
+func (e InterestCapitalized) ToPayload() map[string]any { return toPayload(e) }
+
+type InterestPeriodClosed struct {
+	SchemaVersion          int        `json:"schema_version"`
+	EventID                *uuid.UUID `json:"event_id,omitempty"`
+	PeriodID               uuid.UUID  `json:"period_id"`
+	ProductID              uuid.UUID  `json:"product_id"`
+	Currency               string     `json:"currency"`
+	PeriodYear             int        `json:"period_year"`
+	PeriodMonth            int        `json:"period_month"`
+	TotalAccruedAmount     string     `json:"total_accrued_amount"`
+	TotalCapitalizedAmount string     `json:"total_capitalized_amount"`
+	ClosedAt               time.Time  `json:"closed_at"`
+}
+
+func NewInterestPeriodClosed(periodID, productID uuid.UUID, currency string, year, month int, accrued, capitalized string, closedAt time.Time) InterestPeriodClosed {
+	return InterestPeriodClosed{
+		SchemaVersion: 1,
+		EventID: logicalEventID(TypeInterestPeriodClosed, periodID.String()),
+		PeriodID: periodID, ProductID: productID, Currency: currency,
+		PeriodYear: year, PeriodMonth: month, TotalAccruedAmount: accrued,
+		TotalCapitalizedAmount: capitalized, ClosedAt: closedAt,
+	}
+}
+
+func (e InterestPeriodClosed) ToPayload() map[string]any { return toPayload(e) }
+
+type InterestAdjusted struct {
+	SchemaVersion       int        `json:"schema_version"`
+	EventID             *uuid.UUID `json:"event_id,omitempty"`
+	AdjustmentID        uuid.UUID  `json:"adjustment_id"`
+	SourcePeriodID      uuid.UUID  `json:"source_period_id"`
+	EnrollmentID        uuid.UUID  `json:"enrollment_id"`
+	Amount              string     `json:"amount"`
+	Direction           string     `json:"direction"`
+	CorrectionStage     string     `json:"correction_stage"`
+	Currency            string     `json:"currency"`
+	LedgerTransactionID *uuid.UUID `json:"ledger_transaction_id,omitempty"`
+	OccurredAt          time.Time  `json:"occurred_at"`
+}
+
+func NewInterestAdjusted(adjustmentID, sourcePeriodID, enrollmentID uuid.UUID, amount, direction, stage, currency string, transactionID *uuid.UUID, occurredAt time.Time) InterestAdjusted {
+	return InterestAdjusted{
+		SchemaVersion: 1,
+		EventID: logicalEventID(TypeInterestAdjusted, adjustmentID.String()),
+		AdjustmentID: adjustmentID, SourcePeriodID: sourcePeriodID, EnrollmentID: enrollmentID,
+		Amount: amount, Direction: direction, CorrectionStage: stage, Currency: currency,
+		LedgerTransactionID: transactionID, OccurredAt: occurredAt,
+	}
+}
+
+func (e InterestAdjusted) ToPayload() map[string]any { return toPayload(e) }
+
+type ScheduleOccurrenceSucceeded struct {
+	SchemaVersion       int        `json:"schema_version"`
+	EventID             *uuid.UUID `json:"event_id,omitempty"`
+	OccurrenceID        uuid.UUID  `json:"occurrence_id"`
+	ScheduleID          uuid.UUID  `json:"schedule_id"`
+	LedgerTransactionID *uuid.UUID `json:"ledger_transaction_id,omitempty"`
+	Amount              string     `json:"amount"`
+	FeeAmount           string     `json:"fee_amount"`
+	OccurredAt          time.Time  `json:"occurred_at"`
+}
+
+func NewScheduleOccurrenceSucceeded(occurrenceID, scheduleID uuid.UUID, transactionID *uuid.UUID, amount, feeAmount string, occurredAt time.Time) ScheduleOccurrenceSucceeded {
+	return ScheduleOccurrenceSucceeded{
+		SchemaVersion: 1,
+		EventID: logicalEventID(TypeScheduleOccurrenceSucceeded, occurrenceID.String()),
+		OccurrenceID: occurrenceID, ScheduleID: scheduleID, LedgerTransactionID: transactionID,
+		Amount: amount, FeeAmount: feeAmount, OccurredAt: occurredAt,
+	}
+}
+
+func (e ScheduleOccurrenceSucceeded) ToPayload() map[string]any { return toPayload(e) }
+
+type ScheduleOccurrenceFailed struct {
+	SchemaVersion int        `json:"schema_version"`
+	EventID       *uuid.UUID `json:"event_id,omitempty"`
+	OccurrenceID  uuid.UUID  `json:"occurrence_id"`
+	ScheduleID    uuid.UUID  `json:"schedule_id"`
+	Status        string     `json:"status"`
+	ErrorCode     string     `json:"error_code"`
+	Retryable     bool       `json:"retryable"`
+	OccurredAt    time.Time  `json:"occurred_at"`
+}
+
+func NewScheduleOccurrenceFailed(occurrenceID, scheduleID uuid.UUID, status, errorCode string, retryable bool, occurredAt time.Time) ScheduleOccurrenceFailed {
+	return ScheduleOccurrenceFailed{
+		SchemaVersion: 1,
+		EventID: logicalEventID(TypeScheduleOccurrenceFailed, occurrenceID.String()+":"+status),
+		OccurrenceID: occurrenceID, ScheduleID: scheduleID, Status: status,
+		ErrorCode: errorCode, Retryable: retryable, OccurredAt: occurredAt,
+	}
+}
+
+func (e ScheduleOccurrenceFailed) ToPayload() map[string]any { return toPayload(e) }
+
+type SchedulePaused struct {
+	SchemaVersion int        `json:"schema_version"`
+	EventID       *uuid.UUID `json:"event_id,omitempty"`
+	ScheduleID    uuid.UUID  `json:"schedule_id"`
+	Reason        string     `json:"reason"`
+	OccurredAt    time.Time  `json:"occurred_at"`
+}
+
+func NewSchedulePaused(scheduleID uuid.UUID, reason string, occurredAt time.Time) SchedulePaused {
+	return SchedulePaused{
+		SchemaVersion: 1,
+		EventID: logicalEventID(TypeSchedulePaused, scheduleID.String()+":"+reason),
+		ScheduleID: scheduleID, Reason: reason, OccurredAt: occurredAt,
+	}
+}
+
+func (e SchedulePaused) ToPayload() map[string]any { return toPayload(e) }
 
 // EntrySummary is one posted ledger_entries row, reduced to the fields a
 // consumer needs to reconstruct the double-entry movement without querying
@@ -119,6 +294,14 @@ type TransactionPosted struct {
 	// this package's own versioning policy (no SchemaVersion bump). Empty
 	// for events built outside a traced request (e.g. some system jobs).
 	RequestID string `json:"request_id,omitempty"`
+	// C5 top-up fields are additive: Amount remains the wallet principal while
+	// TotalDebit is the provider-collected amount when a fee is charged on top.
+	FeeAmount      string     `json:"fee_amount,omitempty"`
+	TotalDebit     string     `json:"total_debit,omitempty"`
+	FeeGateway     string     `json:"fee_gateway,omitempty"`
+	FeeApplication string     `json:"fee_application,omitempty"`
+	FeeQuoteID     *uuid.UUID `json:"fee_quote_id,omitempty"`
+	PayinID        *uuid.UUID `json:"payin_id,omitempty"`
 }
 
 // Validate checks the semantic invariants that JSON decoding alone cannot
@@ -136,6 +319,25 @@ func (e TransactionPosted) Validate() error {
 	// indistinguishable from an omitted field after JSON decoding, so a
 	// registry comparison here would reject old USD events; consumers fall
 	// back to the registry when the optional field is absent.
+	if (e.FeeAmount != "" && !minorAmountPattern.MatchString(e.FeeAmount)) ||
+		(e.TotalDebit != "" && !minorAmountPattern.MatchString(e.TotalDebit)) {
+		return fmt.Errorf("transaction posted: fee amounts are invalid")
+	}
+	if (e.FeeAmount == "") != (e.TotalDebit == "") {
+		return fmt.Errorf("transaction posted: fee_amount and total_debit must be supplied together")
+	}
+	if e.FeeAmount != "" {
+		amount, amountOK := new(big.Int).SetString(e.Amount, 10)
+		fee, feeOK := new(big.Int).SetString(e.FeeAmount, 10)
+		total, totalOK := new(big.Int).SetString(e.TotalDebit, 10)
+		if !amountOK || !feeOK || !totalOK {
+			return fmt.Errorf("transaction posted: fee amounts are invalid")
+		}
+		expected := new(big.Int).Add(amount, fee)
+		if expected.Cmp(total) != 0 {
+			return fmt.Errorf("transaction posted: total_debit must equal amount plus fee_amount")
+		}
+		}
 	for i, entry := range e.Entries {
 		if entry.AccountID == uuid.Nil || (entry.Direction != "debit" && entry.Direction != "credit") || !minorAmountPattern.MatchString(entry.Amount) {
 			return fmt.Errorf("transaction posted: invalid entry %d", i)

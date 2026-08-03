@@ -1,0 +1,13 @@
+admin-bff-service
+assurance-service
+auth-service
+fraud-service
+gateway-service
+ledger-service
+object-store-init
+payin-service
+payout-service
+postgres
+rabbitmq
+redis
+vendor-service

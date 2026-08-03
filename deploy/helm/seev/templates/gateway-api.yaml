@@ -1,0 +1,225 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: {{ .Values.traefik.gatewayName }}
+  namespace: {{ .Values.global.edgeNamespace }}
+  labels:
+    {{- include "seev.labels" . | nindent 4 }}
+spec:
+  gatewayClassName: {{ .Values.traefik.gatewayClassName }}
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: {{ .Values.traefik.httpPort }}
+      allowedRoutes:
+        namespaces: {from: Same}
+    - name: api-https
+      protocol: HTTPS
+      port: {{ .Values.traefik.httpsPort }}
+      hostname: {{ .Values.traefik.publicHost | quote }}
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - name: {{ .Values.certs.edgeTLSSecret }}
+      allowedRoutes:
+        namespaces: {from: Same}
+---
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: ReferenceGrant
+metadata:
+  name: seev-edge-backend-grant
+  namespace: {{ .Values.global.appNamespace }}
+spec:
+  from:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      namespace: {{ .Values.global.edgeNamespace }}
+  to:
+    - group: ""
+      kind: Service
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: public-chain
+  namespace: {{ .Values.global.edgeNamespace }}
+spec:
+  chain:
+    middlewares:
+      - name: request-id
+      - name: public-security-headers
+      - name: public-body-limit
+      - name: public-rate-limit
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: callback-chain
+  namespace: {{ .Values.global.edgeNamespace }}
+spec:
+  chain:
+    middlewares:
+      - name: request-id
+      - name: callback-source-allowlist
+      - name: callback-body-limit
+      - name: callback-rate-limit
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: request-id
+  namespace: {{ .Values.global.edgeNamespace }}
+spec:
+  headers:
+    customRequestHeaders:
+      X-Forwarded-Proto: https
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: public-security-headers
+  namespace: {{ .Values.global.edgeNamespace }}
+spec:
+  headers:
+    contentTypeNosniff: true
+    frameDeny: true
+    browserXssFilter: true
+    referrerPolicy: no-referrer
+    customResponseHeaders:
+      Cache-Control: no-store
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: public-body-limit
+  namespace: {{ .Values.global.edgeNamespace }}
+spec:
+  buffering:
+    maxRequestBodyBytes: 1048576
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: callback-body-limit
+  namespace: {{ .Values.global.edgeNamespace }}
+spec:
+  buffering:
+    maxRequestBodyBytes: 65536
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: public-rate-limit
+  namespace: {{ .Values.global.edgeNamespace }}
+spec:
+  rateLimit:
+    average: {{ .Values.traefik.rateLimit.average }}
+    burst: {{ .Values.traefik.rateLimit.burst }}
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: callback-rate-limit
+  namespace: {{ .Values.global.edgeNamespace }}
+spec:
+  rateLimit:
+    average: {{ .Values.traefik.callbackRateLimit.average }}
+    burst: {{ .Values.traefik.callbackRateLimit.burst }}
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: callback-source-allowlist
+  namespace: {{ .Values.global.edgeNamespace }}
+spec:
+  ipAllowList:
+    sourceRange:
+      {{- toYaml .Values.traefik.allowedCallbackCIDRs | nindent 6 }}
+---
+apiVersion: traefik.io/v1alpha1
+kind: ServersTransport
+metadata:
+  name: vendor-mtls
+  namespace: {{ .Values.global.edgeNamespace }}
+spec:
+  # Internal leaves intentionally use a SPIFFE URI SAN instead of a DNS SAN.
+  # Traefik verifies that URI below and presents the client certificate; the
+  # hostname-only verifier is disabled because the backend certificate cannot
+  # validly claim the ephemeral Pod IP selected by the Service.
+  insecureSkipVerify: true
+  peerCertURI: spiffe://seev/vendor
+  rootCAs:
+    - secret: seev-edge-backend-ca
+  certificatesSecrets:
+    - seev-edge-backend-client
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: seev-http-redirect
+  namespace: {{ .Values.global.edgeNamespace }}
+spec:
+  parentRefs:
+    - name: {{ .Values.traefik.gatewayName }}
+      sectionName: http
+  hostnames:
+    - {{ .Values.traefik.publicHost | quote }}
+    - {{ .Values.traefik.callbackHost | quote }}
+  rules:
+    - filters:
+        - type: RequestRedirect
+          requestRedirect:
+            scheme: https
+            statusCode: 301
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: seev-public-api
+  namespace: {{ .Values.global.edgeNamespace }}
+spec:
+  parentRefs:
+    - name: {{ .Values.traefik.gatewayName }}
+      sectionName: api-https
+  hostnames: [{{ .Values.traefik.publicHost | quote }}]
+  rules:
+    - matches:
+        - path: {type: PathPrefix, value: /api/v1/auth}
+      filters:
+        - type: ExtensionRef
+          extensionRef: {group: traefik.io, kind: Middleware, name: public-chain}
+      backendRefs:
+        - name: auth-service
+          namespace: {{ .Values.global.appNamespace }}
+          port: 8082
+    - matches:
+        - path: {type: PathPrefix, value: /api/v1}
+      filters:
+        - type: ExtensionRef
+          extensionRef: {group: traefik.io, kind: Middleware, name: public-chain}
+      backendRefs:
+        - name: gateway-service
+          namespace: {{ .Values.global.appNamespace }}
+          port: 8080
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: seev-callback
+  namespace: {{ .Values.global.edgeNamespace }}
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - match: Host(`{{ .Values.traefik.callbackHost }}`) && Method(`POST`) && PathPrefix(`/webhooks/`)
+      kind: Rule
+      middlewares:
+        - name: callback-chain
+      services:
+        - name: vendor-service
+          namespace: {{ .Values.global.appNamespace }}
+          port: 8098
+          scheme: https
+          serversTransport: {{ printf "%s-vendor-mtls@kubernetescrd" .Values.global.edgeNamespace }}
+  tls:
+    secretName: {{ .Values.certs.edgeTLSSecret }}

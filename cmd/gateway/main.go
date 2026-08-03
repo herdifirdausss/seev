@@ -24,6 +24,9 @@ import (
 	"github.com/herdifirdausss/seev/internal/merchant/idempotency"
 	"github.com/herdifirdausss/seev/internal/merchant/quota"
 	"github.com/herdifirdausss/seev/internal/notify"
+	"github.com/herdifirdausss/seev/internal/notify/channel"
+	"github.com/herdifirdausss/seev/internal/notify/channel/email"
+	"github.com/herdifirdausss/seev/internal/notify/channel/push"
 	"github.com/herdifirdausss/seev/internal/server"
 	"github.com/herdifirdausss/seev/pkg/cache"
 	"github.com/herdifirdausss/seev/pkg/database"
@@ -213,7 +216,36 @@ func main() {
 	// logged, not fatal — notifications are a nice-to-have, never
 	// load-bearing for moving money the way Postgres/RabbitMQ connectivity
 	// itself is.
-	notifyModule := notify.NewModule(db, mq, log)
+	// C3 keeps external channels behind explicit feature flags. The consumer
+	// itself only writes the Gateway plan; Auth, SMTP, and push calls happen in
+	// independent workers after the planning transaction commits.
+	notifyConfig := notify.Config{
+		Enabled: cfg.Notify.Enabled, InAppEnabled: cfg.Notify.InAppEnabled,
+		EmailEnabled: cfg.Notify.EmailEnabled, PushEnabled: cfg.Notify.PushEnabled,
+		DigestEnabled: cfg.Notify.DigestEnabled, DefaultLocale: cfg.Notify.DefaultLocale,
+		DefaultTimezone: cfg.Notify.DefaultTimezone, DigestHour: cfg.Notify.DigestHour,
+		EventPrefetch: cfg.Notify.EventPrefetch, MaxEventAttempts: cfg.Notify.EventMaxAttempts,
+		DeliveryBatch: cfg.Notify.DeliveryBatch, DeliveryLease: cfg.Notify.DeliveryLease,
+		ProviderTimeout: cfg.Notify.ProviderTimeout, EmailWorkers: cfg.Notify.EmailWorkers,
+		PushWorkers: cfg.Notify.PushWorkers, ContactWorkers: cfg.Notify.ContactWorkers,
+		DigestWorkers: cfg.Notify.DigestWorkers, MaxDevices: cfg.Notify.MaxDevices,
+		EncryptionRing: cryptoxRing, FingerprintKey: cfg.Notify.FingerprintKey,
+		AuthContactURL: cfg.AuthInternalAPIURL, InternalToken: cfg.InternalGRPCToken,
+		HTTPClient: tlsx.HTTPClient(certSrc, tlsx.IdentityAuth, cfg.Notify.ProviderTimeout),
+	}
+	var emailSender channel.EmailSender
+	if cfg.Notify.EmailEnabled {
+		emailSender = email.NewSender(email.Config{Host: cfg.Notify.SMTPHost, Port: cfg.Notify.SMTPPort,
+			Username: cfg.Notify.SMTPUsername, Password: cfg.Notify.SMTPPassword, From: cfg.Notify.SMTPFrom,
+			ReplyTo: cfg.Notify.SMTPReplyTo, TLSMode: cfg.Notify.SMTPTLSMode, Timeout: cfg.Notify.ProviderTimeout})
+	}
+	var pushSender channel.PushSender
+	if cfg.Notify.PushEnabled {
+		pushSender = push.NewSender(cfg.Notify.PushProviderURL, cfg.Notify.PushProviderToken, &http.Client{Timeout: cfg.Notify.ProviderTimeout}, cfg.Notify.ProviderTimeout)
+	}
+	contactResolver := &notify.HTTPContactResolver{BaseURL: cfg.AuthInternalAPIURL, Token: cfg.InternalGRPCToken,
+		Client: tlsx.HTTPClient(certSrc, tlsx.IdentityAuth, cfg.Notify.ProviderTimeout)}
+	notifyModule := notify.NewConfiguredModule(db, mq, notifyConfig, log, contactResolver, emailSender, pushSender)
 	if err := notifyModule.Start(ctx); err != nil {
 		log.Error("failed to start notify consumer", "error", err)
 	}

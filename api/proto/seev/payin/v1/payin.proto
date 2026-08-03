@@ -72,6 +72,9 @@ message HandleVendorCallbackResponse {
 message CreateTopupIntentRequest {
   string user_id = 1;
   string amount = 2;
+	// Ledger-owned fee quote. Required when the current top-up policy resolves
+	// a non-zero fee; omission remains compatible with fee-free legacy routes.
+  string fee_quote_id = 3;
 }
 
 message GetTopupIntentRequest {
@@ -98,6 +101,11 @@ message TopupIntent {
   google.protobuf.Timestamp expires_at = 8;
   google.protobuf.Timestamp created_at = 9;
   google.protobuf.Timestamp updated_at = 10;
+  string fee_amount = 11;
+  string total_debit = 12;
+  string fee_gateway = 13;
+  string fee_quote_id = 14;
+  string fee_application = 15;
 }
 
 message CreateMerchantTopupIntentRequest {

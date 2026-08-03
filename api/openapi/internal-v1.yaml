@@ -173,6 +173,14 @@ paths:
       x-see-audience: admin
       security: [{internalToken: []}]
       responses: {'200': {$ref: './components/common.yaml#/components/responses/Success'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '403': {$ref: './components/common.yaml#/components/responses/Forbidden'}}
+  /internal/v1/users/{id}/notification-contact:
+    get:
+      operationId: authGetNotificationContactV1
+      x-see-owner: auth
+      x-see-audience: internal
+      security: [{internalToken: []}]
+      parameters: [{$ref: './components/common.yaml#/components/parameters/UUID'}]
+      responses: {'200': {$ref: './components/common.yaml#/components/responses/Success'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '404': {$ref: './components/common.yaml#/components/responses/NotFound'}, '503': {$ref: './components/common.yaml#/components/responses/Unavailable'}}
   /privacy/export:
     get:
       operationId: ownerPrivacyExportV1

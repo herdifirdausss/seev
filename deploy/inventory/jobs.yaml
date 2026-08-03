@@ -1,0 +1,356 @@
+version: 1
+baseline_commit: ff21bf186f95431a386b339ee3a1409e49a7e1b0
+global_policy:
+  timezone: Asia/Jakarta for retention and scheduled money jobs unless source says otherwise
+  lock_policy: distributed locks are required before scaling a singleton scheduler
+  shutdown: stop admission, cancel context, wait for worker-specific graceful stop
+  unknown_policy: enabled workers have no UNKNOWN_BLOCKER; deferred features carry an owner
+jobs:
+  - name: ledger-outbox-relay
+    owner: ledger
+    service: ledger
+    kind: durable-relay
+    trigger: poll-and-retry
+    interval: source/config-driven
+    first_deployment: true
+    replica_safety: lease-or-database-claim; horizontally safe
+    failure_behavior: retain outbox row and retry; publisher confirms required
+    source: internal/ledger/worker/outbox_relay.go
+  - name: ledger-integrity-verifier
+    owner: ledger
+    service: ledger
+    kind: scheduled-audit
+    trigger: cron
+    schedule: hourly trial balance; 02:00 projection; every 5m outbox lag
+    timezone: Asia/Jakarta
+    first_deployment: true
+    replica_safety: one-active-via-distributed-lock
+    failure_behavior: alert and continue; no money mutation
+    source: internal/ledger/worker/verifier.go
+  - name: ledger-balance-snapshot
+    owner: ledger
+    service: ledger
+    kind: scheduled-materialization
+    trigger: cron
+    schedule: 15 0 * * *
+    timezone: Asia/Jakarta
+    first_deployment: true
+    replica_safety: one-active-via-distributed-lock
+    failure_behavior: catch up on restart; alert on failure
+    source: internal/ledger/worker/snapshot.go
+  - name: ledger-schedule-runner
+    owner: ledger
+    service: ledger
+    kind: scheduled-money-operation
+    trigger: cron
+    schedule: 30 0 * * *
+    timezone: Asia/Jakarta
+    first_deployment: true
+    replica_safety: one-active-via-distributed-lock
+    failure_behavior: idempotent due-run; report failed items
+    source: internal/ledger/worker/schedule_runner.go
+  - name: ledger-interest-accrual
+    owner: ledger
+    service: ledger
+    kind: scheduled-money-operation
+    trigger: cron
+    schedule: 45 0 * * *
+    timezone: Asia/Jakarta
+    first_deployment: true
+    replica_safety: one-active-via-distributed-lock
+    failure_behavior: skip/report individual failures; do not duplicate accrual
+    source: internal/ledger/worker/accrual.go
+  - name: ledger-retention
+    owner: ledger
+    service: ledger
+    kind: retention
+    trigger: owner retention scheduler
+    schedule: policy-driven daily cadence
+    timezone: Asia/Jakarta
+    first_deployment: true
+    replica_safety: one-active-via-distributed-lock
+    failure_behavior: audit and retry next run
+    source: internal/ledger/retention.go
+
+  - name: auth-kyc-apply-retry
+    owner: auth
+    service: auth
+    kind: durable-retry
+    trigger: ticker
+    interval: 30s
+    first_deployment: true
+    replica_safety: database-claim-and-lock
+    failure_behavior: exponential retry then dead state
+    source: internal/auth/worker/retry.go
+  - name: auth-kyc-expiry
+    owner: auth
+    service: auth
+    kind: scheduled-policy
+    trigger: ticker
+    interval: default 1h; KYC_EXPIRY_CHECK_INTERVAL override
+    first_deployment: true
+    replica_safety: distributed-lock
+    failure_behavior: downgrade in bounded batches; retain audit trail
+    source: internal/auth/worker/expiry.go
+  - name: auth-retention
+    owner: auth
+    service: auth
+    kind: retention
+    trigger: owner retention scheduler
+    interval: policy-driven daily cadence
+    timezone: Asia/Jakarta
+    first_deployment: true
+    replica_safety: one-active-via-distributed-lock
+    failure_behavior: audit and retry next run
+    source: internal/auth/retention.go
+  - name: auth-sanctions-rescreen
+    owner: auth
+    service: auth
+    kind: scheduled-risk-check
+    trigger: ticker
+    interval: KYC_RESCREEN_INTERVAL; default 24h
+    first_deployment: true
+    replica_safety: distributed-lock
+    failure_behavior: fail closed for affected KYC decision; retain retry state
+    source: internal/auth/worker/rescreen.go
+  - name: auth-object-delete-outbox
+    owner: auth
+    service: auth
+    kind: object-store-outbox
+    trigger: ticker
+    interval: 15s
+    first_deployment: true
+    replica_safety: database-claim
+    failure_behavior: retain object deletion intent and retry
+    source: internal/auth/object_outbox.go
+  - name: auth-privacy-export
+    owner: auth
+    service: auth
+    kind: asynchronous-export
+    trigger: poll-and-assemble
+    interval: source/config-driven
+    first_deployment: false
+    replica_safety: database-claim
+    failure_behavior: durable request status and retry; object TTL cleanup
+    deferred_reason: requires configured export key and production object-store contract
+    downstream_owner: K3/K7 privacy operations
+    source: internal/auth/privacy_worker.go
+  - name: auth-closure-saga
+    owner: auth
+    service: auth
+    kind: cross-service-saga
+    trigger: durable request poll
+    interval: source/config-driven
+    first_deployment: false
+    replica_safety: database-claim
+    failure_behavior: durable per-owner progress and compensation
+    deferred_reason: requires closure key material and certified owner endpoints
+    downstream_owner: K3/K7 privacy operations
+    source: internal/auth/closure_worker.go
+
+  - name: payin-retention
+    owner: payin
+    service: payin
+    kind: retention
+    trigger: owner retention scheduler
+    interval: policy-driven daily cadence
+    timezone: Asia/Jakarta
+    first_deployment: true
+    replica_safety: one-active-via-distributed-lock
+    failure_behavior: audit and retry next run
+    source: internal/payin/retention.go
+
+  - name: payout-resume
+    owner: payout
+    service: payout
+    kind: recovery
+    trigger: cron
+    schedule: every minute
+    first_deployment: true
+    replica_safety: one-active-via-distributed-lock
+    failure_behavior: bounded recovery and idempotent status query
+    source: internal/payout/worker/resume.go
+  - name: payout-vendor-relay
+    owner: payout
+    service: payout
+    kind: durable-relay
+    trigger: poll-and-retry
+    interval: source/config-driven
+    first_deployment: true
+    replica_safety: database-claim
+    failure_behavior: retain pending state and retry/reconcile
+    source: internal/payout/worker/vendor_relay.go
+  - name: payout-retention
+    owner: payout
+    service: payout
+    kind: retention
+    trigger: owner retention scheduler
+    interval: policy-driven daily cadence
+    timezone: Asia/Jakarta
+    first_deployment: true
+    replica_safety: one-active-via-distributed-lock
+    failure_behavior: audit and retry next run
+    source: internal/payout/retention.go
+
+  - name: fraud-velocity-consumer
+    owner: fraud
+    service: fraud
+    kind: rabbitmq-consumer
+    trigger: queue ledger.events.fraud
+    interval: event-driven
+    first_deployment: true
+    replica_safety: competing-consumer-with-idempotent-handler
+    failure_behavior: bounded redelivery then DLQ; velocity store fails closed
+    source: internal/fraud/consumer.go
+  - name: fraud-spill-flusher
+    owner: fraud
+    service: fraud
+    kind: in-memory-spill-flush
+    trigger: ticker
+    interval: source/config-driven
+    first_deployment: true
+    replica_safety: per-process; scale behavior requires K3 decision
+    failure_behavior: record loss metric and fail closed for screening
+    source: internal/fraud/fraud.go
+  - name: fraud-retention
+    owner: fraud
+    service: fraud
+    kind: retention
+    trigger: owner retention scheduler
+    interval: policy-driven daily cadence
+    timezone: Asia/Jakarta
+    first_deployment: true
+    replica_safety: one-active-via-distributed-lock
+    failure_behavior: audit and retry next run
+    source: internal/fraud/retention.go
+
+  - name: gateway-notification-consumer
+    owner: gateway
+    service: gateway
+    kind: rabbitmq-consumer
+    trigger: queue ledger.events.notifications
+    interval: event-driven
+    first_deployment: true
+    replica_safety: competing-consumer-with-idempotent-handler
+    failure_behavior: bounded redelivery then DLQ
+    source: internal/notify/notify.go
+  - name: gateway-notification-retention
+    owner: gateway
+    service: gateway
+    kind: retention
+    trigger: owner retention scheduler
+    interval: policy-driven daily cadence
+    timezone: Asia/Jakarta
+    first_deployment: true
+    replica_safety: one-active-via-distributed-lock
+    failure_behavior: audit and retry next run
+    source: internal/notify/retention.go
+  - name: gateway-merchant-webhook-relay
+    owner: gateway
+    service: gateway
+    kind: outbound-webhook-relay
+    trigger: poll-and-retry
+    interval: default relay interval
+    first_deployment: true
+    replica_safety: database-lease
+    failure_behavior: durable delivery state and retry
+    source: internal/merchant/webhook/relay.go
+  - name: gateway-merchant-webhook-consumer
+    owner: gateway
+    service: gateway
+    kind: rabbitmq-consumer
+    trigger: queue ledger.events.merchant_webhooks
+    interval: event-driven
+    first_deployment: true
+    replica_safety: competing-consumer-with-idempotent-handler
+    failure_behavior: bounded redelivery then DLQ
+    source: internal/merchant/webhook/consumer.go
+  - name: gateway-merchant-retention
+    owner: gateway
+    service: gateway
+    kind: retention
+    trigger: owner retention scheduler
+    interval: policy-driven daily cadence
+    timezone: Asia/Jakarta
+    first_deployment: true
+    replica_safety: one-active-via-distributed-lock
+    failure_behavior: audit and retry next run
+    source: internal/merchant/merchant.go
+  - name: gateway-merchant-observability
+    owner: gateway
+    service: gateway
+    kind: metrics-refresh
+    trigger: ticker
+    interval: default observability refresh interval
+    first_deployment: true
+    replica_safety: per-process gauge refresh; values are observational
+    failure_behavior: metrics staleness only
+    source: internal/merchant/metrics.go
+
+  - name: admin-bff-session-cleanup
+    owner: admin-bff
+    service: admin-bff
+    kind: scheduled-session-cleanup
+    trigger: shared scheduler
+    interval: source/config-driven
+    first_deployment: true
+    replica_safety: memory-lock today; one replica until K3 externalizes lock
+    failure_behavior: retry next run; session remains valid until cleanup
+    source: internal/adminbff/module.go
+  - name: admin-bff-retention
+    owner: admin-bff
+    service: admin-bff
+    kind: retention
+    trigger: shared scheduler
+    interval: policy-driven daily cadence
+    timezone: Asia/Jakarta
+    first_deployment: true
+    replica_safety: memory-lock today; one replica until K3 externalizes lock
+    failure_behavior: audit and retry next run
+    source: internal/adminbff/module.go
+
+  - name: assurance-correlation
+    owner: assurance
+    service: assurance
+    kind: periodic-correlation
+    trigger: module scheduler
+    interval: source/config-driven
+    first_deployment: true
+    replica_safety: one-active-via-database-or-lock-policy
+    failure_behavior: mark correlation pending and alert
+    source: internal/assurance
+  - name: assurance-retention
+    owner: assurance
+    service: assurance
+    kind: retention
+    trigger: owner retention scheduler
+    interval: policy-driven daily cadence
+    timezone: Asia/Jakarta
+    first_deployment: true
+    replica_safety: one-active-via-distributed-lock
+    failure_behavior: audit and retry next run
+    source: cmd/assurance-service/main.go
+
+  - name: vendor-retention
+    owner: vendor
+    service: vendor
+    kind: retention
+    trigger: owner retention scheduler
+    interval: policy-driven daily cadence
+    timezone: Asia/Jakarta
+    first_deployment: true
+    replica_safety: one-active-via-distributed-lock
+    failure_behavior: audit and retry next run
+    source: cmd/vendor-service/main.go
+  - name: backup-scheduler
+    owner: operations
+    service: backup-agent
+    kind: backup
+    trigger: weekly full and daily differential
+    interval: schedule-driven
+    first_deployment: false
+    replica_safety: one-active-by-operations-deployment
+    failure_behavior: alert and do not claim recovery
+    deferred_reason: operations profile; repository endpoint and restore evidence are UNKNOWN
+    downstream_owner: K7 backup and disaster recovery
+    source: cmd/backup-agent/main.go

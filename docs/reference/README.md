@@ -14,6 +14,8 @@ one according to the question you are answering.
 | What does an unfamiliar term mean? | [Glossary](glossary.md) |
 | What HTTP, protobuf, and event contracts are current? | [API contracts](api-contracts.md) |
 | What does a ledger event mean on the wire? | [Event contract](events.md) |
+| How are notifications planned and delivered? | [Notification platform](notifications.md) |
+| Which notification kinds, templates, preferences, and providers exist? | [Notification references](notification-kinds.md) |
 | Which code and test prove a claim? | [Traceability](traceability.md) |
 
 Current references must agree with executable behavior. Future designs belong

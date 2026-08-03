@@ -38,6 +38,11 @@ var ErrCurrencyRouteUnavailable = &ledgererr.LedgerError{
 	Message: "no payin route declares the requested currency",
 }
 
+// ErrFeeQuoteRequired means a non-zero fee was resolved without the caller
+// supplying the immutable Ledger-owned quote required to lock that fee into
+// the provider amount and eventual settlement posting.
+var ErrFeeQuoteRequired = errors.New("payin: topup fee quote required")
+
 var ErrNoRoute = errors.New("payin: no route")
 
 // ErrNoVendorAvailable means at least one routing rule matched, but every

@@ -1,0 +1,13 @@
+{{- $root := . }}
+{{- range $namespace := list $root.Values.global.appNamespace $root.Values.global.dataNamespace $root.Values.global.egressNamespace $root.Values.global.edgeNamespace }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ $namespace }}
+  labels:
+    app.kubernetes.io/part-of: seev
+    pod-security.kubernetes.io/enforce: {{ if eq $namespace $root.Values.global.appNamespace }}restricted{{ else }}baseline{{ end }}
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+---
+{{- end }}

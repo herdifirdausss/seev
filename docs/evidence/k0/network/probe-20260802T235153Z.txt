@@ -1,0 +1,72 @@
+captured_utc=2026-08-02T23:51:53Z
+policy=local endpoints only; no real vendor calls
+
+[compose containers]
+NAME                          IMAGE                              COMMAND                  SERVICE             CREATED         STATUS                          PORTS
+seev-k0-admin-bff-service-1   seev/admin-bff-service:dev         "/app/service"           admin-bff-service   3 minutes ago   Up About a minute (healthy)     127.0.0.1:8095->8095/tcp
+seev-k0-assurance-service-1   seev/assurance-service:dev         "/app/service"           assurance-service   3 minutes ago   Up About a minute (healthy)     127.0.0.1:8096->8096/tcp
+seev-k0-auth-service-1        seev/auth-service:dev              "/app/service"           auth-service        3 minutes ago   Up About a minute (healthy)     127.0.0.1:8082-8083->8082-8083/tcp
+seev-k0-fraud-service-1       seev/fraud-service:dev             "/app/service"           fraud-service       3 minutes ago   Up About a minute (healthy)     127.0.0.1:8094->8094/tcp, 127.0.0.1:9094->9094/tcp
+seev-k0-gateway-service-1     seev/gateway-service:dev           "/app/service"           gateway-service     3 minutes ago   Up About a minute (healthy)     127.0.0.1:8080-8081->8080-8081/tcp
+seev-k0-ledger-service-1      seev/ledger-service:dev            "/app/service"           ledger-service      3 minutes ago   Up About a minute (healthy)     127.0.0.1:8090-8091->8090-8091/tcp, 127.0.0.1:9091->9091/tcp
+seev-k0-object-store-init-1   busybox:1.38                       "sh -c 'chown 65532:…"   object-store-init   3 minutes ago   Exited (0) About a minute ago
+seev-k0-payin-service-1       seev/payin-service:dev             "/app/service"           payin-service       3 minutes ago   Up About a minute (healthy)     127.0.0.1:8092->8092/tcp, 127.0.0.1:9092->9092/tcp
+seev-k0-payout-service-1      seev/payout-service:dev            "/app/service"           payout-service      3 minutes ago   Up About a minute (healthy)     127.0.0.1:8093->8093/tcp, 127.0.0.1:9093->9093/tcp
+seev-k0-postgres-1            seev/postgres-backup:dev           "seev-backup-entrypo…"   postgres            3 minutes ago   Up 3 minutes (healthy)          127.0.0.1:5433->5432/tcp
+seev-k0-rabbitmq-1            rabbitmq:4.3.4-management-alpine   "docker-entrypoint.s…"   rabbitmq            3 minutes ago   Up About a minute (healthy)     127.0.0.1:5672->5672/tcp, 127.0.0.1:15672->15672/tcp
+seev-k0-redis-1               redis:8.0.0-alpine                 "docker-entrypoint.s…"   redis               3 minutes ago   Up 3 minutes (healthy)          127.0.0.1:6380->6379/tcp
+seev-k0-vendor-service-1      seev/vendor-service:dev            "/app/service"           vendor-service      3 minutes ago   Up 2 minutes (healthy)          127.0.0.1:8098->8098/tcp, 127.0.0.1:9098->9098/tcp
+
+[declared local HTTP health probes]
+200 http://127.0.0.1:8080/health
+404 http://127.0.0.1:8082/health
+400 http://127.0.0.1:8090/health
+400 http://127.0.0.1:8098/health
+
+[declared local data ports]
+not-http 127.0.0.1:5433
+not-http 127.0.0.1:6380
+not-http 127.0.0.1:5672
+
+[rabbitmq topology if the local broker is running]
+Listing exchanges for vhost / ...
+name	type	durable
+	direct	true
+amq.direct	direct	true
+amq.fanout	fanout	true
+amq.headers	headers	true
+amq.match	headers	true
+amq.rabbitmq.log	topic	true
+amq.rabbitmq.trace	topic	true
+amq.topic	topic	true
+ledger.events	topic	true
+ledger.events.dlx	topic	true
+Timeout: 60.0 seconds ...
+Listing queues for vhost / ...
+name	durable	messages	consumers	arguments
+ledger.events.notifications	true	0	1	[{"x-dead-letter-exchange","ledger.events.dlx"},{"x-queue-type","classic"}]
+ledger.events.notifications.dlq	true	0	0	[{"x-queue-type","classic"}]
+ledger.events.audit	true	0	0	[{"x-dead-letter-exchange","ledger.events.dlx"},{"x-queue-type","classic"}]
+ledger.events.merchant_webhooks.dlq	true	0	0	[{"x-queue-type","classic"}]
+ledger.events.fraud.dlq	true	0	0	[{"x-queue-type","classic"}]
+ledger.events.fraud	true	0	1	[{"x-dead-letter-exchange","ledger.events.dlx"},{"x-queue-type","classic"}]
+ledger.events.audit.dlq	true	0	0	[{"x-queue-type","classic"}]
+ledger.events.merchant_webhooks	true	0	1	[{"x-dead-letter-exchange","ledger.events.dlx"},{"x-queue-type","classic"}]
+Listing bindings for vhost /...
+source_name	source_kind	destination_name	destination_kind	routing_key	arguments
+	exchange	ledger.events.notifications	queue	ledger.events.notifications	[]
+	exchange	ledger.events.notifications.dlq	queue	ledger.events.notifications.dlq	[]
+	exchange	ledger.events.audit	queue	ledger.events.audit	[]
+	exchange	ledger.events.merchant_webhooks.dlq	queue	ledger.events.merchant_webhooks.dlq	[]
+	exchange	ledger.events.fraud.dlq	queue	ledger.events.fraud.dlq	[]
+	exchange	ledger.events.fraud	queue	ledger.events.fraud	[]
+	exchange	ledger.events.audit.dlq	queue	ledger.events.audit.dlq	[]
+	exchange	ledger.events.merchant_webhooks	queue	ledger.events.merchant_webhooks	[]
+ledger.events.dlx	exchange	ledger.events.merchant_webhooks.dlq	queue	#	[]
+ledger.events.dlx	exchange	ledger.events.notifications.dlq	queue	#	[]
+ledger.events.dlx	exchange	ledger.events.audit.dlq	queue	#	[]
+ledger.events	exchange	ledger.events.fraud	queue	ledger.transaction.posted.v1	[]
+ledger.events	exchange	ledger.events.notifications	queue	ledger.transaction.posted.v1	[]
+ledger.events	exchange	ledger.events.audit	queue	#	[]
+ledger.events	exchange	ledger.events.merchant_webhooks	queue	ledger.transaction.posted.v1	[]
+ledger.events.dlx	exchange	ledger.events.fraud.dlq	queue	#	[]

@@ -1,0 +1,6 @@
+{
+  "status": "passed",
+  "critical_failures": 0,
+  "warning_failures": 0,
+  "checks": ["ledger_posted_row_count", "ledger_posted_amount_minor", "ledger_debit_credit_balance"]
+}

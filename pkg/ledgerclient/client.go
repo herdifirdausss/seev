@@ -9,7 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 	"google.golang.org/grpc"
-	grpcmetadata "google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -68,7 +68,7 @@ func New(conn *grpc.ClientConn) *Client {
 
 func (c *Client) Post(ctx context.Context, command Command) error {
 	if command.Currency != "" {
-		ctx = grpcmetadata.AppendToOutgoingContext(ctx, "x-seev-currency", command.Currency)
+	ctx = metadata.AppendToOutgoingContext(ctx, "x-seev-currency", command.Currency)
 	}
 	var metadata *structpb.Struct
 	var err error
@@ -112,7 +112,7 @@ func (c *Client) GetUserCurrency(ctx context.Context, userID uuid.UUID, pocketCo
 // metadata mode. This keeps the protobuf surface backward-compatible while
 // allowing split Payin/Payout processes to consult Ledger-owned currency policy.
 func (c *Client) ValidateCurrency(ctx context.Context, code, operation string) error {
-	ctx = grpcmetadata.AppendToOutgoingContext(ctx,
+	ctx = metadata.AppendToOutgoingContext(ctx,
 		"x-seev-currency", code, "x-seev-currency-operation", operation)
 	_, err := c.client.GetUserCurrency(ctx, &ledgerv1.GetUserCurrencyRequest{})
 	return ledgererr.FromStatus(err)
@@ -123,7 +123,7 @@ func (c *Client) ValidateCurrency(ctx context.Context, code, operation string) e
 // successful response so callers can distinguish a missing account from a
 // transport or Ledger failure.
 func (c *Client) UserCurrencyEnabled(ctx context.Context, userID uuid.UUID, code string) (bool, error) {
-	ctx = grpcmetadata.AppendToOutgoingContext(ctx, "x-seev-currency-check", code)
+	ctx = metadata.AppendToOutgoingContext(ctx, "x-seev-currency-check", code)
 	response, err := c.client.GetUserCurrency(ctx, &ledgerv1.GetUserCurrencyRequest{UserId: uuidString(userID)})
 	if err != nil {
 		return false, ledgererr.FromStatus(err)
@@ -238,6 +238,15 @@ func (c *Client) ConsumeFeeQuote(ctx context.Context, quoteID, userID uuid.UUID,
 		return decimal.Zero, "", fmt.Errorf("ledgerclient: invalid fee_amount in response: %w", err)
 	}
 	return fee, response.GetFeeGateway(), nil
+}
+
+// ConsumeFeeQuoteWithGateway binds quote consumption to the provider route
+// that was quoted. The checked-in generated ledger client predates the
+// additive gateway field, so the value travels in gRPC metadata until the
+// protobuf artifacts are regenerated.
+func (c *Client) ConsumeFeeQuoteWithGateway(ctx context.Context, quoteID, userID uuid.UUID, txType, gateway, currency string, amount decimal.Decimal, consumedByRef string) (decimal.Decimal, string, error) {
+	ctx = metadata.AppendToOutgoingContext(ctx, "seev-fee-quote-gateway", gateway)
+	return c.ConsumeFeeQuote(ctx, quoteID, userID, txType, currency, amount, consumedByRef)
 }
 
 // ApplyKycTier is docs/roadmap/archive/39 Task T5's additive RPC — upserts the

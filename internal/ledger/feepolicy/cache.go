@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 
 	"github.com/herdifirdausss/seev/internal/ledger/repository"
 )
@@ -79,4 +80,42 @@ func (c *CachingFeeRepository) ResolveRule(ctx context.Context, txType, currency
 		c.mu.Unlock()
 	}
 	return flat, bps, fg, err
+}
+
+// GetQuoteWithGateway preserves the optional C5 quote-read capability through
+// the experiment-only decorator. Quote reads are never cached here.
+func (c *CachingFeeRepository) GetQuoteWithGateway(ctx context.Context, quoteID, userID uuid.UUID) (amount, feeAmount decimal.Decimal, feeGateway, gateway string, err error) {
+	reader, ok := c.FeeRepository.(interface {
+		GetQuoteWithGateway(context.Context, uuid.UUID, uuid.UUID) (decimal.Decimal, decimal.Decimal, string, string, error)
+	})
+	if ok {
+		return reader.GetQuoteWithGateway(ctx, quoteID, userID)
+	}
+	amount, feeAmount, feeGateway, err = c.FeeRepository.GetQuote(ctx, quoteID, userID)
+	return amount, feeAmount, feeGateway, "", err
+}
+
+// TryConsumeQuoteWithGateway preserves exact provider-route matching through
+// the experiment-only decorator. Consumption remains an uncached passthrough.
+func (c *CachingFeeRepository) TryConsumeQuoteWithGateway(ctx context.Context, exec repository.QueryRower, quoteID, userID uuid.UUID, txType, gateway, currency string, amount decimal.Decimal, ref string) (fee decimal.Decimal, feeGateway string, err error) {
+	consumer, ok := c.FeeRepository.(interface {
+		TryConsumeQuoteWithGateway(context.Context, repository.QueryRower, uuid.UUID, uuid.UUID, string, string, string, decimal.Decimal, string) (decimal.Decimal, string, error)
+	})
+	if ok {
+		return consumer.TryConsumeQuoteWithGateway(ctx, exec, quoteID, userID, txType, gateway, currency, amount, ref)
+	}
+	return c.FeeRepository.TryConsumeQuote(ctx, exec, quoteID, userID, txType, currency, amount, ref)
+}
+
+// ValidateConsumedPayinQuote preserves the Ledger settlement-authority seam
+// through the experiment-only decorator. It remains an uncached, transaction-
+// bound read of the immutable quote snapshot.
+func (c *CachingFeeRepository) ValidateConsumedPayinQuote(ctx context.Context, exec repository.QueryRower, quoteID, userID uuid.UUID, txType, gateway, currency string, amount, fee decimal.Decimal, feeGateway, ref string) error {
+	validator, ok := c.FeeRepository.(interface {
+		ValidateConsumedPayinQuote(context.Context, repository.QueryRower, uuid.UUID, uuid.UUID, string, string, string, decimal.Decimal, decimal.Decimal, string, string) error
+	})
+	if !ok {
+		return sql.ErrNoRows
+	}
+	return validator.ValidateConsumedPayinQuote(ctx, exec, quoteID, userID, txType, gateway, currency, amount, fee, feeGateway, ref)
 }

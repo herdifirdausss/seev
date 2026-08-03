@@ -68,12 +68,41 @@ func NewScheduledTransactionRepository(db database.DatabaseSQL) ScheduledTransac
 
 func (r *scheduledTransactionRepo) Create(ctx context.Context, tx *sql.Tx, id, userID uuid.UUID, cmdPayload []byte, kind string, runAtDate time.Time, dayOfMonth *int, createdBy string) error {
 	_, err := tx.ExecContext(ctx, `
-		INSERT INTO scheduled_transactions (id, user_id, cmd_payload, schedule_kind, run_at_date, day_of_month, status, created_by, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, 'active', $7, now())`,
+		INSERT INTO scheduled_transactions
+			(id, user_id, cmd_payload, schedule_kind, run_at_date, day_of_month,
+			 status, created_by, created_at, command_type, command_version,
+			 command_digest, missed_run_policy, catch_up_limit)
+		VALUES ($1, $2, $3, $4, $5, $6, 'active', $7, now(),
+			$3::jsonb->>'type', 1, decode(md5($3::text), 'hex'),
+			CASE $4 WHEN 'daily' THEN 'skip' ELSE 'run_once_latest' END, 0)`,
 		id, userID, cmdPayload, kind, runAtDate, dayOfMonth, createdBy,
 	)
 	if err != nil {
 		return fmt.Errorf("create scheduled transaction: %w", err)
+	}
+	return nil
+}
+
+// UpdatePolicy is the additive C5 policy write path. It is deliberately not
+// part of ScheduledTransactionRepository so the legacy generated mock and
+// service constructor remain unchanged.
+func (r *scheduledTransactionRepo) UpdatePolicy(ctx context.Context, id uuid.UUID, policy model.ScheduledPolicy, currency, timezone, localTime string) error {
+	if timezone == "" {
+		timezone = "Asia/Jakarta"
+	}
+	if localTime == "" {
+		localTime = "00:30"
+	}
+	_, err := r.db.ExecContext(ctx, `UPDATE scheduled_transactions SET
+		currency=NULLIF($2,''),timezone=$3,local_time=$4,missed_run_policy=$5,
+		catch_up_limit=$6,max_fee_amount=$7,max_infrastructure_attempts=$8,
+		retry_window_seconds=$9,fee_mode=$10,consecutive_failure_threshold=$11,
+		version=version+1 WHERE id=$1`, id, currency, timezone, localTime,
+		policy.MissedRunPolicy, policy.CatchUpLimit, policy.MaxFeeAmount,
+		policy.MaxInfrastructureAttempts, policy.RetryWindowSeconds, policy.FeeMode,
+		policy.ConsecutiveFailureThreshold)
+	if err != nil {
+		return fmt.Errorf("update scheduled transaction C5 policy: %w", err)
 	}
 	return nil
 }
@@ -84,9 +113,17 @@ func scanScheduledTransaction(scan func(dest ...any) error) (model.ScheduledTran
 		dayOfMonth  sql.NullInt32
 		lastRunDate sql.NullTime
 		lastError   sql.NullString
+		maxFee      sql.NullInt64
+		lastPlanned sql.NullTime
+		paused      sql.NullString
 	)
 	err := scan(&st.ID, &st.UserID, &st.CmdPayload, &st.ScheduleKind, &st.RunAtDate, &dayOfMonth,
-		&st.Status, &lastRunDate, &lastError, &st.CreatedBy, &st.CreatedAt, &st.UpdatedAt)
+		&st.Status, &st.CommandType, &st.CommandVersion, &st.CommandDigest,
+		&st.Currency, &st.Timezone, &st.LocalTime, &st.MissedRunPolicy,
+		&st.CatchUpLimit, &maxFee, &st.MaxInfrastructureAttempts,
+		&st.RetryWindowSeconds, &st.FeeMode, &st.ConsecutiveFailureThreshold,
+		&st.ConsecutiveFailureCount, &lastPlanned, &st.Version, &paused,
+		&lastRunDate, &lastError, &st.CreatedBy, &st.CreatedAt, &st.UpdatedAt)
 	if err != nil {
 		return model.ScheduledTransaction{}, err
 	}
@@ -100,11 +137,25 @@ func scanScheduledTransaction(scan func(dest ...any) error) (model.ScheduledTran
 	if lastError.Valid {
 		st.LastError = &lastError.String
 	}
+	if maxFee.Valid {
+		st.MaxFeeAmount = &maxFee.Int64
+	}
+	if lastPlanned.Valid {
+		st.LastPlannedAt = &lastPlanned.Time
+	}
+	if paused.Valid {
+		st.PausedReason = &paused.String
+	}
 	return st, nil
 }
 
 const scheduledTransactionColumns = `id, user_id, cmd_payload, schedule_kind, run_at_date, day_of_month,
-	       status, last_run_date, last_error, created_by, created_at, updated_at`
+       status, command_type, command_version, command_digest, COALESCE(currency, '') AS currency, timezone,
+	       to_char(local_time, 'HH24:MI') AS local_time, missed_run_policy, catch_up_limit, max_fee_amount,
+	       max_infrastructure_attempts, retry_window_seconds, fee_mode,
+	       consecutive_failure_threshold, consecutive_failure_count, last_planned_at,
+	       version, paused_reason, last_run_date, last_error, created_by, created_at,
+	       updated_at`
 
 func (r *scheduledTransactionRepo) GetByID(ctx context.Context, id uuid.UUID) (model.ScheduledTransaction, error) {
 	row := r.db.QueryRowContext(ctx, `SELECT `+scheduledTransactionColumns+`
@@ -142,6 +193,19 @@ func (r *scheduledTransactionRepo) ListDue(ctx context.Context, asOf time.Time) 
 		ORDER BY id`, asOf)
 	if err != nil {
 		return nil, fmt.Errorf("list due scheduled transactions: %w", err)
+	}
+	defer rows.Close()
+	return scanScheduledTransactionRows(rows)
+}
+
+// ListAllActive is the C5 planner view. It is intentionally an additive
+// concrete-repository method rather than part of ScheduledTransactionRepository
+// so existing generated mocks and legacy callers remain source-compatible.
+func (r *scheduledTransactionRepo) ListAllActive(ctx context.Context) ([]model.ScheduledTransaction, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT `+scheduledTransactionColumns+`
+		FROM scheduled_transactions WHERE status='active' ORDER BY id`)
+	if err != nil {
+		return nil, fmt.Errorf("list active scheduled transactions: %w", err)
 	}
 	defer rows.Close()
 	return scanScheduledTransactionRows(rows)
@@ -211,7 +275,9 @@ func (r *scheduledTransactionRepo) Pause(ctx context.Context, tx *sql.Tx, id uui
 
 func (r *scheduledTransactionRepo) Resume(ctx context.Context, tx *sql.Tx, id uuid.UUID) (int64, error) {
 	res, err := tx.ExecContext(ctx, `
-		UPDATE scheduled_transactions SET status = 'active' WHERE id = $1 AND status = 'paused'`, id)
+		UPDATE scheduled_transactions SET status = 'active', consecutive_failure_count = 0,
+			last_error = NULL, paused_reason = NULL, version = version + 1
+		WHERE id = $1 AND status IN ('paused', 'blocked')`, id)
 	if err != nil {
 		return 0, fmt.Errorf("resume scheduled transaction: %w", err)
 	}

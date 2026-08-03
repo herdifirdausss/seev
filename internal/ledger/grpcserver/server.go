@@ -10,7 +10,7 @@ import (
 	"github.com/shopspring/decimal"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
-	grpcmetadata "google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -44,6 +44,10 @@ type Service interface {
 	ListMerchantTransactions(ctx context.Context, tenantID uuid.UUID, beforeCreatedAt time.Time, beforeID uuid.UUID, limit int) ([]model.LedgerTransaction, error)
 	// GetMerchantTransaction is Plan 57 T10 follow-up's additive RPC backing.
 	GetMerchantTransaction(ctx context.Context, tenantID, txID uuid.UUID) (model.LedgerTransaction, error)
+}
+
+type feeQuoteConsumerWithGateway interface {
+	ConsumeFeeQuoteWithGateway(ctx context.Context, quoteID, userID uuid.UUID, txType, gateway, currency string, amount decimal.Decimal, ref string) (fee decimal.Decimal, feeGateway string, err error)
 }
 
 type Server struct {
@@ -107,7 +111,7 @@ func (s *Server) Post(ctx context.Context, req *ledgerv1.PostRequest) (*ledgerv1
 		metadata["request_id"] = id
 	}
 	requestedCurrency := ""
-	if incoming, ok := grpcmetadata.FromIncomingContext(ctx); ok {
+	if incoming, ok := metadata.FromIncomingContext(ctx); ok {
 		if values := incoming.Get("x-seev-currency"); len(values) > 0 {
 			requestedCurrency = values[0]
 		}
@@ -133,7 +137,7 @@ func (s *Server) GetTransactionByIdempotencyKey(ctx context.Context, req *ledger
 }
 
 func (s *Server) GetUserCurrency(ctx context.Context, req *ledgerv1.GetUserCurrencyRequest) (*ledgerv1.GetUserCurrencyResponse, error) {
-	if incoming, ok := grpcmetadata.FromIncomingContext(ctx); ok {
+	if incoming, ok := metadata.FromIncomingContext(ctx); ok {
 		if values := incoming.Get("x-seev-currency-operation"); len(values) > 0 && values[0] != "" {
 			validator, ok := s.service.(interface {
 				ValidateCurrency(context.Context, string, string) error
@@ -216,7 +220,18 @@ func (s *Server) ConsumeFeeQuote(ctx context.Context, req *ledgerv1.ConsumeFeeQu
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "user_id: %v", err)
 	}
-	fee, feeGateway, callErr := s.service.ConsumeFeeQuote(ctx, quoteID, userID, req.GetTransactionType(), req.GetCurrency(), amount, req.GetConsumedByRef())
+	var fee decimal.Decimal
+	var feeGateway string
+	var callErr error
+	if gateways := metadata.ValueFromIncomingContext(ctx, "seev-fee-quote-gateway"); len(gateways) > 0 && gateways[0] != "" {
+		consumer, ok := s.service.(feeQuoteConsumerWithGateway)
+		if !ok {
+			return nil, status.Error(codes.Unimplemented, "gateway-bound fee quote consumption unavailable")
+		}
+		fee, feeGateway, callErr = consumer.ConsumeFeeQuoteWithGateway(ctx, quoteID, userID, req.GetTransactionType(), gateways[0], req.GetCurrency(), amount, req.GetConsumedByRef())
+	} else {
+		fee, feeGateway, callErr = s.service.ConsumeFeeQuote(ctx, quoteID, userID, req.GetTransactionType(), req.GetCurrency(), amount, req.GetConsumedByRef())
+	}
 	if callErr != nil {
 		return nil, mapError(callErr)
 	}

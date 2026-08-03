@@ -65,6 +65,7 @@ type Config struct {
 	// Merchant is docs/roadmap/archive/57-c1-merchant-b2b-api.md T2's config for the
 	// Gateway-owned Merchant/B2B API module.
 	Merchant MerchantConfig
+	Notify   NotifyConfig
 
 	// Cross-process endpoints introduced by the service extraction phases.
 	GRPCPort          string
@@ -94,6 +95,7 @@ type Config struct {
 	PayoutInternalAPIURL  string
 	FraudInternalAPIURL   string
 	GatewayInternalAPIURL string
+	AuthInternalAPIURL    string
 
 	// TLSCertDir is where cmd/certgen (docs/roadmap/archive/49 K3) writes ca.pem plus
 	// one <service>.pem/<service>-key.pem pair per identity — every
@@ -152,6 +154,12 @@ type VendorConfig struct {
 	// feature existed.
 	Mockvendor2Enabled bool
 	Mockvendor2Secret  string
+	// EgressProxyURL is the explicit forward proxy used by real outbound vendor
+	// HTTP adapters. The current mock adapter is in-process, but requiring this
+	// value in the Kubernetes profile prevents a future adapter from silently
+	// falling back to direct internet access.
+	EgressProxyURL      string
+	EgressProxyRequired bool
 }
 
 // BreakerConfig tunes the per-vendor circuit breaker (docs/roadmap/archive/40 Task T1,
@@ -218,6 +226,35 @@ type LedgerConfig struct {
 	// tight, since a tier upgrade taking up to a minute to reflect
 	// everywhere is an accepted tradeoff, same as fee_rules staleness).
 	PolicyCacheTTL time.Duration
+	BalanceV2      BalanceV2Config
+}
+
+// BalanceV2Config is the composition-root representation of the C6 safety
+// controls. It intentionally mirrors the migration package without importing
+// the Ledger implementation into shared configuration.
+type BalanceV2Config struct {
+	Enabled                  bool
+	EmergencySourceRead      bool
+	DisableTargetWrites      bool
+	BackfillBatchSize        int
+	BackfillWorkers          int
+	BackfillSleep            time.Duration
+	BackfillStatementTimeout time.Duration
+	BackfillLockTimeout      time.Duration
+	ShadowWorkers            int
+	ShadowQueueSize          int
+	ShadowTimeout            time.Duration
+	ShadowSampleBasisPoints  int
+	ShadowMaxRPS             int
+	ShadowPerAccountCooldown time.Duration
+	TargetReadTimeout        time.Duration
+	SourceFallback           bool
+	SourceFallbackConfigured bool
+	ReconcileBatchSize       int
+	RepairBatchSize          int
+	RepairWorkers            int
+	WorkerInterval           time.Duration
+	BaselineCommit           string
 }
 
 // FraudConfig contains fraud-service rule configuration.
@@ -493,12 +530,48 @@ func (c RabbitMQConfig) Broker() messaging.BrokerConfig {
 // integrity verifier). See docs/roadmap/archive/06-phase-1-workers.md.
 type WorkerConfig struct {
 	Enabled            bool
+	// C5Enabled is deliberately opt-in: migrations and maker/checker controls
+	// can be deployed before durable schedule/interest behavior starts.
+	C5Enabled          bool
 	OutboxPollInterval time.Duration
 	OutboxBatchSize    int
 	// AlertWebhookURL, if non-empty, receives a POST for every integrity
 	// discrepancy the verifier finds (docs/roadmap/archive/12 Task T4). Empty = no
 	// external alert, log+metric only (backward compatible default).
 	AlertWebhookURL string
+}
+
+// NotifyConfig is Gateway-owned notification delivery configuration. External
+// providers are deliberately disabled by default; in-app remains enabled.
+type NotifyConfig struct {
+	Enabled           bool
+	InAppEnabled      bool
+	EmailEnabled      bool
+	PushEnabled       bool
+	DigestEnabled     bool
+	DefaultLocale     string
+	DefaultTimezone   string
+	DigestHour        int
+	EventPrefetch     int
+	EventMaxAttempts  int
+	DeliveryBatch     int
+	DeliveryLease     time.Duration
+	ProviderTimeout   time.Duration
+	EmailWorkers      int
+	PushWorkers       int
+	ContactWorkers    int
+	DigestWorkers     int
+	MaxDevices        int
+	FingerprintKey    []byte
+	SMTPHost          string
+	SMTPPort          int
+	SMTPUsername      string
+	SMTPPassword      string
+	SMTPFrom          string
+	SMTPReplyTo       string
+	SMTPTLSMode       string
+	PushProviderURL   string
+	PushProviderToken string
 }
 
 // Load reads configuration from environment variables.
@@ -562,6 +635,15 @@ func loadFromEnv(getenv func(string) string) (*Config, error) {
 
 func loadFromEnvMode(getenv func(string) string, requireRabbitMQ bool) (*Config, error) {
 	var errs []string
+	// The roadmap names Ledger-specific tunables BALANCE_V2_*. Keep the
+	// DATA_MIGRATION_* aliases for deployments that adopted the first draft of
+	// the control plane; the documented BALANCE_V2_ name wins when both exist.
+	migrationEnv := func(name string) string {
+		if value := getenv("BALANCE_V2_" + name); value != "" {
+			return value
+		}
+		return getenv("DATA_MIGRATION_" + name)
+	}
 
 	cfg := &Config{
 		App: AppConfig{
@@ -655,14 +737,63 @@ func loadFromEnvMode(getenv func(string) string, requireRabbitMQ bool) (*Config,
 		},
 		Worker: WorkerConfig{
 			Enabled:            parseBool(getenv("WORKER_ENABLED"), true),
+			C5Enabled:          parseBool(getenv("C5_FINANCIAL_PRODUCTS_ENABLED"), false),
 			OutboxPollInterval: parseDuration(getenv("OUTBOX_POLL_INTERVAL"), time.Second),
 			OutboxBatchSize:    parseInt(getenv("OUTBOX_BATCH_SIZE"), 100),
 			AlertWebhookURL:    getenv("ALERT_WEBHOOK_URL"),
+		},
+		Notify: NotifyConfig{
+			Enabled:          parseBool(getenv("NOTIFY_ENABLED"), true),
+			InAppEnabled:     parseBool(getenv("NOTIFY_INAPP_ENABLED"), true),
+			EmailEnabled:     parseBool(getenv("NOTIFY_EMAIL_ENABLED"), false),
+			PushEnabled:      parseBool(getenv("NOTIFY_PUSH_ENABLED"), false),
+			DigestEnabled:    parseBool(getenv("NOTIFY_DIGEST_ENABLED"), false),
+			DefaultLocale:    getWithDefault(getenv, "NOTIFY_DEFAULT_LOCALE", "en-US"),
+			DefaultTimezone:  getWithDefault(getenv, "NOTIFY_DEFAULT_TIMEZONE", "Asia/Jakarta"),
+			DigestHour:       parseInt(getenv("NOTIFY_DEFAULT_DIGEST_HOUR"), 8),
+			EventPrefetch:    parseInt(getenv("NOTIFY_EVENT_PREFETCH"), 10),
+			EventMaxAttempts: parseInt(getenv("NOTIFY_EVENT_MAX_DELIVERY_ATTEMPTS"), 5),
+			DeliveryBatch:    parseInt(getenv("NOTIFY_DELIVERY_BATCH_SIZE"), 50),
+			DeliveryLease:    parseDuration(getenv("NOTIFY_DELIVERY_LEASE_DURATION"), 2*time.Minute),
+			ProviderTimeout:  parseDuration(getenv("NOTIFY_PROVIDER_TIMEOUT"), 10*time.Second),
+			EmailWorkers:     parseInt(getenv("NOTIFY_EMAIL_WORKERS"), 2),
+			PushWorkers:      parseInt(getenv("NOTIFY_PUSH_WORKERS"), 2),
+			ContactWorkers:   parseInt(getenv("NOTIFY_CONTACT_WORKERS"), 2),
+			DigestWorkers:    parseInt(getenv("NOTIFY_DIGEST_WORKERS"), 1),
+			MaxDevices:       parseInt(getenv("NOTIFY_MAX_DEVICES"), 10),
+			SMTPHost:         getenv("NOTIFY_SMTP_HOST"), SMTPPort: parseInt(getenv("NOTIFY_SMTP_PORT"), 25),
+			SMTPUsername: getenv("NOTIFY_SMTP_USERNAME"), SMTPPassword: firstNonEmpty(readOptionalSecretFile(getenv("NOTIFY_SMTP_PASSWORD_FILE")), getenv("NOTIFY_SMTP_PASSWORD")),
+			SMTPFrom: getenv("NOTIFY_SMTP_FROM"), SMTPReplyTo: getenv("NOTIFY_SMTP_REPLY_TO"), SMTPTLSMode: getWithDefault(getenv, "NOTIFY_SMTP_TLS_MODE", "starttls"),
+			PushProviderURL: getenv("NOTIFY_PUSH_PROVIDER_URL"), PushProviderToken: firstNonEmpty(readOptionalSecretFile(getenv("NOTIFY_PUSH_PROVIDER_TOKEN_FILE")), getenv("NOTIFY_PUSH_PROVIDER_TOKEN")),
+			FingerprintKey: loadNotificationFingerprint(getenv, &errs),
 		},
 		Ledger: LedgerConfig{
 			MaxAmountPerTx: parseInt64(getenv("LEDGER_MAX_AMOUNT_PER_TX"), 1_000_000_000),
 			FeeQuoteTTL:    parseDuration(getenv("FEE_QUOTE_TTL"), 10*time.Minute),
 			PolicyCacheTTL: parseDuration(getenv("POLICY_CACHE_TTL"), 60*time.Second),
+			BalanceV2: BalanceV2Config{
+				Enabled:                  parseBool(getenv("DATA_MIGRATION_ENABLED"), false),
+				EmergencySourceRead:      parseBool(getenv("DATA_MIGRATION_EMERGENCY_SOURCE_READ"), true),
+				DisableTargetWrites:      parseBool(getenv("DATA_MIGRATION_DISABLE_TARGET_WRITES"), false),
+				BackfillBatchSize:        parseInt(migrationEnv("BACKFILL_BATCH_SIZE"), 100),
+				BackfillWorkers:          parseInt(migrationEnv("BACKFILL_WORKERS"), 1),
+				BackfillSleep:            parseDuration(migrationEnv("BACKFILL_SLEEP"), 50*time.Millisecond),
+				BackfillStatementTimeout: parseDuration(migrationEnv("BACKFILL_STATEMENT_TIMEOUT"), 5*time.Second),
+				BackfillLockTimeout:      parseDuration(migrationEnv("BACKFILL_LOCK_TIMEOUT"), 500*time.Millisecond),
+				ShadowWorkers:            parseInt(migrationEnv("SHADOW_WORKERS"), 4),
+				ShadowQueueSize:          parseInt(migrationEnv("SHADOW_QUEUE_SIZE"), 1000),
+				ShadowTimeout:            parseDuration(migrationEnv("SHADOW_TIMEOUT"), 50*time.Millisecond),
+				ShadowSampleBasisPoints:  parseInt(migrationEnv("SHADOW_SAMPLE_BPS"), 10000),
+				ShadowMaxRPS:             parseInt(migrationEnv("SHADOW_MAX_RPS"), 100),
+				ShadowPerAccountCooldown: parseDuration(migrationEnv("SHADOW_COOLDOWN"), time.Minute),
+				TargetReadTimeout:        parseDuration(migrationEnv("TARGET_READ_TIMEOUT"), 50*time.Millisecond),
+				SourceFallback:           parseBool(migrationEnv("SOURCE_FALLBACK"), true),
+				ReconcileBatchSize:       parseInt(migrationEnv("RECONCILE_BATCH_SIZE"), 100),
+				RepairBatchSize:          parseInt(migrationEnv("REPAIR_BATCH_SIZE"), 50),
+				RepairWorkers:            parseInt(migrationEnv("REPAIR_WORKERS"), 1),
+				WorkerInterval:           parseDuration(migrationEnv("WORKER_INTERVAL"), time.Second),
+				BaselineCommit:           getWithDefault(migrationEnv, "BASELINE_COMMIT", "unknown"),
+			},
 		},
 		Fraud: FraudConfig{
 			ScreeningMode:                      getWithDefault(getenv, "SCREENING_MODE", "off"),
@@ -676,12 +807,14 @@ func loadFromEnvMode(getenv func(string) string, requireRabbitMQ bool) (*Config,
 			Insecure:     parseBool(getenv("OTEL_EXPORTER_OTLP_INSECURE"), true),
 		},
 		Vendor: VendorConfig{
-			ServiceEnabled:     parseBool(getenv("VENDOR_SERVICE_ENABLED"), false),
-			MockvendorEnabled:  parseBool(getenv("VENDOR_MOCKVENDOR_ENABLED"), false),
-			MockvendorSecret:   getenv("VENDOR_MOCKVENDOR_SECRET"),
-			TopupIntentTTL:     parseDuration(getenv("TOPUP_INTENT_TTL"), 24*time.Hour),
-			Mockvendor2Enabled: parseBool(getenv("MOCKVENDOR2_ENABLED"), false),
-			Mockvendor2Secret:  getenv("MOCKVENDOR2_SECRET"),
+			ServiceEnabled:      parseBool(getenv("VENDOR_SERVICE_ENABLED"), false),
+			MockvendorEnabled:   parseBool(getenv("VENDOR_MOCKVENDOR_ENABLED"), false),
+			MockvendorSecret:    getenv("VENDOR_MOCKVENDOR_SECRET"),
+			TopupIntentTTL:      parseDuration(getenv("TOPUP_INTENT_TTL"), 24*time.Hour),
+			Mockvendor2Enabled:  parseBool(getenv("MOCKVENDOR2_ENABLED"), false),
+			Mockvendor2Secret:   getenv("MOCKVENDOR2_SECRET"),
+			EgressProxyURL:      getenv("VENDOR_EGRESS_PROXY_URL"),
+			EgressProxyRequired: parseBool(getenv("VENDOR_EGRESS_PROXY_REQUIRED"), false),
 		},
 		Breaker: BreakerConfig{
 			FailureThreshold: parseInt(getenv("BREAKER_FAILURE_THRESHOLD"), 5),
@@ -749,6 +882,7 @@ func loadFromEnvMode(getenv func(string) string, requireRabbitMQ bool) (*Config,
 		PayoutInternalAPIURL:  getWithDefault(getenv, "PAYOUT_INTERNAL_API_URL", "https://localhost:8093"),
 		FraudInternalAPIURL:   getWithDefault(getenv, "FRAUD_INTERNAL_API_URL", "https://localhost:8094"),
 		GatewayInternalAPIURL: getWithDefault(getenv, "GATEWAY_INTERNAL_API_URL", "https://localhost:8081"),
+		AuthInternalAPIURL:    getWithDefault(getenv, "AUTH_INTERNAL_API_URL", "https://localhost:8083"),
 		TLSCertDir:            getWithDefault(getenv, "TLS_CERT_DIR", "deploy/certs"),
 	}
 
@@ -793,6 +927,19 @@ func loadVersionedKeys(getenv func(string) string, prefix string) map[int]string
 		}
 	}
 	return keys
+}
+
+func loadNotificationFingerprint(getenv func(string) string, errs *[]string) []byte {
+	raw := firstNonEmpty(readOptionalSecretFile(getenv("NOTIFY_TOKEN_FINGERPRINT_KEY_FILE")), getenv("NOTIFY_TOKEN_FINGERPRINT_KEY"))
+	if raw == "" {
+		return nil
+	}
+	decoded, err := hex.DecodeString(raw)
+	if err != nil || len(decoded) < 32 {
+		*errs = append(*errs, "NOTIFY_TOKEN_FINGERPRINT_KEY must be at least 32 bytes of hex")
+		return nil
+	}
+	return decoded
 }
 
 func firstNonEmpty(values ...string) string {
@@ -950,6 +1097,51 @@ func validate(cfg *Config, requireRabbitMQ bool, errs *[]string) error {
 
 	if cfg.Vendor.Mockvendor2Enabled && cfg.Vendor.Mockvendor2Secret == "" {
 		*errs = append(*errs, "MOCKVENDOR2_SECRET must be set when MOCKVENDOR2_ENABLED=true — an empty HMAC secret would accept any signature")
+	}
+	if cfg.Notify.DefaultLocale != "en-US" && cfg.Notify.DefaultLocale != "id-ID" {
+		*errs = append(*errs, "NOTIFY_DEFAULT_LOCALE must be en-US or id-ID")
+	}
+	if _, err := time.LoadLocation(cfg.Notify.DefaultTimezone); err != nil {
+		*errs = append(*errs, "NOTIFY_DEFAULT_TIMEZONE must be a valid IANA timezone")
+	}
+	if cfg.Notify.DigestHour < 0 || cfg.Notify.DigestHour > 23 {
+		*errs = append(*errs, "NOTIFY_DEFAULT_DIGEST_HOUR must be between 0 and 23")
+	}
+	if cfg.Notify.EventPrefetch <= 0 || cfg.Notify.EventMaxAttempts <= 0 || cfg.Notify.DeliveryBatch <= 0 || cfg.Notify.DeliveryLease <= 0 || cfg.Notify.ProviderTimeout <= 0 {
+		*errs = append(*errs, "notification worker sizing and durations must be positive")
+	}
+	if cfg.Notify.MaxDevices <= 0 || cfg.Notify.MaxDevices > 100 {
+		*errs = append(*errs, "NOTIFY_MAX_DEVICES must be between 1 and 100")
+	}
+	if cfg.App.Env == "production" && len(cfg.Notify.FingerprintKey) == 0 {
+		*errs = append(*errs, "NOTIFY_TOKEN_FINGERPRINT_KEY or NOTIFY_TOKEN_FINGERPRINT_KEY_FILE is required in production")
+	}
+	if cfg.Notify.EmailEnabled {
+		if cfg.Notify.SMTPFrom == "" {
+			*errs = append(*errs, "NOTIFY_SMTP_FROM is required when NOTIFY_EMAIL_ENABLED=true")
+		}
+		if cfg.Notify.SMTPHost == "" || cfg.Notify.SMTPPort <= 0 || cfg.Notify.SMTPPort > 65535 {
+			*errs = append(*errs, "NOTIFY_SMTP_HOST and a valid NOTIFY_SMTP_PORT are required when NOTIFY_EMAIL_ENABLED=true")
+		}
+		mode := strings.ToLower(cfg.Notify.SMTPTLSMode)
+		if mode != "starttls" && mode != "tls" && mode != "none" {
+			*errs = append(*errs, "NOTIFY_SMTP_TLS_MODE must be starttls, tls, or none")
+		}
+		if mode == "none" && cfg.App.Env == "production" {
+			*errs = append(*errs, "NOTIFY_SMTP_TLS_MODE=none is not allowed in production")
+		}
+	}
+	if cfg.Notify.PushEnabled {
+		parsed, parseErr := url.Parse(cfg.Notify.PushProviderURL)
+		if parseErr != nil || parsed.Scheme != "http" && parsed.Scheme != "https" || parsed.Host == "" {
+			*errs = append(*errs, "NOTIFY_PUSH_PROVIDER_URL must be an absolute HTTP(S) URL when NOTIFY_PUSH_ENABLED=true")
+		}
+	}
+	if cfg.Vendor.EgressProxyRequired {
+		proxyURL, err := url.Parse(cfg.Vendor.EgressProxyURL)
+		if err != nil || proxyURL.Host == "" || (proxyURL.Scheme != "http" && proxyURL.Scheme != "https") {
+			*errs = append(*errs, "VENDOR_EGRESS_PROXY_URL must be an http(s) URL when VENDOR_EGRESS_PROXY_REQUIRED=true")
+		}
 	}
 	if cfg.Assurance.PageSize <= 0 || cfg.Assurance.PageSize > 500 {
 		*errs = append(*errs, "ASSURANCE_PAGE_SIZE must be between 1 and 500")

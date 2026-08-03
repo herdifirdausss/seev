@@ -1,0 +1,8 @@
+{{define "content"}}<h1>Data migration control</h1>
+<p>The Ledger owns lifecycle transitions and financial safety gates. This BFF surface only proxies typed operator requests.</p>
+<section>
+  <h2>Current migrations</h2>
+  <pre hx-get="/api/v1/admin/migrations" hx-trigger="load, every 15s">Loading migration state…</pre>
+</section>
+<p>Use the Ledger migration API for maker/checker actions, pre-cutover reconciliation, and target-only repairs.</p>
+{{end}}

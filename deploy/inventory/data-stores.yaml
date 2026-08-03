@@ -1,0 +1,203 @@
+version: 1
+baseline_commit: ff21bf186f95431a386b339ee3a1409e49a7e1b0
+database_policy:
+  owner_writes_only: true
+  migration_identity: separate from runtime app identity
+  cross_service_sql: forbidden; use HTTP or gRPC contracts
+  backup: Postgres backup role and repository are operations-only
+postgresql:
+  - name: ledger-postgres
+    database: seev_ledger
+    owner: ledger
+    app_user: ledger_app
+    migration_user: seev
+    migrations_path: migrations/ledger
+    migration_count_at_baseline: 37
+    retention_policy: config/data-retention.yaml owner ledger
+    backup_policy: physical/logical backup through backup-agent; recovery proof is K7 operations
+    extensions: pgcrypto-or-current-init
+    source_refs: [scripts/postgres-init/03-service-migrations.sh, migrations/ledger, cmd/migrate/main.go]
+    sources: [scripts/postgres-init, migrations/ledger, internal/ledger]
+  - name: auth-postgres
+    database: seev_auth
+    owner: auth
+    app_user: auth_app
+    migration_user: seev
+    migrations_path: migrations/auth
+    migration_count_at_baseline: 18
+    retention_policy: config/data-retention.yaml owner auth
+    backup_policy: physical/logical backup through backup-agent; recovery proof is K7 operations
+    extensions: current-init-default
+    source_refs: [scripts/postgres-init/03-service-migrations.sh, migrations/auth, cmd/migrate/main.go]
+    sources: [scripts/postgres-init, migrations/auth, internal/auth]
+  - name: payin-postgres
+    database: seev_payin
+    owner: payin
+    app_user: payin_app
+    migration_user: seev
+    migrations_path: migrations/payin
+    migration_count_at_baseline: 16
+    retention_policy: config/data-retention.yaml owner payin
+    backup_policy: physical/logical backup through backup-agent; recovery proof is K7 operations
+    extensions: current-init-default
+    source_refs: [scripts/postgres-init/03-service-migrations.sh, migrations/payin, cmd/migrate/main.go]
+    sources: [scripts/postgres-init, migrations/payin, internal/payin]
+  - name: payout-postgres
+    database: seev_payout
+    owner: payout
+    app_user: payout_app
+    migration_user: seev
+    migrations_path: migrations/payout
+    migration_count_at_baseline: 16
+    retention_policy: config/data-retention.yaml owner payout
+    backup_policy: physical/logical backup through backup-agent; recovery proof is K7 operations
+    extensions: current-init-default
+    source_refs: [scripts/postgres-init/03-service-migrations.sh, migrations/payout, cmd/migrate/main.go]
+    sources: [scripts/postgres-init, migrations/payout, internal/payout]
+  - name: fraud-postgres
+    database: seev_fraud
+    owner: fraud
+    app_user: fraud_app
+    migration_user: seev
+    migrations_path: migrations/fraud
+    migration_count_at_baseline: 9
+    retention_policy: config/data-retention.yaml owner fraud
+    backup_policy: physical/logical backup through backup-agent; recovery proof is K7 operations
+    extensions: current-init-default
+    source_refs: [scripts/postgres-init/03-service-migrations.sh, migrations/fraud, cmd/migrate/main.go]
+    sources: [scripts/postgres-init, migrations/fraud, internal/fraud]
+  - name: gateway-postgres
+    database: seev_gateway
+    owner: gateway
+    app_user: gateway_app
+    migration_user: seev
+    migrations_path: migrations/gateway
+    migration_count_at_baseline: 9
+    retention_policy: config/data-retention.yaml owner gateway
+    backup_policy: physical/logical backup through backup-agent; recovery proof is K7 operations
+    extensions: current-init-default
+    source_refs: [scripts/postgres-init/03-service-migrations.sh, migrations/gateway, cmd/migrate/main.go]
+    sources: [scripts/postgres-init, migrations/gateway, internal/merchant]
+  - name: vendor-postgres
+    database: seev_vendor
+    owner: vendor
+    app_user: vendor_app
+    migration_user: seev
+    migrations_path: migrations/vendor
+    migration_count_at_baseline: 4
+    retention_policy: config/data-retention.yaml owner vendor
+    backup_policy: physical/logical backup through backup-agent; recovery proof is K7 operations
+    extensions: current-init-default
+    source_refs: [scripts/postgres-init/03-service-migrations.sh, migrations/vendor, cmd/migrate/main.go]
+    sources: [scripts/postgres-init, migrations/vendor, internal/vendor]
+  - name: admin-bff-postgres
+    database: seev_adminbff
+    owner: admin-bff
+    app_user: adminbff_app
+    migration_user: seev
+    migrations_path: migrations/adminbff
+    migration_count_at_baseline: 7
+    retention_policy: config/data-retention.yaml owner adminbff
+    backup_policy: physical/logical backup through backup-agent; recovery proof is K7 operations
+    extensions: current-init-default
+    source_refs: [scripts/postgres-init/03-service-migrations.sh, migrations/adminbff, cmd/migrate/main.go]
+    sources: [scripts/postgres-init, migrations/adminbff, internal/adminbff]
+  - name: assurance-postgres
+    database: seev_assurance
+    owner: assurance
+    app_user: assurance_app
+    migration_user: seev
+    migrations_path: migrations/assurance
+    migration_count_at_baseline: 9
+    retention_policy: config/data-retention.yaml owner assurance
+    backup_policy: physical/logical backup through backup-agent; recovery proof is K7 operations
+    extensions: current-init-default
+    source_refs: [scripts/postgres-init/03-service-migrations.sh, migrations/assurance, cmd/migrate/main.go]
+    sources: [scripts/postgres-init, migrations/assurance, internal/assurance]
+
+redis:
+  - name: local-redis
+    endpoint: redis:6379
+    database_number: 0
+    owner: shared-runtime-with-prefix-ownership
+    key_prefixes:
+      - auth rate limits and sessions
+      - gateway rate limits and merchant observability
+      - fraud velocity windows
+      - idempotency and short-lived workflow state
+    durability: cache/ephemeral; database is not the system of record
+    failure_behavior: feature-specific degradation; money paths fail closed where required
+    ttl_policy: per-key feature TTL; inventory values are in source/config
+    backup_policy: not authoritative; no backup restore dependency
+    sources: [docker-compose.yml, internal/config, pkg/cache, internal/fraud]
+
+rabbitmq:
+  - name: ledger-events-broker
+    endpoint: rabbitmq:5672
+    exchange: ledger.events
+    exchange_type: topic
+    owner: messaging-platform
+    durability: durable exchange and queues
+    delivery: publisher-confirms; at-least-once consumers; DLX/DLQ
+    topology_ref: deploy/inventory/messaging.yaml
+    sources: [pkg/messaging/topology.go, pkg/messaging/rabbitmq.go, docker-compose.yml]
+
+object_storage:
+  - name: local-object-store
+    endpoint: filesystem-backed local object store
+    owner: auth
+    purposes: KYC documents and privacy exports
+    first_deployment: mock/local-only
+    durability: disposable volume only
+    data_policy: synthetic documents only
+    sources: [internal/objectstore, docker-compose.yml]
+  - name: backup-repository
+    endpoint: UNKNOWN
+    owner: operations
+    purposes: encrypted Postgres backups
+    first_deployment: false
+    durability: operations-managed
+    data_policy: no K0 backup contents
+    sources: [cmd/backup-agent/main.go, deploy/README.md]
+
+filesystem_volumes:
+  - name: postgres-data
+    mount: /var/lib/postgresql/data
+    owner: postgres
+    writable: true
+    persistence: local disposable Compose volume
+    first_deployment: local-only
+    backup: backup-agent in operations profile
+    sources: [docker-compose.yml]
+  - name: object-store-data
+    mount: /data
+    owner: auth
+    writable: true
+    persistence: local disposable Compose volume
+    first_deployment: local-only
+    backup: no production backup claim
+    sources: [docker-compose.yml, internal/objectstore]
+  - name: service-certs
+    mount: /run/secrets/seev-certs
+    owner: platform-security
+    writable: false
+    persistence: injected secret material
+    first_deployment: enabled; per-workload Kubernetes mounts required
+    backup: never copy private keys into evidence
+    sources: [docker-compose.yml, pkg/tlsx, deploy/helm/seev/templates]
+  - name: temporary-runtime
+    mount: /tmp
+    owner: each service
+    writable: UNKNOWN
+    persistence: ephemeral
+    first_deployment: true
+    backup: none
+    sources: [Dockerfile, cmd/*, internal/config]
+  - name: observability-storage
+    mount: component-specific
+    owner: observability
+    writable: true
+    persistence: deferred optional profile
+    first_deployment: false
+    backup: K7
+    sources: [docker-compose.yml, deploy/observability]

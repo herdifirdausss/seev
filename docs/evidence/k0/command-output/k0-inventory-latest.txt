@@ -1,0 +1,7 @@
+command: make k0-inventory
+captured: 2026-08-03T00:56:50Z
+result: BLOCKED (exit 1)
+
+cmd/gateway/main.go:27:2: no required module provides package github.com/herdifirdausss/seev/internal/notify/channel/email
+cmd/gateway/main.go:28:2: no required module provides package github.com/herdifirdausss/seev/internal/notify/channel/push
+make: *** [k0-inventory] Error 1

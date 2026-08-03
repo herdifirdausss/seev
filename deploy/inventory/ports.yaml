@@ -1,0 +1,315 @@
+version: 1
+baseline_commit: ff21bf186f95431a386b339ee3a1409e49a7e1b0
+listener_policy:
+  container_bind: 0.0.0.0 is the current Docker default; Kubernetes exposure is controlled by Service and Ingress
+  host_bind: local Compose publishes only to loopback unless docker-compose.yml says otherwise
+  public_health_metrics: false
+listeners:
+  - name: gateway-public-http
+    service: gateway
+    port: 8080
+    protocol: http
+    transport: tcp
+    bind: 0.0.0.0
+    host_bind: 127.0.0.1:8080
+    tls: terminated-at-edge
+    mtls: false
+    authentication: bearer-or-public-route-policy
+    exposure_class: PUBLIC_EDGE
+    downstream_owner: K4 edge routing and rate limits
+    sources: [docker-compose.yml, cmd/gateway/main.go, internal/handler/router.go]
+  - name: gateway-internal-https
+    service: gateway
+    port: 8081
+    protocol: https
+    transport: tcp
+    bind: 0.0.0.0
+    host_bind: 127.0.0.1:8081
+    tls: service-leaf
+    mtls: true
+    authentication: mTLS-and-service-auth
+    exposure_class: INTERNAL_HTTP
+    downstream_owner: K3 service wiring and K5 NetworkPolicy
+    sources: [docker-compose.yml, cmd/gateway/main.go]
+
+  - name: auth-public-http
+    service: auth
+    port: 8082
+    protocol: http
+    transport: tcp
+    bind: 0.0.0.0
+    host_bind: 127.0.0.1:8082
+    tls: terminated-at-edge
+    mtls: false
+    authentication: public-auth-route-policy
+    exposure_class: PUBLIC_EDGE
+    downstream_owner: K4 edge routing and rate limits
+    sources: [docker-compose.yml, cmd/auth-service/main.go, internal/auth]
+  - name: auth-internal-https
+    service: auth
+    port: 8083
+    protocol: https
+    transport: tcp
+    bind: 0.0.0.0
+    host_bind: 127.0.0.1:8083
+    tls: service-leaf
+    mtls: true
+    authentication: mTLS-and-service-auth
+    exposure_class: INTERNAL_HTTP
+    downstream_owner: K3 service wiring and K5 NetworkPolicy
+    sources: [docker-compose.yml, cmd/auth-service/main.go]
+
+  - name: ledger-user-http
+    service: ledger
+    port: 8090
+    protocol: https
+    transport: tcp
+    bind: 0.0.0.0
+    host_bind: 127.0.0.1:8090
+    tls: service-leaf
+    mtls: true
+    authentication: mTLS-or-end-user-token
+    exposure_class: PRIVATE_ADMIN
+    downstream_owner: K4 private route policy
+    sources: [docker-compose.yml, cmd/ledger-service/main.go, internal/ledger]
+  - name: ledger-internal-https
+    service: ledger
+    port: 8091
+    protocol: https
+    transport: tcp
+    bind: 0.0.0.0
+    host_bind: 127.0.0.1:8091
+    tls: service-leaf
+    mtls: true
+    authentication: mTLS-and-service-auth
+    exposure_class: INTERNAL_HTTP
+    downstream_owner: K5 NetworkPolicy
+    sources: [docker-compose.yml, cmd/ledger-service/main.go]
+  - name: ledger-grpc
+    service: ledger
+    port: 9091
+    protocol: grpc
+    transport: tcp
+    bind: 0.0.0.0
+    host_bind: 127.0.0.1:9091
+    tls: service-leaf
+    mtls: true
+    authentication: mTLS
+    exposure_class: INTERNAL_GRPC
+    downstream_owner: K3 service wiring and K5 NetworkPolicy
+    sources: [docker-compose.yml, cmd/ledger-service/main.go]
+
+  - name: payin-http
+    service: payin
+    port: 8092
+    protocol: https
+    transport: tcp
+    bind: 0.0.0.0
+    host_bind: 127.0.0.1:8092
+    tls: service-leaf
+    mtls: true
+    authentication: mTLS-and-admin-policy
+    exposure_class: PRIVATE_ADMIN
+    downstream_owner: K4 private route policy
+    sources: [docker-compose.yml, cmd/payin-service/main.go]
+  - name: payin-grpc
+    service: payin
+    port: 9092
+    protocol: grpc
+    transport: tcp
+    bind: 0.0.0.0
+    host_bind: 127.0.0.1:9092
+    tls: service-leaf
+    mtls: true
+    authentication: mTLS
+    exposure_class: INTERNAL_GRPC
+    downstream_owner: K3 service wiring and K5 NetworkPolicy
+    sources: [docker-compose.yml, cmd/payin-service/main.go]
+
+  - name: payout-http
+    service: payout
+    port: 8093
+    protocol: https
+    transport: tcp
+    bind: 0.0.0.0
+    host_bind: 127.0.0.1:8093
+    tls: service-leaf
+    mtls: true
+    authentication: mTLS-and-admin-policy
+    exposure_class: PRIVATE_ADMIN
+    downstream_owner: K4 private route policy
+    sources: [docker-compose.yml, cmd/payout-service/main.go]
+  - name: payout-grpc
+    service: payout
+    port: 9093
+    protocol: grpc
+    transport: tcp
+    bind: 0.0.0.0
+    host_bind: 127.0.0.1:9093
+    tls: service-leaf
+    mtls: true
+    authentication: mTLS
+    exposure_class: INTERNAL_GRPC
+    downstream_owner: K3 service wiring and K5 NetworkPolicy
+    sources: [docker-compose.yml, cmd/payout-service/main.go]
+
+  - name: fraud-http
+    service: fraud
+    port: 8094
+    protocol: https
+    transport: tcp
+    bind: 0.0.0.0
+    host_bind: 127.0.0.1:8094
+    tls: service-leaf
+    mtls: true
+    authentication: mTLS-and-admin-policy
+    exposure_class: PRIVATE_ADMIN
+    downstream_owner: K4 private route policy
+    sources: [docker-compose.yml, cmd/fraud-service/main.go]
+  - name: fraud-grpc
+    service: fraud
+    port: 9094
+    protocol: grpc
+    transport: tcp
+    bind: 0.0.0.0
+    host_bind: 127.0.0.1:9094
+    tls: service-leaf
+    mtls: true
+    authentication: mTLS
+    exposure_class: INTERNAL_GRPC
+    downstream_owner: K3 service wiring and K5 NetworkPolicy
+    sources: [docker-compose.yml, cmd/fraud-service/main.go]
+
+  - name: admin-bff-http
+    service: admin-bff
+    port: 8095
+    protocol: https
+    transport: tcp
+    bind: 0.0.0.0
+    host_bind: 127.0.0.1:8095
+    tls: service-leaf
+    mtls: true
+    authentication: mTLS-and-admin-session
+    exposure_class: PRIVATE_ADMIN
+    downstream_owner: K4 private route policy
+    sources: [docker-compose.yml, cmd/admin-bff-service/main.go, internal/adminbff]
+
+  - name: assurance-http
+    service: assurance
+    port: 8096
+    protocol: https
+    transport: tcp
+    bind: 0.0.0.0
+    host_bind: 127.0.0.1:8096
+    tls: service-leaf
+    mtls: true
+    authentication: mTLS-and-admin-policy
+    exposure_class: PRIVATE_ADMIN
+    downstream_owner: K4 private route policy
+    sources: [docker-compose.yml, cmd/assurance-service/main.go]
+  - name: assurance-grpc
+    service: assurance
+    port: 9096
+    protocol: grpc
+    transport: tcp
+    bind: 0.0.0.0
+    host_bind: 127.0.0.1:9096
+    tls: service-leaf
+    mtls: true
+    authentication: mTLS
+    exposure_class: INTERNAL_GRPC
+    downstream_owner: K3 service wiring and K5 NetworkPolicy
+    sources: [docker-compose.yml, cmd/assurance-service/main.go]
+
+  - name: vendor-http
+    service: vendor
+    port: 8098
+    protocol: https
+    transport: tcp
+    bind: 0.0.0.0
+    host_bind: 127.0.0.1:8098
+    tls: service-leaf
+    mtls: true
+    authentication: callback-signature-or-mTLS
+    exposure_class: CALLBACK_EDGE
+    downstream_owner: K4 callback source-IP and signature policy
+    sources: [docker-compose.yml, cmd/vendor-service/main.go, internal/vendor]
+  - name: vendor-grpc
+    service: vendor
+    port: 9098
+    protocol: grpc
+    transport: tcp
+    bind: 0.0.0.0
+    host_bind: 127.0.0.1:9098
+    tls: service-leaf
+    mtls: true
+    authentication: mTLS
+    exposure_class: INTERNAL_GRPC
+    downstream_owner: K3 service wiring and K5 NetworkPolicy
+    sources: [docker-compose.yml, cmd/vendor-service/main.go]
+
+  - name: postgres
+    service: postgres
+    port: 5432
+    protocol: postgresql
+    transport: tcp
+    bind: 0.0.0.0
+    host_bind: 127.0.0.1:5433
+    tls: local-compose-default
+    mtls: false
+    authentication: database-role-and-password
+    exposure_class: DATA_PRIVATE
+    downstream_owner: K2 data dependency and K5 allowlist
+    sources: [docker-compose.yml, scripts/postgres-init]
+  - name: redis
+    service: redis
+    port: 6379
+    protocol: redis
+    transport: tcp
+    bind: 0.0.0.0
+    host_bind: 127.0.0.1:6380
+    tls: local-compose-default
+    mtls: false
+    authentication: optional-local-password
+    exposure_class: DATA_PRIVATE
+    downstream_owner: K2 data dependency and K5 allowlist
+    sources: [docker-compose.yml, internal/config]
+  - name: rabbitmq-amqp
+    service: rabbitmq
+    port: 5672
+    protocol: amqp
+    transport: tcp
+    bind: 0.0.0.0
+    host_bind: 127.0.0.1:5672
+    tls: local-compose-default
+    mtls: false
+    authentication: broker-user-and-password
+    exposure_class: DATA_PRIVATE
+    downstream_owner: K2 data dependency and K5 allowlist
+    sources: [docker-compose.yml, pkg/messaging]
+  - name: rabbitmq-management
+    service: rabbitmq
+    port: 15672
+    protocol: amqp-management
+    transport: tcp
+    bind: 0.0.0.0
+    host_bind: 127.0.0.1:15672
+    tls: local-compose-default
+    mtls: false
+    authentication: broker-management-credentials
+    exposure_class: LOCAL_TOOL_ONLY
+    downstream_owner: K0 evidence only; K5 must not expose
+    sources: [docker-compose.yml]
+  - name: squid-forward-proxy
+    service: squid
+    port: 3128
+    protocol: forward-proxy
+    transport: tcp
+    bind: 0.0.0.0
+    host_bind: 127.0.0.1:3128
+    tls: CONNECT-to-vendor
+    mtls: false
+    authentication: network-policy-and-destination-acl
+    exposure_class: INTERNAL_HTTP
+    downstream_owner: K6 proxy policy and K5 NetworkPolicy
+    sources: [deploy/kubernetes/squid, docker-compose.yml]

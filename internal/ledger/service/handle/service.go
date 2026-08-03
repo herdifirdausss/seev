@@ -37,6 +37,18 @@ type DatabaseSQL interface {
 	WithTx(ctx context.Context, opts *sql.TxOptions, fn func(tx *sql.Tx) error) error
 }
 
+// ProjectionWriter is the optional same-transaction sink used by an active
+// data migration. Keeping it local preserves the posting service's narrow
+// dependency boundary and leaves existing embedders source-compatible.
+type ProjectionWriter interface {
+	WriteForPosting(context.Context, *sql.Tx, []uuid.UUID, uuid.UUID) error
+	SourceWriteAllowed(context.Context) (bool, error)
+}
+
+type transactionalSourceWriteGuard interface {
+	SourceWriteAllowedTx(context.Context, *sql.Tx) (bool, error)
+}
+
 // =============================================================================
 // Service
 // =============================================================================
@@ -60,12 +72,14 @@ type Service struct {
 	// simply be ignored (no caller in this codebase does that: transport
 	// only sets QuoteID after this Service was constructed with a real
 	// feePolicy — see internal/ledger.NewModule).
-	feePolicy *feepolicy.Policy
+	feePolicy        *feepolicy.Policy
 	currencyValidator CurrencyValidator
+	projectionWriter ProjectionWriter
 }
 
 type CurrencyValidator interface {
 	ValidateCurrency(context.Context, string, string) error
+}
 }
 
 // New constructs the posting service. AML/fraud screening no longer runs
@@ -86,6 +100,10 @@ func New(db DatabaseSQL, txRepo repository.TransactionRepository,
 		currencyValidator = validators[0]
 	}
 	return &Service{db: db, txRepo: txRepo, balanceRepo: balanceRepo, entryRepo: entryRepo, outboxRepo: outboxRepo, registry: registry, logger: logger, maxAmountPerTx: maxAmountPerTx, feePolicy: feePolicy, currencyValidator: currencyValidator}
+}
+
+func (s *Service) SetProjectionV2Writer(writer ProjectionWriter) {
+	s.projectionWriter = writer
 }
 
 // lifecycleCloseReason maps a transaction type to the closed_reason it
@@ -437,6 +455,62 @@ func (s *Service) execTransfer(ctx context.Context, cmd processors.ResolvedComma
 				cmd.Metadata["fee_gateway"] = feeGateway
 			}
 
+			// C5 top-up quotes are consumed by Payin before provider collection,
+			// therefore they cannot use cmd.QuoteID's in-transaction consume
+			// path above. Re-validate the consumed snapshot here, inside the
+			// Ledger posting transaction, before any balance lock or entry write.
+			// This makes Ledger the final authority for principal, fee, route,
+			// currency, and payin linkage even though the provider callback
+			// arrives through a separate service.
+			if cmd.Type == "money_in" {
+				_, payinPresent := cmd.Metadata["payin_id"]
+				_, quotePresent := cmd.Metadata["fee_quote_id"]
+				if quotePresent {
+					if !payinPresent {
+						return apperror.NewBizErr(apperror.ErrQuoteMismatch, "top-up fee snapshot is missing payin_id")
+					}
+					payinID, payinErr := generalutil.MetaUUID(cmd.Metadata, "payin_id")
+					quoteID, quoteErr := generalutil.MetaUUID(cmd.Metadata, "fee_quote_id")
+					if payinErr != nil || quoteErr != nil {
+						return apperror.NewBizErr(apperror.ErrQuoteMismatch, "top-up fee snapshot must include valid payin_id and fee_quote_id")
+					}
+					fee, feeErr := generalutil.MetaDecimal(cmd.Metadata, "fee_amount")
+					if feeErr != nil || fee.IsNegative() || !fee.Equal(fee.Truncate(0)) {
+						return apperror.NewBizErr(apperror.ErrQuoteMismatch, "top-up fee snapshot has an invalid fee amount")
+					}
+					application, applicationErr := generalutil.MetaString(cmd.Metadata, "fee_application")
+					if applicationErr != nil || application != "added_on_top" {
+						return apperror.NewBizErr(apperror.ErrQuoteMismatch, "top-up fee snapshot must use added_on_top")
+					}
+					totalDebit, totalErr := generalutil.MetaDecimal(cmd.Metadata, "total_debit")
+					if totalErr != nil || !totalDebit.Equal(cmd.Amount.Add(fee)) {
+						return apperror.NewBizErr(apperror.ErrQuoteMismatch, "top-up total_debit does not match the quoted principal and fee")
+					}
+					feeGateway, _ := generalutil.MetaString(cmd.Metadata, "fee_gateway")
+					if fee.IsPositive() && feeGateway == "" {
+						return apperror.NewBizErr(apperror.ErrQuoteMismatch, "top-up fee snapshot has no fee gateway")
+					}
+					if s.feePolicy == nil {
+						return apperror.NewBizErr(apperror.ErrQuoteMismatch, "Ledger fee quote validation is unavailable")
+					}
+					if err := s.feePolicy.ValidateConsumedPayinQuote(ctx, tx, quoteID, cmd.UserID,
+						cmd.Type, gateway, cmd.Currency, cmd.Amount, fee, feeGateway,
+						"payin:"+payinID.String()); err != nil {
+						if errors.Is(err, feepolicy.ErrQuoteMismatch) || errors.Is(err, feepolicy.ErrQuoteExpired) {
+							return apperror.NewBizErr(apperror.ErrQuoteMismatch, "top-up fee quote settlement snapshot does not match")
+						}
+						return fmt.Errorf("validate consumed top-up fee quote: %w", err)
+					}
+				} else if payinPresent {
+					// Legacy fee-free intents predate C5 quote linkage. They may
+					// still carry payin_id for deterministic idempotency, but a
+					// positive fee without a quote is never accepted.
+					if fee, feeErr := generalutil.MetaDecimal(cmd.Metadata, "fee_amount"); feeErr == nil && fee.IsPositive() {
+						return apperror.NewBizErr(apperror.ErrQuoteMismatch, "top-up fee snapshot is missing fee_quote_id")
+					}
+				}
+			}
+
 			// Some processors have a coordination row that must be acquired
 			// before the generic account-balance phase. FX rebalance locks its
 			// position-limit row here, so its projected-balance check is
@@ -580,6 +654,25 @@ func (s *Service) execTransfer(ctx context.Context, cmd processors.ResolvedComma
 			userEntries, systemEntries := splitEntriesByAccount(entries, systemIDSet)
 			userNewBalances := applyEntries(userBalances, userEntries)
 
+			// A source-write-disabled cutover rejects the posting before any
+			// authoritative projection is mutated. The transaction wrapper then
+			// rolls back the idempotency header and all preceding work.
+			if s.projectionWriter != nil {
+				allowed := true
+				var allowErr error
+				if guard, ok := s.projectionWriter.(transactionalSourceWriteGuard); ok {
+					allowed, allowErr = guard.SourceWriteAllowedTx(ctx, tx)
+				} else {
+					allowed, allowErr = s.projectionWriter.SourceWriteAllowed(ctx)
+				}
+				if allowErr != nil {
+					return fmt.Errorf("check source write availability: %w", allowErr)
+				}
+				if !allowed {
+					return errors.New("ledger: source writes are disabled during migration")
+				}
+			}
+
 			// ── 7b. APPLY SYSTEM DELTAS (atomic, no lock needed) ──────────────
 			systemDeltas := computeSystemDeltas(systemEntries)
 			systemNewBalances, err := s.balanceRepo.ApplySystemDeltas(ctx, tx, systemDeltas)
@@ -604,6 +697,11 @@ func (s *Service) execTransfer(ctx context.Context, cmd processors.ResolvedComma
 			// stale `merged` snapshot, actively wrong).
 			if err := s.balanceRepo.UpdateBalances(ctx, tx, userNewBalances); err != nil {
 				return err
+			}
+			if s.projectionWriter != nil {
+				if err := s.projectionWriter.WriteForPosting(ctx, tx, cmd.AccountIDs, txID); err != nil {
+					return fmt.Errorf("write balance projection: %w", err)
+				}
 			}
 
 			// ── 10. MARK POSTED ───────────────────────────────────────────────

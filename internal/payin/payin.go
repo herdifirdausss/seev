@@ -147,6 +147,9 @@ func (m *Module) HandleVendorCallback(ctx context.Context, vendor, vendorEventID
 		if err != nil {
 			return "", fmt.Errorf("payin: lookup normalized callback intent: %w", err)
 		}
+		if found {
+			intent.NormalizeFinancials()
+		}
 		switch {
 		case !found:
 			unmatchedReason = "no matching payin intent"
@@ -156,11 +159,23 @@ func (m *Module) HandleVendorCallback(ctx context.Context, vendor, vendorEventID
 			unmatchedReason = fmt.Sprintf("payin intent is not pending: %s", intent.Status)
 		case !intent.ExpiresAt.After(time.Now()):
 			unmatchedReason = "payin intent expired"
-		case !intent.Amount.Equal(amount) || intent.Currency != currency:
+		case !intent.TotalDebit.Equal(amount) || intent.Currency != currency:
 			unmatchedReason = "callback amount or currency does not match payin intent"
 		default:
 			event.UserID = intent.UserID
 			event.MerchantTenantID = intent.MerchantTenantID
+			// Keep the immutable Ledger quote/settlement snapshot on the
+			// Payin webhook evidence row as well as on the intent. The legacy
+			// amount column remains the provider-collected total; the split is
+			// carried by the additive fee fields.
+			event.FeeAmount = intent.FeeAmount
+			event.TotalDebit = intent.TotalDebit
+			event.FeeGateway = intent.FeeGateway
+			event.FeeQuoteID = intent.FeeQuoteID
+			event.FeeRuleID = intent.FeeRuleID
+			event.FeeApplication = intent.FeeApplication
+			event.FeeQuoteConsumedAt = intent.FeeQuoteConsumedAt
+			event.FeeSnapshotVersion = intent.FeeSnapshotVersion
 		}
 	}
 
@@ -207,6 +222,52 @@ func (m *Module) HandleVendorCallback(ctx context.Context, vendor, vendorEventID
 // (admin-triggered retry) — identical logic either way.
 func (m *Module) postAndFinalize(ctx context.Context, ev model.WebhookEvent, gateway string) error {
 	isMerchant := ev.MerchantTenantID != uuid.Nil
+	principalAmount := ev.Amount
+	feeAmount := decimal.Zero
+	totalDebit := ev.Amount
+	feeGateway := ""
+	feeApplication := model.TopupFeeApplicationAddedOnTop
+	var payinID uuid.UUID
+	var feeQuoteID *uuid.UUID
+	// A retained webhook row is self-describing even when the original intent
+	// is no longer readable. Its legacy Amount column is the provider total;
+	// recover the principal from the additive C5 snapshot before attempting a
+	// replay. The intent path below remains authoritative whenever it exists.
+	if !ev.TotalDebit.IsZero() {
+		if ev.TotalDebit.IsNegative() || ev.FeeAmount.IsNegative() || ev.FeeAmount.GreaterThanOrEqual(ev.TotalDebit) {
+			return &businessError{err: fmt.Errorf("payin: invalid topup financial snapshot")}
+		}
+		totalDebit = ev.TotalDebit
+		feeAmount = ev.FeeAmount
+		principalAmount = totalDebit.Sub(feeAmount)
+		feeGateway = ev.FeeGateway
+		feeQuoteID = ev.FeeQuoteID
+		if ev.FeeApplication != "" {
+			feeApplication = ev.FeeApplication
+		}
+	}
+	if ev.ExternalRef != "" {
+		if intent, found, lookupErr := m.repo.GetTopupIntentByReference(ctx, ev.ExternalRef); lookupErr != nil {
+			return fmt.Errorf("payin: load topup financial snapshot: %w", lookupErr)
+		} else if found {
+			intent.NormalizeFinancials()
+			if !intent.TotalDebit.Equal(ev.Amount) || intent.Currency != ev.Currency {
+				return &businessError{err: fmt.Errorf("payin: settled amount no longer matches topup financial snapshot")}
+			}
+			principalAmount = intent.Amount
+			payinID = intent.ID
+			feeQuoteID = intent.FeeQuoteID
+			feeAmount = intent.FeeAmount
+			totalDebit = intent.TotalDebit
+			feeGateway = intent.FeeGateway
+			if intent.Gateway != "" {
+				gateway = intent.Gateway
+			}
+			if intent.FeeApplication != "" {
+				feeApplication = intent.FeeApplication
+			}
+		}
+	}
 	// Fraud screening is deliberately SKIPPED for merchant-owned events
 	// (Plan 57 T6 scope decision): fraudClient.Check is keyed on a single
 	// userID, and every merchant event's UserID is the zero sentinel — running
@@ -215,7 +276,9 @@ func (m *Module) postAndFinalize(ctx context.Context, ev model.WebhookEvent, gat
 	// missing nice-to-have. Merchant-specific fraud/velocity screening is
 	// out of scope for T6.
 	if m.fraudClient != nil && !isMerchant {
-		verdict, ferr := m.fraudClient.Check(ctx, "topup", "money_in", ev.UserID, ev.Amount, ev.Currency)
+		// C5's velocity policy measures the provider debit, not just the wallet
+		// principal. For legacy events these values are identical.
+		verdict, ferr := m.fraudClient.Check(ctx, "topup", "money_in", ev.UserID, totalDebit, ev.Currency)
 		if ferr != nil {
 			if errors.Is(ferr, fraudcheck.ErrDependencyUnavailable) {
 				// docs/roadmap/archive/45 Task T3/K4: fraud-service is reachable but
@@ -247,18 +310,41 @@ func (m *Module) postAndFinalize(ctx context.Context, ev model.WebhookEvent, gat
 		}
 	}
 
+	idempotencyKey := fmt.Sprintf("payin:%s:%s", ev.Vendor, ev.VendorEventID)
+	idempotencyScope := "payin:" + ev.Vendor
+	if payinID != uuid.Nil {
+		idempotencyKey = "payin:" + payinID.String()
+		idempotencyScope = "payin:" + payinID.String()
+	}
 	cmd := ledgerclient.Command{
-		IdempotencyKey:   fmt.Sprintf("payin:%s:%s", ev.Vendor, ev.VendorEventID),
-		IdempotencyScope: "payin:" + ev.Vendor,
+		IdempotencyKey:   idempotencyKey,
+		IdempotencyScope: idempotencyScope,
 		Type:             "money_in",
-		Amount:           ev.Amount,
+		Amount:           principalAmount,
 		UserID:           ev.UserID,
 		Currency:         ev.Currency,
 		Metadata: map[string]any{
 			"gateway":      gateway,
 			"external_ref": ev.ExternalRef,
 			"currency_inflight": true,
+			"provider_reference": ev.ExternalRef,
+			"currency":      ev.Currency,
+			"total_debit":  totalDebit.String(),
+			"fee_amount":   feeAmount.String(),
+			"fee_application": feeApplication,
 		},
+	}
+	if payinID != uuid.Nil {
+		cmd.Metadata["payin_id"] = payinID.String()
+	}
+	if feeQuoteID != nil {
+		cmd.Metadata["fee_quote_id"] = feeQuoteID.String()
+	}
+	if feeAmount.IsPositive() {
+		if feeGateway == "" {
+			return &businessError{err: fmt.Errorf("payin: topup fee snapshot has no fee gateway")}
+		}
+		cmd.Metadata["fee_gateway"] = feeGateway
 	}
 	if isMerchant {
 		// Plan 57 T6: the merchant-owned counterpart of money_in — same
@@ -267,12 +353,13 @@ func (m *Module) postAndFinalize(ctx context.Context, ev model.WebhookEvent, gat
 		// MerchantTenantID instead of UserID so the destination resolves
 		// to the tenant's own cash account, never a caller-supplied one.
 		cmd.Type = "merchant_payin_credit"
+		cmd.Amount = totalDebit
 		cmd.UserID = uuid.Nil
 		cmd.MerchantTenantID = ev.MerchantTenantID
 	}
 
 	postErr := m.poster.Post(ctx, cmd)
-	if postErr == nil {
+	if postErr == nil || isLedgerAlreadyPosted(postErr) {
 		// The ledger idempotency key above makes a redelivered request
 		// safe regardless of whether this UPDATE succeeds — money moves
 		// exactly once either way, so a failure here is logged, not
@@ -339,6 +426,11 @@ func IsBusinessFailure(err error) bool {
 func isBusinessFailure(err error) bool {
 	var bizErr *ledgererr.LedgerError
 	return errors.As(err, &bizErr)
+}
+
+func isLedgerAlreadyPosted(err error) bool {
+	var ledgerError *ledgererr.LedgerError
+	return errors.As(err, &ledgerError) && ledgerError.Code == "ALREADY_POSTED"
 }
 
 // ReplayEvent re-runs the post step for a received/failed event

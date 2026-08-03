@@ -23,6 +23,10 @@ type DatabaseSQL interface {
 	WithTx(ctx context.Context, opts *sql.TxOptions, fn func(tx *sql.Tx) error) error
 }
 
+type ProjectionWriter interface {
+	EnsureForAccount(context.Context, *sql.Tx, uuid.UUID) error
+}
+
 // standardAccountTypes are provisioned for every new user. Pocket accounts
 // are created on demand via CreatePocket, not here.
 var standardAccountTypes = []string{
@@ -35,12 +39,17 @@ var standardAccountTypes = []string{
 var pocketCodePattern = regexp.MustCompile(`^[a-z0-9_]{1,32}$`)
 
 type Service struct {
-	db   DatabaseSQL
-	repo repository.ProvisioningRepository
+	db               DatabaseSQL
+	repo             repository.ProvisioningRepository
+	projectionWriter ProjectionWriter
 }
 
 func New(db DatabaseSQL, repo repository.ProvisioningRepository) *Service {
 	return &Service{db: db, repo: repo}
+}
+
+func (s *Service) SetProjectionV2Writer(writer ProjectionWriter) {
+	s.projectionWriter = writer
 }
 
 // CreateUserAccounts provisions the standard account set (cash, hold,
@@ -71,6 +80,11 @@ func (s *Service) CreateUserAccounts(ctx context.Context, userID uuid.UUID, curr
 				return fmt.Errorf("provision %s account: %w", accType, err)
 			}
 			accounts = append(accounts, acc)
+			if s.projectionWriter != nil {
+				if err := s.projectionWriter.EnsureForAccount(ctx, tx, acc.ID); err != nil {
+					return fmt.Errorf("provision %s account projection: %w", accType, err)
+				}
+			}
 		}
 		return nil
 	})
@@ -107,6 +121,9 @@ func (s *Service) CreatePocket(ctx context.Context, userID uuid.UUID, currency, 
 			OwnerID: userID, Type: constant.AccountTypePocket, Currency: currency,
 			PocketCode: pocketCode, CreatedBy: "service:ledger-provision",
 		})
+		if err == nil && s.projectionWriter != nil {
+			err = s.projectionWriter.EnsureForAccount(ctx, tx, acc.ID)
+		}
 		return err
 	})
 	if err != nil {
@@ -154,6 +171,9 @@ func (s *Service) provisionMerchantAccountType(ctx context.Context, tenantID uui
 		acc, err = s.repo.UpsertMerchantAccount(ctx, tx, repository.UpsertMerchantAccountParams{
 			TenantID: tenantID, Type: accountType, Currency: currency, CreatedBy: "service:ledger-provision",
 		})
+		if err == nil && s.projectionWriter != nil {
+			err = s.projectionWriter.EnsureForAccount(ctx, tx, acc.ID)
+		}
 		return err
 	})
 	if err != nil {

@@ -1,0 +1,8 @@
+command: make verify-static
+captured: 2026-08-03T00:57:52Z
+result: BLOCKED (exit 2)
+
+go build -trimpath -ldflags="-s -w" ./...
+cmd/gateway/main.go:27:2: no required module provides package github.com/herdifirdausss/seev/internal/notify/channel/email
+cmd/gateway/main.go:28:2: no required module provides package github.com/herdifirdausss/seev/internal/notify/channel/push
+make: *** [verify-static] Error 1

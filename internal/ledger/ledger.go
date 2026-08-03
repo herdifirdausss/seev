@@ -11,6 +11,8 @@ package ledger
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -31,6 +33,7 @@ import (
 	"github.com/herdifirdausss/seev/internal/ledger/feepolicy"
 	"github.com/herdifirdausss/seev/internal/ledger/grpcserver"
 	"github.com/herdifirdausss/seev/internal/ledger/model"
+	"github.com/herdifirdausss/seev/internal/ledger/migration/balancev2"
 	"github.com/herdifirdausss/seev/internal/ledger/processors"
 	"github.com/herdifirdausss/seev/internal/ledger/repository"
 	"github.com/herdifirdausss/seev/internal/ledger/service/accrual"
@@ -40,11 +43,13 @@ import (
 	"github.com/herdifirdausss/seev/internal/ledger/service/dispute"
 	fxservice "github.com/herdifirdausss/seev/internal/ledger/service/fx"
 	ledgerhandle "github.com/herdifirdausss/seev/internal/ledger/service/handle"
+	interestservice "github.com/herdifirdausss/seev/internal/ledger/service/interest"
 	"github.com/herdifirdausss/seev/internal/ledger/service/provision"
 	"github.com/herdifirdausss/seev/internal/ledger/service/recon"
 	"github.com/herdifirdausss/seev/internal/ledger/service/schedule"
 	"github.com/herdifirdausss/seev/internal/ledger/transport"
 	"github.com/herdifirdausss/seev/internal/ledger/worker"
+	"github.com/herdifirdausss/seev/internal/migrationkit"
 	"github.com/herdifirdausss/seev/pkg/alerting"
 	"github.com/herdifirdausss/seev/pkg/cryptox"
 	"github.com/herdifirdausss/seev/pkg/currency"
@@ -88,6 +93,17 @@ type (
 	DisbursementRunResult   = model.DisbursementRunResult
 	// SavingsConfig marks an account as interest-bearing (docs/roadmap/archive/19 Task T3).
 	SavingsConfig = model.SavingsConfig
+	SavingsProduct = model.SavingsProduct
+	SavingsRateVersion = model.SavingsRateVersion
+	SavingsEnrollment = model.SavingsEnrollment
+	InterestPeriod = model.InterestPeriod
+	InterestDailyAccrual = model.InterestDailyAccrual
+	InterestCapitalizationItem = model.InterestCapitalizationItem
+	InterestAdjustment = model.InterestAdjustment
+	ScheduledOccurrence = model.ScheduledOccurrence
+	ScheduledExecutionAttempt = model.ScheduledExecutionAttempt
+	ScheduledPolicy = model.ScheduledPolicy
+	InterestPeriodPreview = interestservice.PeriodPreview
 	// ReportDailyPosition/ReportDailyMutation/ReportReconSummary back the
 	// regulatory reporting endpoints (docs/roadmap/archive/20 Task T2).
 	ReportDailyPosition = model.ReportDailyPosition
@@ -169,12 +185,17 @@ var ErrAccountNotFound = apperror.ErrAccountNotFound
 // module must not depend on the composition root's config type.
 type WorkerConfig struct {
 	Enabled            bool
+	// C5Enabled is an explicit activation switch for durable occurrences and
+	// monthly interest workers. The new tables and operator controls can be
+	// deployed before any product behavior is scheduled.
+	C5Enabled          bool
 	OutboxPollInterval time.Duration
 	OutboxBatchSize    int
 	// AlertWebhookURL, if non-empty, is POSTed to on every integrity
 	// discrepancy the verifier finds (docs/roadmap/archive/12 Task T4). Empty = no
 	// external alert, log+metric only (backward compatible default).
 	AlertWebhookURL string
+	BalanceV2       balancev2.Config
 }
 
 // Module is the public facade for the ledger module.
@@ -185,8 +206,10 @@ type Module struct {
 	adjustmentsSvc  *adjustments.Service
 	reconSvc        *recon.Service
 	scheduleSvc     *schedule.Service
+	durableScheduleSvc *schedule.DurableService
 	disbursementSvc *disbursement.Service
 	accrualSvc      *accrual.Service
+	interestSvc     *interestservice.Service
 	closureSvc      *closure.Service
 	disputeSvc      *dispute.Service
 	fxSvc           *fxservice.Service
@@ -199,8 +222,10 @@ type Module struct {
 	snapshotRepo     repository.SnapshotRepository
 	currencyRepo     repository.CurrencyRepository
 	scheduleRepo     repository.ScheduledTransactionRepository
+	scheduleOccurrenceRepo repository.ScheduledOccurrenceRepository
 	disbursementRepo repository.DisbursementRepository
 	savingsRepo      repository.SavingsRepository
+	c5InterestRepo   repository.C5InterestRepository
 	reportingRepo    repository.ReportingRepository
 	kycTierRepo      repository.KycTierRepository
 
@@ -213,9 +238,11 @@ type Module struct {
 	workerCfg       WorkerConfig
 	outboxRelay     *worker.OutboxRelay
 	verifier        *worker.Verifier
+	balanceV2       *balancev2.Runtime
 	snapshotJob     *worker.SnapshotJob
 	scheduleJob     *worker.ScheduleRunnerJob
 	accrualJob      *worker.AccrualJob
+	c5Job           *worker.C5FinancialProductJob
 	retentionRunner *retentionworker.Runner
 	retentionSched  *scheduler.Scheduler
 	// loc is Asia/Jakarta (or UTC as a load-failure fallback) — the single
@@ -276,8 +303,10 @@ func NewModule(db database.DatabaseSQL, broker messaging.Broker, redisClient *re
 	reconRepo := repository.NewReconRepository(db, cryptoxRing)
 	currencyRepo := repository.NewCurrencyRepository(db)
 	scheduleRepo := repository.NewScheduledTransactionRepository(db)
+	scheduleOccurrenceRepo := repository.NewScheduledOccurrenceRepository(db)
 	disbursementRepo := repository.NewDisbursementRepository(db)
 	savingsRepo := repository.NewSavingsRepository(db)
+	c5InterestRepo := repository.NewC5InterestRepository(db)
 	reportingRepo := repository.NewReportingRepository(db)
 	kycTierRepo := repository.NewKycTierRepository(db)
 	disputeRepo := repository.NewChargebackDisputeRepository(db)
@@ -299,10 +328,20 @@ func NewModule(db database.DatabaseSQL, broker messaging.Broker, redisClient *re
 	feeQuotePolicy := feepolicy.New(db, feeRepo)
 	fxSvc := fxservice.New(db, txRepo, balanceRepo, entryRepo, outboxRepo)
 	handleSvc := ledgerhandle.New(db, txRepo, balanceRepo, entryRepo, outboxRepo, registry, logger, maxAmountPerTx, feeQuotePolicy, fxSvc)
+	balanceV2Runtime := balancev2.NewRuntime(db, workerCfg.BalanceV2, logger)
+	handleSvc.SetProjectionV2Writer(balanceV2Runtime)
 	adjustmentsSvc := adjustments.New(db, adjRepo, txRepo, outboxRepo, handleSvc)
 	scheduleSvc := schedule.New(db, scheduleRepo, handleSvc, logger)
+	durableScheduleSvc := schedule.NewDurable(scheduleRepo, scheduleOccurrenceRepo, handleSvc, feeQuotePolicy, logger, loc)
+	durableScheduleSvc.SetDatabase(db)
+	durableScheduleSvc.SetOutbox(outboxRepo)
+	if workerCfg.C5Enabled {
+		scheduleSvc.SetDurable(durableScheduleSvc)
+	}
 	disbursementSvc := disbursement.New(db, disbursementRepo, txRepo, handleSvc)
 	accrualSvc := accrual.New(db, savingsRepo, snapshotRepo, handleSvc, logger)
+	interestSvc := interestservice.New(db, c5InterestRepo, snapshotRepo, handleSvc, logger, loc)
+	interestSvc.SetOutbox(outboxRepo)
 
 	m := &Module{
 		db:                db,
@@ -311,8 +350,10 @@ func NewModule(db database.DatabaseSQL, broker messaging.Broker, redisClient *re
 		adjustmentsSvc:    adjustmentsSvc,
 		reconSvc:          recon.New(db, reconRepo, adjustmentsSvc),
 		scheduleSvc:       scheduleSvc,
+		durableScheduleSvc: durableScheduleSvc,
 		disbursementSvc:   disbursementSvc,
 		accrualSvc:        accrualSvc,
+		interestSvc:       interestSvc,
 		closureSvc:        closure.New(db),
 		disputeSvc:        dispute.New(disputeRepo, txRepo),
 		fxSvc:             fxSvc,
@@ -324,8 +365,10 @@ func NewModule(db database.DatabaseSQL, broker messaging.Broker, redisClient *re
 		snapshotRepo:      snapshotRepo,
 		currencyRepo:      currencyRepo,
 		scheduleRepo:      scheduleRepo,
+		scheduleOccurrenceRepo: scheduleOccurrenceRepo,
 		disbursementRepo:  disbursementRepo,
 		savingsRepo:       savingsRepo,
+		c5InterestRepo:    c5InterestRepo,
 		reportingRepo:     reportingRepo,
 		kycTierRepo:       kycTierRepo,
 		broker:            broker,
@@ -333,7 +376,11 @@ func NewModule(db database.DatabaseSQL, broker messaging.Broker, redisClient *re
 		loc:               loc,
 		logger:            logger,
 		processorRegistry: registry,
+		balanceV2:         balanceV2Runtime,
 	}
+	interestSvc.SetTransactionLookup(m)
+	durableScheduleSvc.SetTransactionLookup(m)
+	m.provisionSvc.SetProjectionV2Writer(balanceV2Runtime)
 	m.policyChecker = policyChecker
 	m.feePolicy = feeQuotePolicy
 	m.router = transport.NewRouterWithFraud(m, policyChecker, m.feePolicy, fraudClient, logger, feeQuoteTTL)
@@ -361,6 +408,7 @@ func NewModule(db database.DatabaseSQL, broker messaging.Broker, redisClient *re
 	m.snapshotJob = worker.NewSnapshotJob(snapshotRepo, lock, logger, loc, alertFn)
 	m.scheduleJob = worker.NewScheduleRunnerJob(scheduleSvc, lock, logger, loc)
 	m.accrualJob = worker.NewAccrualJob(accrualSvc, lock, logger, loc)
+	m.c5Job = worker.NewC5FinancialProductJob(m, lock, logger, loc)
 
 	// docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T1: this module's own retention
 	// classes (config/data-retention.yaml). One dedicated scheduler, matching
@@ -455,6 +503,23 @@ func (m *Module) ConsumeFeeQuote(ctx context.Context, quoteID, userID uuid.UUID,
 	}
 }
 
+// ConsumeFeeQuoteWithGateway is the route-bound quote consumption seam used
+// by C5 top-up intents. It preserves the public error classification of
+// ConsumeFeeQuote while adding the provider gateway to the exact-match key.
+func (m *Module) ConsumeFeeQuoteWithGateway(ctx context.Context, quoteID, userID uuid.UUID, txType, gateway, currency string, amount decimal.Decimal, ref string) (fee decimal.Decimal, feeGateway string, err error) {
+	fee, feeGateway, err = m.feePolicy.ConsumeQuoteWithGatewayStandalone(ctx, quoteID, userID, txType, gateway, currency, amount, ref)
+	switch {
+	case err == nil:
+		return fee, feeGateway, nil
+	case errors.Is(err, feepolicy.ErrQuoteExpired):
+		return decimal.Zero, "", apperror.NewBizErr(apperror.ErrQuoteExpired, err.Error())
+	case errors.Is(err, feepolicy.ErrQuoteMismatch):
+		return decimal.Zero, "", apperror.NewBizErr(apperror.ErrQuoteMismatch, err.Error())
+	default:
+		return decimal.Zero, "", err
+	}
+}
+
 // ApplyKycTier upserts userID's effective policy_limits from the
 // policy_tier_limits template for kycLevel (docs/roadmap/archive/39 Task T5) — called
 // by auth-service's gRPC ApplyKycTier when a KYC submission is approved.
@@ -473,6 +538,225 @@ func (m *Module) ApplyKycTier(ctx context.Context, userID uuid.UUID, kycLevel in
 // expose this to untrusted networks (docs/roadmap/archive/10 Task T1).
 func (m *Module) InternalRouter() http.Handler {
 	return transport.NewInternalRouterWithFeePolicy(m, m.feePolicy)
+}
+
+// ListMigrations and the methods below back the typed internal migration
+// control plane. The HTTP package consumes them through a small optional
+// interface so ordinary Ledger service mocks do not inherit operator APIs.
+func (m *Module) ListMigrations(ctx context.Context) ([]balancev2.Migration, error) {
+	if err := m.ensureBalanceMigration(ctx); err != nil {
+		return nil, err
+	}
+	items, err := m.balanceV2.Controls().List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	filtered := make([]balancev2.Migration, 0, 1)
+	for _, item := range items {
+		if isBalanceMigration(item) {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered, nil
+}
+
+func (m *Module) GetMigration(ctx context.Context, id uuid.UUID) (balancev2.Migration, error) {
+	if err := m.ensureBalanceMigration(ctx); err != nil {
+		return balancev2.Migration{}, err
+	}
+	item, err := m.balanceV2.Controls().Get(ctx, id)
+	if err != nil {
+		return balancev2.Migration{}, err
+	}
+	if !isBalanceMigration(item) {
+		return balancev2.Migration{}, balancev2.ErrMigrationNotFound
+	}
+	return item, nil
+}
+
+func isBalanceMigration(item balancev2.Migration) bool {
+	return item.Name == balancev2.MigrationName && item.Resource == balancev2.Resource
+}
+
+func (m *Module) ensureBalanceMigration(ctx context.Context) error {
+	return m.balanceV2.Initialize(ctx, "service:ledger-admin")
+}
+
+func (m *Module) TransitionMigration(ctx context.Context, id uuid.UUID, to, actor, approver, reason string, expectedVersion int64) (balancev2.Migration, error) {
+	if err := m.ensureBalanceMigration(ctx); err != nil {
+		return balancev2.Migration{}, err
+	}
+	current, err := m.balanceV2.Controls().Get(ctx, id)
+	if err != nil {
+		return balancev2.Migration{}, err
+	}
+	if !isBalanceMigration(current) {
+		return balancev2.Migration{}, balancev2.ErrMigrationNotFound
+	}
+	gate := balancev2.GateSnapshot{Passed: true, FreshAt: time.Now().UTC(), Reason: "non-gated lifecycle transition"}
+	if migrationkit.RequiresGate(migrationkit.State(to)) {
+		gate, err = m.balanceV2.Controls().Gates(ctx, current)
+		if err != nil {
+			return balancev2.Migration{}, err
+		}
+	}
+	result, transitionErr := m.balanceV2.Controls().Transition(ctx, balancev2.TransitionRequest{
+		MigrationID: id, ToState: to, RequestedBy: actor, ApprovedBy: approver,
+		Reason: reason, ExpectedVersion: expectedVersion,
+	}, gate)
+	if transitionErr == nil {
+		m.balanceV2.Refresh()
+	}
+	return result, transitionErr
+}
+
+func (m *Module) SetMigrationReadPercentage(ctx context.Context, id uuid.UUID, percentage int, actor, approver, reason string, expectedVersion int64) (balancev2.Migration, error) {
+	if err := m.ensureBalanceMigration(ctx); err != nil {
+		return balancev2.Migration{}, err
+	}
+	migration, err := m.balanceV2.Controls().Get(ctx, id)
+	if err != nil {
+		return balancev2.Migration{}, err
+	}
+	if !isBalanceMigration(migration) {
+		return balancev2.Migration{}, balancev2.ErrMigrationNotFound
+	}
+	gate := balancev2.GateSnapshot{Passed: true, FreshAt: time.Now().UTC(), Reason: "read percentage unchanged"}
+	if percentage > migration.ReadPercentageBasisPoints {
+		gate, err = m.balanceV2.Controls().Gates(ctx, migration)
+		if err != nil {
+			return balancev2.Migration{}, err
+		}
+	}
+	result, setErr := m.balanceV2.Controls().SetReadPercentage(ctx, id, percentage, actor, approver, reason, expectedVersion, gate)
+	if setErr == nil {
+		m.balanceV2.Refresh()
+	}
+	return result, setErr
+}
+
+func (m *Module) SetMigrationDualWrite(ctx context.Context, id uuid.UUID, strict bool, actor, reason string, expectedVersion int64) (balancev2.Migration, error) {
+	if err := m.ensureBalanceMigration(ctx); err != nil {
+		return balancev2.Migration{}, err
+	}
+	current, err := m.balanceV2.Controls().Get(ctx, id)
+	if err != nil {
+		return balancev2.Migration{}, err
+	}
+	if !isBalanceMigration(current) {
+		return balancev2.Migration{}, balancev2.ErrMigrationNotFound
+	}
+	result, setErr := m.balanceV2.Controls().SetDualWrite(ctx, id, strict, actor, reason, expectedVersion)
+	if setErr == nil {
+		m.balanceV2.Refresh()
+	}
+	return result, setErr
+}
+
+func (m *Module) PauseMigration(ctx context.Context, id uuid.UUID, actor, reason string, expectedVersion int64) (balancev2.Migration, error) {
+	if err := m.ensureBalanceMigration(ctx); err != nil {
+		return balancev2.Migration{}, err
+	}
+	current, err := m.balanceV2.Controls().Get(ctx, id)
+	if err != nil {
+		return balancev2.Migration{}, err
+	}
+	if !isBalanceMigration(current) {
+		return balancev2.Migration{}, balancev2.ErrMigrationNotFound
+	}
+	result, pauseErr := m.balanceV2.Controls().Pause(ctx, id, actor, reason, expectedVersion)
+	if pauseErr == nil {
+		m.balanceV2.Refresh()
+	}
+	return result, pauseErr
+}
+
+func (m *Module) ResumeMigration(ctx context.Context, id uuid.UUID, actor, reason string, expectedVersion int64) (balancev2.Migration, error) {
+	if err := m.ensureBalanceMigration(ctx); err != nil {
+		return balancev2.Migration{}, err
+	}
+	current, err := m.balanceV2.Controls().Get(ctx, id)
+	if err != nil {
+		return balancev2.Migration{}, err
+	}
+	if !isBalanceMigration(current) {
+		return balancev2.Migration{}, balancev2.ErrMigrationNotFound
+	}
+	result, resumeErr := m.balanceV2.Controls().Resume(ctx, id, actor, reason, expectedVersion)
+	if resumeErr == nil {
+		m.balanceV2.Refresh()
+	}
+	return result, resumeErr
+}
+
+func (m *Module) ListMigrationMismatches(ctx context.Context, id uuid.UUID, status string, limit, offset int) ([]balancev2.Mismatch, error) {
+	if err := m.ensureBalanceMigration(ctx); err != nil {
+		return nil, err
+	}
+	migration, err := m.balanceV2.Controls().Get(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if !isBalanceMigration(migration) {
+		return nil, balancev2.ErrMigrationNotFound
+	}
+	return m.balanceV2.Controls().ListMismatches(ctx, id, status, limit, offset)
+}
+
+func (m *Module) RunMigrationPreCutoverReconciliation(ctx context.Context, id uuid.UUID, actor string, backupFresh bool) error {
+	if err := m.ensureBalanceMigration(ctx); err != nil {
+		return err
+	}
+	migration, err := m.balanceV2.Controls().Get(ctx, id)
+	if err != nil {
+		return err
+	}
+	if !isBalanceMigration(migration) {
+		return balancev2.ErrMigrationNotFound
+	}
+	return m.balanceV2.RunPreCutoverReconciliation(ctx, actor, backupFresh)
+}
+
+func (m *Module) RequestMigrationRepair(ctx context.Context, migrationID, mismatchID uuid.UUID, actor, reason string) (balancev2.Repair, error) {
+	if err := m.ensureBalanceMigration(ctx); err != nil {
+		return balancev2.Repair{}, err
+	}
+	mismatch, err := m.balanceV2.Controls().GetMismatch(ctx, mismatchID)
+	if err != nil {
+		return balancev2.Repair{}, err
+	}
+	if mismatch.MigrationID != migrationID {
+		return balancev2.Repair{}, balancev2.ErrMigrationNotFound
+	}
+	migration, err := m.balanceV2.Controls().Get(ctx, migrationID)
+	if err != nil {
+		return balancev2.Repair{}, err
+	}
+	if !isBalanceMigration(migration) {
+		return balancev2.Repair{}, balancev2.ErrMigrationNotFound
+	}
+	return m.balanceV2.RequestRepair(ctx, mismatchID, actor, reason)
+}
+
+func (m *Module) ApproveMigrationRepair(ctx context.Context, migrationID, repairID, accountID uuid.UUID, approver, reason string) (balancev2.Repair, error) {
+	if err := m.ensureBalanceMigration(ctx); err != nil {
+		return balancev2.Repair{}, err
+	}
+	repair, err := m.balanceV2.Controls().GetRepair(ctx, repairID)
+	if err != nil {
+		return balancev2.Repair{}, err
+	}
+	if repair.MigrationID != migrationID {
+		return balancev2.Repair{}, balancev2.ErrMigrationNotFound
+	}
+	migration, err := m.balanceV2.Controls().Get(ctx, migrationID)
+	if err != nil {
+		return balancev2.Repair{}, err
+	}
+	if !isBalanceMigration(migration) {
+		return balancev2.Repair{}, balancev2.ErrMigrationNotFound
+	}
+	return m.balanceV2.ApproveRepair(ctx, repairID, accountID, approver, reason)
 }
 
 // ClosureRouter returns docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T5/T4b's (K9, K10,
@@ -694,6 +978,12 @@ const ledgerEventsQueue = "ledger.events.audit"
 // relay and the integrity verifier. No-op if WorkerConfig.Enabled is false.
 // Call StopWorkers on shutdown.
 func (m *Module) StartWorkers(ctx context.Context) {
+	if m.balanceV2 != nil && m.workerCfg.BalanceV2.Enabled {
+		if err := m.balanceV2.Initialize(ctx, "service:ledger"); err != nil {
+			m.logger.Error("ledger: failed to initialize balance migration reference", slog.Any("error", err))
+		}
+		m.balanceV2.Start(ctx)
+	}
 	if !m.workerCfg.Enabled {
 		m.logger.Info("ledger: workers disabled (WORKER_ENABLED=false)")
 		return
@@ -717,6 +1007,11 @@ func (m *Module) StartWorkers(ctx context.Context) {
 	if err := m.accrualJob.Start(ctx); err != nil {
 		m.logger.Error("ledger: failed to start interest accrual job", slog.Any("error", err))
 	}
+	if m.workerCfg.C5Enabled {
+		if err := m.c5Job.Start(ctx); err != nil {
+			m.logger.Error("ledger: failed to start C5 financial product job", slog.Any("error", err))
+		}
+	}
 	if err := m.retentionRunner.Start(m.retentionSched); err != nil {
 		m.logger.Error("ledger: failed to start data retention job", slog.Any("error", err))
 	}
@@ -726,6 +1021,9 @@ func (m *Module) StartWorkers(ctx context.Context) {
 // any in-flight batch/check to finish. Safe to call even if StartWorkers was
 // never called or workers were disabled.
 func (m *Module) StopWorkers() {
+	if m.balanceV2 != nil {
+		m.balanceV2.Stop()
+	}
 	if !m.workerCfg.Enabled {
 		return
 	}
@@ -734,6 +1032,9 @@ func (m *Module) StopWorkers() {
 	m.snapshotJob.Stop()
 	m.scheduleJob.Stop()
 	m.accrualJob.Stop()
+	if m.workerCfg.C5Enabled {
+		m.c5Job.Stop()
+	}
 	m.retentionSched.Stop()
 }
 
@@ -782,6 +1083,9 @@ func (m *Module) GetUserCurrency(ctx context.Context, userID uuid.UUID, pocketCo
 
 // GetBalance returns the current balance for an account.
 func (m *Module) GetBalance(ctx context.Context, accountID uuid.UUID) (Balance, error) {
+	if m.balanceV2 != nil {
+		return m.balanceV2.ReadBalance(ctx, accountID, m.balanceRepo.GetBalance)
+	}
 	return m.balanceRepo.GetBalance(ctx, accountID)
 }
 
@@ -792,7 +1096,7 @@ func (m *Module) GetBalance(ctx context.Context, accountID uuid.UUID) (Balance, 
 // Currency/status/type/allow_negative always reflect the CURRENT account
 // state — only Balance is historical.
 func (m *Module) GetBalanceAsOf(ctx context.Context, accountID uuid.UUID, asOf time.Time) (Balance, error) {
-	current, err := m.balanceRepo.GetBalance(ctx, accountID)
+	current, err := m.GetBalance(ctx, accountID)
 	if err != nil {
 		return Balance{}, err
 	}
@@ -817,7 +1121,7 @@ const maxStatementEntries = 5000
 // GetBalanceAsOf(from - 1 day), never a full replay of the account's entire
 // history.
 func (m *Module) Statement(ctx context.Context, accountID uuid.UUID, from, to time.Time) (Statement, error) {
-	bal, err := m.balanceRepo.GetBalance(ctx, accountID)
+	bal, err := m.GetBalance(ctx, accountID)
 	if err != nil {
 		return Statement{}, err
 	}
@@ -902,7 +1206,7 @@ func (m *Module) GetMerchantAccount(ctx context.Context, tenantID uuid.UUID) (Ba
 	if err != nil {
 		return Balance{}, err
 	}
-	return m.balanceRepo.GetBalance(ctx, accountID)
+	return m.GetBalance(ctx, accountID)
 }
 
 // ListMerchantTransactions returns tenantID's own transactions (as either
@@ -1178,6 +1482,15 @@ func (m *Module) CreateScheduleWithCurrency(
 	return m.scheduleSvc.CreateWithCurrency(ctx, userID, txType, amount, targetUserID, pocketCode, metadata, kind, runAtDate, dayOfMonth, createdBy, requestedCurrency)
 }
 
+func (m *Module) CreateScheduleWithPolicy(
+	ctx context.Context, userID uuid.UUID, txType string, amount decimal.Decimal,
+	targetUserID uuid.UUID, pocketCode string, metadata map[string]any,
+	kind string, runAtDate time.Time, dayOfMonth *int, createdBy string,
+	policy ScheduledPolicy, currency, timezone, localTime string,
+) (uuid.UUID, error) {
+	return m.scheduleSvc.CreateWithPolicy(ctx, userID, txType, amount, targetUserID, pocketCode, metadata, kind, runAtDate, dayOfMonth, createdBy, policy, currency, timezone, localTime)
+}
+
 // ListSchedules returns userID's own scheduled transactions.
 func (m *Module) ListSchedules(ctx context.Context, userID uuid.UUID) ([]ScheduledTransaction, error) {
 	return m.scheduleSvc.List(ctx, userID)
@@ -1202,6 +1515,39 @@ func (m *Module) CancelSchedule(ctx context.Context, id, userID uuid.UUID) error
 // endpoint (docs/roadmap/archive/19 Task T1 step 5).
 func (m *Module) RunSchedulesNow(ctx context.Context, asOf time.Time) (executed, failed int, err error) {
 	return m.scheduleJob.RunNow(ctx, asOf)
+}
+
+// PlanScheduledOccurrences materializes C5 schedule occurrences for a
+// calendar cutoff without executing them.
+func (m *Module) PlanScheduledOccurrences(ctx context.Context, scheduleID uuid.UUID, asOf time.Time) ([]ScheduledOccurrence, error) {
+	return m.durableScheduleSvc.PlanSchedule(ctx, scheduleID, asOf)
+}
+
+// ExecuteScheduledOccurrence runs one durable occurrence through the normal
+// Ledger posting core. The boolean is false when another worker already owns
+// or completed the occurrence.
+func (m *Module) ExecuteScheduledOccurrence(ctx context.Context, occurrenceID uuid.UUID, owner string) (bool, error) {
+	return m.durableScheduleSvc.ExecuteOccurrence(ctx, occurrenceID, owner)
+}
+
+func (m *Module) ListScheduledOccurrences(ctx context.Context, scheduleID, userID uuid.UUID, limit, offset int) ([]ScheduledOccurrence, error) {
+	return m.durableScheduleSvc.ListOccurrences(ctx, scheduleID, userID, limit, offset)
+}
+
+func (m *Module) GetScheduledOccurrence(ctx context.Context, occurrenceID, userID uuid.UUID) (ScheduledOccurrence, error) {
+	return m.durableScheduleSvc.GetOccurrence(ctx, occurrenceID, userID)
+}
+
+func (m *Module) ListScheduledExecutionAttempts(ctx context.Context, occurrenceID uuid.UUID) ([]ScheduledExecutionAttempt, error) {
+	return m.scheduleOccurrenceRepo.ListAttempts(ctx, occurrenceID)
+}
+
+func (m *Module) RetryScheduledOccurrence(ctx context.Context, occurrenceID uuid.UUID) error {
+	return m.durableScheduleSvc.RetryOccurrence(ctx, occurrenceID)
+}
+
+func (m *Module) ConfirmScheduledFeeCap(ctx context.Context, scheduleID, userID uuid.UUID, maxFeeAmount int64) error {
+	return m.durableScheduleSvc.ConfirmFeeCap(ctx, scheduleID, userID, maxFeeAmount)
 }
 
 // ImportDisbursementBatch validates and persists a new batch — it does NOT
@@ -1267,6 +1613,314 @@ func (m *Module) SetSavingsConfig(ctx context.Context, accountID uuid.UUID, annu
 // ListSavingsConfigs returns every registered savings account (enabled or not).
 func (m *Module) ListSavingsConfigs(ctx context.Context) ([]SavingsConfig, error) {
 	return m.accrualSvc.ListConfigs(ctx)
+}
+
+// C5 savings-product and period-close facade. These operations remain on
+// LedgerService; no separate financial-product application service is created.
+func (m *Module) CreateSavingsProduct(ctx context.Context, product SavingsProduct) (SavingsProduct, error) {
+	if product.Currency == "" || product.ProductCode == "" || product.Name == "" || product.CreatedBy == "" {
+		return SavingsProduct{}, fmt.Errorf("%w: product code, name, currency, and created_by are required", apperror.ErrValidation)
+	}
+	if product.Status != "" && product.Status != model.SavingsProductDraft {
+		return SavingsProduct{}, fmt.Errorf("%w: savings products must be created in draft status", apperror.ErrValidation)
+	}
+	product.Status = model.SavingsProductDraft
+	if !currency.IsValid(product.Currency) {
+		return SavingsProduct{}, fmt.Errorf("%w: unsupported savings product currency", apperror.ErrValidation)
+	}
+	if len(product.EligibleAccountTypes) > 0 {
+		for _, accountType := range product.EligibleAccountTypes {
+			if accountType != constant.AccountTypeCash && accountType != constant.AccountTypePocket {
+				return SavingsProduct{}, fmt.Errorf("%w: unsupported savings eligible account type %q", apperror.ErrValidation, accountType)
+			}
+		}
+	}
+	if product.InterestExpenseAccountID == uuid.Nil || product.InterestPayableAccountID == uuid.Nil {
+		return SavingsProduct{}, fmt.Errorf("%w: product system accounts are required", apperror.ErrValidation)
+	}
+	expectedExpense, err := m.accountRepo.GetSystemAccountID(ctx, constant.AccountTypeInterestExpense, "", product.Currency)
+	if err != nil {
+		return SavingsProduct{}, fmt.Errorf("%w: interest expense account is unavailable: %v", apperror.ErrValidation, err)
+	}
+	expectedPayable, err := m.accountRepo.GetSystemAccountID(ctx, constant.AccountTypeAccruedInterestPayable, "", product.Currency)
+	if err != nil {
+		return SavingsProduct{}, fmt.Errorf("%w: accrued interest payable account is unavailable: %v", apperror.ErrValidation, err)
+	}
+	if product.InterestExpenseAccountID != expectedExpense || product.InterestPayableAccountID != expectedPayable {
+		return SavingsProduct{}, fmt.Errorf("%w: savings system accounts must match the product currency", apperror.ErrValidation)
+	}
+	if product.Timezone != "" {
+		if _, err := time.LoadLocation(product.Timezone); err != nil {
+			return SavingsProduct{}, fmt.Errorf("%w: invalid savings product timezone", apperror.ErrValidation)
+		}
+	}
+	return m.c5InterestRepo.CreateProduct(ctx, product)
+}
+
+func (m *Module) GetSavingsProduct(ctx context.Context, id uuid.UUID) (SavingsProduct, error) {
+	return m.c5InterestRepo.GetProduct(ctx, id)
+}
+
+func (m *Module) ListSavingsProducts(ctx context.Context, status string) ([]SavingsProduct, error) {
+	return m.c5InterestRepo.ListProducts(ctx, status)
+}
+
+func (m *Module) SetSavingsProductStatus(ctx context.Context, id uuid.UUID, status, checker string) (SavingsProduct, error) {
+	if checker == "" {
+		return SavingsProduct{}, fmt.Errorf("%w: product checker is required", apperror.ErrValidation)
+	}
+	product, err := m.c5InterestRepo.GetProduct(ctx, id)
+	if err != nil {
+		return SavingsProduct{}, err
+	}
+	if product.CreatedBy == checker {
+		return SavingsProduct{}, fmt.Errorf("%w: product maker and checker must differ", apperror.ErrValidation)
+	}
+	validTransition := (status == model.SavingsProductActive && (product.Status == model.SavingsProductDraft || product.Status == model.SavingsProductIntakePaused)) ||
+		(status == model.SavingsProductIntakePaused && product.Status == model.SavingsProductActive) ||
+		(status == model.SavingsProductRetired && (product.Status == model.SavingsProductActive || product.Status == model.SavingsProductIntakePaused))
+	if !validTransition {
+		return SavingsProduct{}, fmt.Errorf("%w: invalid savings product status transition", apperror.ErrValidation)
+	}
+	if err := m.c5InterestRepo.UpdateProductStatus(ctx, id, status, checker); err != nil {
+		return SavingsProduct{}, err
+	}
+	return m.c5InterestRepo.GetProduct(ctx, id)
+}
+
+func (m *Module) CreateSavingsRate(ctx context.Context, rate SavingsRateVersion) (SavingsRateVersion, error) {
+	if rate.CreatedBy == "" || rate.ProductID == uuid.Nil || rate.AnnualRateBps < 0 || rate.AnnualRateBps > 2000 {
+		return SavingsRateVersion{}, fmt.Errorf("%w: invalid savings rate", apperror.ErrValidation)
+	}
+	if rate.Status != "" && rate.Status != "draft" {
+		return SavingsRateVersion{}, fmt.Errorf("%w: savings rate must be created in draft status", apperror.ErrValidation)
+	}
+	rate.Status = "draft"
+	if rate.EffectiveFrom.IsZero() || (rate.EffectiveUntil != nil && !rate.EffectiveUntil.After(rate.EffectiveFrom)) {
+		return SavingsRateVersion{}, fmt.Errorf("%w: invalid savings rate effective window", apperror.ErrValidation)
+	}
+	if len(rate.ContentHash) == 0 {
+		until := ""
+		if rate.EffectiveUntil != nil {
+			until = rate.EffectiveUntil.Format("2006-01-02")
+		}
+		terms, _ := json.Marshal(struct {
+			ProductID       string `json:"product_id"`
+			AnnualRateBPS   int    `json:"annual_rate_bps"`
+			EffectiveFrom   string `json:"effective_from"`
+			EffectiveUntil   string `json:"effective_until,omitempty"`
+		}{
+			ProductID:     rate.ProductID.String(),
+			AnnualRateBPS: rate.AnnualRateBps,
+			EffectiveFrom: rate.EffectiveFrom.Format("2006-01-02"),
+			EffectiveUntil: until,
+		})
+		digest := sha256.Sum256(terms)
+		rate.ContentHash = digest[:]
+	}
+	return m.c5InterestRepo.CreateRate(ctx, rate)
+}
+
+func (m *Module) SubmitSavingsRate(ctx context.Context, id uuid.UUID, maker string) error {
+	if maker == "" {
+		return fmt.Errorf("%w: rate maker is required", apperror.ErrValidation)
+	}
+	return m.c5InterestRepo.SubmitRate(ctx, id, maker)
+}
+
+func (m *Module) ApproveSavingsRate(ctx context.Context, id uuid.UUID, checker string) error {
+	if checker == "" {
+		return fmt.Errorf("%w: rate checker is required", apperror.ErrValidation)
+	}
+	return m.c5InterestRepo.ApproveRate(ctx, id, checker)
+}
+
+func (m *Module) RejectSavingsRate(ctx context.Context, id uuid.UUID, checker, reason string) error {
+	if checker == "" {
+		return fmt.Errorf("%w: rate checker is required", apperror.ErrValidation)
+	}
+	return m.c5InterestRepo.RejectRate(ctx, id, checker, reason)
+}
+
+func (m *Module) EnrollSavingsAccount(ctx context.Context, enrollment SavingsEnrollment) (SavingsEnrollment, error) {
+	if enrollment.ProductID == uuid.Nil || enrollment.AccountID == uuid.Nil || enrollment.UserID == uuid.Nil || enrollment.CreatedBy == "" {
+		return SavingsEnrollment{}, fmt.Errorf("%w: product, account, user, and created_by are required", apperror.ErrValidation)
+	}
+	product, err := m.c5InterestRepo.GetProduct(ctx, enrollment.ProductID)
+	if err != nil {
+		return SavingsEnrollment{}, err
+	}
+	if product.Status != model.SavingsProductActive {
+		return SavingsEnrollment{}, fmt.Errorf("%w: savings product is not active", apperror.ErrValidation)
+	}
+	if enrollment.EffectiveFrom.IsZero() {
+		return SavingsEnrollment{}, fmt.Errorf("%w: enrollment effective_from is required", apperror.ErrValidation)
+	}
+	if enrollment.EffectiveUntil != nil && !enrollment.EffectiveUntil.After(enrollment.EffectiveFrom) {
+		return SavingsEnrollment{}, fmt.Errorf("%w: invalid enrollment effective window", apperror.ErrValidation)
+	}
+	var accountType, accountCurrency string
+	if err := m.db.QueryRowContext(ctx, `SELECT type, currency FROM accounts
+		WHERE id=$1 AND owner_type='user' AND owner_id=$2 AND status='active'`, enrollment.AccountID, enrollment.UserID).
+		Scan(&accountType, &accountCurrency); err != nil {
+		return SavingsEnrollment{}, fmt.Errorf("%w: savings account is unavailable or not owned by user", apperror.ErrValidation)
+	}
+	if accountCurrency != product.Currency || !slices.Contains(product.EligibleAccountTypes, accountType) {
+		return SavingsEnrollment{}, fmt.Errorf("%w: savings account is not eligible for product", apperror.ErrValidation)
+	}
+	if enrollment.Status == "" {
+		enrollment.Status = model.SavingsEnrollmentActive
+	}
+	if enrollment.Status != model.SavingsEnrollmentPending && enrollment.Status != model.SavingsEnrollmentActive {
+		return SavingsEnrollment{}, fmt.Errorf("%w: enrollment must be created as pending or active", apperror.ErrValidation)
+	}
+	if enrollment.Mode == "" {
+		enrollment.Mode = "monthly_liability_capitalization"
+	}
+	if enrollment.Mode != "monthly_liability_capitalization" {
+		return SavingsEnrollment{}, fmt.Errorf("%w: C5 enrollment mode must be monthly_liability_capitalization", apperror.ErrValidation)
+	}
+	if enrollment.UpdatedBy == "" {
+		enrollment.UpdatedBy = enrollment.CreatedBy
+	}
+	return m.c5InterestRepo.CreateEnrollment(ctx, enrollment)
+}
+
+func (m *Module) GetSavingsEnrollment(ctx context.Context, id uuid.UUID) (SavingsEnrollment, error) {
+	return m.c5InterestRepo.GetEnrollment(ctx, id)
+}
+
+func (m *Module) ListSavingsEnrollments(ctx context.Context, userID uuid.UUID) ([]SavingsEnrollment, error) {
+	return m.c5InterestRepo.ListEnrollments(ctx, userID)
+}
+
+func (m *Module) ListInterestAccruals(ctx context.Context, enrollmentID uuid.UUID) ([]InterestDailyAccrual, error) {
+	return m.c5InterestRepo.ListEnrollmentAccruals(ctx, enrollmentID)
+}
+
+func (m *Module) ListInterestPeriods(ctx context.Context, enrollmentID uuid.UUID) ([]InterestPeriod, error) {
+	return m.c5InterestRepo.ListEnrollmentPeriods(ctx, enrollmentID)
+}
+
+func (m *Module) ListInterestCapitalizations(ctx context.Context, enrollmentID uuid.UUID) ([]InterestCapitalizationItem, error) {
+	return m.c5InterestRepo.ListEnrollmentCapitalizations(ctx, enrollmentID)
+}
+
+func (m *Module) RunInterestDaily(ctx context.Context, date time.Time) interestservice.DailyRunSummary {
+	if snapshotter, ok := m.snapshotRepo.(interface {
+		InsertForDateAllAccounts(context.Context, time.Time) (int, error)
+	}); ok {
+		if _, err := snapshotter.InsertForDateAllAccounts(ctx, date); err != nil {
+			m.logger.Error("c5: complete closing snapshot failed", slog.Any("error", err), slog.String("date", date.Format("2006-01-02")))
+		}
+	}
+	return m.interestSvc.RunDaily(ctx, date)
+}
+
+func (m *Module) RunInterestPeriodCloseDue(ctx context.Context, now time.Time, actor string) (closed, failed int, err error) {
+	return m.interestSvc.CloseDuePeriods(ctx, now, actor)
+}
+
+func (m *Module) GetInterestPeriod(ctx context.Context, id uuid.UUID) (InterestPeriod, error) {
+	return m.c5InterestRepo.GetPeriod(ctx, id)
+}
+
+func (m *Module) PreviewInterestPeriodClose(ctx context.Context, id uuid.UUID) (interestservice.PeriodPreview, error) {
+	return m.interestSvc.PreviewPeriodClose(ctx, id)
+}
+
+func (m *Module) RunInterestPeriodClose(ctx context.Context, id uuid.UUID, actor string) error {
+	return m.interestSvc.ClosePeriod(ctx, id, actor)
+}
+
+func (m *Module) updateSavingsEnrollmentStatus(ctx context.Context, id uuid.UUID, status, checker string, effectiveUntil *time.Time) error {
+	if checker == "" {
+		return fmt.Errorf("%w: enrollment checker is required", apperror.ErrValidation)
+	}
+	enrollment, err := m.c5InterestRepo.GetEnrollment(ctx, id)
+	if err != nil {
+		return err
+	}
+	if enrollment.CreatedBy == checker {
+		return fmt.Errorf("%w: enrollment maker and checker must differ", apperror.ErrValidation)
+	}
+	validTransition := (status == model.SavingsEnrollmentAccrualPaused && enrollment.Status == model.SavingsEnrollmentActive) ||
+		(status == model.SavingsEnrollmentActive && enrollment.Status == model.SavingsEnrollmentAccrualPaused) ||
+		(status == model.SavingsEnrollmentEnded && (enrollment.Status == model.SavingsEnrollmentActive || enrollment.Status == model.SavingsEnrollmentAccrualPaused))
+	if !validTransition {
+		return fmt.Errorf("%w: invalid savings enrollment status transition", apperror.ErrValidation)
+	}
+	if status == model.SavingsEnrollmentEnded {
+		if effectiveUntil == nil || !effectiveUntil.After(enrollment.EffectiveFrom) {
+			return fmt.Errorf("%w: enrollment end must be after effective_from", apperror.ErrValidation)
+		}
+	}
+	product, err := m.c5InterestRepo.GetProduct(ctx, enrollment.ProductID)
+	if err != nil {
+		return err
+	}
+	loc, err := time.LoadLocation(product.Timezone)
+	if err != nil {
+		return fmt.Errorf("%w: invalid savings product timezone", apperror.ErrValidation)
+	}
+	now := time.Now().In(loc)
+	effectiveFrom := time.Date(now.Year(), now.Month(), now.Day()+1, 0, 0, 0, 0, loc)
+	if status == model.SavingsEnrollmentEnded && effectiveUntil != nil {
+		effectiveFrom = *effectiveUntil
+	}
+	if updater, ok := m.c5InterestRepo.(interface {
+		UpdateEnrollmentStatusWithEffectiveDate(context.Context, uuid.UUID, string, string, *time.Time, *time.Time) error
+	}); ok {
+		return updater.UpdateEnrollmentStatusWithEffectiveDate(ctx, id, status, checker, &effectiveFrom, effectiveUntil)
+	}
+	updater, ok := m.c5InterestRepo.(interface {
+		UpdateEnrollmentStatus(context.Context, uuid.UUID, string, string, *time.Time) error
+	})
+	if !ok {
+		return fmt.Errorf("%w: savings enrollment lifecycle is unavailable", apperror.ErrValidation)
+	}
+	return updater.UpdateEnrollmentStatus(ctx, id, status, checker, effectiveUntil)
+}
+
+func (m *Module) PauseSavingsEnrollment(ctx context.Context, id uuid.UUID, checker string) error {
+	return m.updateSavingsEnrollmentStatus(ctx, id, model.SavingsEnrollmentAccrualPaused, checker, nil)
+}
+
+func (m *Module) ResumeSavingsEnrollment(ctx context.Context, id uuid.UUID, checker string) error {
+	return m.updateSavingsEnrollmentStatus(ctx, id, model.SavingsEnrollmentActive, checker, nil)
+}
+
+func (m *Module) EndSavingsEnrollment(ctx context.Context, id uuid.UUID, checker string) error {
+	enrollment, err := m.c5InterestRepo.GetEnrollment(ctx, id)
+	if err != nil {
+		return err
+	}
+	product, err := m.c5InterestRepo.GetProduct(ctx, enrollment.ProductID)
+	if err != nil {
+		return err
+	}
+	loc, err := time.LoadLocation(product.Timezone)
+	if err != nil {
+		return fmt.Errorf("%w: invalid savings product timezone", apperror.ErrValidation)
+	}
+	now := time.Now().In(loc)
+	effectiveUntil := time.Date(now.Year(), now.Month(), now.Day()+1, 0, 0, 0, 0, loc)
+	return m.updateSavingsEnrollmentStatus(ctx, id, model.SavingsEnrollmentEnded, checker, &effectiveUntil)
+}
+
+func (m *Module) RetryInterestPeriodItem(ctx context.Context, id uuid.UUID) error {
+	return m.interestSvc.RetryPeriodItem(ctx, id)
+}
+
+func (m *Module) CreateInterestAdjustment(ctx context.Context, adjustment InterestAdjustment) (InterestAdjustment, error) {
+	if adjustment.CreatedBy == "" || adjustment.Reason == "" || adjustment.Amount <= 0 {
+		return InterestAdjustment{}, fmt.Errorf("%w: adjustment reason, amount, and creator are required", apperror.ErrValidation)
+	}
+	return m.interestSvc.CreateAdjustment(ctx, adjustment)
+}
+
+func (m *Module) ApproveInterestAdjustment(ctx context.Context, id uuid.UUID, checker string) error {
+	return m.interestSvc.ApproveAdjustment(ctx, id, checker)
 }
 
 // GetDailyPositionReport/GetDailyMutationReport/GetReconSummaryReport read

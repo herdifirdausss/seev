@@ -1,0 +1,16 @@
+{{- range $name, $spec := .Values.services }}
+{{- if and $spec.enabled (gt (int $spec.replicas) 1) }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ $name }}-service
+  namespace: {{ $.Values.global.appNamespace }}
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/part-of: seev
+      seev.io/service: {{ $name }}
+---
+{{- end }}
+{{- end }}

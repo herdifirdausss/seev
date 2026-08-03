@@ -37,6 +37,11 @@ const getFeeQuoteQuery = `
 	FROM fee_quotes
 	WHERE id = $1 AND user_id = $2 AND consumed_at IS NULL AND expires_at > now()`
 
+const getFeeQuoteWithGatewayQuery = `
+	SELECT amount, fee_amount, fee_gateway, gateway
+	FROM fee_quotes
+	WHERE id = $1 AND user_id = $2 AND consumed_at IS NULL AND expires_at > now()`
+
 // tryConsumeFeeQuoteQuery atomically marks a quote consumed ONLY when every
 // quoted dimension matches the request exactly (transaction_type, currency,
 // amount) — a mismatched attempt affects 0 rows rather than silently
@@ -44,9 +49,41 @@ const getFeeQuoteQuery = `
 // the same quote_id are serialized by Postgres' own row lock — exactly one
 // affects a row.
 const tryConsumeFeeQuoteQuery = `
-	UPDATE fee_quotes SET consumed_at = now(), consumed_by_ref = $6
-	WHERE id = $1 AND user_id = $2 AND consumed_at IS NULL AND expires_at > now()
+	UPDATE fee_quotes SET consumed_at = COALESCE(consumed_at, now()), consumed_by_ref = $6,
+		consumed_by_type = CASE
+			WHEN $6 LIKE 'payin:%' THEN 'payin'
+			WHEN $6 LIKE 'payout:%' THEN 'payout'
+			WHEN $6 LIKE 'tx:%' THEN 'transaction'
+			ELSE 'legacy'
+		END
+	WHERE id = $1 AND user_id = $2
 	  AND transaction_type = $3 AND currency = $4 AND amount = $5
+	  AND ((consumed_at IS NULL AND expires_at > now()) OR (
+		consumed_by_type = CASE
+			WHEN $6 LIKE 'payin:%' THEN 'payin'
+			WHEN $6 LIKE 'payout:%' THEN 'payout'
+			WHEN $6 LIKE 'tx:%' THEN 'transaction'
+			ELSE 'legacy'
+		END AND consumed_by_ref = $6
+	  ))
+	RETURNING fee_amount, fee_gateway`
+
+// tryConsumeFeeQuoteWithGatewayQuery is the C5 top-up path: the provider
+// gateway is part of the quote's immutable dimensions and must match the
+// route selected for the intent exactly.
+const tryConsumeFeeQuoteWithGatewayQuery = `
+	UPDATE fee_quotes SET consumed_at = COALESCE(consumed_at, now()), consumed_by_ref = $7,
+		consumed_by_type = CASE
+			WHEN $7 LIKE 'payin:%' THEN 'payin'
+			WHEN $7 LIKE 'payout:%' THEN 'payout'
+			WHEN $7 LIKE 'tx:%' THEN 'transaction'
+			ELSE 'legacy'
+		END
+	WHERE id = $1 AND user_id = $2
+	  AND transaction_type = $3 AND gateway = $4 AND currency = $5 AND amount = $6
+	  AND ((consumed_at IS NULL AND expires_at > now()) OR (
+		consumed_by_type = 'payin' AND consumed_by_ref = $7
+	  ))
 	RETURNING fee_amount, fee_gateway`
 
 // feeQuoteExistsQuery is used only after tryConsumeFeeQuoteQuery affects 0
@@ -56,6 +93,21 @@ const tryConsumeFeeQuoteQuery = `
 const feeQuoteExistsQuery = `
 	SELECT 1 FROM fee_quotes
 	WHERE id = $1 AND user_id = $2 AND consumed_at IS NULL AND expires_at > now()`
+
+// validateConsumedPayinQuoteQuery is the Ledger-side settlement authority for
+// C5 top-ups. Payin consumes the quote before provider collection, so the later
+// money_in posting must verify the complete immutable snapshot again inside its
+// own posting transaction. A caller cannot manufacture fee metadata or replay
+// a quote consumed for a different payin/provider route.
+const validateConsumedPayinQuoteQuery = `
+	SELECT fee_amount, fee_gateway
+	FROM fee_quotes
+	WHERE id = $1 AND user_id = $2
+	  AND transaction_type = $3 AND gateway = $4 AND currency = $5
+	  AND amount = $6 AND fee_amount = $7 AND fee_gateway = $8
+	  AND consumed_at IS NOT NULL
+	  AND consumed_by_type = 'payin'
+	  AND consumed_by_ref = $9`
 
 // QueryRower is the minimal read capability fee-quote consumption needs —
 // satisfied by both *sql.Tx (so it can run INSIDE the posting transaction;
@@ -161,9 +213,27 @@ func (r *feeRepo) GetQuote(ctx context.Context, quoteID, userID uuid.UUID) (amou
 	return amount, feeAmount, feeGateway, err
 }
 
+func (r *feeRepo) GetQuoteWithGateway(ctx context.Context, quoteID, userID uuid.UUID) (amount, feeAmount decimal.Decimal, feeGateway, gateway string, err error) {
+	err = r.db.QueryRowContext(ctx, getFeeQuoteWithGatewayQuery, quoteID, userID).Scan(&amount, &feeAmount, &feeGateway, &gateway)
+	return amount, feeAmount, feeGateway, gateway, err
+}
+
 func (r *feeRepo) TryConsumeQuote(ctx context.Context, exec QueryRower, quoteID, userID uuid.UUID, txType, currency string, amount decimal.Decimal, ref string) (fee decimal.Decimal, feeGateway string, err error) {
 	err = exec.QueryRowContext(ctx, tryConsumeFeeQuoteQuery, quoteID, userID, txType, currency, amount, ref).Scan(&fee, &feeGateway)
 	return fee, feeGateway, err
+}
+
+func (r *feeRepo) TryConsumeQuoteWithGateway(ctx context.Context, exec QueryRower, quoteID, userID uuid.UUID, txType, gateway, currency string, amount decimal.Decimal, ref string) (fee decimal.Decimal, feeGateway string, err error) {
+	err = exec.QueryRowContext(ctx, tryConsumeFeeQuoteWithGatewayQuery, quoteID, userID, txType, gateway, currency, amount, ref).Scan(&fee, &feeGateway)
+	return fee, feeGateway, err
+}
+
+func (r *feeRepo) ValidateConsumedPayinQuote(ctx context.Context, exec QueryRower, quoteID, userID uuid.UUID, txType, gateway, currency string, amount, fee decimal.Decimal, feeGateway, ref string) error {
+	var storedFee decimal.Decimal
+	var storedFeeGateway string
+	return exec.QueryRowContext(ctx, validateConsumedPayinQuoteQuery,
+		quoteID, userID, txType, gateway, currency, amount, fee, feeGateway, ref).
+		Scan(&storedFee, &storedFeeGateway)
 }
 
 func (r *feeRepo) QuoteExists(ctx context.Context, exec QueryRower, quoteID, userID uuid.UUID) (bool, error) {

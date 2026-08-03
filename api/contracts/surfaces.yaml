@@ -137,10 +137,150 @@ http:
     lifecycle: active
     contract_version: v1
     source: internal/handler/router.go
+  - id: gateway.notifications.detail
+    service: gateway
+    method: GET
+    path: /api/v1/notifications/{id}
+    kind: operation
+    owner: gateway
+    behavior_owner: notify
+    audience: public
+    artifact: api/openapi/public-v1.yaml
+    auth: user-jwt
+    consumers: [external]
+    lifecycle: active
+    contract_version: v1
+    source: internal/handler/router.go
+  - id: gateway.notifications.unread_count
+    service: gateway
+    method: GET
+    path: /api/v1/notifications/unread-count
+    kind: operation
+    owner: gateway
+    behavior_owner: notify
+    audience: public
+    artifact: api/openapi/public-v1.yaml
+    auth: user-jwt
+    consumers: [external]
+    lifecycle: active
+    contract_version: v1
+    source: internal/handler/router.go
   - id: gateway.notifications.read
     service: gateway
     method: POST
     path: /api/v1/notifications/{id}/read
+    kind: operation
+    owner: gateway
+    behavior_owner: notify
+    audience: public
+    artifact: api/openapi/public-v1.yaml
+    auth: user-jwt
+    consumers: [external]
+    lifecycle: active
+    contract_version: v1
+    source: internal/handler/router.go
+  - id: gateway.notifications.read_all
+    service: gateway
+    method: POST
+    path: /api/v1/notifications/read-all
+    kind: operation
+    owner: gateway
+    behavior_owner: notify
+    audience: public
+    artifact: api/openapi/public-v1.yaml
+    auth: user-jwt
+    consumers: [external]
+    lifecycle: active
+    contract_version: v1
+    source: internal/handler/router.go
+  - id: gateway.notification_settings.get
+    service: gateway
+    method: GET
+    path: /api/v1/notification-settings
+    kind: operation
+    owner: gateway
+    behavior_owner: notify
+    audience: public
+    artifact: api/openapi/public-v1.yaml
+    auth: user-jwt
+    consumers: [external]
+    lifecycle: active
+    contract_version: v1
+    source: internal/handler/router.go
+  - id: gateway.notification_settings.update
+    service: gateway
+    method: PUT
+    path: /api/v1/notification-settings
+    kind: operation
+    owner: gateway
+    behavior_owner: notify
+    audience: public
+    artifact: api/openapi/public-v1.yaml
+    auth: user-jwt
+    consumers: [external]
+    lifecycle: active
+    contract_version: v1
+    source: internal/handler/router.go
+  - id: gateway.notification_preferences.get
+    service: gateway
+    method: GET
+    path: /api/v1/notification-preferences
+    kind: operation
+    owner: gateway
+    behavior_owner: notify
+    audience: public
+    artifact: api/openapi/public-v1.yaml
+    auth: user-jwt
+    consumers: [external]
+    lifecycle: active
+    contract_version: v1
+    source: internal/handler/router.go
+  - id: gateway.notification_preferences.update
+    service: gateway
+    method: PUT
+    path: /api/v1/notification-preferences
+    kind: operation
+    owner: gateway
+    behavior_owner: notify
+    audience: public
+    artifact: api/openapi/public-v1.yaml
+    auth: user-jwt
+    consumers: [external]
+    lifecycle: active
+    contract_version: v1
+    source: internal/handler/router.go
+  - id: gateway.notification_devices.list
+    service: gateway
+    method: GET
+    path: /api/v1/notification-devices
+    kind: operation
+    owner: gateway
+    behavior_owner: notify
+    audience: public
+    artifact: api/openapi/public-v1.yaml
+    auth: user-jwt
+    consumers: [external]
+    lifecycle: active
+    contract_version: v1
+    source: internal/handler/router.go
+  - id: gateway.notification_devices.register
+    service: gateway
+    method: POST
+    path: /api/v1/notification-devices
+    kind: operation
+    owner: gateway
+    behavior_owner: notify
+    audience: public
+    artifact: api/openapi/public-v1.yaml
+    auth: user-jwt
+    consumers: [external]
+    lifecycle: active
+    contract_version: v1
+    source: internal/handler/router.go
+  - id: gateway.notification_devices.revoke
+    service: gateway
+    method: DELETE
+    path: /api/v1/notification-devices/{id}
     kind: operation
     owner: gateway
     behavior_owner: notify
@@ -1568,6 +1708,20 @@ http:
     lifecycle: active
     contract_version: v1
     source: internal/auth/privacy_http.go
+  - id: auth.internal.notification_contact
+    service: auth
+    method: GET
+    path: /internal/v1/users/{id}/notification-contact
+    kind: operation
+    owner: auth
+    behavior_owner: auth
+    audience: internal
+    artifact: api/openapi/internal-v1.yaml
+    auth: service-mtls+internal-token
+    consumers: [gateway]
+    lifecycle: active
+    contract_version: v1
+    source: cmd/auth-service/router.go
   - id: auth.internal.privacy.closure.prepare
     service: auth
     method: POST

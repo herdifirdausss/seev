@@ -28,14 +28,15 @@ const (
 // deliberately NOT on this struct (it lives in auth_credentials and never
 // leaves the repository except inside VerifyPassword).
 type User struct {
-	ID        uuid.UUID
-	Email     string
-	FullName  string
-	Role      string
-	Status    string
-	KYCLevel  int
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID              uuid.UUID
+	Email           string
+	FullName        string
+	Role            string
+	Status          string
+	KYCLevel        int
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+	EmailVerifiedAt *time.Time
 	// KYCVerifiedUntil is the validity deadline for KYCLevel — nil for level
 	// 0 (nothing to verify) or a level approved before this field existed.
 	// Past this timestamp the level is still enforced (limits don't drop

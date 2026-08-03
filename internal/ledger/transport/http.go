@@ -171,6 +171,23 @@ func (h *handler) mux() http.Handler {
 	mux.HandleFunc("POST /schedules/{id}/pause", h.pauseSchedule)
 	mux.HandleFunc("POST /schedules/{id}/resume", h.resumeSchedule)
 	mux.HandleFunc("POST /schedules/{id}/cancel", h.cancelSchedule)
+	mux.HandleFunc("POST /schedules/{id}/confirm-fee-cap", h.confirmScheduledFeeCap)
+	mux.HandleFunc("GET /schedules/{id}/occurrences", h.listScheduledOccurrences)
+	mux.HandleFunc("GET /schedules/{id}/occurrences/{occurrence_id}", h.getScheduledOccurrence)
+	// C5 names the same durable history as scheduled-transactions/executions;
+	// keep both spellings additive while existing clients migrate.
+	mux.HandleFunc("GET /scheduled-transactions/{id}/executions", h.listScheduledOccurrences)
+	mux.HandleFunc("GET /scheduled-transactions/{id}/executions/{execution_id}", h.getScheduledOccurrence)
+	mux.HandleFunc("POST /scheduled-transactions/{id}/confirm-fee-cap", h.confirmScheduledFeeCap)
+
+	// C5 user read surfaces. Writes remain internal/admin-controlled; these
+	// reads are additive and use optional structural interfaces so existing
+	// transport mocks do not need a generated contract change.
+	mux.HandleFunc("GET /savings/products", h.listC5SavingsProducts)
+	mux.HandleFunc("GET /savings/enrollments", h.listC5SavingsEnrollments)
+	mux.HandleFunc("GET /savings/enrollments/{id}", h.getC5SavingsEnrollment)
+	mux.HandleFunc("GET /savings/enrollments/{id}/accruals", h.listC5SavingsAccruals)
+	mux.HandleFunc("GET /savings/enrollments/{id}/periods", h.listC5SavingsPeriods)
 
 	// Admin outbox dead-letter replay (docs/roadmap/archive/12 Task T3) — internal
 	// router ONLY (allowedTypes == nil is this package's existing signal
@@ -179,6 +196,20 @@ func (h *handler) mux() http.Handler {
 	// network isolation of the internal listener is the primary control,
 	// not the only one, for an operation this sensitive.
 	if h.allowedTypes == nil {
+		// C6 data-migration control plane — typed Ledger-owned admin API only;
+		// the Admin BFF proxies these routes and never queries migration tables.
+		mux.HandleFunc("GET /admin/migrations", h.listMigrations)
+		mux.HandleFunc("GET /admin/migrations/{id}", h.getMigration)
+		mux.HandleFunc("POST /admin/migrations/{id}/transition", h.transitionMigration)
+		mux.HandleFunc("POST /admin/migrations/{id}/read-percentage", h.setMigrationReadPercentage)
+		mux.HandleFunc("POST /admin/migrations/{id}/dual-write", h.setMigrationDualWrite)
+		mux.HandleFunc("POST /admin/migrations/{id}/pause", h.pauseMigration)
+		mux.HandleFunc("POST /admin/migrations/{id}/resume", h.resumeMigration)
+		mux.HandleFunc("GET /admin/migrations/{id}/mismatches", h.listMigrationMismatches)
+		mux.HandleFunc("POST /admin/migrations/{id}/reconcile", h.runMigrationReconciliation)
+		mux.HandleFunc("POST /admin/migrations/{id}/mismatches/{mismatch_id}/repair", h.requestMigrationRepair)
+		mux.HandleFunc("POST /admin/migrations/{id}/repairs/{repair_id}/approve", h.approveMigrationRepair)
+
 		mux.HandleFunc("POST /admin/outbox/dead/{id}/replay", h.replayDeadEvent)
 		mux.HandleFunc("POST /admin/outbox/dead/replay-all", h.replayAllDeadEvents)
 		mux.HandleFunc("GET /admin/outbox/dead", h.listDeadEvents)
@@ -204,6 +235,10 @@ func (h *handler) mux() http.Handler {
 		// Schedule runner ops/testing trigger (docs/roadmap/archive/19 Task T1 step 5)
 		// — internal router only, admin-gated.
 		mux.HandleFunc("POST /admin/schedules/run", h.runSchedulesNow)
+		mux.HandleFunc("GET /admin/schedules/{id}/occurrences", h.listAdminScheduledOccurrences)
+		mux.HandleFunc("POST /admin/schedules/occurrences/{occurrence_id}/retry", h.retryScheduledOccurrence)
+		mux.HandleFunc("GET /admin/scheduled-transactions/{id}/executions", h.listAdminScheduledOccurrences)
+		mux.HandleFunc("POST /admin/scheduled-transactions/{id}/executions/{occurrence_id}/retry", h.retryScheduledOccurrence)
 
 		// Batch disbursement (docs/roadmap/archive/19 Task T2) — internal router only,
 		// admin-gated. approve/reject (maker-checker gate, business-completeness
@@ -219,6 +254,23 @@ func (h *handler) mux() http.Handler {
 		// admin-gated.
 		mux.HandleFunc("PUT /admin/savings/{account_id}", h.setSavingsConfig)
 		mux.HandleFunc("GET /admin/savings", h.listSavingsConfigs)
+		mux.HandleFunc("POST /admin/savings/products", h.createC5SavingsProduct)
+		mux.HandleFunc("GET /admin/savings/products", h.listC5SavingsProducts)
+		mux.HandleFunc("POST /admin/savings/products/{id}/status", h.updateC5SavingsProductStatus)
+		mux.HandleFunc("POST /admin/savings/products/{id}/rates", h.createC5SavingsRate)
+		mux.HandleFunc("POST /admin/savings/rates/{id}/submit", h.submitC5SavingsRate)
+		mux.HandleFunc("POST /admin/savings/rates/{id}/approve", h.approveC5SavingsRate)
+		mux.HandleFunc("POST /admin/savings/rates/{id}/reject", h.rejectC5SavingsRate)
+		mux.HandleFunc("POST /admin/savings/enrollments", h.createC5SavingsEnrollment)
+		mux.HandleFunc("POST /admin/savings/enrollments/{id}/pause", h.pauseC5SavingsEnrollment)
+		mux.HandleFunc("POST /admin/savings/enrollments/{id}/resume", h.resumeC5SavingsEnrollment)
+		mux.HandleFunc("POST /admin/savings/enrollments/{id}/end", h.endC5SavingsEnrollment)
+		mux.HandleFunc("GET /admin/savings/periods/{id}/preview", h.previewC5InterestPeriod)
+		mux.HandleFunc("POST /admin/savings/periods/{id}/close", h.closeC5InterestPeriod)
+		mux.HandleFunc("POST /admin/savings/interest/run", h.runC5InterestDaily)
+		mux.HandleFunc("POST /admin/savings/period-items/{id}/retry", h.retryC5InterestPeriodItem)
+		mux.HandleFunc("POST /admin/savings/adjustments", h.createC5InterestAdjustment)
+		mux.HandleFunc("POST /admin/savings/adjustments/{id}/approve", h.approveC5InterestAdjustment)
 
 		mux.HandleFunc("GET /admin/reports/{kind}", h.getReport)
 
@@ -1615,23 +1667,62 @@ func (h *handler) createSchedule(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var id uuid.UUID
-	if req.Currency == "" {
-		id, err = h.svc.CreateSchedule(r.Context(), userID, req.Type, amount, targetUserID, req.PocketCode, req.Metadata,
-			req.ScheduleKind, runAtDate, req.DayOfMonth, userID.String())
-	} else {
-		creator, ok := h.svc.(scheduleCurrencyCreator)
+	var createErr error
+	c5Requested := req.Currency != "" || req.Timezone != "" || req.LocalTime != "" || req.MissedRunPolicy != "" || req.CatchUpLimit != 0 || req.MaxFeeAmount != nil || req.MaxInfrastructureAttempts != 0 || req.RetryWindowSeconds != 0 || req.FeeMode != "" || req.ConsecutiveFailureThreshold != 0
+	if c5Requested {
+		creator, ok := h.svc.(c5ScheduleCreator)
 		if !ok {
-			response.InternalServerError(w, errors.New("currency-aware schedule service is unavailable"))
-			return
+			if req.Currency == "" {
+				response.JSON(w, http.StatusNotImplemented, map[string]string{"code": "C5_UNAVAILABLE"})
+				return
+			}
+			currencyCreator, currencyOK := h.svc.(scheduleCurrencyCreator)
+			if !currencyOK {
+				response.InternalServerError(w, errors.New("currency-aware schedule service is unavailable"))
+				return
+			}
+			id, createErr = currencyCreator.CreateScheduleWithCurrency(r.Context(), userID, req.Type, amount, targetUserID, req.PocketCode, req.Metadata,
+				req.ScheduleKind, runAtDate, req.DayOfMonth, userID.String(), req.Currency)
+		} else {
+			id, createErr = creator.CreateScheduleWithPolicy(r.Context(), userID, req.Type, amount, targetUserID, req.PocketCode, req.Metadata,
+				req.ScheduleKind, runAtDate, req.DayOfMonth, userID.String(), model.ScheduledPolicy{
+				MissedRunPolicy: req.MissedRunPolicy, CatchUpLimit: req.CatchUpLimit,
+				MaxFeeAmount: req.MaxFeeAmount, MaxInfrastructureAttempts: req.MaxInfrastructureAttempts,
+				RetryWindowSeconds: req.RetryWindowSeconds, FeeMode: req.FeeMode,
+				ConsecutiveFailureThreshold: req.ConsecutiveFailureThreshold,
+			}, req.Currency, req.Timezone, req.LocalTime)
 		}
-		id, err = creator.CreateScheduleWithCurrency(r.Context(), userID, req.Type, amount, targetUserID, req.PocketCode, req.Metadata,
-			req.ScheduleKind, runAtDate, req.DayOfMonth, userID.String(), req.Currency)
+	} else {
+		id, createErr = h.svc.CreateSchedule(r.Context(), userID, req.Type, amount, targetUserID, req.PocketCode, req.Metadata,
+			req.ScheduleKind, runAtDate, req.DayOfMonth, userID.String())
 	}
-	if err != nil {
-		writeError(w, err)
+	if createErr != nil {
+		writeError(w, createErr)
 		return
 	}
-	response.Created(w, createScheduleResponse{ID: id})
+	created := createScheduleResponse{ID: id}
+	if c5Requested {
+		created.Timezone = req.Timezone
+		if created.Timezone == "" { created.Timezone = "Asia/Jakarta" }
+		created.LocalTime = req.LocalTime
+		if created.LocalTime == "" { created.LocalTime = "00:30" }
+		created.MissedRunPolicy = req.MissedRunPolicy
+		if created.MissedRunPolicy == "" {
+			if req.ScheduleKind == "daily" { created.MissedRunPolicy = "skip" } else { created.MissedRunPolicy = "run_once_latest" }
+		}
+		created.CatchUpLimit = req.CatchUpLimit
+		if created.CatchUpLimit == 0 { created.CatchUpLimit = 7 }
+		created.MaxFeeAmount = req.MaxFeeAmount
+		created.MaxInfrastructureAttempts = req.MaxInfrastructureAttempts
+		if created.MaxInfrastructureAttempts == 0 { created.MaxInfrastructureAttempts = 5 }
+			created.RetryWindowSeconds = req.RetryWindowSeconds
+			if created.RetryWindowSeconds == 0 { created.RetryWindowSeconds = 86400 }
+		created.FeeMode = req.FeeMode
+		if created.FeeMode == "" { created.FeeMode = "current_policy_with_consent_cap" }
+		created.ConsecutiveFailureThreshold = req.ConsecutiveFailureThreshold
+		if created.ConsecutiveFailureThreshold == 0 { created.ConsecutiveFailureThreshold = 3 }
+	}
+	response.Created(w, created)
 }
 
 func (h *handler) listSchedules(w http.ResponseWriter, r *http.Request) {

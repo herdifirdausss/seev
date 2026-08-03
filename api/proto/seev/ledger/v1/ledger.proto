@@ -126,6 +126,10 @@ message ConsumeFeeQuoteRequest {
   // consumed_by_ref is persisted as fee_quotes.consumed_by_ref for audit —
   // 'payout:<uuid>' for this caller.
   string consumed_by_ref = 6;
+  // gateway binds quote consumption to the provider route that was quoted.
+  // It is carried through the compatibility bridge until generated
+  // protobuf artifacts are regenerated.
+  string gateway = 7;
 }
 
 message ConsumeFeeQuoteResponse {

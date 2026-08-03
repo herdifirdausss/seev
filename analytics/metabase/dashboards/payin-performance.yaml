@@ -1,0 +1,9 @@
+name: C2 Pay-in performance
+collection: C2 / Business
+read_role: bi_readonly
+freshness_model: mart_freshness
+cards:
+  - {name: Pay-ins by status, source: core.fact_payin_lifecycle, sql: "select report_date, currency, vendor, status, count() as payin_count, sum(amount_minor) as amount_minor from core.fact_payin_lifecycle where report_date between {{start_date}} and {{end_date}} group by report_date, currency, vendor, status", semantics: lifecycle_not_revenue}
+  - {name: Success rate, source: core.fact_payin_lifecycle, sql: "select report_date, currency, if(count() = 0, 0, countIf(is_successful) / count()) as success_rate from core.fact_payin_lifecycle group by report_date, currency", semantics: count_ratio}
+  - {name: Time to terminal, source: core.fact_payin_lifecycle, sql: "select report_date, currency, quantile(0.5)(duration_to_terminal_ms) as p50_ms, quantile(0.95)(duration_to_terminal_ms) as p95_ms from core.fact_payin_lifecycle where is_successful group by report_date, currency", semantics: milliseconds}
+  - {name: Callback duplicate rate, source: core.fact_payin_lifecycle, sql: "select report_date, currency, sum(callback_count - distinct_callback_count) as duplicate_callbacks from core.fact_payin_lifecycle group by report_date, currency", semantics: bounded_callback_metadata}
