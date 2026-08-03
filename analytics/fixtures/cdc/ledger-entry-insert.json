@@ -1,0 +1,1 @@
+{"id":"20000000-0000-0000-0000-000000000001","transaction_id":"10000000-0000-0000-0000-000000000001","account_id":"30000000-0000-0000-0000-000000000001","direction":"debit","amount":100000,"balance_after":900000,"created_at":"2026-08-03T03:00:00.123456Z","__op":"c","__table":"ledger_entries","__schema":"public","__lsn":101,"__source_ts_ms":1785726000123,"__deleted":false}

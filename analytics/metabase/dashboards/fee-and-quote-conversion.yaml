@@ -1,0 +1,9 @@
+name: C2 Fee and quote conversion
+collection: C2 / Business
+read_role: bi_readonly
+freshness_model: mart_freshness
+cards:
+  - {name: Quotes created, source: mart_quote_conversion_daily, sql: "select report_date, currency, transaction_type, quotes_created from mart.mart_quote_conversion_daily", semantics: pricing_intent}
+  - {name: Quote conversion rate, source: mart_quote_conversion_daily, sql: "select report_date, currency, transaction_type, quote_conversion_rate from mart.mart_quote_conversion_daily", semantics: consumed_divided_by_created}
+  - {name: Recognized revenue, source: mart_revenue_daily, sql: "select report_date, currency, product, recognized_fee_revenue_minor from mart.mart_revenue_daily", semantics: posted_fee_account_entries_only}
+  - {name: Quote-to-recognition delta, source: mart_quote_conversion_daily, sql: "select report_date, currency, transaction_type, quoted_fee_minor, quotes_consumed from mart.mart_quote_conversion_daily", semantics: quote_does_not_prove_revenue}

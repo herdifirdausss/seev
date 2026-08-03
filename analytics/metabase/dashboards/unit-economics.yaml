@@ -1,0 +1,9 @@
+name: C2 Modeled unit economics
+collection: C2 / Business
+read_role: bi_readonly
+warning: Costs are modeled, not invoiced actuals. Contribution margin is not net profit.
+freshness_model: mart_freshness
+cards:
+  - {name: Recognized revenue, source: mart_unit_economics_daily, sql: "select report_date, currency, product, vendor, recognized_fee_revenue_minor from mart.mart_unit_economics_daily", semantics: recognized_revenue}
+  - {name: Modeled variable vendor cost, source: mart_unit_economics_daily, sql: "select report_date, currency, product, vendor, modeled_variable_vendor_cost_minor, cost_model_version from mart.mart_unit_economics_daily", semantics: modeled_cost}
+  - {name: Modeled contribution margin, source: mart_unit_economics_daily, sql: "select report_date, currency, product, vendor, modeled_contribution_margin_minor, cost_basis from mart.mart_unit_economics_daily", semantics: revenue_minus_modeled_cost}

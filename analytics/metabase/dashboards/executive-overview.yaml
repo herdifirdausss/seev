@@ -1,0 +1,11 @@
+name: C2 Executive overview
+collection: C2 / Business
+read_role: bi_readonly
+freshness_model: mart_freshness
+currency_rule: every money card groups by currency; no implicit FX
+cards:
+  - {name: Successful processed volume, source: mart_volume_daily, sql: "select report_date, currency, product, successful_processed_volume_minor from mart.mart_volume_daily where report_date between {{start_date}} and {{end_date}} order by report_date", semantics: volume_not_revenue}
+  - {name: Recognized fee revenue, source: mart_revenue_daily, sql: "select report_date, currency, product, recognized_fee_revenue_minor from mart.mart_revenue_daily where report_date between {{start_date}} and {{end_date}} order by report_date", semantics: posted_fee_account_entries_only}
+  - {name: Modeled unit economics, source: mart_unit_economics_daily, sql: "select report_date, currency, product, vendor, modeled_variable_vendor_cost_minor, modeled_contribution_margin_minor, cost_basis, cost_model_version from mart.mart_unit_economics_daily where report_date between {{start_date}} and {{end_date}} order by report_date", semantics: modeled_not_profit}
+  - {name: Data freshness, source: mart_freshness, sql: "select source_service, source_table, freshness_seconds, latest_ingested_at_utc from mart.mart_freshness", semantics: stale_data_visible}
+  - {name: Latest reconciliation, source: control.reconciliation_runs, sql: "select status, finished_at, critical_failures, warning_failures from control.reconciliation_runs order by finished_at desc limit 1", semantics: control_status}

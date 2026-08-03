@@ -1,0 +1,43 @@
+version: 2
+
+sources:
+  - name: ledger_staging
+    database: staging
+    schema: staging
+    loader: ClickHouse raw/staging migration
+    freshness:
+      warn_after: {count: 120, period: minute}
+      error_after: {count: 15, period: minute}
+    tables:
+      - name: ledger_accounts_current
+      - name: ledger_balances_current
+      - name: ledger_transactions_current
+      - name: ledger_entries_changes
+      - name: ledger_fee_quotes_current
+  - name: payin_staging
+    database: staging
+    schema: staging
+    loader: ClickHouse raw/staging migration
+    freshness:
+      warn_after: {count: 300, period: minute}
+      error_after: {count: 30, period: minute}
+    tables:
+      - name: payin_intents_current
+      - name: payin_webhooks_changes
+  - name: payout_staging
+    database: staging
+    schema: staging
+    loader: ClickHouse raw/staging migration
+    freshness:
+      warn_after: {count: 300, period: minute}
+      error_after: {count: 30, period: minute}
+    tables:
+      - name: payout_requests_current
+      - name: payout_calls_changes
+  - name: control
+    database: control
+    schema: control
+    loader: ClickHouse control migrations
+    tables:
+      - name: reconciliation_runs
+      - name: pipeline_watermarks

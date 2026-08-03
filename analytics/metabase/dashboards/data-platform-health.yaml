@@ -1,0 +1,9 @@
+name: C2 Data platform health
+collection: C2 / Operations
+read_role: bi_readonly
+freshness_model: mart_freshness
+cards:
+  - {name: Source freshness, source: mart_freshness, sql: "select source_service, source_table, freshness_seconds, latest_source_timestamp_utc, latest_ingested_at_utc from mart.mart_freshness", semantics: freshness_seconds}
+  - {name: Connector status, source: connector REST evidence, sql: "external operational card; use connector status script", semantics: connector_task_state}
+  - {name: Reconciliation status, source: control.reconciliation_runs, sql: "select status, finished_at, critical_failures, warning_failures from control.reconciliation_runs order by finished_at desc limit 10", semantics: control_status}
+  - {name: Failed data tests, source: control.data_quality_failures, sql: "select observed_at, check_name, layer, severity, failure_count from control.data_quality_failures order by observed_at desc limit 100", semantics: bounded_control_metadata}

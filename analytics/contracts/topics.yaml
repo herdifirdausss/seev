@@ -1,0 +1,19 @@
+version: 1
+environment: local-dev
+defaults:
+  partitions: 1
+  retention: 7_days
+  ordering: source_lsn_then_partition_offset
+  delivery: at_least_once
+  value_format: json_without_schemas
+  raw_payload_allowed: false
+topics:
+  - {name: seev.cdc.ledger.public.accounts.v1, owner: LedgerService, source_table: accounts, connector: seev-ledger-postgres-cdc, key: id, consumer: clickhouse_raw, dedup_identity: topic_partition_offset, classification: financial_reference}
+  - {name: seev.cdc.ledger.public.account_balances.v1, owner: LedgerService, source_table: account_balances, connector: seev-ledger-postgres-cdc, key: account_id, consumer: clickhouse_raw, dedup_identity: topic_partition_offset, classification: financial_projection}
+  - {name: seev.cdc.ledger.public.ledger_transactions.v1, owner: LedgerService, source_table: ledger_transactions, connector: seev-ledger-postgres-cdc, key: id, consumer: clickhouse_raw, dedup_identity: topic_partition_offset, classification: financial}
+  - {name: seev.cdc.ledger.public.ledger_entries.v1, owner: LedgerService, source_table: ledger_entries, connector: seev-ledger-postgres-cdc, key: id, consumer: clickhouse_raw, dedup_identity: topic_partition_offset, classification: financial_immutable}
+  - {name: seev.cdc.ledger.public.fee_quotes.v1, owner: LedgerService, source_table: fee_quotes, connector: seev-ledger-postgres-cdc, key: id, consumer: clickhouse_raw, dedup_identity: topic_partition_offset, classification: pricing_intent}
+  - {name: seev.cdc.payin.public.payin_topup_intents.v1, owner: PayinService, source_table: payin_topup_intents, connector: seev-payin-postgres-cdc, key: id, consumer: clickhouse_raw, dedup_identity: topic_partition_offset, classification: payment_lifecycle}
+  - {name: seev.cdc.payin.public.payin_webhook_events.v1, owner: PayinService, source_table: payin_webhook_events, connector: seev-payin-postgres-cdc, key: id, consumer: clickhouse_raw, dedup_identity: topic_partition_offset, classification: callback_metadata}
+  - {name: seev.cdc.payout.public.payout_requests.v1, owner: PayoutService, source_table: payout_requests, connector: seev-payout-postgres-cdc, key: id, consumer: clickhouse_raw, dedup_identity: topic_partition_offset, classification: payment_lifecycle}
+  - {name: seev.cdc.payout.public.payout_vendor_calls.v1, owner: PayoutService, source_table: payout_vendor_calls, connector: seev-payout-postgres-cdc, key: id, consumer: clickhouse_raw, dedup_identity: topic_partition_offset, classification: provider_attempt_metadata}

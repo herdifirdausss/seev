@@ -1,0 +1,10 @@
+{
+  "currency": "IDR",
+  "posted_transaction_count": 2,
+  "posted_volume_minor": 125000,
+  "recognized_fee_revenue_minor": 5000,
+  "ledger_debit_minor": 125000,
+  "ledger_credit_minor": 125000,
+  "currencies_are_separate": true,
+  "duplicate_logical_entries": 0
+}

@@ -1,0 +1,20 @@
+version: 1
+timezone: Asia/Jakarta
+money_unit: integer_minor_units
+models:
+  - {name: dim_account, layer: core, owner: LedgerService, grain: one_account, unique_key: account_id, timestamp: updated_at_utc, money_semantics: none, sensitivity: restricted_financial, freshness: 120_seconds}
+  - {name: dim_currency, layer: core, owner: Analytics, grain: one_currency, unique_key: currency, timestamp: none, money_semantics: none, sensitivity: business, freshness: 120_seconds}
+  - {name: dim_transaction_type, layer: core, owner: LedgerService, grain: one_transaction_type, unique_key: transaction_type, timestamp: none, money_semantics: none, sensitivity: business, freshness: 120_seconds}
+  - {name: dim_gateway, layer: core, owner: LedgerService, grain: one_gateway, unique_key: gateway, timestamp: none, money_semantics: none, sensitivity: business, freshness: 120_seconds}
+  - {name: dim_vendor, layer: core, owner: PayoutService, grain: one_vendor, unique_key: vendor, timestamp: none, money_semantics: none, sensitivity: business, freshness: 300_seconds}
+  - {name: fact_ledger_entry, layer: core, owner: LedgerService, grain: one_immutable_ledger_entry, unique_key: id, timestamp: created_at_utc, money_semantics: signed_minor_units_by_direction, sensitivity: restricted_financial, freshness: 120_seconds}
+  - {name: fact_ledger_transaction, layer: core, owner: LedgerService, grain: one_ledger_transaction, unique_key: id, timestamp: created_at_utc, money_semantics: positive_minor_units, sensitivity: restricted_financial, freshness: 120_seconds}
+  - {name: fact_fee_quote, layer: core, owner: LedgerService, grain: one_fee_quote, unique_key: id, timestamp: created_at_utc, money_semantics: quoted_minor_units_not_revenue, sensitivity: restricted_pricing, freshness: 300_seconds}
+  - {name: fact_fee_revenue, layer: core, owner: LedgerService, grain: one_posted_fee_account_entry, unique_key: entry_id, timestamp: posted_at_utc, money_semantics: signed_recognized_minor_units, sensitivity: restricted_financial, freshness: 120_seconds}
+  - {name: fact_payin_lifecycle, layer: core, owner: PayinService, grain: one_payin_intent, unique_key: payin_id, timestamp: created_at_utc, money_semantics: positive_minor_units, sensitivity: restricted_payment, freshness: 300_seconds}
+  - {name: fact_payout_lifecycle, layer: core, owner: PayoutService, grain: one_payout_request, unique_key: payout_id, timestamp: created_at_utc, money_semantics: positive_minor_units, sensitivity: restricted_payment, freshness: 300_seconds}
+  - {name: fact_provider_attempt, layer: core, owner: PayoutService, grain: one_safe_provider_attempt, unique_key: attempt_id, timestamp: started_at_utc, money_semantics: none, sensitivity: operational, freshness: 300_seconds}
+  - {name: fact_daily_unit_economics, layer: core, owner: Analytics, grain: report_date_currency_product_vendor, unique_key: report_date_currency_product_vendor, timestamp: report_date, money_semantics: modeled_minor_units_separate_currency, sensitivity: restricted_business, freshness: 300_seconds}
+  - {name: mart_volume_daily, layer: mart, owner: Analytics, grain: report_date_currency_product, unique_key: report_date_currency_product, timestamp: report_date, money_semantics: positive_minor_units_separate_currency, sensitivity: business, freshness: 300_seconds}
+  - {name: mart_revenue_daily, layer: mart, owner: LedgerService, grain: report_date_currency_product, unique_key: report_date_currency_product, timestamp: report_date, money_semantics: signed_recognized_minor_units_separate_currency, sensitivity: business, freshness: 300_seconds}
+  - {name: mart_unit_economics_daily, layer: mart, owner: Analytics, grain: report_date_currency_product_vendor, unique_key: report_date_currency_product_vendor, timestamp: report_date, money_semantics: modeled_minor_units_separate_currency, sensitivity: business, freshness: 300_seconds}
