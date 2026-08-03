@@ -180,7 +180,26 @@ paths:
       x-see-behavior-owner: notify
       x-see-audience: public
       security: [{bearerAuth: []}]
-      parameters: [{name: cursor, in: query, schema: {type: string, maxLength: 512}}, {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100}}]
+      parameters: [{name: cursor, in: query, deprecated: true, description: Legacy alias for before., schema: {type: string, format: date-time}}, {name: before, in: query, description: Exclusive created_at timestamp for keyset pagination., schema: {type: string, format: date-time}}, {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 200}}, {name: unread, in: query, schema: {type: boolean}}, {name: category, in: query, schema: {type: string, enum: [money_movement, account, security, compliance, system]}}, {name: kind, in: query, schema: {type: string, maxLength: 64}}]
+      responses: {'200': {$ref: './components/common.yaml#/components/responses/Success'}, '400': {$ref: './components/common.yaml#/components/responses/BadRequest'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}}
+  /api/v1/notifications/{id}:
+    get:
+      operationId: gatewayGetNotificationV1
+      tags: [notifications]
+      x-see-owner: gateway
+      x-see-behavior-owner: notify
+      x-see-audience: public
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: './components/common.yaml#/components/parameters/UUID'}]
+      responses: {'200': {$ref: './components/common.yaml#/components/responses/Success'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '404': {$ref: './components/common.yaml#/components/responses/NotFound'}}
+  /api/v1/notifications/unread-count:
+    get:
+      operationId: gatewayGetNotificationUnreadCountV1
+      tags: [notifications]
+      x-see-owner: gateway
+      x-see-behavior-owner: notify
+      x-see-audience: public
+      security: [{bearerAuth: []}]
       responses: {'200': {$ref: './components/common.yaml#/components/responses/Success'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}}
   /api/v1/notifications/{id}/read:
     post:
@@ -192,6 +211,80 @@ paths:
       security: [{bearerAuth: []}]
       parameters: [{$ref: './components/common.yaml#/components/parameters/UUID'}]
       responses: {'204': {$ref: './components/common.yaml#/components/responses/NoContent'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '404': {$ref: './components/common.yaml#/components/responses/NotFound'}}
+  /api/v1/notifications/read-all:
+    post:
+      operationId: gatewayMarkAllNotificationsReadV1
+      tags: [notifications]
+      x-see-owner: gateway
+      x-see-behavior-owner: notify
+      x-see-audience: public
+      security: [{bearerAuth: []}]
+      requestBody: {$ref: './components/common.yaml#/components/requestBodies/JSON'}
+      responses: {'204': {$ref: './components/common.yaml#/components/responses/NoContent'}, '400': {$ref: './components/common.yaml#/components/responses/BadRequest'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}}
+  /api/v1/notification-settings:
+    get:
+      operationId: gatewayGetNotificationSettingsV1
+      tags: [notifications]
+      x-see-owner: gateway
+      x-see-behavior-owner: notify
+      x-see-audience: public
+      security: [{bearerAuth: []}]
+      responses: {'200': {$ref: './components/common.yaml#/components/responses/Success'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '503': {$ref: './components/common.yaml#/components/responses/Unavailable'}}
+    put:
+      operationId: gatewayUpdateNotificationSettingsV1
+      tags: [notifications]
+      x-see-owner: gateway
+      x-see-behavior-owner: notify
+      x-see-audience: public
+      security: [{bearerAuth: []}]
+      requestBody: {$ref: './components/common.yaml#/components/requestBodies/JSON'}
+      responses: {'200': {$ref: './components/common.yaml#/components/responses/Success'}, '400': {$ref: './components/common.yaml#/components/responses/BadRequest'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '409': {$ref: './components/common.yaml#/components/responses/Conflict'}, '503': {$ref: './components/common.yaml#/components/responses/Unavailable'}}
+  /api/v1/notification-preferences:
+    get:
+      operationId: gatewayGetNotificationPreferencesV1
+      tags: [notifications]
+      x-see-owner: gateway
+      x-see-behavior-owner: notify
+      x-see-audience: public
+      security: [{bearerAuth: []}]
+      responses: {'200': {$ref: './components/common.yaml#/components/responses/Success'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '503': {$ref: './components/common.yaml#/components/responses/Unavailable'}}
+    put:
+      operationId: gatewayUpdateNotificationPreferencesV1
+      tags: [notifications]
+      x-see-owner: gateway
+      x-see-behavior-owner: notify
+      x-see-audience: public
+      security: [{bearerAuth: []}]
+      requestBody: {$ref: './components/common.yaml#/components/requestBodies/JSON'}
+      responses: {'200': {$ref: './components/common.yaml#/components/responses/Success'}, '400': {$ref: './components/common.yaml#/components/responses/BadRequest'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '409': {$ref: './components/common.yaml#/components/responses/Conflict'}, '503': {$ref: './components/common.yaml#/components/responses/Unavailable'}}
+  /api/v1/notification-devices:
+    get:
+      operationId: gatewayListNotificationDevicesV1
+      tags: [notifications]
+      x-see-owner: gateway
+      x-see-behavior-owner: notify
+      x-see-audience: public
+      security: [{bearerAuth: []}]
+      responses: {'200': {$ref: './components/common.yaml#/components/responses/Success'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '503': {$ref: './components/common.yaml#/components/responses/Unavailable'}}
+    post:
+      operationId: gatewayRegisterNotificationDeviceV1
+      tags: [notifications]
+      x-see-owner: gateway
+      x-see-behavior-owner: notify
+      x-see-audience: public
+      security: [{bearerAuth: []}]
+      requestBody: {$ref: './components/common.yaml#/components/requestBodies/JSON'}
+      responses: {'201': {$ref: './components/common.yaml#/components/responses/Success'}, '400': {$ref: './components/common.yaml#/components/responses/BadRequest'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '409': {$ref: './components/common.yaml#/components/responses/Conflict'}, '503': {$ref: './components/common.yaml#/components/responses/Unavailable'}}
+  /api/v1/notification-devices/{id}:
+    delete:
+      operationId: gatewayRevokeNotificationDeviceV1
+      tags: [notifications]
+      x-see-owner: gateway
+      x-see-behavior-owner: notify
+      x-see-audience: public
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: './components/common.yaml#/components/parameters/UUID'}]
+      responses: {'204': {$ref: './components/common.yaml#/components/responses/NoContent'}, '400': {$ref: './components/common.yaml#/components/responses/BadRequest'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '503': {$ref: './components/common.yaml#/components/responses/Unavailable'}}
   /api/v1/ledger/transactions:
     post:
       operationId: gatewayPostLedgerTransactionV1

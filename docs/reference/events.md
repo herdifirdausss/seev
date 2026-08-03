@@ -12,6 +12,13 @@ react without participating in the database transaction that moved money. An
 event is delivered at least once, so receiving the same receipt twice must not
 repeat the business action.
 
+Gateway's notification planner consumes `ledger.transaction.posted.v1` from
+`ledger.events.notifications`. It derives the stable notification kind and
+recipient role from the ledger facts; it never asks Ledger for user-facing copy.
+New C3 notification rows store a bounded render context and an empty legacy
+payload placeholder, while older rows continue to use the compatibility
+payload until their existing retention policy removes it.
+
 Wire format for events the ledger module publishes via the transactional
 outbox → RabbitMQ (docs/roadmap/archive/14 Task T3, decision K4). The authoritative types
 live in [`internal/ledger/events`](../../internal/ledger/events/events.go) — that

@@ -1,0 +1,30 @@
+DROP TABLE IF EXISTS notif_digest_items;
+DROP INDEX IF EXISTS uq_notif_deliveries_digest;
+DROP TABLE IF EXISTS notif_delivery_attempts;
+DROP TABLE IF EXISTS notif_deliveries;
+DROP TABLE IF EXISTS notif_digest_windows;
+DROP TABLE IF EXISTS notif_device_endpoints;
+DROP TABLE IF EXISTS notif_preferences;
+DROP TABLE IF EXISTS notif_user_settings;
+DROP TABLE IF EXISTS notif_template_versions;
+DROP TABLE IF EXISTS notif_templates;
+DROP TABLE IF EXISTS notif_event_inbox;
+DROP TABLE IF EXISTS notif_channel_controls;
+DROP INDEX IF EXISTS uq_notif_notifications_event_user_kind;
+DROP INDEX IF EXISTS idx_notif_notifications_user_keyset;
+DROP INDEX IF EXISTS idx_notif_notifications_unread;
+DROP INDEX IF EXISTS idx_notif_notifications_kind;
+ALTER TABLE notif_notifications
+    DROP COLUMN IF EXISTS event_type,
+    DROP COLUMN IF EXISTS source_service,
+    DROP COLUMN IF EXISTS kind,
+    DROP COLUMN IF EXISTS category,
+    DROP COLUMN IF EXISTS priority,
+    DROP COLUMN IF EXISTS requirement,
+    DROP COLUMN IF EXISTS locale,
+    DROP COLUMN IF EXISTS template_version_id,
+    DROP COLUMN IF EXISTS deep_link,
+    DROP COLUMN IF EXISTS context,
+    DROP COLUMN IF EXISTS content_hash,
+    DROP COLUMN IF EXISTS expires_at,
+    DROP COLUMN IF EXISTS updated_at;

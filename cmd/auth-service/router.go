@@ -69,6 +69,10 @@ type operatorOffboardingHandlers interface {
 	AdminListOperatorOffboardingHandler() http.HandlerFunc
 }
 
+type notificationContactHandlers interface {
+	NotificationContactHandler() http.HandlerFunc
+}
+
 func publicRouter(cfg *config.Config, handlers authHandlers, redisCache *cache.Cache, log *slog.Logger) http.Handler {
 	root := httpcontract.New(httpcontract.Options{Owner: "auth", Audience: "operational", Contract: "public-v1"})
 	apiRoot := httpcontract.New(httpcontract.Options{Owner: "auth", Audience: "public", Contract: "public-v1"})
@@ -154,6 +158,9 @@ func internalRouter(args ...any) http.Handler {
 			mux.Handle("POST /api/v1/admin/privacy/operator-offboarding/{id}/approve", authedAdmin(offboarding.AdminApproveOperatorOffboardingHandler()))
 			mux.Handle("POST /api/v1/admin/privacy/operator-offboarding/{id}/reject", authedAdmin(offboarding.AdminRejectOperatorOffboardingHandler()))
 			mux.Handle("GET /api/v1/admin/privacy/operator-offboarding", authedAdmin(offboarding.AdminListOperatorOffboardingHandler()))
+		}
+		if contact, ok := args[1].(notificationContactHandlers); ok && cfgOK {
+			mux.Handle("GET /internal/v1/users/{id}/notification-contact", middleware.WithInternalToken(cfg.InternalGRPCToken)(contact.NotificationContactHandler()))
 		}
 	}
 	return mux

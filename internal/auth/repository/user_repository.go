@@ -108,14 +108,14 @@ func (r *userRepo) CreateUser(ctx context.Context, u model.User, passwordHash st
 }
 
 const userColumns = `id, role, status, kyc_level, created_at, updated_at,
-	email_ciphertext, full_name_ciphertext, kyc_verified_until`
+	email_ciphertext, full_name_ciphertext, kyc_verified_until, email_verified_at`
 
 func (r *userRepo) scanUser(row *sql.Row) (model.User, error) {
 	var u model.User
 	var emailCiphertext, fullNameCiphertext []byte
-	var kycVerifiedUntil sql.NullTime
+	var kycVerifiedUntil, emailVerifiedAt sql.NullTime
 	err := row.Scan(&u.ID, &u.Role, &u.Status, &u.KYCLevel, &u.CreatedAt, &u.UpdatedAt,
-		&emailCiphertext, &fullNameCiphertext, &kycVerifiedUntil)
+		&emailCiphertext, &fullNameCiphertext, &kycVerifiedUntil, &emailVerifiedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return model.User{}, ErrNotFound
 	}
@@ -125,6 +125,10 @@ func (r *userRepo) scanUser(row *sql.Row) (model.User, error) {
 	if kycVerifiedUntil.Valid {
 		value := kycVerifiedUntil.Time
 		u.KYCVerifiedUntil = &value
+	}
+	if emailVerifiedAt.Valid {
+		value := emailVerifiedAt.Time
+		u.EmailVerifiedAt = &value
 	}
 	plainEmail, err := r.ring.Open(emailAAD(u.ID), emailCiphertext)
 	if err != nil {

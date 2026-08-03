@@ -1,0 +1,29 @@
+{{define "content"}}
+<h1>Notifications</h1>
+<p>Gateway-owned notification operations. Payloads below are intentionally
+sanitized: recipient addresses, device tokens, rendered user content, and
+provider secrets are never shown in the operator console.</p>
+
+<section>
+  <h2>Templates</h2>
+  <button hx-get="/api/v1/admin/gateway/notifications/templates"
+          hx-target="#notification-templates" hx-swap="textContent">Refresh catalog</button>
+  <pre id="notification-templates">No template catalog loaded.</pre>
+</section>
+
+<section>
+  <h2>Delivery backlog</h2>
+  <button hx-get="/api/v1/admin/gateway/notifications/deliveries"
+          hx-target="#notification-deliveries" hx-swap="textContent">Refresh deliveries</button>
+  <pre id="notification-deliveries">No delivery data loaded.</pre>
+</section>
+
+<section>
+  <h2>Channel controls</h2>
+  <div class="grid">
+    <article><h3>Email</h3><pre hx-get="/api/v1/admin/gateway/notifications/channels/email" hx-trigger="load" hx-swap="textContent"></pre></article>
+    <article><h3>Push</h3><pre hx-get="/api/v1/admin/gateway/notifications/channels/push" hx-trigger="load" hx-swap="textContent"></pre></article>
+    <article><h3>Digest</h3><pre hx-get="/api/v1/admin/gateway/notifications/channels/digest" hx-trigger="load" hx-swap="textContent"></pre></article>
+  </div>
+</section>
+{{end}}
