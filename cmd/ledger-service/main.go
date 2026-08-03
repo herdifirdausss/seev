@@ -23,6 +23,7 @@ import (
 	fraudv1 "github.com/herdifirdausss/seev/gen/fraud/v1"
 	"github.com/herdifirdausss/seev/internal/config"
 	"github.com/herdifirdausss/seev/internal/ledger"
+	"github.com/herdifirdausss/seev/internal/ledger/migration/balancev2"
 	ledgerrepository "github.com/herdifirdausss/seev/internal/ledger/repository"
 	"github.com/herdifirdausss/seev/internal/policy"
 	"github.com/herdifirdausss/seev/pkg/alerting"
@@ -252,6 +253,19 @@ func run(parent context.Context) error {
 	module := ledger.NewModule(db, mq, redisClient, ledger.WorkerConfig{
 		Enabled: cfg.Worker.Enabled, OutboxPollInterval: cfg.Worker.OutboxPollInterval,
 		OutboxBatchSize: cfg.Worker.OutboxBatchSize, AlertWebhookURL: cfg.Worker.AlertWebhookURL,
+		BalanceV2: balancev2.Config{
+			Enabled: cfg.Ledger.BalanceV2.Enabled, EmergencySourceRead: cfg.Ledger.BalanceV2.EmergencySourceRead,
+			DisableTargetWrites: cfg.Ledger.BalanceV2.DisableTargetWrites,
+			BackfillBatchSize: cfg.Ledger.BalanceV2.BackfillBatchSize, BackfillWorkers: cfg.Ledger.BalanceV2.BackfillWorkers,
+			BackfillSleep: cfg.Ledger.BalanceV2.BackfillSleep, BackfillStatementTimeout: cfg.Ledger.BalanceV2.BackfillStatementTimeout,
+			BackfillLockTimeout: cfg.Ledger.BalanceV2.BackfillLockTimeout, ShadowWorkers: cfg.Ledger.BalanceV2.ShadowWorkers,
+			ShadowQueueSize: cfg.Ledger.BalanceV2.ShadowQueueSize, ShadowTimeout: cfg.Ledger.BalanceV2.ShadowTimeout,
+			ShadowSampleBasisPoints: cfg.Ledger.BalanceV2.ShadowSampleBasisPoints, ShadowMaxRPS: cfg.Ledger.BalanceV2.ShadowMaxRPS,
+			ShadowPerAccountCooldown: cfg.Ledger.BalanceV2.ShadowPerAccountCooldown, TargetReadTimeout: cfg.Ledger.BalanceV2.TargetReadTimeout,
+			SourceFallback: cfg.Ledger.BalanceV2.SourceFallback, SourceFallbackConfigured: true, ReconcileBatchSize: cfg.Ledger.BalanceV2.ReconcileBatchSize,
+			RepairBatchSize: cfg.Ledger.BalanceV2.RepairBatchSize, RepairWorkers: cfg.Ledger.BalanceV2.RepairWorkers,
+			WorkerInterval: cfg.Ledger.BalanceV2.WorkerInterval, BaselineCommit: cfg.Ledger.BalanceV2.BaselineCommit,
+		},
 	}, log, decimal.NewFromInt(cfg.Ledger.MaxAmountPerTx), policyEngine, fraudClient, cfg.Ledger.FeeQuoteTTL, digestRing, cryptoxRing)
 	if err := module.LoadCurrencies(ctx); err != nil {
 		closeDependencies(log, module, mq, redisCache, db, shutdownTracing)

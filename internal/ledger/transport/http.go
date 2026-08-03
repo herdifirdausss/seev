@@ -166,6 +166,20 @@ func (h *handler) mux() http.Handler {
 	// network isolation of the internal listener is the primary control,
 	// not the only one, for an operation this sensitive.
 	if h.allowedTypes == nil {
+		// C6 data-migration control plane — typed Ledger-owned admin API only;
+		// the Admin BFF proxies these routes and never queries migration tables.
+		mux.HandleFunc("GET /admin/migrations", h.listMigrations)
+		mux.HandleFunc("GET /admin/migrations/{id}", h.getMigration)
+		mux.HandleFunc("POST /admin/migrations/{id}/transition", h.transitionMigration)
+		mux.HandleFunc("POST /admin/migrations/{id}/read-percentage", h.setMigrationReadPercentage)
+		mux.HandleFunc("POST /admin/migrations/{id}/dual-write", h.setMigrationDualWrite)
+		mux.HandleFunc("POST /admin/migrations/{id}/pause", h.pauseMigration)
+		mux.HandleFunc("POST /admin/migrations/{id}/resume", h.resumeMigration)
+		mux.HandleFunc("GET /admin/migrations/{id}/mismatches", h.listMigrationMismatches)
+		mux.HandleFunc("POST /admin/migrations/{id}/reconcile", h.runMigrationReconciliation)
+		mux.HandleFunc("POST /admin/migrations/{id}/mismatches/{mismatch_id}/repair", h.requestMigrationRepair)
+		mux.HandleFunc("POST /admin/migrations/{id}/repairs/{repair_id}/approve", h.approveMigrationRepair)
+
 		mux.HandleFunc("POST /admin/outbox/dead/{id}/replay", h.replayDeadEvent)
 		mux.HandleFunc("POST /admin/outbox/dead/replay-all", h.replayAllDeadEvents)
 		mux.HandleFunc("GET /admin/outbox/dead", h.listDeadEvents)
