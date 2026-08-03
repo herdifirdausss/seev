@@ -224,6 +224,35 @@ type LedgerConfig struct {
 	// tight, since a tier upgrade taking up to a minute to reflect
 	// everywhere is an accepted tradeoff, same as fee_rules staleness).
 	PolicyCacheTTL time.Duration
+	BalanceV2      BalanceV2Config
+}
+
+// BalanceV2Config is the composition-root representation of the C6 safety
+// controls. It intentionally mirrors the migration package without importing
+// the Ledger implementation into shared configuration.
+type BalanceV2Config struct {
+	Enabled                  bool
+	EmergencySourceRead      bool
+	DisableTargetWrites      bool
+	BackfillBatchSize        int
+	BackfillWorkers          int
+	BackfillSleep            time.Duration
+	BackfillStatementTimeout time.Duration
+	BackfillLockTimeout      time.Duration
+	ShadowWorkers            int
+	ShadowQueueSize          int
+	ShadowTimeout            time.Duration
+	ShadowSampleBasisPoints  int
+	ShadowMaxRPS             int
+	ShadowPerAccountCooldown time.Duration
+	TargetReadTimeout        time.Duration
+	SourceFallback           bool
+	SourceFallbackConfigured bool
+	ReconcileBatchSize       int
+	RepairBatchSize          int
+	RepairWorkers            int
+	WorkerInterval           time.Duration
+	BaselineCommit           string
 }
 
 // FraudConfig contains fraud-service rule configuration.
@@ -567,6 +596,15 @@ func loadFromEnv(getenv func(string) string) (*Config, error) {
 
 func loadFromEnvMode(getenv func(string) string, requireRabbitMQ bool) (*Config, error) {
 	var errs []string
+	// The roadmap names Ledger-specific tunables BALANCE_V2_*. Keep the
+	// DATA_MIGRATION_* aliases for deployments that adopted the first draft of
+	// the control plane; the documented BALANCE_V2_ name wins when both exist.
+	migrationEnv := func(name string) string {
+		if value := getenv("BALANCE_V2_" + name); value != "" {
+			return value
+		}
+		return getenv("DATA_MIGRATION_" + name)
+	}
 
 	cfg := &Config{
 		App: AppConfig{
@@ -668,6 +706,29 @@ func loadFromEnvMode(getenv func(string) string, requireRabbitMQ bool) (*Config,
 			MaxAmountPerTx: parseInt64(getenv("LEDGER_MAX_AMOUNT_PER_TX"), 1_000_000_000),
 			FeeQuoteTTL:    parseDuration(getenv("FEE_QUOTE_TTL"), 10*time.Minute),
 			PolicyCacheTTL: parseDuration(getenv("POLICY_CACHE_TTL"), 60*time.Second),
+			BalanceV2: BalanceV2Config{
+				Enabled:                  parseBool(getenv("DATA_MIGRATION_ENABLED"), false),
+				EmergencySourceRead:      parseBool(getenv("DATA_MIGRATION_EMERGENCY_SOURCE_READ"), true),
+				DisableTargetWrites:      parseBool(getenv("DATA_MIGRATION_DISABLE_TARGET_WRITES"), false),
+				BackfillBatchSize:        parseInt(migrationEnv("BACKFILL_BATCH_SIZE"), 100),
+				BackfillWorkers:          parseInt(migrationEnv("BACKFILL_WORKERS"), 1),
+				BackfillSleep:            parseDuration(migrationEnv("BACKFILL_SLEEP"), 50*time.Millisecond),
+				BackfillStatementTimeout: parseDuration(migrationEnv("BACKFILL_STATEMENT_TIMEOUT"), 5*time.Second),
+				BackfillLockTimeout:      parseDuration(migrationEnv("BACKFILL_LOCK_TIMEOUT"), 500*time.Millisecond),
+				ShadowWorkers:            parseInt(migrationEnv("SHADOW_WORKERS"), 4),
+				ShadowQueueSize:          parseInt(migrationEnv("SHADOW_QUEUE_SIZE"), 1000),
+				ShadowTimeout:            parseDuration(migrationEnv("SHADOW_TIMEOUT"), 50*time.Millisecond),
+				ShadowSampleBasisPoints:  parseInt(migrationEnv("SHADOW_SAMPLE_BPS"), 10000),
+				ShadowMaxRPS:             parseInt(migrationEnv("SHADOW_MAX_RPS"), 100),
+				ShadowPerAccountCooldown: parseDuration(migrationEnv("SHADOW_COOLDOWN"), time.Minute),
+				TargetReadTimeout:        parseDuration(migrationEnv("TARGET_READ_TIMEOUT"), 50*time.Millisecond),
+				SourceFallback:           parseBool(migrationEnv("SOURCE_FALLBACK"), true),
+				ReconcileBatchSize:       parseInt(migrationEnv("RECONCILE_BATCH_SIZE"), 100),
+				RepairBatchSize:          parseInt(migrationEnv("REPAIR_BATCH_SIZE"), 50),
+				RepairWorkers:            parseInt(migrationEnv("REPAIR_WORKERS"), 1),
+				WorkerInterval:           parseDuration(migrationEnv("WORKER_INTERVAL"), time.Second),
+				BaselineCommit:           getWithDefault(migrationEnv, "BASELINE_COMMIT", "unknown"),
+			},
 		},
 		Fraud: FraudConfig{
 			ScreeningMode:               getWithDefault(getenv, "SCREENING_MODE", "off"),
