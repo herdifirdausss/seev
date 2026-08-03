@@ -26,6 +26,7 @@ import (
 	"github.com/herdifirdausss/seev/internal/ledger/model"
 	"github.com/herdifirdausss/seev/internal/ledger/processors"
 	"github.com/herdifirdausss/seev/internal/ledger/repository"
+	currencypkg "github.com/herdifirdausss/seev/pkg/currency"
 	"github.com/herdifirdausss/seev/pkg/generalutil"
 )
 
@@ -56,18 +57,28 @@ var allowedKinds = map[string]bool{"once": true, "daily": true, "monthly": true}
 // time (fail fast, pola pending_adjustments). UserID is NOT stored here —
 // it's always the row's own user_id column, injected at RunDue time.
 type cmdPayload struct {
+	Version      int            `json:"version,omitempty"`
 	Type         string         `json:"type"`
 	Amount       string         `json:"amount"`
+	Currency     string         `json:"currency,omitempty"`
 	TargetUserID uuid.UUID      `json:"target_user_id,omitempty"`
 	PocketCode   string         `json:"pocket_code,omitempty"`
 	Metadata     map[string]any `json:"metadata,omitempty"`
 }
 
+// C5SchedulePolicyUpdater is implemented by the concrete repository after
+// migration 000039. It is optional so the legacy constructor remains usable
+// while a deployment is being rolled forward.
+type C5SchedulePolicyUpdater interface {
+	UpdatePolicy(context.Context, uuid.UUID, model.ScheduledPolicy, string, string, string) error
+}
+
 type Service struct {
-	db     DatabaseSQL
-	repo   repository.ScheduledTransactionRepository
-	poster Poster
-	logger *slog.Logger
+	db       DatabaseSQL
+	repo     repository.ScheduledTransactionRepository
+	poster   Poster
+	logger   *slog.Logger
+	durable  *DurableService
 }
 
 func New(db DatabaseSQL, repo repository.ScheduledTransactionRepository, poster Poster, logger *slog.Logger) *Service {
@@ -75,6 +86,22 @@ func New(db DatabaseSQL, repo repository.ScheduledTransactionRepository, poster 
 		logger = slog.Default()
 	}
 	return &Service{db: db, repo: repo, poster: poster, logger: logger}
+}
+
+// SetDurable wires the C5 occurrence state machine without changing the
+// legacy schedule service constructor or its generated repository contract.
+func (s *Service) SetDurable(durable *DurableService) {
+	s.durable = durable
+}
+
+// RunDurable is selected by the shared worker when C5 persistence is wired.
+// The fallback preserves the pre-C5 runner for migrations where the new
+// occurrence tables have not been deployed yet.
+func (s *Service) RunDurable(ctx context.Context, asOf time.Time) (executed, failed int, err error) {
+	if s.durable == nil {
+		return s.RunDue(ctx, asOf)
+	}
+	return s.durable.RunDurable(ctx, asOf)
 }
 
 // Create validates and stores a new scheduled transaction. It does NOT post
@@ -115,7 +142,7 @@ func (s *Service) Create(
 		return uuid.Nil, fmt.Errorf("%w: created_by (caller identity) is required", apperror.ErrValidation)
 	}
 
-	payload := cmdPayload{Type: txType, Amount: amount.String(), TargetUserID: targetUserID, PocketCode: pocketCode, Metadata: metadata}
+	payload := cmdPayload{Version: 1, Type: txType, Amount: amount.String(), TargetUserID: targetUserID, PocketCode: pocketCode, Metadata: metadata}
 	payloadJSON, err := json.Marshal(payload)
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("marshal schedule payload: %w", err)
@@ -126,6 +153,59 @@ func (s *Service) Create(
 		return s.repo.Create(ctx, tx, id, userID, payloadJSON, kind, runAtDate, dayOfMonth, createdBy)
 	})
 	if err != nil {
+		return uuid.Nil, err
+	}
+	return id, nil
+}
+
+// CreateWithPolicy is the C5 schedule creation path. The historical Create
+// method remains the compatibility API; this additive path stores explicit
+// missed-run and fee-consent policy before the schedule can execute.
+func (s *Service) CreateWithPolicy(
+	ctx context.Context, userID uuid.UUID, txType string, amount decimal.Decimal,
+	targetUserID uuid.UUID, pocketCode string, metadata map[string]any,
+	kind string, runAtDate time.Time, dayOfMonth *int, createdBy string,
+	policy model.ScheduledPolicy, currency, timezone, localTime string,
+) (uuid.UUID, error) {
+	policy, err := NormalizePolicy(kind, policy)
+	if err != nil {
+		return uuid.Nil, err
+	}
+	if currency != "" && !currencypkg.IsValid(currency) {
+		return uuid.Nil, fmt.Errorf("%w: schedule currency is invalid", apperror.ErrValidation)
+	}
+	if timezone != "" {
+		if _, err := time.LoadLocation(timezone); err != nil {
+			return uuid.Nil, fmt.Errorf("%w: schedule timezone is invalid", apperror.ErrValidation)
+		}
+	}
+	if localTime != "" {
+		if _, err := time.Parse("15:04", localTime); err != nil {
+			return uuid.Nil, fmt.Errorf("%w: schedule local_time must be HH:MM", apperror.ErrValidation)
+		}
+	}
+	if policy.MaxFeeAmount != nil && *policy.MaxFeeAmount < 0 {
+		return uuid.Nil, fmt.Errorf("%w: schedule max_fee_amount cannot be negative", apperror.ErrValidation)
+	}
+	updater, ok := s.repo.(C5SchedulePolicyUpdater)
+	if !ok {
+		return uuid.Nil, fmt.Errorf("%w: C5 schedule persistence is not installed", apperror.ErrValidation)
+	}
+	id, err := s.Create(ctx, userID, txType, amount, targetUserID, pocketCode, metadata, kind, runAtDate, dayOfMonth, createdBy)
+	if err != nil {
+		return uuid.Nil, err
+	}
+	if err := updater.UpdatePolicy(ctx, id, policy, currency, timezone, localTime); err != nil {
+		// The legacy create and additive policy update cannot share one
+		// repository interface transaction. Quarantine the row if the second
+		// phase fails so a partially configured schedule can never execute.
+		pauseErr := s.db.WithTx(ctx, nil, func(tx *sql.Tx) error {
+			_, pauseErr := s.repo.Pause(ctx, tx, id)
+			return pauseErr
+		})
+		if pauseErr != nil {
+			return uuid.Nil, fmt.Errorf("%w (failed to quarantine schedule: %v)", err, pauseErr)
+		}
 		return uuid.Nil, err
 	}
 	return id, nil

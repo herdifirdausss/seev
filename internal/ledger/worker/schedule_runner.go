@@ -15,6 +15,10 @@ type scheduleRunner interface {
 	RunDue(ctx context.Context, asOf time.Time) (executed, failed int, err error)
 }
 
+type durableScheduleRunner interface {
+	RunDurable(ctx context.Context, asOf time.Time) (executed, failed int, err error)
+}
+
 // ScheduleRunnerJob runs docs/roadmap/archive/19 Task T1's daily job: post every
 // scheduled_transactions row due today. Unlike SnapshotJob, there is no
 // day-by-day catch-up loop on Start — a missed calendar day for a
@@ -49,11 +53,15 @@ func NewScheduleRunnerJob(runner scheduleRunner, lock scheduler.LockProvider, lo
 	}
 }
 
-// Start registers the daily cron — 00:30 Asia/Jakarta, after the balance
-// snapshot job (00:15) so schedules that read balance state are never
-// racing an incomplete snapshot for the day that just closed (docs/roadmap/archive/19
-// Task T1 step 4). Call Stop to shut down.
+// Start registers the durable occurrence dispatcher at one-minute cadence.
+// The durable runner plans missed occurrences and dispatches ready work from
+// persisted state, so it must not wait for the legacy daily trigger. Legacy
+// schedule rows retain the 00:30 Asia/Jakarta trigger after the balance
+// snapshot job (00:15). Call Stop to shut down.
 func (j *ScheduleRunnerJob) Start(ctx context.Context) error {
+	if _, ok := j.runner.(durableScheduleRunner); ok {
+		return j.sched.Cron("schedule-occurrence-dispatcher", "* * * * *", j.runDaily)
+	}
 	return j.sched.Cron("schedule-runner", "30 0 * * *", j.runDaily)
 }
 
@@ -70,12 +78,15 @@ func (j *ScheduleRunnerJob) Stop() {
 // multiple replicas, and Post()'s own idempotency key makes even that safe
 // (just redundant work), never a double-post.
 func (j *ScheduleRunnerJob) RunNow(ctx context.Context, asOf time.Time) (executed, failed int, err error) {
+	if durable, ok := j.runner.(durableScheduleRunner); ok {
+		return durable.RunDurable(ctx, asOf)
+	}
 	return j.runner.RunDue(ctx, asOf)
 }
 
 func (j *ScheduleRunnerJob) runDaily(ctx context.Context) error {
 	today := time.Now().In(j.loc)
-	executed, failed, err := j.runner.RunDue(ctx, today)
+	executed, failed, err := j.RunNow(ctx, today)
 	if err != nil {
 		j.logger.Error("schedule-runner: RunDue failed", slog.Any("error", err))
 		return err

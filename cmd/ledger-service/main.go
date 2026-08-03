@@ -253,6 +253,7 @@ func run(parent context.Context) error {
 	module := ledger.NewModule(db, mq, redisClient, ledger.WorkerConfig{
 		Enabled: cfg.Worker.Enabled, OutboxPollInterval: cfg.Worker.OutboxPollInterval,
 		OutboxBatchSize: cfg.Worker.OutboxBatchSize, AlertWebhookURL: cfg.Worker.AlertWebhookURL,
+		C5Enabled: cfg.Worker.C5Enabled,
 		BalanceV2: balancev2.Config{
 			Enabled: cfg.Ledger.BalanceV2.Enabled, EmergencySourceRead: cfg.Ledger.BalanceV2.EmergencySourceRead,
 			DisableTargetWrites: cfg.Ledger.BalanceV2.DisableTargetWrites,

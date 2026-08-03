@@ -23,6 +23,18 @@ type WebhookEvent struct {
 	// to a user, unchanged from before T6.
 	MerchantTenantID uuid.UUID
 	Amount           decimal.Decimal
+	// FeeAmount is the Ledger-owned platform fee captured at quote/intent
+	// creation. For a matched callback it is added on top of the provider
+	// amount represented by the legacy webhook Amount column; the requested
+	// wallet credit is reconstructed as TotalDebit - FeeAmount.
+	FeeAmount          decimal.Decimal
+	TotalDebit         decimal.Decimal
+	FeeGateway         string
+	FeeQuoteID         *uuid.UUID
+	FeeRuleID          *uuid.UUID
+	FeeApplication     string
+	FeeQuoteConsumedAt *time.Time
+	FeeSnapshotVersion int
 	Currency         string
 	Raw              []byte // raw webhook body, forensic/replay — never exposed in any reporting view
 	Status           string // received | posted | failed
@@ -53,8 +65,20 @@ type TopupIntent struct {
 	// merchant-owned intent — exactly one of the two is ever non-zero.
 	MerchantTenantID uuid.UUID
 	Amount           decimal.Decimal
-	Currency         string
+	// FeeAmount and TotalDebit are the immutable Ledger-owned settlement
+	// snapshot. Amount remains the principal credited to the wallet; the
+	// provider collects TotalDebit = Amount + FeeAmount.
+	FeeAmount          decimal.Decimal
+	TotalDebit         decimal.Decimal
+	FeeGateway         string
+	FeeQuoteID         *uuid.UUID
+	FeeRuleID          *uuid.UUID
+	FeeApplication     string
+	FeeQuoteConsumedAt *time.Time
+	FeeSnapshotVersion int
+	Currency           string
 	Vendor           string
+	Gateway          string
 	Status           string // pending | settled | expired
 	SettledEventID   *uuid.UUID
 	// DownstreamKey (B2B HTTP handlers follow-up to Plan 57 T6) is the
@@ -70,6 +94,23 @@ type TopupIntent struct {
 	RequestID string
 	CreatedAt time.Time
 	UpdatedAt time.Time
+}
+
+const TopupFeeApplicationAddedOnTop = "added_on_top"
+
+// NormalizeFinancials keeps pre-C5 rows readable while making all new
+// lifecycle paths explicit. A legacy fee-free intent has total_debit equal to
+// its principal amount.
+func (i *TopupIntent) NormalizeFinancials() {
+	if i.FeeAmount.IsNegative() {
+		i.FeeAmount = decimal.Zero
+	}
+	if i.TotalDebit.IsZero() {
+		i.TotalDebit = i.Amount.Add(i.FeeAmount)
+	}
+	if i.FeeApplication == "" {
+		i.FeeApplication = TopupFeeApplicationAddedOnTop
+	}
 }
 
 // RoutingRule selects a vendor for a flow. Nil match fields are wildcards.

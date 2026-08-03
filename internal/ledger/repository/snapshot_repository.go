@@ -70,6 +70,13 @@ type SnapshotRepository interface {
 	LatestSnapshotDate(ctx context.Context) (date time.Time, found bool, err error)
 }
 
+// SnapshotReader is the immutable-row lookup used by C5 daily accrual.  It is
+// intentionally additive to SnapshotRepository: legacy callers only need a
+// balance, while C5 also records the exact snapshot evidence id.
+type SnapshotReader interface {
+	SnapshotAt(ctx context.Context, accountID uuid.UUID, date time.Time) (id uuid.UUID, balance decimal.Decimal, found bool, err error)
+}
+
 type snapshotRepo struct {
 	db  database.DatabaseSQL
 	loc *time.Location
@@ -114,6 +121,32 @@ func (r *snapshotRepo) InsertForDate(ctx context.Context, date time.Time) (int, 
 	return int(n), nil
 }
 
+// InsertForDateAllAccounts is the C5 exact-closing-snapshot path. The legacy
+// job intentionally writes only accounts with activity; monthly interest
+// needs an immutable row even when an enrolled account was unchanged that day.
+// It is additive and is reached through a structural assertion by the C5
+// Ledger facade, so legacy snapshot callers keep their original workload.
+func (r *snapshotRepo) InsertForDateAllAccounts(ctx context.Context, date time.Time) (int, error) {
+	res, err := r.db.ExecContext(ctx, `
+		INSERT INTO account_balance_snapshots (account_id, as_of_date, closing_balance, entry_count)
+		SELECT a.id, $1::date,
+		       COALESCE((SELECT le.balance_after FROM ledger_entries le
+		         WHERE le.account_id=a.id
+		           AND le.created_at < (($1::date + 1)::timestamp AT TIME ZONE $2)
+		         ORDER BY le.created_at DESC, le.id DESC LIMIT 1), 0),
+		       (SELECT count(*) FROM ledger_entries le
+		         WHERE le.account_id=a.id
+		           AND le.created_at >= ($1::date::timestamp AT TIME ZONE $2)
+		           AND le.created_at < (($1::date + 1)::timestamp AT TIME ZONE $2))
+		FROM accounts a
+		WHERE a.status='active' AND a.type IN ('cash','pocket')
+		ON CONFLICT (account_id, as_of_date) DO NOTHING`, date.Format(dateLayout), r.loc.String())
+	if err != nil { return 0, fmt.Errorf("insert complete C5 snapshot for %s: %w", date.Format(dateLayout), err) }
+	n, err := res.RowsAffected()
+	if err != nil { return 0, fmt.Errorf("insert complete C5 snapshot for %s: rows affected: %w", date.Format(dateLayout), err) }
+	return int(n), nil
+}
+
 func (r *snapshotRepo) GetLatestBefore(ctx context.Context, accountID uuid.UUID, date time.Time) (decimal.Decimal, time.Time, bool, error) {
 	var balance int64
 	var asOf time.Time
@@ -132,6 +165,21 @@ func (r *snapshotRepo) GetLatestBefore(ctx context.Context, accountID uuid.UUID,
 		return decimal.Zero, time.Time{}, false, fmt.Errorf("get latest snapshot before %s: %w", date.Format(dateLayout), err)
 	}
 	return decimal.NewFromInt(balance), asOf, true, nil
+}
+
+func (r *snapshotRepo) SnapshotAt(ctx context.Context, accountID uuid.UUID, date time.Time) (uuid.UUID, decimal.Decimal, bool, error) {
+	var id uuid.UUID
+	var balance int64
+	err := r.db.QueryRowContext(ctx, `SELECT id, closing_balance
+		FROM account_balance_snapshots WHERE account_id=$1 AND as_of_date=$2::date`,
+		accountID, date.Format(dateLayout)).Scan(&id, &balance)
+	if errors.Is(err, sql.ErrNoRows) {
+		return uuid.Nil, decimal.Zero, false, nil
+	}
+	if err != nil {
+		return uuid.Nil, decimal.Zero, false, fmt.Errorf("get immutable snapshot for %s: %w", date.Format(dateLayout), err)
+	}
+	return id, decimal.NewFromInt(balance), true, nil
 }
 
 func (r *snapshotRepo) BalanceAsOf(ctx context.Context, accountID uuid.UUID, date time.Time) (decimal.Decimal, error) {
