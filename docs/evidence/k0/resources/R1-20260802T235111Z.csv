@@ -1,0 +1,7 @@
+timestamp_utc,profile,container,cpu_percent,memory_usage,memory_limit,memory_percent,net_io,block_io,pids
+2026-08-02T23:51:14Z,R1,seev-k0-admin-bff-service-1,0.00%,22.3MiB,128MiB,17.42%,2.35kB / 1.14kB,18.8MB / 0B,8
+2026-08-02T23:51:21Z,R1,seev-k0-admin-bff-service-1,13.76%,23.55MiB,128MiB,18.40%,2.35kB / 1.14kB,18.8MB / 0B,11
+2026-08-02T23:51:27Z,R1,seev-k0-admin-bff-service-1,0.00%,23.73MiB,128MiB,18.54%,2.41kB / 1.21kB,18.9MB / 0B,11
+2026-08-02T23:51:33Z,R1,seev-k0-admin-bff-service-1,0.00%,23.78MiB,128MiB,18.58%,2.41kB / 1.21kB,18.9MB / 0B,11
+2026-08-02T23:51:40Z,R1,seev-k0-admin-bff-service-1,0.00%,23.83MiB,128MiB,18.62%,2.41kB / 1.21kB,18.9MB / 0B,11
+2026-08-02T23:51:46Z,R1,seev-k0-admin-bff-service-1,0.00%,23.86MiB,128MiB,18.64%,2.52kB / 1.31kB,18.9MB / 0B,11

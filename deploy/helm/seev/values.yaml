@@ -1,0 +1,310 @@
+global:
+  imagePullSecrets: []
+  image:
+    repository: ghcr.io/herdifirdausss/seev
+    tag: dev
+    digest: ""
+    pullPolicy: IfNotPresent
+  appNamespace: seev-app
+  dataNamespace: seev-data
+  egressNamespace: seev-egress
+  edgeNamespace: seev-edge
+  serviceAccountPrefix: seev
+  runtimeSecret: seev-runtime-secrets
+  dataSecret: seev-data-secrets
+  cryptoSecret: seev-crypto-secrets
+  mtlsSecret: seev-mtls
+  probeSecret: seev-probe-certs
+  appEnv: staging
+  jwtIssuer: seev
+  postgres:
+    host: postgres.seev-data.svc.cluster.local
+    port: "5432"
+    sslMode: require
+  redis:
+    enabled: true
+    addr: redis.seev-data.svc.cluster.local:6379
+  rabbitmq:
+    host: rabbitmq.seev-data.svc.cluster.local
+    port: "5672"
+    exchange: ledger.events
+  telemetry:
+    otlpEndpoint: ""
+    insecure: "false"
+    sampleRatio: "0.10"
+
+image:
+  repository: ghcr.io/herdifirdausss/seev
+  tag: dev
+  digest: ""
+  pullPolicy: IfNotPresent
+
+podAnnotations: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+topologySpreadConstraints: []
+
+networkPolicy:
+  # The Kubernetes API Service normally resolves inside the cluster service
+  # CIDR. Some CNIs, including kind's Docker network, DNAT that request to a
+  # control-plane node address; provider overlays/local profiles must add that
+  # address range explicitly rather than opening arbitrary HTTPS egress.
+  edgeKubernetesAPICIDRs:
+    - 10.0.0.0/8
+  edgeKubernetesAPIPorts:
+    - 443
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 2
+  targetCPUUtilizationPercentage: 70
+  services: [gateway, auth]
+
+secrets:
+  create: false
+
+certs:
+  edgeTLSSecret: seev-edge-tls
+
+migrations:
+  enabled: true
+  image:
+    repository: ghcr.io/herdifirdausss/seev-migrations
+    tag: dev
+    digest: ""
+    pullPolicy: IfNotPresent
+  backoffLimit: 3
+  user: seev
+  sslMode: require
+
+data:
+  enabled: true
+  postgres:
+    image: postgres:16.4-alpine
+    storageClass: ""
+    storageSize: 10Gi
+    resources:
+      requests: {cpu: 100m, memory: 256Mi}
+      limits: {cpu: 500m, memory: 768Mi}
+  redis:
+    image: redis:7.4.9-alpine
+    storageClass: ""
+    storageSize: 2Gi
+    resources:
+      requests: {cpu: 25m, memory: 64Mi}
+      limits: {cpu: 250m, memory: 256Mi}
+  rabbitmq:
+    image: rabbitmq:3.13.7-management-alpine
+    storageClass: ""
+    storageSize: 2Gi
+    resources:
+      requests: {cpu: 50m, memory: 128Mi}
+      limits: {cpu: 500m, memory: 512Mi}
+
+egress:
+  enabled: true
+  image: ubuntu/squid:6.6-24.04_beta
+  replicas: 1
+  servicePort: 3128
+  allowedDomains:
+    - ".example.invalid"
+  resources:
+    requests: {cpu: 25m, memory: 64Mi}
+    limits: {cpu: 250m, memory: 256Mi}
+
+observability:
+  serviceMonitor:
+    enabled: false
+
+traefik:
+  gatewayClassName: traefik
+  gatewayName: seev-public
+  serviceName: traefik
+  # Gateway listener ports must match Traefik's unprivileged container
+  # entryPoints. The Service exposes these as external 443/80 ports.
+  httpsPort: 8443
+  httpPort: 8000
+  publicHost: api.local.seev.test
+  callbackHost: callback.local.seev.test
+  allowedCallbackCIDRs:
+    - 127.0.0.1/32
+    - 10.244.0.0/16
+  rateLimit:
+    average: 20
+    burst: 40
+  callbackRateLimit:
+    average: 10
+    burst: 20
+
+services:
+  gateway:
+    enabled: true
+    image: gateway-service
+    identity: gateway
+    replicas: 1
+    ports:
+      - {name: http, port: 8080, targetPort: 8080}
+      - {name: internal, port: 8081, targetPort: 8081}
+    env:
+      APP_PORT: "8080"
+      INTERNAL_APP_PORT: "8081"
+      INTERNAL_APP_BIND_ADDR: "0.0.0.0"
+      LEDGER_GRPC_ADDR: ledger-service.seev-app.svc.cluster.local:9091
+      LEDGER_USER_API_URL: https://ledger-service.seev-app.svc.cluster.local:8090
+      PAYIN_GRPC_ADDR: payin-service.seev-app.svc.cluster.local:9092
+      PAYOUT_GRPC_ADDR: payout-service.seev-app.svc.cluster.local:9093
+      FRAUD_GRPC_ADDR: fraud-service.seev-app.svc.cluster.local:9094
+      VENDOR_SERVICE_ENABLED: "true"
+    resources:
+      requests: {cpu: 100m, memory: 128Mi}
+      limits: {cpu: 500m, memory: 512Mi}
+  auth:
+    enabled: true
+    image: auth-service
+    identity: auth
+    replicas: 1
+    ports:
+      - {name: http, port: 8082, targetPort: 8082}
+      - {name: internal, port: 8083, targetPort: 8083}
+    env:
+      APP_PORT: "8082"
+      INTERNAL_APP_PORT: "8083"
+      INTERNAL_APP_BIND_ADDR: "0.0.0.0"
+      LEDGER_GRPC_ADDR: ledger-service.seev-app.svc.cluster.local:9091
+      PAYIN_GRPC_ADDR: payin-service.seev-app.svc.cluster.local:9092
+      PAYOUT_GRPC_ADDR: payout-service.seev-app.svc.cluster.local:9093
+      FRAUD_GRPC_ADDR: fraud-service.seev-app.svc.cluster.local:9094
+    resources:
+      requests: {cpu: 100m, memory: 128Mi}
+      limits: {cpu: 500m, memory: 512Mi}
+  ledger:
+    enabled: true
+    image: ledger-service
+    identity: ledger
+    replicas: 1
+    ports:
+      - {name: user-http, port: 8090, targetPort: 8090}
+      - {name: internal-http, port: 8091, targetPort: 8091}
+      - {name: grpc, port: 9091, targetPort: 9091}
+    env:
+      APP_PORT: "8090"
+      INTERNAL_APP_PORT: "8091"
+      INTERNAL_APP_BIND_ADDR: "0.0.0.0"
+      GRPC_PORT: "9091"
+      WORKER_ENABLED: "true"
+    resources:
+      requests: {cpu: 200m, memory: 256Mi}
+      limits: {cpu: 1000m, memory: 768Mi}
+  payin:
+    enabled: true
+    image: payin-service
+    identity: payin
+    replicas: 1
+    ports:
+      - {name: http, port: 8092, targetPort: 8092}
+      - {name: grpc, port: 9092, targetPort: 9092}
+    env:
+      APP_PORT: "8092"
+      GRPC_PORT: "9092"
+      LEDGER_GRPC_ADDR: ledger-service.seev-app.svc.cluster.local:9091
+      VENDOR_GRPC_ADDR: vendor-service.seev-app.svc.cluster.local:9098
+      FRAUD_GRPC_ADDR: fraud-service.seev-app.svc.cluster.local:9094
+      VENDOR_SERVICE_ENABLED: "true"
+    resources:
+      requests: {cpu: 100m, memory: 128Mi}
+      limits: {cpu: 500m, memory: 512Mi}
+  payout:
+    enabled: true
+    image: payout-service
+    identity: payout
+    replicas: 1
+    ports:
+      - {name: http, port: 8093, targetPort: 8093}
+      - {name: grpc, port: 9093, targetPort: 9093}
+    env:
+      APP_PORT: "8093"
+      GRPC_PORT: "9093"
+      LEDGER_GRPC_ADDR: ledger-service.seev-app.svc.cluster.local:9091
+      VENDOR_GRPC_ADDR: vendor-service.seev-app.svc.cluster.local:9098
+      FRAUD_GRPC_ADDR: fraud-service.seev-app.svc.cluster.local:9094
+      VENDOR_SERVICE_ENABLED: "true"
+    resources:
+      requests: {cpu: 100m, memory: 128Mi}
+      limits: {cpu: 500m, memory: 512Mi}
+  fraud:
+    enabled: true
+    image: fraud-service
+    identity: fraud
+    replicas: 1
+    ports:
+      - {name: http, port: 8094, targetPort: 8094}
+      - {name: grpc, port: 9094, targetPort: 9094}
+    env:
+      APP_PORT: "8094"
+      GRPC_PORT: "9094"
+      LEDGER_GRPC_ADDR: ledger-service.seev-app.svc.cluster.local:9091
+    resources:
+      requests: {cpu: 100m, memory: 128Mi}
+      limits: {cpu: 500m, memory: 512Mi}
+  vendor:
+    enabled: true
+    image: vendor-service
+    identity: vendor
+    replicas: 1
+    callbackCIDRs: 127.0.0.1/32,10.244.0.0/16
+    trustedProxyCIDRs: ""
+    egressProxyRequired: true
+    ports:
+      - {name: http, port: 8098, targetPort: 8098}
+      - {name: grpc, port: 9098, targetPort: 9098}
+    env:
+      APP_PORT: "8098"
+      GRPC_PORT: "9098"
+      PAYIN_GRPC_ADDR: payin-service.seev-app.svc.cluster.local:9092
+      PAYOUT_GRPC_ADDR: payout-service.seev-app.svc.cluster.local:9093
+      VENDOR_SERVICE_ENABLED: "true"
+      VENDOR_MOCKVENDOR_ENABLED: "true"
+      MOCKVENDOR2_ENABLED: "false"
+      VENDOR_EGRESS_PROXY_URL: http://squid.seev-egress.svc.cluster.local:3128
+      VENDOR_CALLBACK_CIDRS: 127.0.0.1/32,10.244.0.0/16
+      VENDOR_CALLBACK_TRUSTED_PROXY_CIDRS: ""
+    resources:
+      requests: {cpu: 100m, memory: 128Mi}
+      limits: {cpu: 500m, memory: 512Mi}
+  admin-bff:
+    enabled: true
+    image: admin-bff-service
+    identity: admin-bff
+    replicas: 1
+    ports:
+      - {name: http, port: 8095, targetPort: 8095}
+    env:
+      APP_PORT: "8095"
+      AUTH_SERVICE_URL: http://auth-service.seev-app.svc.cluster.local:8082
+      AUTH_ADMIN_SERVICE_URL: https://auth-service.seev-app.svc.cluster.local:8083
+      LEDGER_SERVICE_URL: https://ledger-service.seev-app.svc.cluster.local:8091
+      PAYIN_SERVICE_URL: https://payin-service.seev-app.svc.cluster.local:8092
+      PAYOUT_SERVICE_URL: https://payout-service.seev-app.svc.cluster.local:8093
+      FRAUD_SERVICE_URL: https://fraud-service.seev-app.svc.cluster.local:8094
+      GATEWAY_SERVICE_URL: https://gateway-service.seev-app.svc.cluster.local:8081
+      ADMIN_BFF_SECURE_COOKIE: "true"
+    resources:
+      requests: {cpu: 50m, memory: 96Mi}
+      limits: {cpu: 300m, memory: 256Mi}
+  assurance:
+    enabled: true
+    image: assurance-service
+    identity: assurance
+    replicas: 1
+    ports:
+      - {name: http, port: 8096, targetPort: 8096}
+    env:
+      APP_PORT: "8096"
+      PAYIN_GRPC_ADDR: payin-service.seev-app.svc.cluster.local:9092
+      PAYOUT_GRPC_ADDR: payout-service.seev-app.svc.cluster.local:9093
+      LEDGER_GRPC_ADDR: ledger-service.seev-app.svc.cluster.local:9091
+    resources:
+      requests: {cpu: 50m, memory: 96Mi}
+      limits: {cpu: 300m, memory: 256Mi}

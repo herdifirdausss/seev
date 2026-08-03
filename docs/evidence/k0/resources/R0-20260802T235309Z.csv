@@ -1,0 +1,13 @@
+timestamp_utc,profile,container,cpu_percent,memory_usage,memory_limit,memory_percent,net_io,block_io,pids
+2026-08-02T23:53:12Z,R0,seev-k0-postgres-1,2.27%,68.08MiB,5.786GiB,1.15%,223kB / 114kB,43MB / 286MB,7
+2026-08-02T23:53:12Z,R0,seev-k0-rabbitmq-1,74.19%,106.3MiB,5.786GiB,1.79%,23.9kB / 21kB,39.4MB / 647kB,37
+2026-08-02T23:53:12Z,R0,seev-k0-redis-1,0.85%,6.367MiB,5.786GiB,0.11%,20.2kB / 12.2kB,1.83MB / 0B,6
+2026-08-02T23:53:19Z,R0,seev-k0-postgres-1,0.00%,68.09MiB,5.786GiB,1.15%,223kB / 114kB,43MB / 286MB,7
+2026-08-02T23:53:19Z,R0,seev-k0-rabbitmq-1,0.45%,106.1MiB,5.786GiB,1.79%,24.1kB / 21kB,39.4MB / 647kB,37
+2026-08-02T23:53:19Z,R0,seev-k0-redis-1,2.95%,6.367MiB,5.786GiB,0.11%,20.5kB / 12.5kB,1.83MB / 0B,6
+2026-08-02T23:53:26Z,R0,seev-k0-postgres-1,4.53%,68.09MiB,5.786GiB,1.15%,223kB / 114kB,43MB / 286MB,7
+2026-08-02T23:53:26Z,R0,seev-k0-rabbitmq-1,27.25%,106.1MiB,5.786GiB,1.79%,24.1kB / 21kB,39.4MB / 647kB,37
+2026-08-02T23:53:26Z,R0,seev-k0-redis-1,0.63%,6.367MiB,5.786GiB,0.11%,20.5kB / 12.5kB,1.83MB / 0B,6
+2026-08-02T23:53:33Z,R0,seev-k0-postgres-1,0.00%,68.08MiB,5.786GiB,1.15%,223kB / 114kB,43MB / 286MB,7
+2026-08-02T23:53:33Z,R0,seev-k0-rabbitmq-1,1.25%,106.1MiB,5.786GiB,1.79%,24.1kB / 21kB,39.4MB / 647kB,37
+2026-08-02T23:53:33Z,R0,seev-k0-redis-1,0.78%,6.367MiB,5.786GiB,0.11%,20.5kB / 12.5kB,1.83MB / 0B,6

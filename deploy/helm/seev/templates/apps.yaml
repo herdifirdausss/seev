@@ -1,0 +1,245 @@
+{{- $root := . }}
+{{- range $name, $spec := .Values.services }}
+{{- if $spec.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}-service
+  namespace: {{ $root.Values.global.appNamespace }}
+  labels:
+    {{- include "seev.labels" $root | nindent 4 }}
+    seev.io/service: {{ $name }}
+spec:
+  replicas: {{ $spec.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/part-of: seev
+      seev.io/service: {{ $name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: seev
+        seev.io/service: {{ $name }}
+        seev.io/db-access: "true"
+        {{ if or (eq $name "gateway") (eq $name "auth") (eq $name "ledger") (eq $name "payin") (eq $name "payout") (eq $name "fraud") }}
+        seev.io/redis-access: "true"
+        {{ end }}
+        {{ if or (eq $name "gateway") (eq $name "ledger") (eq $name "fraud") }}
+        seev.io/rabbitmq-access: "true"
+        {{ end }}
+      annotations:
+        {{ with $root.Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{ end }}
+    spec:
+      serviceAccountName: {{ printf "%s-%s" $root.Values.global.serviceAccountPrefix $name | trunc 63 | trimSuffix "-" }}
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 35
+      {{ with $root.Values.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{ end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      {{ with $root.Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{ end }}
+      containers:
+        - name: {{ $name }}
+          image: {{ include "seev.serviceImage" (list $root $spec) | quote }}
+          imagePullPolicy: {{ default $root.Values.global.image.pullPolicy $root.Values.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          ports:
+            {{ range $port := $spec.ports }}
+            - name: {{ $port.name }}
+              containerPort: {{ $port.targetPort }}
+              protocol: TCP
+            {{ end }}
+          env:
+            - name: APP_NAME
+              value: {{ printf "%s-service" $name | quote }}
+            - name: APP_ENV
+              value: {{ $root.Values.global.appEnv | quote }}
+            - name: LOG_FORMAT
+              value: json
+            - name: TLS_CERT_DIR
+              value: /certs
+            - name: POSTGRES_HOST
+              value: {{ $root.Values.global.postgres.host | quote }}
+            - name: POSTGRES_PORT
+              value: {{ $root.Values.global.postgres.port | quote }}
+            - name: POSTGRES_SSL_MODE
+              value: {{ $root.Values.global.postgres.sslMode | quote }}
+            - name: POSTGRES_USER
+              value: {{ printf "%s_app" (replace "-" "" $name) | quote }}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $root.Values.global.dataSecret }}
+                  key: {{ printf "%s-postgres-password" $name }}
+            - name: POSTGRES_DB
+              value: {{ printf "seev_%s" (replace "-" "" $name) | quote }}
+            - name: REDIS_ENABLED
+              value: {{ $root.Values.global.redis.enabled | quote }}
+            - name: REDIS_ADDR
+              value: {{ $root.Values.global.redis.addr | quote }}
+            - name: RABBITMQ_HOST
+              value: {{ $root.Values.global.rabbitmq.host | quote }}
+            - name: RABBITMQ_PORT
+              value: {{ $root.Values.global.rabbitmq.port | quote }}
+            - name: RABBITMQ_USERNAME
+              value: seev
+            - name: RABBITMQ_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $root.Values.global.dataSecret }}
+                  key: rabbitmq-password
+            - name: RABBITMQ_EXCHANGE
+              value: {{ $root.Values.global.rabbitmq.exchange | quote }}
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $root.Values.global.runtimeSecret }}
+                  key: jwt-secret
+            - name: JWT_ISSUER
+              value: {{ $root.Values.global.jwtIssuer | quote }}
+            - name: INTERNAL_GRPC_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $root.Values.global.runtimeSecret }}
+                  key: internal-grpc-token
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ $root.Values.global.telemetry.otlpEndpoint | quote }}
+            - name: OTEL_EXPORTER_OTLP_INSECURE
+              value: {{ $root.Values.global.telemetry.insecure | quote }}
+            - name: OTEL_TRACES_SAMPLER
+              value: parentbased_traceidratio
+            - name: OTEL_TRACES_SAMPLER_ARG
+              value: {{ $root.Values.global.telemetry.sampleRatio | quote }}
+            - name: CRYPTOX_KEY_CURRENT_VERSION
+              value: "1"
+            - name: CRYPTOX_KEY_V1_FILE
+              value: /run/secrets/cryptox_key_v1
+            - name: CRYPTOX_LOOKUP_KEY_FILE
+              value: /run/secrets/cryptox_lookup_key
+            - name: LEDGER_IDEMPOTENCY_KEY_CURRENT_VERSION
+              value: "1"
+            - name: LEDGER_IDEMPOTENCY_KEY_V1_FILE
+              value: /run/secrets/ledger_idempotency_key_v1
+            {{ if eq $name "gateway" }}
+            - name: MERCHANT_API_KEY_PEPPER_FILE
+              value: /run/secrets/merchant_api_key_pepper
+            {{ end }}
+            {{ if eq $name "vendor" }}
+            - name: VENDOR_MOCKVENDOR_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $root.Values.global.runtimeSecret }}
+                  key: vendor-mockvendor-secret
+            - name: MOCKVENDOR2_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $root.Values.global.runtimeSecret }}
+                  key: vendor-mockvendor2-secret
+            - name: VENDOR_EGRESS_PROXY_REQUIRED
+              value: {{ $spec.egressProxyRequired | quote }}
+            {{ end }}
+            {{ range $envName, $envValue := $spec.env }}
+            - name: {{ $envName }}
+              value: {{ $envValue | quote }}
+            {{ end }}
+          volumeMounts:
+            - name: certs
+              mountPath: /certs
+              readOnly: true
+            - name: crypto-secrets
+              mountPath: /run/secrets
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+          startupProbe:
+            exec:
+              command: ["/app/service", "-healthcheck"]
+            failureThreshold: 30
+            periodSeconds: 5
+            timeoutSeconds: 5
+          readinessProbe:
+            exec:
+              command: ["/app/service", "-healthcheck"]
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            tcpSocket:
+              port: {{ (index $spec.ports 0).name }}
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            {{- toYaml $spec.resources | nindent 12 }}
+      volumes:
+        - name: certs
+          secret:
+            secretName: {{ $root.Values.global.mtlsSecret }}
+            items:
+              - {key: ca.pem, path: ca.pem}
+              - {key: {{ printf "%s.pem" $spec.identity }}, path: {{ printf "%s.pem" $spec.identity }}}
+              - {key: {{ printf "%s-key.pem" $spec.identity }}, path: {{ printf "%s-key.pem" $spec.identity }}}
+              - {key: dev-operator.pem, path: dev-operator.pem}
+              - {key: dev-operator-key.pem, path: dev-operator-key.pem}
+        - name: crypto-secrets
+          secret:
+            secretName: {{ $root.Values.global.cryptoSecret }}
+            items:
+              - {key: cryptox_key_v1, path: cryptox_key_v1}
+              - {key: cryptox_lookup_key, path: cryptox_lookup_key}
+              - {key: ledger_idempotency_key_v1, path: ledger_idempotency_key_v1}
+              - {key: merchant_api_key_pepper, path: merchant_api_key_pepper}
+        - name: tmp
+          emptyDir: {}
+      {{ with $root.Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{ end }}
+      {{ with $root.Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{ end }}
+      {{ with $root.Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{ end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}-service
+  namespace: {{ $root.Values.global.appNamespace }}
+  labels:
+    {{- include "seev.labels" $root | nindent 4 }}
+    seev.io/service: {{ $name }}
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/part-of: seev
+    seev.io/service: {{ $name }}
+  ports:
+    {{ range $port := $spec.ports }}
+    - name: {{ $port.name }}
+      port: {{ $port.port }}
+      targetPort: {{ $port.targetPort }}
+      protocol: TCP
+    {{ end }}
+---
+{{- end }}
+{{- end }}

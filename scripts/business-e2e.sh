@@ -143,7 +143,7 @@ onboard() {
 	# exactly despite an admin changing fee_rules in between.
 	local admin_token fee_url code resp
 	admin_token="$(gen_token "$(uuidgen | tr '[:upper:]' '[:lower:]')" admin)"
-	fee_url="http://localhost:$LEDGER_INTERNAL_PORT/api/v1/admin/ledger/fee-rules"
+	fee_url="http://localhost:$LEDGER_INTERNAL_PORT/api/v1/ledger/admin/ledger/fee-rules"
 	# The ledger DB is intentionally reusable between local runs. A global rule
 	# is unique by (tx_type,gateway,currency,NULL user), so update an existing
 	# seed instead of turning a harmless rerun into HTTP 500.
@@ -465,7 +465,7 @@ quote_journey() {
 
 	log "admin re-prices A's transfer_p2p override to 9000 AFTER the quote was created..."
 	local code
-	code=$(curl_internal -s -o /dev/null -w '%{http_code}' -X PUT "http://localhost:$LEDGER_INTERNAL_PORT/api/v1/admin/ledger/fee-rules/$TRANSFER_FEE_RULE_ID" \
+	code=$(curl_internal -s -o /dev/null -w '%{http_code}' -X PUT "http://localhost:$LEDGER_INTERNAL_PORT/api/v1/ledger/admin/ledger/fee-rules/$TRANSFER_FEE_RULE_ID" \
 		-H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" \
 		-d "{\"tx_type\":\"transfer_p2p\",\"currency\":\"IDR\",\"user_id\":\"$USER_A\",\"flat_minor_units\":9000,\"fee_gateway\":\"platform\"}")
 	[ "$code" = "200" ] && ok "fee_rules re-priced to 9000 via admin API" || fail "fee rule update got $code, expected 200"
@@ -538,7 +538,7 @@ quote_journey() {
 	[ -n "$payout_quote_id" ] && [ "$payout_fee_amount" = "2000" ] && ok "payout quote created (id=$payout_quote_id fee=$payout_fee_amount)" \
 		|| fail "payout quote creation unexpected: $payout_quote_resp"
 
-	code=$(curl_internal -s -o /dev/null -w '%{http_code}' -X PUT "http://localhost:$LEDGER_INTERNAL_PORT/api/v1/admin/ledger/fee-rules/$WITHDRAW_FEE_RULE_ID" \
+	code=$(curl_internal -s -o /dev/null -w '%{http_code}' -X PUT "http://localhost:$LEDGER_INTERNAL_PORT/api/v1/ledger/admin/ledger/fee-rules/$WITHDRAW_FEE_RULE_ID" \
 		-H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" \
 		-d '{"tx_type":"withdraw_settle","currency":"IDR","flat_minor_units":8000,"fee_gateway":"platform"}')
 	[ "$code" = "200" ] && ok "withdraw_settle re-priced to 8000 via admin API" || fail "fee rule update got $code, expected 200"
@@ -679,7 +679,7 @@ ops() {
 
 	log "GET /admin/ledger/fee-rules — operator sees the pricing seeded in section 1 without SQL..."
 	local fee_rules_resp
-	fee_rules_resp="$(curl_internal -s "http://localhost:$LEDGER_INTERNAL_PORT/api/v1/admin/ledger/fee-rules" -H "Authorization: Bearer $admin_token")"
+	fee_rules_resp="$(curl_internal -s "http://localhost:$LEDGER_INTERNAL_PORT/api/v1/ledger/admin/ledger/fee-rules" -H "Authorization: Bearer $admin_token")"
 	echo "$fee_rules_resp" | grep -q '"tx_type":"transfer_p2p"' \
 		&& ok "fee-rules admin surface shows the configured transfer_p2p pricing" \
 		|| fail "fee-rules admin surface missing expected rules: $fee_rules_resp"

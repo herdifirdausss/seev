@@ -1,0 +1,63 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: seev-observability
+  labels:
+    app.kubernetes.io/part-of: seev
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+      external_labels:
+        environment: seev-learning
+    rule_files:
+      - /etc/prometheus/rules/*.yml
+    scrape_configs:
+      - job_name: seev-services
+        scheme: https
+        tls_config:
+          ca_file: /certs/ca.pem
+          cert_file: /certs/prometheus.pem
+          key_file: /certs/prometheus-key.pem
+          insecure_skip_verify: true
+        static_configs:
+          - targets:
+              - gateway-service.seev-app.svc.cluster.local:8081
+              - auth-service.seev-app.svc.cluster.local:8083
+              - ledger-service.seev-app.svc.cluster.local:8091
+              - payin-service.seev-app.svc.cluster.local:8092
+              - payout-service.seev-app.svc.cluster.local:8093
+              - fraud-service.seev-app.svc.cluster.local:8094
+              - vendor-service.seev-app.svc.cluster.local:8098
+              - admin-bff-service.seev-app.svc.cluster.local:8095
+              - assurance-service.seev-app.svc.cluster.local:8096
+        relabel_configs:
+          - source_labels: [__address__]
+            regex: "([^:]+):.*"
+            target_label: service
+            replacement: "$1"
+      - job_name: traefik
+        scheme: http
+        static_configs:
+          - targets: [traefik.seev-edge.svc.cluster.local:9100]
+  rules.yml: |
+    groups:
+      - name: seev-deployment
+        rules:
+          - alert: SeevServiceDown
+            expr: up{job="seev-services"} == 0
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Seev service scrape is down"
+              runbook: "docs/operations/runbooks"
+          - alert: SeevCallbackRejections
+            expr: increase(vendor_callback_denied_total[10m]) > 0
+            for: 5m
+            labels:
+              severity: info
+            annotations:
+              summary: "Vendor callback requests are being rejected"

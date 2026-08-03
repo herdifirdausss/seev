@@ -26,7 +26,7 @@ GOLANGCI_LINT := $(GOLANGCI_LINT_DIR)/golangci-lint
 GOVULNCHECK_DIR := $(TOOLS_DIR)/govulncheck-$(GOVULNCHECK_VERSION)
 GOVULNCHECK := $(GOVULNCHECK_DIR)/govulncheck
 
-.PHONY: build build-all run dev test test/cover clean lint modernize-check ci-lint print-golangci-lint-version print-govulncheck-version docs-check tidy tools tools-lint tools-security security-vuln proto proto-lint proto-breaking contract-generate contract-lint contract-breaking contract-test contracts load-lint load-test load-seed load-snapshot load-restore load-smoke load-run load-capacity load-report-check load-clean vet docker-up docker-down smoke-container smoke-test business-e2e admin-e2e privacy-e2e merchant-e2e verify-static verify-full verify-chaos chaos-debug migrate-up migrate-up-all migrate-down grant-app-role observability-secret observability-up observability-down certs backup-secret backup-role-bootstrap backup-checksums-enable backup-stanza-init backup-full backup-diff backup-check backup-status backup-expire cryptox-secret retention-docs retention-check analytics-secret analytics-config-check analytics-up-core analytics-up-ui analytics-up-ops analytics-health analytics-source-setup analytics-connectors-validate analytics-connectors-apply analytics-connectors-status analytics-connectors-pause analytics-connectors-resume analytics-connectors-delete analytics-clickhouse-migrate analytics-dbt-deps analytics-dbt-build analytics-dbt-test analytics-reconcile analytics-e2e analytics-chaos analytics-reset analytics-down analytics-verify help
+.PHONY: build build-all run dev test test/cover clean lint modernize-check ci-lint print-golangci-lint-version print-govulncheck-version docs-check tidy tools tools-lint tools-security security-vuln proto proto-lint proto-breaking contract-generate contract-lint contract-breaking contract-test contracts load-lint load-test load-seed load-snapshot load-restore load-smoke load-run load-capacity load-report-check load-clean vet docker-up docker-down smoke-container smoke-test business-e2e admin-e2e privacy-e2e merchant-e2e verify-static verify-full verify-chaos chaos-debug migrate-up migrate-up-all migrate-down grant-app-role observability-secret observability-down certs backup-secret backup-role-bootstrap backup-checksums-enable backup-stanza-init backup-full backup-diff backup-check backup-status backup-expire cryptox-secret retention-docs retention-check analytics-secret analytics-config-check analytics-up-core analytics-up-ui analytics-up-ops analytics-health analytics-source-setup analytics-connectors-validate analytics-connectors-apply analytics-connectors-status analytics-connectors-pause analytics-connectors-resume analytics-connectors-delete analytics-clickhouse-migrate analytics-dbt-deps analytics-dbt-build analytics-dbt-test analytics-reconcile analytics-e2e analytics-chaos analytics-reset analytics-down analytics-verify k0-inventory k0-inventory-check k0-resource-sample k0-network-probe helm-lint k8s-preflight k8s-bootstrap k8s-smoke k8s-verify-callback k8s-verify-egress help
 
 ## build: Compile the binary
 build:
@@ -187,6 +187,50 @@ analytics-down:
 ## analytics-verify: Run lightweight static privacy and config checks
 analytics-verify: analytics-config-check
 	@./analytics/scripts/verify-no-sensitive-columns.sh
+
+## k0-inventory: Generate redacted K0 deployment inventory and baseline evidence
+k0-inventory:
+	@./scripts/deployment-inventory-generate.sh
+
+## k0-inventory-check: Validate K0 machine-readable contracts and evidence safety
+k0-inventory-check:
+	@./scripts/deployment-inventory-check.sh
+
+## k0-resource-sample: Collect a bounded Docker resource sample; never starts containers
+k0-resource-sample:
+	@./scripts/deployment-resource-sample.sh
+
+## k0-network-probe: Probe only declared local endpoints and broker topology
+k0-network-probe:
+	@./scripts/deployment-network-probe.sh
+
+## helm-lint: Validate the Plan 63 application chart (requires Helm 3)
+helm-lint:
+	@command -v helm >/dev/null 2>&1 || { echo "helm is required" >&2; exit 2; }
+	helm lint deploy/helm/seev
+	helm lint deploy/helm/seev -f deploy/helm/seev/values-local.yaml
+	helm lint deploy/helm/seev -f deploy/helm/seev/values-gcp-dev.yaml
+	helm lint deploy/helm/seev -f deploy/helm/seev/values-aws-dev.yaml
+
+## k8s-preflight: Prove local NetworkPolicy enforcement with the selected CNI
+k8s-preflight:
+	@./deploy/kubernetes/scripts/networkpolicy-preflight.sh
+
+## k8s-bootstrap: Create the disposable kind + Calico learning cluster
+k8s-bootstrap:
+	@./deploy/kubernetes/scripts/bootstrap-local.sh
+
+## k8s-smoke: Run the local Kubernetes readiness and edge smoke test
+k8s-smoke:
+	@./deploy/kubernetes/scripts/smoke.sh
+
+## k8s-verify-callback: Check callback source-IP and route controls
+k8s-verify-callback:
+	@./deploy/kubernetes/scripts/verify-callback-allowlist.sh
+
+## k8s-verify-egress: Check direct egress denial and Squid destination policy
+k8s-verify-egress:
+	@./deploy/kubernetes/scripts/verify-egress-proxy.sh
 
 ## retention-docs: Regenerate docs/data/retention.md from config/data-retention.yaml
 retention-docs:

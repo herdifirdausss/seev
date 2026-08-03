@@ -1,0 +1,103 @@
+version: 1
+baseline_commit: ff21bf186f95431a386b339ee3a1409e49a7e1b0
+measurement_policy:
+  sampler: scripts/deployment-resource-sample.sh
+  source: Docker stats plus application and broker diagnostics
+  evidence_rule: record per-profile files under docs/evidence/k0/resources; do not record secret values or payloads
+  local_limitations: host has approximately 8 GiB memory and approximately 5 GiB free disk at baseline
+measurement_status:
+  R0:
+    status: measured
+    reason: bounded local infrastructure sample completed; the roadmap's 10 minute stabilization target was not run under the constrained host budget
+    evidence: docs/evidence/k0/resources/R0-20260802T235309Z.csv
+    owner: K0 execution
+  R1:
+    status: measured
+    reason: bounded local nine-service plus infrastructure sample completed; the roadmap's 10 minute stabilization target was not run under the constrained host budget
+    evidence: docs/evidence/k0/resources/R1-20260802T235223Z.csv
+    owner: K0 execution
+  R2:
+    status: measured
+    reason: synthetic registration, KYC, top-up, signed mock callback, and settled-status journey completed against the isolated Compose profile; resource sample is bounded
+    evidence:
+      - docs/evidence/k0/resources/R2-20260802T235807Z.csv
+      - docs/evidence/k0/verification/runtime-journeys.md
+    owner: K0 execution
+  R3:
+    status: deferred
+    reason: business journey reached the full host profile and passed core money/KYC/callback/fee/quote/integrity/tracing assertions, but the reusable Redis circuit state caused the final failover probe to miss its expected uncertain call; no clean isolated resource profile was captured
+    evidence: docs/evidence/k0/verification/runtime-journeys.md
+    owner: K0 execution
+  R4:
+    status: deferred
+    reason: admin harness was stopped during native linking after the existing kind cluster saturated local CPU; no admin acceptance claim is made
+    owner: K0/K9 capacity
+    owner: K0 execution
+  R5:
+    status: deferred
+    reason: load smoke is optional and must use the repository disposable acknowledgement
+    owner: K0 execution
+  R6:
+    status: deferred
+    reason: observability stack is outside the application baseline and local disk is constrained
+    owner: K7 observability
+profiles:
+  R0:
+    workload: postgres, redis, rabbitmq
+    stabilization: 10m target
+    required_metrics: [cpu_average, cpu_peak, memory_working_set, memory_peak, connections, disk_growth]
+  R1:
+    workload: nine services plus infrastructure; optional features disabled
+    stabilization: 10m target
+    required_metrics: [cpu_average, cpu_peak, memory_working_set, memory_peak, goroutines, file_descriptors, connections]
+  R2:
+    workload: smoke journey
+    required_metrics: [journey_duration, cpu_peak, memory_peak, database_connections, queue_depth, recovery]
+  R3:
+    workload: business journey
+    required_metrics: [journey_duration, cpu_peak, memory_peak, database_connections, queue_depth, recovery]
+  R4:
+    workload: admin journey
+    required_metrics: [journey_duration, cpu_peak, memory_peak, database_connections, recovery]
+  R5:
+    workload: bounded disposable load smoke
+    acknowledgement: SEEV_LOAD_ACK=disposable-only
+    required_metrics: [throughput, p95, p99, cpu_peak, memory_peak, connections, disk_growth]
+  R6:
+    workload: optional observability
+    separate_from_application_baseline: true
+    required_metrics: [component_memory_peak, component_cpu_peak, disk_growth]
+service_classes:
+  gateway: EDGE_LATENCY
+  auth: EDGE_LATENCY
+  ledger: MONEY_CRITICAL
+  payin: MONEY_CRITICAL
+  payout: MONEY_CRITICAL
+  fraud: MONEY_CRITICAL
+  admin-bff: ADMIN_LOW_TRAFFIC
+  assurance: AUDIT_BACKGROUND
+  vendor: VENDOR_BOUNDARY
+initial_request_seed:
+  status: pending-measurement
+  method: p95 steady CPU and high-percentile working set plus safety margin
+  limits: do not set final Kubernetes requests or limits from this document alone
+connection_budget:
+  assumptions:
+    replicas: one per service until K3 replica safety is proven
+    database_max_connections: UNKNOWN; derive from current config and measured pool state
+    redis_connections: UNKNOWN; derive from client pools and measured state
+    rabbitmq_channels: UNKNOWN; derive from consumer/publisher counts and measured state
+  formula: replicas x per-process max connections plus migration and operator headroom
+  downstream_owner: K3/K9 capacity guard
+node_footprint:
+  target: approximately 4 vCPU and 16 GiB was a roadmap hypothesis, not an accepted result
+  measured_sum: pending
+  headroom: 20-30 percent after measured sum
+  downstream_owner: K3/K9 capacity planning
+limitations:
+  - local Docker Desktop memory and disk are smaller than a cloud target
+  - kind containers from Plan 63 may be present and must be separated from Compose samples
+  - no cloud vendor network or managed data service is measured in K0
+sources:
+  - scripts/deployment-resource-sample.sh
+  - docs/roadmap/active/64-k0-deployment-inventory-baseline.md

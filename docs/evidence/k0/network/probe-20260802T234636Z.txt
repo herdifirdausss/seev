@@ -1,0 +1,19 @@
+captured_utc=2026-08-02T23:46:36Z
+policy=local endpoints only; no real vendor calls
+
+[compose containers]
+NAME      IMAGE     COMMAND   SERVICE   CREATED   STATUS    PORTS
+
+[declared local HTTP health probes]
+000unreachable http://127.0.0.1:8080/health
+000unreachable http://127.0.0.1:8082/health
+000unreachable http://127.0.0.1:8090/health
+000unreachable http://127.0.0.1:8098/health
+
+[declared local data ports]
+not-http 127.0.0.1:5433
+not-http 127.0.0.1:6380
+not-http 127.0.0.1:5672
+
+[rabbitmq topology if the local broker is running]
+rabbitmq=not-running

@@ -152,6 +152,12 @@ type VendorConfig struct {
 	// feature existed.
 	Mockvendor2Enabled bool
 	Mockvendor2Secret  string
+	// EgressProxyURL is the explicit forward proxy used by real outbound vendor
+	// HTTP adapters. The current mock adapter is in-process, but requiring this
+	// value in the Kubernetes profile prevents a future adapter from silently
+	// falling back to direct internet access.
+	EgressProxyURL      string
+	EgressProxyRequired bool
 }
 
 // BreakerConfig tunes the per-vendor circuit breaker (docs/roadmap/archive/40 Task T1,
@@ -674,12 +680,14 @@ func loadFromEnvMode(getenv func(string) string, requireRabbitMQ bool) (*Config,
 			Insecure:     parseBool(getenv("OTEL_EXPORTER_OTLP_INSECURE"), true),
 		},
 		Vendor: VendorConfig{
-			ServiceEnabled:     parseBool(getenv("VENDOR_SERVICE_ENABLED"), false),
-			MockvendorEnabled:  parseBool(getenv("VENDOR_MOCKVENDOR_ENABLED"), false),
-			MockvendorSecret:   getenv("VENDOR_MOCKVENDOR_SECRET"),
-			TopupIntentTTL:     parseDuration(getenv("TOPUP_INTENT_TTL"), 24*time.Hour),
-			Mockvendor2Enabled: parseBool(getenv("MOCKVENDOR2_ENABLED"), false),
-			Mockvendor2Secret:  getenv("MOCKVENDOR2_SECRET"),
+			ServiceEnabled:      parseBool(getenv("VENDOR_SERVICE_ENABLED"), false),
+			MockvendorEnabled:   parseBool(getenv("VENDOR_MOCKVENDOR_ENABLED"), false),
+			MockvendorSecret:    getenv("VENDOR_MOCKVENDOR_SECRET"),
+			TopupIntentTTL:      parseDuration(getenv("TOPUP_INTENT_TTL"), 24*time.Hour),
+			Mockvendor2Enabled:  parseBool(getenv("MOCKVENDOR2_ENABLED"), false),
+			Mockvendor2Secret:   getenv("MOCKVENDOR2_SECRET"),
+			EgressProxyURL:      getenv("VENDOR_EGRESS_PROXY_URL"),
+			EgressProxyRequired: parseBool(getenv("VENDOR_EGRESS_PROXY_REQUIRED"), false),
 		},
 		Breaker: BreakerConfig{
 			FailureThreshold: parseInt(getenv("BREAKER_FAILURE_THRESHOLD"), 5),
@@ -948,6 +956,12 @@ func validate(cfg *Config, requireRabbitMQ bool, errs *[]string) error {
 
 	if cfg.Vendor.Mockvendor2Enabled && cfg.Vendor.Mockvendor2Secret == "" {
 		*errs = append(*errs, "MOCKVENDOR2_SECRET must be set when MOCKVENDOR2_ENABLED=true — an empty HMAC secret would accept any signature")
+	}
+	if cfg.Vendor.EgressProxyRequired {
+		proxyURL, err := url.Parse(cfg.Vendor.EgressProxyURL)
+		if err != nil || proxyURL.Host == "" || (proxyURL.Scheme != "http" && proxyURL.Scheme != "https") {
+			*errs = append(*errs, "VENDOR_EGRESS_PROXY_URL must be an http(s) URL when VENDOR_EGRESS_PROXY_REQUIRED=true")
+		}
 	}
 	if cfg.Assurance.PageSize <= 0 || cfg.Assurance.PageSize > 500 {
 		*errs = append(*errs, "ASSURANCE_PAGE_SIZE must be between 1 and 500")

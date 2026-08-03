@@ -1,0 +1,43 @@
+global:
+  appEnv: development
+  postgres:
+    sslMode: disable
+  telemetry:
+    insecure: "true"
+
+networkPolicy:
+  edgeKubernetesAPICIDRs:
+    - 10.0.0.0/8
+    - 172.16.0.0/12
+  edgeKubernetesAPIPorts:
+    - 443
+    - 6443
+  image:
+    repository: seev
+    tag: dev
+    pullPolicy: IfNotPresent
+image:
+  repository: seev
+  tag: dev
+  pullPolicy: IfNotPresent
+migrations:
+  image:
+    repository: seev/migrations
+    tag: dev
+    pullPolicy: IfNotPresent
+  sslMode: disable
+traefik:
+  publicHost: api.local.seev.test
+  callbackHost: callback.local.seev.test
+  allowedCallbackCIDRs:
+    - 127.0.0.1/32
+    - 10.244.0.0/16
+services:
+  vendor:
+    callbackCIDRs: 127.0.0.1/32,10.244.0.0/16
+    trustedProxyCIDRs: ""
+    env:
+      VENDOR_CALLBACK_CIDRS: 127.0.0.1/32,10.244.0.0/16
+      VENDOR_CALLBACK_TRUSTED_PROXY_CIDRS: ""
+      VENDOR_EGRESS_PROXY_URL: http://squid.seev-egress.svc.cluster.local:3128
+      VENDOR_EGRESS_PROXY_REQUIRED: "true"

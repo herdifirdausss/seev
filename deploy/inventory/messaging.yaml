@@ -1,0 +1,110 @@
+version: 1
+baseline_commit: ff21bf186f95431a386b339ee3a1409e49a7e1b0
+broker:
+  endpoint: rabbitmq:5672
+  default_exchange: ledger.events
+  exchange_type: topic
+  publisher_delivery: publisher-confirms
+  consumer_delivery: at-least-once
+  reconnect: self-healing-consumer-loop
+  message_policy: consumers deduplicate by event identity or domain idempotency
+  sources: [pkg/messaging/config.go, pkg/messaging/publisher.go, pkg/messaging/consumer.go]
+exchange:
+  name: ledger.events
+  type: topic
+  durable: true
+  auto_delete: false
+  source: pkg/messaging/topology.go
+queues:
+  - name: ledger.events.audit
+    owner: ledger
+    exchange: ledger.events
+    routing_keys: ["#"]
+    durable: true
+    consumers: []
+    dead_letter_policy:
+      exchange: ledger.events.dlx
+      queue: ledger.events.audit.dlq
+      routing_key: "#"
+      requeue_after_max_attempts: false
+    idempotency: event identity and transaction identity
+    first_deployment: true
+    sources: [internal/ledger/ledger.go, pkg/messaging/topology.go]
+  - name: ledger.events.notifications
+    owner: gateway
+    exchange: ledger.events
+    routing_keys: [ledger.transaction.posted.v1]
+    durable: true
+    consumers:
+      - service: gateway
+        module: internal/notify
+        consumer_tag: notify-consumer
+        prefetch: 10
+        max_delivery_attempts: 5
+        concurrency: bounded
+    dead_letter_policy:
+      exchange: ledger.events.dlx
+      queue: ledger.events.notifications.dlq
+      routing_key: "#"
+      requeue_after_max_attempts: false
+    idempotency: notification delivery record and event identity
+    first_deployment: true
+    sources: [internal/notify/notify.go, pkg/messaging/topology.go]
+  - name: ledger.events.fraud
+    owner: fraud
+    exchange: ledger.events
+    routing_keys: [ledger.transaction.posted.v1]
+    durable: true
+    message_ttl: 2h velocity window
+    consumers:
+      - service: fraud
+        module: internal/fraud
+        consumer_tag: fraud-velocity-consumer
+        prefetch: 10
+        max_delivery_attempts: 5
+        concurrency: bounded
+    dead_letter_policy:
+      exchange: ledger.events.dlx
+      queue: ledger.events.fraud.dlq
+      routing_key: "#"
+      requeue_after_max_attempts: false
+    idempotency: event identity and velocity-window update
+    first_deployment: true
+    sources: [internal/fraud/consumer.go, pkg/messaging/topology.go]
+  - name: ledger.events.merchant_webhooks
+    owner: gateway
+    exchange: ledger.events
+    routing_keys: [ledger.transaction.posted.v1]
+    durable: true
+    consumers:
+      - service: gateway
+        module: internal/merchant/webhook
+        consumer_tag: merchant-webhook-consumer
+        prefetch: 10
+        max_delivery_attempts: 5
+        concurrency: bounded
+    dead_letter_policy:
+      exchange: ledger.events.dlx
+      queue: ledger.events.merchant_webhooks.dlq
+      routing_key: "#"
+      requeue_after_max_attempts: false
+    idempotency: merchant delivery record and event identity
+    first_deployment: true
+    sources: [internal/merchant/webhook/consumer.go, pkg/messaging/topology.go]
+publisher_domains:
+  - owner: ledger
+    service: ledger
+    routing_keys: [ledger.transaction.posted.v1]
+    durable_source: ledger outbox
+    confirmation: required
+    source: internal/ledger/worker/outbox_relay.go
+  - owner: gateway
+    service: gateway
+    routing_keys: [merchant-specific-event-types]
+    durable_source: merchant outbox
+    confirmation: required
+    source: internal/merchant
+dead_letter_operations:
+  replay: explicit operations action only
+  retention: UNKNOWN; K7 messaging operations owner
+  evidence_rule: K0 records topology names and no message payloads

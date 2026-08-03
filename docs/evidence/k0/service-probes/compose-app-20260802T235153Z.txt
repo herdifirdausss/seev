@@ -1,0 +1,17 @@
+K0 service probes
+captured_utc=2026-08-02T23:51:53Z
+project=seev-k0
+policy=local synthetic Compose profile only; no real vendor calls; no credentials or payloads recorded
+
+endpoint                               result              interpretation
+http://127.0.0.1:8080/health           200                 gateway live
+http://127.0.0.1:8082/health           404                 auth public surface does not expose health
+http://127.0.0.1:8090/health           400                 ledger listener expects TLS
+http://127.0.0.1:8098/health           400                 vendor listener expects TLS
+127.0.0.1:5433                         not-http             PostgreSQL data port
+127.0.0.1:6380                         not-http             Redis data port
+127.0.0.1:5672                         not-http             AMQP data port
+
+tls_and_mtls=verified by application startup and the isolated callback journey
+broker_topology=exchange and expected queues/DLQs present; notification, fraud,
+merchant-webhook consumers active; audit queue has no consumer by design

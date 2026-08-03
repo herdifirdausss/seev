@@ -1,0 +1,13 @@
+busybox:1.38
+rabbitmq:4.3.4-management-alpine
+redis:8.0.0-alpine
+seev/admin-bff-service:dev
+seev/assurance-service:dev
+seev/auth-service:dev
+seev/fraud-service:dev
+seev/gateway-service:dev
+seev/ledger-service:dev
+seev/payin-service:dev
+seev/payout-service:dev
+seev/postgres-backup:dev
+seev/vendor-service:dev

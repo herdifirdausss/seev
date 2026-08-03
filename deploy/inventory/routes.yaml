@@ -1,0 +1,333 @@
+version: 1
+baseline_commit: ff21bf186f95431a386b339ee3a1409e49a7e1b0
+edge_policy:
+  public_hosts:
+    - api.local.seev.test
+    - api.dev.seev.example
+  callback_hosts:
+    - callback.local.seev.test
+    - callback.dev.seev.example
+  admin_host:
+    - admin.local.seev.test
+  never_public:
+    - health
+    - ready
+    - metrics
+    - internal-admin
+    - gRPC
+    - Traefik dashboard
+routes:
+  - name: auth-public-api
+    owner: auth
+    listener: auth-public-http
+    host: api.local.seev.test/api.dev.seev.example
+    path: /api/v1/auth/*
+    methods: [GET, POST, PUT]
+    auth_class: public-auth-or-bearer
+    authorization: auth handler policy
+    rate_limit: edge-and-service
+    body_limit: edge-default
+    idempotency: route-specific
+    signature: none
+    source_ip_policy: edge-default
+    public_exposure: true
+    first_deployment: true
+    sources: [cmd/auth-service/router.go, api/openapi/auth.yaml, docs/deployment/public-route-matrix.md]
+  - name: gateway-ledger-api
+    owner: gateway
+    listener: gateway-public-http
+    host: api.local.seev.test/api.dev.seev.example
+    path: /api/v1/ledger/*
+    methods: [GET, POST, PUT, DELETE]
+    auth_class: bearer
+    authorization: user-and-kyc-policy
+    rate_limit: edge-and-service
+    body_limit: edge-default
+    idempotency: required-for-money-changing-posts
+    signature: none
+    source_ip_policy: edge-default
+    public_exposure: true
+    first_deployment: true
+    sources: [internal/handler/router.go, api/openapi/ledger.yaml]
+  - name: gateway-payout-api
+    owner: gateway
+    listener: gateway-public-http
+    host: api.local.seev.test/api.dev.seev.example
+    path: /api/v1/payout[/{id}]
+    methods: [GET, POST]
+    auth_class: bearer
+    authorization: user-and-kyc-policy
+    rate_limit: edge-and-service
+    body_limit: edge-default
+    idempotency: required-for-create
+    signature: none
+    source_ip_policy: edge-default
+    public_exposure: true
+    first_deployment: true
+    sources: [internal/handler/router.go, internal/handler/payout.go]
+  - name: gateway-topup-api
+    owner: gateway
+    listener: gateway-public-http
+    host: api.local.seev.test/api.dev.seev.example
+    path: /api/v1/topup[/{id}]
+    methods: [GET, POST]
+    auth_class: bearer
+    authorization: user-and-kyc-policy
+    rate_limit: edge-and-service
+    body_limit: edge-default
+    idempotency: required-for-create
+    signature: none
+    source_ip_policy: edge-default
+    public_exposure: true
+    first_deployment: true
+    sources: [internal/handler/router.go, internal/handler/topup.go]
+  - name: gateway-notifications-api
+    owner: gateway
+    listener: gateway-public-http
+    host: api.local.seev.test/api.dev.seev.example
+    path: /api/v1/notifications[/{id}/read]
+    methods: [GET, POST]
+    auth_class: bearer
+    authorization: user-ownership
+    rate_limit: edge-and-service
+    body_limit: edge-default
+    idempotency: route-specific
+    signature: none
+    source_ip_policy: edge-default
+    public_exposure: true
+    first_deployment: true
+    sources: [internal/handler/router.go]
+  - name: gateway-b2b-api
+    owner: gateway
+    listener: gateway-public-http
+    host: api.local.seev.test/api.dev.seev.example
+    path: /api/v1/b2b/*
+    methods: [GET, POST, PUT, DELETE]
+    auth_class: merchant-api-key
+    authorization: merchant-scope
+    rate_limit: merchant-policy
+    body_limit: edge-default
+    idempotency: route-specific
+    signature: merchant-signature-policy
+    source_ip_policy: edge-default
+    public_exposure: true
+    first_deployment: false
+    feature_flag: merchant_b2b
+    sources: [internal/handler/router.go, internal/merchant/api]
+  - name: vendor-callback
+    owner: vendor
+    listener: vendor-http
+    host: callback.local.seev.test/callback.dev.seev.example
+    path: /webhooks/{vendor}
+    methods: [POST]
+    auth_class: callback-signature-and-source-cidr
+    authorization: vendor-registry
+    rate_limit: callback-policy
+    body_limit: callback-default
+    idempotency: event-id-and-provider-reference
+    signature: vendor-hmac
+    source_ip_policy: explicit-callback-cidr; trusted proxy list is empty unless configured
+    public_exposure: true
+    first_deployment: true
+    sources: [cmd/vendor-service/main.go, internal/vendorboundary/callback.go, api/openapi/webhooks-v1.yaml]
+  - name: admin-bff-console
+    owner: admin-bff
+    listener: admin-bff-http
+    host: admin.local.seev.test
+    path: / and /api/v1/admin/*
+    methods: [GET, POST, PUT, DELETE]
+    auth_class: session-and-csrf
+    authorization: maker-checker-and-role-policy
+    rate_limit: private-admin-policy
+    body_limit: admin-default
+    idempotency: decision-specific
+    signature: none
+    source_ip_policy: private-admin-network
+    public_exposure: false
+    first_deployment: true
+    sources: [cmd/admin-bff-service/router.go, internal/adminbff/module.go]
+
+  - name: gateway-health
+    owner: gateway
+    listener: gateway-public-http
+    path: /health
+    methods: [GET]
+    auth_class: none
+    authorization: liveness-only
+    rate_limit: none
+    body_limit: none
+    idempotency: none
+    signature: none
+    source_ip_policy: cluster-only
+    public_exposure: false
+    first_deployment: true
+    sources: [internal/handler/health.go, cmd/gateway/main.go]
+  - name: gateway-ready
+    owner: gateway
+    listener: gateway-internal-https
+    path: /ready
+    methods: [GET]
+    auth_class: mTLS
+    authorization: dependency-readiness
+    rate_limit: none
+    body_limit: none
+    idempotency: none
+    signature: none
+    source_ip_policy: cluster-only
+    public_exposure: false
+    first_deployment: true
+    sources: [internal/handler/health.go, internal/handler/router.go]
+  - name: gateway-metrics
+    owner: gateway
+    listener: gateway-internal-https
+    path: /metrics
+    methods: [GET]
+    auth_class: mTLS
+    authorization: telemetry-only
+    rate_limit: scrape-policy
+    body_limit: none
+    idempotency: none
+    signature: none
+    source_ip_policy: cluster-only
+    public_exposure: false
+    first_deployment: false
+    sources: [internal/handler/router.go]
+  - name: auth-health-ready-metrics
+    owner: auth
+    listener: auth-internal-https
+    path: /health, /ready, /metrics
+    methods: [GET]
+    auth_class: mTLS-or-probe-exception
+    authorization: liveness-readiness-telemetry
+    rate_limit: none
+    body_limit: none
+    idempotency: none
+    signature: none
+    source_ip_policy: cluster-only
+    public_exposure: false
+    first_deployment: true
+    sources: [cmd/auth-service/router.go, cmd/auth-service/main.go]
+  - name: ledger-health-ready-metrics
+    owner: ledger
+    listener: ledger-internal-https
+    path: /health, /ready, /metrics
+    methods: [GET]
+    auth_class: mTLS-or-probe-exception
+    authorization: liveness-readiness-telemetry
+    rate_limit: none
+    body_limit: none
+    idempotency: none
+    signature: none
+    source_ip_policy: cluster-only
+    public_exposure: false
+    first_deployment: true
+    sources: [cmd/ledger-service/main.go]
+  - name: payin-health-metrics
+    owner: payin
+    listener: payin-http
+    path: /health, /metrics
+    methods: [GET]
+    auth_class: mTLS-or-probe-exception
+    authorization: liveness-telemetry
+    rate_limit: none
+    body_limit: none
+    idempotency: none
+    signature: none
+    source_ip_policy: cluster-only
+    public_exposure: false
+    first_deployment: true
+    sources: [cmd/payin-service/router.go]
+  - name: payout-health-metrics
+    owner: payout
+    listener: payout-http
+    path: /health, /metrics
+    methods: [GET]
+    auth_class: mTLS-or-probe-exception
+    authorization: liveness-telemetry
+    rate_limit: none
+    body_limit: none
+    idempotency: none
+    signature: none
+    source_ip_policy: cluster-only
+    public_exposure: false
+    first_deployment: true
+    sources: [cmd/payout-service/router.go]
+  - name: fraud-health-metrics
+    owner: fraud
+    listener: fraud-http
+    path: /health, /metrics
+    methods: [GET]
+    auth_class: mTLS-or-probe-exception
+    authorization: liveness-telemetry
+    rate_limit: none
+    body_limit: none
+    idempotency: none
+    signature: none
+    source_ip_policy: cluster-only
+    public_exposure: false
+    first_deployment: true
+    sources: [cmd/fraud-service/router.go]
+  - name: admin-bff-health-metrics
+    owner: admin-bff
+    listener: admin-bff-http
+    path: /health, /metrics
+    methods: [GET]
+    auth_class: mTLS-or-probe-exception
+    authorization: liveness-telemetry
+    rate_limit: none
+    body_limit: none
+    idempotency: none
+    signature: none
+    source_ip_policy: cluster-only
+    public_exposure: false
+    first_deployment: true
+    sources: [cmd/admin-bff-service/router.go]
+  - name: assurance-health-ready-metrics
+    owner: assurance
+    listener: assurance-http
+    path: /health, /ready, /metrics
+    methods: [GET]
+    auth_class: mTLS-or-probe-exception
+    authorization: liveness-readiness-telemetry
+    rate_limit: none
+    body_limit: none
+    idempotency: none
+    signature: none
+    source_ip_policy: cluster-only
+    public_exposure: false
+    first_deployment: true
+    sources: [cmd/assurance-service/main.go]
+  - name: vendor-health-ready-metrics
+    owner: vendor
+    listener: vendor-http
+    path: /health, /ready, /metrics
+    methods: [GET]
+    auth_class: mTLS-or-probe-exception
+    authorization: liveness-readiness-telemetry
+    rate_limit: none
+    body_limit: none
+    idempotency: none
+    signature: none
+    source_ip_policy: cluster-only
+    public_exposure: false
+    first_deployment: true
+    sources: [cmd/vendor-service/main.go]
+  - name: internal-service-admin-and-privacy
+    owner: service-owners
+    listener: per-service-internal-http
+    path: /admin/*, /api/v1/admin/*, /privacy/*
+    methods: [GET, POST, PUT, DELETE]
+    auth_class: mTLS-and-internal-token
+    authorization: service-admin-policy
+    rate_limit: internal-policy
+    body_limit: service-default
+    idempotency: route-specific
+    signature: none
+    source_ip_policy: cluster-only
+    public_exposure: false
+    first_deployment: true
+    sources: [cmd/*/router.go, internal/handler/router.go, internal/config]
+debug_route_scan:
+  public_debug_routes: none found in current route registrations
+  dashboard_exposure: forbidden
+  source: internal/handler/*, cmd/*/router.go

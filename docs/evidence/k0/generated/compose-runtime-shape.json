@@ -1,0 +1,583 @@
+{
+  "services": {
+    "admin-bff-service": {
+      "build_service": "admin-bff-service",
+      "depends_on": {
+        "auth-service": {
+          "condition": "service_healthy",
+          "required": true
+        },
+        "postgres": {
+          "condition": "service_healthy",
+          "required": true
+        }
+      },
+      "image": "seev/admin-bff-service:${SEEV_IMAGE_TAG:-dev}",
+      "ports": [
+        {
+          "host_ip": "127.0.0.1",
+          "mode": "ingress",
+          "protocol": "tcp",
+          "published": "8095",
+          "target": 8095
+        }
+      ],
+      "profiles": [
+        "app"
+      ]
+    },
+    "alloy": {
+      "build_service": null,
+      "depends_on": {
+        "docker-socket-proxy": {
+          "condition": "service_healthy",
+          "required": true
+        },
+        "loki": {
+          "condition": "service_started",
+          "required": true
+        }
+      },
+      "image": "grafana/alloy@sha256:491b0578c04983fd54fe99b587b6fab4404dc46d0dc16677bd6b00cc1140b308",
+      "ports": [],
+      "profiles": [
+        "observability"
+      ]
+    },
+    "assurance-service": {
+      "build_service": "assurance-service",
+      "depends_on": {
+        "ledger-service": {
+          "condition": "service_healthy",
+          "required": true
+        },
+        "payin-service": {
+          "condition": "service_healthy",
+          "required": true
+        },
+        "payout-service": {
+          "condition": "service_healthy",
+          "required": true
+        },
+        "postgres": {
+          "condition": "service_healthy",
+          "required": true
+        }
+      },
+      "image": "seev/assurance-service:${SEEV_IMAGE_TAG:-dev}",
+      "ports": [
+        {
+          "host_ip": "127.0.0.1",
+          "mode": "ingress",
+          "protocol": "tcp",
+          "published": "8096",
+          "target": 8096
+        }
+      ],
+      "profiles": [
+        "app"
+      ]
+    },
+    "auth-service": {
+      "build_service": "auth-service",
+      "depends_on": {
+        "ledger-service": {
+          "condition": "service_healthy",
+          "required": true
+        },
+        "object-store-init": {
+          "condition": "service_completed_successfully",
+          "required": true
+        },
+        "postgres": {
+          "condition": "service_healthy",
+          "required": true
+        },
+        "redis": {
+          "condition": "service_healthy",
+          "required": true
+        }
+      },
+      "image": "seev/auth-service:${SEEV_IMAGE_TAG:-dev}",
+      "ports": [
+        {
+          "host_ip": "127.0.0.1",
+          "mode": "ingress",
+          "protocol": "tcp",
+          "published": "8082",
+          "target": 8082
+        },
+        {
+          "host_ip": "127.0.0.1",
+          "mode": "ingress",
+          "protocol": "tcp",
+          "published": "8083",
+          "target": 8083
+        }
+      ],
+      "profiles": [
+        "app"
+      ]
+    },
+    "backup-agent": {
+      "build_service": null,
+      "depends_on": {
+        "postgres": {
+          "condition": "service_healthy",
+          "required": true
+        }
+      },
+      "image": "seev/backup-agent:${SEEV_IMAGE_TAG:-dev}",
+      "ports": [
+        {
+          "host_ip": "127.0.0.1",
+          "mode": "ingress",
+          "protocol": "tcp",
+          "published": "18097",
+          "target": 8097
+        }
+      ],
+      "profiles": [
+        "backup"
+      ]
+    },
+    "docker-socket-proxy": {
+      "build_service": null,
+      "depends_on": {},
+      "image": "ghcr.io/tecnativa/docker-socket-proxy@sha256:1f5038b54f06c3e18422902cf00ba21803d1c97805aae032e5e6673d532d3459",
+      "ports": [],
+      "profiles": [
+        "observability"
+      ]
+    },
+    "fraud-service": {
+      "build_service": "fraud-service",
+      "depends_on": {
+        "postgres": {
+          "condition": "service_healthy",
+          "required": true
+        },
+        "rabbitmq": {
+          "condition": "service_healthy",
+          "required": true
+        },
+        "redis": {
+          "condition": "service_healthy",
+          "required": true
+        }
+      },
+      "image": "seev/fraud-service:${SEEV_IMAGE_TAG:-dev}",
+      "ports": [
+        {
+          "host_ip": "127.0.0.1",
+          "mode": "ingress",
+          "protocol": "tcp",
+          "published": "8094",
+          "target": 8094
+        },
+        {
+          "host_ip": "127.0.0.1",
+          "mode": "ingress",
+          "protocol": "tcp",
+          "published": "9094",
+          "target": 9094
+        }
+      ],
+      "profiles": [
+        "app"
+      ]
+    },
+    "gateway-service": {
+      "build_service": "gateway",
+      "depends_on": {
+        "ledger-service": {
+          "condition": "service_healthy",
+          "required": true
+        },
+        "payin-service": {
+          "condition": "service_healthy",
+          "required": true
+        },
+        "payout-service": {
+          "condition": "service_healthy",
+          "required": true
+        },
+        "postgres": {
+          "condition": "service_healthy",
+          "required": true
+        },
+        "rabbitmq": {
+          "condition": "service_healthy",
+          "required": true
+        },
+        "redis": {
+          "condition": "service_healthy",
+          "required": true
+        }
+      },
+      "image": "seev/gateway-service:${SEEV_IMAGE_TAG:-dev}",
+      "ports": [
+        {
+          "host_ip": "127.0.0.1",
+          "mode": "ingress",
+          "protocol": "tcp",
+          "published": "8080",
+          "target": 8080
+        },
+        {
+          "host_ip": "127.0.0.1",
+          "mode": "ingress",
+          "protocol": "tcp",
+          "published": "8081",
+          "target": 8081
+        }
+      ],
+      "profiles": [
+        "app"
+      ]
+    },
+    "grafana": {
+      "build_service": null,
+      "depends_on": {
+        "loki": {
+          "condition": "service_started",
+          "required": true
+        },
+        "prometheus": {
+          "condition": "service_started",
+          "required": true
+        },
+        "tempo": {
+          "condition": "service_started",
+          "required": true
+        }
+      },
+      "image": "grafana/grafana@sha256:1c1bd67c54c5fcf6e759897852b5a584191bd6796e8d328a5ace457799801261",
+      "ports": [
+        {
+          "host_ip": "127.0.0.1",
+          "mode": "ingress",
+          "protocol": "tcp",
+          "published": "3000",
+          "target": 3000
+        }
+      ],
+      "profiles": [
+        "observability"
+      ]
+    },
+    "ledger-service": {
+      "build_service": "ledger-service",
+      "depends_on": {
+        "postgres": {
+          "condition": "service_healthy",
+          "required": true
+        },
+        "rabbitmq": {
+          "condition": "service_healthy",
+          "required": true
+        },
+        "redis": {
+          "condition": "service_healthy",
+          "required": true
+        }
+      },
+      "image": "seev/ledger-service:${SEEV_IMAGE_TAG:-dev}",
+      "ports": [
+        {
+          "host_ip": "127.0.0.1",
+          "mode": "ingress",
+          "protocol": "tcp",
+          "published": "8090",
+          "target": 8090
+        },
+        {
+          "host_ip": "127.0.0.1",
+          "mode": "ingress",
+          "protocol": "tcp",
+          "published": "8091",
+          "target": 8091
+        },
+        {
+          "host_ip": "127.0.0.1",
+          "mode": "ingress",
+          "protocol": "tcp",
+          "published": "9091",
+          "target": 9091
+        }
+      ],
+      "profiles": [
+        "app"
+      ]
+    },
+    "loki": {
+      "build_service": null,
+      "depends_on": {},
+      "image": "grafana/loki@sha256:87f0a067673756a3cede1bcbf0c74875f7df9b09fddb53e399d0c576f756cfcc",
+      "ports": [
+        {
+          "host_ip": "127.0.0.1",
+          "mode": "ingress",
+          "protocol": "tcp",
+          "published": "3100",
+          "target": 3100
+        }
+      ],
+      "profiles": [
+        "observability"
+      ]
+    },
+    "object-store-init": {
+      "build_service": null,
+      "depends_on": {},
+      "image": "busybox:1.38",
+      "ports": [],
+      "profiles": [
+        "app"
+      ]
+    },
+    "payin-service": {
+      "build_service": "payin-service",
+      "depends_on": {
+        "ledger-service": {
+          "condition": "service_healthy",
+          "required": true
+        },
+        "postgres": {
+          "condition": "service_healthy",
+          "required": true
+        },
+        "vendor-service": {
+          "condition": "service_healthy",
+          "required": true
+        }
+      },
+      "image": "seev/payin-service:${SEEV_IMAGE_TAG:-dev}",
+      "ports": [
+        {
+          "host_ip": "127.0.0.1",
+          "mode": "ingress",
+          "protocol": "tcp",
+          "published": "8092",
+          "target": 8092
+        },
+        {
+          "host_ip": "127.0.0.1",
+          "mode": "ingress",
+          "protocol": "tcp",
+          "published": "9092",
+          "target": 9092
+        }
+      ],
+      "profiles": [
+        "app"
+      ]
+    },
+    "payout-service": {
+      "build_service": "payout-service",
+      "depends_on": {
+        "ledger-service": {
+          "condition": "service_healthy",
+          "required": true
+        },
+        "postgres": {
+          "condition": "service_healthy",
+          "required": true
+        },
+        "redis": {
+          "condition": "service_healthy",
+          "required": true
+        },
+        "vendor-service": {
+          "condition": "service_healthy",
+          "required": true
+        }
+      },
+      "image": "seev/payout-service:${SEEV_IMAGE_TAG:-dev}",
+      "ports": [
+        {
+          "host_ip": "127.0.0.1",
+          "mode": "ingress",
+          "protocol": "tcp",
+          "published": "8093",
+          "target": 8093
+        },
+        {
+          "host_ip": "127.0.0.1",
+          "mode": "ingress",
+          "protocol": "tcp",
+          "published": "9093",
+          "target": 9093
+        }
+      ],
+      "profiles": [
+        "app"
+      ]
+    },
+    "postgres": {
+      "build_service": null,
+      "depends_on": {},
+      "image": "seev/postgres-backup:${SEEV_IMAGE_TAG:-dev}",
+      "ports": [
+        "127.0.0.1:${POSTGRES_PORT:-5433}:5432"
+      ],
+      "profiles": []
+    },
+    "prometheus": {
+      "build_service": null,
+      "depends_on": {},
+      "image": "prom/prometheus@sha256:3c42b892cf723fa54d2f262c37a0e1f80aa8c8ddb1da7b9b0df9455a35a7f893",
+      "ports": [
+        {
+          "host_ip": "127.0.0.1",
+          "mode": "ingress",
+          "protocol": "tcp",
+          "published": "9090",
+          "target": 9090
+        }
+      ],
+      "profiles": [
+        "observability"
+      ]
+    },
+    "rabbitmq": {
+      "build_service": null,
+      "depends_on": {},
+      "image": "rabbitmq:4.3.4-management-alpine",
+      "ports": [
+        {
+          "host_ip": "127.0.0.1",
+          "mode": "ingress",
+          "protocol": "tcp",
+          "published": "5672",
+          "target": 5672
+        },
+        {
+          "host_ip": "127.0.0.1",
+          "mode": "ingress",
+          "protocol": "tcp",
+          "published": "15672",
+          "target": 15672
+        }
+      ],
+      "profiles": []
+    },
+    "redis": {
+      "build_service": null,
+      "depends_on": {},
+      "image": "redis:8.0.0-alpine",
+      "ports": [
+        {
+          "host_ip": "127.0.0.1",
+          "mode": "ingress",
+          "protocol": "tcp",
+          "published": "6380",
+          "target": 6379
+        }
+      ],
+      "profiles": []
+    },
+    "tempo": {
+      "build_service": null,
+      "depends_on": {},
+      "image": "grafana/tempo@sha256:1ce31d6d7ffab62189685e8c47881d4a561c5d38bd0dbd66e40ca83cef07923d",
+      "ports": [
+        {
+          "host_ip": "127.0.0.1",
+          "mode": "ingress",
+          "protocol": "tcp",
+          "published": "3200",
+          "target": 3200
+        },
+        {
+          "host_ip": "127.0.0.1",
+          "mode": "ingress",
+          "protocol": "tcp",
+          "published": "4317",
+          "target": 4317
+        }
+      ],
+      "profiles": [
+        "observability"
+      ]
+    },
+    "vault": {
+      "build_service": null,
+      "depends_on": {},
+      "image": "hashicorp/vault@sha256:a296a888b118615dc01d5f1a6846e6d4a7277946caaed5b447008fff5fe06b54",
+      "ports": [
+        {
+          "host_ip": "127.0.0.1",
+          "mode": "ingress",
+          "protocol": "tcp",
+          "published": "18200",
+          "target": 8200
+        }
+      ],
+      "profiles": [
+        "secrets"
+      ]
+    },
+    "vendor-service": {
+      "build_service": "vendor-service",
+      "depends_on": {
+        "postgres": {
+          "condition": "service_healthy",
+          "required": true
+        }
+      },
+      "image": "seev/vendor-service:${SEEV_IMAGE_TAG:-dev}",
+      "ports": [
+        {
+          "host_ip": "127.0.0.1",
+          "mode": "ingress",
+          "protocol": "tcp",
+          "published": "8098",
+          "target": 8098
+        },
+        {
+          "host_ip": "127.0.0.1",
+          "mode": "ingress",
+          "protocol": "tcp",
+          "published": "9098",
+          "target": 9098
+        }
+      ],
+      "profiles": [
+        "app"
+      ]
+    }
+  },
+  "volumes": {
+    "seev_alloy_data": {
+      "name": "seev_seev_alloy_data"
+    },
+    "seev_backup_socket": {
+      "name": "seev_seev_backup_socket"
+    },
+    "seev_grafana_data": {
+      "name": "seev_seev_grafana_data"
+    },
+    "seev_loki_data": {
+      "name": "seev_seev_loki_data"
+    },
+    "seev_object_store": {
+      "name": "seev_seev_object_store"
+    },
+    "seev_postgres_data": {
+      "name": "seev_seev_postgres_data"
+    },
+    "seev_prometheus_data": {
+      "name": "seev_seev_prometheus_data"
+    },
+    "seev_rabbitmq_data": {
+      "name": "seev_seev_rabbitmq_data"
+    },
+    "seev_redis_data": {
+      "name": "seev_seev_redis_data"
+    },
+    "seev_tempo_data": {
+      "name": "seev_seev_tempo_data"
+    }
+  }
+}

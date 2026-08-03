@@ -1,0 +1,7 @@
+project_id                 = "replace-with-dedicated-project"
+billing_account            = "000000-000000-000000"
+region                     = "asia-southeast2"
+zone                       = "asia-southeast2-a"
+authorized_operator_cidrs  = ["203.0.113.10/32"]
+dns_name                   = "dev.seev.example."
+budget_amount_usd          = 25
