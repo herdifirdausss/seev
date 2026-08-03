@@ -49,9 +49,10 @@ system look like a single API from the outside.
 
 **What's inside**: `internal/handler` (routing + composition),
 `internal/server` (HTTP server, graceful shutdown), `internal/notify`
-(user-facing notifications, its own small module with its own table).
-Gateway owns `seev_gateway`, containing exactly one table:
-`notif_notifications`. It holds almost no business logic of its own —
+(user-facing notifications, its own bounded module). Gateway owns
+`seev_gateway`, containing notification history plus durable planning,
+delivery, preference, device, template, digest, and channel-control tables.
+It holds almost no business logic of its own —
 everything it does is validate/compose/forward.
 
 Implemented (Plan 57 / track C1): `internal/merchant` — a bounded module
@@ -72,10 +73,13 @@ for the full route list, contracts, and verification evidence.
 | HTTP (public) | `POST /api/v1/topup`, `GET /api/v1/topup/{id}` | JWT + KYC tier 1 required — calls Payin over gRPC |
 | HTTP (public) | `POST /api/v1/payout`, `GET /api/v1/payout/{id}` | JWT + KYC tier 1 required — calls Payout over gRPC |
 | HTTP (public) | `/api/v1/ledger/*` | JWT (+ KYC tier for postings) — reverse-proxies the ledger API surface to ledger-service |
-| HTTP (public) | `GET /api/v1/notifications`, `POST /api/v1/notifications/{id}/read` | JWT — served directly by gateway's own `internal/notify` |
+| HTTP (public) | `GET /api/v1/notifications[?... ]`, `GET /api/v1/notifications/{id}`, `GET /api/v1/notifications/unread-count`, `POST /api/v1/notifications/{id}/read`, `POST /api/v1/notifications/read-all` | JWT — served directly by Gateway's `internal/notify` |
+| HTTP (public) | `GET/PUT /api/v1/notification-settings`, `GET/PUT /api/v1/notification-preferences`, `GET/POST /api/v1/notification-devices`, `DELETE /api/v1/notification-devices/{id}` | JWT — user-scoped notification controls |
+| HTTP (internal admin) | `/api/v1/admin/gateway/notifications/*` | mTLS + admin JWT through Admin BFF; templates, delivery inspection/replay, and channel controls |
 | HTTP (public probes) | `GET /health`, `GET /ready` | none |
 | HTTP (internal ops) | `GET /metrics` on `:8081` | mTLS service identity |
-| Background | RabbitMQ consumer in `internal/notify` | consumes `ledger.transaction.posted.v1` to create in-app notifications |
+| Background | RabbitMQ consumer in `internal/notify` | consumes `ledger.transaction.posted.v1`, atomically plans in-app/external work, and ACKs after durable planning |
+| Background | Email, push, and digest workers in `internal/notify` | leases Gateway-owned delivery rows; calls Auth contact resolution and local SMTP/mock-push adapters outside DB transactions |
 | HTTP (public B2B) | `/api/v1/b2b/{merchant,accounts,transactions,transfers,payins,payouts}` | Merchant API key (`Authorization: Bearer mk_live_...`/`mk_sandbox_...`) — `internal/merchant/api` |
 | HTTP (internal admin) | `/api/v1/admin/gateway/tenants/*`, `/api/v1/admin/gateway/tenants/{id}/webhooks`, `/api/v1/admin/gateway/global/b2b-api` | mTLS + JWT `authed` — tenant/key/quota lifecycle, webhook endpoint management (operator-managed, no merchant self-service route), maker/checker, global kill switch |
 | Background | Webhook relay + RabbitMQ consumer in `internal/merchant/webhook` | fans out `transaction.posted.v1` (the one external event type) to subscribed tenant endpoints, HMAC-signed |
@@ -86,7 +90,9 @@ gateway. See [Onboarding](../development/onboarding.md#service-map-name--code--d
 for why that's easy to assume wrong.
 
 **Depends on**: Auth (JWT verification via shared secret, not a live
-call), Payin, Payout, Ledger (gRPC/proxy), RabbitMQ (notifications).
+call), Auth's verified-contact internal endpoint for email, Payin, Payout,
+Ledger (gRPC/proxy), RabbitMQ (notifications), and optional local Mailpit/mock
+push sinks.
 **Depended on by**: nothing internal — it's a leaf in the call graph from
 every other service's perspective.
 
@@ -126,6 +132,7 @@ pluggable third-party KYC verification client. Owns `seev_auth`:
 | HTTP (public) | `GET/PUT /api/v1/users/me` | JWT |
 | HTTP (public) | `POST /api/v1/users/me/kyc`, `GET /api/v1/users/me/kyc`, `POST /api/v1/users/me/kyc/documents` | JWT |
 | HTTP (internal admin) | `GET /api/v1/admin/kyc/submissions`, `POST .../approve`, `POST .../reject`, `POST /api/v1/admin/kyc/users/{id}/downgrade`, `GET /api/v1/admin/kyc/documents/{id}` | admin/maker/checker role |
+| HTTP (internal service) | `GET /internal/v1/users/{id}/notification-contact` | Gateway-only internal token; returns active user email and verified-contact state, never credentials |
 | Background | KYC apply-retry job | claims durable intents when a KYC approval's ledger-side tier apply failed transiently; re-runs the full limits-first flow (`internal/auth/worker/retry.go`) |
 | Background | Sanctions re-screen job | periodically re-submits already-approved KYC subjects to the sanctions checker (`internal/auth/worker/rescreen.go`) |
 

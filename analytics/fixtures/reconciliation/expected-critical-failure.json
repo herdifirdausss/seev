@@ -1,0 +1,7 @@
+{
+  "status": "failed",
+  "critical_failures": 1,
+  "warning_failures": 0,
+  "check": "recognized_fee_revenue_reconciliation",
+  "details": "integer delta only; source row details are redacted"
+}

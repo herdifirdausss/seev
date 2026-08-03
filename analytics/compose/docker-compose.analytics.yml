@@ -1,0 +1,233 @@
+name: seev-analytics
+
+x-analytics-logging: &analytics-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-analytics-resources: &analytics-resources
+  deploy:
+    resources:
+      limits:
+        cpus: "1.00"
+        memory: "768M"
+
+services:
+  redpanda:
+    profiles: ["analytics-core", "analytics-ops"]
+    image: redpandadata/redpanda:v25.1.5
+    command:
+      - redpanda
+      - start
+      - --overprovisioned
+      - --smp
+      - "1"
+      - --memory
+      - ${ANALYTICS_REDPANDA_MEMORY:-768M}
+      - --reserve-memory
+      - 0M
+      - --node-id
+      - "0"
+      - --check=false
+      - --kafka-addr
+      - internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr
+      - internal://redpanda:9092,external://127.0.0.1:19092
+    ports:
+      - "127.0.0.1:19092:19092"
+    volumes:
+      - seev_analytics_redpanda_data:/var/lib/redpanda/data
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health --brokers 127.0.0.1:9092 | grep -q Healthy"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
+    logging: *analytics-logging
+    <<: *analytics-resources
+
+  redpanda-init:
+    profiles: ["analytics-core"]
+    image: redpandadata/redpanda:v25.1.5
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        for topic in \
+          seev.cdc.ledger.public.accounts.v1 \
+          seev.cdc.ledger.public.account_balances.v1 \
+          seev.cdc.ledger.public.ledger_transactions.v1 \
+          seev.cdc.ledger.public.ledger_entries.v1 \
+          seev.cdc.ledger.public.fee_quotes.v1 \
+          seev.cdc.payin.public.payin_topup_intents.v1 \
+          seev.cdc.payin.public.payin_webhook_events.v1 \
+          seev.cdc.payout.public.payout_requests.v1 \
+          seev.cdc.payout.public.payout_vendor_calls.v1; do
+          rpk topic create "$topic" --brokers redpanda:9092 --partitions 1 --replicas 1 --topic-config retention.ms=604800000 --topic-config cleanup.policy=delete --if-not-exists
+        done
+
+  connect:
+    profiles: ["analytics-core"]
+    build:
+      context: ../connect
+      dockerfile: Dockerfile
+    image: seev/analytics-connect:3.1.2
+    environment:
+      BOOTSTRAP_SERVERS: redpanda:9092
+      GROUP_ID: seev-analytics-connect
+      CONFIG_STORAGE_TOPIC: seev.analytics.connect.config
+      OFFSET_STORAGE_TOPIC: seev.analytics.connect.offsets
+      STATUS_STORAGE_TOPIC: seev.analytics.connect.status
+      CONFIG_STORAGE_REPLICATION_FACTOR: "1"
+      OFFSET_STORAGE_REPLICATION_FACTOR: "1"
+      STATUS_STORAGE_REPLICATION_FACTOR: "1"
+      REST_ADVERTISED_HOST_NAME: connect
+      REST_PORT: "8083"
+      KEY_CONVERTER: org.apache.kafka.connect.storage.StringConverter
+      VALUE_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+      VALUE_CONVERTER_SCHEMAS_ENABLE: "false"
+      CONNECT_PLUGIN_PATH: /kafka/connect,/kafka/connect/plugins
+      CONNECT_LOG4J_ROOT_LOGLEVEL: ${ANALYTICS_CONNECT_LOG_LEVEL:-INFO}
+      CONNECT_HEARTBEAT_INTERVAL_MS: "10000"
+      ANALYTICS_SOURCE_DB_HOST: ${ANALYTICS_SOURCE_DB_HOST:-host.docker.internal}
+      ANALYTICS_SOURCE_DB_PORT: ${ANALYTICS_SOURCE_DB_PORT:-5433}
+    secrets:
+      - analytics_pseudonym_salt
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "127.0.0.1:18083:8083"
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8083/connectors >/dev/null"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    logging: *analytics-logging
+    <<: *analytics-resources
+
+  clickhouse:
+    profiles: ["analytics-core", "analytics-ops", "analytics-ui"]
+    image: clickhouse/clickhouse-server:25.3.6.56
+    environment:
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+      CLICKHOUSE_MAX_MEMORY_USAGE: ${ANALYTICS_CLICKHOUSE_MAX_MEMORY_USAGE:-1073741824}
+    ports:
+      - "127.0.0.1:8123:8123"
+      - "127.0.0.1:9000:9000"
+    volumes:
+      - seev_analytics_clickhouse_data:/var/lib/clickhouse
+      - ../clickhouse/config/config.d:/etc/clickhouse-server/config.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8123/ping | grep -q Ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
+    logging: *analytics-logging
+    <<: *analytics-resources
+
+  warehouse-init:
+    profiles: ["analytics-core"]
+    image: clickhouse/clickhouse-server:25.3.6.56
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+      redpanda-init:
+        condition: service_completed_successfully
+    environment:
+      CLICKHOUSE_BI_PASSWORD_FILE: /run/secrets/analytics_bi_password
+      CLICKHOUSE_DBT_PASSWORD_FILE: /run/secrets/analytics_dbt_password
+      CLICKHOUSE_RECONCILIATION_PASSWORD_FILE: /run/secrets/analytics_reconciliation_password
+      CLICKHOUSE_BI_PASSWORD_FILE: /run/secrets/analytics_bi_password
+      CLICKHOUSE_DBT_PASSWORD_FILE: /run/secrets/analytics_dbt_password
+    secrets:
+      - analytics_bi_password
+      - analytics_dbt_password
+      - analytics_reconciliation_password
+    volumes:
+      - ../clickhouse/migrations:/migrations:ro
+      - ../clickhouse/scripts:/scripts:ro
+    entrypoint: ["/bin/sh", "/scripts/init-warehouse.sh"]
+    restart: "no"
+
+  dbt:
+    profiles: ["analytics-core"]
+    image: ghcr.io/dbt-labs/dbt-clickhouse:1.9.2
+    depends_on:
+      warehouse-init:
+        condition: service_completed_successfully
+    environment:
+      DBT_PROFILES_DIR: /workspace
+      DBT_THREADS: ${ANALYTICS_DBT_THREADS:-1}
+      DBT_CLICKHOUSE_HOST: clickhouse
+      DBT_CLICKHOUSE_PORT: "8123"
+      DBT_CLICKHOUSE_USER: analytics_dbt
+      DBT_CLICKHOUSE_PASSWORD_FILE: /run/secrets/analytics_dbt_password
+    secrets:
+      - analytics_dbt_password
+    volumes:
+      - ../dbt:/workspace:ro
+    entrypoint: ["/workspace/scripts/dbt-entrypoint.sh"]
+    command: ["tail -f /dev/null"]
+    <<: *analytics-resources
+
+  metabase:
+    profiles: ["analytics-ui"]
+    image: metabase/metabase:v0.55.8
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+    environment:
+      MB_DB_FILE: /metabase-data/metabase.db
+      MB_JETTY_PORT: "3000"
+      MB_ANON_TRACKING_ENABLED: "false"
+      JAVA_TIMEZONE: Asia/Jakarta
+      JAVA_OPTS: ${ANALYTICS_METABASE_JAVA_OPTS:--Xmx512m}
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - seev_analytics_metabase_data:/metabase-data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:3000/api/health | grep -q ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+    logging: *analytics-logging
+    <<: *analytics-resources
+
+  console:
+    profiles: ["analytics-ops"]
+    image: redpandadata/console:v2.8.3
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    environment:
+      KAFKA_BROKERS: redpanda:9092
+      KAFKA_SCHEMAREGISTRY_ENABLED: "false"
+    ports:
+      - "127.0.0.1:18084:8080"
+    logging: *analytics-logging
+    <<: *analytics-resources
+
+secrets:
+  analytics_pseudonym_salt:
+    file: ../secrets/pseudonym_salt
+  analytics_bi_password:
+    file: ../secrets/bi_password
+  analytics_dbt_password:
+    file: ../secrets/dbt_password
+  analytics_reconciliation_password:
+    file: ../secrets/reconciliation_password
+
+volumes:
+  seev_analytics_redpanda_data:
+  seev_analytics_clickhouse_data:
+  seev_analytics_metabase_data:

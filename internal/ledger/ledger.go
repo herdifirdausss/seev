@@ -32,6 +32,7 @@ import (
 	"github.com/herdifirdausss/seev/internal/ledger/feepolicy"
 	"github.com/herdifirdausss/seev/internal/ledger/grpcserver"
 	"github.com/herdifirdausss/seev/internal/ledger/model"
+	"github.com/herdifirdausss/seev/internal/ledger/migration/balancev2"
 	"github.com/herdifirdausss/seev/internal/ledger/processors"
 	"github.com/herdifirdausss/seev/internal/ledger/repository"
 	"github.com/herdifirdausss/seev/internal/ledger/service/accrual"
@@ -46,6 +47,7 @@ import (
 	"github.com/herdifirdausss/seev/internal/ledger/service/schedule"
 	"github.com/herdifirdausss/seev/internal/ledger/transport"
 	"github.com/herdifirdausss/seev/internal/ledger/worker"
+	"github.com/herdifirdausss/seev/internal/migrationkit"
 	"github.com/herdifirdausss/seev/pkg/alerting"
 	"github.com/herdifirdausss/seev/pkg/cryptox"
 	"github.com/herdifirdausss/seev/pkg/currency"
@@ -180,6 +182,7 @@ type WorkerConfig struct {
 	// discrepancy the verifier finds (docs/roadmap/archive/12 Task T4). Empty = no
 	// external alert, log+metric only (backward compatible default).
 	AlertWebhookURL string
+	BalanceV2       balancev2.Config
 }
 
 // Module is the public facade for the ledger module.
@@ -221,6 +224,7 @@ type Module struct {
 	workerCfg       WorkerConfig
 	outboxRelay     *worker.OutboxRelay
 	verifier        *worker.Verifier
+	balanceV2       *balancev2.Runtime
 	snapshotJob     *worker.SnapshotJob
 	scheduleJob     *worker.ScheduleRunnerJob
 	accrualJob      *worker.AccrualJob
@@ -309,6 +313,8 @@ func NewModule(db database.DatabaseSQL, broker messaging.Broker, redisClient *re
 	}
 	feeQuotePolicy := feepolicy.New(db, feeRepo)
 	handleSvc := ledgerhandle.New(db, txRepo, balanceRepo, entryRepo, outboxRepo, registry, logger, maxAmountPerTx, feeQuotePolicy)
+	balanceV2Runtime := balancev2.NewRuntime(db, workerCfg.BalanceV2, logger)
+	handleSvc.SetProjectionV2Writer(balanceV2Runtime)
 	adjustmentsSvc := adjustments.New(db, adjRepo, txRepo, outboxRepo, handleSvc)
 	scheduleSvc := schedule.New(db, scheduleRepo, handleSvc, logger)
 	durableScheduleSvc := schedule.NewDurable(scheduleRepo, scheduleOccurrenceRepo, handleSvc, feeQuotePolicy, logger, loc)
@@ -354,9 +360,11 @@ func NewModule(db database.DatabaseSQL, broker messaging.Broker, redisClient *re
 		loc:               loc,
 		logger:            logger,
 		processorRegistry: registry,
+		balanceV2:         balanceV2Runtime,
 	}
 	interestSvc.SetTransactionLookup(m)
 	durableScheduleSvc.SetTransactionLookup(m)
+	m.provisionSvc.SetProjectionV2Writer(balanceV2Runtime)
 	m.policyChecker = policyChecker
 	m.feePolicy = feeQuotePolicy
 	m.router = transport.NewRouterWithFraud(m, policyChecker, m.feePolicy, fraudClient, logger, feeQuoteTTL)
@@ -516,6 +524,225 @@ func (m *Module) InternalRouter() http.Handler {
 	return transport.NewInternalRouterWithFeePolicy(m, m.feePolicy)
 }
 
+// ListMigrations and the methods below back the typed internal migration
+// control plane. The HTTP package consumes them through a small optional
+// interface so ordinary Ledger service mocks do not inherit operator APIs.
+func (m *Module) ListMigrations(ctx context.Context) ([]balancev2.Migration, error) {
+	if err := m.ensureBalanceMigration(ctx); err != nil {
+		return nil, err
+	}
+	items, err := m.balanceV2.Controls().List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	filtered := make([]balancev2.Migration, 0, 1)
+	for _, item := range items {
+		if isBalanceMigration(item) {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered, nil
+}
+
+func (m *Module) GetMigration(ctx context.Context, id uuid.UUID) (balancev2.Migration, error) {
+	if err := m.ensureBalanceMigration(ctx); err != nil {
+		return balancev2.Migration{}, err
+	}
+	item, err := m.balanceV2.Controls().Get(ctx, id)
+	if err != nil {
+		return balancev2.Migration{}, err
+	}
+	if !isBalanceMigration(item) {
+		return balancev2.Migration{}, balancev2.ErrMigrationNotFound
+	}
+	return item, nil
+}
+
+func isBalanceMigration(item balancev2.Migration) bool {
+	return item.Name == balancev2.MigrationName && item.Resource == balancev2.Resource
+}
+
+func (m *Module) ensureBalanceMigration(ctx context.Context) error {
+	return m.balanceV2.Initialize(ctx, "service:ledger-admin")
+}
+
+func (m *Module) TransitionMigration(ctx context.Context, id uuid.UUID, to, actor, approver, reason string, expectedVersion int64) (balancev2.Migration, error) {
+	if err := m.ensureBalanceMigration(ctx); err != nil {
+		return balancev2.Migration{}, err
+	}
+	current, err := m.balanceV2.Controls().Get(ctx, id)
+	if err != nil {
+		return balancev2.Migration{}, err
+	}
+	if !isBalanceMigration(current) {
+		return balancev2.Migration{}, balancev2.ErrMigrationNotFound
+	}
+	gate := balancev2.GateSnapshot{Passed: true, FreshAt: time.Now().UTC(), Reason: "non-gated lifecycle transition"}
+	if migrationkit.RequiresGate(migrationkit.State(to)) {
+		gate, err = m.balanceV2.Controls().Gates(ctx, current)
+		if err != nil {
+			return balancev2.Migration{}, err
+		}
+	}
+	result, transitionErr := m.balanceV2.Controls().Transition(ctx, balancev2.TransitionRequest{
+		MigrationID: id, ToState: to, RequestedBy: actor, ApprovedBy: approver,
+		Reason: reason, ExpectedVersion: expectedVersion,
+	}, gate)
+	if transitionErr == nil {
+		m.balanceV2.Refresh()
+	}
+	return result, transitionErr
+}
+
+func (m *Module) SetMigrationReadPercentage(ctx context.Context, id uuid.UUID, percentage int, actor, approver, reason string, expectedVersion int64) (balancev2.Migration, error) {
+	if err := m.ensureBalanceMigration(ctx); err != nil {
+		return balancev2.Migration{}, err
+	}
+	migration, err := m.balanceV2.Controls().Get(ctx, id)
+	if err != nil {
+		return balancev2.Migration{}, err
+	}
+	if !isBalanceMigration(migration) {
+		return balancev2.Migration{}, balancev2.ErrMigrationNotFound
+	}
+	gate := balancev2.GateSnapshot{Passed: true, FreshAt: time.Now().UTC(), Reason: "read percentage unchanged"}
+	if percentage > migration.ReadPercentageBasisPoints {
+		gate, err = m.balanceV2.Controls().Gates(ctx, migration)
+		if err != nil {
+			return balancev2.Migration{}, err
+		}
+	}
+	result, setErr := m.balanceV2.Controls().SetReadPercentage(ctx, id, percentage, actor, approver, reason, expectedVersion, gate)
+	if setErr == nil {
+		m.balanceV2.Refresh()
+	}
+	return result, setErr
+}
+
+func (m *Module) SetMigrationDualWrite(ctx context.Context, id uuid.UUID, strict bool, actor, reason string, expectedVersion int64) (balancev2.Migration, error) {
+	if err := m.ensureBalanceMigration(ctx); err != nil {
+		return balancev2.Migration{}, err
+	}
+	current, err := m.balanceV2.Controls().Get(ctx, id)
+	if err != nil {
+		return balancev2.Migration{}, err
+	}
+	if !isBalanceMigration(current) {
+		return balancev2.Migration{}, balancev2.ErrMigrationNotFound
+	}
+	result, setErr := m.balanceV2.Controls().SetDualWrite(ctx, id, strict, actor, reason, expectedVersion)
+	if setErr == nil {
+		m.balanceV2.Refresh()
+	}
+	return result, setErr
+}
+
+func (m *Module) PauseMigration(ctx context.Context, id uuid.UUID, actor, reason string, expectedVersion int64) (balancev2.Migration, error) {
+	if err := m.ensureBalanceMigration(ctx); err != nil {
+		return balancev2.Migration{}, err
+	}
+	current, err := m.balanceV2.Controls().Get(ctx, id)
+	if err != nil {
+		return balancev2.Migration{}, err
+	}
+	if !isBalanceMigration(current) {
+		return balancev2.Migration{}, balancev2.ErrMigrationNotFound
+	}
+	result, pauseErr := m.balanceV2.Controls().Pause(ctx, id, actor, reason, expectedVersion)
+	if pauseErr == nil {
+		m.balanceV2.Refresh()
+	}
+	return result, pauseErr
+}
+
+func (m *Module) ResumeMigration(ctx context.Context, id uuid.UUID, actor, reason string, expectedVersion int64) (balancev2.Migration, error) {
+	if err := m.ensureBalanceMigration(ctx); err != nil {
+		return balancev2.Migration{}, err
+	}
+	current, err := m.balanceV2.Controls().Get(ctx, id)
+	if err != nil {
+		return balancev2.Migration{}, err
+	}
+	if !isBalanceMigration(current) {
+		return balancev2.Migration{}, balancev2.ErrMigrationNotFound
+	}
+	result, resumeErr := m.balanceV2.Controls().Resume(ctx, id, actor, reason, expectedVersion)
+	if resumeErr == nil {
+		m.balanceV2.Refresh()
+	}
+	return result, resumeErr
+}
+
+func (m *Module) ListMigrationMismatches(ctx context.Context, id uuid.UUID, status string, limit, offset int) ([]balancev2.Mismatch, error) {
+	if err := m.ensureBalanceMigration(ctx); err != nil {
+		return nil, err
+	}
+	migration, err := m.balanceV2.Controls().Get(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if !isBalanceMigration(migration) {
+		return nil, balancev2.ErrMigrationNotFound
+	}
+	return m.balanceV2.Controls().ListMismatches(ctx, id, status, limit, offset)
+}
+
+func (m *Module) RunMigrationPreCutoverReconciliation(ctx context.Context, id uuid.UUID, actor string, backupFresh bool) error {
+	if err := m.ensureBalanceMigration(ctx); err != nil {
+		return err
+	}
+	migration, err := m.balanceV2.Controls().Get(ctx, id)
+	if err != nil {
+		return err
+	}
+	if !isBalanceMigration(migration) {
+		return balancev2.ErrMigrationNotFound
+	}
+	return m.balanceV2.RunPreCutoverReconciliation(ctx, actor, backupFresh)
+}
+
+func (m *Module) RequestMigrationRepair(ctx context.Context, migrationID, mismatchID uuid.UUID, actor, reason string) (balancev2.Repair, error) {
+	if err := m.ensureBalanceMigration(ctx); err != nil {
+		return balancev2.Repair{}, err
+	}
+	mismatch, err := m.balanceV2.Controls().GetMismatch(ctx, mismatchID)
+	if err != nil {
+		return balancev2.Repair{}, err
+	}
+	if mismatch.MigrationID != migrationID {
+		return balancev2.Repair{}, balancev2.ErrMigrationNotFound
+	}
+	migration, err := m.balanceV2.Controls().Get(ctx, migrationID)
+	if err != nil {
+		return balancev2.Repair{}, err
+	}
+	if !isBalanceMigration(migration) {
+		return balancev2.Repair{}, balancev2.ErrMigrationNotFound
+	}
+	return m.balanceV2.RequestRepair(ctx, mismatchID, actor, reason)
+}
+
+func (m *Module) ApproveMigrationRepair(ctx context.Context, migrationID, repairID, accountID uuid.UUID, approver, reason string) (balancev2.Repair, error) {
+	if err := m.ensureBalanceMigration(ctx); err != nil {
+		return balancev2.Repair{}, err
+	}
+	repair, err := m.balanceV2.Controls().GetRepair(ctx, repairID)
+	if err != nil {
+		return balancev2.Repair{}, err
+	}
+	if repair.MigrationID != migrationID {
+		return balancev2.Repair{}, balancev2.ErrMigrationNotFound
+	}
+	migration, err := m.balanceV2.Controls().Get(ctx, migrationID)
+	if err != nil {
+		return balancev2.Repair{}, err
+	}
+	if !isBalanceMigration(migration) {
+		return balancev2.Repair{}, balancev2.ErrMigrationNotFound
+	}
+	return m.balanceV2.ApproveRepair(ctx, repairID, accountID, approver, reason)
+}
+
 // ClosureRouter returns docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T5/T4b's (K9, K10,
 // K11) privacy endpoints for auth-service's cross-service closure and
 // export sagas: POST /privacy/closure/prepare, POST /privacy/closure/commit,
@@ -573,6 +800,12 @@ const ledgerEventsQueue = "ledger.events.audit"
 // relay and the integrity verifier. No-op if WorkerConfig.Enabled is false.
 // Call StopWorkers on shutdown.
 func (m *Module) StartWorkers(ctx context.Context) {
+	if m.balanceV2 != nil && m.workerCfg.BalanceV2.Enabled {
+		if err := m.balanceV2.Initialize(ctx, "service:ledger"); err != nil {
+			m.logger.Error("ledger: failed to initialize balance migration reference", slog.Any("error", err))
+		}
+		m.balanceV2.Start(ctx)
+	}
 	if !m.workerCfg.Enabled {
 		m.logger.Info("ledger: workers disabled (WORKER_ENABLED=false)")
 		return
@@ -610,6 +843,9 @@ func (m *Module) StartWorkers(ctx context.Context) {
 // any in-flight batch/check to finish. Safe to call even if StartWorkers was
 // never called or workers were disabled.
 func (m *Module) StopWorkers() {
+	if m.balanceV2 != nil {
+		m.balanceV2.Stop()
+	}
 	if !m.workerCfg.Enabled {
 		return
 	}
@@ -669,6 +905,9 @@ func (m *Module) GetUserCurrency(ctx context.Context, userID uuid.UUID, pocketCo
 
 // GetBalance returns the current balance for an account.
 func (m *Module) GetBalance(ctx context.Context, accountID uuid.UUID) (Balance, error) {
+	if m.balanceV2 != nil {
+		return m.balanceV2.ReadBalance(ctx, accountID, m.balanceRepo.GetBalance)
+	}
 	return m.balanceRepo.GetBalance(ctx, accountID)
 }
 
@@ -679,7 +918,7 @@ func (m *Module) GetBalance(ctx context.Context, accountID uuid.UUID) (Balance, 
 // Currency/status/type/allow_negative always reflect the CURRENT account
 // state — only Balance is historical.
 func (m *Module) GetBalanceAsOf(ctx context.Context, accountID uuid.UUID, asOf time.Time) (Balance, error) {
-	current, err := m.balanceRepo.GetBalance(ctx, accountID)
+	current, err := m.GetBalance(ctx, accountID)
 	if err != nil {
 		return Balance{}, err
 	}
@@ -704,7 +943,7 @@ const maxStatementEntries = 5000
 // GetBalanceAsOf(from - 1 day), never a full replay of the account's entire
 // history.
 func (m *Module) Statement(ctx context.Context, accountID uuid.UUID, from, to time.Time) (Statement, error) {
-	bal, err := m.balanceRepo.GetBalance(ctx, accountID)
+	bal, err := m.GetBalance(ctx, accountID)
 	if err != nil {
 		return Statement{}, err
 	}
@@ -782,7 +1021,7 @@ func (m *Module) GetMerchantAccount(ctx context.Context, tenantID uuid.UUID) (Ba
 	if err != nil {
 		return Balance{}, err
 	}
-	return m.balanceRepo.GetBalance(ctx, accountID)
+	return m.GetBalance(ctx, accountID)
 }
 
 // ListMerchantTransactions returns tenantID's own transactions (as either

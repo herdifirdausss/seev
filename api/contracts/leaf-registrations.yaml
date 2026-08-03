@@ -65,6 +65,7 @@ registrations:
   - {service: auth, listener: admin, method: POST, pattern: "/api/v1/admin/privacy/operator-offboarding/{id}/approve", owner: auth, audience: admin, source: cmd/auth-service/router.go}
   - {service: auth, listener: admin, method: POST, pattern: "/api/v1/admin/privacy/operator-offboarding/{id}/reject", owner: auth, audience: admin, source: cmd/auth-service/router.go}
   - {service: auth, listener: admin, method: GET, pattern: /api/v1/admin/privacy/operator-offboarding, owner: auth, audience: admin, source: cmd/auth-service/router.go}
+  - {service: auth, listener: internal, method: GET, pattern: "/internal/v1/users/{id}/notification-contact", owner: auth, audience: internal, source: cmd/auth-service/router.go}
   - {service: payin, listener: admin, method: GET, pattern: /admin/payin/events, owner: payin, audience: admin, source: internal/payin/http.go}
   - {service: payin, listener: admin, method: POST, pattern: "/admin/payin/events/{id}/replay", owner: payin, audience: admin, source: internal/payin/http.go}
   - {service: payin, listener: admin, method: GET, pattern: /admin/payin/routing-rules, owner: payin, audience: admin, source: internal/payin/http.go}

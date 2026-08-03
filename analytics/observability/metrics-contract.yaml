@@ -1,0 +1,93 @@
+version: 1
+status: implementation-contract
+owner: data-platform
+description: >-
+  Operational metrics for the C2 one-way analytics path. Metric labels must be
+  bounded infrastructure or contract values; business payloads and user
+  identifiers are never metric labels.
+labels:
+  allowed:
+    - environment
+    - source_service
+    - connector
+    - task
+    - topic
+    - partition
+    - model
+    - severity
+    - result
+  prohibited:
+    - user_id
+    - customer_id
+    - account_id
+    - transaction_id
+    - payment_intent_id
+    - payout_id
+    - destination_account_id
+    - raw_payload
+metrics:
+  - name: seev_analytics_connector_task_up
+    type: gauge
+    unit: boolean
+    purpose: Connector task health.
+  - name: seev_analytics_connector_source_lag_seconds
+    type: gauge
+    unit: seconds
+    purpose: Source timestamp to connector observation lag.
+  - name: seev_analytics_connector_records_total
+    type: counter
+    unit: records
+    purpose: Records read from each approved source connector.
+  - name: seev_analytics_redpanda_consumer_lag_records
+    type: gauge
+    unit: records
+    purpose: Raw-ingest consumer backlog by approved topic and partition.
+  - name: seev_analytics_clickhouse_ingest_rows_total
+    type: counter
+    unit: rows
+    purpose: Rows written into raw CDC storage.
+  - name: seev_analytics_clickhouse_ingest_errors_total
+    type: counter
+    unit: errors
+    purpose: Raw-ingest parse or insert failures.
+  - name: seev_analytics_dbt_run_total
+    type: counter
+    unit: runs
+    purpose: dbt invocation result by model or invocation scope.
+  - name: seev_analytics_dbt_run_duration_seconds
+    type: histogram
+    unit: seconds
+    purpose: dbt invocation duration.
+  - name: seev_analytics_model_freshness_seconds
+    type: gauge
+    unit: seconds
+    purpose: Source and mart freshness age.
+  - name: seev_analytics_reconciliation_run_total
+    type: counter
+    unit: runs
+    purpose: Reconciliation result at a safe common cutoff.
+  - name: seev_analytics_reconciliation_delta_minor_units
+    type: gauge
+    unit: minor_units
+    purpose: Absolute reconciliation delta; no currency conversion is implied.
+  - name: seev_analytics_wal_retained_bytes
+    type: gauge
+    unit: bytes
+    purpose: Source replication-slot retained WAL.
+alerts:
+  - name: AnalyticsConnectorTaskDown
+    metric: seev_analytics_connector_task_up
+    condition: value == 0 for 5m
+    severity: critical
+  - name: AnalyticsConsumerLagHigh
+    metric: seev_analytics_redpanda_consumer_lag_records
+    condition: value exceeds the agreed environment threshold for 10m
+    severity: warning
+  - name: AnalyticsWALPressure
+    metric: seev_analytics_wal_retained_bytes
+    condition: value exceeds the source safety threshold
+    severity: critical
+  - name: AnalyticsReconciliationCritical
+    metric: seev_analytics_reconciliation_run_total
+    condition: result == critical
+    severity: critical

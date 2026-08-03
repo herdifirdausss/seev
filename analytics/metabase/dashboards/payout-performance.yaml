@@ -1,0 +1,9 @@
+name: C2 Payout performance
+collection: C2 / Business
+read_role: bi_readonly
+freshness_model: mart_freshness
+cards:
+  - {name: Payouts by status, source: core.fact_payout_lifecycle, sql: "select report_date, currency, vendor, status, count() as payout_count, sum(amount_minor) as amount_minor from core.fact_payout_lifecycle where report_date between {{start_date}} and {{end_date}} group by report_date, currency, vendor, status", semantics: lifecycle_not_revenue}
+  - {name: Success rate, source: core.fact_payout_lifecycle, sql: "select report_date, currency, if(count() = 0, 0, countIf(is_successful) / count()) as success_rate from core.fact_payout_lifecycle group by report_date, currency", semantics: count_ratio}
+  - {name: Hold to terminal duration, source: core.fact_payout_lifecycle, sql: "select report_date, currency, quantile(0.5)(duration_to_terminal_ms) as p50_ms, quantile(0.95)(duration_to_terminal_ms) as p95_ms from core.fact_payout_lifecycle group by report_date, currency", semantics: milliseconds}
+  - {name: Provider attempts, source: core.fact_provider_attempt, sql: "select report_date, vendor, outcome, count() as attempts from core.fact_provider_attempt group by report_date, vendor, outcome", semantics: safe_provider_metadata}

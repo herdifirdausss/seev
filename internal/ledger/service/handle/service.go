@@ -36,6 +36,18 @@ type DatabaseSQL interface {
 	WithTx(ctx context.Context, opts *sql.TxOptions, fn func(tx *sql.Tx) error) error
 }
 
+// ProjectionWriter is the optional same-transaction sink used by an active
+// data migration. Keeping it local preserves the posting service's narrow
+// dependency boundary and leaves existing embedders source-compatible.
+type ProjectionWriter interface {
+	WriteForPosting(context.Context, *sql.Tx, []uuid.UUID, uuid.UUID) error
+	SourceWriteAllowed(context.Context) (bool, error)
+}
+
+type transactionalSourceWriteGuard interface {
+	SourceWriteAllowedTx(context.Context, *sql.Tx) (bool, error)
+}
+
 // =============================================================================
 // Service
 // =============================================================================
@@ -59,7 +71,8 @@ type Service struct {
 	// simply be ignored (no caller in this codebase does that: transport
 	// only sets QuoteID after this Service was constructed with a real
 	// feePolicy — see internal/ledger.NewModule).
-	feePolicy *feepolicy.Policy
+	feePolicy       *feepolicy.Policy
+	projectionWriter ProjectionWriter
 }
 
 // New constructs the posting service. AML/fraud screening no longer runs
@@ -76,6 +89,10 @@ func New(db DatabaseSQL, txRepo repository.TransactionRepository,
 		logger = slog.Default()
 	}
 	return &Service{db: db, txRepo: txRepo, balanceRepo: balanceRepo, entryRepo: entryRepo, outboxRepo: outboxRepo, registry: registry, logger: logger, maxAmountPerTx: maxAmountPerTx, feePolicy: feePolicy}
+}
+
+func (s *Service) SetProjectionV2Writer(writer ProjectionWriter) {
+	s.projectionWriter = writer
 }
 
 // lifecycleCloseReason maps a transaction type to the closed_reason it
@@ -577,6 +594,25 @@ func (s *Service) execTransfer(ctx context.Context, cmd processors.ResolvedComma
 			userEntries, systemEntries := splitEntriesByAccount(entries, systemIDSet)
 			userNewBalances := applyEntries(userBalances, userEntries)
 
+			// A source-write-disabled cutover rejects the posting before any
+			// authoritative projection is mutated. The transaction wrapper then
+			// rolls back the idempotency header and all preceding work.
+			if s.projectionWriter != nil {
+				allowed := true
+				var allowErr error
+				if guard, ok := s.projectionWriter.(transactionalSourceWriteGuard); ok {
+					allowed, allowErr = guard.SourceWriteAllowedTx(ctx, tx)
+				} else {
+					allowed, allowErr = s.projectionWriter.SourceWriteAllowed(ctx)
+				}
+				if allowErr != nil {
+					return fmt.Errorf("check source write availability: %w", allowErr)
+				}
+				if !allowed {
+					return errors.New("ledger: source writes are disabled during migration")
+				}
+			}
+
 			// ── 7b. APPLY SYSTEM DELTAS (atomic, no lock needed) ──────────────
 			systemDeltas := computeSystemDeltas(systemEntries)
 			systemNewBalances, err := s.balanceRepo.ApplySystemDeltas(ctx, tx, systemDeltas)
@@ -601,6 +637,11 @@ func (s *Service) execTransfer(ctx context.Context, cmd processors.ResolvedComma
 			// stale `merged` snapshot, actively wrong).
 			if err := s.balanceRepo.UpdateBalances(ctx, tx, userNewBalances); err != nil {
 				return err
+			}
+			if s.projectionWriter != nil {
+				if err := s.projectionWriter.WriteForPosting(ctx, tx, cmd.AccountIDs, txID); err != nil {
+					return fmt.Errorf("write balance projection: %w", err)
+				}
 			}
 
 			// ── 10. MARK POSTED ───────────────────────────────────────────────

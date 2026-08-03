@@ -1,0 +1,96 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "graphTooltip": 1,
+  "panels": [
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "id": 1,
+      "options": {"legend": {"displayMode": "table", "placement": "bottom"}},
+      "targets": [{"expr": "sum by (result) (rate(seev_notification_events_total[5m]))", "legendFormat": "{{result}}", "refId": "A"}],
+      "title": "Notification event ingestion",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "id": 2,
+      "options": {"legend": {"displayMode": "table", "placement": "bottom"}},
+      "targets": [{"expr": "sum by (channel, result) (rate(seev_notification_deliveries_total[5m]))", "legendFormat": "{{channel}} {{result}}", "refId": "A"}],
+      "title": "Delivery outcomes",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+      "id": 3,
+      "options": {"legend": {"displayMode": "table", "placement": "bottom"}},
+      "targets": [{"expr": "seev_notification_oldest_due_age_seconds", "legendFormat": "{{channel}}", "refId": "A"}],
+      "title": "Oldest due delivery age",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+      "id": 4,
+      "options": {"legend": {"displayMode": "table", "placement": "bottom"}},
+      "targets": [{"expr": "sum by (channel, status) (seev_notification_delivery_due_total)", "legendFormat": "{{channel}} {{status}}", "refId": "A"}],
+      "title": "Delivery backlog by status",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
+      "id": 5,
+      "options": {"legend": {"displayMode": "table", "placement": "bottom"}},
+      "targets": [{"expr": "sum by (channel, provider, result) (rate(seev_notification_delivery_attempts_total[10m]))", "legendFormat": "{{channel}} {{provider}} {{result}}", "refId": "A"}],
+      "title": "Provider attempts",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
+      "id": 6,
+      "options": {"legend": {"displayMode": "table", "placement": "bottom"}},
+      "targets": [{"expr": "sum by (channel, reason) (rate(seev_notification_dead_total[1h]))", "legendFormat": "{{channel}} {{reason}}", "refId": "A"}, {"expr": "sum by (channel, reason) (rate(seev_notification_blocked_total[1h]))", "legendFormat": "{{channel}} blocked {{reason}}", "refId": "B"}],
+      "title": "Dead and blocked growth",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 24},
+      "id": 7,
+      "options": {"legend": {"displayMode": "table", "placement": "bottom"}},
+      "targets": [{"expr": "sum by (result) (rate(seev_notification_contact_resolution_total[10m]))", "legendFormat": "contact {{result}}", "refId": "A"}, {"expr": "sum by (channel, kind) (rate(seev_notification_template_missing_total[10m]))", "legendFormat": "template {{channel}} {{kind}}", "refId": "B"}],
+      "title": "Contact and template health",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 24},
+      "id": 8,
+      "options": {"legend": {"displayMode": "table", "placement": "bottom"}},
+      "targets": [{"expr": "seev_notification_digest_schedule_lag_seconds", "legendFormat": "digest lag", "refId": "A"}, {"expr": "sum by (channel, state) (seev_notification_channel_state)", "legendFormat": "{{channel}} {{state}}", "refId": "B"}],
+      "title": "Digest and channel controls",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 41,
+  "tags": ["notifications", "c3", "gateway"],
+  "templating": {"list": []},
+  "time": {"from": "now-6h", "to": "now"},
+  "timezone": "browser",
+  "title": "Multi-Channel Notifications",
+  "uid": "notifications-c3",
+  "version": 1
+}

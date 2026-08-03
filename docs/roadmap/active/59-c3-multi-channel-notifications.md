@@ -1,7 +1,7 @@
 # Plan 59 — C3 Multi-Channel Notifications
 
 **Created:** 2026-07-28
-**Status:** Ready for execution after the C3 entry gate
+**Status:** In progress — implementation present; acceptance evidence pending
 **Roadmap track:** C3 — Multi-channel notifications
 **Activation trigger:** Conscious user-facing delivery-pipeline learning decision
 **Primary owner:** Gateway `internal/notify`
@@ -10,6 +10,13 @@
 **Initial channels:** In-app, email through local SMTP, push through a local mock provider
 **Delivery model:** At-least-once external delivery, exactly-once logical in-app creation
 **No paid provider and no new application service are authorized by this plan.**
+
+**Current implementation note:** The C3 code, migrations, local providers,
+operational artifacts, and reference documents are implemented in the
+dedicated worktree. The entry-gate, cutover, and final-acceptance records
+intentionally remain pending because this pass changes code only; see
+[C3 entry-gate evidence](../../evidence/c3-entry-gate.md) and
+[C3 final acceptance](../../evidence/c3-final-acceptance.md).
 
 ---
 
