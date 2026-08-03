@@ -57,14 +57,23 @@ func (p *Policy) CreateQuote(ctx context.Context, userID uuid.UUID, txType, gate
 // semantics as ConsumeQuote (see that sentinel's own doc comment).
 func (p *Policy) GetQuote(ctx context.Context, quoteID, userID uuid.UUID) (Quote, error) {
 	q := Quote{ID: quoteID, UserID: userID}
-	amount, feeAmount, feeGateway, err := p.repo.GetQuote(ctx, quoteID, userID)
+	var amount, feeAmount decimal.Decimal
+	var feeGateway, gateway string
+	var err error
+	if reader, ok := p.repo.(interface {
+		GetQuoteWithGateway(context.Context, uuid.UUID, uuid.UUID) (decimal.Decimal, decimal.Decimal, string, string, error)
+	}); ok {
+		amount, feeAmount, feeGateway, gateway, err = reader.GetQuoteWithGateway(ctx, quoteID, userID)
+	} else {
+		amount, feeAmount, feeGateway, err = p.repo.GetQuote(ctx, quoteID, userID)
+	}
 	if errors.Is(err, sql.ErrNoRows) {
 		return Quote{}, ErrQuoteExpired
 	}
 	if err != nil {
 		return Quote{}, err
 	}
-	q.Amount, q.FeeAmount, q.FeeGateway = amount, feeAmount, feeGateway
+	q.Amount, q.FeeAmount, q.FeeGateway, q.Gateway = amount, feeAmount, feeGateway, gateway
 	return q, nil
 }
 
@@ -98,6 +107,33 @@ func (p *Policy) ConsumeQuote(ctx context.Context, exec repository.QueryRower, q
 	return decimal.Zero, "", ErrQuoteMismatch
 }
 
+// ConsumeQuoteWithGateway is the gateway-bound variant used by top-up
+// intents. The optional repository capability keeps older repository mocks
+// source-compatible while the C5 repository enforces gateway equality in SQL.
+func (p *Policy) ConsumeQuoteWithGateway(ctx context.Context, exec repository.QueryRower, quoteID, userID uuid.UUID, txType, gateway, currency string, amount decimal.Decimal, ref string) (fee decimal.Decimal, feeGateway string, err error) {
+	consumer, ok := p.repo.(interface {
+		TryConsumeQuoteWithGateway(context.Context, repository.QueryRower, uuid.UUID, uuid.UUID, string, string, string, decimal.Decimal, string) (decimal.Decimal, string, error)
+	})
+	if !ok {
+		return p.ConsumeQuote(ctx, exec, quoteID, userID, txType, currency, amount, ref)
+	}
+	fee, feeGateway, err = consumer.TryConsumeQuoteWithGateway(ctx, exec, quoteID, userID, txType, gateway, currency, amount, ref)
+	if err == nil {
+		return fee, feeGateway, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return decimal.Zero, "", err
+	}
+	exists, existsErr := p.repo.QuoteExists(ctx, exec, quoteID, userID)
+	if existsErr != nil {
+		return decimal.Zero, "", existsErr
+	}
+	if !exists {
+		return decimal.Zero, "", ErrQuoteExpired
+	}
+	return decimal.Zero, "", ErrQuoteMismatch
+}
+
 // ConsumeQuoteStandalone is ConsumeQuote for a caller with no active
 // transaction of its own to run inside (docs/roadmap/archive/38 Task T5: payout's
 // consumption is a short, separate gRPC-triggered operation — the
@@ -105,4 +141,30 @@ func (p *Policy) ConsumeQuote(ctx context.Context, exec repository.QueryRower, q
 // tx with the ledger side at all).
 func (p *Policy) ConsumeQuoteStandalone(ctx context.Context, quoteID, userID uuid.UUID, txType, currency string, amount decimal.Decimal, ref string) (decimal.Decimal, string, error) {
 	return p.ConsumeQuote(ctx, p.db, quoteID, userID, txType, currency, amount, ref)
+}
+
+// ConsumeQuoteWithGatewayStandalone is the standalone route-bound variant
+// used by callers that do not have an enclosing database transaction.
+func (p *Policy) ConsumeQuoteWithGatewayStandalone(ctx context.Context, quoteID, userID uuid.UUID, txType, gateway, currency string, amount decimal.Decimal, ref string) (decimal.Decimal, string, error) {
+	return p.ConsumeQuoteWithGateway(ctx, p.db, quoteID, userID, txType, gateway, currency, amount, ref)
+}
+
+// ValidateConsumedPayinQuote re-validates the immutable quote snapshot at the
+// point Ledger posts the provider settlement. The quote was consumed earlier
+// by Payin so provider collection could use the same total_debit; this check
+// binds that consumed row to the exact payin ref and current money_in command.
+// It intentionally accepts a QueryRower so callers can execute it inside the
+// posting transaction, alongside the ledger entries.
+func (p *Policy) ValidateConsumedPayinQuote(ctx context.Context, exec repository.QueryRower, quoteID, userID uuid.UUID, txType, gateway, currency string, amount, fee decimal.Decimal, feeGateway, ref string) error {
+	validator, ok := p.repo.(interface {
+		ValidateConsumedPayinQuote(context.Context, repository.QueryRower, uuid.UUID, uuid.UUID, string, string, string, decimal.Decimal, decimal.Decimal, string, string) error
+	})
+	if !ok {
+		return ErrQuoteMismatch
+	}
+	err := validator.ValidateConsumedPayinQuote(ctx, exec, quoteID, userID, txType, gateway, currency, amount, fee, feeGateway, ref)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrQuoteMismatch
+	}
+	return err
 }

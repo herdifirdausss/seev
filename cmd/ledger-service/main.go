@@ -252,6 +252,7 @@ func run(parent context.Context) error {
 	module := ledger.NewModule(db, mq, redisClient, ledger.WorkerConfig{
 		Enabled: cfg.Worker.Enabled, OutboxPollInterval: cfg.Worker.OutboxPollInterval,
 		OutboxBatchSize: cfg.Worker.OutboxBatchSize, AlertWebhookURL: cfg.Worker.AlertWebhookURL,
+		C5Enabled: cfg.Worker.C5Enabled,
 	}, log, decimal.NewFromInt(cfg.Ledger.MaxAmountPerTx), policyEngine, fraudClient, cfg.Ledger.FeeQuoteTTL, digestRing, cryptoxRing)
 	if err := module.LoadCurrencies(ctx); err != nil {
 		closeDependencies(log, module, mq, redisCache, db, shutdownTracing)

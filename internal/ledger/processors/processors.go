@@ -396,6 +396,32 @@ func newPostedEvent(cmd ResolvedCommand, txID uuid.UUID, entries []model.EntryIn
 		buildEntrySummaries(entries), externalRef, time.Now().UTC(),
 		userID, targetUserID, requestID, merchantTenantID,
 	)
+	// C5 top-ups keep the principal in TransactionPosted.Amount and carry the
+	// provider-collected total plus fee snapshot as additive event fields. The
+	// metadata is written by payin before the ledger command is posted, so the
+	// event remains self-contained for downstream reconciliation consumers.
+	if cmd.Type == "money_in" {
+		if totalDebit, err := generalutil.MetaDecimal(cmd.Metadata, "total_debit"); err == nil {
+			feeAmount := decimal.Zero
+			if fee, feeErr := generalutil.MetaDecimal(cmd.Metadata, "fee_amount"); feeErr == nil {
+				feeAmount = fee
+			}
+			ev.TotalDebit = totalDebit.String()
+			ev.FeeAmount = feeAmount.String()
+			if feeGateway, gatewayErr := generalutil.MetaString(cmd.Metadata, "fee_gateway"); gatewayErr == nil {
+				ev.FeeGateway = feeGateway
+			}
+			if feeApplication, applicationErr := generalutil.MetaString(cmd.Metadata, "fee_application"); applicationErr == nil {
+				ev.FeeApplication = feeApplication
+			}
+			if quoteID, quoteErr := generalutil.MetaUUID(cmd.Metadata, "fee_quote_id"); quoteErr == nil {
+					ev.FeeQuoteID = &quoteID
+			}
+			if payinID, payinErr := generalutil.MetaUUID(cmd.Metadata, "payin_id"); payinErr == nil {
+				ev.PayinID = &payinID
+			}
+		}
+	}
 	return model.OutboxEvent{
 		AggregateType: "ledger_transaction", AggregateID: txID,
 		EventType: events.TypeTransactionPosted, Payload: ev.ToPayload(),
@@ -520,6 +546,10 @@ func NewDefaultRegistry(
 		NewDisbursement(accRepo),
 		// Interest accrual (docs/roadmap/archive/19 Task T3) — internal router only.
 		NewInterestAccrue(accRepo),
+		// C5 monthly liability/capitalization path — internal workers only.
+		NewInterestLiabilityAccrue(accRepo),
+		NewInterestCapitalize(accRepo),
+		NewInterestAdjustment(accRepo),
 		// Correction
 		NewReversal(txRepo, accRepo),
 	)

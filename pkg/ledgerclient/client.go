@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -210,6 +211,15 @@ func (c *Client) ConsumeFeeQuote(ctx context.Context, quoteID, userID uuid.UUID,
 		return decimal.Zero, "", fmt.Errorf("ledgerclient: invalid fee_amount in response: %w", err)
 	}
 	return fee, response.GetFeeGateway(), nil
+}
+
+// ConsumeFeeQuoteWithGateway binds quote consumption to the provider route
+// that was quoted. The checked-in generated ledger client predates the
+// additive gateway field, so the value travels in gRPC metadata until the
+// protobuf artifacts are regenerated.
+func (c *Client) ConsumeFeeQuoteWithGateway(ctx context.Context, quoteID, userID uuid.UUID, txType, gateway, currency string, amount decimal.Decimal, consumedByRef string) (decimal.Decimal, string, error) {
+	ctx = metadata.AppendToOutgoingContext(ctx, "seev-fee-quote-gateway", gateway)
+	return c.ConsumeFeeQuote(ctx, quoteID, userID, txType, currency, amount, consumedByRef)
 }
 
 // ApplyKycTier is docs/roadmap/archive/39 Task T5's additive RPC — upserts the

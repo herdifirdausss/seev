@@ -283,20 +283,27 @@ type quoteRequest struct {
 // quoteResponse's Amount/FeeAmount/TotalDebit are decimal strings — same
 // convention as every other money field in this API (docs/roadmap/archive/10).
 type quoteResponse struct {
-	QuoteID    uuid.UUID `json:"quote_id"`
-	Amount     string    `json:"amount"`
-	FeeAmount  string    `json:"fee_amount"`
-	FeeGateway string    `json:"fee_gateway,omitempty"`
-	TotalDebit string    `json:"total_debit"`
-	Currency   string    `json:"currency"`
-	ExpiresAt  time.Time `json:"expires_at"`
+	QuoteID        uuid.UUID `json:"quote_id"`
+	Amount         string    `json:"amount"`
+	FeeAmount      string    `json:"fee_amount"`
+	Gateway        string    `json:"gateway"`
+	FeeGateway     string    `json:"fee_gateway,omitempty"`
+	FeeApplication string    `json:"fee_application,omitempty"`
+	TotalDebit     string    `json:"total_debit"`
+	Currency       string    `json:"currency"`
+	ExpiresAt      time.Time `json:"expires_at"`
 }
 
 func toQuoteResponse(q feepolicy.Quote) quoteResponse {
+	feeApplication := ""
+	if q.TransactionType == "money_in" {
+		feeApplication = "added_on_top"
+	}
 	return quoteResponse{
 		QuoteID: q.ID, Amount: q.Amount.String(), FeeAmount: q.FeeAmount.String(),
-		FeeGateway: q.FeeGateway, TotalDebit: q.Amount.Add(q.FeeAmount).String(),
-		Currency: q.Currency, ExpiresAt: q.ExpiresAt,
+		Gateway: q.Gateway,
+		FeeGateway: q.FeeGateway, FeeApplication: feeApplication,
+		TotalDebit: q.Amount.Add(q.FeeAmount).String(), Currency: q.Currency, ExpiresAt: q.ExpiresAt,
 	}
 }
 
@@ -448,10 +455,31 @@ type createScheduleRequest struct {
 	RunAtDate string `json:"run_at_date"`
 	// DayOfMonth is required for schedule_kind="monthly" (1-28), omitted otherwise.
 	DayOfMonth *int `json:"day_of_month,omitempty"`
+	// C5 policy fields are optional so legacy schedules retain their original
+	// request shape and missed-run behavior.
+	Currency                    string `json:"currency,omitempty"`
+	Timezone                    string `json:"timezone,omitempty"`
+	LocalTime                   string `json:"local_time,omitempty"`
+	MissedRunPolicy             string `json:"missed_run_policy,omitempty"`
+	CatchUpLimit                int    `json:"catch_up_limit,omitempty"`
+	MaxFeeAmount                *int64 `json:"max_fee_amount,omitempty"`
+	MaxInfrastructureAttempts  int    `json:"max_infrastructure_attempts,omitempty"`
+	RetryWindowSeconds         int64  `json:"retry_window_seconds,omitempty"`
+	FeeMode                    string `json:"fee_mode,omitempty"`
+	ConsecutiveFailureThreshold int    `json:"consecutive_failure_threshold,omitempty"`
 }
 
 type createScheduleResponse struct {
-	ID uuid.UUID `json:"id"`
+	ID                          uuid.UUID `json:"id"`
+	Timezone                    string    `json:"timezone,omitempty"`
+	LocalTime                   string    `json:"local_time,omitempty"`
+	MissedRunPolicy             string    `json:"missed_run_policy,omitempty"`
+	CatchUpLimit                int       `json:"catch_up_limit,omitempty"`
+	MaxFeeAmount                *int64    `json:"max_fee_amount,omitempty"`
+	MaxInfrastructureAttempts  int       `json:"max_infrastructure_attempts,omitempty"`
+	RetryWindowSeconds         int64     `json:"retry_window_seconds,omitempty"`
+	FeeMode                    string    `json:"fee_mode,omitempty"`
+	ConsecutiveFailureThreshold int       `json:"consecutive_failure_threshold,omitempty"`
 }
 
 type scheduleResponse struct {
@@ -463,6 +491,21 @@ type scheduleResponse struct {
 	Status       string    `json:"status"`
 	LastRunDate  string    `json:"last_run_date,omitempty"`
 	LastError    string    `json:"last_error,omitempty"`
+	CommandType  string    `json:"command_type,omitempty"`
+	Currency     string    `json:"currency,omitempty"`
+	Timezone     string    `json:"timezone,omitempty"`
+	LocalTime    string    `json:"local_time,omitempty"`
+	MissedRunPolicy             string `json:"missed_run_policy,omitempty"`
+	CatchUpLimit                int    `json:"catch_up_limit,omitempty"`
+	MaxFeeAmount                *int64  `json:"max_fee_amount,omitempty"`
+	MaxInfrastructureAttempts  int    `json:"max_infrastructure_attempts,omitempty"`
+	RetryWindowSeconds         int64  `json:"retry_window_seconds,omitempty"`
+	FeeMode                    string `json:"fee_mode,omitempty"`
+	ConsecutiveFailureThreshold int    `json:"consecutive_failure_threshold,omitempty"`
+	ConsecutiveFailureCount     int    `json:"consecutive_failure_count,omitempty"`
+	LastPlannedAt               *time.Time `json:"last_planned_at,omitempty"`
+	Version                     int64  `json:"version,omitempty"`
+	PausedReason                *string `json:"paused_reason,omitempty"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
 }
@@ -471,7 +514,15 @@ func toScheduleResponse(st model.ScheduledTransaction) scheduleResponse {
 	out := scheduleResponse{
 		ID: st.ID, UserID: st.UserID, ScheduleKind: st.ScheduleKind,
 		RunAtDate: st.RunAtDate.Format("2006-01-02"), DayOfMonth: st.DayOfMonth,
-		Status: st.Status, CreatedAt: st.CreatedAt, UpdatedAt: st.UpdatedAt,
+		Status: st.Status, CommandType: st.CommandType, Currency: st.Currency,
+		Timezone: st.Timezone, LocalTime: st.LocalTime, MissedRunPolicy: st.MissedRunPolicy,
+		CatchUpLimit: st.CatchUpLimit, MaxFeeAmount: st.MaxFeeAmount,
+		MaxInfrastructureAttempts: st.MaxInfrastructureAttempts, RetryWindowSeconds: st.RetryWindowSeconds,
+		FeeMode: st.FeeMode,
+		ConsecutiveFailureThreshold: st.ConsecutiveFailureThreshold,
+		ConsecutiveFailureCount: st.ConsecutiveFailureCount, LastPlannedAt: st.LastPlannedAt,
+		Version: st.Version, PausedReason: st.PausedReason,
+		CreatedAt: st.CreatedAt, UpdatedAt: st.UpdatedAt,
 	}
 	if st.LastRunDate != nil {
 		out.LastRunDate = st.LastRunDate.Format("2006-01-02")

@@ -498,6 +498,9 @@ func (c RabbitMQConfig) Broker() messaging.BrokerConfig {
 // integrity verifier). See docs/roadmap/archive/06-phase-1-workers.md.
 type WorkerConfig struct {
 	Enabled            bool
+	// C5Enabled is deliberately opt-in: migrations and maker/checker controls
+	// can be deployed before durable schedule/interest behavior starts.
+	C5Enabled          bool
 	OutboxPollInterval time.Duration
 	OutboxBatchSize    int
 	// AlertWebhookURL, if non-empty, receives a POST for every integrity
@@ -660,6 +663,7 @@ func loadFromEnvMode(getenv func(string) string, requireRabbitMQ bool) (*Config,
 		},
 		Worker: WorkerConfig{
 			Enabled:            parseBool(getenv("WORKER_ENABLED"), true),
+			C5Enabled:          parseBool(getenv("C5_FINANCIAL_PRODUCTS_ENABLED"), false),
 			OutboxPollInterval: parseDuration(getenv("OUTBOX_POLL_INTERVAL"), time.Second),
 			OutboxBatchSize:    parseInt(getenv("OUTBOX_BATCH_SIZE"), 100),
 			AlertWebhookURL:    getenv("ALERT_WEBHOOK_URL"),

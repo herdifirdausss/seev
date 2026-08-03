@@ -395,6 +395,62 @@ func (s *Service) execTransfer(ctx context.Context, cmd processors.ResolvedComma
 				cmd.Metadata["fee_gateway"] = feeGateway
 			}
 
+			// C5 top-up quotes are consumed by Payin before provider collection,
+			// therefore they cannot use cmd.QuoteID's in-transaction consume
+			// path above. Re-validate the consumed snapshot here, inside the
+			// Ledger posting transaction, before any balance lock or entry write.
+			// This makes Ledger the final authority for principal, fee, route,
+			// currency, and payin linkage even though the provider callback
+			// arrives through a separate service.
+			if cmd.Type == "money_in" {
+				_, payinPresent := cmd.Metadata["payin_id"]
+				_, quotePresent := cmd.Metadata["fee_quote_id"]
+				if quotePresent {
+					if !payinPresent {
+						return apperror.NewBizErr(apperror.ErrQuoteMismatch, "top-up fee snapshot is missing payin_id")
+					}
+					payinID, payinErr := generalutil.MetaUUID(cmd.Metadata, "payin_id")
+					quoteID, quoteErr := generalutil.MetaUUID(cmd.Metadata, "fee_quote_id")
+					if payinErr != nil || quoteErr != nil {
+						return apperror.NewBizErr(apperror.ErrQuoteMismatch, "top-up fee snapshot must include valid payin_id and fee_quote_id")
+					}
+					fee, feeErr := generalutil.MetaDecimal(cmd.Metadata, "fee_amount")
+					if feeErr != nil || fee.IsNegative() || !fee.Equal(fee.Truncate(0)) {
+						return apperror.NewBizErr(apperror.ErrQuoteMismatch, "top-up fee snapshot has an invalid fee amount")
+					}
+					application, applicationErr := generalutil.MetaString(cmd.Metadata, "fee_application")
+					if applicationErr != nil || application != "added_on_top" {
+						return apperror.NewBizErr(apperror.ErrQuoteMismatch, "top-up fee snapshot must use added_on_top")
+					}
+					totalDebit, totalErr := generalutil.MetaDecimal(cmd.Metadata, "total_debit")
+					if totalErr != nil || !totalDebit.Equal(cmd.Amount.Add(fee)) {
+						return apperror.NewBizErr(apperror.ErrQuoteMismatch, "top-up total_debit does not match the quoted principal and fee")
+					}
+					feeGateway, _ := generalutil.MetaString(cmd.Metadata, "fee_gateway")
+					if fee.IsPositive() && feeGateway == "" {
+						return apperror.NewBizErr(apperror.ErrQuoteMismatch, "top-up fee snapshot has no fee gateway")
+					}
+					if s.feePolicy == nil {
+						return apperror.NewBizErr(apperror.ErrQuoteMismatch, "Ledger fee quote validation is unavailable")
+					}
+					if err := s.feePolicy.ValidateConsumedPayinQuote(ctx, tx, quoteID, cmd.UserID,
+						cmd.Type, gateway, cmd.Currency, cmd.Amount, fee, feeGateway,
+						"payin:"+payinID.String()); err != nil {
+						if errors.Is(err, feepolicy.ErrQuoteMismatch) || errors.Is(err, feepolicy.ErrQuoteExpired) {
+							return apperror.NewBizErr(apperror.ErrQuoteMismatch, "top-up fee quote settlement snapshot does not match")
+						}
+						return fmt.Errorf("validate consumed top-up fee quote: %w", err)
+					}
+				} else if payinPresent {
+					// Legacy fee-free intents predate C5 quote linkage. They may
+					// still carry payin_id for deterministic idempotency, but a
+					// positive fee without a quote is never accepted.
+					if fee, feeErr := generalutil.MetaDecimal(cmd.Metadata, "fee_amount"); feeErr == nil && fee.IsPositive() {
+						return apperror.NewBizErr(apperror.ErrQuoteMismatch, "top-up fee snapshot is missing fee_quote_id")
+					}
+				}
+			}
+
 			// ── 2. SPLIT ACCOUNTS & LOCK ONLY USER ONES ───────────────────────
 			// [docs/roadmap/archive/11 Task T1] account_balances.allow_negative is true
 			// ONLY for system accounts (settlement/adjustment/chargeback —

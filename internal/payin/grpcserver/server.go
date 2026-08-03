@@ -9,7 +9,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	payinv1 "github.com/herdifirdausss/seev/gen/payin/v1"
@@ -75,10 +77,35 @@ func (s *Server) CreateTopupIntent(ctx context.Context, request *payinv1.CreateT
 	if err != nil {
 		return nil, err
 	}
-	intent, callErr := s.service.CreateTopupIntent(ctx, userID, amount)
+	var intent model.TopupIntent
+	var callErr error
+	rawQuoteID := protoStringField(request, "fee_quote_id")
+	if rawQuoteID == "" {
+		if values := metadata.ValueFromIncomingContext(ctx, "seev-fee-quote-id"); len(values) > 0 {
+			rawQuoteID = values[0]
+		}
+	}
+	if rawQuoteID != "" {
+		quoteID, parseErr := uuid.Parse(rawQuoteID)
+		if parseErr != nil {
+			return nil, status.Error(codes.InvalidArgument, "fee_quote_id must be a valid UUID")
+		}
+		creator, ok := s.service.(interface {
+			CreateTopupIntentWithFeeQuote(context.Context, uuid.UUID, decimal.Decimal, uuid.UUID) (model.TopupIntent, error)
+		})
+		if !ok {
+			return nil, status.Error(codes.Unimplemented, "topup fee quote consumption unavailable")
+		}
+		intent, callErr = creator.CreateTopupIntentWithFeeQuote(ctx, userID, amount, quoteID)
+	} else {
+		intent, callErr = s.service.CreateTopupIntent(ctx, userID, amount)
+	}
 	if callErr != nil {
 		if strings.Contains(callErr.Error(), "intake paused") {
 			return nil, status.Error(codes.FailedPrecondition, "INTAKE_PAUSED")
+		}
+		if strings.Contains(callErr.Error(), "topup fee quote required") {
+			return nil, status.Error(codes.FailedPrecondition, "TOPUP_FEE_QUOTE_REQUIRED")
 		}
 		if errors.Is(callErr, s.noRoute) {
 			return nil, status.Error(codes.FailedPrecondition, "no topup route available")
@@ -91,6 +118,9 @@ func (s *Server) CreateTopupIntent(ctx context.Context, request *payinv1.CreateT
 			return nil, status.Error(codes.Unavailable, "no vendor available")
 		}
 		return nil, status.Error(codes.Internal, "create topup intent failed")
+	}
+	if err := setFeeSnapshotHeaders(ctx, intent); err != nil {
+		return nil, status.Error(codes.Internal, "set topup fee snapshot metadata failed")
 	}
 	return &payinv1.CreateTopupIntentResponse{Intent: intentToProto(intent)}, nil
 }
@@ -113,6 +143,9 @@ func (s *Server) GetTopupIntent(ctx context.Context, request *payinv1.GetTopupIn
 	}
 	if intent.UserID != userID {
 		return nil, status.Error(codes.NotFound, "topup intent not found")
+	}
+	if err := setFeeSnapshotHeaders(ctx, intent); err != nil {
+		return nil, status.Error(codes.Internal, "set topup fee snapshot metadata failed")
 	}
 	return &payinv1.GetTopupIntentResponse{Intent: intentToProto(intent)}, nil
 }
@@ -144,6 +177,9 @@ func (s *Server) CreateMerchantTopupIntent(ctx context.Context, request *payinv1
 	if callErr != nil {
 		if strings.Contains(callErr.Error(), "intake paused") {
 			return nil, status.Error(codes.FailedPrecondition, "INTAKE_PAUSED")
+		}
+		if strings.Contains(callErr.Error(), "topup fee quote required") {
+			return nil, status.Error(codes.FailedPrecondition, "TOPUP_FEE_QUOTE_REQUIRED")
 		}
 		if errors.Is(callErr, s.noRoute) {
 			return nil, status.Error(codes.FailedPrecondition, "no topup route available")
@@ -240,9 +276,52 @@ func parseUserAndAmount(rawUserID, rawAmount string) (uuid.UUID, decimal.Decimal
 }
 
 func intentToProto(intent model.TopupIntent) *payinv1.TopupIntent {
-	return &payinv1.TopupIntent{
+	intent.NormalizeFinancials()
+	out := &payinv1.TopupIntent{
 		Id: intent.ID.String(), Reference: intent.Reference, UserId: intent.UserID.String(),
 		Amount: intent.Amount.String(), Currency: intent.Currency, Vendor: intent.Vendor, Status: intent.Status,
 		ExpiresAt: timestamppb.New(intent.ExpiresAt), CreatedAt: timestamppb.New(intent.CreatedAt), UpdatedAt: timestamppb.New(intent.UpdatedAt),
 	}
+	setProtoStringField(out, "fee_amount", intent.FeeAmount.String())
+	setProtoStringField(out, "total_debit", intent.TotalDebit.String())
+	setProtoStringField(out, "fee_gateway", intent.FeeGateway)
+	if intent.FeeQuoteID != nil {
+		setProtoStringField(out, "fee_quote_id", intent.FeeQuoteID.String())
+	}
+	setProtoStringField(out, "fee_application", intent.FeeApplication)
+	return out
+}
+
+func setFeeSnapshotHeaders(ctx context.Context, intent model.TopupIntent) error {
+	values := metadata.Pairs(
+		"seev-fee-amount", intent.FeeAmount.String(),
+		"seev-total-debit", intent.TotalDebit.String(),
+		"seev-fee-application", intent.FeeApplication,
+	)
+	if intent.FeeGateway != "" {
+		values.Append("seev-fee-gateway", intent.FeeGateway)
+	}
+	if intent.FeeQuoteID != nil {
+		values.Append("seev-fee-quote-id", intent.FeeQuoteID.String())
+	}
+	return grpc.SetHeader(ctx, values)
+}
+
+// Reflection keeps this source compatible with the checked-in generated
+// protobuf during the expand/contract window; once the proto additions are
+// regenerated, the same helper reads/writes the new fields over the wire.
+func protoStringField(message interface{ ProtoReflect() protoreflect.Message }, name string) string {
+	field := message.ProtoReflect().Descriptor().Fields().ByName(protoreflect.Name(name))
+	if field == nil || field.Kind() != protoreflect.StringKind {
+		return ""
+	}
+	return message.ProtoReflect().Get(field).String()
+}
+
+func setProtoStringField(message interface{ ProtoReflect() protoreflect.Message }, name, value string) {
+	field := message.ProtoReflect().Descriptor().Fields().ByName(protoreflect.Name(name))
+	if field == nil || field.Kind() != protoreflect.StringKind {
+		return
+	}
+	message.ProtoReflect().Set(field, protoreflect.ValueOfString(value))
 }

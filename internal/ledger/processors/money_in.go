@@ -6,9 +6,13 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
+
+	"github.com/herdifirdausss/seev/internal/ledger/apperror"
 	"github.com/herdifirdausss/seev/internal/ledger/constant"
 	"github.com/herdifirdausss/seev/internal/ledger/model"
 	"github.com/herdifirdausss/seev/internal/ledger/repository"
+	"github.com/herdifirdausss/seev/pkg/generalutil"
 )
 
 // =============================================================================
@@ -78,7 +82,23 @@ func (p *MoneyIn) Validate(ctx context.Context, tx *sql.Tx, cmd ResolvedCommand,
 	if _, _, ok := hasFee(cmd); ok {
 		v = append(v, FeeAmountValidator{})
 	}
-	return v.Validate(ctx, tx, cmd, bal)
+	if err := v.Validate(ctx, tx, cmd, bal); err != nil {
+		return err
+	}
+	if application, _ := generalutil.MetaString(cmd.Metadata, "fee_application"); application == "added_on_top" {
+		totalDebit, err := generalutil.MetaDecimal(cmd.Metadata, "total_debit")
+		if err != nil {
+			return fmt.Errorf("%w: money_in total_debit is invalid", apperror.ErrValidation)
+		}
+		_, fee, withFee := hasFee(cmd)
+		if !withFee {
+			fee = decimal.Zero
+		}
+		if !totalDebit.Equal(cmd.Amount.Add(fee)) {
+			return apperror.NewBizErr(apperror.ErrValidation, "money_in total_debit must equal amount plus fee")
+		}
+	}
+	return nil
 }
 
 func (p *MoneyIn) BuildEntries(_ context.Context, _ *sql.Tx, cmd ResolvedCommand, _ map[uuid.UUID]model.AccountBalance) ([]model.EntryInstruction, error) {
@@ -87,12 +107,21 @@ func (p *MoneyIn) BuildEntries(_ context.Context, _ *sql.Tx, cmd ResolvedCommand
 		destNote = "pocket:" + cmd.PocketCode
 	}
 	feeID, fee, withFee := hasFee(cmd)
+	sourceAmount := cmd.Amount
 	net := cmd.Amount
 	if withFee {
-		net = cmd.Amount.Sub(fee)
+		if application, _ := generalutil.MetaString(cmd.Metadata, "fee_application"); application == "added_on_top" {
+			if totalDebit, err := generalutil.MetaDecimal(cmd.Metadata, "total_debit"); err == nil {
+				sourceAmount = totalDebit
+			} else {
+				sourceAmount = cmd.Amount.Add(fee)
+			}
+		} else {
+			net = cmd.Amount.Sub(fee)
+		}
 	}
 	entries := []model.EntryInstruction{
-		{AccountID: cmd.AccountIDs[0], Direction: constant.Debit, Amount: cmd.Amount},
+		{AccountID: cmd.AccountIDs[0], Direction: constant.Debit, Amount: sourceAmount},
 		{AccountID: cmd.AccountIDs[1], Direction: constant.Credit, Amount: net, Note: "money_in → " + destNote},
 	}
 	if withFee {

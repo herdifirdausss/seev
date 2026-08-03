@@ -104,6 +104,21 @@ func rawAAD(eventID uuid.UUID) cryptox.AAD {
 var redactedRawMarker = []byte(`{"redacted":true}`)
 
 func (r *repo) GetOrInsert(ctx context.Context, ev model.WebhookEvent) (model.WebhookEvent, error) {
+	if ev.FeeAmount.IsNegative() || !ev.FeeAmount.Equal(ev.FeeAmount.Truncate(0)) || !ev.FeeAmount.BigInt().IsInt64() {
+		return model.WebhookEvent{}, fmt.Errorf("insert payin webhook event: invalid fee amount")
+	}
+	if ev.TotalDebit.IsZero() {
+		ev.TotalDebit = ev.Amount
+	}
+	if !ev.TotalDebit.Equal(ev.Amount) || !ev.TotalDebit.Equal(ev.TotalDebit.Truncate(0)) || !ev.TotalDebit.BigInt().IsInt64() {
+		return model.WebhookEvent{}, fmt.Errorf("insert payin webhook event: total debit must equal provider amount")
+	}
+	if ev.FeeApplication == "" {
+		ev.FeeApplication = model.TopupFeeApplicationAddedOnTop
+	}
+	if ev.FeeSnapshotVersion <= 0 {
+		ev.FeeSnapshotVersion = 1
+	}
 	rawCiphertext, err := r.ring.Seal(rawAAD(ev.ID), ev.Raw)
 	if err != nil {
 		return model.WebhookEvent{}, fmt.Errorf("encrypt payin webhook raw: %w", err)
@@ -111,11 +126,14 @@ func (r *repo) GetOrInsert(ctx context.Context, ev model.WebhookEvent) (model.We
 	v := r.ring.CurrentVersion()
 	_, err = r.db.ExecContext(ctx, `
 		INSERT INTO payin_webhook_events
-			(id, vendor, vendor_event_id, external_ref, user_id, merchant_tenant_id, amount, currency, status, request_id, created_at, updated_at,
+			(id, vendor, vendor_event_id, external_ref, user_id, merchant_tenant_id, amount, currency,
+			 fee_quote_id, fee_rule_id, fee_gateway, fee_amount, total_debit, fee_application,
+			 fee_quote_consumed_at, fee_snapshot_version, status, request_id, created_at, updated_at,
 			 raw_ciphertext, raw_key_version)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'received', $9, now(), now(), $10, $11)`,
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NULLIF($11,''), $12, $13, $14, $15, $16, 'received', $17, now(), now(), $18, $19)`,
 		ev.ID, ev.Vendor, ev.VendorEventID, ev.ExternalRef, ev.UserID, ev.MerchantTenantID, ev.Amount.IntPart(), ev.Currency,
-		generalutil.NullString(ev.RequestID), rawCiphertext, v,
+		ev.FeeQuoteID, ev.FeeRuleID, ev.FeeGateway, ev.FeeAmount.IntPart(), ev.TotalDebit.IntPart(), ev.FeeApplication,
+		ev.FeeQuoteConsumedAt, ev.FeeSnapshotVersion, generalutil.NullString(ev.RequestID), rawCiphertext, v,
 	)
 	if err != nil {
 		if !generalerror.IsDuplicateKey(err) {
@@ -132,20 +150,14 @@ func (r *repo) GetOrInsert(ctx context.Context, ev model.WebhookEvent) (model.We
 }
 
 func (r *repo) getByVendorEventID(ctx context.Context, vendor, vendorEventID string) (model.WebhookEvent, error) {
-	row := r.db.QueryRowContext(ctx, `
-		SELECT id, vendor, vendor_event_id, external_ref, user_id, merchant_tenant_id, amount, currency, status,
-		       COALESCE(error_message, ''), COALESCE(request_id, ''), created_at, updated_at,
-		       raw_ciphertext
+	row := r.db.QueryRowContext(ctx, `SELECT `+webhookEventColumns+`
 		FROM payin_webhook_events WHERE vendor = $1 AND vendor_event_id = $2`,
 		vendor, vendorEventID)
 	return r.scanEvent(row)
 }
 
 func (r *repo) Get(ctx context.Context, id uuid.UUID) (model.WebhookEvent, error) {
-	row := r.db.QueryRowContext(ctx, `
-		SELECT id, vendor, vendor_event_id, external_ref, user_id, merchant_tenant_id, amount, currency, status,
-		       COALESCE(error_message, ''), COALESCE(request_id, ''), created_at, updated_at,
-		       raw_ciphertext
+	row := r.db.QueryRowContext(ctx, `SELECT `+webhookEventColumns+`
 		FROM payin_webhook_events WHERE id = $1`,
 		id)
 	ev, err := r.scanEvent(row)
@@ -157,12 +169,15 @@ func (r *repo) Get(ctx context.Context, id uuid.UUID) (model.WebhookEvent, error
 
 func (r *repo) scanEvent(scanner interface{ Scan(...any) error }) (model.WebhookEvent, error) {
 	var ev model.WebhookEvent
-	var amount int64
-	var userID sql.NullString
+	var amount, feeAmount, totalDebit int64
+	var userID, feeGateway, feeQuoteID, feeRuleID sql.NullString
+	var feeApplication sql.NullString
+	var feeQuoteConsumedAt sql.NullTime
 	var rawCiphertext []byte
 	if err := scanner.Scan(&ev.ID, &ev.Vendor, &ev.VendorEventID, &ev.ExternalRef, &userID, &ev.MerchantTenantID, &amount,
-		&ev.Currency, &ev.Status, &ev.ErrorMessage, &ev.RequestID, &ev.CreatedAt, &ev.UpdatedAt,
-		&rawCiphertext); err != nil {
+		&ev.Currency, &feeQuoteID, &feeRuleID, &feeGateway, &feeAmount, &totalDebit, &feeApplication,
+		&feeQuoteConsumedAt, &ev.FeeSnapshotVersion, &ev.Status, &ev.ErrorMessage, &ev.RequestID,
+		&ev.CreatedAt, &ev.UpdatedAt, &rawCiphertext); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return model.WebhookEvent{}, err
 		}
@@ -176,6 +191,24 @@ func (r *repo) scanEvent(scanner interface{ Scan(...any) error }) (model.Webhook
 		ev.UserID = parsed
 	}
 	ev.Amount = decimal.NewFromInt(amount)
+	ev.FeeAmount = decimal.NewFromInt(feeAmount)
+	ev.TotalDebit = decimal.NewFromInt(totalDebit)
+	if feeGateway.Valid { ev.FeeGateway = feeGateway.String }
+	if feeApplication.Valid { ev.FeeApplication = feeApplication.String }
+	if feeQuoteConsumedAt.Valid { ev.FeeQuoteConsumedAt = &feeQuoteConsumedAt.Time }
+	if feeQuoteID.Valid {
+		parsed, err := uuid.Parse(feeQuoteID.String)
+		if err != nil { return model.WebhookEvent{}, fmt.Errorf("parse payin webhook fee quote id: %w", err) }
+		ev.FeeQuoteID = &parsed
+	}
+	if feeRuleID.Valid {
+		parsed, err := uuid.Parse(feeRuleID.String)
+		if err != nil { return model.WebhookEvent{}, fmt.Errorf("parse payin webhook fee rule id: %w", err) }
+		ev.FeeRuleID = &parsed
+	}
+	if ev.TotalDebit.IsZero() { ev.TotalDebit = ev.Amount }
+	if ev.FeeApplication == "" { ev.FeeApplication = model.TopupFeeApplicationAddedOnTop }
+	if ev.FeeSnapshotVersion <= 0 { ev.FeeSnapshotVersion = 1 }
 	if rawCiphertext == nil {
 		// T2.6's own retention redaction already nulled this — nothing
 		// left to decrypt, same marker the pre-contract plaintext column
@@ -227,10 +260,7 @@ func (r *repo) MarkBlocked(ctx context.Context, id uuid.UUID, reason string) err
 }
 
 func (r *repo) List(ctx context.Context, vendor, status string, limit, offset int) ([]model.WebhookEvent, error) {
-	query := `SELECT id, vendor, vendor_event_id, external_ref, user_id, merchant_tenant_id, amount, currency, status,
-	                 COALESCE(error_message, ''), COALESCE(request_id, ''), created_at, updated_at,
-	                 raw_ciphertext
-	          FROM payin_webhook_events WHERE 1=1`
+	query := `SELECT ` + webhookEventColumns + ` FROM payin_webhook_events WHERE 1=1`
 	args := []any{}
 	argN := 0
 	if vendor != "" {
@@ -265,3 +295,8 @@ func (r *repo) List(ctx context.Context, vendor, status string, limit, offset in
 	}
 	return out, nil
 }
+
+const webhookEventColumns = `id, vendor, vendor_event_id, external_ref, user_id, merchant_tenant_id,
+amount, currency, fee_quote_id, fee_rule_id, COALESCE(fee_gateway, ''), fee_amount, total_debit,
+COALESCE(fee_application, 'added_on_top'), fee_quote_consumed_at, fee_snapshot_version, status,
+COALESCE(error_message, ''), COALESCE(request_id, ''), created_at, updated_at, raw_ciphertext`

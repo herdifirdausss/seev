@@ -22,6 +22,7 @@ const (
 	AccountTypeSuspense        = "suspense"
 	AccountTypeFxConversion    = "fx_conversion"
 	AccountTypeInterestExpense = "interest_expense"
+	AccountTypeAccruedInterestPayable = "accrued_interest_payable"
 
 	AccountStatusActive    = "active"
 	AccountStatusSuspended = "suspended"

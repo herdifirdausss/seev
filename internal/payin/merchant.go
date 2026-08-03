@@ -58,6 +58,24 @@ func (m *Module) CreateMerchantTopupIntent(ctx context.Context, tenantID uuid.UU
 	if err != nil {
 		return TopupIntent{}, err
 	}
+	mapping, found, err := m.routing.GetVendorGateway(ctx, vendor)
+	if err != nil {
+		return TopupIntent{}, err
+	}
+	if !found {
+		return TopupIntent{}, fmt.Errorf("payin: vendor %q has no gateway mapping", vendor)
+	}
+	fee, feeGateway, consumedAt, err := m.resolveTopupFinancials(ctx, uuid.Nil, "merchant_payin_credit", mapping.Gateway, currency, amount, nil, "")
+	if err != nil {
+		return TopupIntent{}, err
+	}
+	if fee.IsPositive() {
+		return TopupIntent{}, fmt.Errorf("%w: non-zero merchant top-up fees require a valid fee quote", ErrFeeQuoteRequired)
+	}
+	totalDebit := amount.Add(fee)
+	if !totalDebit.BigInt().IsInt64() {
+		return TopupIntent{}, fmt.Errorf("payin: merchant topup total debit exceeds int64")
+	}
 
 	ttl := m.topupTTL
 	if ttl <= 0 {
@@ -69,8 +87,15 @@ func (m *Module) CreateMerchantTopupIntent(ctx context.Context, tenantID uuid.UU
 		Reference:        "TOP-" + generalutil.NewV7().String(),
 		MerchantTenantID: tenantID,
 		Amount:           amount,
+		FeeAmount:        fee,
+		TotalDebit:       totalDebit,
+		FeeGateway:       feeGateway,
+		FeeApplication:   model.TopupFeeApplicationAddedOnTop,
+		FeeQuoteConsumedAt: consumedAt,
+		FeeSnapshotVersion: 1,
 		Currency:         currency,
 		Vendor:           vendor,
+		Gateway:          mapping.Gateway,
 		Status:           model.TopupStatusPending,
 		ExpiresAt:        time.Now().Add(ttl),
 		RequestID:        middleware.RequestIDFromCtx(ctx),
@@ -87,7 +112,7 @@ func (m *Module) CreateMerchantTopupIntent(ctx context.Context, tenantID uuid.UU
 		return stored, nil
 	}
 	if m.vendorSession != nil {
-		if err := m.vendorSession.CreatePayinSession(ctx, vendor, intent.ID.String(), amount, currency, intent.RequestID); err != nil {
+		if err := m.vendorSession.CreatePayinSession(ctx, vendor, intent.ID.String(), totalDebit, currency, intent.RequestID); err != nil {
 			return TopupIntent{}, fmt.Errorf("payin: create VendorService session: %w", err)
 		}
 	}
