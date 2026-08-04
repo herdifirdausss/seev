@@ -20,7 +20,7 @@ or chaos drills.
 | mock push | pending | accepted, duplicate, invalid-token, and outage assertions |
 | digest | pending | timezone/window/empty-window/recovery assertions |
 | retention and privacy closure/export | pending | closure/export evidence and retention checks |
-| observability and runbooks | implemented as artifacts | [alerts](../../deploy/observability/prometheus/rules/notifications.yml), [dashboard](../../deploy/observability/grafana/dashboards/notifications-c3.json), [runbooks](../operations/runbooks/notification-provider-outage.md) |
+| observability and runbooks | implemented as artifacts | [alerts](../../deploy/observability/prometheus/rules/notifications.yml), [dashboard](../../deploy/observability/grafana/dashboards/notifications.json), [runbooks](../operations/runbooks/notification-provider-outage.md) |
 
 The plan must remain active until the pending rows have reproducible command
 logs and residual risks are reviewed. No financial correctness claim depends on

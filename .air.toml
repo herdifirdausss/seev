@@ -2,7 +2,7 @@ root = "."
 tmp_dir = "tmp"
 
 [build]
-  cmd = "go build -o ./tmp/gateway ./cmd/gateway"
+  cmd = "go build -o ./tmp/gateway ./services/gateway/cmd/gateway"
   bin = "./tmp/gateway"
   full_bin = "./tmp/gateway"
   include_ext = ["go", "sql", "env"]

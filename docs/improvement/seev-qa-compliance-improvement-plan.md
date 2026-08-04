@@ -644,8 +644,8 @@ requirements:
       A payout with an uncertain vendor result must remain assigned to
       the same vendor until reconciliation establishes a terminal result.
     implementation:
-      - internal/payout/relay.go
-      - internal/payout/command.go
+      - services/payout/internal/payout/relay.go
+      - services/payout/internal/repository/vendor_command_repository.go
     tests:
       - TestDispatchOne_VendorTimesOut_NeverFailsOver_PinnedForResume
     evidence:

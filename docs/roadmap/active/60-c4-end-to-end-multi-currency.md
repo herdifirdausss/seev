@@ -84,7 +84,7 @@ The repository already contains:
 - `currencies(code, minor_unit, enabled)`;
 - IDR exponent `0`;
 - USD exponent `2`;
-- `pkg/currency`;
+- `internal/platform/money/currency`;
 - user and system account uniqueness that includes currency;
 - currency-specific system account resolution;
 - USD settlement, fee, escrow, chargeback, adjustment, confiscated, and
@@ -2870,7 +2870,7 @@ No audit entry includes secret credentials or raw destinations.
 - Record exact commit and migration heads.
 - Run current verification.
 - Inspect archived plan 18 assumptions against the split-service runtime.
-- Inventory `pkg/currency`.
+- Inventory `internal/platform/money/currency`.
 - Inventory account provisioning.
 - Inventory every amount/currency DTO.
 - Inventory every Protobuf field.
@@ -2950,7 +2950,7 @@ conversion retry after lost response
 
 ### Work
 
-- Review and extend `pkg/currency`.
+- Review and extend `internal/platform/money/currency`.
 - Add immutable `Money` and exact `Rate` helpers where appropriate.
 - Add checked arithmetic.
 - Add decimal-string parser.
@@ -3998,29 +3998,29 @@ docs/runbooks/fx-*.md
 Expected areas:
 
 ```text
-pkg/currency/
+internal/platform/money/currency/
 
-internal/ledger/
-internal/payin/
-internal/payout/
-internal/vendorboundary/
-internal/vendorgw/
-internal/fraud/
-internal/assurance/
-internal/notify/
-internal/adminbff/
-internal/handler/
+services/ledger/internal/
+services/payin/internal/
+services/payout/internal/
+services/vendor-service/internal/
+contracts/vendorgw/
+services/fraud/internal/
+services/assurance/internal/
+services/gateway/internal/notification/
+services/adminbff/internal/
+services/gateway/internal/transport/http/
 
-migrations/ledger/
-migrations/payin/
-migrations/payout/
-migrations/vendor/
-migrations/adminbff/ if only audit/UI state requires it
+services/ledger/migrations/
+services/payin/migrations/
+services/payout/migrations/
+services/vendor-service/migrations/
+services/adminbff/migrations/ if only audit/UI state requires it
 
-api/openapi/
-api/contracts/
-api/events/
-api/proto/seev/
+contracts/http/
+contracts/compatibility/
+contracts/events/
+contracts/proto/seev/
 gen/
 
 scripts/multi-currency-e2e.sh

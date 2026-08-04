@@ -116,13 +116,15 @@ A confirmed mistake gets a visible correction instead of erased history.
 
 ## What is this repository made of?
 
-You do not need to read the code yet:
+Folders:
 
 | Part | Everyday meaning |
 |---|---|
 | `docs/` and the root guides | Explanations, decisions, and emergency instructions |
-| `cmd/` and `internal/` | Instructions that start the offices and perform their work |
-| `migrations/` | Instructions for building each office's filing cabinet |
+| `services/<service>/cmd/` | Instructions that start a business office |
+| `services/<service>/internal/` | Private service code |
+| `services/<service>/migrations/` | Instructions for building that office's filing cabinet |
+| `tools/` and `operations/` | Developer and operator tools |
 | `scripts/` and tests | Rehearsals that check normal work and failures |
 
 ## One honest warning

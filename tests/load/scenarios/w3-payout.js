@@ -38,13 +38,13 @@ export default function (data) {
   const key = stableKey('payout');
   const token = data.senders[Math.floor(Math.random() * data.senders.length)];
   // "withdraw_initiate" is the registered transaction type (ledger
-  // processors withdraw_initiate.go / internal/ledger/transport/http.go:67)
+  // processors withdraw_initiate.go / services/ledger/internal/transport/http.go:67)
   // — "withdraw_hold" was never a real type, discovered live once a real
   // token made it past the auth checks that had always masked this 400.
   const quote = json('POST', '/api/v1/ledger/fees/quote', { transaction_type: 'withdraw_initiate', amount: String(data.amountPerPayout), currency: 'IDR' }, { 'Idempotency-Key': `${key}-quote` }, token);
   semantic(quote, 'payout quote', [200, 201]);
 
-  // createPayoutRequest (internal/handler/payout.go) only has amount,
+  // createPayoutRequest (services/gateway/internal/transport/http/payout.go) only has amount,
   // destination, quote_id — no idempotency_key or currency field, and
   // response.Decode uses DisallowUnknownFields, so sending either causes a
   // hard 400 "invalid request body" (discovered live, same masking as

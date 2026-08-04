@@ -2,7 +2,7 @@
 
 > [Documentation home](../../README.md) · [Data](README.md)
 
-> **Generated from [config/data-retention.yaml](../../config/data-retention.yaml) — do not hand-edit this file.** Regenerate with `make retention-docs` after changing the policy. `cmd/retentioncheck` fails CI if this file and the policy ever disagree.
+> **Generated from [config/data-retention.yaml](../../config/data-retention.yaml) — do not hand-edit this file.** Regenerate with `make retention-docs` after changing the policy. `tools/retentioncheck` fails CI if this file and the policy ever disagree.
 
 Policy version: **1**. See [docs/roadmap/archive/51-a8-data-lifecycle-privacy.md](../roadmap/archive/51-a8-data-lifecycle-privacy.md) for the locked design decisions (K1–K13) this matrix implements.
 
@@ -100,7 +100,7 @@ No entry may fully delete a row from these tables — only `retain_permanent`, `
 
 **`auth.kyc_apply_retries.succeeded`** — docs/roadmap/archive/51 §4.2 'Successful KYC apply retry'. Requires status='succeeded'.
 
-**`auth.kyc_document_object`** — Object key is "kyc/<document_uuid>" (internal/auth/documents.go, docs/roadmap/archive/51 T2.3) — opaque, carries no user reference; the document/user relationship lives only in the encrypted auth.kyc_documents row. Deletion must use K6's delete-intent-then-delete-then-mark outbox pattern, paired 1:1 with that metadata row. The Compose auth service wires the local file-backed object store; host binaries require OBJECT_STORE_DIR, and the feature fails closed when it is absent.
+**`auth.kyc_document_object`** — Object key is "kyc/<document_uuid>" (services/auth/internal/auth/documents.go, docs/roadmap/archive/51 T2.3) — opaque, carries no user reference; the document/user relationship lives only in the encrypted auth.kyc_documents row. Deletion must use K6's delete-intent-then-delete-then-mark outbox pattern, paired 1:1 with that metadata row. The Compose auth service wires the local file-backed object store; host binaries require OBJECT_STORE_DIR, and the feature fails closed when it is absent.
 
 **`auth.kyc_documents`** — Same closure-gated rule as auth.kyc_submissions (grouped together in §4.2). auth-service wires FileDocumentStore when OBJECT_STORE_DIR is configured; Upload/Download fail closed without the store or document key ring. The paired object is deleted through auth_object_delete_outbox before metadata removal.
 
@@ -110,7 +110,7 @@ No entry may fully delete a row from these tables — only `retain_permanent`, `
 
 **`auth.kyc_submissions`** — docs/roadmap/archive/51 §4.2 'KYC submission and document': eligible only when the owning account has been closed more than 365 days and no hold applies — this is a closure-gated rule, not a standalone age rule on created_at/decided_at. `payload` becomes K2 ciphertext before this ever runs. The current schema uses the completed closure request's ready_at as the retention horizon rather than a separate closed_at column.
 
-**`auth.object_delete_outbox`** — docs/roadmap/archive/51 K6 (T1.6). pkg/objectoutbox's transactional outbox for object-store deletes — 'done' rows are the permanent proof an object-delete intent was actually carried out, same append-only rationale as auth.retention_audit. Never age-purged.
+**`auth.object_delete_outbox`** — docs/roadmap/archive/51 K6 (T1.6). internal/platform/lifecycle/objectoutbox's transactional outbox for object-store deletes — 'done' rows are the permanent proof an object-delete intent was actually carried out, same append-only rationale as auth.retention_audit. Never age-purged.
 
 **`auth.operator_offboarding_requests`** — docs/roadmap/archive/51 K10 (A8 T5b). Maker-checker record for operator/admin account offboarding — same shape and rationale as ledger.pending_adjustments: requested_by/approved_by are operator identities (never the offboarded subject's own PII), reason is an operator-authored justification, and the row is the permanent two-person-control audit trail proving who proposed and who approved each operator closure. Retained permanently, same append-only rationale as auth.retention_audit.
 
@@ -136,13 +136,13 @@ No entry may fully delete a row from these tables — only `retain_permanent`, `
 | `fraud.screening_events` | fraud.screening_events | financial | created_at | 365d | delete | 500 | subject |
 | `fraud.screening_rule_modes` | fraud.screening_rule_modes | internal | — | — | retain_state | — | none |
 
-**`fraud.redis_velocity`** — internal/fraud/rules.VelocityKey; self-expiring via Redis EXPIRE (~2h window), not a Postgres retention job. Reconstructable from posted ledger transactions plus published outbox proof at any time (A7 K10) — never a data-loss event on expiry.
+**`fraud.redis_velocity`** — services/fraud/rules.VelocityKey; self-expiring via Redis EXPIRE (~2h window), not a Postgres retention job. Reconstructable from posted ledger transactions plus published outbox proof at any time (A7 K10) — never a data-loss event on expiry.
 
 **`fraud.retention_audit`** — docs/roadmap/archive/51 K4. Same shape/rationale as adminbff.retention_audit.
 
 **`fraud.retention_holds`** — docs/roadmap/archive/51 K5. Same shape/rationale as adminbff.retention_holds.
 
-**`fraud.sanctions_entries`** — Third-party (non-platform-user) sanctions/watchlist data from an external dataset. internal/fraud/repository/sanctions_repository.go already fully replaces the table on every dataset load (DELETE-all + re-INSERT) — no independent age-based job needed or wanted; a stale entry must not silently persist past its dataset version.
+**`fraud.sanctions_entries`** — Third-party (non-platform-user) sanctions/watchlist data from an external dataset. services/fraud/internal/repository/sanctions_repository.go already fully replaces the table on every dataset load (DELETE-all + re-INSERT) — no independent age-based job needed or wanted; a stale entry must not silently persist past its dataset version.
 
 **`fraud.screening_event_summaries`** — Non-identifying daily/rule/verdict aggregate successor proof, persisted atomically before screening event deletion.
 
@@ -204,7 +204,7 @@ No entry may fully delete a row from these tables — only `retain_permanent`, `
 
 **`gateway.merchant.webhook_deliveries`** — Requires status IN ('delivered','dead') — a pending/failed (still retrying) delivery is never purged regardless of age. merchant_webhook_attempts cascade-delete with their parent row (ON DELETE CASCADE), so they need no independent purge function.
 
-**`gateway.merchant.webhook_endpoints`** — Live endpoint configuration (secret_ciphertext is already encrypted via pkg/cryptox, T7); deletion is an explicit merchant/operator action (DELETE /webhook-endpoints/{id}), not an automatic age rule.
+**`gateway.merchant.webhook_endpoints`** — Live endpoint configuration (secret_ciphertext is already encrypted via internal/platform/security/crypto, T7); deletion is an explicit merchant/operator action (DELETE /webhook-endpoints/{id}), not an automatic age rule.
 
 **`gateway.merchant.webhook_events`** — Immutable external event bytes, purged once no merchant_webhook_deliveries row still references them (enforced in the purge function itself, not just the age check) — payload may carry tenant transaction data.
 
@@ -263,6 +263,7 @@ No entry may fully delete a row from these tables — only `retain_permanent`, `
 | `ledger.disbursement_items` | ledger.disbursement_items | financial | — | — | retain_permanent | — | none |
 | `ledger.fee_quotes.consumed` | ledger.fee_quotes | financial | consumed_at | 365d | delete | 500 | none |
 | `ledger.fee_quotes.unconsumed` | ledger.fee_quotes | financial | expires_at | 24h | delete | 500 | none |
+| `ledger.fee_rule_versions` | ledger.fee_rule_versions | financial | — | — | retain_immutable | — | none |
 | `ledger.fee_rules` | ledger.fee_rules | financial | — | — | retain_state | — | none |
 | `ledger.fx_conversions` | ledger.fx_conversions | financial | — | — | retain_permanent | — | none |
 | `ledger.fx_pair_directions` | ledger.fx_pair_directions | financial | — | — | retain_state | — | none |
@@ -277,6 +278,8 @@ No entry may fully delete a row from these tables — only `retain_permanent`, `
 | `ledger.interest_periods` | ledger.interest_periods | financial | — | — | retain_permanent | — | none |
 | `ledger.ledger_entries` | ledger.ledger_entries | financial | — | — | retain_immutable | — | none |
 | `ledger.ledger_transactions` | ledger.ledger_transactions | financial | — | — | retain_permanent | — | none |
+| `ledger.money_movement_execution_subjects` | ledger.money_movement_execution_subjects | personal | — | — | retain_state | — | subject |
+| `ledger.money_movement_policy_decisions` | ledger.money_movement_policy_decisions | financial | — | — | retain_immutable | — | none |
 | `ledger.outbox_events.dead` | ledger.outbox_events | financial | — | — | never_automatic | — | none |
 | `ledger.outbox_events.published` | ledger.outbox_events | financial | published_at | 30d | delete | 500 | none |
 | `ledger.pending_adjustments` | ledger.pending_adjustments | financial | — | — | retain_permanent | — | none |
@@ -305,9 +308,9 @@ No entry may fully delete a row from these tables — only `retain_permanent`, `
 
 **`ledger.accounts`** — owner_id is pseudonymized (not purged) by the T5 closure saga per K10/K11; otherwise never age-purged.
 
-**`ledger.chargeback_dispute_status_changes`** — Security audit finding (migrations/ledger/000037_chargeback_dispute_audit_trail) — the actor/history trail for chargeback_disputes resolution; same permanent-retention posture as its parent table (an accountability record has no reason to expire before the case it documents does).
+**`ledger.chargeback_dispute_status_changes`** — Security audit finding (services/ledger/migrations/000037_chargeback_dispute_audit_trail) — the actor/history trail for chargeback_disputes resolution; same permanent-retention posture as its parent table (an accountability record has no reason to expire before the case it documents does).
 
-**`ledger.chargeback_disputes`** — Business-completeness audit finding (migrations/ledger/000035_chargeback_disputes) — card-network dispute case evidence, same permanent-retention posture as disbursement_items/recon_batches: a resolved dispute (won/lost/expired) is exactly the kind of record a card network or regulator can re-open years later.
+**`ledger.chargeback_disputes`** — Business-completeness audit finding (services/ledger/migrations/000035_chargeback_disputes) — card-network dispute case evidence, same permanent-retention posture as disbursement_items/recon_batches: a resolved dispute (won/lost/expired) is exactly the kind of record a card network or regulator can re-open years later.
 
 **`ledger.currencies`** — Static reference table.
 
@@ -330,6 +333,8 @@ No entry may fully delete a row from these tables — only `retain_permanent`, `
 **`ledger.fee_quotes.consumed`** — docs/roadmap/archive/51 §4.2/K8. Requires consumed_by_ref to still point at a terminal transaction/payout with matching booked-fee proof — K8's proof-aware gate, not a bare age check.
 
 **`ledger.fee_quotes.unconsumed`** — docs/roadmap/archive/51 §4.2/K8. Requires consumed_at IS NULL. A quote a concurrent consumer is locking is skipped this run, never deleted underneath consumption (K8).
+
+**`ledger.fee_rule_versions`** — Immutable maker-checker pricing history; retained for deterministic historical fee reconstruction.
 
 **`ledger.fee_rules`** — Live pricing configuration, not event history. A disabled/superseded rule needs its own explicit future policy per docs/roadmap/archive/51 §4.2's closing note, not a generic age rule.
 
@@ -359,6 +364,10 @@ No entry may fully delete a row from these tables — only `retain_permanent`, `
 
 **`ledger.ledger_transactions`** — docs/roadmap/archive/51 §4.1 'posted transaction headers, lifecycle closers'. idempotency_key/idempotency_scope become K7 digest tombstones in T3, handled by a separate class below — this class covers everything else in the row.
 
+**`ledger.money_movement_execution_subjects`** — Current execution-time KYC, user, and tenant gate state; retained as live policy state rather than an age-purged event log.
+
+**`ledger.money_movement_policy_decisions`** — Append-only allow/deny decisions for money execution; retained as authorization and financial-control evidence.
+
 **`ledger.outbox_events.dead`** — docs/roadmap/archive/51 §4.2 'Dead ledger outbox event' — never automatic at any age; an operator must resolve or replay it first.
 
 **`ledger.outbox_events.published`** — docs/roadmap/archive/51 §4.2 'Published ledger outbox event'. Requires status='published'.
@@ -373,7 +382,7 @@ No entry may fully delete a row from these tables — only `retain_permanent`, `
 
 **`ledger.recon_items`** — docs/roadmap/archive/51 §4.2. Redacts `raw` only, once the parent recon_batches row is terminal for 90+ days. amount/match_status/matched_tx_id remain, matching 'retain match result and totals'.
 
-**`ledger.redis_policy_counters`** — internal/policy.DailyAmountKey/DailyCountKey/MonthlyAmountKey. Self- expiring counters (Redis key TTL, not a Postgres retention job) — daily keys naturally roll off within ~48h, monthly within ~35d, matching docs/roadmap/archive/50 T5's own drreseed reconstruction assumptions. Reconstructable from posted ledger transactions at any time (A7 K10), so a lost/expired key is never a data-loss event.
+**`ledger.redis_policy_counters`** — services/ledger/policy.DailyAmountKey/DailyCountKey/MonthlyAmountKey. Self- expiring counters (Redis key TTL, not a Postgres retention job) — daily keys naturally roll off within ~48h, monthly within ~35d, matching docs/roadmap/archive/50 T5's own drreseed reconstruction assumptions. Reconstructable from posted ledger transactions at any time (A7 K10), so a lost/expired key is never a data-loss event.
 
 **`ledger.retention_audit`** — docs/roadmap/archive/51 K4. Same shape/rationale as adminbff.retention_audit.
 
@@ -467,22 +476,22 @@ No entry may fully delete a row from these tables — only `retain_permanent`, `
 |---|---|---|---|---|---|---|---|
 | `shared.a7_backups` | pgBackRest encrypted backup chains (docs/roadmap/archive/50) | financial | — | — | expiration_based | — | none |
 | `shared.logs_and_traces` | application logs (Loki) and traces (Tempo) | personal | — | — | protected_by_masking | — | none |
-| `shared.rabbitmq_event_transit` | RabbitMQ in-flight event delivery (internal/ledger/events) | financial | — | — | not_persisted | — | none |
+| `shared.rabbitmq_event_transit` | RabbitMQ in-flight event delivery (contracts/events/ledger) | financial | — | — | not_persisted | — | none |
 | `shared.redis_circuit_breaker` | redis:breaker:<namespace>:{state\|probe}:<vendor>, breaker:<namespace>:vendors | internal | — | — | retain_state | — | none |
 | `shared.redis_job_locks` | redis:joblock:<jobName> | internal | — | — | retain_state | — | none |
 | `shared.redis_rate_limits` | redis:rl:ip:<ip>, rl:user:<userID>, rl:<ip>:<path>, rl:webhook:<vendor> | internal | — | — | retain_state | — | none |
 
 **`shared.a7_backups`** — docs/roadmap/archive/51 K12: active-database redaction/deletion does not rewrite already-taken backups. A redacted/deleted value may still be readable from an encrypted backup chain until that chain expires per A7 K4 (two retained full chains + their WAL). Privacy status responses and runbooks must state the latest backup-expiration horizon rather than claim complete erasure. Not independently age-purged by this policy — governed entirely by docs/roadmap/archive/50-a7-backup-pitr-disaster-recovery.md K4.
 
-**`shared.logs_and_traces`** — docs/roadmap/archive/51 §2.4: passwords, tokens, authorization values, documents, raw webhook fields, payout destinations, and full idempotency keys are masked at the point of logging (pkg/logger), not retained-then-purged. Loki/Tempo's own configured retention window governs storage duration for whatever remains (deploy/observability/); this class documents the protection mechanism rather than defining a new database-style purge job, satisfying docs/roadmap/archive/51 §6 T0's "logs, traces... are classified" requirement.
+**`shared.logs_and_traces`** — docs/roadmap/archive/51 §2.4: passwords, tokens, authorization values, documents, raw webhook fields, payout destinations, and full idempotency keys are masked at the point of logging (internal/platform/observability/logging), not retained-then-purged. Loki/Tempo's own configured retention window governs storage duration for whatever remains (deploy/observability/); this class documents the protection mechanism rather than defining a new database-style purge job, satisfying docs/roadmap/archive/51 §6 T0's "logs, traces... are classified" requirement.
 
 **`shared.rabbitmq_event_transit`** — Events (TransactionPosted, TransactionReversed, AdjustmentDecided) exist only in flight; the durable fact lives in ledger.outbox_events (its own class above) and the consumer's own persisted row (gateway.notif_notifications, its own class above). A broker-only in-flight delivery lost to a broker outage is recovered by outbox replay (A7 K10), never treated as data requiring its own retention rule.
 
-**`shared.redis_circuit_breaker`** — internal/vendorgw/distributed_breaker.go (used by payin+payout). Operational state only, no personal data; safe to start empty after any restore.
+**`shared.redis_circuit_breaker`** — contracts/vendorgw/distributed_breaker.go (used by payin+payout). Operational state only, no personal data; safe to start empty after any restore.
 
-**`shared.redis_job_locks`** — pkg/scheduler.NewRedisLock. Short-lived distributed cron locks; no personal data.
+**`shared.redis_job_locks`** — internal/platform/scheduling.NewRedisLock. Short-lived distributed cron locks; no personal data.
 
-**`shared.redis_rate_limits`** — pkg/middleware/rate_limit.go. Self-expiring fixed-window counters; safe to start empty after any restore (A7 K10 §4).
+**`shared.redis_rate_limits`** — internal/platform/security/middleware/rate_limit.go. Self-expiring fixed-window counters; safe to start empty after any restore (A7 K10 §4).
 
 ## vendor
 

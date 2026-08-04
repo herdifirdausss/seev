@@ -1,8 +1,8 @@
 # 28 — Phase 6c: Auth Service Extraction
 
-Read [plan 26](26-phase6a-foundations.md) first. Prerequisite: [plan 27](27-phase6b-ledger-service.md) is complete and auth's `Provisioner` uses `pkg/ledgerclient`.
+Read [plan 26](26-phase6a-foundations.md) first. Prerequisite: [plan 27](27-phase6b-ledger-service.md) is complete and auth's `Provisioner` uses `contracts/clients/ledger`.
 
-`internal/auth` already has a clean boundary and only depends on the provisioning interface. This phase moves it to its own public binary and database:
+`services/auth` already has a clean boundary and only depends on the provisioning interface. This phase moves it to its own public binary and database:
 
 - public listener `:8082` for register, login, refresh, and `/users/me`;
 - internal listener `:8083` for health and metrics;

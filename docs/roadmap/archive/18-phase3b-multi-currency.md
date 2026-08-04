@@ -17,7 +17,7 @@ Clients must not send major-unit decimals where a minor-unit integer is expected
 
 1. Add migration `000011_currencies.up.sql` and its down migration. The `currencies` table contains `code`, `minor_unit`, and `enabled`, and is seeded with IDR and USD.
 
-2. Add `pkg/currency` with an atomic registry and the following responsibilities:
+2. Add `internal/platform/money/currency` with an atomic registry and the following responsibilities:
 
    - load enabled currencies at startup;
    - return a currency's minor-unit exponent;

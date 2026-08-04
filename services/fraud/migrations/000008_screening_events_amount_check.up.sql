@@ -1,0 +1,11 @@
+-- screening_events.amount was the only amount column across the whole
+-- schema without a positivity guard (found during a broader schema audit) —
+-- every comparable column (ledger_transactions.amount, ledger_entries.amount,
+-- payin_topup_intents.amount, payout_requests.amount, fee_quotes.amount)
+-- has CHECK (amount > 0). services/fraud/internal/repository/screening_repository.go
+-- always inserts a real screened transaction amount (never zero/negative by
+-- the domain), and fraud_screening_event_summaries.amount_minor_sum is a
+-- running SUM() of this column via fn_retention_purge_screening_events — a
+-- stray negative value from an app bug would silently corrupt that
+-- permanent aggregate instead of failing fast at insert time.
+ALTER TABLE screening_events ADD CONSTRAINT chk_screening_events_amount_positive CHECK (amount > 0);

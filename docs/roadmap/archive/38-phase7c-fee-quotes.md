@@ -21,7 +21,7 @@ Add ledger migration `000021_fee_quotes` with user, transaction type, gateway, c
 
 ## T2 — Create and consume quotes
 
-Add `CreateQuote` and `ConsumeQuote` to `internal/ledger/feepolicy`.
+Add `CreateQuote` and `ConsumeQuote` to `services/ledger/internal/feepolicy`.
 
 - `CreateQuote` uses the existing specificity and clamp logic and defaults to a ten-minute TTL.
 - Quotes are valid for one exact user, transaction type, currency, and amount.

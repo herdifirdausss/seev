@@ -69,7 +69,7 @@ jobs:
         if: always()
         run: |
           if [ -f "${SEEV_LOAD_ARTIFACT_ROOT}/summary.json" ]; then
-            go run ./cmd/loadreport -runs "${SEEV_LOAD_ARTIFACT_ROOT}/summary.json" \
+            go run ./tools/loadreport -runs "${SEEV_LOAD_ARTIFACT_ROOT}/summary.json" \
               -out "${SEEV_LOAD_ARTIFACT_ROOT}/report.md"
           fi
 

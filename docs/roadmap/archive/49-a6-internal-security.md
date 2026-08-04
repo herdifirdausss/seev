@@ -61,9 +61,9 @@ is not treated as a substitute for checking the code.
 
 ### K2 — Shared TLS package with hot reload
 
-`pkg/tlsx` owns certificate loading, polling-based hot reload, client and
+`internal/platform/security/tls` owns certificate loading, polling-based hot reload, client and
 server TLS configuration, URI SAN extraction, certificate-chain validation,
-and allowlist checks. It is usable by `pkg/grpcx` and by internal HTTP
+and allowlist checks. It is usable by `internal/platform/transport/grpc` and by internal HTTP
 clients and servers without importing any `internal/*` package.
 
 The server validates the peer certificate on every handshake. The client
@@ -160,7 +160,7 @@ money-safety chaos scenario.
 
 ### K10 — Low-cardinality TLS metrics
 
-`pkg/tlsx` exposes certificate expiry and handshake-failure metrics. Identity
+`internal/platform/security/tls` exposes certificate expiry and handshake-failure metrics. Identity
 labels come only from the fixed service identity set. Unverified certificate
 names are recorded as `unknown`, so an attacker cannot inject arbitrary
 Prometheus label values.
@@ -181,7 +181,7 @@ assurance.
 
 ### T2 — mTLS for gRPC and token fail-closed
 
-Added `pkg/tlsx`, `cmd/certgen`, generated local certificates, and the gRPC
+Added `internal/platform/security/tls`, `cmd/certgen`, generated local certificates, and the gRPC
 TLS wiring. All gRPC dial sites and listeners now load service identities and
 validate the expected peer identity. Negative tests prove that a missing
 certificate and a certificate outside the listener allowlist are rejected.

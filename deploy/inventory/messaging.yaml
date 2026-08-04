@@ -8,13 +8,13 @@ broker:
   consumer_delivery: at-least-once
   reconnect: self-healing-consumer-loop
   message_policy: consumers deduplicate by event identity or domain idempotency
-  sources: [pkg/messaging/config.go, pkg/messaging/publisher.go, pkg/messaging/consumer.go]
+  sources: [internal/platform/messaging/config.go, internal/platform/messaging/publisher.go, internal/platform/messaging/consumer.go]
 exchange:
   name: ledger.events
   type: topic
   durable: true
   auto_delete: false
-  source: pkg/messaging/topology.go
+  source: internal/platform/messaging/topology.go
 queues:
   - name: ledger.events.audit
     owner: ledger
@@ -29,7 +29,7 @@ queues:
       requeue_after_max_attempts: false
     idempotency: event identity and transaction identity
     first_deployment: true
-    sources: [internal/ledger/ledger.go, pkg/messaging/topology.go]
+    sources: [services/ledger/internal/ledger/ledger.go, internal/platform/messaging/topology.go]
   - name: ledger.events.notifications
     owner: gateway
     exchange: ledger.events
@@ -37,7 +37,7 @@ queues:
     durable: true
     consumers:
       - service: gateway
-        module: internal/notify
+        module: services/gateway/internal/notification
         consumer_tag: notify-consumer
         prefetch: 10
         max_delivery_attempts: 5
@@ -49,7 +49,7 @@ queues:
       requeue_after_max_attempts: false
     idempotency: notification delivery record and event identity
     first_deployment: true
-    sources: [internal/notify/notify.go, pkg/messaging/topology.go]
+    sources: [services/gateway/internal/notification/inbox/notify.go, internal/platform/messaging/topology.go]
   - name: ledger.events.fraud
     owner: fraud
     exchange: ledger.events
@@ -58,7 +58,7 @@ queues:
     message_ttl: 2h velocity window
     consumers:
       - service: fraud
-        module: internal/fraud
+        module: services/fraud
         consumer_tag: fraud-velocity-consumer
         prefetch: 10
         max_delivery_attempts: 5
@@ -70,7 +70,7 @@ queues:
       requeue_after_max_attempts: false
     idempotency: event identity and velocity-window update
     first_deployment: true
-    sources: [internal/fraud/consumer.go, pkg/messaging/topology.go]
+    sources: [services/fraud/internal/fraud/consumer.go, internal/platform/messaging/topology.go]
   - name: ledger.events.merchant_webhooks
     owner: gateway
     exchange: ledger.events
@@ -78,7 +78,7 @@ queues:
     durable: true
     consumers:
       - service: gateway
-        module: internal/merchant/webhook
+        module: services/gateway/internal/merchant/webhook
         consumer_tag: merchant-webhook-consumer
         prefetch: 10
         max_delivery_attempts: 5
@@ -90,20 +90,20 @@ queues:
       requeue_after_max_attempts: false
     idempotency: merchant delivery record and event identity
     first_deployment: true
-    sources: [internal/merchant/webhook/consumer.go, pkg/messaging/topology.go]
+    sources: [services/gateway/internal/merchant/webhook/consumer.go, internal/platform/messaging/topology.go]
 publisher_domains:
   - owner: ledger
     service: ledger
     routing_keys: [ledger.transaction.posted.v1]
     durable_source: ledger outbox
     confirmation: required
-    source: internal/ledger/worker/outbox_relay.go
+    source: services/ledger/internal/worker/outbox_relay.go
   - owner: gateway
     service: gateway
     routing_keys: [merchant-specific-event-types]
     durable_source: merchant outbox
     confirmation: required
-    source: internal/merchant
+    source: services/gateway/internal/merchant
 dead_letter_operations:
   replay: explicit operations action only
   retention: UNKNOWN; K7 messaging operations owner

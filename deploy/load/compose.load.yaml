@@ -23,12 +23,12 @@ services:
     volumes:
       - seev_load_postgres_data:/var/lib/postgresql/data
       - ./scripts/load-postgres-init:/docker-entrypoint-initdb.d:ro
-      - ./migrations:/migrations:ro
+      - ./services:/services:ro
     # Phase 0 §24.4: !reset means "clear to null," not "replace with this
     # list" — the compose-spec merge tag for "these values instead of the
     # base file's" is !override. With !reset, this list was silently
     # dropped and the port was never actually published (discovered live:
-    # cmd/loadprobe, the first thing this session needed to connect via the
+    # tools/loadprobe, the first thing this session needed to connect via the
     # published host port rather than `compose exec` inside the network,
     # got "connection refused"). Same fix applies to prometheus below.
     ports: !override
@@ -38,14 +38,11 @@ services:
     mem_limit: ${SEEV_LOAD_MEM_POSTGRES:-640m}
     # Phase 5 resource elasticity study (§15.2) — postgres is one of the two
     # services (with ledger-service) every prior bottleneck finding in this
-    # report points to as capacity-determining. cpus defaults to "100" (no
-    # container ever needs 100 CPUs, so this is unlimited in practice) —
-    # Docker Compose has no clean way to conditionally OMIT the cpus key
-    # via env-var substitution, and "0" is not a valid "unlimited" sentinel
-    # for --cpus. Every other service is left uncapped on CPU entirely, same
-    # as before this variable existed, since they were never the limiting
-    # component.
-    deploy: {resources: {limits: {memory: "${SEEV_LOAD_MEM_POSTGRES:-640M}", cpus: "${SEEV_LOAD_CPUS_POSTGRES:-100}"}}}
+    # report points to as capacity-determining. scripts/load-test.sh derives
+    # the default cap from the selected profile; the fallback keeps direct
+    # Compose inspection/startup valid on small hosts. Every other service is
+    # left uncapped on CPU, since it was never the limiting component.
+    deploy: {resources: {limits: {memory: "${SEEV_LOAD_MEM_POSTGRES:-640M}", cpus: "${SEEV_LOAD_CPUS_POSTGRES:-1}"}}}
 
   redis:
     # The disposable load network reaches Redis by service name. Do not
@@ -70,14 +67,14 @@ services:
       RATE_LIMIT_BURST: ${SEEV_LOAD_RATE_LIMIT_BURST:-5000}
       # B3 experiment only (docs/performance/reports/2026-xx-baseline.md §22)
       # — empty by default, byte-identical to before this variable existed.
-      # internal/ledger/ledger.go reads this directly (never through
-      # internal/config); set to e.g. "5s" for the cached A/B variant run.
+      # services/ledger/internal/ledger/ledger.go reads this directly (never through
+      # internal/platform/config); set to e.g. "5s" for the cached A/B variant run.
       FEE_RESOLVER_CACHE_TTL: ${SEEV_LOAD_FEE_RESOLVER_CACHE_TTL:-}
     mem_limit: ${SEEV_LOAD_MEM_LEDGER:-512m}
     # Phase 5 resource elasticity study (§15.2) — see postgres' own comment
-    # above on cpus' "100" default and why only these two services are
+    # above on the profile-derived cap and why only these two services are
     # CPU-capped.
-    deploy: {resources: {limits: {memory: "${SEEV_LOAD_MEM_LEDGER:-512M}", cpus: "${SEEV_LOAD_CPUS_LEDGER:-100}"}}}
+    deploy: {resources: {limits: {memory: "${SEEV_LOAD_MEM_LEDGER:-512M}", cpus: "${SEEV_LOAD_CPUS_LEDGER:-1}"}}}
   auth-service:
     profiles: [load]
     environment:
@@ -101,7 +98,7 @@ services:
       AUTH_BOOTSTRAP_CHECKER_PASSWORD: ${SEEV_LOAD_CHECKER_PASSWORD:-LoadCheckerDisposable2026}
       # Scenario setup() mints each sender's access token once and reuses it
       # for the whole run — the production 5m default (JWT_ACCESS_EXPIRY,
-      # internal/config/config.go) expires mid-run for anything past a short
+      # internal/platform/config/config.go) expires mid-run for anything past a short
       # smoke/staircase probe, surfacing as a mass 401 cascade indistinguishable
       # from a real capacity knee (discovered live: a 15-minute Phase 3
       # confirmation run showed ~69% unexpected_failures purely from this).
@@ -117,8 +114,8 @@ services:
       RATE_LIMIT_PER: ${SEEV_LOAD_RATE_LIMIT_PER:-1m}
       RATE_LIMIT_BURST: ${SEEV_LOAD_RATE_LIMIT_BURST:-5000}
       # Phase 0 §24.2/K11: base docker-compose.yml disables mockvendor2 for
-      # payin (registry.AddPayin gated by cfg.Vendor.Mockvendor2Enabled,
-      # cmd/payin-service/main.go) — W5's two-gateway control needs a
+      # payin (registry.AddPayin gated by cfg.Vendor.SecondaryMockVendorEnabled,
+      # services/payin/cmd/payin/main.go) — W5's two-gateway control needs a
       # second registered vendor to route half its pool to. The secret is
       # also mandatory here — payin boot-fails fail-closed
       # ("MOCKVENDOR2_SECRET must be set when MOCKVENDOR2_ENABLED=true")
@@ -218,14 +215,14 @@ services:
       LOAD_KEY_CARDINALITY: ${SEEV_LOAD_KEY_CARDINALITY:-10}
       # ledger-service's own INTERNAL :8091 listener, not its public :8090
       # one — /api/v1/admin/ledger/ (disbursements included) is mounted on
-      # internalRouter (cmd/ledger-service/main.go:332-338), bound to
+      # internalRouter (services/ledger/cmd/ledger/main.go:332-338), bound to
       # InternalPort, not publicRouter's :8090 (discovered live: pointing
       # this at :8090 404s, since publicRouter only serves /api/v1/ledger/).
       # gateway-service does not forward this path either. Reachable with
       # the same dev-operator mTLS identity LOAD_TLS_CERT_FILE/KEY_FILE
       # already establish (ledger's internal listener allows
       # IdentityDevOperator, IdentityPrometheus, IdentityAdminBFF —
-      # cmd/ledger-service/main.go:287-289).
+      # services/ledger/cmd/ledger/main.go:287-289).
       LOAD_LEDGER_BASE_URL: https://ledger-service:8091
     volumes:
       - ./tests/load:/scripts:ro

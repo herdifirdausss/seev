@@ -30,7 +30,7 @@ Follow [README.md](README.md)'s "Local quick start" to get the stack
 running, then [Onboarding](docs/development/onboarding.md)'s "trace one request
 end-to-end" section to build a working mental model before changing
 anything load-bearing (in particular,
-`internal/ledger/service/handle/service.go`'s `execTransfer` — read the
+`services/ledger/internal/ledger/handle/service.go`'s `execTransfer` — read the
 comment above it first). If you're about to change a specific service,
 read its entry in [Services](docs/reference/services.md) first — its full
 endpoint/job surface and dependencies are there, not just the pieces
@@ -43,7 +43,7 @@ your change happens to touch.
   [Project guide](docs/development/project-guide.md#package-layout-conventions) — new
   code should be indistinguishable in style from what's already there.
 - Regenerate mocks after changing an interface
-  (`go generate ./internal/<service>/repository/...`); never hand-edit a
+  (`go generate ./services/<service>/internal/repository/...`); never hand-edit a
   generated `_mock.go` file.
 - Add or update tests alongside the code you change:
   `<file>_test.go` for unit tests (no Docker required),
@@ -78,7 +78,7 @@ make security-vuln
 make ci-lint
 make test
 make docs-check
-make proto-lint   # only if you changed api/proto/
+make proto-lint   # only if you changed contracts/proto/
 make contracts
 make load-lint
 make retention-check

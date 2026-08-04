@@ -15,7 +15,7 @@ either the original response or a fresh attempt.
 
 ## Understand the mechanism before you act
 
-`internal/merchant/idempotency` (T4) claims a row in `'processing'` state
+`services/gateway/internal/merchant/idempotency` (T4) claims a row in `'processing'` state
 under a lease (`lease_owner`, `lease_expires_at`) before doing any
 downstream work. Three things can happen next:
 

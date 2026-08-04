@@ -32,7 +32,7 @@ routes:
     source_ip_policy: edge-default
     public_exposure: true
     first_deployment: true
-    sources: [cmd/auth-service/router.go, api/openapi/auth.yaml, docs/deployment/public-route-matrix.md]
+    sources: [services/auth/cmd/auth/router.go, contracts/http/public-v1.yaml, docs/deployment/public-route-matrix.md]
   - name: gateway-ledger-api
     owner: gateway
     listener: gateway-public-http
@@ -48,7 +48,7 @@ routes:
     source_ip_policy: edge-default
     public_exposure: true
     first_deployment: true
-    sources: [internal/handler/router.go, api/openapi/ledger.yaml]
+    sources: [services/gateway/internal/transport/http/router.go, contracts/http/public-v1.yaml]
   - name: gateway-payout-api
     owner: gateway
     listener: gateway-public-http
@@ -64,7 +64,7 @@ routes:
     source_ip_policy: edge-default
     public_exposure: true
     first_deployment: true
-    sources: [internal/handler/router.go, internal/handler/payout.go]
+    sources: [services/gateway/internal/transport/http/router.go, services/gateway/internal/transport/http/payout.go]
   - name: gateway-topup-api
     owner: gateway
     listener: gateway-public-http
@@ -80,7 +80,7 @@ routes:
     source_ip_policy: edge-default
     public_exposure: true
     first_deployment: true
-    sources: [internal/handler/router.go, internal/handler/topup.go]
+    sources: [services/gateway/internal/transport/http/router.go, services/gateway/internal/transport/http/topup.go]
   - name: gateway-notifications-api
     owner: gateway
     listener: gateway-public-http
@@ -96,7 +96,7 @@ routes:
     source_ip_policy: edge-default
     public_exposure: true
     first_deployment: true
-    sources: [internal/handler/router.go]
+    sources: [services/gateway/internal/transport/http/router.go]
   - name: gateway-b2b-api
     owner: gateway
     listener: gateway-public-http
@@ -113,7 +113,7 @@ routes:
     public_exposure: true
     first_deployment: false
     feature_flag: merchant_b2b
-    sources: [internal/handler/router.go, internal/merchant/api]
+    sources: [services/gateway/internal/transport/http/router.go, services/gateway/internal/merchant/api]
   - name: vendor-callback
     owner: vendor
     listener: vendor-http
@@ -129,7 +129,7 @@ routes:
     source_ip_policy: explicit-callback-cidr; trusted proxy list is empty unless configured
     public_exposure: true
     first_deployment: true
-    sources: [cmd/vendor-service/main.go, internal/vendorboundary/callback.go, api/openapi/webhooks-v1.yaml]
+    sources: [services/vendor-service/cmd/vendor/main.go, services/vendor-service/internal/callback.go, contracts/http/webhooks-v1.yaml]
   - name: admin-bff-console
     owner: admin-bff
     listener: admin-bff-http
@@ -145,7 +145,7 @@ routes:
     source_ip_policy: private-admin-network
     public_exposure: false
     first_deployment: true
-    sources: [cmd/admin-bff-service/router.go, internal/adminbff/module.go]
+    sources: [services/adminbff/cmd/adminbff/router.go, services/adminbff/internal/admin/module.go]
 
   - name: gateway-health
     owner: gateway
@@ -161,7 +161,7 @@ routes:
     source_ip_policy: cluster-only
     public_exposure: false
     first_deployment: true
-    sources: [internal/handler/health.go, cmd/gateway/main.go]
+    sources: [services/gateway/internal/transport/http/health.go, services/gateway/cmd/gateway/main.go]
   - name: gateway-ready
     owner: gateway
     listener: gateway-internal-https
@@ -176,7 +176,7 @@ routes:
     source_ip_policy: cluster-only
     public_exposure: false
     first_deployment: true
-    sources: [internal/handler/health.go, internal/handler/router.go]
+    sources: [services/gateway/internal/transport/http/health.go, services/gateway/internal/transport/http/router.go]
   - name: gateway-metrics
     owner: gateway
     listener: gateway-internal-https
@@ -191,7 +191,7 @@ routes:
     source_ip_policy: cluster-only
     public_exposure: false
     first_deployment: false
-    sources: [internal/handler/router.go]
+    sources: [services/gateway/internal/transport/http/router.go]
   - name: auth-health-ready-metrics
     owner: auth
     listener: auth-internal-https
@@ -206,7 +206,7 @@ routes:
     source_ip_policy: cluster-only
     public_exposure: false
     first_deployment: true
-    sources: [cmd/auth-service/router.go, cmd/auth-service/main.go]
+    sources: [services/auth/cmd/auth/router.go, services/auth/cmd/auth/main.go]
   - name: ledger-health-ready-metrics
     owner: ledger
     listener: ledger-internal-https
@@ -221,7 +221,7 @@ routes:
     source_ip_policy: cluster-only
     public_exposure: false
     first_deployment: true
-    sources: [cmd/ledger-service/main.go]
+    sources: [services/ledger/cmd/ledger/main.go]
   - name: payin-health-metrics
     owner: payin
     listener: payin-http
@@ -236,7 +236,7 @@ routes:
     source_ip_policy: cluster-only
     public_exposure: false
     first_deployment: true
-    sources: [cmd/payin-service/router.go]
+    sources: [services/payin/cmd/payin/router.go]
   - name: payout-health-metrics
     owner: payout
     listener: payout-http
@@ -251,7 +251,7 @@ routes:
     source_ip_policy: cluster-only
     public_exposure: false
     first_deployment: true
-    sources: [cmd/payout-service/router.go]
+    sources: [services/payout/cmd/payout/router.go]
   - name: fraud-health-metrics
     owner: fraud
     listener: fraud-http
@@ -266,7 +266,7 @@ routes:
     source_ip_policy: cluster-only
     public_exposure: false
     first_deployment: true
-    sources: [cmd/fraud-service/router.go]
+    sources: [services/fraud/cmd/fraud/router.go]
   - name: admin-bff-health-metrics
     owner: admin-bff
     listener: admin-bff-http
@@ -281,7 +281,7 @@ routes:
     source_ip_policy: cluster-only
     public_exposure: false
     first_deployment: true
-    sources: [cmd/admin-bff-service/router.go]
+    sources: [services/adminbff/cmd/adminbff/router.go]
   - name: assurance-health-ready-metrics
     owner: assurance
     listener: assurance-http
@@ -296,7 +296,7 @@ routes:
     source_ip_policy: cluster-only
     public_exposure: false
     first_deployment: true
-    sources: [cmd/assurance-service/main.go]
+    sources: [services/assurance/cmd/assurance/main.go]
   - name: vendor-health-ready-metrics
     owner: vendor
     listener: vendor-http
@@ -311,7 +311,7 @@ routes:
     source_ip_policy: cluster-only
     public_exposure: false
     first_deployment: true
-    sources: [cmd/vendor-service/main.go]
+    sources: [services/vendor-service/cmd/vendor/main.go]
   - name: internal-service-admin-and-privacy
     owner: service-owners
     listener: per-service-internal-http
@@ -326,8 +326,8 @@ routes:
     source_ip_policy: cluster-only
     public_exposure: false
     first_deployment: true
-    sources: [cmd/*/router.go, internal/handler/router.go, internal/config]
+    sources: [services/*/cmd/*/router.go, services/gateway/internal/transport/http/router.go, internal/platform/config]
 debug_route_scan:
   public_debug_routes: none found in current route registrations
   dashboard_exposure: forbidden
-  source: internal/handler/*, cmd/*/router.go
+  source: services/gateway/internal/transport/http/*, services/*/cmd/*/router.go

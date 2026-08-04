@@ -22,7 +22,7 @@ than Phase 1; before starting a task, write its detailed design as
   `ledger.transaction.failed.v1`: transaction ID, type, amount as a string,
   currency, compact entries (`account_id`, direction, amount), `occurred_at`,
   and `schema_version`.
-- Create one `internal/ledger/events` package for payload types and event-type
+- Create one `contracts/events/ledger` package for payload types and event-type
   constants. Consumer modules may import this package as the only ledger
   subpackage exception, or the types may be promoted to the root `ledger`
   package.

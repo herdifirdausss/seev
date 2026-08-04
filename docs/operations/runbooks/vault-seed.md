@@ -5,7 +5,7 @@
 > **Status: Current. Audience: local-development operators.** This procedure is
 > for the disposable development Vault, not a production secret store.
 
-Covers seeding the local dev-mode Vault (docs/roadmap/archive/49 K7) that `internal/config`'s `vaultGetenv` seam can overlay on top of plain env vars when `VAULT_ADDR`/`VAULT_TOKEN` are set. Dev-mode Vault is **in-memory** — every restart wipes it, and this seed script exists precisely because "reseed on every boot" is the normal, expected operating mode here, not an edge case.
+Covers seeding the local dev-mode Vault (docs/roadmap/archive/49 K7) that `internal/platform/config`'s `vaultGetenv` seam can overlay on top of plain env vars when `VAULT_ADDR`/`VAULT_TOKEN` are set. Dev-mode Vault is **in-memory** — every restart wipes it, and this seed script exists precisely because "reseed on every boot" is the normal, expected operating mode here, not an edge case.
 
 ## When to run this
 
@@ -42,7 +42,7 @@ Seeded, one shared value written identically into every service's own KV v2 entr
 
 - `JWT_SECRET`
 - `INTERNAL_GRPC_TOKEN`
-- `CRYPTOX_KEY_V1` — docs/roadmap/archive/51 T2.2's shared pkg/cryptox KEK; see [cryptox-key-rotation.md](cryptox-key-rotation.md).
+- `CRYPTOX_KEY_V1` — docs/roadmap/archive/51 T2.2's shared internal/platform/security/crypto KEK; see [cryptox-key-rotation.md](cryptox-key-rotation.md).
 - `CRYPTOX_LOOKUP_KEY` — only auth actually reads this (normalized-email HMAC digest), seeded into every service anyway rather than special-casing one out.
 - `AUTH_BOOTSTRAP_ADMIN_PASSWORD` — auth-service only, safe to randomize independently.
 
@@ -72,5 +72,5 @@ Dev-mode Vault talks plain HTTP on the same Compose network every other service 
 ## Related
 
 - [scripts/vault-seed.sh](../../../scripts/vault-seed.sh) — the script this runbook operates.
-- [internal/config/config.go](../../../internal/config/config.go) `vaultGetenv`/`fetchVaultKV` — the consuming seam.
+- [internal/platform/config/config.go](../../../internal/platform/config/config.go) `vaultGetenv`/`fetchVaultKV` — the consuming seam.
 - [docs/roadmap/archive/49-a6-internal-security.md](../../roadmap/archive/49-a6-internal-security.md) K7 — the dev-mode-vs-production-Vault decision and its stated trade-offs.

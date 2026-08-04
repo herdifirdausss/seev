@@ -1,10 +1,10 @@
 # 06 — Phase 1c: Outbox Relay Worker and Verification Jobs
 
 Prerequisite: 04 and 05 are complete. The workers run as goroutines inside the
-`cmd/server` process (decision D9), scheduled by `pkg/scheduler` with a Redis
+`cmd/server` process (decision D9), scheduled by `internal/platform/scheduling` with a Redis
 distributed lock so the design is safe for future multi-replica deployments.
 
-## Task 1c.1 — Outbox relay (`internal/ledger/worker/outbox_relay.go`)
+## Task 1c.1 — Outbox relay (`services/ledger/internal/worker/outbox_relay.go`)
 
 Polling loop, with a one-second default interval configurable through
 `OUTBOX_POLL_INTERVAL`:
@@ -20,7 +20,7 @@ WHERE id IN (
 ) RETURNING id, aggregate_type, aggregate_id, event_type, payload, retry_count;
 ```
 
-2. **Publish** each event through the `pkg/messaging` publisher. Use the
+2. **Publish** each event through the `internal/platform/messaging` publisher. Use the
    `ledger.events` topic exchange, `event_type` as the routing key, persistent
    messages, and `x-event-id` as the outbox ID. Consumers deduplicate by this
    ID; delivery is **at least once**. Document that guarantee in the code.
@@ -40,7 +40,7 @@ Requirements:
 
 - Every loop honors `ctx.Done()`. `Stop()` waits for the current batch to
   finish and shuts down gracefully with the server.
-- Acquire a `pkg/scheduler` Redis lock per loop name. If two replicas run in
+- Acquire a `internal/platform/scheduling` Redis lock per loop name. If two replicas run in
   the future, only one may poll each loop.
 - Metrics: `outbox_published_total`, `outbox_publish_failures_total`, an
   `outbox_pending` gauge refreshed every 15 seconds, and `outbox_dead_total`.
@@ -56,9 +56,9 @@ Tests:
   event is eventually delivered. A duplicate is acceptable; a lost event is
   not.
 
-## Task 1c.2 — Ledger-integrity verifier (`internal/ledger/worker/verifier.go`)
+## Task 1c.2 — Ledger-integrity verifier (`services/ledger/internal/worker/verifier.go`)
 
-Schedule these jobs through `pkg/scheduler`:
+Schedule these jobs through `internal/platform/scheduling`:
 
 1. **Trial balance per transaction** — every hour run
    `SELECT * FROM fn_verify_ledger_balance(now()-'2 hours'::interval, now())`.
@@ -84,7 +84,7 @@ work.
 - In the `srv.Start` cleanup callback, stop workers first, then close RabbitMQ,
   Redis, and PostgreSQL.
 - Register `OUTBOX_POLL_INTERVAL`, `OUTBOX_BATCH_SIZE`, and `WORKER_ENABLED` in
-  `internal/config` and `.env.example`. The default for `WORKER_ENABLED` is
+  `internal/platform/config` and `.env.example`. The default for `WORKER_ENABLED` is
   true; set it to false when running the server without workers for debugging.
 
 ## Definition of done for 06

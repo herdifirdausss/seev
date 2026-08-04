@@ -1,9 +1,9 @@
 #!/bin/sh
 set -eu
 # load_observer (01-load-control-role.sh) only carries pg_monitor — system
-# catalog/stat views, never regular table SELECT. cmd/loaddataset (§24.1's
+# catalog/stat views, never regular table SELECT. tools/loaddataset (§24.1's
 # dataset-manifest gap) connects as load_observer (the same OBSERVER_DSN
-# cmd/loadprobe already uses) but needs to read accounts/ledger_transactions/
+# tools/loadprobe already uses) but needs to read accounts/ledger_transactions/
 # ledger_entries/account_balances/schema_migrations_ledger — discovered live
 # as "permission denied" on every one of them. app_readonly (created by
 # ledger's own migrations, 03-load-service-migrations.sh above, which always

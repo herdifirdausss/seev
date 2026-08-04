@@ -16,8 +16,8 @@ Never route `/health`, `/ready`, `/metrics`, internal admin APIs, gRPC, or the
 Traefik dashboard through the public Gateway. The callback route must not be a
 wildcard route to Gateway.
 
-Source references: `api/openapi/*.yaml`, `api/openapi/webhooks-v1.yaml`,
-`cmd/*/main.go`, and `internal/vendorboundary/callback.go`.
+Source references: `contracts/http/*.yaml`, `contracts/http/webhooks-v1.yaml`,
+`services/*/cmd/*/main.go`, and `services/vendor-service/internal/callback.go`.
 
 The authoritative machine-readable route record is
 [deploy/inventory/routes.yaml](../../deploy/inventory/routes.yaml). K0 also

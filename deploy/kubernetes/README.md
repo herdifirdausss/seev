@@ -64,7 +64,7 @@ create a cloud project/account.
 ## Known learning-stage limitations
 
 The current repository's mock vendor is in-process, so no real outbound HTTP
-adapter exists to exercise through Squid yet. The `pkg/egressproxy` seam and
+adapter exists to exercise through Squid yet. The `internal/platform/resilience/egressproxy` seam and
 the fail-closed VendorService configuration are ready for the first real
 adapter. Managed PostgreSQL, Cloud NAT source-IP evidence, GitOps, and AWS are
 external follow-on stages and are not simulated by local manifests.

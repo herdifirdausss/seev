@@ -122,7 +122,7 @@ needed yet; nullable columns provide the guard without adding a hot-path join.
 
 ### K4 — One generic versioned event contract
 
-Create `internal/ledger/events` as the only ledger subpackage that other
+Create `contracts/events/ledger` as the only ledger subpackage that other
 modules may import. It contains payload types and constants only. Use
 `ledger.transaction.posted.v1` and `ledger.transaction.reversed.v1`; consumers
 filter on `transaction_type` rather than 22 routing keys.

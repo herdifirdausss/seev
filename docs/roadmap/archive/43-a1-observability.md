@@ -7,7 +7,7 @@ This execution plan implements Track A1 from [plan 42](../42-long-term-roadmap.m
 - Use only open-source local components: Prometheus, Grafana, Loki, Tempo, and Promtail.
 - Run them in a separate `observability` Compose profile; never combine the profile with the full testcontainers suite on the 4 GB development machine.
 - Replace Jaeger with Tempo while keeping OTLP gRPC on 4317.
-- Centralize tracing setup in `pkg/tracing`; an empty endpoint remains a no-op and exporter failures are non-fatal.
+- Centralize tracing setup in `internal/platform/observability/tracing`; an empty endpoint remains a no-op and exporter failures are non-fatal.
 - Add automatic HTTP (`otelhttp`) and gRPC (`otelgrpc`) spans. AMQP tracing and correlation from plan 36 are already complete and must not be changed.
 - Add RED metrics with route-pattern labels only. Never label metrics with user IDs, account IDs, idempotency keys, or raw paths.
 - Add business gauges for vendor breaker state and stuck payouts.
@@ -25,7 +25,7 @@ Status: complete.
 
 ## T2 — Shared tracing and automatic instrumentation
 
-Move duplicated command-level tracing setup into `pkg/tracing.Setup`. Wire all six services with correct service names, add request-ID-aware `WithTracing` middleware after `WithRequestID`, and register `otelgrpc` server/client handlers in `pkg/grpcx`.
+Move duplicated command-level tracing setup into `internal/platform/observability/tracing.Setup`. Wire all six services with correct service names, add request-ID-aware `WithTracing` middleware after `WithRequestID`, and register `otelgrpc` server/client handlers in `internal/platform/transport/grpc`.
 
 **Tests:** in-memory span naming, existing gRPC tests, no-op behavior with no endpoint, and a full trace from gateway through gRPC and AMQP notification consumption.
 

@@ -16,6 +16,11 @@ covers the rules you must follow when changing code. This guide is about
 getting your bearings fast in the code itself: where things live, why
 they're named that way, and what to read first.
 
+Run `make onboarding-check` after structural changes. It verifies the critical
+ownership paths used in the first-contribution walkthrough, the service-local
+test commands, and the full verification command. It is a structural guardrail;
+the under-two-minute target still needs a real unfamiliar contributor review.
+
 ## 60-second mental model
 
 Seev started as a single ledger-first monolith and was deliberately split
@@ -58,56 +63,52 @@ own workflow and correlation decisions.
 
 ## Service map (name → code → data)
 
-The service name in conversation, its `cmd/` entrypoint, and its
-`internal/` package **do not always match** — this trips up newcomers more
-than anything else in this repo:
+Each service now has one obvious source root. Start at its README, then follow
+`cmd/` into the composition root and `internal/` into feature, transport,
+repository, and worker packages:
 
-| Talked about as | `cmd/` entrypoint | `internal/` package(s) | Database |
+| Service | Source root | Entrypoint | Database |
 |---|---|---|---|
-| gateway | `cmd/gateway` | `internal/handler`, `internal/server`, `internal/notify` (**not** `internal/gateway`) | seev_gateway |
-| auth | `cmd/auth-service` | `internal/auth` | seev_auth |
-| ledger | `cmd/ledger-service` | `internal/ledger`, `internal/policy` | seev_ledger |
-| payin | `cmd/payin-service` | `internal/payin`, `internal/vendorgw` (shared with payout) | seev_payin |
-| payout | `cmd/payout-service` | `internal/payout`, `internal/vendorgw` (shared with payin) | seev_payout |
-| fraud | `cmd/fraud-service` | `internal/fraud` | seev_fraud |
-| admin console | `cmd/admin-bff-service` | `internal/adminbff` (**not** `internal/admin-bff`) | seev_adminbff |
-| assurance | `cmd/assurance-service` | `internal/assurance` | seev_assurance |
-| vendor | `cmd/vendor-service` | `internal/vendorboundary` | seev_vendor |
+| gateway | `services/gateway/` | `services/gateway/cmd/gateway` | seev_gateway |
+| auth | `services/auth/` | `services/auth/cmd/auth` | seev_auth |
+| ledger | `services/ledger/` | `services/ledger/cmd/ledger` | seev_ledger |
+| payin | `services/payin/` | `services/payin/cmd/payin` | seev_payin |
+| payout | `services/payout/` | `services/payout/cmd/payout` | seev_payout |
+| fraud | `services/fraud/` | `services/fraud/cmd/fraud` | seev_fraud |
+| admin console | `services/adminbff/` | `services/adminbff/cmd/adminbff` | seev_adminbff |
+| assurance | `services/assurance/` | `services/assurance/cmd/assurance` | seev_assurance |
+| vendor | `services/vendor-service/` | `services/vendor-service/cmd/vendor` | seev_vendor |
 
-Everything cross-cutting lives outside any one service: `internal/config`
-(env loading, every service imports it), `pkg/*` (shared infra — `pkg/`
-must never import `internal/`, see the [project guide](project-guide.md)),
-`internal/kycvendor`
-(auth-only, third-party KYC clients), `internal/testutil` (test harness
-shared by integration tests).
+Everything cross-cutting lives outside any one service: `internal/platform/`
+(domain-neutral runtime infrastructure), `contracts/` (wire and compatibility
+contracts), and `internal/testkit` (test harness shared by integration tests).
+Platform code must not import `services/` or encode service-owned business
+decisions. Auth-only KYC adapters remain under
+`services/auth/internal/adapter/kycvendor`; they are not shared infrastructure.
 
 Full port/DB table is in [README.md](../../README.md#runtime-architecture) —
 not duplicated here since it changes with the Compose file.
 
-## How a service's folder is organized
+## How `internal/` is organized
 
-Every `internal/<service>` follows the same three-tier convention,
-documented in full in [Project guide](project-guide.md#package-layout-conventions).
-The short version, so you know what you're looking at:
+The root `internal/` directory is intentionally small: `platform/` contains
+domain-neutral runtime infrastructure and `testkit/` contains test-only
+helpers. Business code belongs under the owning `services/<service>/internal/`
+tree. The full root map is in [`internal/README.md`](../../internal/README.md).
 
-- **Flat files by default.** `<service>.go` or `module.go` holds the
-  `Module` struct + `NewModule` + core business methods. `http.go` holds
-  HTTP handlers. `errors.go` holds sentinel errors. `metrics.go` holds
-  Prometheus vars. One file per concern once the concern gets big enough
-  (e.g. auth has `bootstrap.go`, `kyc.go`, `kyc_retry.go`, `documents.go`
-  alongside `auth.go` — all still flat, just split by concern).
-- **`repository/` is always its own subpackage**, one file per aggregate/
-  table, e.g. `internal/payin/repository/routing_repository.go` +
-  `topup_repository.go`. The rule is strict: one file = one interface = one
-  private struct = one constructor = one generated `<name>_mock.go`. A
-  struct backing more than one interface is a bug, not a shortcut.
-- **`model/` holds plain data structs** with no business logic (e.g.
-  `internal/payin/model/model.go`).
-- **A `service/` subpackage** (only `internal/ledger` has this today) means
-  the domain has multiple genuinely independent sub-processes with their
-  own lifecycle — `internal/ledger/service/{accrual,adjustments,
-  disbursement,provision,recon,schedule,handle}`. Don't expect to find this
-  pattern elsewhere; it's the exception, not the default.
+Inside a bounded context, use focused subpackages only when they have a
+meaningful API and independent tests. The established names are `model/` for
+data types, `repository/` for owned persistence, `transport/` for HTTP/gRPC
+adapters, `worker/` for background jobs, and `service/` for independent
+lifecycles such as Ledger's accrual or reconciliation flows. Keep small
+concerns as files at the module root rather than creating empty layers.
+
+Repositories remain one interface, implementation, constructor, and generated
+mock per concern; see the [project guide](project-guide.md#package-layout-conventions).
+
+Run `make ide-config` when using VS Code. It generates one Delve launch entry
+per canonical service from the same registry enforced by the architecture
+tests, so debugger paths stay current after a service move.
 
 ## Naming conventions
 
@@ -116,7 +117,7 @@ flag, not a new pattern to copy:
 
 - **Errors**: package-level `var ErrXxx = errors.New("<service>: message")`,
   declared in that package's `errors.go`, wrapped with `%w` when crossing a
-  layer (`internal/auth/errors.go` is a clean example). Never a bare string
+  layer (`services/auth/internal/auth/errors.go` is a clean example). Never a bare string
   comparison — always `errors.Is`.
 - **Tests**: `<file>_test.go` beside the code for unit tests (mocked deps,
   no Docker needed); `<file>_integration_test.go` behind the `integration`
@@ -126,8 +127,8 @@ flag, not a new pattern to copy:
 - **Mocks**: always generated, never hand-written — `//go:generate mockgen
   -source=<file>.go -destination=<file>_mock.go -package=repository` sits
   directly above the interface it mocks. Regenerate with `go generate
-  ./internal/<service>/repository/...`; there is no `make mocks` target.
-- **Migrations**: `migrations/<service>/NNNNNN_description.{up,down}.sql`,
+  ./services/<service>/internal/repository/...`; there is no `make mocks` target.
+- **Migrations**: `services/<service>/migrations/NNNNNN_description.{up,down}.sql`,
   strictly numbered, one pair per change, both directions always written
   together. Never edit a migration that's already merged — write a new one.
 - **Scripts**: `scripts/<purpose>.sh` (`smoke-test.sh`, `business-e2e.sh`,
@@ -151,16 +152,16 @@ of reading:
    gateway. Auth is one of two services with its own public edge (gateway
    is the other); everything else is internal-only, reached only through
    gateway or another service. Routed in
-   [internal/auth/http.go](../../internal/auth/http.go) (`RegisterHandler`).
-2. `Module.Register` in [internal/auth/auth.go](../../internal/auth/auth.go) —
+   [services/auth/internal/transport/http/http.go](../../services/auth/internal/transport/http/http.go) (`RegisterHandler`).
+2. `Module.Register` in [services/auth/internal/auth/auth.go](../../services/auth/internal/auth/auth.go) —
    creates the user row, then calls `Provisioner.ProvisionUser` (a small
    interface, not a concrete ledger import — see how auth depends on
    ledger through an interface it owns, not the other way around).
 3. **`POST /topup`** — this one DOES go through gateway:
-   [internal/handler/topup.go](../../internal/handler/topup.go) calls
+   [services/gateway/internal/transport/http/topup.go](../../services/gateway/internal/transport/http/topup.go) calls
    payin-service over gRPC (`payinv1.PayinServiceClient`), which lands in
    `Module.CreateTopupIntent` in
-   [internal/payin/topup.go](../../internal/payin/topup.go) — creates a pending
+   [services/payin/internal/payin/topup.go](../../services/payin/internal/payin/topup.go) — creates a pending
    intent, no money has moved yet.
 4. A vendor webhook confirms the top-up → payin resolves the intent → it
    calls ledger-service's gRPC contract to post the actual double-entry
@@ -172,7 +173,7 @@ of reading:
    correlates it with its own state.
 5. **The posting itself**: `Service.Handle` →
    `Service.execTransfer` in
-   [internal/ledger/service/handle/service.go](../../internal/ledger/service/handle/service.go) —
+   [services/ledger/internal/ledger/handle/service.go](../../services/ledger/internal/ledger/handle/service.go) —
    this is the single most load-bearing function in the repo. Read the
    comment above it before ever touching it; the
    [project guide](project-guide.md) calls out by name that reordering it
@@ -180,13 +181,13 @@ of reading:
    lock order, validation order, balance projection, posting, and outbox
    guarantees.
 6. The posting writes an outbox row; a relay worker publishes it to
-   RabbitMQ; gateway's `internal/notify` consumes it for user-facing
-   notifications, and `internal/fraud`'s consumer independently consumes
+   RabbitMQ; gateway's `services/gateway/internal/notification` consumes it for user-facing
+   notifications, and `services/fraud`'s consumer independently consumes
    it for velocity checks — same event, two unrelated subscribers, neither
    blocks the posting transaction.
 
-Once that path makes sense, `internal/assurance` (reads payin/payout/ledger
-to cross-check without ever writing) and `internal/adminbff` (operator
+Once that path makes sense, `services/assurance` (reads payin/payout/ledger
+to cross-check without ever writing) and `services/adminbff` (operator
 console proxying typed requests to everything else) are easy to place
 mentally — they sit outside the money-movement path entirely.
 
@@ -198,16 +199,16 @@ mentally — they sit outside the money-movement path entirely.
 | What am I not allowed to do? | [Project guide](project-guide.md) — service boundaries, financial invariants, security rules |
 | What does service X actually do, its full endpoint/job list, and what depends on it? | [Services](../reference/services.md) |
 | What does `docker-compose.yml`/the Makefile/a script/CI/observability actually solve, and how? | [Operations](../operations/README.md) |
-| What does a `pkg/` package actually do and who uses it? | [Shared packages](../reference/shared-packages.md) |
+| What does a `internal/platform/` package actually do and who uses it? | [Shared packages](../reference/shared-packages.md) |
 | Why does the code look like *this*? | [docs/roadmap/README.md](../roadmap/README.md) — find the phase, read that one doc, not the whole folder |
 | What does event X mean on the wire? | [docs/reference/events.md](../reference/events.md) |
 | Something's broken in prod-like conditions | [docs/operations/runbooks/](../operations/runbooks/) — one doc per incident class (recon, DR restore, cert rotation, ledger integrity, etc.) |
 | What's the threat model / what's already been reviewed? | [docs/security/threat-model.md](../security/threat-model.md) |
-| How do I add a scheduled job? | [pkg/scheduler/README.md](../../pkg/scheduler/README.md) |
+| How do I add a scheduled job? | [internal/platform/scheduling/README.md](../../internal/platform/scheduling/README.md) |
 
 ## Gotchas that cost people real time
 
-- **`gateway`'s code isn't in `internal/gateway`** — see the service map
+- **`gateway`'s code isn't in `services/gateway`** — see the service map
   above. Searching for the wrong package name is the #1 time-waster.
 - **`docs/roadmap` numbers aren't feature IDs.** Doc 48 is track A10, doc 49 is
   track A6 — always check the doc's own title, never assume `NN` means
@@ -248,7 +249,7 @@ The notes below explain their repository-specific consequences:
   guarantees "posted" and "event will eventually be published" never
   diverge.
 - **[KYC tier / KYC level](../reference/glossary.md#kyc)** — 0/1/2 identity-verification level on a user;
-  gates policy limits enforced in `internal/policy`, applied via
+  gates policy limits enforced in `services/ledger/policy`, applied via
   `Provisioner.ApplyKycTier`.
 - **[Fraud screening boundary](../reference/glossary.md#fraud-screening)** — synchronous screening happens before a
   public ledger posting opens its database transaction, before Payin posts a
@@ -260,7 +261,7 @@ The notes below explain their repository-specific consequences:
   actions (e.g. ledger adjustments); one operator proposes, a different
   one approves.
 - **[SPIFFE-style URI SAN](../reference/glossary.md#spiffe-style-uri-san)** — the internal mTLS identity scheme
-  (`pkg/tlsx`); a certificate's identity is its URI SAN, never its Common
+  (`internal/platform/security/tls`); a certificate's identity is its URI SAN, never its Common
   Name.
 
 ## First day checklist
@@ -277,4 +278,4 @@ The notes below explain their repository-specific consequences:
    so you know what green looks like before you change anything.
 6. Pick a small, contained first task (a `_test.go` gap, a lint warning, a
    docs/operations/runbooks correction) before touching `execTransfer` or anything in
-   `internal/ledger/service/handle`.
+   `services/ledger/internal/ledger/handle`.

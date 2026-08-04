@@ -1,9 +1,9 @@
  M .gitignore
  M Makefile
- M cmd/vendor-service/main.go
- M internal/config/config.go
+ M services/vendor-service/cmd/vendor/main.go
+ M internal/platform/config/config.go
 ?? .github/workflows/kubernetes-validate.yml
-?? cmd/migrate/
+?? tools/migrate/
 ?? deploy/README.md
 ?? deploy/gitops/
 ?? deploy/helm/
@@ -12,4 +12,4 @@
 ?? docs/deployment/
 ?? docs/evidence/k0-deployment-inventory.md
 ?? docs/evidence/plan-63-implementation-status.md
-?? pkg/egressproxy/
+?? internal/platform/resilience/egressproxy/

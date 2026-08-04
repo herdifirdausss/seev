@@ -11,14 +11,14 @@ gate result this inventory supports.
 
 | Contract file | Operations | Audience |
 |---|---|---|
-| `api/openapi/public-v1.yaml` | 32 | end-user (JWT) |
-| `api/openapi/internal-v1.yaml` | 26 | service-to-service (mTLS + internal token) |
-| `api/openapi/admin-v1.yaml` | 14 | operator (Admin BFF session) |
-| `api/openapi/webhooks-v1.yaml` | 1 | inbound vendor callback (HMAC) |
+| `contracts/http/public-v1.yaml` | 32 | end-user (JWT) |
+| `contracts/http/internal-v1.yaml` | 26 | service-to-service (mTLS + internal token) |
+| `contracts/http/admin-v1.yaml` | 14 | operator (Admin BFF session) |
+| `contracts/http/webhooks-v1.yaml` | 1 | inbound vendor callback (HMAC) |
 
-A fifth file, `api/openapi/b2b-v1.yaml`, is the new C1 surface (Plan 57 §6.1,
+A fifth file, `contracts/http/b2b-v1.yaml`, is the new C1 surface (Plan 57 §6.1,
 delivered in T1). Every operation across all five files registers in the
-single `api/contracts/surfaces.yaml` inventory and is subject to the same
+single `contracts/compatibility/surfaces.yaml` inventory and is subject to the same
 `make contracts` gate (`contract-generate`/`contract-lint`/`contract-breaking`/
 `contract-test`).
 
@@ -26,12 +26,12 @@ Existing operations C1 depends on are already registered and canonical —
 no gap found that blocks T1:
 
 - Ledger: account read/balance, transaction read, transfer post (internal
-  surface, gRPC — `api/proto/ledger/v1/*.proto`, 6 `.proto` files, 547 lines
+  surface, gRPC — `contracts/proto/ledger/v1/*.proto`, 6 `.proto` files, 547 lines
   total).
 - Payin/Payout: intent create/get (internal gRPC surfaces).
 - Admin BFF: session/CSRF/audit patterns (`admin-v1.yaml`).
 
-## 2. Event contracts (RabbitMQ, `internal/ledger/events`)
+## 2. Event contracts (RabbitMQ, `contracts/events/ledger`)
 
 | Event type | Constant |
 |---|---|
@@ -40,12 +40,12 @@ no gap found that blocks T1:
 | `ledger.adjustment.decided.v1` | `events.TypeAdjustmentDecided` |
 
 Every event already carries a **logical, deterministic `EventID`**
-(`uuid.NewSHA1(eventType+identity)`, see `internal/ledger/events/events.go`
+(`uuid.NewSHA1(eventType+identity)`, see `contracts/events/ledger/events.go`
 lines 10-11, 241-244) — this is the exact identity C1's T7 webhook relay
 must dedupe on (Plan 57 §15, "deduplicate using logical event ID"), not the
 outbox row's own primary key. (This distinction was the root cause of a real
 regression fixed earlier this session in
-`internal/notify/notify_integration_test.go` — any new C1 webhook-relay code
+`services/gateway/internal/notification/inbox/notify_integration_test.go` — any new C1 webhook-relay code
 or test must use the same `EventID` semantics, not `outbox_events.id`.)
 
 Plan 57 §4.3's five external event families (`transaction.posted.v1`,
@@ -70,7 +70,7 @@ Gateway-internal event with no existing analog (new in T7).
 | vendor | `000001_vendor_boundary` |
 
 Per Plan 57 §3.1 ("No new service extraction... Gateway-owned persistence
-only"), C1's new tables land in `migrations/gateway/000004_...` onward. No
+only"), C1's new tables land in `services/gateway/migrations/000004_...` onward. No
 other service's migration head needs a schema change for T2; Ledger/Payin/
 Payout changes in T5/T6 are additive Go-level contract/field changes against
 their *existing* tables, not new migrations (with one exception — see §4).
@@ -81,7 +81,7 @@ These are the concrete places where existing code assumes a human JWT
 principal and must be extended (not replaced) for a merchant/API-key
 principal, found by direct inspection (not assumption):
 
-1. **`pkg/middleware/auth.go`'s `Claims` struct** (`UserID`, `Email`, `Role`,
+1. **`internal/platform/security/middleware/auth.go`'s `Claims` struct** (`UserID`, `Email`, `Role`,
    `KYCLevel`) is the ONLY current HTTP principal type, produced solely by
    `WithAuth` (JWT-only). There is no generic "actor" abstraction — every
    handler that needs the caller's identity type-asserts through `Claims`
@@ -89,21 +89,21 @@ principal, found by direct inspection (not assumption):
    (`WithMerchantAuth` or similar, per Plan 57 §3.2) rather than extending
    `Claims`, exactly as the plan already locks: "an API key is not an Auth
    user."
-2. **`internal/ledger` account ownership is already schema-ready but
+2. **`services/ledger` account ownership is already schema-ready but
    code-ready only for `owner_type='user'`.** The `accounts.owner_type`
    CHECK constraint in the very first migration
-   (`migrations/ledger/000001_ledger_core.up.sql:14-15`) already allows
+   (`services/ledger/migrations/000001_ledger_core.up.sql:14-15`) already allows
    `'merchant'` alongside `'user'`/`'system'`/`'partner'`/`'escrow'` — this
    was anticipated at schema design time, genuinely surprising to find,
    and means **T5 needs no new Ledger migration for account ownership**.
-   However, `internal/ledger/repository/account_repository.go`'s query
+   However, `services/ledger/internal/repository/account_repository.go`'s query
    methods (`GetByOwner` and friends, lines 86/109/166) and
-   `internal/ledger/service/closure/closure.go`'s multiple `owner_type =
+   `services/ledger/internal/ledger/closure/closure.go`'s multiple `owner_type =
    'user'` predicates all hardcode the literal `'user'` string. T5 must
    extend these call sites to accept an owner-type parameter (or add
    parallel merchant-scoped methods) rather than assume the schema needs
    migrating.
-3. **`RateLimitByUser` (`pkg/middleware/rate_limit.go:82`)** keys off the
+3. **`RateLimitByUser` (`internal/platform/security/middleware/rate_limit.go:82`)** keys off the
    JWT `Claims.UserID` — T4's quota enforcement needs an equivalent
    `RateLimitByMerchant`/tenant-keyed function, following the same pattern
    as the existing `RateLimitByIP`/`RateLimitByVendor` siblings.
@@ -118,13 +118,13 @@ principal, found by direct inspection (not assumption):
 
 | Concern | Existing helper | Reuse plan |
 |---|---|---|
-| Request ID | `pkg/middleware.WithRequestID` | Reuse as-is; B2B requests get the same `X-Request-ID` propagation |
-| Internal token auth | `pkg/middleware.WithInternalToken` (`internal_token.go`) | Reference pattern (constant-time compare, fail-closed on empty token) for API-key digest comparison in T3 — not directly reusable (different key shape) but same security posture |
-| Rate limiting / quota | `pkg/cache.Limiter` interface, `RedisRateLimiter`, `MemoryRateLimiter`, `FailoverLimiter` (`pkg/cache/rate_limiter.go`, `failover.go`) | Directly reusable for T4's quota enforcement; **note Plan 57 §T4 requires write fail-closed on Redis outage** — the existing `FailoverLimiter`'s hot-swap-to-memory behavior (built for A3) is the *wrong* default for merchant financial writes and must NOT be used for write-path quota (mirrors A8 T3's `FailClosedVelocityStore` precedent for fraud velocity, same K4 rule: no memory fallback for financial controls) |
-| Envelope encryption | `pkg/cryptox.Ring`/`DigestRing`/`LookupKey` (versioned AEAD envelope, AAD, KEK ring, HMAC lookup digest) | Directly reusable for T3 (API key secret-at-rest, if any secret component needs storage) and T7 (webhook endpoint secret encryption) — same pattern as A8 T2's auth email/KYC and payin/payout field encryption |
-| Durable outbox / async relay | `pkg/objectoutbox.Worker` (claim/lease/process/retry, `ProcessOnce`/`Start`), plus `internal/ledger/worker/outbox_relay.go`'s sibling pattern | Directly reusable shape for T7's webhook relay (claim → attempt → dead-letter), and for T2/T4's retention jobs (`pkg/retentionworker.Runner`, already used by 8 of 9 services) |
-| Admin audit trail | `internal/adminbff/audit.go` (`AuditEntry`, `WriteAudit`, `ListAudit`, `Module.AuditMutation`) | Directly reusable for T8's "every mutation emits a redacted audit event" requirement — same call pattern as every other Admin BFF mutation this session (closure, offboarding, retention) |
-| Retention scheduling | `pkg/retentionworker.Runner` + `pkg/scheduler` | Directly reusable for T2's idempotency/delivery-evidence retention jobs and T9's stuck-lease detection |
+| Request ID | `internal/platform/security/middleware.WithRequestID` | Reuse as-is; B2B requests get the same `X-Request-ID` propagation |
+| Internal token auth | `internal/platform/security/middleware.WithInternalToken` (`internal_token.go`) | Reference pattern (constant-time compare, fail-closed on empty token) for API-key digest comparison in T3 — not directly reusable (different key shape) but same security posture |
+| Rate limiting / quota | `internal/platform/cache.Limiter` interface, `RedisRateLimiter`, `MemoryRateLimiter`, `FailoverLimiter` (`internal/platform/cache/rate_limiter.go`, `failover.go`) | Directly reusable for T4's quota enforcement; **note Plan 57 §T4 requires write fail-closed on Redis outage** — the existing `FailoverLimiter`'s hot-swap-to-memory behavior (built for A3) is the *wrong* default for merchant financial writes and must NOT be used for write-path quota (mirrors A8 T3's `FailClosedVelocityStore` precedent for fraud velocity, same K4 rule: no memory fallback for financial controls) |
+| Envelope encryption | `internal/platform/security/crypto.Ring`/`DigestRing`/`LookupKey` (versioned AEAD envelope, AAD, KEK ring, HMAC lookup digest) | Directly reusable for T3 (API key secret-at-rest, if any secret component needs storage) and T7 (webhook endpoint secret encryption) — same pattern as A8 T2's auth email/KYC and payin/payout field encryption |
+| Durable outbox / async relay | `internal/platform/lifecycle/objectoutbox.Worker` (claim/lease/process/retry, `ProcessOnce`/`Start`), plus `services/ledger/internal/worker/outbox_relay.go`'s sibling pattern | Directly reusable shape for T7's webhook relay (claim → attempt → dead-letter), and for T2/T4's retention jobs (`internal/platform/lifecycle/retention/worker.Runner`, already used by 8 of 9 services) |
+| Admin audit trail | `services/adminbff/internal/admin/audit.go` (`AuditEntry`, `WriteAudit`, `ListAudit`, `Module.AuditMutation`) | Directly reusable for T8's "every mutation emits a redacted audit event" requirement — same call pattern as every other Admin BFF mutation this session (closure, offboarding, retention) |
+| Retention scheduling | `internal/platform/lifecycle/retention/worker.Runner` + `internal/platform/scheduling` | Directly reusable for T2's idempotency/delivery-evidence retention jobs and T9's stuck-lease detection |
 
 ## 6. Dependency and blast-radius table
 

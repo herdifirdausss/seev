@@ -141,7 +141,7 @@ When sources disagree, use this order:
 1. Running behavior and tests
 2. Application code
 3. Dockerfile and docker-compose.yml
-4. api/contracts, api/proto, api/events
+4. contracts/compatibility, contracts/proto, contracts/events
 5. .env.example and configuration validation
 6. Current reference documentation
 7. Archived roadmap documents
@@ -476,11 +476,11 @@ first-deployment enabled state
 Known naming examples to reconcile:
 
 ```text
-gateway entrypoint: cmd/gateway
+gateway entrypoint: services/gateway/cmd/gateway
 Compose name: gateway-service
 APP_NAME: gateway-service
 
-admin entrypoint: cmd/admin-bff-service
+admin entrypoint: services/adminbff/cmd/adminbff
 Compose name: admin-bff-service
 ```
 
@@ -528,7 +528,7 @@ deploy/inventory/services.yaml
 ```yaml
 name: ledger
 current:
-  command: ./cmd/ledger-service
+  command: ./services/ledger/cmd/ledger
   compose_service: ledger-service
   image: seev/ledger-service
   binary: /app/service
@@ -549,7 +549,7 @@ unknowns: []
 sources:
   - Dockerfile
   - docker-compose.yml
-  - cmd/ledger-service
+  - services/ledger/cmd/ledger
 ```
 
 ### 9.7 Acceptance
@@ -723,10 +723,10 @@ Determine which HTTP paths may cross the Kubernetes edge.
 Inspect:
 
 ```text
-api/contracts/
-api/openapi/
+contracts/compatibility/
+contracts/http/
 internal/*/http.go
-internal/handler/
+services/gateway/internal/transport/http/
 cmd/* server wiring
 docs/reference/services.md
 scripts/smoke-test.sh
@@ -1364,7 +1364,7 @@ Sources:
 ```text
 .env.example
 docker-compose.yml
-internal/config
+internal/platform/config
 cmd/* startup
 tests
 scripts
@@ -2723,7 +2723,7 @@ baseline_commit: "<git-sha>"
 services:
   - name: gateway
     source:
-      command: cmd/gateway
+      command: services/gateway/cmd/gateway
       compose: gateway-service
       image: seev/gateway-service
     roles:

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Seeds the local dev-mode Vault (docs/roadmap/archive/49 K7) with the secrets
-# internal/config's vaultGetenv seam will overlay on top of env when
+# internal/platform/config's vaultGetenv seam will overlay on top of env when
 # VAULT_ADDR/VAULT_TOKEN are set. Idempotent — re-running never rotates an
 # already-seeded value (dev mode's storage is in-memory anyway, so a fresh
 # container always starts empty and needs a real seed regardless).

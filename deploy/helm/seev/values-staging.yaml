@@ -1,0 +1,75 @@
+# Production-shaped staging overlay. Replace every REPLACE_WITH_* value from
+# the cloud platform and secret manager before applying. This overlay does not
+# enable the in-cluster development data StatefulSets.
+global:
+  appEnv: staging
+  image:
+    repository: ghcr.io/herdifirdausss/seev
+    tag: ""
+    digest: sha256:REPLACE_WITH_IMMUTABLE_APPLICATION_DIGEST
+    pullPolicy: IfNotPresent
+  postgres:
+    host: REPLACE_WITH_MANAGED_POSTGRES_PRIVATE_HOST
+    port: "5432"
+    sslMode: verify-full
+  redis:
+    enabled: true
+    addr: REPLACE_WITH_MANAGED_REDIS_PRIVATE_HOST:6379
+  rabbitmq:
+    host: REPLACE_WITH_MANAGED_BROKER_PRIVATE_HOST
+    port: "5671"
+    exchange: ledger.events
+  telemetry:
+    insecure: "false"
+
+data:
+  enabled: false
+
+migrations:
+  enabled: true
+  sslMode: verify-full
+  image:
+    repository: ghcr.io/herdifirdausss/seev-migrations
+    tag: ""
+    digest: sha256:REPLACE_WITH_IMMUTABLE_MIGRATION_DIGEST
+
+egress:
+  replicas: 2
+
+traefik:
+  publicHost: api.staging.seev.example
+  callbackHost: callback.staging.seev.example
+  allowedCallbackCIDRs:
+    - REPLACE_WITH_CERTIFIED_VENDOR_CALLBACK_CIDR
+
+services:
+  gateway:
+    replicas: 2
+  auth:
+    replicas: 2
+    env:
+      KYC_PROVIDER_URL: https://REPLACE_WITH_KYC_SANDBOX_HOST
+  ledger:
+    replicas: 2
+  payin:
+    replicas: 2
+  payout:
+    replicas: 2
+  fraud:
+    replicas: 2
+  admin-bff:
+    replicas: 2
+  assurance:
+    replicas: 2
+  vendor:
+    replicas: 2
+    callbackCIDRs: REPLACE_WITH_CERTIFIED_VENDOR_CALLBACK_CIDR
+    trustedProxyCIDRs: REPLACE_WITH_CLUSTER_PROXY_CIDR
+    env:
+      VENDOR_SERVICE_ENABLED: "true"
+      VENDOR_MOCKVENDOR_ENABLED: "false"
+      MOCKVENDOR2_ENABLED: "false"
+      VENDOR_CALLBACK_CIDRS: REPLACE_WITH_CERTIFIED_VENDOR_CALLBACK_CIDR
+      VENDOR_CALLBACK_TRUSTED_PROXY_CIDRS: REPLACE_WITH_CLUSTER_PROXY_CIDR
+      VENDOR_EGRESS_PROXY_URL: http://squid.seev-egress.svc.cluster.local:3128
+      VENDOR_EGRESS_PROXY_REQUIRED: "true"

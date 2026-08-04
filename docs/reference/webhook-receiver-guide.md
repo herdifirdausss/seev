@@ -1,7 +1,7 @@
 # Merchant webhook receiver guide
 
 Audience: a merchant tenant building a receiver for Seev's outbound B2B
-webhooks (Plan 57 T7, `internal/merchant/webhook`). This is the
+webhooks (Plan 57 T7, `services/gateway/internal/merchant/webhook`). This is the
 implementation-facing companion to `docs/reference/c1-b2b-design.md §2`,
 which is the locked contract; this document only explains how to verify
 and consume it correctly.
@@ -58,7 +58,7 @@ of one logical event.
 
 ### Reference implementation (Go)
 
-This is exactly what `internal/merchant/webhook.Verify` /
+This is exactly what `services/gateway/internal/merchant/webhook.Verify` /
 `VerifyWithTolerance` do — reproduced here as an example for receivers
 written outside this codebase:
 

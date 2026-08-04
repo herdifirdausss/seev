@@ -20,7 +20,7 @@ Migration `auth/000002_kyc` adds `auth_users.kyc_level`, `kyc_submissions`, and 
 
 ## T2 — Mock KYC provider
 
-Add `internal/kycvendor` and `mockkyc`. `mock_mode` supports approve, reject, refer, and timeout. Level 2 always returns refer regardless of mode; level 1 defaults to approve.
+Add `services/auth/internal/kycvendor` and `mockkyc`. `mock_mode` supports approve, reject, refer, and timeout. Level 2 always returns refer regardless of mode; level 1 defaults to approve.
 
 **Result:** table-driven tests cover every mode, the level-2 rule, defaults, and invalid mode values. Auth-service owns the provider module in the boundary map.
 

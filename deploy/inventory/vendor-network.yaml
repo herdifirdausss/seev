@@ -31,7 +31,7 @@ vendors:
       proxy_endpoint: not-used-for-in-process-mock
       direct_fallback_allowed: false
       failure_behavior: synthetic adapter error
-    source: internal/vendorboundary, cmd/vendor-service/main.go
+    source: services/vendor-service/internal, services/vendor-service/cmd/vendor/main.go
 
   - name: mockvendor2
     mode: in-process-mock
@@ -58,7 +58,7 @@ vendors:
       proxy_endpoint: not-used-for-in-process-mock
       direct_fallback_allowed: false
       failure_behavior: synthetic adapter error
-    source: internal/vendorboundary, cmd/vendor-service/main.go
+    source: services/vendor-service/internal, services/vendor-service/cmd/vendor/main.go
 
   - name: real-vendor-provider
     mode: external-provider
@@ -87,7 +87,7 @@ vendors:
       failure_behavior: fail closed and retain retryable provider state
     status: blocked-pending-provider-certification
     downstream_owner: K6 and vendor-integration owner
-    source: pkg/egressproxy, internal/vendorboundary, docs/roadmap/active/64-k0-deployment-inventory-baseline.md
+    source: internal/platform/resilience/egressproxy, services/vendor-service/internal, docs/roadmap/active/64-k0-deployment-inventory-baseline.md
 endpoint_variables:
   VENDOR_CALLBACK_CIDRS:
     local_value_policy: synthetic loopback or Docker test range only

@@ -69,7 +69,7 @@ Common root causes, in likely order:
    `EXECUTE` on the backup-control functions (T1 K5). If these grants
    were altered outside `scripts/postgres-init/04-backup-role.sh`, re-run
    `make backup-role-bootstrap` (idempotent — safe to re-run).
-4. **A previous run is still holding the overlap lock.** `pkg/scheduler`
+4. **A previous run is still holding the overlap lock.** `internal/platform/scheduling`
    rejects a concurrent run rather than corrupting a chain — if a prior
    invocation genuinely hung, confirm no `pgbackrest` process is actually
    running before assuming this is the cause.

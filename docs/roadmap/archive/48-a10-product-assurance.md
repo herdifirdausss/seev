@@ -62,8 +62,8 @@ public listener or domain gRPC server. Its database role is `assurance_app`.
 
 The assurance connection pool is bounded at five open and five idle
 connections. The service has a 128 MiB container memory limit and may import
-generated API clients and shared packages, but not `internal/payin`,
-`internal/payout`, or `internal/ledger`.
+generated API clients and shared packages, but not `services/payin`,
+`services/payout`, or `services/ledger`.
 
 ### K2 — Additive, allowlisted owner contracts
 

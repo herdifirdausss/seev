@@ -4,7 +4,7 @@ Read [plan 26](26-phase6a-foundations.md) first. Prerequisite: [plan 29](29-phas
 
 ## Context
 
-Move `internal/payout` to an internal binary and its own `seev_payout` database. The resume/polling worker and its Redis DB 0 distributed lock move with it. The client no longer sends a vendor; routing chooses one at creation time and stores it in `payout_requests.vendor` for later submit and poll steps.
+Move `services/payout` to an internal binary and its own `seev_payout` database. The resume/polling worker and its Redis DB 0 distributed lock move with it. The client no longer sends a vendor; routing chooses one at creation time and stores it in `payout_requests.vendor` for later submit and poll steps.
 
 ## T1 — Payout protobuf and gRPC server
 
@@ -36,7 +36,7 @@ Status: not started.
 
 ## T5 — Database, scripts, Compose, and boundary cutover
 
-Apply payout migrations to `seev_payout`, provision `payout_app`, add payout-service to host scripts and Compose, and register `payout-service: {payout}` in the boundary map. `internal/vendorgw` is a shared library and may be imported by both payin and payout.
+Apply payout migrations to `seev_payout`, provision `payout_app`, add payout-service to host scripts and Compose, and register `payout-service: {payout}` in the boundary map. `contracts/vendorgw` is a shared library and may be imported by both payin and payout.
 
 Update the business journey to configure payout routing through the admin API, complete a fee-bearing withdrawal, and verify that cancellation refunds the full amount.
 

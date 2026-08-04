@@ -2,7 +2,7 @@
 
 Read [plan 26](26-phase6a-foundations.md) first. This phase extracts the ledger and policy modules before any other service, because every other module depends on them. Later phases reuse the same protobuf, client-shim, multi-process, and boundary-enforcement pattern.
 
-When complete, `cmd/ledger-service` runs against `seev_ledger` with gRPC on `:9091`, user HTTP on `:8090`, and internal admin HTTP on `:8091`. The shrinking monolith calls ledger only through gRPC or the ledger reverse proxy. `internal/policy` moves with ledger because `policy_limits` belongs to the ledger database.
+When complete, `cmd/ledger-service` runs against `seev_ledger` with gRPC on `:9091`, user HTTP on `:8090`, and internal admin HTTP on `:8091`. The shrinking monolith calls ledger only through gRPC or the ledger reverse proxy. `services/ledger/policy` moves with ledger because `policy_limits` belongs to the ledger database.
 
 ## T1 — Ledger protobuf
 
@@ -22,7 +22,7 @@ Status: not started.
 
 ## T2 — gRPC server in the ledger module
 
-Add `internal/ledger/grpcserver` implementing the generated service. Convert protobuf messages to facade and processor types, map `Struct` to `map[string]any`, reject non-integral amounts, and map errors according to the master contract:
+Add `services/ledger/internal/transport/grpc` implementing the generated service. Convert protobuf messages to facade and processor types, map `Struct` to `map[string]any`, reject non-integral amounts, and map errors according to the master contract:
 
 - typed ledger errors → `FailedPrecondition` with `ErrorInfo`;
 - already-closed operations → `Aborted`;
@@ -35,9 +35,9 @@ Expose `RegisterGRPC` on `ledger.Module`.
 
 Status: not started.
 
-## T3 — `pkg/ledgerclient` shim
+## T3 — `contracts/clients/ledger` shim
 
-Add a public client package that owns its own `Command` and `Transaction` types. It must not import `internal/ledger`. The client exposes `Post`, transaction lookup, currency lookup, fee resolution, and user provisioning.
+Add a public client package that owns its own `Command` and `Transaction` types. It must not import `services/ledger`. The client exposes `Post`, transaction lookup, currency lookup, fee resolution, and user provisioning.
 
 Every returned gRPC error passes through `ledgererr.FromStatus`, so callers can still use `errors.As` for typed ledger errors and `errors.Is` for `ErrAlreadyClosed`.
 
@@ -49,7 +49,7 @@ Status: not started.
 
 Update payin and payout interfaces to use `ledgerclient` types and `ledgererr` errors. Add context to payout fee resolution. Change auth provisioning to return only an error; callers currently ignore the account list. Update every mock and stub.
 
-**DoD:** production packages under `internal/payin`, `internal/payout`, and `internal/auth` no longer import the ledger facade. The only permitted ledger-related import is the published events contract.
+**DoD:** production packages under `services/payin`, `services/payout`, and `services/auth` no longer import the ledger facade. The only permitted ledger-related import is the published events contract.
 
 Status: not started.
 
@@ -91,7 +91,7 @@ Status: not started.
 
 ## T8 — Boundary test v2
 
-Add a service-to-module map to `boundary_test.go`. The ledger service may import ledger and policy; the remaining production modules may not import `internal/ledger`, except for the events contract. Service command packages may import their own module, config, shared packages, and generated protobufs.
+Add a service-to-module map to `boundary_test.go`. The ledger service may import ledger and policy; the remaining production modules may not import `services/ledger`, except for the events contract. Service command packages may import their own module, config, shared packages, and generated protobufs.
 
 Include a negative test: an intentionally illegal import must make the boundary suite fail.
 

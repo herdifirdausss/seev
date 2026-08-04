@@ -15,6 +15,12 @@ reader. [README.md](../../README.md) is the quick-start; [Onboarding](../develop
 is the guided code tour; this document is the "why does it look like this"
 layer that sits above both.
 
+For the contributor-facing source tree and ownership rules, see the
+[repository ownership map](../architecture/repository-ownership.md) and the
+[service-centric layout ADR](../architecture/adr-service-centric-repository-layout.md).
+The current package-size and dependency snapshot is in the
+[repository structure metrics](../architecture/repository-structure-metrics.md).
+
 If terms such as ledger, idempotency, or payout are unfamiliar, start with
 [Seev, explained from start to finish](../learn/beginner-guide.md) or keep the
 [glossary](glossary.md) open while reading. The
@@ -271,7 +277,7 @@ codebase — it's the one function in the repo that the
 requiring a full understanding of the idempotency gate,
 lock order, validation order, balance projection, posting, and outbox
 guarantees before anyone touches it
-(`internal/ledger/service/handle/service.go`'s `execTransfer`).
+(`services/ledger/internal/ledger/handle/service.go`'s `execTransfer`).
 
 ### 5.3 Technology choices and why
 
@@ -282,7 +288,7 @@ guarantees before anyone touches it
 | Ledger database | PostgreSQL, one schema per service | Strong transactional guarantees (`FOR UPDATE`, `SERIALIZABLE`-adjacent locking) for the posting engine; per-service ownership prevents silent cross-service coupling |
 | Cross-service events | RabbitMQ via a transactional outbox | The outbox row is written in the *same* DB transaction as the posting — "posted" and "the event will eventually publish" can never diverge, even across a crash |
 | Service calls | gRPC (internal) + HTTP (public/admin) | Typed contracts internally where performance/latency matter; plain HTTP where a browser or curl needs to reach it |
-| Internal transport security | Mutual TLS with SPIFFE-style URI SAN identities (`pkg/tlsx`) | Every internal hop authenticates *which service* is calling, not just *that a token was presented* — see [docs/security/threat-model.md](../security/threat-model.md) for exactly what this replaced |
+| Internal transport security | Mutual TLS with SPIFFE-style URI SAN identities (`internal/platform/security/tls`) | Every internal hop authenticates *which service* is calling, not just *that a token was presented* — see [docs/security/threat-model.md](../security/threat-model.md) for exactly what this replaced |
 | Caching / coordination | Redis (optional) | Rate limiting, velocity checks, distributed locks for scheduled jobs — the system degrades explicitly (fail-open or fail-closed, by documented contract) rather than silently when Redis is unavailable |
 | Observability | Prometheus, Grafana, Loki, Tempo (via Alloy) | Metrics, dashboards, logs, and traces as an opt-in profile — not required to run the system, required to operate it with confidence |
 | CI | GitHub Actions, SHA-pinned actions, a docs-only fast path | A single required `ci-gate` check that's fast for docs, thorough for code: lint, unit tests, integration tests (testcontainers), contract gates, load-harness safety checks, and a full 9-image container smoke test |
@@ -334,7 +340,7 @@ are the same decision, because in a ledger system they have to be:
 |---|---|
 | Every service's problem statement, full endpoint/job surface, and dependencies | [Services](services.md) |
 | What Compose, the Makefile, scripts, CI, and observability each solve and how | [Operations](../operations/README.md) |
-| What each `pkg/` package does and who uses it | [Shared packages](shared-packages.md) |
+| What each `internal/platform/` package does and who uses it | [Shared packages](shared-packages.md) |
 | To run it locally | [README.md](../../README.md) |
 | To navigate the code, folder-by-folder | [Onboarding](../development/onboarding.md) |
 | The contributor rulebook (what you must never do) | [Project guide](../development/project-guide.md) |

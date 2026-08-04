@@ -4,7 +4,7 @@
 **Status:** In progress — implementation present; acceptance evidence pending
 **Roadmap track:** C3 — Multi-channel notifications
 **Activation trigger:** Conscious user-facing delivery-pipeline learning decision
-**Primary owner:** Gateway `internal/notify`
+**Primary owner:** Gateway `services/gateway/internal/notification`
 **Supporting owner:** AuthService for verified email resolution
 **Operator surface:** Admin BFF
 **Initial channels:** In-app, email through local SMTP, push through a local mock provider
@@ -75,8 +75,8 @@ The implementation must preserve these principles:
 At plan creation, Gateway already owns:
 
 ```text
-internal/notify
-migrations/gateway
+services/gateway/internal/notification
+services/gateway/migrations
 seev_gateway.notif_notifications
 GET  /api/v1/notifications
 POST /api/v1/notifications/{id}/read
@@ -189,7 +189,7 @@ The current nine-core-service topology remains the baseline. Gateway already own
 - public notification routes;
 - notification-lag observability.
 
-C3 expands `internal/notify` into a larger but still bounded Gateway module.
+C3 expands `services/gateway/internal/notification` into a larger but still bounded Gateway module.
 
 A future extraction requires separate evidence such as:
 
@@ -204,13 +204,13 @@ A future extraction requires separate evidence such as:
 External Gateway code continues importing only:
 
 ```text
-internal/notify
+services/gateway/internal/notification
 ```
 
 Suggested internal layout:
 
 ```text
-internal/notify/
+services/gateway/internal/notification/
 ├── notify.go                 # public module facade and lifecycle wiring
 ├── http.go                   # user-facing HTTP surface
 ├── admin_http.go             # Gateway-owned admin API
@@ -3103,7 +3103,7 @@ Rules:
 
 - Record baseline commit.
 - Run all current gates.
-- Inventory current `internal/notify` files and package boundaries.
+- Inventory current `services/gateway/internal/notification` files and package boundaries.
 - Inventory current migrations and grants.
 - Inventory current notification API fixtures.
 - Inventory queue/exchange/DLQ behavior.
@@ -4331,19 +4331,19 @@ docs/runbooks/notification-*.md
 Expected areas:
 
 ```text
-internal/notify/
-internal/auth/
-internal/adminbff/
-internal/handler/
+services/gateway/internal/notification/
+services/auth/internal/
+services/adminbff/internal/
+services/gateway/internal/transport/http/
 
-migrations/gateway/
-api/openapi/
-api/contracts/
-api/events/
-api/proto/ if the chosen Auth transport requires it
+services/gateway/migrations/
+contracts/http/
+contracts/compatibility/
+contracts/events/
+contracts/proto/ if the chosen Auth transport requires it
 gen/ if Protobuf changes
 
-cmd/mock-push-provider/
+tools/mock-push-provider/
 deploy/notifications/
 docker-compose.yml
 Makefile

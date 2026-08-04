@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1
+# syntax=docker/dockerfile:1@sha256:87999aa3d42bdc6bea60565083ee17e86d1f3339802f543c0d03998580f9cb89
 #
 # Pinned PostgreSQL 16 + pgBackRest image for docs/roadmap/archive/50 (Track A7).
 # Built once so the exact PostgreSQL and pgBackRest versions used for backup
@@ -11,6 +11,7 @@
 # verified docs/roadmap/archive/50 T1 execution). The exact resolved version is recorded
 # in docs/roadmap/archive/50-a7-backup-pitr-disaster-recovery.md's T1 Result section —
 # see that file, not this comment, as the pin loses meaning if the two drift.
+# Manifest-list digest verified 2026-08-04.
 FROM postgres:16.14-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
 
 # Hard-pinned to the exact version resolved and recorded at T1 execution
@@ -51,5 +52,6 @@ RUN mkdir -p /tmp/pgbackrest && chown postgres:postgres /tmp/pgbackrest && chmod
 # (docker-entrypoint.sh / postgres) are otherwise unchanged.
 COPY entrypoint.sh /usr/local/bin/seev-backup-entrypoint.sh
 RUN chmod +x /usr/local/bin/seev-backup-entrypoint.sh
+USER postgres
 ENTRYPOINT ["seev-backup-entrypoint.sh"]
 CMD ["postgres"]

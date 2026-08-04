@@ -1,0 +1,250 @@
+syntax = "proto3";
+
+package seev.ledger.v1;
+
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+service LedgerService {
+  rpc Post(PostRequest) returns (PostResponse);
+  rpc GetTransactionByIdempotencyKey(GetTxByIdemKeyRequest) returns (Transaction);
+  rpc GetUserCurrency(GetUserCurrencyRequest) returns (GetUserCurrencyResponse);
+  rpc ResolveFee(ResolveFeeRequest) returns (ResolveFeeResponse);
+  rpc ProvisionUser(ProvisionUserRequest) returns (ProvisionUserResponse);
+  // ConsumeFeeQuote atomically, single-use consumes a fee quote created via
+  // POST /fees/quote (docs/roadmap/archive/38 Task T5) — additive; ResolveFee remains
+  // the no-quote fallback for every existing caller.
+  rpc ConsumeFeeQuote(ConsumeFeeQuoteRequest) returns (ConsumeFeeQuoteResponse);
+  rpc ApplyKycTier(ApplyKycTierRequest) returns (ApplyKycTierResponse);
+  rpc SetExecutionSubjectState(SetExecutionSubjectStateRequest) returns (SetExecutionSubjectStateResponse);
+  rpc BatchGetAssuranceTransactions(BatchGetAssuranceTransactionsRequest) returns (BatchGetAssuranceTransactionsResponse);
+  // ProvisionMerchant is Plan 57 T5's additive RPC — idempotently
+  // provisions a merchant tenant's single owner_type='merchant' cash
+  // account (mirrors ProvisionUser; a merchant needs no hold/pending/
+  // frozen accounts, those are end-user withdrawal-lifecycle states).
+  rpc ProvisionMerchant(ProvisionMerchantRequest) returns (ProvisionMerchantResponse);
+  // GetMerchantAccount resolves a tenant's cash account id and reads its
+  // current balance in one round trip — the account id is NEVER accepted
+  // from a caller, only ever resolved server-side from tenant_id.
+  rpc GetMerchantAccount(GetMerchantAccountRequest) returns (MerchantAccount);
+  // ListMerchantTransactions is tenant-scoped: the account id is resolved
+  // server-side from tenant_id, never accepted as a request parameter, so
+  // no caller can ever list another tenant's transactions.
+  rpc ListMerchantTransactions(ListMerchantTransactionsRequest) returns (ListMerchantTransactionsResponse);
+  // GetMerchantTransaction resolves ONE of tenant_id's own transactions by
+  // id (Plan 57 T10 follow-up: the B2B GET /transactions/{id} and
+  // GET /transfers/{id} routes both serve this same RPC — a merchant
+  // transaction has no separate "transfer" resource type, only a Type
+  // value on the same Transaction). Tenant scoping mirrors
+  // CanAccessTransaction's own "walk every account the transaction
+  // touched" approach rather than trusting Transaction's own
+  // source/destination fields alone (docs/roadmap/archive/04's D1 note) —
+  // a transaction that exists but touches none of tenant_id's accounts
+  // returns NOT_FOUND, identical to a genuinely missing id (§6.7: never
+  // leak resource existence across tenants).
+  rpc GetMerchantTransaction(GetMerchantTransactionRequest) returns (Transaction);
+}
+
+message PostRequest {
+  string idempotency_key = 1;
+  string idempotency_scope = 2;
+  string type = 3;
+  string amount = 4;
+  string user_id = 5;
+  string target_user_id = 6;
+  string pocket_code = 7;
+  string reference_id = 8;
+  google.protobuf.Struct metadata = 9;
+  // merchant_tenant_id (Plan 57 T5) is set ONLY for type="merchant_transfer"
+  // — the SOURCE account is always resolved server-side from this tenant
+  // id, never from a caller-supplied account id (§T5 "source account
+  // cannot be substituted by the caller"). The destination account id
+  // travels in metadata["destination_account_id"], the same established
+  // pattern escrow_release already uses for a raw account-id target.
+  string merchant_tenant_id = 10;
+}
+
+message PostResponse {}
+
+message GetTxByIdemKeyRequest {
+  string idempotency_key = 1;
+  string idempotency_scope = 2;
+}
+
+message Transaction {
+  string id = 1;
+  string idempotency_key = 2;
+  string idempotency_scope = 3;
+  string type = 4;
+  string status = 5;
+  string amount = 6;
+  string currency = 7;
+  string source_account_id = 8;
+  string destination_account_id = 9;
+  string error_message = 10;
+  string external_ref = 11;
+  string gateway = 12;
+  google.protobuf.Timestamp created_at = 13;
+  google.protobuf.Timestamp updated_at = 14;
+}
+
+message GetUserCurrencyRequest {
+  string user_id = 1;
+  string pocket_code = 2;
+}
+
+message GetUserCurrencyResponse {
+  string currency = 1;
+}
+
+message ResolveFeeRequest {
+  string type = 1;
+  string gateway = 2;
+  string currency = 3;
+  string amount = 4;
+  string user_id = 5;
+}
+
+message ResolveFeeResponse {
+  string fee = 1;
+  string fee_gateway = 2;
+  bool ok = 3;
+}
+
+message ProvisionUserRequest {
+  string user_id = 1;
+  string currency = 2;
+}
+
+message ProvisionUserResponse {}
+
+message ConsumeFeeQuoteRequest {
+  string quote_id = 1;
+  string user_id = 2;
+  string transaction_type = 3;
+  string currency = 4;
+  string amount = 5;
+  // consumed_by_ref is persisted as fee_quotes.consumed_by_ref for audit —
+  // 'payout:<uuid>' for this caller.
+  string consumed_by_ref = 6;
+  // gateway binds quote consumption to the provider route that was quoted.
+  // It is carried through the compatibility bridge until generated
+  // protobuf artifacts are regenerated.
+  string gateway = 7;
+}
+
+message ConsumeFeeQuoteResponse {
+  string fee_amount = 1;
+  string fee_gateway = 2;
+}
+
+message ApplyKycTierRequest {
+  string user_id = 1;
+  int32 kyc_level = 2;
+}
+
+message ApplyKycTierResponse {}
+
+message SetExecutionSubjectStateRequest {
+  string user_id = 1;
+  string status = 2;
+  int32 kyc_level = 3;
+  google.protobuf.Timestamp kyc_verified_until = 4;
+}
+
+message SetExecutionSubjectStateResponse {}
+
+message BatchGetAssuranceTransactionsRequest {
+  repeated AssuranceSelector selectors = 1;
+  repeated string fee_quote_ids = 2;
+}
+
+message AssuranceSelector {
+  string token = 1;
+  string transaction_id = 2;
+  string idempotency_key = 3;
+  string idempotency_scope = 4;
+  string type = 5;
+  string gateway = 6;
+  string external_ref = 7;
+}
+
+message BatchGetAssuranceTransactionsResponse {
+  repeated AssuranceTransactionResult results = 1;
+  repeated FeeQuoteProof fee_quote_proofs = 2;
+}
+
+message AssuranceTransactionResult {
+  string token = 1;
+  repeated AssuranceTransaction transactions = 2;
+}
+
+message AssuranceTransaction {
+  string id = 1;
+  string type = 2;
+  string status = 3;
+  string amount = 4;
+  string currency = 5;
+  string gateway = 6;
+  string external_ref = 7;
+  string original_reference_id = 8;
+  string lifecycle_closer_id = 9;
+  string lifecycle_closer_reason = 10;
+  string booked_fee_amount = 11;
+  string booked_fee_gateway = 12;
+  google.protobuf.Timestamp created_at = 13;
+  google.protobuf.Timestamp updated_at = 14;
+}
+
+message FeeQuoteProof {
+  string quote_id = 1;
+  bool user_match = 2;
+  string transaction_type = 3;
+  string amount = 4;
+  string currency = 5;
+  string fee_amount = 6;
+  string fee_gateway = 7;
+  string status = 8;
+  string consumed_by_ref = 9;
+}
+
+// ── Plan 57 T5 — merchant account provisioning, balance and transaction reads ──
+
+message ProvisionMerchantRequest {
+  string tenant_id = 1;
+  string currency = 2;
+}
+
+message ProvisionMerchantResponse {
+  string account_id = 1;
+}
+
+message GetMerchantAccountRequest {
+  string tenant_id = 1;
+}
+
+message MerchantAccount {
+  string account_id = 1;
+  string currency = 2;
+  string balance = 3;
+  string status = 4;
+}
+
+message ListMerchantTransactionsRequest {
+  string tenant_id = 1;
+  int32 limit = 2;
+  // before_id/before_created_at page backward from a prior response's last
+  // row (same cursor shape as services/ledger's own ListEntries) — both
+  // empty means "start from the most recent transaction".
+  string before_id = 3;
+  google.protobuf.Timestamp before_created_at = 4;
+}
+
+message ListMerchantTransactionsResponse {
+  repeated Transaction transactions = 1;
+}
+
+message GetMerchantTransactionRequest {
+  string tenant_id = 1;
+  string transaction_id = 2;
+}

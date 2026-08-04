@@ -40,7 +40,7 @@ ADMIN_TOKEN="$(gen_token "merchant-e2e-operator-$RUN_ID" admin)"
 # ─── Helpers ────────────────────────────────────────────────────────────────
 
 # admin_post/admin_get hit Gateway's internal listener directly (mTLS +
-# JWT `authed` chain — internal/handler.NewInternalRouter, Plan 57 T8),
+# JWT `authed` chain — services/gateway/internal/transport/http.NewInternalRouter, Plan 57 T8),
 # the same surface Admin BFF's own generic proxy targets.
 admin_post() {
 	local path=$1 body=$2

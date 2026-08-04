@@ -98,6 +98,9 @@ jobs:
       - name: Validate documentation links
         run: make docs-check
 
+      - name: Validate world-class engineering plan index
+        run: make improvement-check
+
       # docs/roadmap/archive/51 K1: config/data-retention.yaml must stay in sync with
       # every migrated table, and docs/data/retention.md must stay in sync
       # with the policy — this is the CI enforcement that closes the loop.
@@ -169,6 +172,9 @@ jobs:
       - name: External action SHA-pin policy
         run: ./scripts/ci/check-action-pins.sh
 
+      - name: Supply-chain source controls
+        run: ./scripts/ci/supply-chain-check.sh
+
       # Makefile's GOLANGCI_LINT_VERSION/GOVULNCHECK_VERSION are the single
       # source of truth for these two pins — read them here instead of
       # hardcoding a second copy in this workflow, so bumping the Makefile
@@ -212,12 +218,12 @@ jobs:
         run: |
           set -euo pipefail
           make contract-generate contract-lint contract-test
-          git diff --exit-code -- api/openapi/dist
-          if [ -n "$CONTRACT_MERGE_BASE_REF" ] && git cat-file -e "$CONTRACT_MERGE_BASE_REF:api/openapi/dist/public-v1.yaml" 2>/dev/null; then
-            go run ./cmd/contractcheck -merge-base-ref "$CONTRACT_MERGE_BASE_REF"
+          git diff --exit-code -- contracts/http/dist
+          if [ -n "$CONTRACT_MERGE_BASE_REF" ] && git cat-file -e "$CONTRACT_MERGE_BASE_REF:contracts/http/dist/public-v1.yaml" 2>/dev/null; then
+            go run ./tools/contractcheck -merge-base-ref "$CONTRACT_MERGE_BASE_REF"
           else
             echo "contract baseline is being bootstrapped; running local baseline compatibility check"
-            go run ./cmd/contractcheck
+            go run ./tools/contractcheck
           fi
 
       # A9: keep protobuf compatibility on the same explicit merge-base
@@ -265,6 +271,13 @@ jobs:
           persist-credentials: false
           fetch-depth: 1
 
+      # Keep the integration output even when setup or the test process fails.
+      # RUNNER_TEMP is outside the checkout and the upload step below names this
+      # exact directory, so the evidence bundle cannot collect repository files
+      # or an unrelated runner-temp tree.
+      - name: Prepare integration evidence directory
+        run: mkdir -p "$RUNNER_TEMP/seev-integration-evidence"
+
       - name: Read Go version from go.mod
         id: goversion
         run: echo "version=$(grep -E '^go ' go.mod | awk '{print $2}')" >> "$GITHUB_OUTPUT"
@@ -278,18 +291,51 @@ jobs:
       # Postgres container against the Docker daemon already available on
       # GitHub-hosted runners — no separate `services:` container needed.
       - name: Integration tests
+        id: integration-tests
+        shell: bash
         # internal/auth exercises many testcontainers-backed lifecycle cases;
         # under -race it can legitimately exceed Go's 10-minute default test
         # timeout (the job itself remains bounded by timeout-minutes: 30).
-        run: go test -tags=integration -race -timeout 25m ./...
+        run: |
+          set -uo pipefail
+          set +e
+          go test -json -tags=integration -race -timeout 25m ./... \
+            | tee "$RUNNER_TEMP/seev-integration-evidence/go-test.jsonl"
+          statuses=("${PIPESTATUS[@]}")
+          test_status="${statuses[0]}"
+          tee_status="${statuses[1]}"
+          printf 'test_exit_code=%s\ntee_exit_code=%s\n' "$test_status" "$tee_status" \
+            >"$RUNNER_TEMP/seev-integration-evidence/test-exit-code.txt"
+          set -e
+          if [ "$test_status" -ne 0 ]; then
+            exit "$test_status"
+          fi
+          exit "$tee_status"
+
+      - name: Write integration evidence manifest
+        if: always()
+        env:
+          SEEV_EVIDENCE_KIND: integration
+          SEEV_EVIDENCE_SUITE: go-test-integration-race
+          SEEV_EVIDENCE_OUTCOME: ${{ steps.integration-tests.outcome || 'not-started' }}
+          SEEV_EVIDENCE_RETENTION_DAYS: "30"
+        run: ./scripts/ci/write-critical-failure-manifest.sh "$RUNNER_TEMP/seev-integration-evidence"
+
+      - name: Upload integration evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: integration-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/seev-integration-evidence/
+          retention-days: 30
+          if-no-files-found: warn
 
   # ─── smoke-container: full-container round-trip (docs/roadmap/archive/44 K4/K5) ───────
   # Nine images built ONCE via a single Bake invocation (reads the build
   # config straight out of docker-compose.yml — no separate Bake file, K5),
   # cached via the GHA backend, loaded into the daemon; smoke-container.sh
-  # then runs with --no-build against exactly those loaded images. No push,
-  # no registry login, no provenance/SBOM (K5 — ephemeral functional gate
-  # only).
+  # then runs with --no-build against exactly those loaded images. The same
+  # loaded images are vulnerability-scanned and have SBOM files retained.
   smoke-container:
     name: smoke-container
     needs: changes
@@ -308,7 +354,7 @@ jobs:
           fetch-depth: 1
 
       # docs/roadmap/archive/49 K3: smoke-container.sh now runs `make certs` (builds
-      # cmd/certgen with the host Go toolchain) before compose starts any
+      # tools/certgen with the host Go toolchain) before compose starts any
       # app-profile container, since every one of them mounts the mTLS
       # cert directory this step produces.
       - name: Read Go version from go.mod
@@ -365,10 +411,72 @@ jobs:
             echo "$image: id=$id revision=$rev OK"
           done
 
+      - name: Prepare container-scan evidence
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/seev-container-scan"
+          {
+            echo "schema=seev.container-scan.v1"
+            echo "commit=${{ github.sha }}"
+            echo "workflow_run=${{ github.run_id }}"
+            echo "workflow_attempt=${{ github.run_attempt }}"
+            echo "generated_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } > "$RUNNER_TEMP/seev-container-scan/run-manifest.txt"
+
+      - name: Install Trivy
+        uses: aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567 # v0.3.1
+        with:
+          version: v0.73.0
+          cache: true
+
+      - name: Scan loaded service images and generate SBOMs
+        id: container-scan
+        if: always()
+        continue-on-error: true
+        run: |
+          set -u
+          evidence_dir="$RUNNER_TEMP/seev-container-scan"
+          scan_status=0
+          for svc in auth-service fraud-service gateway-service ledger-service payin-service payout-service admin-bff-service assurance-service vendor-service; do
+            image="seev/${svc}:ci"
+            report="$evidence_dir/${svc}-trivy.json"
+            sbom="$evidence_dir/${svc}-sbom.cdx.json"
+
+            if ! trivy image \
+              --format json \
+              --output "$report" \
+              --severity HIGH,CRITICAL \
+              --pkg-types os,library \
+              --no-progress \
+              --exit-code 1 \
+              "$image"; then
+              scan_status=1
+            fi
+
+            if ! trivy image \
+              --format cyclonedx \
+              --output "$sbom" \
+              --pkg-types os,library \
+              --no-progress \
+              "$image"; then
+              scan_status=1
+            fi
+          done
+          exit "$scan_status"
+
       - name: Run smoke-container (pre-loaded images, --no-build)
         env:
           SEEV_SMOKE_NO_BUILD: "1"
         run: make smoke-container
+
+      - name: Enforce container scan gate
+        if: always()
+        run: |
+          set -euo pipefail
+          if [ "${{ steps.container-scan.outcome }}" != "success" ]; then
+            echo "::error::HIGH/CRITICAL container vulnerability scan or SBOM generation failed"
+            exit 1
+          fi
 
       - name: Upload failure diagnostics
         if: failure()
@@ -379,6 +487,15 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
           include-hidden-files: true
+
+      - name: Upload container scan and SBOM evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: container-scan-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/seev-container-scan/
+          retention-days: 30
+          if-no-files-found: warn
 
   # ─── ci-gate: the ONE required check (docs/roadmap/archive/44 K3) ─────────────────────
   ci-gate:

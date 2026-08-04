@@ -151,7 +151,7 @@ re-sourcing mid-session silently breaks helpers like `gen_token`.
 | `business-e2e.sh` | The MVP can be run **end-to-end as a business**, not just as a technical system | Two real users register and log in with real JWTs (not `gentoken`); one tops up via a signed VendorService callback, transfers to the other for a fee, withdraws for a fee, both get notified, and an operator confirms the books balance AND the platform earned the expected revenue |
 | `admin-e2e.sh` | The operator console works end-to-end | Starts the BFF separately from the user-money gateway path, exercises the real admin session/CSRF/maker-checker/audit journey |
 | `privacy-e2e-host.sh` + `privacy-e2e.sh` | Export, retention holds, and closure work against a clean host-binary stack | The wrapper owns dependencies, migrations, binaries, certificates, and cleanup; the underlying journey verifies export metadata, hold blocking/release, and closure completion |
-| `chaos-test.sh {1..20\|all}` | The system survives real failure, dependency outage, privacy-lifecycle failure, and recovery — not just handles errors in tests | 20 scenarios (below); scenarios 1–14 are multi-service drills, while 15–20 invoke focused lifecycle tests and retain the same pass/fail evidence |
+| `chaos-test.sh {1..23\|all}` | The system survives real failure, dependency outage, privacy-lifecycle failure, merchant relay failure, and recovery — not just handles errors in tests | 23 scenarios (below); scenarios 1–14 are multi-service drills, 15–20 cover privacy lifecycle, and 21–23 cover merchant money movement and webhook relay |
 
 The local Compose default for `VENDOR_CALLBACK_CIDRS` includes the private
 Docker bridge range because a host-originated callback reaches the container
@@ -183,6 +183,9 @@ mandatory in both environments.
 | 18 | Privacy worker restart | Closure saga checkpoints survive repeated worker invocations and resume forward |
 | 19 | Owner timeout during closure | Owner failure leaves closure disabled and resumable from its durable checkpoint |
 | 20 | Retention/closure race | Retention cannot purge data before the closure horizon while closure is still resumable |
+| 21 | Merchant transfer kill -9 mid-posting | A killed merchant money-movement process leaves one idempotent ledger outcome and a balanced ledger |
+| 22 | Merchant quota Redis outage | Quota enforcement follows its declared outage contract without bypassing tenant isolation or money safety |
+| 23 | Merchant webhook relay during RabbitMQ outage | A posted merchant transaction remains durably relayable and reaches the endpoint after broker recovery |
 
 Current acceptance note (2026-07-28): the latest `./scripts/chaos-test.sh 5`
 run settled the created, held, and ledger-crash requests; the deliberate
@@ -219,7 +222,7 @@ Action becoming a supply-chain hole.
 | `changes` | Classifies the diff as docs-only vs. runtime (anything outside `docs/**`/`*.md` counts as runtime) | Always |
 | `docs-check` | Uses the repository's standard-library Go checker to validate the required learning-path markers plus every local Markdown file link and heading anchor | Always |
 | `lint-and-test` | Go build/vet/module verification, `actionlint` + `ShellCheck`, SHA-pin policy, `golangci-lint`, Go 1.26 modernizer check, `govulncheck`, race/coverage tests, load-tag safety tests, HTTP/protobuf contract gates, and the disposable B0 load-harness safety gate | Only if `runtime == true` |
-| `integration` | `go test -tags=integration -race ./...` against testcontainers-provisioned Postgres | Only if `runtime == true` |
+| `integration` | `go test -json -tags=integration -race -timeout 25m ./...` against testcontainers-provisioned Postgres; uploads a 30-day JSONL/status/manifest artifact on every attempted run | Only if `runtime == true` |
 | `smoke-container` | Builds all 9 service images via a single Bake invocation, verifies each image's revision label actually matches the commit (never a stale cache hit), runs `smoke-container.sh` against them | Only if `runtime == true` |
 | `ci-gate` | The one required check — requires `docs-check`, then asserts the three heavy jobs are `skipped` for a docs-only change or `success` for a runtime change; never silently green from an absent job | Always |
 
@@ -234,9 +237,13 @@ Despite the filename (kept for grep-ability), the automatic schedule is
 **weekly**, not nightly — a daily 90-minute gate doesn't fit this repo's
 cost budget. Runs `business-e2e.sh`, `privacy-e2e`, then `chaos-test.sh all`,
 generates fresh per-run credentials that are masked before they ever land in a
-log, and uploads the work directories as a diagnostics artifact only on
-failure. `workflow_dispatch` lets an operator run any subset (`all`,
-`business`, `privacy`, or `chaos`) on demand between scheduled runs.
+log, and uploads a run-specific evidence artifact on success or failure.
+The 30-day bundle contains the manifest, allowlisted suite logs/result text,
+and service logs; binaries, certificates/private keys, PIDs, encrypted
+objects, and nested directories are excluded. `workflow_dispatch` lets an
+operator run any subset (`all`, `business`, `privacy`, or `chaos`) on demand
+between scheduled runs. A deployed production-shaped run is still required
+for runtime acceptance.
 
 ### `dependabot.yml` — supply-chain freshness
 
@@ -289,7 +296,7 @@ dependency of the system itself.
 
 ---
 
-## 6. API contracts (`api/proto/`, `gen/`, `buf.yaml`, `buf.gen.yaml`)
+## 6. API contracts (`contracts/proto/`, `gen/go/`, `buf.yaml`, `buf.gen.yaml`)
 
 **Problem it solves**: internal gRPC contracts between services need to
 be typed, versioned, and safe to evolve — a hand-maintained client/server
@@ -297,16 +304,16 @@ pair drifts silently; an accidental breaking change to a wire message
 shipped as a routine PR breaks every caller at once, discovered at
 runtime instead of at review time.
 
-**How it's built**: five `.proto` files under `api/proto/seev/{fraud,
+**How it's built**: five `.proto` files under `contracts/proto/seev/{fraud,
 ledger,payin,payout,ping}/v1/`, compiled via `buf` (`buf.yaml` /
-`buf.gen.yaml`) into committed Go bindings under `gen/` — generated code
+`buf.gen.yaml`) into committed Go bindings under `gen/go/` — generated code
 is checked into version control rather than generated at build time, so
 a clone of the repo builds without the protobuf toolchain installed.
 
 **How this solves the problem**:
 
 - `make proto` regenerates bindings from the `.proto` source — the
-  single command that keeps `gen/` and `api/proto/` from drifting apart.
+  single command that keeps `gen/go/` and `contracts/proto/` from drifting apart.
 - `make tools` installs the pinned Buf and Go protobuf compiler versions under
   `bin/tools/`; `make proto`, `make proto-lint`, and `make proto-breaking`
   depend on that local toolchain automatically, so a fresh checkout does not
@@ -324,7 +331,7 @@ a clone of the repo builds without the protobuf toolchain installed.
   RPC" from a runtime surprise into a CI failure with a name attached to
   the offending field.
 - `buf.gen.yaml`'s managed mode pins each proto package's Go import path
-  explicitly (`github.com/herdifirdausss/seev/gen/<service>/v1`) so
+  explicitly (`github.com/herdifirdausss/seev/gen/go/<service>/v1`) so
   generated imports stay stable and predictable across regenerations.
 
 ---
@@ -335,7 +342,7 @@ a clone of the repo builds without the protobuf toolchain installed.
 |---|---|
 | Why the system is built this way at all | [Architecture](../reference/architecture.md) |
 | What each service actually does | [Services](../reference/services.md) |
-| What each `pkg/` package does and who uses it | [Shared packages](../reference/shared-packages.md) |
+| What each `internal/platform/` package does and who uses it | [Shared packages](../reference/shared-packages.md) |
 | The rules for changing any of this | [Project guide](../development/project-guide.md) |
 | Step-by-step local setup | [README.md](../../README.md) |
 | What to do when something breaks in the field | [docs/operations/runbooks/](runbooks/) |

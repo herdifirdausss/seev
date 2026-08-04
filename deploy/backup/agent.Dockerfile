@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1
+# syntax=docker/dockerfile:1@sha256:87999aa3d42bdc6bea60565083ee17e86d1f3339802f543c0d03998580f9cb89
 #
 # docs/roadmap/archive/50-a7-backup-pitr-disaster-recovery.md T2 (K13): backup-agent needs BOTH a compiled Go binary and
 # a local pgbackrest install with direct filesystem access to PGDATA — it
@@ -13,14 +13,15 @@
 #
 # Builder stage matches the root Dockerfile's own Go build exactly
 # (same base image/version, same trimpath+ldflags). Build context must be
-# the repo root (not ./deploy/backup) so this stage can see go.mod/cmd/
-# internal/pkg.
-FROM golang:1.26.5-alpine AS builder
+# the repo root (not ./deploy/backup) so this stage can see go.mod,
+# operations/, services/, and internal/.
+# Manifest-list digest verified 2026-08-04.
+FROM golang:1.26.5-alpine@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2 AS builder
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/backup-agent ./cmd/backup-agent
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/backup-agent ./operations/agents/backup/cmd/backup-agent
 
 # Final stage intentionally repeats deploy/backup/Dockerfile's own
 # base-image digest and pgbackrest package pin verbatim (rather than

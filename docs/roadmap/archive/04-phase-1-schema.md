@@ -16,7 +16,7 @@ column names, and types must not change:
 ```sql
 -- ============================================================================
 -- SEEV LEDGER — canonical schema v1
--- Follows the Go code in internal/ledger. See docs/roadmap/archive/04.
+-- Follows the Go code in services/ledger. See docs/roadmap/archive/04.
 -- ============================================================================
 
 -- ── ACCOUNTS ────────────────────────────────────────────────────────────────
@@ -307,10 +307,10 @@ seeded system balances and accounts.
 
 ## Task 1a.4 — Code changes required by the schema
 
-1. **`internal/ledger/repository/account_balance_repository.go`** — in the
+1. **`services/ledger/internal/repository/account_balance_repository.go`** — in the
    `LockBalances` query, change `ab.currency` to `a.currency` (decision D3).
    The scan columns do not change.
-2. **`internal/ledger/processors/validators.go`** — ensure integral amounts are
+2. **`services/ledger/internal/processors/validators.go`** — ensure integral amounts are
    validated with `if !cmd.Amount.IsInteger() { return ErrValidation }` (amounts
    are minor units, D2). Add the validation and a test if missing.
 3. **Makefile** — ensure `migrate-up` and `migrate-down` use the
@@ -318,7 +318,7 @@ seeded system balances and accounts.
 
 ## Task 1a.5 — Schema-to-code contract test
 
-Create `internal/ledger/schema_contract_test.go` with the `integration` build
+Create `services/ledger/internal/ledger/schema_contract_test.go` with the `integration` build
 tag and testcontainers PostgreSQL:
 
 1. Start a PostgreSQL container and run every `migrations/*.up.sql` file in
@@ -339,6 +339,6 @@ tag and testcontainers PostgreSQL:
 - [ ] `make migrate-up` succeeds on an empty database, and `make migrate-down`
       returns it to empty.
 - [ ] Contract test (1a.5) passes:
-      `go test -tags integration ./internal/ledger/ -run TestSchemaContract -race`.
+      `go test -tags integration ./services/ledger/internal/ -run TestSchemaContract -race`.
 - [ ] The M1 table/column audit in 00-current-state.md confirms that every
       column referenced by the code exists in the migrations.

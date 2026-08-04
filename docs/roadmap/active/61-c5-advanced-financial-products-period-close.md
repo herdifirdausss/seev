@@ -419,7 +419,7 @@ VendorService continues owning:
 Suggested Ledger internal layout:
 
 ```text
-internal/ledger/service/
+services/ledger/internal/ledger/
 ├── interest/
 │   ├── product/
 │   ├── rate/
@@ -4537,35 +4537,35 @@ docs/runbooks/topup-fee-*.md
 Expected areas:
 
 ```text
-internal/ledger/service/accrual/
-internal/ledger/service/interest/
-internal/ledger/service/schedule/
-internal/ledger/service/fee/
-internal/ledger/processors/
-internal/ledger/repository/
-internal/ledger/model/
+services/ledger/internal/ledger/accrual/
+services/ledger/internal/ledger/interest/
+services/ledger/internal/ledger/schedule/
+services/ledger/internal/ledger/fee/
+services/ledger/internal/processors/
+services/ledger/internal/repository/
+services/ledger/internal/ledger/model/
 
-internal/payin/
-internal/vendorboundary/
-internal/vendorgw/
-internal/assurance/
-internal/fraud/
-internal/notify/
-internal/adminbff/
-internal/handler/
+services/payin/internal/
+services/vendor-service/internal/
+contracts/vendorgw/
+services/assurance/internal/
+services/fraud/internal/
+services/gateway/internal/notification/
+services/adminbff/internal/
+services/gateway/internal/transport/http/
 
-migrations/ledger/
-migrations/payin/
+services/ledger/migrations/
+services/payin/migrations/
 
-api/openapi/
-api/contracts/
-api/events/
-api/proto/seev/
+contracts/http/
+contracts/compatibility/
+contracts/events/
+contracts/proto/seev/
 gen/
 
 internal/scheduler/
 cmd/ledger/
-cmd/gateway/
+services/gateway/cmd/gateway/
 
 scripts/interest-period-e2e.sh
 scripts/schedule-policy-e2e.sh

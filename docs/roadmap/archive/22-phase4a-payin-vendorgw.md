@@ -4,7 +4,7 @@ Prerequisite: [plan 21](21-service-topology-review.md), including decisions K-T1
 
 ## Goal and scope
 
-This phase implements the first real money-in path. A vendor webhook is verified, deduplicated, and posted as `money_in` to the ledger through `internal/payin`.
+This phase implements the first real money-in path. A vendor webhook is verified, deduplicated, and posted as `money_in` to the ledger through `services/payin`.
 
 The scope is settled-webhook-only: a successful payment webhook becomes a ledger credit. VA/QRIS payment intents and pending-payment flows are intentionally deferred.
 
@@ -12,7 +12,7 @@ The scope is settled-webhook-only: a successful payment webhook becomes a ledger
 
 ### Design
 
-Add `internal/vendorgw` with a normalized `PayinEvent` and a `PayinVerifier` interface:
+Add `contracts/vendorgw` with a normalized `PayinEvent` and a `PayinVerifier` interface:
 
 ```go
 type PayinEvent struct {
@@ -35,7 +35,7 @@ The signature must be calculated over the raw request bytes before JSON decoding
 
 The registry is a plain container (`NewRegistry`, `AddPayin`, and `Payin`). The composition root constructs the configured adapter and registers it. This avoids a circular import between the root gateway package and adapter subpackages while preserving the “one adapter package plus one registry entry” property.
 
-`internal/vendorgw/mockvendor` implements HMAC-SHA256 with the `X-Mock-Signature` header and exports `Sign` for tests and smoke scripts. It uses string amounts rather than JSON floating-point numbers.
+`contracts/vendorgw/mockvendor` implements HMAC-SHA256 with the `X-Mock-Signature` header and exports `Sign` for tests and smoke scripts. It uses string amounts rather than JSON floating-point numbers.
 
 ### Result
 
@@ -89,7 +89,7 @@ The webhook chain and configuration were implemented. Enabling `mockvendor` with
 
 Integration tests cover valid and invalid signatures, unknown vendors, oversized bodies, and redelivery after an infrastructure failure. A smoke test against the live server verified a signed webhook, the `posted` event row, and the user's increased balance.
 
-During testing, a pre-existing logging bug was discovered: the request-body masking helper truncated bodies above 16 KiB before downstream handlers could enforce their own limits. That issue belongs to `pkg/logger`, not the payin implementation, and was tracked separately rather than hidden inside this phase.
+During testing, a pre-existing logging bug was discovered: the request-body masking helper truncated bodies above 16 KiB before downstream handlers could enforce their own limits. That issue belongs to `internal/platform/observability/logging`, not the payin implementation, and was tracked separately rather than hidden inside this phase.
 
 ## T4 — Admin operations
 

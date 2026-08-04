@@ -20,12 +20,12 @@ tree:   clean (git status --short empty)
 
 | Requirement | Result | Evidence |
 |---|---|---|
-| `make contracts` passes from a clean tree | PASS | `contract-generate`/`contract-lint`/`contract-breaking`/`contract-test` all exit 0, no `api/openapi/dist` diff |
-| Generated HTTP operation inventory has no unresolved drift | PASS | same run; `contract-generate` regenerates `api/openapi/dist/*.yaml` deterministically, `git status` clean after |
-| Current event schemas and Protobuf semantic checks pass | PASS | `api/contracts` test suite (`event_compatibility_test.go`, `proto_semantics_test.go`, `proto_reserved_test.go`, `proto_rollout_test.go`) all green as part of `make contracts` |
-| Every existing operation C1 will call/extend has a canonical contract entry | PASS (see inventory doc) | `api/contracts/surfaces.yaml` — ledger transfer/account, payin, payout, admin BFF operations C1 depends on are all already registered |
+| `make contracts` passes from a clean tree | PASS | `contract-generate`/`contract-lint`/`contract-breaking`/`contract-test` all exit 0, no `contracts/http/dist` diff |
+| Generated HTTP operation inventory has no unresolved drift | PASS | same run; `contract-generate` regenerates `contracts/http/dist/*.yaml` deterministically, `git status` clean after |
+| Current event schemas and Protobuf semantic checks pass | PASS | `contracts/compatibility` test suite (`event_compatibility_test.go`, `proto_semantics_test.go`, `proto_reserved_test.go`, `proto_rollout_test.go`) all green as part of `make contracts` |
+| Every existing operation C1 will call/extend has a canonical contract entry | PASS (see inventory doc) | `contracts/compatibility/surfaces.yaml` — ledger transfer/account, payin, payout, admin BFF operations C1 depends on are all already registered |
 | Every C1-touched existing HTTP operation has a live fixture or a recorded same-PR task | N/A THIS TASK | No existing operation is touched by T0 (docs/inventory only); tracked per-operation in T1+ as contracts are added |
-| A6 internal-auth and mTLS verification commands pass | PASS | `./scripts/smoke-test.sh all`, `./scripts/business-e2e.sh`, `./scripts/admin-e2e.sh` all boot all 9 services over the existing mTLS mesh (`pkg/tlsx`) and complete; no service failed a peer-cert check |
+| A6 internal-auth and mTLS verification commands pass | PASS | `./scripts/smoke-test.sh all`, `./scripts/business-e2e.sh`, `./scripts/admin-e2e.sh` all boot all 9 services over the existing mTLS mesh (`internal/platform/security/tls`) and complete; no service failed a peer-cert check |
 | Existing business, admin, callback, and smoke journeys remain green | PASS | see command log below — all three scripts: `=== ALL SMOKE ASSERTIONS PASSED ===`, `=== FULL BUSINESS JOURNEY PASSED ===`, `admin-e2e completed` with all `[ pass]` lines |
 | Working branch contains no unrelated schema or topology migration | PASS | `git status --short` empty at baseline; migration heads recorded below are the actual current heads, not touched by this task |
 | Exact baseline commit is recorded in this plan's evidence log | PASS | recorded above and in Plan 57 §32 |
@@ -36,17 +36,17 @@ tree:   clean (git status --short empty)
 
 ```text
 $ make contracts
-go run ./cmd/contractgenerate
-go test ./api/contracts
-ok  	github.com/herdifirdausss/seev/api/contracts	0.577s
-go run ./cmd/contractcheck -mode breaking
-go test ./pkg/httpcontract ./api/contracts
-ok  	github.com/herdifirdausss/seev/pkg/httpcontract	(cached)
-ok  	github.com/herdifirdausss/seev/api/contracts	0.273s
+go run ./tools/contractgenerate
+go test ./contracts/compatibility
+ok  	github.com/herdifirdausss/seev/contracts/compatibility	0.577s
+go run ./tools/contractcheck -mode breaking
+go test ./internal/platform/transport/httpcontract ./contracts/compatibility
+ok  	github.com/herdifirdausss/seev/internal/platform/transport/httpcontract	(cached)
+ok  	github.com/herdifirdausss/seev/contracts/compatibility	0.273s
 (exit 0)
 
 $ make build
-go build -trimpath -ldflags="-s -w" -o "bin/gateway" "./cmd/gateway"
+go build -trimpath -ldflags="-s -w" -o "bin/gateway" "./services/gateway/cmd/gateway"
 (exit 0)
 
 $ ./scripts/smoke-test.sh all

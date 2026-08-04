@@ -7,25 +7,25 @@ Snapshot from July 2026, branch `main`, commit `ac7d617`. Module path:
 
 ### Infrastructure (`pkg/`)
 
-- `pkg/database` — pgx pool in stdlib mode and the `WithTx` helper. The ledger
+- `internal/platform/database` — pgx pool in stdlib mode and the `WithTx` helper. The ledger
   service uses it through the `DatabaseSQL` interface.
-- `pkg/cache` — Redis client and sliding-window rate limiter with an in-memory
+- `internal/platform/cache` — Redis client and sliding-window rate limiter with an in-memory
   fallback.
-- `pkg/messaging` — RabbitMQ broker, publisher, consumer, topology, pool,
+- `internal/platform/messaging` — RabbitMQ broker, publisher, consumer, topology, pool,
   metrics, automatic reconnect, and DLQ support.
-- `pkg/middleware` — request IDs, logging, recovery, CORS, rate limiting,
+- `internal/platform/security/middleware` — request IDs, logging, recovery, CORS, rate limiting,
   security headers, timeouts, JWT authentication (HS256), and `WithRole`.
-- `pkg/logger` — structured `slog` logging with sensitive-data masking.
-- `pkg/response` — standard JSON envelope.
-- `pkg/generalutil`, `pkg/generalerror` — SQL argument helpers, metadata
+- `internal/platform/observability/logging` — structured `slog` logging with sensitive-data masking.
+- `internal/platform/transport/http/response` — standard JSON envelope.
+- `pkg/generalutil`, `internal/platform/errors` — SQL argument helpers, metadata
   parsing, and PostgreSQL error classification (retryable errors and duplicate
   keys).
-- `internal/config` — environment configuration with strict validation.
-- `internal/server` — graceful shutdown.
-- `internal/handler` — Go 1.22 `net/http` router with health and readiness
+- `internal/platform/config` — environment configuration with strict validation.
+- `internal/platform/transport/httpserver` — graceful shutdown.
+- `services/gateway/internal/transport/http` — Go 1.22 `net/http` router with health and readiness
   probes.
 
-### Ledger module (`internal/ledger/`)
+### Ledger module (`services/ledger/internal/`)
 
 - **`service/handle/service.go`** — the posting engine. Its flow has been
   through several review iterations:
@@ -89,7 +89,7 @@ None of the existing schema files matches the code:
   outbox lifecycle (`pending/processing/published/failed/dead` with automatic
   dead-lettering), `fn_verify_ledger_balance`,
   `fn_verify_account_balance`, the audit view, and RLS.
-- `internal/ledger/001.sql` — another copy in the wrong location (it belongs
+- `services/ledger/internal/001.sql` — another copy in the wrong location (it belongs
   under `migrations/`); its view references columns that do not exist, such as
   `a.user_id` and `a.is_system`.
 
@@ -99,7 +99,7 @@ useful safeguards from `ledgernew.sql`, and archive the old schema files.
 
 ### M2 — Critical: `AccountRepository` has no implementation
 
-`internal/ledger/repository/account_repository.go` contains only the
+`services/ledger/internal/repository/account_repository.go` contains only the
 `GetAccountID`, `GetPocketAccountID`, `GetAccountCurrency`, and
 `GetSystemAccountID` interfaces plus a mock. Every processor depends on these
 methods. Without a SQL implementation, no processor can run outside unit tests.
@@ -109,7 +109,7 @@ methods. Without a SQL implementation, no processor can run outside unit tests.
 - `cmd/server/main.go` wires only the database, Redis, and RabbitMQ into the
   router. It does not construct `ledger.Service`, the processor registry, or
   the repositories.
-- `internal/handler/router.go` contains only 501 placeholders for
+- `services/gateway/internal/transport/http/router.go` contains only 501 placeholders for
   `/auth/login`, `/users/me`, and similar routes. There is no ledger endpoint.
 - There is no user-account provisioning mechanism. The schema comment says
   that accounts are created explicitly by a service, but that service does not
@@ -119,19 +119,19 @@ methods. Without a SQL implementation, no processor can run outside unit tests.
 
 - `cmd/scheduler/scheduler_final.go` — a 1,221-line cron library with extended
   cron syntax, a distributed Redis lock, and a heap scheduler, currently under
-  `cmd/` as `package main`. Move it to `pkg/scheduler`; move its 582-line and
+  `cmd/` as `package main`. Move it to `internal/platform/scheduling`; move its 582-line and
   727-line test files with it.
 - `cmd/rabbitmq/rabbitmq.go` — a 204-line example/demo that duplicates
-  `pkg/messaging`; remove it.
-- `internal/ledger/service/migration.go` — defines the unused `SMALLINT`
+  `internal/platform/messaging`; remove it.
+- `services/ledger/internal/service/migration.go` — defines the unused `SMALLINT`
   enums `AccountCash = 1` and `CurrencyIDR = 1` from the `ledgernew.sql`
   design. Remove it, or rewrite it only if it contains provisioning logic
   worth preserving after inspection.
-- `internal/ledger/service/transfer/transfer_service.go` — check whether this
+- `services/ledger/internal/service/transfer/transfer_service.go` — check whether this
   obsolete posting engine has any references with
   `grep -rn "service/transfer"`. If not, remove it.
-- `internal/ledger/001.sql` — remove after the canonical migrations exist.
-- `internal/handler/dependencties.go` — rename the misspelled file to
+- `services/ledger/internal/001.sql` — remove after the canonical migrations exist.
+- `services/gateway/internal/transport/http/dependencties.go` — rename the misspelled file to
   `dependencies.go`.
 
 ### M5 — The README is inaccurate
@@ -160,7 +160,7 @@ incorrect assumptions about the interfaces.
    was added to every processor and is called immediately after
    `registry.Get()`, before `ResolveAccounts()`. A processor that needs real
    pre-database metadata validation can implement it there.
-2. **`internal/ledger/processors/reversal.go` called missing or incompatible
+2. **`services/ledger/internal/processors/reversal.go` called missing or incompatible
    transaction-repository methods.** The following changes were made:
    - `TransactionRepository.GetAccountIDs` now accepts `(ctx, transactionID)`
      and reads through the `DatabaseSQL` stored in the repository.
@@ -176,7 +176,7 @@ incorrect assumptions about the interfaces.
      argument. This was fixed; the query could fail against real PostgreSQL
      even when some mocks passed.
    - The `TransactionRepository` mock was regenerated with `mockgen`.
-3. **`internal/ledger/service/transfer/transfer_service.go` was removed.** It
+3. **`services/ledger/internal/service/transfer/transfer_service.go` was removed.** It
    was an unused prototype already replaced by `service/handle/service.go` and
    did not compile because it referenced a missing `domain` package and missing
    repository methods (`InsertPending`, `MarkFailed`, and `MarkPosted`).

@@ -7,7 +7,7 @@ canonical_names:
   - payin
   - payout
   - fraud
-  - admin-bff
+  - adminbff
   - assurance
   - vendor
 source_hierarchy:
@@ -19,7 +19,7 @@ source_hierarchy:
 services:
   - name: gateway
     current:
-      command: ./cmd/gateway
+      command: ./services/gateway/cmd/gateway
       compose_service: gateway-service
       build_service: gateway
       image: seev/gateway-service
@@ -49,14 +49,14 @@ services:
       data_policy: synthetic-only
     unknowns: []
     sources:
-      - cmd/gateway/main.go
+      - services/gateway/cmd/gateway/main.go
       - Dockerfile
       - docker-compose.yml
-      - internal/handler/router.go
+      - services/gateway/internal/transport/http/router.go
 
   - name: auth
     current:
-      command: ./cmd/auth-service
+      command: ./services/auth/cmd/auth
       compose_service: auth-service
       build_service: auth-service
       image: seev/auth-service
@@ -89,14 +89,14 @@ services:
     unknowns:
       - real KYC provider endpoint is downstream of K1 and disabled in first deployment
     sources:
-      - cmd/auth-service/main.go
-      - internal/auth
+      - services/auth/cmd/auth/main.go
+      - services/auth
       - Dockerfile
       - docker-compose.yml
 
   - name: ledger
     current:
-      command: ./cmd/ledger-service
+      command: ./services/ledger/cmd/ledger
       compose_service: ledger-service
       build_service: ledger-service
       image: seev/ledger-service
@@ -127,14 +127,14 @@ services:
       data_policy: synthetic-only
     unknowns: []
     sources:
-      - cmd/ledger-service/main.go
-      - internal/ledger
+      - services/ledger/cmd/ledger/main.go
+      - services/ledger
       - Dockerfile
       - docker-compose.yml
 
   - name: payin
     current:
-      command: ./cmd/payin-service
+      command: ./services/payin/cmd/payin
       compose_service: payin-service
       build_service: payin-service
       image: seev/payin-service
@@ -160,14 +160,14 @@ services:
       data_policy: synthetic-only
     unknowns: []
     sources:
-      - cmd/payin-service/main.go
-      - internal/payin
+      - services/payin/cmd/payin/main.go
+      - services/payin
       - Dockerfile
       - docker-compose.yml
 
   - name: payout
     current:
-      command: ./cmd/payout-service
+      command: ./services/payout/cmd/payout
       compose_service: payout-service
       build_service: payout-service
       image: seev/payout-service
@@ -195,14 +195,14 @@ services:
       data_policy: synthetic-only
     unknowns: []
     sources:
-      - cmd/payout-service/main.go
-      - internal/payout
+      - services/payout/cmd/payout/main.go
+      - services/payout
       - Dockerfile
       - docker-compose.yml
 
   - name: fraud
     current:
-      command: ./cmd/fraud-service
+      command: ./services/fraud/cmd/fraud
       compose_service: fraud-service
       build_service: fraud-service
       image: seev/fraud-service
@@ -230,14 +230,14 @@ services:
       data_policy: synthetic-only
     unknowns: []
     sources:
-      - cmd/fraud-service/main.go
-      - internal/fraud
+      - services/fraud/cmd/fraud/main.go
+      - services/fraud
       - Dockerfile
       - docker-compose.yml
 
   - name: admin-bff
     current:
-      command: ./cmd/admin-bff-service
+      command: ./services/adminbff/cmd/adminbff
       compose_service: admin-bff-service
       build_service: admin-bff-service
       image: seev/admin-bff-service
@@ -264,14 +264,14 @@ services:
       data_policy: synthetic-only
     unknowns: []
     sources:
-      - cmd/admin-bff-service/main.go
-      - internal/adminbff
+      - services/adminbff/cmd/adminbff/main.go
+      - services/adminbff
       - Dockerfile
       - docker-compose.yml
 
   - name: assurance
     current:
-      command: ./cmd/assurance-service
+      command: ./services/assurance/cmd/assurance
       compose_service: assurance-service
       build_service: assurance-service
       image: seev/assurance-service
@@ -298,14 +298,14 @@ services:
       data_policy: synthetic-only
     unknowns: []
     sources:
-      - cmd/assurance-service/main.go
-      - internal/assurance
+      - services/assurance/cmd/assurance/main.go
+      - services/assurance
       - Dockerfile
       - docker-compose.yml
 
   - name: vendor
     current:
-      command: ./cmd/vendor-service
+      command: ./services/vendor-service/cmd/vendor
       compose_service: vendor-service
       build_service: vendor-service
       image: seev/vendor-service
@@ -332,46 +332,46 @@ services:
     unknowns:
       - real vendor hostname and CIDR are UNKNOWN; mock adapters are in-process
     sources:
-      - cmd/vendor-service/main.go
-      - internal/vendor
-      - pkg/egressproxy
+      - services/vendor-service/cmd/vendor/main.go
+      - services/vendor-service
+      - internal/platform/resilience/egressproxy
       - Dockerfile
       - docker-compose.yml
 
 command_classification:
   long_running_service:
-    - cmd/gateway
-    - cmd/auth-service
-    - cmd/ledger-service
-    - cmd/payin-service
-    - cmd/payout-service
-    - cmd/fraud-service
-    - cmd/admin-bff-service
-    - cmd/assurance-service
-    - cmd/vendor-service
+    - services/gateway/cmd/gateway
+    - services/auth/cmd/auth
+    - services/ledger/cmd/ledger
+    - services/payin/cmd/payin
+    - services/payout/cmd/payout
+    - services/fraud/cmd/fraud
+    - services/adminbff/cmd/adminbff
+    - services/assurance/cmd/assurance
+    - services/vendor-service/cmd/vendor
   one_shot_migration:
-    - cmd/migrate
+    - tools/migrate
   certificate_tool:
-    - cmd/certgen
+    - tools/certgen
   backup_utility:
-    - cmd/backup-agent
+    - operations/agents/backup/cmd/backup-agent
   administrative_cli:
-    - cmd/drreseed
-    - cmd/drverify
-    - cmd/gentoken
-    - cmd/retentionctl
-    - cmd/sanctions-loader
+    - operations/recovery/drreseed/cmd/drreseed
+    - operations/recovery/drverify/cmd/drverify
+    - tools/gentoken
+    - tools/retentionctl
+    - services/fraud/cmd/sanctions-loader
   test_or_fixture_helper:
-    - cmd/cryptox-fixture
-    - cmd/loadcheck
-    - cmd/loaddataset
-    - cmd/loadprobe
-    - cmd/loadreport
+    - tools/cryptox-fixture
+    - tools/loadcheck
+    - tools/loaddataset
+    - tools/loadprobe
+    - tools/loadreport
   validation_or_generator:
-    - cmd/contractcheck
-    - cmd/contractgenerate
-    - cmd/doccheck
-    - cmd/retentioncheck
+    - tools/contractcheck
+    - tools/contractgenerate
+    - tools/doccheck
+    - tools/retentioncheck
   first_deployment_relevance:
     migration: enabled-as-one-shot-job
     backup-agent: deferred-operations-only
@@ -386,11 +386,11 @@ auxiliary_processes:
     first_deployment: true
     source: docker-compose.yml
   - name: migration-runner
-    command: ./cmd/migrate
+    command: ./tools/migrate
     class: one-shot
     kubernetes_relevance: migration-job
     first_deployment: true
-    source: cmd/migrate/main.go
+    source: tools/migrate/main.go
   - name: postgres
     compose_service: postgres
     class: stateful-infrastructure

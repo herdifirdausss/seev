@@ -18,7 +18,7 @@ Revenue comes from withdrawal and P2P transfer fees; top-ups are free. Notificat
 ### Implementation
 
 1. Add migration `000021_auth` with `auth_users`, `auth_credentials`, and `auth_refresh_tokens`, including forced RLS and minimal grants.
-2. Add `internal/auth` with register, login, refresh, profile, profile update, and bootstrap-admin operations.
+2. Add `services/auth` with register, login, refresh, profile, profile update, and bootstrap-admin operations.
 3. Hash passwords with bcrypt cost 12. Generate opaque 32-byte refresh tokens, store only their SHA-256 hashes, and rotate them on every refresh. Reuse of a revoked token revokes all tokens for that user.
 4. Issue JWTs through the existing `middleware.GenerateToken` contract; ledger, policy, and middleware claims do not change.
 5. Register the ledger account through a structural `Provisioner` interface. Login performs lazy re-provisioning to self-heal a partially completed registration.
@@ -47,7 +47,7 @@ Fee configuration, facade methods, injected transport policy, inline settlement 
 
 ### Design
 
-Extend `internal/payin` with migration `000022_payin_topup_intents` and pending/settled/expired intents. A user creates an intent with `POST /api/v1/topup`; the response contains a vendor-facing reference and expiry.
+Extend `services/payin` with migration `000022_payin_topup_intents` and pending/settled/expired intents. A user creates an intent with `POST /api/v1/topup`; the response contains a vendor-facing reference and expiry.
 
 The webhook uses the existing `external_ref` field to resolve the intent, cross-checks amount and currency, and uses the intent's user rather than exposing an internal user ID to the vendor. For backward compatibility, a webhook without a matching pending intent may still use its payload `user_id`.
 
@@ -63,7 +63,7 @@ Migration 000022, authenticated create/get endpoints, intent lookup, user resolu
 
 Add migration `000023_notify` with `notif_notifications` and a unique `(event_id, user_id)` key for at-least-once delivery. Enrich `TransactionPosted` with optional user and target-user fields without changing the event schema version.
 
-The new `internal/notify` consumer declares `ledger.events.notifications`, filters relevant transaction types, maps recipients, inserts with `ON CONFLICT DO NOTHING`, acknowledges success or duplicates, and negatively acknowledges retryable failures up to five attempts.
+The new `services/gateway/internal/notification` consumer declares `ledger.events.notifications`, filters relevant transaction types, maps recipients, inserts with `ON CONFLICT DO NOTHING`, acknowledges success or duplicates, and negatively acknowledges retryable failures up to five attempts.
 
 Public endpoints:
 

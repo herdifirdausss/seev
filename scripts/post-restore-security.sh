@@ -2,7 +2,7 @@
 # Post-restore session/token revocation fence (docs/roadmap/archive/50 T5, decision
 # K11) — PITR can resurrect refresh tokens and admin sessions that were
 # legitimately revoked AFTER the recovery target. Run this after
-# scripts/restore-cluster.sh + cmd/drverify pass and cmd/drreseed has
+# scripts/restore-cluster.sh + operations/recovery/drverify/cmd/drverify pass and operations/recovery/drreseed/cmd/drreseed has
 # reseeded Redis, but BEFORE the public gateway/auth listeners are ever
 # enabled (K10 item 6's ordering) — this script itself refuses to run if
 # it can already reach one, exactly mirroring
@@ -17,7 +17,7 @@
 #
 # Runtime secrets (JWT_SECRET, INTERNAL_GRPC_TOKEN, Vault-sourced values)
 # are never read from or written to any table this script touches —
-# confirmed by reading internal/config's actual loader
+# confirmed by reading internal/platform/config's actual loader
 # (docs/roadmap/archive/50 T5 Result item 6): they come from the environment/Vault
 # at process startup, independent of any PostgreSQL backup.
 #
@@ -83,7 +83,7 @@ if [ "$CONFIRM" -eq 0 ]; then
 fi
 
 # ─── Step 2: refresh tokens ─────────────────────────────────────────────────
-# Same predicate internal/auth/repository/refresh_token_repository.go's
+# Same predicate services/auth/internal/repository/refresh_token_repository.go's
 # RevokeAllForUser already uses (revoked_at IS NULL AND expires_at > now()),
 # widened from one user to every user — a soft revoke (UPDATE, never
 # DELETE), audit-preserving, identical semantics to the proven live path.

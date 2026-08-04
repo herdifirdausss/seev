@@ -34,7 +34,7 @@ services:
     # docs/roadmap/archive/50 T6: an ephemeral, loopback-only host port (Docker
     # picks whatever is free — `docker port <container> 5432/tcp` discovers
     # it, same pattern scripts/lib.sh's detect_db_port already uses for the
-    # main dev stack) so cmd/drverify/cmd/drreseed, both plain host Go
+    # main dev stack) so operations/recovery/drverify/cmd/drverify and operations/recovery/drreseed/cmd/drreseed, both plain host Go
     # binaries, can open a real TCP DSN against the restored cluster.
     # scripts/restore-cluster.sh itself only ever talks to this container
     # over the Compose network by service name, so this is additive and

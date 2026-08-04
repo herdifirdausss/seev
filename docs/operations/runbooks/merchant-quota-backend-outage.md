@@ -11,7 +11,7 @@ Redis instance is under load.
 
 ## Understand the behavior before you act
 
-`internal/merchant/quota.Enforcer.Check` (T4) has an explicit,
+`services/gateway/internal/merchant/quota.Enforcer.Check` (T4) has an explicit,
 deliberately asymmetric fail-open/fail-closed policy — this is not a bug,
 it is the documented design:
 

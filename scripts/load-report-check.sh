@@ -9,4 +9,4 @@ args=(-runs "$RUNS")
 if [[ -n "$OUTPUT" ]]; then
 	args+=(-out "$OUTPUT")
 fi
-exec go run ./cmd/loadreport "${args[@]}"
+exec go run ./tools/loadreport "${args[@]}"

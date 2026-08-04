@@ -43,12 +43,12 @@ All of the following must be true:
 
 | Service | Extraction notes |
 |---|---|
-| Payin | Most likely first candidate because adding vendors may require frequent releases. Move `internal/vendorgw` with it and make the webhook route its edge. |
+| Payin | Most likely first candidate because adding vendors may require frequent releases. Move `contracts/vendorgw` with it and make the webhook route its edge. |
 | Payout | Move the state machine and resume worker together. Keep the K3 ledger guard in the ledger service; do not duplicate it. |
 | Fraud | Replace the ledger hook with a strict-timeout, fail-open HTTP client and move the rule engine and `screening_events`. Use `ledger.transaction.posted.v1` for asynchronous enrichment. |
 | Ledger | Extract last, if ever. All other services depend on it, so moving it changes every client boundary at once. |
 | Internal admin | Build a new BFF that calls each service; this is not an extraction of a current module. |
-| User-facing | Create `internal/auth` first, then move the public router and auth together as a BFF. |
+| User-facing | Create `services/auth` first, then move the public router and auth together as a BFF. |
 
 ## Frozen internal API inventory (baseline 2026-07-12)
 
@@ -71,7 +71,7 @@ All routes below are on the internal `:8081` listener, under `/api/v1`, and are 
 | Payout | Request list, cancel, and retry routes |
 | Operations | `GET /metrics` |
 
-## Future `internal/auth` outline
+## Future `services/auth` outline
 
 When the user-facing service is needed, add:
 

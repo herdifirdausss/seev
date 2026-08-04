@@ -14,15 +14,15 @@ what's specific to the merchant/B2B path on top.
 
 ## Understand the blast radius
 
-Gateway's `internal/merchant` module talks to:
+Gateway's `services/gateway/internal/merchant` module talks to:
 
-- **Ledger**, via `pkg/ledgerclient.Client` over gRPC (account
+- **Ledger**, via `contracts/clients/ledger.Client` over gRPC (account
   provisioning: `ProvisionMerchant`, `GetMerchantAccount`,
   `ListMerchantTransactions`, and the `merchant_transfer` processor for
   P2P-style transfers between merchant-owned accounts).
 - **Payin/Payout**, via the same owner-service gRPC clients Gateway
-  already dials for end-user traffic (`internal/payin/merchant.go`,
-  `internal/payout/merchant.go`) — merchant pay-in/payout requests share
+  already dials for end-user traffic (`services/payin/internal/payin/merchant.go`,
+  `services/payout/internal/payout/merchant.go`) — merchant pay-in/payout requests share
   the SAME underlying connections as end-user requests to those services;
   there is no separate merchant-only connection to fail independently.
 
@@ -31,7 +31,7 @@ traffic simultaneously through the shared gRPC connection — this is not
 a merchant-isolated failure mode. Confirm the scope first: if end-user
 traffic through the same owner service is ALSO failing, this is that
 owner service's own incident (follow its own runbook); if ONLY merchant
-traffic is affected, the problem is more likely in `internal/merchant`'s
+traffic is affected, the problem is more likely in `services/gateway/internal/merchant`'s
 own request path (routing rules for `sandboxVendor`, environment
 mismatches) than the owner service itself.
 
@@ -42,11 +42,11 @@ mismatches) than the owner service itself.
    docker compose ps ledger-service payin-service payout-service
    curl -k --cacert deploy/certs/ca.pem --cert deploy/certs/dev-operator.pem --key deploy/certs/dev-operator-key.pem https://localhost:<internal-port>/ready
    ```
-2. Check Gateway's own gRPC dial health — `cmd/gateway/main.go` dials
+2. Check Gateway's own gRPC dial health — `services/gateway/cmd/gateway/main.go` dials
    Ledger/Payin/Payout once at startup with `grpcx.Dial`; a transient
    network blip is usually retried by gRPC's own backoff, but a
    long-lived TLS/identity failure requires a Gateway restart to
-   re-establish (check `pkg/tlsx` certificate expiry if the outage
+   re-establish (check `internal/platform/security/tls` certificate expiry if the outage
    coincides with a cert rotation window — see
    [cert-rotation.md](cert-rotation.md)).
 3. Check `merchant_idempotency_records` for a spike in `'processing'`
@@ -79,7 +79,7 @@ mismatches) than the owner service itself.
 
 6. Merchant requests will fail with `503`/timeout/`5xx` from the owner
    service, surfaced to the merchant as whatever error code
-   `internal/merchant`'s own handlers map a downstream gRPC failure to
+   `services/gateway/internal/merchant`'s own handlers map a downstream gRPC failure to
    (an owner-service-unavailable class of error, not a merchant-caused
    `4xx`). Confirm the merchant's own retry behavior matches step 4's
    guidance if they ask.

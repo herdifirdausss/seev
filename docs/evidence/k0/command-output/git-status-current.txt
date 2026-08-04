@@ -4,10 +4,10 @@
  M analytics/reconciliation/cmd/reconcile/main.go
  M analytics/reconciliation/internal/contract/validate.go
  M analytics/reconciliation/internal/contract/validate_test.go
- M api/contracts/surfaces.yaml
- M api/openapi/dist/internal-v1.yaml
- M api/openapi/dist/public-v1.yaml
- M api/openapi/public-v1.yaml
+ M contracts/compatibility/surfaces.yaml
+ M contracts/http/dist/internal-v1.yaml
+ M contracts/http/dist/public-v1.yaml
+ M contracts/http/public-v1.yaml
  M boundary_test.go
  M config/data-retention.yaml
  M deploy/inventory/configuration.yaml
@@ -79,45 +79,45 @@ R  docs/runbooks/notification-template-missing.md -> docs/operations/runbooks/no
  M docs/roadmap/active/62-c6-zero-downtime-migration-engine.md
  M docs/roadmap/active/64-k0-deployment-inventory-baseline.md
  M docs/security/threat-model.md
- M internal/assurance/fx.go
- M internal/config/config.go
- M internal/config/config_test.go
- M internal/ledger/feepolicy/cache.go
- M internal/ledger/grpcserver/server.go
- M internal/ledger/migration/balancev2/control.go
- M internal/ledger/migration/balancev2/metrics.go
- M internal/ledger/migration/balancev2/repository.go
- M internal/ledger/migration/balancev2/runtime.go
- M internal/ledger/migration/balancev2/types.go
- M internal/ledger/migration/balancev2/worker.go
- M internal/ledger/processors/fx_rebalance.go
- M internal/ledger/service/fx/admin.go
- M internal/ledger/service/fx/reconciliation.go
- M internal/ledger/service/fx/service.go
- M internal/ledger/service/handle/service.go
- M internal/ledger/service/interest/service.go
- M internal/ledger/service/provision/provision_test.go
- M internal/ledger/service/schedule/c5_policy.go
- M internal/ledger/service/schedule/durable.go
- M internal/ledger/transport/c5_http.go
- M internal/ledger/transport/dto.go
- M internal/ledger/transport/http.go
- M internal/ledger/transport/http_multi_currency.go
- M internal/migrationkit/sampling.go
- M internal/notify/admin_http.go
- M internal/notify/delivery.go
- M internal/notify/registry/registry.go
- M internal/notify/repository/platform.go
- M internal/notify/template/renderer.go
- M internal/payin/grpcserver/server.go
- M internal/payin/http_test.go
- M internal/payin/merchant_test.go
- M internal/payin/payin.go
- M internal/payin/payin_test.go
- M internal/payout/payout_test.go
- M pkg/currency/currency.go
- M pkg/currency/money.go
- M pkg/retentionpolicy/render.go
- M pkg/retentionworker/worker.go
+ M services/assurance/internal/fx.go
+ M internal/platform/config/config.go
+ M internal/platform/config/config_test.go
+ M services/ledger/internal/feepolicy/cache.go
+ M services/ledger/internal/transport/grpc/server.go
+ M services/ledger/internal/migration/balancev2/control.go
+ M services/ledger/internal/migration/balancev2/metrics.go
+ M services/ledger/internal/migration/balancev2/repository.go
+ M services/ledger/internal/migration/balancev2/runtime.go
+ M services/ledger/internal/migration/balancev2/types.go
+ M services/ledger/internal/migration/balancev2/worker.go
+ M services/ledger/internal/processors/fx_rebalance.go
+ M services/ledger/internal/service/fx/admin.go
+ M services/ledger/internal/service/fx/reconciliation.go
+ M services/ledger/internal/service/fx/service.go
+ M services/ledger/internal/service/handle/service.go
+ M services/ledger/internal/service/interest/service.go
+ M services/ledger/internal/service/provision/provision_test.go
+ M services/ledger/internal/service/schedule/c5_policy.go
+ M services/ledger/internal/service/schedule/durable.go
+ M services/ledger/internal/transport/c5_http.go
+ M services/ledger/internal/transport/dto.go
+ M services/ledger/internal/transport/http.go
+ M services/ledger/internal/transport/http_multi_currency.go
+ M internal/platform/migration/sampling.go
+ M services/gateway/internal/notification/admin_http.go
+ M services/gateway/internal/notification/delivery.go
+ M services/gateway/internal/notification/registry/registry.go
+ M services/gateway/internal/notification/repository/platform.go
+ M services/gateway/internal/notification/template/renderer.go
+ M services/payin/internal/transport/grpc/server.go
+ M services/payin/internal/http_test.go
+ M services/payin/internal/merchant_test.go
+ M services/payin.go
+ M services/payin_test.go
+ M services/payout_test.go
+ M internal/platform/money/currency/currency.go
+ M internal/platform/money/currency/money.go
+ M internal/platform/lifecycle/retention/policy/render.go
+ M internal/platform/lifecycle/retention/worker/worker.go
 ?? .worktrees/
 ?? docs/reference/current-state.md

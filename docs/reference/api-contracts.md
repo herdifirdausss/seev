@@ -2,21 +2,21 @@
 
 The A9 baseline keeps consumed boundaries explicit:
 
-- HTTP source contracts live in [`api/openapi/`](../../api/openapi/); generated
+- HTTP source contracts live in [`contracts/http/`](../../contracts/http/); generated
   bundles are produced with `make contract-generate` and are never hand-edited.
 - Ownership, audience, consumers, and lifecycle are recorded in
-  [`api/contracts/surfaces.yaml`](../../api/contracts/surfaces.yaml).
+  [`contracts/compatibility/surfaces.yaml`](../../contracts/compatibility/surfaces.yaml).
 - AMQP routing keys and payload schemas are catalogued in
-  [`api/events/catalog.yaml`](../../api/events/catalog.yaml).
-- Protobuf remains canonical in `api/proto/`; behavioral metadata that Buf
-  cannot infer is in [`proto-semantics.yaml`](../../api/contracts/proto-semantics.yaml).
+  [`contracts/events/catalog.yaml`](../../contracts/events/catalog.yaml).
+- Protobuf remains canonical in `contracts/proto/`; behavioral metadata that Buf
+  cannot infer is in [`proto-semantics.yaml`](../../contracts/compatibility/proto-semantics.yaml).
 
 Before changing a consumed boundary, add an optional, additive version first.
 Keep old and new representations live until consumers acknowledge the change,
 the zero-use window has elapsed, and the replacement guide is published.
 The only reviewed current exception is the Gateway → VendorService webhook
 ownership cutover, which is recorded in
-[`api/contracts/approved-breaking.yaml`](../../api/contracts/approved-breaking.yaml)
+[`contracts/compatibility/approved-breaking.yaml`](../../contracts/compatibility/approved-breaking.yaml)
 and linked to [archived Plan 54](../roadmap/archive/54-vendor-service-boundary.md);
 it does not authorize unrelated breaking changes.
 

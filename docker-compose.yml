@@ -19,7 +19,7 @@ x-cert-volume: &cert-volume
 services:
   object-store-init:
     profiles: ["app"]
-    image: busybox:1.38
+    image: busybox:1.38@sha256:dc2d74b28e4cf8984fa52af1f39bc7c3d9c73760b41a74d629f5d11b1ab28616 # digest verified 2026-08-04
     command: ["sh", "-c", "chown 65532:65532 /objects && chmod 700 /objects"]
     volumes:
       - seev_object_store:/objects
@@ -85,7 +85,7 @@ services:
     volumes:
       - seev_postgres_data:/var/lib/postgresql/data
       - ./scripts/postgres-init:/docker-entrypoint-initdb.d:ro
-      - ./migrations:/migrations:ro
+      - ./services:/services:ro
       - ./deploy/backup/pgbackrest.conf:/etc/pgbackrest/pgbackrest.conf:ro
       # docs/roadmap/archive/50 K3: the backup repository is a HOST PATH, deliberately
       # separate from seev_postgres_data — a destructive drill cleanup may
@@ -146,7 +146,7 @@ services:
       BACKUP_PASSWORD_FILE: /run/secrets/seev_backup_password
       BACKUP_MANIFEST_DIR: /app/manifests
       # K4's weekly-full/daily-diff Asia/Jakarta schedule is the default
-      # (internal/backupagent/config.go) — these overrides exist for an
+      # (operations/agents/backup/config.go) — these overrides exist for an
       # operator who needs a different window, and were exercised
       # directly to verify the scheduled path in docs/roadmap/archive/50 T2 Result.
       BACKUP_FULL_CRON: "${BACKUP_FULL_CRON:-}"
@@ -184,7 +184,7 @@ services:
           memory: 128M
 
   redis:
-    image: redis:8.0.0-alpine
+    image: redis:8.0.0-alpine@sha256:0779069b3c24a47a2f681855c1c01d046793e7c5f7d2b079c2aa0652c42eaf0e # digest verified 2026-08-04
     ports:
       # Host uses 6380 to avoid colliding with a locally installed Redis.
       # Containers keep reaching this service as redis:6379.
@@ -198,7 +198,7 @@ services:
       retries: 10
 
   rabbitmq:
-    image: rabbitmq:4.3.4-management-alpine
+    image: rabbitmq:4.3.4-management-alpine@sha256:09b39ca8a3e884e91cab8842cd41264de21aab0625e1f1d016a9a3135ba590ef # digest verified 2026-08-04
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME:-seev}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-seev}
@@ -724,7 +724,7 @@ services:
   #   docker compose --profile app --profile notifications up -d
   mailpit:
     profiles: ["notifications"]
-    image: axllent/mailpit:v1.21.8
+    image: axllent/mailpit:v1.21.8@sha256:81370195cd4a0eab9604d17c2617a7525b0486f9365555253b6c5376c6350f1a # digest verified 2026-08-04
     environment:
       MP_MAX_MESSAGES: "1000"
       MP_DATABASE: /data/mailpit.db

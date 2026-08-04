@@ -252,7 +252,7 @@ mechanics, but it cannot know Ledger tables or execute arbitrary transforms.
 Suggested:
 
 ```text
-internal/migrationkit/
+internal/platform/migration/
 ├── state.go
 ├── checkpoint.go
 ├── lease.go
@@ -265,7 +265,7 @@ internal/migrationkit/
 Ledger-specific implementation:
 
 ```text
-internal/ledger/migration/balancev2/
+services/ledger/internal/migration/balancev2/
 ├── transform.go
 ├── writer.go
 ├── reader.go
@@ -3207,18 +3207,18 @@ docs/runbooks/migration-*.md
 Expected:
 
 ```text
-internal/migrationkit/
-internal/ledger/migration/balancev2/
-internal/ledger/repository/
-internal/ledger/service/
-internal/adminbff/
-internal/handler/
+internal/platform/migration/
+services/ledger/internal/migration/balancev2/
+services/ledger/internal/repository/
+services/ledger/internal/ledger/
+services/adminbff/internal/
+services/gateway/internal/transport/http/
 
-migrations/ledger/
+services/ledger/migrations/
 
-api/openapi/
-api/contracts/
-api/proto/seev/
+contracts/http/
+contracts/compatibility/
+contracts/proto/seev/
 gen/
 
 scripts/migration-balance-v2-e2e.sh

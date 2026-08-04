@@ -1,15 +1,10 @@
-// Package boundary enforces the module-boundary rules from
-// docs/roadmap/archive/01-target-architecture.md (rules 1–3) and
-// docs/roadmap/archive/21-service-topology-review.md (K-T5) as a plain Go test — it
-// runs on every `make test`, so a boundary violation fails CI the moment it
-// is written instead of waiting for a review to catch it.
-//
-// It parses import declarations directly (go/parser, ImportsOnly) rather
-// than building the package graph, so it needs no extra tooling, no
-// x/tools dependency, and stays fast.
+// Package boundary enforces the service ownership rules for the modular
+// monolith. It parses imports instead of building a graph, so the check is
+// fast and does not need x/tools or a generated dependency file.
 package boundary
 
 import (
+	"fmt"
 	"go/parser"
 	"go/token"
 	"io/fs"
@@ -17,89 +12,14 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/herdifirdausss/seev/tests/architecture"
 )
 
 const modulePath = "github.com/herdifirdausss/seev"
 
-// skipDirs are top-level directories that contain no Go packages subject to
-// the rules (or no Go code at all).
-var skipDirs = map[string]bool{
-	".git": true, ".github": true, ".claude": true, "docs": true,
-	".worktrees": true,
-	"api":        true, "gen": true, "migrations": true, "scripts": true, "vendor": true,
-}
+var mutuallyExclusive = [][2]string{{"payin", "payout"}}
 
-// mutuallyExclusive lists module pairs that must never import each other —
-// not even each other's root facade (docs/roadmap/archive/21 K-T5 point c): if the two
-// ever need to talk, it goes through events, so that splitting them into
-// separate services never creates a synchronous runtime dependency chain.
-var mutuallyExclusive = [][2]string{
-	{"payin", "payout"},
-}
-
-// serviceModules is the executable ownership map during the staged split.
-// Adding a new service means moving modules between entries, never widening
-// every composition root's import privileges.
-var serviceModules = map[string]map[string]bool{
-	"ledger-service":    {"ledger": true, "policy": true},
-	"auth-service":      {"auth": true, "kycvendor": true},
-	"payin-service":     {"payin": true},
-	"payout-service":    {"payout": true},
-	"vendor-service":    {"vendorboundary": true},
-	"fraud-service":     {"fraud": true},
-	"sanctions-loader":  {"fraud": true},
-	"admin-bff-service": {"adminbff": true},
-	"assurance-service": {"assurance": true},
-	"backup-agent":      {"backupagent": true},
-	"drreseed":          {"drreseed": true},
-	"drverify":          {"drverify": true},
-	"gateway":           {"handler": true, "notify": true, "merchant": true},
-	"gentoken":          {},
-}
-
-var ledgerConsumers = map[string]bool{
-	"payin": true, "payout": true, "auth": true, "notify": true, "handler": true, "fraud": true,
-}
-
-// offlineRecoveryDependencies are narrow exceptions for recovery tools that
-// run against an isolated restored cluster while application traffic remains
-// fenced. They reuse owner logic to verify or rebuild ephemeral state, but
-// they are not linked into any long-running service. Keep both the importing
-// and imported modules explicit so this cannot become a general cross-service
-// escape hatch.
-var offlineRecoveryDependencies = map[string]map[string]bool{
-	"drreseed": {"fraud": true, "policy": true},
-	"drverify": {"assurance": true},
-}
-
-// grandfathered tracks pre-existing exceptions. Do not add entries; fix the
-// dependency direction instead.
-var grandfathered = map[string]bool{}
-
-// TestModuleBoundaries enforces:
-//
-//  1. No package outside internal/<mod> imports internal/<mod>/<sub> — a
-//     module's subpackages are private; only its root facade is importable.
-//     Single exception: internal/<mod>/events (the versioned event payload
-//     contract, docs/roadmap/archive/14 T3) may be imported from anywhere. cmd/ is
-//     exempt from this rule entirely (see inline comment below) — it is
-//     the composition root, not a module.
-//  2. pkg/* never imports internal/* (dependency direction cmd → internal →
-//     pkg is one-way). Applies even in test files — pkg is meant to be
-//     extractable as a generic library, in tests or not.
-//  3. Mutually exclusive module pairs (see above) never import each other
-//     at all.
-//  4. Production modules may import another module only when both are owned
-//     by the same service, or through the explicit shared contracts:
-//     internal/ledger/events, internal/vendorgw, and gen/*.
-//
-// Rules 1 and 3 are NOT enforced in _test.go files. A test exercising
-// realistic cross-module behavior (e.g. internal/payin's integration test
-// driving a real internal/vendorgw/mockvendor signature end to end,
-// docs/roadmap/archive/22 Task T2) is a normal, valuable practice — test code never
-// ships in the deployed binary, so it creates no runtime coupling between
-// modules. Production code (including cmd/gateway, for anything other than
-// its own subpackage-registration wiring) is held to the full rule.
 func TestModuleBoundaries(t *testing.T) {
 	root, err := os.Getwd()
 	if err != nil {
@@ -108,133 +28,96 @@ func TestModuleBoundaries(t *testing.T) {
 
 	var violations []string
 	fset := token.NewFileSet()
-
-	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
+	err = filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
 		}
-		if d.IsDir() {
+		if entry.IsDir() {
 			rel, _ := filepath.Rel(root, path)
 			if rel != "." {
 				top := strings.SplitN(filepath.ToSlash(rel), "/", 2)[0]
-				if skipDirs[top] {
+				switch top {
+				case ".git", ".github", ".claude", ".worktrees", "docs", "api", "gen", "scripts", "deploy", "analytics", "artifacts", "bin":
 					return filepath.SkipDir
 				}
 			}
 			return nil
 		}
-		if !strings.HasSuffix(d.Name(), ".go") {
+		if !strings.HasSuffix(entry.Name(), ".go") {
 			return nil
 		}
 
 		rel, _ := filepath.Rel(root, path)
 		rel = filepath.ToSlash(rel)
-
-		f, err := parser.ParseFile(fset, path, nil, parser.ImportsOnly)
-		if err != nil {
-			return err // unparseable Go file should fail loudly, not be skipped
+		file, parseErr := parser.ParseFile(fset, path, nil, parser.ImportsOnly)
+		if parseErr != nil {
+			return parseErr
 		}
-
-		importerMod := internalModuleOf(rel) // "" when not under internal/
-		command := commandOf(rel)
-		inPkg := strings.HasPrefix(rel, "pkg/")
+		importer := serviceForPath(rel)
 		isTest := strings.HasSuffix(rel, "_test.go")
+		isPlatform := strings.HasPrefix(rel, "internal/platform/")
+		isTestkit := strings.HasPrefix(rel, "internal/testkit/")
 
-		for _, imp := range f.Imports {
-			impPath := strings.Trim(imp.Path.Value, `"`)
+		for _, spec := range file.Imports {
+			impPath := strings.Trim(spec.Path.Value, `"`)
 			if !strings.HasPrefix(impPath, modulePath+"/") {
 				continue
 			}
 			short := strings.TrimPrefix(impPath, modulePath+"/")
-			// Generated wire contracts are intentionally shared by every layer.
-			if strings.HasPrefix(short, "gen/") {
+
+			if isPlatform && strings.HasPrefix(short, "services/") {
+				violations = append(violations, fmt.Sprintf("%s imports %s: internal/platform cannot depend on services", rel, short))
+			}
+			if isPlatform && (short == "internal/testkit" || strings.HasPrefix(short, "internal/testkit/")) {
+				violations = append(violations, fmt.Sprintf("%s imports %s: internal/platform cannot depend on testkit", rel, short))
+			}
+			if strings.HasPrefix(short, "pkg/") {
+				violations = append(violations, fmt.Sprintf("%s imports retired package path %s", rel, short))
+			}
+			if isTestkit {
+				// internal/testkit is a repository-level test harness. Its own
+				// implementation may use public service facades; consumers may use
+				// it only from test files.
 				continue
 			}
 
-			// Rule 2: pkg must never import internal.
-			if inPkg && strings.HasPrefix(short, "internal/") {
-				if grandfathered["pkg -> "+short] {
+			target, targetIsInternal, targetOK := serviceFromImport(short)
+			if strings.HasPrefix(rel, "contracts/") && targetIsInternal {
+				violations = append(violations, fmt.Sprintf("%s imports %s: contracts cannot depend on service implementation", rel, short))
+			}
+			if importer != "" && (strings.HasPrefix(short, "tools/") || strings.HasPrefix(short, "operations/")) {
+				violations = append(violations, fmt.Sprintf("%s imports %s: service runtime code cannot depend on tools or operations", rel, short))
+			}
+			if !targetOK {
+				if short == "internal/testkit" || strings.HasPrefix(short, "internal/testkit/") {
+					if !isTest {
+						violations = append(violations, fmt.Sprintf("%s imports %s: internal/testkit is test-only for consumers", rel, short))
+					}
 					continue
 				}
-				violations = append(violations,
-					rel+" imports "+short+" — pkg/ must never import internal/ (doc 01 rule 3)")
-				continue
-			}
-
-			if !strings.HasPrefix(short, "internal/") {
-				continue
-			}
-			segs := strings.Split(strings.TrimPrefix(short, "internal/"), "/")
-			impMod := segs[0]
-
-			// Service composition roots may import only their owned modules plus
-			// internal/config. pkg/* and gen/* were handled before this branch.
-			sharedVendorGateway := impMod == "vendorgw" && (command == "payin-service" || command == "payout-service")
-			sharedVendorBoundary := impMod == "vendorboundary" && (command == "payin-service" || command == "payout-service")
-			sharedInfrastructure := impMod == "config" || impMod == "server" || impMod == "migrationkit"
-			if command != "" && !sharedInfrastructure && !sharedVendorGateway && !sharedVendorBoundary && !serviceModules[command][impMod] {
-				violations = append(violations,
-					rel+" imports "+short+" — cmd/"+command+" does not own internal/"+impMod)
-			}
-
-			if isTest {
-				continue // rules 1 and 3 don't apply in tests — see doc comment above
-			}
-
-			// Final service boundary: internal packages owned by different
-			// deployables cannot call each other in-process. Event and wire
-			// contracts are the intentional exceptions; vendorgw is a shared
-			// library owned by both payin and payout.
-			if importerMod != "" && importerMod != impMod && importerMod != "testutil" && !sharedInfrastructure {
-				sameService := moduleOwner(importerMod) != "" && moduleOwner(importerMod) == moduleOwner(impMod)
-				ledgerEvent := impMod == "ledger" && len(segs) >= 2 && segs[1] == "events"
-				sharedVendorGateway := impMod == "vendorgw" && (importerMod == "payin" || importerMod == "payout")
-				sharedVendorBoundary := impMod == "vendorboundary" && (importerMod == "payin" || importerMod == "payout")
-				vendorBoundaryAdapters := importerMod == "vendorboundary" && impMod == "vendorgw"
-				offlineRecovery := offlineRecoveryDependencies[importerMod][impMod]
-				if !sameService && !ledgerEvent && !sharedVendorGateway && !sharedVendorBoundary && !vendorBoundaryAdapters && !offlineRecovery {
-					violations = append(violations,
-						rel+" imports "+short+" — cross-service production imports must use internal/ledger/events or gen/*")
+				if strings.HasPrefix(short, "internal/") && importer != "" && !isPlatform {
+					// Root platform code is intentionally shared by service composition
+					// roots; other root-internal packages are rejected by the tree test.
+					if !strings.HasPrefix(short, "internal/platform/") {
+						violations = append(violations, fmt.Sprintf("%s imports legacy root internal package %s", rel, short))
+					}
 				}
-			}
-
-			// Extracted ledger consumers may share only the versioned events
-			// package; all synchronous access belongs in pkg/ledgerclient.
-			if ledgerConsumers[importerMod] && impMod == "ledger" &&
-				(len(segs) == 1 || len(segs) >= 2 && segs[1] != "events") {
-				violations = append(violations,
-					rel+" imports "+short+" — production ledger consumers must use pkg/ledgerclient (events is the only exception)")
-			}
-
-			// Rule 3: mutually exclusive pairs — any import at all is a violation.
-			for _, pair := range mutuallyExclusive {
-				if (importerMod == pair[0] && impMod == pair[1]) ||
-					(importerMod == pair[1] && impMod == pair[0]) {
-					violations = append(violations,
-						rel+" imports "+short+" — "+pair[0]+" and "+pair[1]+
-							" must never import each other; communicate via events (doc 21 K-T5)")
-				}
-			}
-
-			// Rule 1: subpackage imports are module-private, except <mod>/events.
-			// cmd/ is exempt — it is the composition root, not "another
-			// module" in doc 01 rule 1's sense (which governs module-to-
-			// module boundaries). This codebase's established idiom already
-			// has cmd/gateway explicitly construct concrete implementations
-			// based on config (e.g. cache.NewRedisCounter vs
-			// cache.NewMemoryCounter) rather than hiding that behind
-			// registration magic — a module's registry pattern (e.g.
-			// vendorgw.Registry, docs/roadmap/archive/22 Task T1) relies on cmd doing
-			// the same for the module's own sub-implementations.
-			if strings.HasPrefix(rel, "cmd/") {
 				continue
 			}
-			offlineRecovery := offlineRecoveryDependencies[importerMod][impMod]
-			vendorBoundaryAdapters := importerMod == "vendorboundary" && impMod == "vendorgw"
-			if len(segs) >= 2 && importerMod != impMod && segs[1] != "events" && !offlineRecovery && !vendorBoundaryAdapters {
-				violations = append(violations,
-					rel+" imports "+short+" — only internal/"+impMod+
-						" itself may import its subpackages; import the root facade instead (doc 01 rule 1)")
+
+			if targetIsInternal && importer != "" && target != importer {
+				violations = append(violations, fmt.Sprintf("%s imports %s: service %s cannot import service %s internals; use a facade, client, or contract", rel, short, importer, target))
+			}
+			if targetIsInternal && (strings.HasPrefix(rel, "tools/") || strings.HasPrefix(rel, "operations/")) {
+				violations = append(violations, fmt.Sprintf("%s imports %s: tools and operations must use public service APIs", rel, short))
+			}
+
+			if target != "" && importer != "" {
+				for _, pair := range mutuallyExclusive {
+					if (importer == pair[0] && target == pair[1]) || (importer == pair[1] && target == pair[0]) {
+						violations = append(violations, fmt.Sprintf("%s imports %s: %s and %s are mutually exclusive; communicate through contracts/events", rel, short, pair[0], pair[1]))
+					}
+				}
 			}
 		}
 		return nil
@@ -242,43 +125,43 @@ func TestModuleBoundaries(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	for _, v := range violations {
-		t.Error(v)
+	for _, violation := range violations {
+		t.Error(violation)
 	}
 }
 
-func moduleOwner(module string) string {
-	for service, modules := range serviceModules {
-		if modules[module] {
-			return service
+// serviceForPath maps a Go source file to the logical service that owns it.
+// Public facades, command roots, and private packages all belong to the same
+// service for import checks.
+func serviceForPath(rel string) string {
+	if !strings.HasPrefix(rel, "services/") {
+		return ""
+	}
+	parts := strings.Split(rel, "/")
+	if len(parts) < 2 {
+		return ""
+	}
+	for name, service := range architecture.Services {
+		if service.Directory == "services/"+parts[1] {
+			return name
 		}
 	}
 	return ""
 }
 
-// commandOf returns the executable name for files under cmd/<name>.
-func commandOf(rel string) string {
-	if !strings.HasPrefix(rel, "cmd/") {
-		return ""
+func serviceFromImport(short string) (service string, internal bool, ok bool) {
+	if !strings.HasPrefix(short, "services/") {
+		return "", false, false
 	}
-	rest := strings.TrimPrefix(rel, "cmd/")
-	if i := strings.IndexByte(rest, '/'); i > 0 {
-		return rest[:i]
+	parts := strings.Split(short, "/")
+	if len(parts) < 2 {
+		return "", false, false
 	}
-	return ""
-}
-
-// internalModuleOf returns the module name for a repo-relative file path
-// under internal/ ("ledger" for internal/ledger/service/x.go), or "" when
-// the file is not part of an internal module.
-func internalModuleOf(rel string) string {
-	if !strings.HasPrefix(rel, "internal/") {
-		return ""
+	for name, registered := range architecture.Services {
+		if registered.Directory != "services/"+parts[1] {
+			continue
+		}
+		return name, len(parts) >= 3 && parts[2] == "internal", true
 	}
-	rest := strings.TrimPrefix(rel, "internal/")
-	if i := strings.IndexByte(rest, '/'); i > 0 {
-		return rest[:i]
-	}
-	return "" // a file directly under internal/ (none today) belongs to no module
+	return "", false, false
 }

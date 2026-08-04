@@ -74,8 +74,8 @@ produces an **inventoried but unverified** restored cluster; never point
 real traffic at it on its own. For a real incident or a rehearsed drill,
 use the full chained procedure below
 ([Game-day drill](#game-day-drill-scriptsdr-drillsh)), which runs
-`restore-cluster.sh` as its own Phase E and then chains `cmd/drverify`
-(T4), `cmd/drreseed` + the post-restore security fence (T5), and the
+`restore-cluster.sh` as its own Phase E and then chains `operations/recovery/drverify/cmd/drverify`
+(T4), `operations/recovery/drreseed/cmd/drreseed` + the post-restore security fence (T5), and the
 business smoke test before any traffic is allowed.
 
 ## Game-day drill (scripts/dr-drill.sh)
@@ -93,8 +93,8 @@ disaster), then chains every recovery tool T1–T5 built, in order:
 
 ```text
 restore-cluster.sh (restore + promote)
-  → cmd/drverify        (zero-fatal cross-database gate)
-  → cmd/drreseed         (Redis policy/fraud reconstruction)
+  → operations/recovery/drverify/cmd/drverify        (zero-fatal cross-database gate)
+  → operations/recovery/drreseed/cmd/drreseed         (Redis policy/fraud reconstruction)
   → post-restore-security.sh --confirm  (session/token fence, K11)
   → application services started against the restored cluster
   → business smoke (fixture balance + fn_verify_ledger_balance)
@@ -203,8 +203,8 @@ a small team:
 |---|---|---|
 | Declare incident, choose `latest` vs. PITR target | Incident commander | Judgment call from evidence (see target selection above); everyone else waits for this before touching anything |
 | Restore + promote (`restore-cluster.sh`) | Database operator | Mechanical once the target is chosen; abort and escalate on any fail-closed error (below) |
-| Cross-database gate (`cmd/drverify`) | Database operator or on-call engineer | Zero fatal findings required before proceeding — a partial pass is not a pass |
-| Redis/fraud reconstruction (`cmd/drreseed`) | On-call engineer | Fails closed if outbox evidence is incomplete — do not override |
+| Cross-database gate (`operations/recovery/drverify/cmd/drverify`) | Database operator or on-call engineer | Zero fatal findings required before proceeding — a partial pass is not a pass |
+| Redis/fraud reconstruction (`operations/recovery/drreseed/cmd/drreseed`) | On-call engineer | Fails closed if outbox evidence is incomplete — do not override |
 | Session/token fence (`post-restore-security.sh --confirm`) | Security/on-call engineer | Must run before the next stage, never after |
 | Enable traffic | Incident commander | Final go/no-go, after every prior stage reports success — this is the one action that cannot be undone by re-running a script |
 
@@ -215,10 +215,10 @@ Abort the restore (`scripts/restore-cluster.sh cleanup` /
 any of these — every one of them is a real fail-closed behavior already
 proven live in T1–T5, not a theoretical concern:
 
-- `cmd/drverify` reports any fatal finding, or exits non-zero for any
+- `operations/recovery/drverify/cmd/drverify` reports any fatal finding, or exits non-zero for any
   reason (including a check that could not run at all — `Passed()` is
   `false` whenever `errors` is non-empty too).
-- `cmd/drreseed` fails closed on missing fraud-evidence coverage (a real,
+- `operations/recovery/drreseed/cmd/drreseed` fails closed on missing fraud-evidence coverage (a real,
   intentional refusal — never override by re-running with weaker
   evidence).
 - The restore target itself is unreachable (before the earliest backup,
@@ -254,7 +254,7 @@ looking at before choosing a recovery action:
 | State class | Examples | Recovery source | Notes |
 |---|---|---|---|
 | **PostgreSQL — authoritative** | `seev_ledger`, `seev_auth`, `seev_payin`, `seev_payout`, `seev_fraud`, `seev_gateway`, `seev_adminbff`, `seev_assurance`, `seev_vendor` (all 9 service databases, one shared cluster) | Physical cluster backup + WAL (Track A7); `pg_dump`/projection rebuild for the ledger-only minimal case covered by this runbook | The only state that is ever wrong to silently regenerate — restore it, don't reconstruct it from inference. |
-| **Redis — reconstructable/ephemeral** | Rate-limit buckets, policy counters, fraud velocity keys, scheduler locks, circuit-breaker state | Rebuilt from PostgreSQL after a restore (Track A7 `cmd/drreseed`); safe to start empty otherwise | Never a backup target itself. A cold Redis after restore is expected, not a failure — it must be reseeded from durable evidence before production traffic resumes, not left to warm up silently. |
+| **Redis — reconstructable/ephemeral** | Rate-limit buckets, policy counters, fraud velocity keys, scheduler locks, circuit-breaker state | Rebuilt from PostgreSQL after a restore (Track A7 `operations/recovery/drreseed/cmd/drreseed`); safe to start empty otherwise | Never a backup target itself. A cold Redis after restore is expected, not a failure — it must be reseeded from durable evidence before production traffic resumes, not left to warm up silently. |
 | **RabbitMQ — delivery-only** | Outbox event deliveries, durable payout vendor commands in flight | Topology (exchanges/queues/bindings) is recreated from service startup code; in-flight-only deliveries are not backed up and must be treated as potentially lost | The event's *fact* lives in PostgreSQL (the outbox row); the broker is a delivery mechanism, not a source of truth. A lost in-flight delivery is recovered by replaying from the durable outbox row, never by trying to back up the broker. |
 | **Vault / certificates — external** | Vault dev-mode secrets, mTLS leaf certificates and the local mini-CA | Re-seeded (`scripts/vault-seed.sh`) / re-issued (`make certs`) from current external configuration, never from a database backup | Runtime secrets and identity material must come from the environment at restore time, not resurrected from backup data — see `docs/security/threat-model.md` for why. |
 

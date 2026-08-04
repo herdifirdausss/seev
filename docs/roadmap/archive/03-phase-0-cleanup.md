@@ -8,9 +8,9 @@ except where explicitly stated.
 Execute the tasks in order. For each task: implement it, run `make test`, and
 commit it.
 
-## Task 0.1 — Move the scheduler to `pkg/scheduler`
+## Task 0.1 — Move the scheduler to `internal/platform/scheduling`
 
-1. Create `pkg/scheduler/scheduler.go` from
+1. Create `internal/platform/scheduling/scheduler.go` from
    `cmd/scheduler/scheduler_final.go`:
    - Change `package main` to `package scheduler`.
    - Remove `main()` and any signal-handling/demo block. A library must not
@@ -20,17 +20,17 @@ commit it.
      `WithLocation`, and the metrics interface. Keep internal helpers
      unexported.
 2. Move `cmd/scheduler/scheduler_test.go` and `scheduler_unit_test.go` to
-   `pkg/scheduler/`, updating the package name. All tests must remain green.
-3. Move `cmd/scheduler/README.md` to `pkg/scheduler/README.md`.
+   `internal/platform/scheduling/`, updating the package name. All tests must remain green.
+3. Move `cmd/scheduler/README.md` to `internal/platform/scheduling/README.md`.
 4. Remove `cmd/scheduler/`.
 
-Acceptance: `go build ./...` and `go test ./pkg/scheduler/ -race` pass, and no
+Acceptance: `go build ./...` and `go test ./internal/platform/scheduling/ -race` pass, and no
 `package main` remains outside `cmd/server`.
 
 ## Task 0.2 — Remove `cmd/rabbitmq`
 
 `cmd/rabbitmq/rabbitmq.go` is example code whose functionality is already
-covered by `pkg/messaging`. Verify first that
+covered by `internal/platform/messaging`. Verify first that
 `grep -rn "cmd/rabbitmq" --include="*.go" .` returns no results, then remove
 the directory.
 
@@ -39,7 +39,7 @@ the directory.
 1. Create `docs/design/legacy-schemas/`.
 2. Move these files there: `migrations/001.sql`, `migrations/002.sql`,
    `migrations/ledger.sql`, `migrations/ledgernew.sql`, and
-   `internal/ledger/001.sql`.
+   `services/ledger/internal/001.sql`.
 3. Remove the empty `migrations/auth.sql` file.
 4. Add `docs/design/legacy-schemas/README.md` with one paragraph:
    "These are schema drafts from before the canonical migrations (see
@@ -54,26 +54,26 @@ The `migrations/` directory should now be empty and will be populated in Phase
 
 ## Task 0.4 — Remove dead ledger code
 
-1. `internal/ledger/service/migration.go` contains the old `SMALLINT` design.
+1. `services/ledger/internal/service/migration.go` contains the old `SMALLINT` design.
    Check its users with
    `grep -rn "AccountCash\|CurrencyIDR\|AccountType(" --include="*.go" internal/ cmd/`.
    If only that file uses them, remove it.
-2. Check `internal/ledger/service/transfer/transfer_service.go` with
+2. Check `services/ledger/internal/service/transfer/transfer_service.go` with
    `grep -rn "service/transfer" --include="*.go" .`. If nothing references it,
    remove the directory. If it is referenced, inspect it and report before
    deciding.
-3. `internal/ledger/model/ledger_transaction.go` contains a `model.Command`
+3. `services/ledger/internal/model/ledger_transaction.go` contains a `model.Command`
    duplicate of `processors.Command`. Check its users with
    `grep -rn "model.Command" --include="*.go" .`, migrate them to
    `processors.Command`, and remove `model.Command`.
 4. Fix the misplaced comment in
-   `internal/ledger/model/ledger_entry.go`: the `LedgerEntryRecord` comment is
+   `services/ledger/internal/model/ledger_entry.go`: the `LedgerEntryRecord` comment is
    attached to `EntryInstruction`.
 
 ## Task 0.5 — Fix the filename typo
 
-Rename `internal/handler/dependencties.go` to
-`internal/handler/dependencies.go` without changing its contents.
+Rename `services/gateway/internal/transport/http/dependencties.go` to
+`services/gateway/internal/transport/http/dependencies.go` without changing its contents.
 
 ## Task 0.6 — Add the development infrastructure promised by the README
 
@@ -84,7 +84,7 @@ missing files:
 - `docker-compose.yml`: PostgreSQL 16 (port 5432), Redis 7, and RabbitMQ 3
   with management enabled and health checks.
 - `.env.example`: every environment variable validated by
-  `internal/config/config.go`, with development-safe example values. Use that
+  `internal/platform/config/config.go`, with development-safe example values. Use that
   file as the source of truth for the list.
 - `.golangci.yml`: at minimum `errcheck`, `govet`, `staticcheck`, `ineffassign`,
   `unused`, and `misspell`.

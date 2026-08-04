@@ -2,7 +2,7 @@
 # Certificate rotation drill (docs/roadmap/archive/49 K9/T6).
 #
 # A standalone, on-demand proof — NOT a permanent chaos scenario, NOT part
-# of `make verify-full` — that cmd/certgen's `rotate` operation is:
+# of `make verify-full` — that tools/certgen's `rotate` operation is:
 #
 #   1. zero-downtime: no process restart, no listener rebind, no dropped
 #      baseline connections. A poll-based reload (docs/roadmap/archive/49 K2 —
@@ -16,7 +16,7 @@
 #      trusted), not merely "a new cert also happens to work".
 #
 # Scope: exercises ledger-service's internal HTTPS listener only, not
-# every service/gRPC too. pkg/tlsx.CertSource is the one shared object
+# every service/gRPC too. internal/platform/security/tls.CertSource is the one shared object
 # every tls.Config in a process (gRPC AND HTTP, server AND client) reads
 # from — proving hot-reload here proves the same code path gRPC uses in
 # the same process, so duplicating this against every listener/service
@@ -90,7 +90,7 @@ ROTATE_TS=$(date +%s.%N)
 "$CERTGEN_BIN" rotate --out "$CERT_DIR"
 
 # GRACE_SECONDS bounds how long a request MAY transiently fail after
-# rotation: pkg/tlsx polls for changes rather than reacting instantly
+# rotation: internal/platform/security/tls polls for changes rather than reacting instantly
 # (docs/roadmap/archive/49 K2 — deliberately no fsnotify dependency), so a brand new
 # client cert reissued by rotate can be rejected until this server's OWN
 # CertSource next polls and reloads its CAPool. "Zero-downtime" here means
@@ -100,7 +100,7 @@ ROTATE_TS=$(date +%s.%N)
 # 5s default poll interval is a generous bound; a real failure pattern
 # would be sustained past it, not self-heal within it.
 GRACE_SECONDS=10
-log "letting the loop keep running through pkg/tlsx's poll-based hot-reload (grace window ${GRACE_SECONDS}s, waiting 20s total)..."
+log "letting the loop keep running through internal/platform/security/tls's poll-based hot-reload (grace window ${GRACE_SECONDS}s, waiting 20s total)..."
 sleep 20
 
 kill "$LOOP_PID" 2>/dev/null || true

@@ -10,7 +10,7 @@
 
 # Build output (`make build`) and stray extensionless binaries from
 # `go build ./cmd/<pkg>` run without -o at the repo root (easy to do by
-# accident — happened once building cmd/gentoken).
+# accident — happened once building tools/gentoken).
 /bin/
 /server
 /gentoken
@@ -47,7 +47,7 @@ go.work.sum
 !/deploy/observability/secrets/.gitkeep
 
 # docs/roadmap/archive/49 K3: mTLS CA + per-service leaf certs generated locally by
-# `make certs` (cmd/certgen) — private keys, never committed, mirrors the
+# `make certs` (tools/certgen) — private keys, never committed, mirrors the
 # observability-secret pattern above.
 /deploy/certs/*
 !/deploy/certs/.gitkeep
@@ -74,6 +74,11 @@ go.work.sum
 # are disposable evidence and must never enter Git. Commit only redacted,
 # deterministic summaries under docs/performance/.
 /artifacts/load/*
+
+# Container smoke diagnostics are disposable and allowlisted by the smoke
+# script; retain only committed, redacted evidence when a failure is worth
+# documenting.
+/.smoke-container-artifacts/
 
 # C2 analytics secrets and disposable local evidence.
 /analytics/secrets/*

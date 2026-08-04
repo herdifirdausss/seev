@@ -24,4 +24,4 @@ esac
 	exit 2
 }
 
-exec go run ./cmd/loadseed -kind "$KIND" -count "$COUNT" -out "$OUTPUT" -ack "$ACK"
+exec go run ./tools/loadseed -kind "$KIND" -count "$COUNT" -out "$OUTPUT" -ack "$ACK"

@@ -2,9 +2,9 @@
 
 Read [plan 26](26-phase6a-foundations.md) first. Prerequisite: [plan 30](30-phase6e-payout-service-routing.md).
 
-Screening currently lives inside ledger as `internal/ledger/screening` and implements a synchronous, fail-open `PrePostHook`. This phase moves the rules and `screening_events` to an internal fraud service while preserving that seam in ledger. Velocity changes from counting screening attempts to counting transactions that were actually posted; this is an intentional semantic improvement.
+Screening currently lives inside ledger as `services/ledger/internal/screening` and implements a synchronous, fail-open `PrePostHook`. This phase moves the rules and `screening_events` to an internal fraud service while preserving that seam in ledger. Velocity changes from counting screening attempts to counting transactions that were actually posted; this is an intentional semantic improvement.
 
-## T1 — Standalone `internal/fraud` module
+## T1 — Standalone `services/fraud` module
 
 Create the standard fraud module structure with rules, repository, model, facade, and errors. Move the amount-threshold, velocity, mode, and metrics logic from ledger. The facade accepts transaction type, user, amount, and currency and returns a block verdict and reason.
 
@@ -34,7 +34,7 @@ Status: not started.
 
 ## T4 — Ledger gRPC hook
 
-Keep a small `internal/ledger/screening/grpchook.go` package that implements `PrePostHook`. Call fraud-service with a 500 ms context timeout. Any error, including timeout or unavailable service, is returned to the existing fail-open pipeline. Configure the hook only when `FRAUD_GRPC_ADDR` is set; an empty address creates no hooks and preserves old behavior.
+Keep a small `services/ledger/internal/screening/grpchook.go` package that implements `PrePostHook`. Call fraud-service with a 500 ms context timeout. Any error, including timeout or unavailable service, is returned to the existing fail-open pipeline. Configure the hook only when `FRAUD_GRPC_ADDR` is set; an empty address creates no hooks and preserves old behavior.
 
 **Tests:** blocking response propagation and fail-open behavior when fraud is unavailable, using bufconn.
 

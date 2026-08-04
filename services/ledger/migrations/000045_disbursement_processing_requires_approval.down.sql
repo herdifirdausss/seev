@@ -1,0 +1,3 @@
+DROP TRIGGER IF EXISTS trg_disbursement_approval_fields_immutable ON disbursement_batches;
+DROP FUNCTION IF EXISTS fn_disbursement_approval_fields_immutable();
+ALTER TABLE disbursement_batches DROP CONSTRAINT IF EXISTS chk_disbursement_batches_processing_requires_approval;

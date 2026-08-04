@@ -283,8 +283,17 @@ fi
 # same query piped over STDIN works correctly. So the query is piped, not
 # passed via -c, with -v still providing the bound (regex-validated, single-
 # quoted) value.
+# Resolve the Compose service container instead of assuming the default
+# development project name. The full gate runs under `seev-verify`, and using
+# a fixed `seev-postgres-1` name can accidentally target a stopped container
+# from another project.
+POSTGRES_CONTAINER="$(docker compose --profile app ps -q postgres 2>/dev/null || true)"
+if [ -z "$POSTGRES_CONTAINER" ]; then
+	fail "could not resolve the running postgres container from the active Compose project"
+	exit 1
+fi
 BALANCE="$(printf "SELECT ab.balance FROM account_balances ab JOIN accounts a ON a.id = ab.account_id WHERE a.owner_id = :user_id AND a.type = 'cash';\n" |
-	docker exec -i seev-postgres-1 psql -U seev -d seev_ledger -v ON_ERROR_STOP=1 -t -A -v user_id="'$USER_ID'")"
+	docker exec -i "$POSTGRES_CONTAINER" psql -U seev -d seev_ledger -v ON_ERROR_STOP=1 -t -A -v user_id="'$USER_ID'")"
 BALANCE="$(echo "$BALANCE" | tr -d '[:space:]')"
 if [[ "$BALANCE" =~ ^[0-9]+$ ]] && [ "$BALANCE" = "500000" ]; then
 	ok "cash balance is exactly 500000 after settlement (verified via docker exec psql)"

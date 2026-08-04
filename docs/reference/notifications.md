@@ -4,7 +4,7 @@
 
 Gateway owns the notification platform. A committed Ledger event enters the
 RabbitMQ queue `ledger.events.notifications`, is validated and mapped by
-`internal/notify`, and is atomically recorded with its user-facing plan in
+`services/gateway/internal/notification`, and is atomically recorded with its user-facing plan in
 Gateway PostgreSQL. RabbitMQ acknowledgement happens only after that durable
 plan succeeds.
 

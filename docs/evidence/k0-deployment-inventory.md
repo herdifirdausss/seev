@@ -21,7 +21,7 @@ readiness assertion.
 - PostgreSQL, Redis, RabbitMQ, and vendor boundary relationships are in
   [dependency-matrix](../deployment/dependency-matrix.md).
 - Vendor callback source policy is implemented in
-  `internal/vendorboundary/callback.go`: the connection peer is authoritative
+  `services/vendor-service/internal/callback.go`: the connection peer is authoritative
   unless the immediate peer is explicitly trusted for forwarded headers.
 - Callback signature verification and durable inbox/idempotency remain inside
   VendorService; Traefik is not the business-authentication owner.

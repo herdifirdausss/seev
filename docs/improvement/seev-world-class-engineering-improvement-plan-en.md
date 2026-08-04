@@ -4,6 +4,8 @@
 > Current status: **strong pre-production engineering prototype and engineering reference**  
 > Target: evolve Seev from a portfolio-grade repository into a system supported by **production-grade engineering evidence**
 
+> Implementation index: [`docs/engineering/improvement-plan-tracker.md`](../engineering/improvement-plan-tracker.md). Repository implementation is complete where marked `implemented`; cloud, vendor, independent-review, remote GitHub-object, and product-decision evidence remains explicitly external and is not represented as complete by source code alone.
+
 ---
 
 ## 1. Executive Summary
@@ -564,6 +566,10 @@ Dispute Opened
 
 ## 8.6 Close Remaining Database and Authorization Findings
 
+Repository-side implementation and repeatable evidence are indexed in
+[`docs/acceptance/security.md`](../acceptance/security.md). The independent
+review in section 12.6 remains an external evidence gate.
+
 Review and close all high-priority findings, including:
 
 - KYC-state consistency constraints;
@@ -733,6 +739,14 @@ Include:
 - seed version;
 - test-scenario version;
 - container or artifact digests.
+
+The repository-side evidence contract is implemented in
+[`docs/acceptance/critical-failures.md`](../acceptance/critical-failures.md).
+CI retains run-specific integration and scheduled full-stack bundles for 30
+days and uses an allowlist that excludes binaries, private keys, process IDs,
+and encrypted object-store contents. A deployed production-shaped run with
+the same manifest, invariant reports, alert/runbook results, and owner sign-off
+is still required before runtime acceptance is claimed.
 
 ## Phase 2 Exit Criteria
 
@@ -1110,6 +1124,15 @@ Implement:
 - verified third-party GitHub Actions;
 - reproducible release metadata.
 
+The repository implementation is recorded in
+[`docs/acceptance/supply-chain.md`](../acceptance/supply-chain.md): source and
+image references are pinned, Go and container vulnerability gates run in CI,
+CycloneDX and BuildKit SBOM/provenance artifacts are retained, the protected
+publish workflow signs and verifies the immutable digest, and production
+application/migration runtimes enforce non-root, read-only operation. A real
+protected-registry run and deployed admission/runtime verification remain
+environment evidence requirements.
+
 ---
 
 ## 12.6 Perform an Independent Security Review
@@ -1144,6 +1167,14 @@ Track every finding with:
 - due date;
 - verification evidence;
 - accepted residual risk when not remediated.
+
+The repository-side scope, evidence fields, and exit criteria are recorded in
+[`docs/security/independent-review-scope.md`](../security/independent-review-scope.md),
+with an execution template in
+[`docs/acceptance/independent-security-review.md`](../acceptance/independent-security-review.md).
+Completion still requires an independent assessor's dated report,
+reproduction evidence, remediation or risk-acceptance decisions, and a retest
+statement. Repository tests or an internal self-review do not close this gate.
 
 ---
 
@@ -1198,6 +1229,10 @@ Use:
 - strict kill-switch criteria.
 
 ## Go/No-Go Checklist
+
+The boxes below are repository implementation gates. Runtime-evidence gates
+remain open until the scorecard has a real environment artifact; a checked
+box must not be read as production approval.
 
 ### Correctness
 
@@ -1262,6 +1297,12 @@ The pilot may begin only when:
 - every go/no-go item has evidence;
 - the pilot has an explicit owner;
 - rollback and stop conditions are documented.
+
+The release record for the P0/P1 gate is maintained in
+[`docs/acceptance/p0-p1-risk-gate.md`](../acceptance/p0-p1-risk-gate.md).
+Repository checks validate the inventory and approval contract, but the gate
+is not complete until a specific commit and environment have current evidence
+and a signed release decision.
 
 ---
 
@@ -1351,48 +1392,48 @@ This is only an example. The final decision must be based on profiling, ownershi
 
 ## P0
 
-- [ ] Route scheduled transactions through the policy engine
-- [ ] Introduce the unified money-movement command pipeline
-- [ ] Implement fee-rule maker-checker
-- [ ] Add non-negative fee database constraints
-- [ ] Add the disbursement-approval database invariant
-- [ ] Add dispute-amount constraints
-- [ ] Expose dispute APIs and operator flows
-- [ ] Implement the dispute-deadline worker
-- [ ] Strengthen currency type safety
+- [x] Route scheduled transactions through the policy engine
+- [x] Introduce the unified money-movement command pipeline
+- [x] Implement fee-rule maker-checker
+- [x] Add non-negative fee database constraints
+- [x] Add the disbursement-approval database invariant
+- [x] Add dispute-amount constraints
+- [x] Expose dispute APIs and operator flows
+- [x] Implement the dispute-deadline worker
+- [x] Strengthen currency type safety
 - [ ] Close the remaining non-green chaos scenario
-- [ ] Remove or restrict all direct posting paths
-- [ ] Add architectural tests for forbidden bypasses
+- [x] Remove or restrict all direct posting paths
+- [x] Add architectural tests for forbidden bypasses
 
 ## P1
 
-- [ ] Document golden-route state machines
-- [ ] Create the failure matrix
-- [ ] Implement operator recovery APIs
-- [ ] Implement a stuck-state scanner
-- [ ] Define an outbox-age SLO
-- [ ] Define an unknown-vendor-state SLO
-- [ ] Add reconciliation alerts
-- [ ] Complete recovery runbooks
-- [ ] Define an incident-severity model
-- [ ] Preserve DR-drill evidence
-- [ ] Complete runtime-acceptance documents
+- [x] Document golden-route state machines
+- [x] Create the failure matrix
+- [x] Implement operator recovery APIs
+- [x] Implement a stuck-state scanner
+- [x] Define an outbox-age SLO
+- [x] Define an unknown-vendor-state SLO
+- [x] Add reconciliation alerts
+- [x] Complete recovery runbooks
+- [x] Define an incident-severity model
+- [ ] Preserve DR-drill evidence (attach a completed restore-drill artifact)
+- [x] Complete runtime-acceptance documents
 - [ ] Add regular alert and runbook drills
 
 ## P2
 
-- [ ] Implement Infrastructure as Code
+- [x] Implement Infrastructure as Code
 - [ ] Provision managed PostgreSQL staging
-- [ ] Introduce an external secret manager
-- [ ] Introduce workload identity
-- [ ] Separate migration jobs from application startup
-- [ ] Generate SBOMs and sign artifacts
+- [x] Introduce an external secret manager
+- [x] Introduce workload identity
+- [x] Separate migration jobs from application startup
+- [x] Pin dependencies, actions, and image bases; run Go/container vulnerability scans; retain SBOM/provenance; sign/verify protected releases; and enforce minimal non-root/read-only runtimes (the protected-registry run remains an environment evidence gate)
 - [ ] Add multi-replica tests
 - [ ] Integrate a real vendor sandbox
-- [ ] Centralize logs
-- [ ] Build SLO dashboards
+- [x] Centralize logs
+- [x] Build SLO dashboards
 - [ ] Complete an independent security review
-- [ ] Add release provenance
+- [x] Add release provenance
 
 ## P3
 

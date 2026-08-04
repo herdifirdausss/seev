@@ -1,0 +1,68 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "SeeV: adminbff",
+      "type": "go",
+      "request": "launch",
+      "mode": "debug",
+      "program": "${workspaceFolder}/services/adminbff/cmd/adminbff"
+    },
+    {
+      "name": "SeeV: assurance",
+      "type": "go",
+      "request": "launch",
+      "mode": "debug",
+      "program": "${workspaceFolder}/services/assurance/cmd/assurance"
+    },
+    {
+      "name": "SeeV: auth",
+      "type": "go",
+      "request": "launch",
+      "mode": "debug",
+      "program": "${workspaceFolder}/services/auth/cmd/auth"
+    },
+    {
+      "name": "SeeV: fraud",
+      "type": "go",
+      "request": "launch",
+      "mode": "debug",
+      "program": "${workspaceFolder}/services/fraud/cmd/fraud"
+    },
+    {
+      "name": "SeeV: gateway",
+      "type": "go",
+      "request": "launch",
+      "mode": "debug",
+      "program": "${workspaceFolder}/services/gateway/cmd/gateway"
+    },
+    {
+      "name": "SeeV: ledger",
+      "type": "go",
+      "request": "launch",
+      "mode": "debug",
+      "program": "${workspaceFolder}/services/ledger/cmd/ledger"
+    },
+    {
+      "name": "SeeV: payin",
+      "type": "go",
+      "request": "launch",
+      "mode": "debug",
+      "program": "${workspaceFolder}/services/payin/cmd/payin"
+    },
+    {
+      "name": "SeeV: payout",
+      "type": "go",
+      "request": "launch",
+      "mode": "debug",
+      "program": "${workspaceFolder}/services/payout/cmd/payout"
+    },
+    {
+      "name": "SeeV: vendor",
+      "type": "go",
+      "request": "launch",
+      "mode": "debug",
+      "program": "${workspaceFolder}/services/vendor-service/cmd/vendor"
+    }
+  ]
+}

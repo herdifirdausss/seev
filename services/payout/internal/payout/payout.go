@@ -1,0 +1,221 @@
+// Package payout is the public facade for the payout module (docs/roadmap/archive/23,
+// decision K-T3/K-T6) — orchestrates a user withdraw request through
+// hold -> vendor submission -> terminal state (settled/cancelled/failed).
+// This is the ONLY package other code may import from services/payout —
+// importing services/payout/internal/repository or services/payout/internal/payout/model directly
+// from outside this module is a boundary violation
+// (docs/roadmap/archive/01-target-architecture.md, enforced by boundary_test.go).
+//
+// payout is NOT a general-purpose saga framework — it is a state machine
+// (payout_requests.status) plus a resume/polling job that re-drives
+// whatever step a crashed/interrupted request last reached. The guard that
+// actually prevents money-unsafe outcomes (double-settle,
+// settle-after-cancel) is the LEDGER's own closed_by_tx_id atomic guard
+// (docs/roadmap/archive/14 Task T2, decision K3) — payout translates a lost race
+// (ledgererr.ErrAlreadyClosed) into "reconcile local state", it never builds
+// its own competing protection.
+package payout
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+	"os"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/redis/go-redis/v9"
+	"github.com/shopspring/decimal"
+	"google.golang.org/grpc"
+
+	"github.com/herdifirdausss/seev/contracts/clients/fraud"
+	"github.com/herdifirdausss/seev/contracts/clients/ledger"
+	vendorgw "github.com/herdifirdausss/seev/contracts/vendorgw"
+	payoutv1 "github.com/herdifirdausss/seev/gen/go/payout/v1"
+	"github.com/herdifirdausss/seev/internal/platform/database"
+	currencyreg "github.com/herdifirdausss/seev/internal/platform/money/currency"
+	"github.com/herdifirdausss/seev/internal/platform/scheduling"
+	"github.com/herdifirdausss/seev/internal/platform/security/crypto"
+	"github.com/herdifirdausss/seev/services/payout/internal/payout/model"
+	"github.com/herdifirdausss/seev/services/payout/internal/repository"
+	"github.com/herdifirdausss/seev/services/payout/internal/transport/grpc"
+	"github.com/herdifirdausss/seev/services/payout/internal/worker"
+)
+
+// Re-exported types so callers never need to import services/payout/internal/payout/model.
+type PayoutRequest = model.PayoutRequest
+
+func (m *Module) RegisterGRPC(server *grpc.Server) {
+	payoutv1.RegisterPayoutServiceServer(server, grpcserver.New(m, repository.ErrNotFound, ErrNoRoute, ErrNoVendorAvailable, ErrScreeningBlocked, ErrScreeningDependencyUnavailable, ErrSandboxVendorUnavailable))
+}
+
+const (
+	VendorCallbackFinalized         = "finalized"
+	VendorCallbackAlreadyFinalized  = "already_finalized"
+	VendorCallbackIgnored           = "ignored_non_terminal"
+	VendorCallbackRecordedUnmatched = "recorded_unmatched"
+)
+
+// HandleVendorCallback applies a normalized terminal callback only when its
+// vendor and vendor reference identify a local payout request. Amount and
+// currency are checked before any Ledger transition.
+func (m *Module) HandleVendorCallback(ctx context.Context, vendor, vendorEventID, externalReference, amountRaw, currency, status, occurredAt, inboxID, requestID, unknownStatus string) (string, error) {
+	if err := currencyreg.ValidateCode(currency); err != nil {
+		return "", fmt.Errorf("payout: invalid normalized callback currency: %w", err)
+	}
+	amount, err := decimal.NewFromString(amountRaw)
+	if err != nil || currencyreg.ValidatePositiveMinorAmount(amount) != nil {
+		return "", fmt.Errorf("payout: invalid normalized callback amount")
+	}
+	vendorReference := externalReference
+	req, err := m.repo.GetByVendorReference(ctx, vendor, vendorReference)
+	if errors.Is(err, repository.ErrNotFound) {
+		return VendorCallbackRecordedUnmatched, nil
+	}
+	if err != nil {
+		return "", err
+	}
+	if !req.Amount.Equal(amount) || req.Currency != currency {
+		return VendorCallbackRecordedUnmatched, nil
+	}
+	if req.Status == model.StatusSettled || req.Status == model.StatusCancelled || req.Status == model.StatusFailed {
+		return VendorCallbackAlreadyFinalized, nil
+	}
+	if status != "settled" && status != "failed" {
+		return VendorCallbackIgnored, nil
+	}
+	gateway, err := m.gatewayForVendor(ctx, vendor)
+	if err != nil {
+		return "", err
+	}
+	if status == "settled" {
+		if err := m.settle(ctx, req.ID, gateway); err != nil {
+			return "", err
+		}
+	} else {
+		reason := "vendor callback failed"
+		if unknownStatus != "" {
+			reason = unknownStatus
+		}
+		if err := m.cancel(ctx, req.ID, gateway, reason); err != nil {
+			return "", err
+		}
+	}
+	return VendorCallbackFinalized, nil
+}
+
+// Poster is the subset of ledger.Module's behavior payout needs — a local
+// structural interface (mirrors services/payin.Poster, docs/roadmap/archive/22 Task
+// T2) rather than a dependency on the concrete *ledger.Module type.
+type Poster interface {
+	Post(ctx context.Context, cmd ledgerclient.Command) error
+	// GetTransactionByIdempotencyKey recovers the tx ID Post() itself
+	// doesn't return, so payout can later pass it as ReferenceID to
+	// withdraw_settle/withdraw_cancel (docs/roadmap/archive/23 Task T3).
+	GetTransactionByIdempotencyKey(ctx context.Context, key, scope string) (ledgerclient.Transaction, error)
+	// GetUserCurrency resolves the currency Create should record on a new
+	// payout_requests row (docs/roadmap/archive/23 Task T3 step 1).
+	GetUserCurrency(ctx context.Context, userID uuid.UUID, pocketCode string) (string, error)
+	// ResolveFee prices the withdraw fee (docs/roadmap/archive/25 Task T2) — the
+	// boundary-clean way payout charges a fee without importing
+	// services/ledger/internal/feepolicy (a subpackage of another module). settle()
+	// calls this and passes the result as fee_amount/fee_gateway metadata
+	// on the withdraw_settle command — NEVER on withdraw_initiate/cancel,
+	// since a fee charged upfront would either break the exact-amount
+	// close validation or strand the fee on a cancelled withdrawal.
+	ResolveFee(ctx context.Context, userID uuid.UUID, txType, gateway, currency string, amount decimal.Decimal) (fee decimal.Decimal, feeGateway string, ok bool, err error)
+	// ConsumeFeeQuote atomically, single-use consumes a fee quote created
+	// via ledger's POST /fees/quote (docs/roadmap/archive/38 Task T5) — Create calls
+	// this BEFORE hold (anti-burn ordering: quote consumption never moves
+	// money by itself). Returns *ledgererr.LedgerError{Code: "QUOTE_EXPIRED"
+	// | "QUOTE_MISMATCH"} on rejection.
+	ConsumeFeeQuote(ctx context.Context, quoteID, userID uuid.UUID, txType, currency string, amount decimal.Decimal, ref string) (fee decimal.Decimal, feeGateway string, err error)
+}
+
+// Module is the public facade for the payout module.
+type Module struct {
+	db       database.DatabaseSQL
+	repo     repository.Repository
+	routing  repository.RoutingRepository
+	poster   Poster
+	registry *vendorgw.Registry
+	logger   *slog.Logger
+	// fraudClient screens a payout before any row is created or hold is
+	// posted (docs/roadmap/archive/37 Task T5). nil is a valid, fully-supported
+	// configuration — no screening runs.
+	fraudClient *fraudcheck.Client
+	// breaker tracks per-vendor circuit health (docs/roadmap/archive/40 Task T1) — nil
+	// is a valid, fully-supported configuration (byte-identical to before
+	// this feature existed: every registered vendor is always "allowed").
+	breaker vendorgw.Breaker
+	// commandRepo persists the durable vendor-dispatch outbox (docs/roadmap/archive/45
+	// Task T0/T1) — relay.go's dispatchOne is the only place that ever
+	// calls provider.Submit; every other call site (Create, resume,
+	// AdminRetry) only ever enqueues/ensures a command.
+	commandRepo repository.VendorCommandRepository
+
+	resumeJob *worker.ResumeJob
+	relay     *worker.VendorRelay
+}
+
+// NewModule wires the payout module. Vendor and gateway selection comes
+// from the routing repository. redisClient follows the optional-Redis convention as
+// ledger.NewModule: nil means the resume job's distributed lock falls back
+// to an in-memory implementation (single-instance only). fraudClient may be
+// nil to disable pre-hold fraud screening entirely. breaker may be nil to
+// disable circuit-breaking entirely (every registered vendor is always
+// allowed). ring is REQUIRED — docs/roadmap/archive/51-a8-data-lifecycle-privacy.md
+// "A8 T2.5b" (the contract migration) removed payout_requests.destination's
+// plaintext fallback, so there is no longer a valid "cryptox unconfigured"
+// mode to construct; repository.NewRepository itself panics on a nil ring
+// as the last-resort backstop.
+func NewModule(db database.DatabaseSQL, poster Poster, registry *vendorgw.Registry, redisClient *redis.Client, logger *slog.Logger, fraudClient *fraudcheck.Client, breaker vendorgw.Breaker, ring *cryptox.Ring) *Module {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	m := &Module{
+		db:          db,
+		repo:        repository.NewRepository(db, ring),
+		routing:     repository.NewRoutingRepository(db),
+		commandRepo: repository.NewVendorCommandRepository(db),
+		poster:      poster,
+		registry:    registry,
+		logger:      logger,
+		fraudClient: fraudClient,
+		breaker:     breaker,
+	}
+
+	var lock scheduler.LockProvider
+	if redisClient != nil {
+		instanceID, err := os.Hostname()
+		if err != nil || instanceID == "" {
+			instanceID = uuid.NewString()
+		}
+		lock = scheduler.NewRedisLock(redisClient, instanceID)
+	} else {
+		lock = scheduler.NewMemoryLock(time.Second)
+	}
+	m.resumeJob = worker.NewResumeJob(m, lock, logger, time.Minute)
+	m.relay = worker.NewVendorRelay(m, logger, worker.VendorRelayConfig{})
+
+	return m
+}
+
+// StartWorkers launches the resume/polling job (docs/roadmap/archive/23 Task T3 step
+// 3) and the vendor-command relay (docs/roadmap/archive/45 Task T1) — the only place
+// provider.Submit is ever called from. Call StopWorkers on shutdown.
+func (m *Module) StartWorkers(ctx context.Context) {
+	if err := m.resumeJob.Start(ctx); err != nil {
+		m.logger.Error("payout: failed to start resume job", slog.Any("error", err))
+	}
+	m.relay.Start(ctx)
+}
+
+// StopWorkers gracefully stops the resume job and the vendor relay,
+// waiting for any in-flight run. Safe to call even if StartWorkers was
+// never called.
+func (m *Module) StopWorkers() {
+	m.resumeJob.Stop()
+	m.relay.Stop()
+}

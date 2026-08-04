@@ -74,7 +74,7 @@ loki.process "app_logs" {
 		}
 	}
 
-	// Defense-in-depth redaction (docs/roadmap/archive/43-a1-observability.md K9/T6) — pkg/logger's
+	// Defense-in-depth redaction (docs/roadmap/archive/43-a1-observability.md K9/T6) — internal/platform/observability/logging's
 	// application-level masking (masking.go: sensitiveKeys/
 	// sensitiveValuePatterns) is the PRIMARY control and already strips
 	// Authorization/password/secret/token/idempotency_key etc. before a

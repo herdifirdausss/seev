@@ -1,0 +1,24 @@
+# Repository ownership is intentionally path-aware. The repository currently
+# has one maintainer; keep these boundaries explicit so the entries can be
+# replaced with service teams without changing the tree.
+* @herdifirdausss
+
+/services/gateway/ @herdifirdausss
+/services/auth/ @herdifirdausss
+/services/ledger/ @herdifirdausss
+/services/payin/ @herdifirdausss
+/services/payout/ @herdifirdausss
+/services/fraud/ @herdifirdausss
+/services/adminbff/ @herdifirdausss
+/services/assurance/ @herdifirdausss
+/services/vendor-service/ @herdifirdausss
+
+/internal/platform/ @herdifirdausss
+/internal/testkit/ @herdifirdausss
+/contracts/ @herdifirdausss
+/gen/ @herdifirdausss
+/operations/ @herdifirdausss
+/tools/ @herdifirdausss
+/tests/architecture/ @herdifirdausss
+/deploy/ @herdifirdausss
+/.github/ @herdifirdausss

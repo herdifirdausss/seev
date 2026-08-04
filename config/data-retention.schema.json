@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://seev.internal/schema/data-retention.json",
   "title": "Seev data retention policy (docs/roadmap/archive/51 K1)",
-  "description": "Validates config/data-retention.yaml (parsed as JSON). Enforced by cmd/retentioncheck.",
+  "description": "Validates config/data-retention.yaml (parsed as JSON). Enforced by tools/retentioncheck.",
   "type": "object",
   "additionalProperties": false,
   "required": ["policy_version", "classifications", "actions", "permanent_tables", "entries"],

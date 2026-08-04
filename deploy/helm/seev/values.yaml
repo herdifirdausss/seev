@@ -82,21 +82,24 @@ migrations:
 data:
   enabled: true
   postgres:
-    image: postgres:16.4-alpine
+    # Digest verified 2026-08-04; the tag remains for operator readability.
+    image: postgres:16.4-alpine@sha256:5660c2cbfea50c7a9127d17dc4e48543eedd3d7a41a595a2dfa572471e37e64c
     storageClass: ""
     storageSize: 10Gi
     resources:
       requests: {cpu: 100m, memory: 256Mi}
       limits: {cpu: 500m, memory: 768Mi}
   redis:
-    image: redis:7.4.9-alpine
+    # Digest verified 2026-08-04.
+    image: redis:7.4.9-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99
     storageClass: ""
     storageSize: 2Gi
     resources:
       requests: {cpu: 25m, memory: 64Mi}
       limits: {cpu: 250m, memory: 256Mi}
   rabbitmq:
-    image: rabbitmq:3.13.7-management-alpine
+    # Digest verified 2026-08-04.
+    image: rabbitmq:3.13.7-management-alpine@sha256:606d8c0d6b3c18d1da9afc53bc7cdb2a8d5486df91b5a9830e9e07626c9ae281
     storageClass: ""
     storageSize: 2Gi
     resources:
@@ -105,7 +108,8 @@ data:
 
 egress:
   enabled: true
-  image: ubuntu/squid:6.6-24.04_beta
+  # Digest verified 2026-08-04.
+  image: ubuntu/squid:6.6-24.04_beta@sha256:6a097f68bae708cedbabd6188d68c7e2e7a38cedd05a176e1cc0ba29e3bbe029
   replicas: 1
   servicePort: 3128
   allowedDomains:

@@ -228,7 +228,7 @@ production mode. A production change requires a reviewed policy-file change.
 ### K2 — Sensitive fields use versioned envelope encryption
 
 Extract the existing KYC document envelope into a domain-neutral
-`pkg/cryptox`. Use AES-GCM with a random data key, a versioned KEK ring, and
+`internal/platform/security/crypto`. Use AES-GCM with a random data key, a versioned KEK ring, and
 associated data containing service, table, column, row ID, and envelope
 version. A ciphertext copied to another row or field must fail authentication.
 
@@ -504,23 +504,23 @@ live migrations, not assumed from this document's own §2.** Read every
 `migrations/<owner>/*.up.sql` in file order (tracking `ALTER TABLE ADD
 COLUMN` so each table's *current* merged column list was used, not just its
 original `CREATE TABLE`), plus every Redis key-building function
-(`internal/policy`, `internal/fraud/rules`, `internal/vendorgw`,
-`pkg/middleware/rate_limit.go`, `pkg/scheduler`), the RabbitMQ event schema
-(`internal/ledger/events/events.go`) and its one persisting consumer
-(`internal/notify/notify.go`), and the KYC object-store code path
-(`internal/auth/documents.go`).
+(`services/ledger/policy`, `services/fraud/rules`, `contracts/vendorgw`,
+`internal/platform/security/middleware/rate_limit.go`, `internal/platform/scheduling`), the RabbitMQ event schema
+(`contracts/events/ledger/events.go`) and its one persisting consumer
+(`services/gateway/internal/notification/notify.go`), and the KYC object-store code path
+(`services/auth/internal/documents.go`).
 
 **Two real findings that changed the plan, caught only by reading the
 actual code rather than trusting this document's own §2/§4:**
 
 - §2.3 said adminbff sessions have "no cleanup worker" — **false as of the
-  current code**: `internal/adminbff/module.go`'s `Start()` already
+  current code**: `services/adminbff/internal/module.go`'s `Start()` already
   registers a `adminbff-session-cleanup` cron every 5 minutes, calling the
   real `CleanupSessions` query. It deletes the *moment* a session expires,
   not after the 7-day grace period §4.2 wants — so T1's actual work here is
   changing an existing cutoff, not wiring up dead code. (An earlier research
   pass this session initially reported `CleanupSessions` as unwired/dead
-  code; spot-checking `internal/adminbff/module.go` directly before trusting
+  code; spot-checking `services/adminbff/internal/module.go` directly before trusting
   that claim caught the error.)
 - The KYC document object store is **entirely unwired** in this codebase:
   `Module.SetDocumentStore` has zero callers anywhere
@@ -709,11 +709,11 @@ passed everywhere, not just in this task's own new tests. `released_by <>
 created_by` is enforced by a database CHECK constraint (K5 maker/checker),
 not just application logic.
 
-**2. `pkg/retentionworker`** — the shared Go runtime every owner's Runner
+**2. `internal/platform/lifecycle/retention/worker`** — the shared Go runtime every owner's Runner
 uses: bounded batch loop, one SECURITY DEFINER Postgres function per class,
 dry-run support (a dry run returns the full eligible count in one call,
 never a batched preview), `FOR UPDATE SKIP LOCKED` batch claiming, Jakarta
-schedule with deterministic per-owner jitter (`pkg/retentionworker/schedule.go`).
+schedule with deterministic per-owner jitter (`internal/platform/lifecycle/retention/worker/schedule.go`).
 
 **3. Ten retention classes implemented as real SECURITY DEFINER functions**,
 each following the fixed `(p_job_id UUID, p_batch_size INT, p_dry_run
@@ -756,7 +756,7 @@ reason — not silently dropped:**
   "an audit summary to already exist" before either may be purged, and
   §4.3's own never-purge condition ("its successor/audit summary has not
   been persisted") forbids purging without one. Neither has a persisted,
-  queryable summary anywhere in this codebase today (`internal/auth/worker/retry.go`
+  queryable summary anywhere in this codebase today (`services/auth/internal/worker/retry.go`
   only sets `status='dead'` plus a log line; `assurance_runs.error_code`/
   `error_message` are the row's own fields, not an independent record).
   Purging either now would violate §4.3, not just be premature.
@@ -767,7 +767,7 @@ names "fee-quote, refresh-token, session, published-outbox, notification,
 successful-retry, assurance-run, alert-delivery" only) — out of this task's
 scope, not a gap within it.
 
-**4. `pkg/objectoutbox`** (K6 item 4) — the generic transactional
+**4. `internal/platform/lifecycle/objectoutbox`** (K6 item 4) — the generic transactional
 object-delete outbox T1.6 required before any KYC/export object cleanup:
 persist a delete intent, delete from the store idempotently, then mark
 metadata deleted/redacted — all three steps in that order, with a failed
@@ -775,7 +775,7 @@ store delete leaving the outbox row `pending` and metadata untouched.
 Wired into auth as the concrete vertical slice (`auth_object_delete_outbox`,
 `kyc_documents.deleted_at`), proven live with an in-memory fake store since
 no production object-store adapter is wired anywhere in this codebase yet
-(`internal/auth/documents.go`'s own long-standing comment).
+(`services/auth/internal/documents.go`'s own long-standing comment).
 
 **5. `cmd/retentionctl`** (K6 item 5, the "CLI" half of "endpoints/CLI") —
 `status`, `dry-run`, `run-now`, `hold-create`, `hold-release`, generic
@@ -794,10 +794,10 @@ creation, exclusion, and cross-operator release.
 `seev_retention_holds{owner,scope,status}` (new this pass, refreshed once
 per `RunOnce` call from each owner's own holds table) and
 `seev_object_outbox_deleted_total`/`_failures_total`/`_last_batch_failed`
-(new, `pkg/objectoutbox`). **`seev_retention_oldest_eligible_age_seconds`
+(new, `internal/platform/lifecycle/objectoutbox`). **`seev_retention_oldest_eligible_age_seconds`
 from K13's own canonical list is deliberately not implemented**: the fixed
 `(p_job_id, p_batch_size, p_dry_run) RETURNS INT` function signature has no
-age channel to report through, and `pkg/retentionworker` is deliberately
+age channel to report through, and `internal/platform/lifecycle/retention/worker` is deliberately
 schema-agnostic (it doesn't know any class's cutoff column). Adding it
 would mean either widening every function's signature/audit-row shape
 across four owners, or a per-class Go-side query this package's whole
@@ -865,7 +865,7 @@ this task's own new ones.
 
 **Work**
 
-1. Extract and harden `pkg/cryptox` with versioned envelopes, AAD, KEK ring,
+1. Extract and harden `internal/platform/security/crypto` with versioned envelopes, AAD, KEK ring,
    deterministic lookup HMAC, zeroization where practical, and key metrics.
 2. Add generated development keys, ignored Compose secrets, Vault seeding,
    production fail-fast validation, and key-rotation runbook.
@@ -895,7 +895,7 @@ rest and every plaintext fallback has been removed after verification.
 
 ### Result
 
-**1. `pkg/cryptox`** — versioned envelope encryption (`Ring.Seal`/`Ring.Open`):
+**1. `internal/platform/security/crypto`** — versioned envelope encryption (`Ring.Seal`/`Ring.Open`):
 a random per-value AES-256 DEK encrypts the plaintext; the DEK itself is
 wrapped by a versioned KEK from the ring. AAD (service/table/column/row ID)
 is authenticated at both layers via AES-GCM's associated-data parameter, so
@@ -910,7 +910,7 @@ wording ("masked ... audit identity" vs. "ciphertext" for every other
 field); deterministic, so exact-match audit search still works by masking
 the search term the same way.
 
-**2. Key infrastructure** — `internal/config.CryptoxConfig` is one shared
+**2. Key infrastructure** — `internal/platform/config.CryptoxConfig` is one shared
 cluster-wide key ring across every service (same precedent as
 `JWT_SECRET`/`INTERNAL_GRPC_TOKEN`); field-level isolation comes from AAD
 binding, not separate keys per service. Docker secrets
@@ -993,7 +993,7 @@ small marker value instead of NULL; already-nullable ones
 terminal window (join on `batch_id`), not any column on `recon_items`
 itself — matches the policy's own documented reasoning. `payin` and
 `payout` each gained their first-ever `StartRetentionRunner` (mirroring
-`internal/notify.Module`'s own construction) since neither had any
+`services/gateway/internal/notification.Module`'s own construction) since neither had any
 retention class implemented before T2.6; `ledger`'s existing runner just
 grew two more classes. Live-verified per class: eligibility boundary
 (terminal status + age cutoff), redaction leaves non-sensitive columns
@@ -1005,7 +1005,7 @@ real run.
 **Required tests — live-verified:**
 
 - envelope round-trip, wrong key, wrong AAD, copied ciphertext, truncated
-  envelope, old-key read/new-key write — `pkg/cryptox`'s own test suite
+  envelope, old-key read/new-key write — `internal/platform/security/crypto`'s own test suite
   (T2.1).
 - normalized email lookup and uniqueness without plaintext —
   `TestUserRepository_GetUserByEmail_NormalizedLookupViaDigest`,
@@ -1022,7 +1022,7 @@ real run.
   round-trip test asserts `require.NotContains(ciphertext, plaintextValue)`
   in addition to the aggregate absence scans above.
 - service boot fails when a required current key is missing — T2.2's own
-  `internal/config` production fail-fast tests.
+  `internal/platform/config` production fail-fast tests.
 - existing business, KYC, webhook replay, payout, and reconciliation
   behavior remains correct — the full pre-existing integration suite for
   auth, payin, payout, ledger, and adminbff ran clean after every change in
@@ -1066,7 +1066,7 @@ the permanent monetary deduplication invariant.
 
 ### Result
 
-**1–2. `pkg/cryptox.DigestRing`** — a new versioned HMAC-SHA256 key type,
+**1–2. `internal/platform/security/crypto.DigestRing`** — a new versioned HMAC-SHA256 key type,
 deliberately distinct from both `Ring` (reversible envelope encryption) and
 `LookupKey` (single, unversioned key): a digest enforcing a *permanent*
 unique constraint has to survive key rotation without ever silently
@@ -1076,14 +1076,14 @@ a digest is only ever recomputed and compared, never reversed. `Digest`
 always uses the current version (posting); `DigestAt` recomputes under a
 specific historical version (rotation backfill/drill only).
 `idempotency_key_digest` is a keyed HMAC over a length-delimited, canonical
-`(scope, key)` encoding (`internal/ledger/repository.canonicalIdempotencyInput`)
+`(scope, key)` encoding (`services/ledger/internal/repository.canonicalIdempotencyInput`)
 — length-prefixing, not plain concatenation, so `scope="ab",key="c"` can
 never collide with `scope="a",key="bc"`. `conflict_fingerprint` is a
 *plain* SHA-256 over `(type, amount, currency)` — no secret key, since its
 only job is exact-match comparison against itself, never resisting
 offline guessing.
 
-**Key infrastructure** — `internal/config.LedgerIdempotencyConfig`, a
+**Key infrastructure** — `internal/platform/config.LedgerIdempotencyConfig`, a
 completely separate key namespace from `Cryptox` (`LEDGER_IDEMPOTENCY_KEY_V<N>`,
 same Docker-secrets-file convention). Unlike `Cryptox` (optional outside
 production), this is **required unconditionally in every environment** —
@@ -1110,7 +1110,7 @@ freshly-computed digest doesn't match an old row's stale-version digest.
 looks up **digest-first**, falls back to raw key/scope only if the digest
 lookup misses (the rotation-transition safety net above), then compares
 the caller's own freshly-computed `conflict_fingerprint` against the
-stored one. `handleDuplicate` (`internal/ledger/service/handle`) now
+stored one. `handleDuplicate` (`services/ledger/internal/service/handle`) now
 checks conflict **before** the existing posted/failed/processing status
 switch, returning the new `apperror.ErrIdempotencyConflict` (409, in
 `businessRejectionSentinels`) rather than ever silently treating a
@@ -1166,13 +1166,13 @@ CLI).
   goroutines, identical request, every result nil, balance moves exactly
   once, exactly one `ledger_transactions` row).
 - current/previous key versions work during rotation —
-  `TestDigestRing_CurrentAndPreviousVersions` (`pkg/cryptox`) plus
+  `TestDigestRing_CurrentAndPreviousVersions` (`internal/platform/security/crypto`) plus
   `TestFindConflictOrDuplicate_RotationFallbackViaRawKey` (repository
   level: inserts under an old-version-only ring, looks up through a
   rotated ring whose fresh digest legitimately doesn't match, proves the
   raw-key fallback still finds it).
 - missing/unknown key versions fail closed —
-  `TestDigestRing_MissingVersionFailsClosed` (`pkg/cryptox`) and
+  `TestDigestRing_MissingVersionFailsClosed` (`internal/platform/security/crypto`) and
   `TestNewTransactionRepository_NilRing_Panics` (construction boundary —
   a repository can never silently exist without a ring).
 - digest/backfill migrations and proto checks pass — migrations
@@ -1191,7 +1191,7 @@ CLI).
   touches `idempotency_key_digest`, `idempotency_key_version`, or
   `conflict_fingerprint` anywhere in this task's changes, and the
   pre-existing `idem_key_prefix` truncation in `Handle`'s own log fields
-  (`internal/ledger/service/handle/service.go`) is untouched. Flagged
+  (`services/ledger/internal/service/handle/service.go`) is untouched. Flagged
   here explicitly as an inspection-based guarantee rather than a
   live-tested one, the same honesty standard this doc's other Result
   sections already apply to genuine gaps.
@@ -1200,8 +1200,8 @@ Full sweep run clean at the end of this task: `go build ./...`, `go vet
 ./...`, `go vet -tags=integration ./...`, `TestModuleBoundaries`, `make
 docs-check`, `make retention-check` (83 policy entries), the complete
 non-integration suite, and the full integration suite for every touched
-package — `internal/ledger` and every one of its subpackages (270s,
-0 failures), `internal/notify` (real RabbitMQ + real ledger.Module,
+package — `services/ledger` and every one of its subpackages (270s,
+0 failures), `services/gateway/internal/notification` (real RabbitMQ + real ledger.Module,
 unaffected by the digest ring's new required-parameter shape once wired).
 
 ### T4 — Authenticated user export (K9)
@@ -1252,7 +1252,7 @@ undertaking on top of the mechanism itself — better done owner by owner
 with its own live verification pass than rushed alongside everything
 else. Tracked as follow-up task **"A8 T4b"** with the exact pattern to
 replicate (ledger's own cursor-pagination convention, the client-wiring
-shape to copy from `internal/adminbff/client`) written into the task
+shape to copy from `services/adminbff/internal/client`) written into the task
 description itself. T4's own Definition of Done — "a user can retrieve a
 complete... owner-sourced export" — is therefore met **for auth as the
 sole owner**, not yet for the full seven-owner scope K9 describes.
@@ -1273,8 +1273,8 @@ reimplementing it — required at both creation and download time (K9:
 "requires... password re-verification" / "download rechecks JWT
 ownership and password").
 
-**4. Encrypted ZIP/NDJSON with manifest hashes** — `internal/config.ExportConfig`
-is a **dedicated** `pkg/cryptox.Ring`, its own key namespace
+**4. Encrypted ZIP/NDJSON with manifest hashes** — `internal/platform/config.ExportConfig`
+is a **dedicated** `internal/platform/security/crypto.Ring`, its own key namespace
 (`EXPORT_KEK_V<N>`), never the shared field-encryption `Cryptox` ring —
 K2's own separate-key-material principle applied a third time (after
 `LookupKey` and T3's `LedgerIdempotency`). `manifest.json` records
@@ -1294,12 +1294,12 @@ and named in the manifest's `exclusions` list.
 
 **Saga discipline** — `AssembleOnePendingExport` claims one `pending` row
 (`FOR UPDATE SKIP LOCKED`), transitions to `collecting`, and is modeled
-directly on `internal/payout/relay.go`'s own `dispatchOne`: every exit
+directly on `services/payout/internal/relay.go`'s own `dispatchOne`: every exit
 path is accounted for, a row is never left silently `collecting` — a
 build failure marks `failed` with the error recorded, success marks
 `ready` with `object_key`/`manifest_hash`/`expires_at` all set together.
 Exported (not left package-private) the same way
-`pkg/objectoutbox.Worker.ProcessOnce` already is, specifically so
+`internal/platform/lifecycle/objectoutbox.Worker.ProcessOnce` already is, specifically so
 integration tests can drive one unit of work deterministically instead of
 racing the 15-second background poller.
 
@@ -1307,7 +1307,7 @@ racing the 15-second background poller.
 `DownloadExport` re-verifies password, decrypts the archive **in memory**
 (never to disk — the HTTP handler writes the returned bytes straight into
 the response), and unconditionally calls the *existing*
-`pkg/objectoutbox.Enqueue` (T1.6) against a **new** `privacy_requests`
+`internal/platform/lifecycle/objectoutbox.Enqueue` (T1.6) against a **new** `privacy_requests`
 `Target` added to auth's already-running object-delete-outbox worker —
 no new outbox table needed. `ExpireOneStaleExport` (same worker, second
 poll loop) does the same enqueue for any `ready`, undownloaded row past
@@ -1346,7 +1346,7 @@ stack in this pass.
 - successful download and TTL expiry each remove the object idempotently —
   `TestPrivacyExport_Download_OneTimeAndEnqueuesCleanup` and
   `TestPrivacyExport_TTLExpiry_EnqueuesCleanupIdempotently` (both drive
-  the real `pkg/objectoutbox.Worker.ProcessOnce` and assert the fake
+  the real `internal/platform/lifecycle/objectoutbox.Worker.ProcessOnce` and assert the fake
   store ends up empty; the TTL test also calls `ExpireOneStaleExport`
   twice to prove the second call is a safe no-op).
 - a failed owner never produces a falsely complete manifest —
@@ -1361,7 +1361,7 @@ Full sweep run clean: `go build ./...`, `go vet ./...`, `go vet -tags=integratio
 ./...`, `TestModuleBoundaries`, `make docs-check`, `make retention-check`
 (84 policy entries, `auth.privacy_requests` newly classified
 `retain_permanent`), the complete non-integration suite, and the full
-`internal/auth` integration suite (108s, every pre-existing test
+`services/auth` integration suite (108s, every pre-existing test
 included, not just this task's own seven new ones).
 
 ### T5 — Account closure and pseudonymization saga (K10–K12)
@@ -1417,7 +1417,7 @@ maker/checker-approved operator offboarding runbook, is a second large
 undertaking on top of the saga machinery itself — better done with its own
 live verification pass than rushed alongside everything else. Tracked as
 follow-up task **"A8 T5b"** with the exact pattern to replicate (ledger's
-own `closure.Service`/`ClosureRouter` shape, the `pkg/middleware.WithInternalToken`
+own `closure.Service`/`ClosureRouter` shape, the `internal/platform/security/middleware.WithInternalToken`
 + mTLS wiring to copy) written into the task description itself. K10's own
 Definition of Done — "an eligible user can be de-identified across service
 boundaries" — is therefore met **for auth+ledger as the owner set**, not
@@ -1452,7 +1452,7 @@ the password (`verifyPassword`, reused from T4), rejects any role other
 than `RoleUser` (`ErrClosureNotSelfService` — admin/admin_maker/
 admin_checker require the not-yet-built offboarding runbook, A8 T5b),
 generates the surrogate UUID, seals the original subject id under a
-**fourth** dedicated key namespace (`internal/config.ClosureConfig`,
+**fourth** dedicated key namespace (`internal/platform/config.ClosureConfig`,
 `CLOSURE_KEK_V<N>`, same K2 separate-key-material principle as
 `LookupKey`/`LedgerIdempotency`/`Export`), and in one transaction inserts
 the `pending` closure row and flips `auth_users.status` to `closing` — this
@@ -1463,13 +1463,13 @@ because the status flip is ALREADY the enforcement point (a live but
 unrevoked token still fails `Refresh`'s status check), not the only one.
 
 **3. Owner `prepare`/`commit`/`status` — auth and ledger.** Ledger's new
-`internal/ledger/service/closure.Service` (`Prepare`/`Commit`) is exposed
+`services/ledger/internal/service/closure.Service` (`Prepare`/`Commit`) is exposed
 over a **separate** `Module.ClosureRouter()` — deliberately NOT added to
 the existing broad `transport.Service` interface `InternalRouter()` uses,
 since widening that interface for one narrowly-scoped, single-caller
 feature would force it on every future implementer of that module
-boundary. `ClosureRouter` is gated by a **new** `pkg/middleware.WithInternalToken`
-(this codebase's first HTTP analog of `pkg/grpcx`'s existing gRPC
+boundary. `ClosureRouter` is gated by a **new** `internal/platform/security/middleware.WithInternalToken`
+(this codebase's first HTTP analog of `internal/platform/transport/grpc`'s existing gRPC
 `authInterceptor`/`INTERNAL_GRPC_TOKEN` — reuses that exact same shared
 secret, no new one introduced) plus the internal listener's own mTLS
 identity allowlist (`tlsx.IdentityAuth` added to ledger's `:8091` class).
@@ -1567,7 +1567,7 @@ Full sweep run clean: `go build ./...`, `go vet ./...`, `go vet -tags=integratio
 `make docs-check`, `make retention-check` (84 policy entries, unchanged
 from T4 — closure extends the SAME `privacy_requests` table, no new table
 to classify), the complete non-integration suite across every package, and
-`internal/auth`'s full integration suite including every pre-existing test
+`services/auth`'s full integration suite including every pre-existing test
 (51s) plus this task's own 9 new closure tests (28s).
 
 ### A8 T4b/T5b — Owner contract wiring (K9, K10, K11)
@@ -1576,20 +1576,20 @@ to classify), the complete non-integration suite across every package, and
 holds first-class end-user data now has real, live-verified export +
 closure contracts: **ledger** (already done at T5, gained a new `Export`
 capability here), **payin**, **payout**, **fraud**, and **gateway**
-(`internal/notify`, the module that actually owns `notif_notifications` —
-gateway itself has no `internal/gateway` package). **admin-bff and
+(`services/gateway/internal/notification`, the module that actually owns `notif_notifications` —
+gateway itself has no `services/gateway` package). **admin-bff and
 assurance are wired to nothing, by design, not by omission** — verified by
 code inspection before writing any contract for either:
 
 - admin-bff owns no end-user `user_id` data at all — its only tables are
   admin OPERATOR sessions/audit (`sessions.role CHECK IN
-  ('admin','admin_maker','admin_checker')`, `internal/adminbff/login.go`).
+  ('admin','admin_maker','admin_checker')`, `services/adminbff/internal/login.go`).
   K11's own wording — "operator session removal... when applicable" — is
   satisfied because self-service closure structurally excludes
   admin/operator accounts (`ErrClosureNotSelfService`, T5). There is
   nothing for an ordinary end-user's export or closure to touch here.
 - assurance's `assurance_findings.resource_id` is populated from
-  `PayinRecord.ID`/`PayoutRecord.ID` (`internal/assurance/rules/rules.go`),
+  `PayinRecord.ID`/`PayoutRecord.ID` (`services/assurance/rules/rules.go`),
   **never** a `user_id` — no first-class subject column exists to
   pseudonymize or export. K11's own "verify evidence contains no hidden
   subject field" is satisfied by this design, confirmed by reading the
@@ -1603,7 +1603,7 @@ than silently assumed.
 exposes the identical wire contract at one base URL (`POST
 <base>/privacy/closure/prepare`, `POST <base>/privacy/closure/commit`, `GET
 <base>/privacy/export`), so `OwnerClosureClient`
-(`internal/auth/owner_closure_client.go`) gained a third method (`Export`)
+(`services/auth/internal/owner_closure_client.go`) gained a third method (`Export`)
 rather than a parallel client type — `cmd/auth-service/main.go` calls
 `RegisterClosureOwner` exactly five times (ledger, payin, payout, fraud,
 gateway) and both the export worker and the closure saga read from the
@@ -1614,7 +1614,7 @@ owner's export data — export and closure are two independent capabilities
 that happen to share a registry, not one gated by the other.
 
 **Auth closure worker rewritten for N owners.**
-`internal/auth/closure_worker.go` no longer hardcodes a single ledger call;
+`services/auth/internal/auth/closure_worker.go` no longer hardcodes a single ledger call;
 it loops `m.closureOwners` (an ordered slice — registration order is
 deterministic saga processing order) at both the `prepare` and `commit`
 steps, checkpointing each owner's own phase into the existing
@@ -1656,7 +1656,7 @@ across repeated calls.
 
 Each owner's `PrivacyRouter()` is mounted as a sibling to that service's
 existing JWT-gated admin router (bare `/privacy/` path, never under
-`/api/v1/`), gated by the same `pkg/middleware.WithInternalToken` +
+`/api/v1/`), gated by the same `internal/platform/security/middleware.WithInternalToken` +
 `tlsx.IdentityAuth` allowlist pattern T5 established for ledger — added to
 payin-service's, payout-service's, fraud-service's, and gateway's own
 internal listener this pass.
@@ -1664,7 +1664,7 @@ internal listener this pass.
 **A real bug found and fixed by this pass's own live tests, not by
 inspection:** the wire cutoff auth-service sends to every OTHER owner's
 `GET /privacy/export` was encoded with `cutoff.UTC().Format(time.RFC3339)`
-(`internal/auth/owner_closure_client.go`) — `time.RFC3339`'s `Format` drops
+(`services/auth/internal/owner_closure_client.go`) — `time.RFC3339`'s `Format` drops
 fractional seconds entirely, so every owner's effective cutoff was always
 rounded *down* to the start of the second, silently excluding any owner
 row created in that truncated sub-second gap from exports — while auth's
@@ -1678,7 +1678,7 @@ the receiving side already accepted fractional seconds — only the
 change).
 
 **Required tests — all live-verified against a real Postgres and real
-in-process owner modules** (`internal/auth/closure_multiowner_integration_test.go`,
+in-process owner modules** (`services/auth/internal/closure_multiowner_integration_test.go`,
 each owner reached over a genuine HTTP round trip, same
 httptest.Server-wrapping-a-real-module shape T5 established for ledger):
 
@@ -1703,8 +1703,8 @@ httptest.Server-wrapping-a-real-module shape T5 established for ledger):
 
 Full sweep run clean: `go build ./...`, `go vet ./...`, `go vet
 -tags=integration ./...`, the complete non-integration suite across every
-touched package (`internal/payin`, `internal/payout`, `internal/fraud`,
-`internal/notify`, `internal/ledger` and subpackages), and `internal/auth`'s
+touched package (`services/payin`, `services/payout`, `services/fraud`,
+`services/gateway/internal/notification`, `services/ledger` and subpackages), and `services/auth`'s
 full integration suite — all 18 pre-existing tests plus these 4 new ones,
 22/22 passing (163s).
 
@@ -1723,11 +1723,11 @@ field-for-field: `requested_by`/`approved_by` are operator identities
 (never the target's own PII), a `CHECK (approved_by IS NULL OR
 approved_by <> requested_by)` is the database-level backstop behind the
 application-level self-approval check, and `closure_request_id` links the
-decision to the actual closure it starts. `internal/auth/operator_offboarding.go`'s
+decision to the actual closure it starts. `services/auth/internal/operator_offboarding.go`'s
 `ProposeOperatorOffboarding` (the maker half — rejects a target whose role
 is `RoleUser`, since that account uses self-service `RequestClosure`
 instead) and `ApproveOperatorOffboarding` (the checker half) mirror
-`internal/ledger/service/adjustments.Service`'s own `Create`/`Approve`
+`services/ledger/internal/service/adjustments.Service`'s own `Create`/`Approve`
 control-flow shape, but **Approve does not itself move or pseudonymize
 anything** — it inserts the exact same `privacy_requests` row
 `RequestClosure` inserts (same surrogate generation, same
@@ -1738,7 +1738,7 @@ identically regardless of which entry point started it — no new saga
 logic, only a new gate in front of the existing one. HTTP routes
 (`POST/GET /api/v1/admin/privacy/operator-offboarding...`) are gated by
 new `isAdminMaker`/`isAdminChecker` helpers that mirror
-`internal/ledger/transport`'s own identically-named functions exactly, and
+`services/ledger/internal/transport`'s own identically-named functions exactly, and
 are reachable with zero admin-bff changes — they land inside admin-bff's
 already-existing generic `/api/v1/admin/privacy/` proxy subtree.
 `config/data-retention.yaml` gained the new table's own entry (85 policy
@@ -1754,7 +1754,7 @@ every single approval. Fixed by reordering the transaction body: insert
 `privacy_requests` first, then the offboarding row referencing it.
 
 **Required tests — all live-verified against a real Postgres and every
-registered owner** (`internal/auth/operator_offboarding_integration_test.go`):
+registered owner** (`services/auth/internal/operator_offboarding_integration_test.go`):
 
 - happy path closes the target across every owner —
   `TestOperatorOffboarding_HappyPath_ClosesTargetAcrossAllOwners` (propose
@@ -1794,7 +1794,7 @@ present in the final `owner_checkpoints`.
 
 Full sweep run clean: `go build ./...`, `go vet ./...`, `go vet
 -tags=integration ./...`, `make retention-check` (85 entries),
-`make docs-check`, and `internal/auth`'s full integration suite — all 22
+`make docs-check`, and `services/auth`'s full integration suite — all 22
 pre-existing tests plus these 6 new ones (5 offboarding + 1 injected-failure),
 28/28 passing.
 
@@ -1886,7 +1886,7 @@ out of bounds per this session's own standing safety rules), so the
 `privacy-e2e.sh`) could not be run to completion in THIS session. Also
 found and fixed while investigating: `scripts/privacy-export.sh` (T4) and
 this pass's own first draft of `privacy-e2e.sh` both read response fields
-at the wrong JSON path (`.id` instead of `.data.id` — `pkg/response.Envelope`
+at the wrong JSON path (`.id` instead of `.data.id` — `internal/platform/transport/http/response.Envelope`
 wraps every payload under `"data"`) — a second latent bug from the same
 "never actually run this script live" gap. Both fixed and syntax-verified
 this pass; a user running these scripts in an environment without the
@@ -1894,9 +1894,9 @@ port conflict gets the corrected paths for free.
 
 **1. Metrics, alerts, runbooks, admin panel.** Four of K13's five
 remaining (post-T1) privacy metrics now exist in
-`internal/auth/privacy_metrics.go`: `seev_privacy_requests{kind,status}`
+`services/auth/internal/privacy_metrics.go`: `seev_privacy_requests{kind,status}`
 (gauge, refreshed once per worker tick — same convention as
-`pkg/retentionworker`'s own `holdsGauge`), `seev_privacy_request_duration_seconds{kind,result}`
+`internal/platform/lifecycle/retention/worker`'s own `holdsGauge`), `seev_privacy_request_duration_seconds{kind,result}`
 (histogram, observed at every terminal transition — `ready`/`failed`/`expired`
 for export, `completed`/`blocked`/`dead` for closure), `seev_privacy_owner_calls_total{owner,operation,result}`
 (incremented around every ledger `Prepare`/`Commit` call), and
@@ -1960,22 +1960,22 @@ direct struct conversion instead of a field-by-field literal), `make
 proto`/`proto-lint`/`proto-breaking` (no diffs), `make docs-check` (106
 files), `make retention-check` (84 entries, unchanged from T4 — no new
 table), and the complete `make test` suite (every package). A full-repo
-`go test -tags=integration -race ./...` run timed out on `internal/auth`
+`go test -tags=integration -race ./...` run timed out on `services/auth`
 alone at Go's default 10-minute per-package limit (the race detector's
 instrumentation overhead compounds badly with this package's many
 testcontainers-based tests) — re-run scoped to that package with a
 25-minute budget instead: `go test -tags=integration -race -timeout 25m
-./internal/auth/...` **PASSED clean, 350.4s, zero data races reported**.
+./services/auth/internal/...` **PASSED clean, 350.4s, zero data races reported**.
 This package alone covers every T4/T5/T6 code path this pass touched
 (export, closure, privacy admin panel). Every OTHER individual package
-this pass touched (`internal/ledger`, `internal/adminbff`,
-`internal/config`, `internal/testutil`) was already independently
+this pass touched (`services/ledger`, `services/adminbff`,
+`internal/platform/config`, `internal/testkit`) was already independently
 live-verified multiple times earlier in this same session with
 `-tags=integration` (without `-race`) — see each task's own Result
 section above for the specific pass counts and timings; none of those
 packages' new code this pass introduces concurrent access to shared state
 (closure/export are per-request DB transactions, no new shared in-memory
-structures), so `internal/auth`'s own clean `-race` result is
+structures), so `services/auth`'s own clean `-race` result is
 representative.
 
 **3/4. Deferred to "A8 T6b".** New chaos scenarios for the six named

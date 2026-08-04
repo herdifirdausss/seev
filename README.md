@@ -80,7 +80,7 @@ machine, Nia protects and recovers it, the team proves each claim, and the
 reader learns how to contribute. Forty-three prerequisite panels define new
 terms before use, so source labels remain optional deeper reading. The six
 selectable chapters cover the product journey,
-service architecture, every `pkg/` category, local runtime, tests and chaos
+service architecture, every `internal/platform/` category, local runtime, tests and chaos
 drills, observability, security, runbooks, roadmap status, and contribution.
 Ten small quizzes explain both correct and incorrect answers; there are no
 reading modes or expandable sections.
@@ -144,10 +144,30 @@ HTTP or gRPC contracts; services must not query another service's database.
 
 ## Repository layout
 
+The [repository ownership map](docs/architecture/repository-ownership.md)
+explains where domain, repository, transport, worker, adapter, contract, and
+platform changes belong.
+
 ~~~text
 .
-├── api/proto/               # Protobuf service contracts
-├── cmd/                     # Nine core service entrypoints plus local support binaries and utilities
+├── services/                # One discoverable root per business service
+│   ├── gateway/             # Public edge, merchant API, and notifications
+│   ├── auth/                # Identity, sessions, KYC, and privacy
+│   ├── ledger/              # Double-entry accounting and policy
+│   ├── payin/               # Money-in lifecycle
+│   ├── payout/              # Money-out lifecycle
+│   ├── fraud/               # Screening and sanctions
+│   ├── adminbff/            # Operator console backend
+│   ├── assurance/           # Read-only cross-service controls
+│   └── vendor-service/      # External provider boundary (`vendor` logical name)
+├── contracts/               # Protobuf, HTTP, event, and compatibility contracts
+│   ├── proto/               # Canonical protobuf sources
+│   ├── http/                # OpenAPI sources and generated bundles
+│   ├── events/              # Event catalog, schemas, and typed payloads
+│   └── compatibility/       # Inventory and compatibility test suite
+├── gen/go/                  # Committed generated Go protobuf bindings
+├── tools/                   # One-shot developer, CI, and load tools
+├── operations/              # Backup agents and recovery workflows
 ├── deploy/observability/    # Prometheus, Grafana, Loki, Tempo, and Alloy config
 ├── docs/                    # Documentation home and interactive story
 │   ├── learn/               # Plain-language and product learning paths
@@ -156,16 +176,16 @@ HTTP or gRPC contracts; services must not query another service's database.
 │   ├── operations/          # Runtime tooling and incident runbooks
 │   ├── security/            # Threat model and trust boundaries
 │   └── roadmap/             # Active plans separated from archived history
-├── gen/                     # Committed generated protobuf bindings
-├── internal/                # Service and domain implementations
-├── migrations/              # Per-service SQL migrations
-├── pkg/                     # Shared infrastructure packages
+├── internal/                # Small shared platform and integration test kit
+│   ├── platform/             # Capability-grouped shared infrastructure
+│   └── testkit/              # Test-only integration helpers
 ├── scripts/                 # CI, operations, smoke, journeys, load, and chaos tools
 ├── LICENSE                  # Apache License 2.0
 ├── docker-compose.yml       # Local infrastructure and opt-in service profiles
 └── Makefile                 # Build, migration, verification, and operations targets
 ~~~
 
+Start from the [internal module map](internal/README.md) when navigating code.
 Start from the [documentation home](docs/README.md); it routes each reader to
 one category. The most important engineering constraints are documented in
 the [Project guide](docs/development/project-guide.md).
@@ -244,6 +264,9 @@ make lint            # golangci-lint
 make ci-lint         # actionlint, ShellCheck, and action SHA-pin policy
 make verify-static   # build, vet, lint, security, contracts, docs, and load safety
 make docs-check      # local Markdown links and heading anchors
+make doctor          # layout, Go toolchain, Docker, docs, and generated-contract health
+make architecture-graph # print the current direct Go package graph
+make architecture-metrics # report package size and dependency metrics
 make proto-lint      # protobuf lint
 make contracts       # generate, lint, compare, and test A9 contracts
 make verify-full     # complete clean-volume non-chaos gate
@@ -290,7 +313,7 @@ intentionally heavier than the normal unit-test loop.
 
 ## Protobuf workflow
 
-Generated Go bindings under gen/ are committed:
+Generated Go bindings under gen/go/ are committed:
 
 ~~~bash
 make proto
@@ -353,7 +376,7 @@ to read every document.
 - **Operate and review it:** [operational tooling](docs/operations/README.md),
   [runbooks](docs/operations/runbooks/), [threat model](docs/security/threat-model.md),
   [event contract](docs/reference/events.md), and
-  [scheduler guide](pkg/scheduler/README.md).
+  [scheduler guide](internal/platform/scheduling/README.md).
 - **Understand project history:** [plan index](docs/roadmap/README.md) separates
   completed, future, reference, and superseded plans.
 - **Participate safely:** [contributing guide](CONTRIBUTING.md),

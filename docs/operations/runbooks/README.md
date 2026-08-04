@@ -17,7 +17,7 @@ and [Services](../../reference/services.md) for that.
 | Seev and an external settlement report disagree | [Reconciliation](reconciliation.md) | Confirm the external evidence before resolving |
 | Internal TLS handshakes suddenly fail | [Handshake failures](handshake-failure-response.md) | Identify CA versus identity failure before rotating |
 | Certificates are near expiry or intentionally replaced | [Certificate rotation](cert-rotation.md) | Generate and verify before removing old material |
-| A pkg/cryptox encryption key needs rotating or is suspected compromised | [Cryptox key rotation](cryptox-key-rotation.md) | Never retire an old version until no row still references it |
+| A internal/platform/security/crypto encryption key needs rotating or is suspected compromised | [Cryptox key rotation](cryptox-key-rotation.md) | Never retire an old version until no row still references it |
 | Payin/Payout and Ledger records disagree | [Product assurance](product-assurance.md) | Pause intake only through the controlled workflow |
 | A KYC or screening queue cannot recover | [Compliance](compliance-a4.md) | Preserve the failed record and audit trail |
 | One side of an FX pair is missing | [FX position](fx-position.md) | Never fabricate the missing leg |
@@ -39,11 +39,12 @@ and [Services](../../reference/services.md) for that.
 | Analytics CDC or OLAP ingestion is stalled | [Analytics ingestion](analytics-clickhouse-ingestion-stalled.md) | Keep the OLTP source authoritative; do not repair facts in the warehouse |
 | Analytics replication, connector, or dbt health is degraded | [Analytics connector](analytics-connector-failed.md), [source WAL](analytics-source-wal-pressure.md), or [dbt failure](analytics-dbt-failure.md) | Check lag and retention before restarting or rebuilding |
 | A notification queue, template, provider, or recipient flow is failing | [Notification provider](notification-provider-outage.md), [delivery backlog](notification-email-backlog.md), or [template incident](notification-template-incident.md) | Preserve the durable notification state; do not send outside the delivery ledger |
+| A ledger schedule, dispute deadline, or outbox row is stuck | [Stuck state](stuck-state-runbook.md) | Do not replay until the current state, lease, and idempotency key are recorded |
 
 | Runbook | Covers |
 |---|---|
 | [cert-rotation.md](cert-rotation.md) | Rotating the internal mini-CA and every service's mTLS leaf certificate |
-| [cryptox-key-rotation.md](cryptox-key-rotation.md) | Rotating the shared pkg/cryptox encryption key ring (expand/backfill/contract) |
+| [cryptox-key-rotation.md](cryptox-key-rotation.md) | Rotating the shared internal/platform/security/crypto encryption key ring (expand/backfill/contract) |
 | [handshake-failure-response.md](handshake-failure-response.md) | Responding to a rise in mTLS handshake failures (`tlsx_handshake_failures_total`) |
 | [ledger-integrity-alert.md](ledger-integrity-alert.md) | Responding to a trial-balance or projection-audit discrepancy alert |
 | [dr-restore-drill.md](dr-restore-drill.md) | Restoring all nine core service databases from backup (latest or PITR) and proving it's safe to serve traffic again |
@@ -67,6 +68,11 @@ and [Services](../../reference/services.md) for that.
 | [merchant-webhook-backlog.md](merchant-webhook-backlog.md) | Diagnosing webhook delivery backlog/dead-letters and replaying eligible deliveries |
 | [merchant-webhook-secret-compromise.md](merchant-webhook-secret-compromise.md) | Rotating a merchant webhook endpoint's signing secret and handling the in-flight overlap window |
 | [merchant-owner-service-outage.md](merchant-owner-service-outage.md) | Merchant-facing impact of a Ledger/Payin/Payout outage and why same-key retries are safe |
+| [database-failover-runbook.md](database-failover-runbook.md) | Re-establishing database connectivity and replaying durable work after failover |
+| [outbox-backlog-runbook.md](outbox-backlog-runbook.md) | Investigating old pending/failed outbox events and safe replay |
+| [payout-unknown-state-runbook.md](payout-unknown-state-runbook.md) | Recovering a payout whose provider result is unknown without duplicate submission |
+| [reconciliation-mismatch-runbook.md](reconciliation-mismatch-runbook.md) | Quarantining and correcting a settlement mismatch through maker-checker |
+| [stuck-state-runbook.md](stuck-state-runbook.md) | Triage for scheduled, dispute, and outbox stuck-state gauges |
 | [analytics-*.md](.) | C2 CDC, OLAP ingestion, dbt, reconciliation, rebuild, and sensitive-data incident procedures |
 | [notification-*.md](.) | C3 notification event, template, provider, channel, backlog, and recipient-protection procedures |
 

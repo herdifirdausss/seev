@@ -28,7 +28,7 @@ verification is broken and they mistakenly suspect compromise).
    ```sql
    SELECT secret_version, updated_at FROM merchant_webhook_endpoints WHERE id = '<endpoint_id>';
    ```
-   `secret_version` reflects the `pkg/cryptox.Ring` key version the NEW
+   `secret_version` reflects the `internal/platform/security/crypto.Ring` key version the NEW
    secret was sealed under — it does not itself prove the SECRET changed
    (the ring's current key version may be unchanged across a rotation),
    but `updated_at` moving confirms the row was actually rewritten.

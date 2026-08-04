@@ -37,6 +37,10 @@ export PGPASSWORD="$MIGRATE_PASSWORD"
 DSN="postgres://$MIGRATE_USER@$HOST:$PORT/seev_$SERVICE?sslmode=$SSL_MODE&x-migrations-table=schema_migrations_$SERVICE"
 
 if [[ "$COMMAND" == "up" ]]; then
-	exec migrate -path "migrations/$SERVICE" -database "$DSN" up
+	MIGRATION_DIR="$SERVICE"
+	[[ "$SERVICE" == vendor ]] && MIGRATION_DIR=vendor-service
+	exec migrate -path "services/$MIGRATION_DIR/migrations" -database "$DSN" up
 fi
-exec migrate -path "migrations/$SERVICE" -database "$DSN" down 1
+MIGRATION_DIR="$SERVICE"
+[[ "$SERVICE" == vendor ]] && MIGRATION_DIR=vendor-service
+exec migrate -path "services/$MIGRATION_DIR/migrations" -database "$DSN" down 1

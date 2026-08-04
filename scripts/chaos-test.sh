@@ -59,6 +59,11 @@ source "$ROOT_DIR/scripts/lib.sh"
 
 trap cleanup EXIT
 
+# Preserve the scenario summary and assertions alongside the service logs for
+# scheduled evidence collection. KEEP_WORK_DIR controls whether the directory
+# survives after the run; local default behavior remains disposable.
+exec > >(tee "$WORK_DIR/chaos-test.stdout.log") 2>&1
+
 # ─── Scenario 1: kill -9 mid-posting ────────────────────────────────────────
 
 scenario_1() {
@@ -320,7 +325,7 @@ scenario_4() {
 	log "restarting the server process with REDIS_ENABLED=false (the operator's actual mitigation for a known outage — picks up the in-memory lock/limiter fallback fresh; REDIS_ENABLED=true, the default, is a required-dependency fail-fast per docs/roadmap/archive/12 T1 and would refuse to start against an unreachable Redis)..."
 	stop_server_gracefully
 	# fraud-service is excluded here: it CAN start with Redis down (since
-	# docs/roadmap/archive/45 Task T3, cmd/fraud-service/main.go uses
+	# docs/roadmap/archive/45 Task T3, services/fraud/cmd/fraud/main.go uses
 	# cache.NewClientWithoutPing instead of an eager-ping constructor,
 	# specifically so fraud-service boots and runs fail-closed rather than
 	# refusing to start — see scenario 9), but this scenario simply doesn't
@@ -383,7 +388,7 @@ scenario_4() {
 #     wait_for_payout_status); there is deliberately no HTTP-reachable way
 #     to force mockvendor to resolve a Pending payout from outside the
 #     process (CompletePending is a Go-only test method — see
-#     internal/payout/payout_integration_test.go's
+#     services/payout/internal/payout/payout_integration_test.go's
 #     TestPayout_Create_Async_ResumeJobSettles for that side of the proof),
 #     so THIS kill point proves resume polls it correctly (Query is called,
 #     no money moves twice, nothing is silently dropped) rather than forcing
@@ -544,9 +549,9 @@ scenario_5() {
 	psql_exec "$PAYOUT_DB_NAME" -c "UPDATE payout_vendor_commands SET next_attempt_at = now() WHERE payout_request_id IN (SELECT id FROM payout_requests WHERE user_id='$user_id' AND status IN ('created','held','submitted','vendor_pending'));" >/dev/null
 
 	log "waiting for all five requests to reach a terminal 'settled' state..."
-	# A fixed sleep here undercounts real recovery time: pkg/grpcx's client to
+	# A fixed sleep here undercounts real recovery time: internal/platform/transport/grpc's client to
 	# ledger uses grpc-go's default "lazy reconnect" backoff (intentional,
-	# see pkg/grpcx's own comment) rather than an eager reconnect, so after a
+	# see internal/platform/transport/grpc's own comment) rather than an eager reconnect, so after a
 	# >2-minute ledger outage the client can take on the order of 200s to
 	# even notice ledger is reachable again — independent of how many resume
 	# ticks fire in the meantime, since each one fails fast against the same
@@ -736,7 +741,7 @@ scenario_7() {
 	# ─── Fraud-service back up, in BLOCK mode: all three must reject BEFORE any write ───
 	start_fraud_service
 	# ledger/payin/payout each hold a long-lived grpc.ClientConn to
-	# fraud-service (pkg/grpcx.Dial's lazy-reconnect, intentional per its own
+	# fraud-service (internal/platform/transport/grpc.Dial's lazy-reconnect, intentional per its own
 	# comment) established back when THEY started — it does NOT get
 	# re-dialed just because fraud-service restarts. When fraud-service was
 	# killed above, each of those connections entered grpc-go's own
@@ -988,7 +993,7 @@ scenario_8() {
 # ─── Scenario 9: Redis outage — selective hot-swap + fraud fail-closed ─────
 #
 # docs/roadmap/archive/45 Task T4, bullet 1. Proves the docs/roadmap/archive/45 Task T3 design
-# (K4) against REAL running processes, not just pkg/cache's own unit tests:
+# (K4) against REAL running processes, not just internal/platform/cache's own unit tests:
 # the ledger rate limiter and policy velocity counter hot-swap from Redis to
 # an in-process memory fallback the INSTANT a real operation fails — no
 # restart, unlike scenario 4's operator-driven REDIS_ENABLED=false mitigation
@@ -1056,7 +1061,7 @@ scenario_9() {
 		-H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" \
 		-d "{\"user_id\":\"$user_id\",\"transaction_type\":\"withdraw_initiate\",\"max_daily_count\":1,\"enabled\":true}"
 	sleep 3
-	# withdraw_initiate is in publicUserTypes (internal/ledger/transport/
+	# withdraw_initiate is in publicUserTypes (services/ledger/internal/transport/
 	# http.go), so it's ALSO fraud-screened on the public router — every
 	# publicUserTypes call is (http.go's fraud check has no per-type
 	# discriminator beyond "public router", despite the flow name it passes
@@ -1100,7 +1105,7 @@ scenario_9() {
 
 	log "-- Redis down: rate limiter must keep enforcing from memory (burst of 11 topup-intent creates) --"
 	# RateLimitByIPAndPath keys on the client IP with the ephemeral source
-	# port stripped (docs/roadmap/archive/49 TM-11 — pkg/middleware/rate_limit.go)
+	# port stripped (docs/roadmap/archive/49 TM-11 — internal/platform/security/middleware/rate_limit.go)
 	# now, so 11 separate curl invocations would already land on the same
 	# bucket regardless. Still chaining them with --next inside ONE curl
 	# invocation over a single persistent HTTP/1.1 connection (same source
@@ -1131,7 +1136,7 @@ scenario_9() {
 	log "-- Redis down: policy counter's Get() is still consulted from memory, AND fraud fails CLOSED — both provable from ONE call --"
 	# With Redis down, policy.Check's counter.Get() degrades to a FRESH
 	# memory counter (cur=0, unaware of Redis's real cur=1 recorded at
-	# baseline — pkg/cache/failover.go's FailoverCounter is deliberately not
+	# baseline — internal/platform/cache/failover.go's FailoverCounter is deliberately not
 	# a continuation of Redis's state). 0+1=1, not >1, so policy ALLOWS this
 	# call on its own — it's fraud.Check (http.go:590, right after policy)
 	# that then fails CLOSED, since the velocity rule is registered and its
@@ -1693,7 +1698,7 @@ scenario_14() {
 
 scenario_15() {
 	log "=== Scenario 15: retention database failure remains isolated and fail-closed ==="
-	if GOCACHE=/tmp/seev-go-cache go test ./pkg/retentionworker -run '^TestRunOnce_OneClassFailureDoesNotStopOthers$' -count=1; then
+	if GOCACHE=/tmp/seev-go-cache go test ./internal/platform/lifecycle/retention/worker -run '^TestRunOnce_OneClassFailureDoesNotStopOthers$' -count=1; then
 		ok "database/query failure was audited as an error without authorizing deletion"
 	else
 		fail "retention database failure drill failed"
@@ -1702,7 +1707,7 @@ scenario_15() {
 
 scenario_16() {
 	log "=== Scenario 16: object-store outage preserves metadata and retries ==="
-	if GOCACHE=/tmp/seev-go-cache go test -tags=integration ./internal/auth -run '^TestObjectOutbox_StoreOutage_PreservesMetadataAndRetries$' -count=1; then
+	if GOCACHE=/tmp/seev-go-cache go test -tags=integration ./services/auth -run '^TestObjectOutbox_StoreOutage_PreservesMetadataAndRetries$' -count=1; then
 		ok "object outage left metadata truthful and retry converged"
 	else
 		fail "object-store outage drill failed"
@@ -1711,7 +1716,7 @@ scenario_16() {
 
 scenario_17() {
 	log "=== Scenario 17: privacy key-version mismatch fails closed ==="
-	if GOCACHE=/tmp/seev-go-cache go test ./pkg/cryptox -run '^(TestRing_WrongKey|TestRing_OpenUnknownKeyVersion_FailsClosed)$' -count=1; then
+	if GOCACHE=/tmp/seev-go-cache go test ./internal/platform/security/crypto -run '^(TestRing_WrongKey|TestRing_OpenUnknownKeyVersion_FailsClosed)$' -count=1; then
 		ok "wrong and unavailable key versions failed closed"
 	else
 		fail "key-version mismatch drill failed"
@@ -1720,7 +1725,7 @@ scenario_17() {
 
 scenario_18() {
 	log "=== Scenario 18: privacy worker restart resumes durable saga state ==="
-	if GOCACHE=/tmp/seev-go-cache go test -tags=integration ./internal/auth -run '^TestClosure_HappyPath_FullLifecycle$' -count=1; then
+	if GOCACHE=/tmp/seev-go-cache go test -tags=integration ./services/auth -run '^TestClosure_HappyPath_FullLifecycle$' -count=1; then
 		ok "one-step durable checkpoints converged after repeated worker invocations"
 	else
 		fail "privacy-worker restart drill failed"
@@ -1729,7 +1734,7 @@ scenario_18() {
 
 scenario_19() {
 	log "=== Scenario 19: owner timeout leaves closure disabled and resumable ==="
-	if GOCACHE=/tmp/seev-go-cache go test -tags=integration ./internal/auth -run '^TestClosure_InjectedOwnerFailure_LeavesDisabledAndResumesForward$' -count=1; then
+	if GOCACHE=/tmp/seev-go-cache go test -tags=integration ./services/auth -run '^TestClosure_InjectedOwnerFailure_LeavesDisabledAndResumesForward$' -count=1; then
 		ok "owner timeout resumed from the last durable checkpoint"
 	else
 		fail "owner-timeout drill failed"
@@ -1738,7 +1743,7 @@ scenario_19() {
 
 scenario_20() {
 	log "=== Scenario 20: retention/closure race respects the closure horizon ==="
-	if GOCACHE=/tmp/seev-go-cache go test -tags=integration ./internal/auth -run '^TestClosure_RacingRetentionFailsClosedUntilClosureHorizon$' -count=1; then
+	if GOCACHE=/tmp/seev-go-cache go test -tags=integration ./services/auth -run '^TestClosure_RacingRetentionFailsClosedUntilClosureHorizon$' -count=1; then
 		ok "concurrent retention could not purge pre-horizon closure data"
 	else
 		fail "retention/closure race drill failed"
@@ -1749,14 +1754,14 @@ scenario_20() {
 #
 # Same proof as scenario 1 (a genuine process crash, not a client-side
 # retry, cannot double-post or lose money) but through the NEW merchant
-# B2B surface (internal/merchant/api) instead of the user-facing ledger
+# B2B surface (services/gateway/internal/merchant/api) instead of the user-facing ledger
 # API — T10's own required chaos matrix (§24) calls for merchant-specific
 # evidence, and this is the one case scripts/merchant-e2e.sh's replay test
 # does not cover: that test proves a client retrying with the same
 # Idempotency-Key is safe, not that the gateway process dying mid-request
 # is safe. execTransfer's guarantees (ordered locks, atomic commit) are
 # shared machinery with user transfers, but the merchant idempotency layer
-# (internal/merchant/api/idempotency.go) sits in front of it and had never
+# (services/gateway/internal/merchant/api/idempotency.go) sits in front of it and had never
 # been chaos-tested itself.
 
 chaos21_admin_post() {
@@ -1855,7 +1860,7 @@ scenario_21() {
 # ─── Scenario 22: merchant quota Redis outage (Plan 57 T10b) ───────────────
 #
 # T10b's own audit found the merchant quota package's Redis-outage posture
-# (internal/merchant/quota.Enforcer.Check: write fails closed with 503
+# (services/gateway/internal/merchant/quota.Enforcer.Check: write fails closed with 503
 # QUOTA_UNAVAILABLE, read degrades to a bounded allow — ErrQuotaBackendUnavailable's
 # own doc comment) was only ever proven against a fake/unreachable client
 # in unit tests, never through the real assembled Gateway with a real
@@ -2010,7 +2015,7 @@ scenario_22() {
 # Ledger's own outbox->RabbitMQ resilience is already proven generically
 # by scenario 2 (checking outbox_events drains after recovery), but that
 # never confirms the SEPARATE merchant webhook Consumer (its own queue
-# binding on the same exchange, internal/merchant/webhook/consumer.go)
+# binding on the same exchange, services/gateway/internal/merchant/webhook/consumer.go)
 # also survives the outage and catches up — a distinct consumer with its
 # own dedup/fan-out logic that scenario 2 never exercises.
 
@@ -2059,11 +2064,11 @@ PYEOF
 	sleep 1
 
 	# Webhook endpoint management is an operator (admin) operation, not a
-	# merchant-facing API-key route (internal/merchant/adminhttp.go) — the
+	# merchant-facing API-key route (services/gateway/internal/merchant/adminhttp.go) — the
 	# tenant's own self-service surface has no "/webhook-endpoints" route.
 	local endpoint_create_code
 	# transaction.posted.v1 is the ONE external event type this consumer
-	# fans out (internal/merchant/webhook/envelope.go) — a settled merchant
+	# fans out (services/gateway/internal/merchant/webhook/envelope.go) — a settled merchant
 	# payin credits the tenant's ledger account, which is what actually
 	# emits this event, not a dedicated "payin.updated" type.
 	endpoint_create_code="$(curl_internal -sS -o /dev/null -w '%{http_code}' -X POST "http://localhost:$INTERNAL_PORT/api/v1/admin/gateway/tenants/$tenant_id/webhooks" \

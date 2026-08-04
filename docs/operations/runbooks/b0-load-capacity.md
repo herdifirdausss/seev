@@ -46,7 +46,7 @@ experiment until the separate correctness fix is reviewed.
 
 Use at least two independent signals: achieved throughput/latency plus pool
 waits, PostgreSQL wait/lock samples, CPU/memory, outbox/queue age, or resolver
-time. `cmd/loadprobe` records query IDs and monitoring classes only; do not
+time. `tools/loadprobe` records query IDs and monitoring classes only; do not
 copy SQL parameters, request bodies, tokens, or service logs into reports.
 
 ## Cleanup and retention

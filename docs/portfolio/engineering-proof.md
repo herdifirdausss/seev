@@ -51,7 +51,7 @@ outbox preserves an event for later delivery.
 
 ### 1. Concurrent duplicate request
 
-[Twenty concurrent retries produce one monetary effect](https://github.com/herdifirdausss/seev/blob/main/internal/ledger/idempotency_digest_integration_test.go#L120-L154)
+[Twenty concurrent retries produce one monetary effect](https://github.com/herdifirdausss/seev/blob/main/services/ledger/internal/ledger/idempotency_digest_integration_test.go#L120-L154)
 
 `TestIdempotency_ConcurrentRetries_ExactlyOneMonetaryEffect` sends twenty
 identical requests concurrently. The final balance changes once and exactly

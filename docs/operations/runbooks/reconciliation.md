@@ -6,7 +6,7 @@
 > discrepancy only after internal records and external settlement evidence
 > have both been checked.
 
-Covers the daily settlement reconciliation flow (docs/roadmap/archive/16 Task T2, decision K5): importing a gateway's settlement report, reviewing the match report, and resolving discrepancies via a governed adjustment. All endpoints below are on the **internal-only listener**, admin-gated (`isAdmin` in `internal/ledger/transport/http.go`).
+Covers the daily settlement reconciliation flow (docs/roadmap/archive/16 Task T2, decision K5): importing a gateway's settlement report, reviewing the match report, and resolving discrepancies via a governed adjustment. All endpoints below are on the **internal-only listener**, admin-gated (`isAdmin` in `services/ledger/internal/transport/http.go`).
 
 Also reachable via Grafana unified alerting (docs/roadmap/archive/43 Task T5, folder "Seev"): `seev-op-notification-handler-slow`, `seev-op-payout-stuck-backlog`, `seev-op-breaker-open-extended`, and the `seev-slo-webhook-*`/`seev-slo-notif-*` burn-rate alerts all carry this runbook's path in their `runbook` annotation.
 

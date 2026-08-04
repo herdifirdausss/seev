@@ -1,0 +1,418 @@
+// Package schedule executes recurring/deferred user transactions
+// (docs/roadmap/archive/19 Task T1, decision S3): a scheduled row is nothing but a
+// stored processors.Command plus a due-date rule. RunDue is called once a
+// day by services/ledger/internal/worker/schedule_runner.go and posts every row
+// that's due through the SAME posting pipeline every other transaction
+// uses — there is no separate execution state machine. "Has this run" is
+// answered by the ledger's own deterministic idempotency key
+// (sched:<id>:<run_date>); last_run_date/last_error on the row are
+// informational only, safe to be stale or momentarily inconsistent with
+// what actually posted.
+package schedule
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"log/slog"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
+
+	currencyreg "github.com/herdifirdausss/seev/internal/platform/money/currency"
+	"github.com/herdifirdausss/seev/internal/platform/database/identifiers"
+	"github.com/herdifirdausss/seev/services/ledger/internal/ledger/errors"
+	"github.com/herdifirdausss/seev/services/ledger/internal/ledger/model"
+	"github.com/herdifirdausss/seev/services/ledger/internal/processors"
+	"github.com/herdifirdausss/seev/services/ledger/internal/repository"
+	commandservice "github.com/herdifirdausss/seev/services/ledger/internal/ledger/command"
+)
+
+// DatabaseSQL is the thin interface over the connection pool this service
+// needs — mirrors adjustments/recon/provision's own narrow redefinitions.
+type DatabaseSQL interface {
+	WithTx(ctx context.Context, opts *sql.TxOptions, fn func(tx *sql.Tx) error) error
+}
+
+// Poster is the subset of ledgerhandle.Service this package needs.
+type Poster interface {
+	Handle(ctx context.Context, cmd processors.Command) error
+}
+
+// CommandExecutor is the context-aware form used by durable schedule
+// execution. It prevents a worker from silently becoming a policy bypass.
+type CommandExecutor interface {
+	Execute(context.Context, processors.Command, commandservice.ExecutionContext) error
+}
+
+// allowedTypes are the ONLY transaction types schedulable for MVP
+// (docs/roadmap/archive/19 Task T1 step 2) — purely user-initiated movements.
+// scheduled money_in/money_out makes no sense without a gateway event;
+// adjustment_* stay maker-checker only, never schedulable.
+var allowedTypes = map[string]bool{
+	"transfer_p2p":    true,
+	"transfer_pocket": true,
+}
+
+var allowedKinds = map[string]bool{"once": true, "daily": true, "monthly": true}
+
+// cmdPayload is the JSON shape stored in scheduled_transactions.cmd_payload
+// — a deliberately narrow subset of processors.Command, validated at Create
+// time (fail fast, pola pending_adjustments). UserID is NOT stored here —
+// it's always the row's own user_id column, injected at RunDue time.
+type cmdPayload struct {
+	Version      int            `json:"version,omitempty"`
+	Type         string         `json:"type"`
+	Amount       string         `json:"amount"`
+	Currency     string         `json:"currency,omitempty"`
+	TargetUserID uuid.UUID      `json:"target_user_id,omitempty"`
+	PocketCode   string         `json:"pocket_code,omitempty"`
+	Metadata     map[string]any `json:"metadata,omitempty"`
+}
+
+// SchedulePolicyUpdater is implemented by the concrete repository after
+// migration 000040. It is optional so the legacy constructor remains usable
+// while a deployment is being rolled forward.
+type SchedulePolicyUpdater interface {
+	UpdatePolicy(context.Context, uuid.UUID, model.ScheduledPolicy, string, string, string) error
+}
+
+type Service struct {
+	db       DatabaseSQL
+	repo     repository.ScheduledTransactionRepository
+	poster   Poster
+	executor CommandExecutor
+	logger   *slog.Logger
+	durable  *DurableService
+}
+
+func New(db DatabaseSQL, repo repository.ScheduledTransactionRepository, poster Poster, logger *slog.Logger) *Service {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	return &Service{db: db, repo: repo, poster: poster, logger: logger}
+}
+
+func (s *Service) SetExecutor(executor CommandExecutor) { s.executor = executor }
+
+// SetDurable wires the C5 occurrence state machine without changing the
+// legacy schedule service constructor or its generated repository contract.
+func (s *Service) SetDurable(durable *DurableService) {
+	s.durable = durable
+}
+
+// RunDurable is selected by the shared worker when C5 persistence is wired.
+// The fallback preserves the pre-C5 runner for migrations where the new
+// occurrence tables have not been deployed yet.
+func (s *Service) RunDurable(ctx context.Context, asOf time.Time) (executed, failed int, err error) {
+	if s.durable == nil {
+		return s.RunDue(ctx, asOf)
+	}
+	return s.durable.RunDurable(ctx, asOf)
+}
+
+// Create validates and stores a new scheduled transaction. It does NOT post
+// anything — that only happens when RunDue later finds the row due.
+func (s *Service) Create(
+	ctx context.Context, userID uuid.UUID, txType string, amount decimal.Decimal,
+	targetUserID uuid.UUID, pocketCode string, metadata map[string]any,
+	kind string, runAtDate time.Time, dayOfMonth *int, createdBy string,
+) (uuid.UUID, error) {
+	return s.create(ctx, userID, txType, amount, targetUserID, pocketCode, metadata, kind, runAtDate, dayOfMonth, createdBy, "")
+}
+
+// CreateWithCurrency is the currency-aware scheduled transaction entry point.
+// The legacy Create method intentionally remains unchanged: an omitted
+// currency preserves the original IDR account-resolution behavior for old
+// callers and old cmd_payload rows.
+func (s *Service) CreateWithCurrency(
+	ctx context.Context, userID uuid.UUID, txType string, amount decimal.Decimal,
+	targetUserID uuid.UUID, pocketCode string, metadata map[string]any,
+	kind string, runAtDate time.Time, dayOfMonth *int, createdBy, requestedCurrency string,
+) (uuid.UUID, error) {
+	return s.create(ctx, userID, txType, amount, targetUserID, pocketCode, metadata, kind, runAtDate, dayOfMonth, createdBy, requestedCurrency)
+}
+
+func (s *Service) create(
+	ctx context.Context, userID uuid.UUID, txType string, amount decimal.Decimal,
+	targetUserID uuid.UUID, pocketCode string, metadata map[string]any,
+	kind string, runAtDate time.Time, dayOfMonth *int, createdBy, requestedCurrency string,
+) (uuid.UUID, error) {
+	if !allowedTypes[txType] {
+		return uuid.Nil, fmt.Errorf("%w: type must be one of transfer_p2p, transfer_pocket", apperror.ErrValidation)
+	}
+	if !amount.IsPositive() || !amount.Equal(amount.Truncate(0)) {
+		return uuid.Nil, fmt.Errorf("%w: amount must be a positive integer (minor units)", apperror.ErrValidation)
+	}
+	if !allowedKinds[kind] {
+		return uuid.Nil, fmt.Errorf("%w: schedule_kind must be one of once, daily, monthly", apperror.ErrValidation)
+	}
+	if kind == "monthly" {
+		if dayOfMonth == nil || *dayOfMonth < 1 || *dayOfMonth > 28 {
+			return uuid.Nil, fmt.Errorf("%w: monthly schedules require day_of_month between 1 and 28", apperror.ErrValidation)
+		}
+	} else if dayOfMonth != nil {
+		return uuid.Nil, fmt.Errorf("%w: day_of_month is only valid for monthly schedules", apperror.ErrValidation)
+	}
+	if txType == "transfer_p2p" {
+		if targetUserID == uuid.Nil {
+			return uuid.Nil, fmt.Errorf("%w: transfer_p2p requires target_user_id", apperror.ErrValidation)
+		}
+		if targetUserID == userID {
+			return uuid.Nil, fmt.Errorf("%w: cannot schedule a transfer to yourself", apperror.ErrValidation)
+		}
+	}
+	if txType == "transfer_pocket" && pocketCode == "" {
+		return uuid.Nil, fmt.Errorf("%w: transfer_pocket requires pocket_code", apperror.ErrValidation)
+	}
+	if createdBy == "" {
+		return uuid.Nil, fmt.Errorf("%w: created_by (caller identity) is required", apperror.ErrValidation)
+	}
+	if requestedCurrency != "" {
+		if err := currencyreg.ValidateCode(requestedCurrency); err != nil {
+			return uuid.Nil, fmt.Errorf("%w: currency: %v", apperror.ErrValidation, err)
+		}
+	}
+
+	payload := cmdPayload{Version: 1, Type: txType, Amount: amount.String(), Currency: requestedCurrency, TargetUserID: targetUserID, PocketCode: pocketCode, Metadata: metadata}
+	payloadJSON, err := json.Marshal(payload)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("marshal schedule payload: %w", err)
+	}
+
+	id := identifiers.NewV7()
+	err = s.db.WithTx(ctx, nil, func(tx *sql.Tx) error {
+		return s.repo.Create(ctx, tx, id, userID, payloadJSON, kind, runAtDate, dayOfMonth, createdBy)
+	})
+	if err != nil {
+		return uuid.Nil, err
+	}
+	return id, nil
+}
+
+// CreateWithPolicy is the C5 schedule creation path. The historical Create
+// method remains the compatibility API; this additive path stores explicit
+// missed-run and fee-consent policy before the schedule can execute.
+func (s *Service) CreateWithPolicy(
+	ctx context.Context, userID uuid.UUID, txType string, amount decimal.Decimal,
+	targetUserID uuid.UUID, pocketCode string, metadata map[string]any,
+	kind string, runAtDate time.Time, dayOfMonth *int, createdBy string,
+	policy model.ScheduledPolicy, currency, timezone, localTime string,
+) (uuid.UUID, error) {
+	policy, err := NormalizePolicy(kind, policy)
+	if err != nil {
+		return uuid.Nil, err
+	}
+	if currency != "" && !currencyreg.IsValid(currency) {
+		return uuid.Nil, fmt.Errorf("%w: schedule currency is invalid", apperror.ErrValidation)
+	}
+	if timezone != "" {
+		if _, err := time.LoadLocation(timezone); err != nil {
+			return uuid.Nil, fmt.Errorf("%w: schedule timezone is invalid", apperror.ErrValidation)
+		}
+	}
+	if localTime != "" {
+		if _, err := time.Parse("15:04", localTime); err != nil {
+			return uuid.Nil, fmt.Errorf("%w: schedule local_time must be HH:MM", apperror.ErrValidation)
+		}
+	}
+	if policy.MaxFeeAmount != nil && *policy.MaxFeeAmount < 0 {
+		return uuid.Nil, fmt.Errorf("%w: schedule max_fee_amount cannot be negative", apperror.ErrValidation)
+	}
+	updater, ok := s.repo.(SchedulePolicyUpdater)
+	if !ok {
+		return uuid.Nil, fmt.Errorf("%w: C5 schedule persistence is not installed", apperror.ErrValidation)
+	}
+	id, err := s.Create(ctx, userID, txType, amount, targetUserID, pocketCode, metadata, kind, runAtDate, dayOfMonth, createdBy)
+	if err != nil {
+		return uuid.Nil, err
+	}
+	if err := updater.UpdatePolicy(ctx, id, policy, currency, timezone, localTime); err != nil {
+		// The legacy create and additive policy update cannot share one
+		// repository interface transaction. Quarantine the row if the second
+		// phase fails so a partially configured schedule can never execute.
+		pauseErr := s.db.WithTx(ctx, nil, func(tx *sql.Tx) error {
+			_, pauseErr := s.repo.Pause(ctx, tx, id)
+			return pauseErr
+		})
+		if pauseErr != nil {
+			return uuid.Nil, fmt.Errorf("%w (failed to quarantine schedule: %v)", err, pauseErr)
+		}
+		return uuid.Nil, err
+	}
+	return id, nil
+}
+
+// List returns userID's own scheduled transactions.
+func (s *Service) List(ctx context.Context, userID uuid.UUID) ([]model.ScheduledTransaction, error) {
+	return s.repo.List(ctx, userID)
+}
+
+// Pause/Resume/Cancel each check ownership (the caller's userID must match
+// the schedule's own) before the atomic status transition — ownership
+// mismatch and not-found both return ErrScheduledTransactionNotOwned/
+// ErrScheduledTransactionNotFound rather than a generic 403, matching
+// CanAccessAccount's existing "don't confirm existence of another user's
+// resource" reasoning elsewhere in this module.
+func (s *Service) Pause(ctx context.Context, id, userID uuid.UUID) error {
+	return s.transition(ctx, id, userID, s.repo.Pause)
+}
+
+func (s *Service) Resume(ctx context.Context, id, userID uuid.UUID) error {
+	return s.transition(ctx, id, userID, s.repo.Resume)
+}
+
+func (s *Service) Cancel(ctx context.Context, id, userID uuid.UUID) error {
+	return s.transition(ctx, id, userID, s.repo.Cancel)
+}
+
+func (s *Service) transition(ctx context.Context, id, userID uuid.UUID, fn func(context.Context, *sql.Tx, uuid.UUID) (int64, error)) error {
+	st, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if st.UserID != userID {
+		return fmt.Errorf("%w: %s", apperror.ErrScheduledTransactionNotOwned, id)
+	}
+	var rows int64
+	err = s.db.WithTx(ctx, nil, func(tx *sql.Tx) error {
+		var err error
+		rows, err = fn(ctx, tx, id)
+		return err
+	})
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return fmt.Errorf("%w: %s", apperror.ErrScheduledTransactionAlreadyTerminal, id)
+	}
+	return nil
+}
+
+// RunDue posts every schedule due to run on asOf — called once daily by
+// worker/schedule_runner.go. Returns how many posted successfully vs failed
+// (business failures AND infra failures both count toward failed; only the
+// business ones are recorded on the row, docs/roadmap/archive/19 Task T1 step 3).
+func (s *Service) RunDue(ctx context.Context, asOf time.Time) (executed, failed int, err error) {
+	due, err := s.repo.ListDue(ctx, asOf)
+	if err != nil {
+		return 0, 0, fmt.Errorf("schedule: list due: %w", err)
+	}
+
+	for _, row := range due {
+		var payload cmdPayload
+		if unmarshalErr := json.Unmarshal(row.CmdPayload, &payload); unmarshalErr != nil {
+			s.logger.Error("schedule: corrupt cmd_payload, marking failed", slog.String("id", row.ID.String()), slog.Any("error", unmarshalErr))
+			s.markBusinessFailure(ctx, row.ID, "corrupt cmd_payload: "+unmarshalErr.Error(), row.ScheduleKind == "once")
+			failed++
+			continue
+		}
+		amount, amtErr := decimal.NewFromString(payload.Amount)
+		if amtErr != nil {
+			s.logger.Error("schedule: corrupt stored amount, marking failed", slog.String("id", row.ID.String()), slog.Any("error", amtErr))
+			s.markBusinessFailure(ctx, row.ID, "corrupt stored amount: "+amtErr.Error(), row.ScheduleKind == "once")
+			failed++
+			continue
+		}
+		metadata := payload.Metadata
+		if metadata == nil {
+			metadata = map[string]any{}
+		}
+		// A schedule was accepted before this execution attempt. Treat the
+		// resulting posting as in-flight so an intake pause/disable cannot
+		// strand an already durable scheduled instruction.
+		metadata["currency_inflight"] = true
+
+		cmd := processors.Command{
+			IdempotencyKey:   scheduleIdempotencyKey(row.ID, asOf),
+			IdempotencyScope: row.UserID.String(),
+			Type:             payload.Type,
+			Amount:           amount,
+			Currency:         payload.Currency,
+			UserID:           row.UserID,
+			TargetUserID:     payload.TargetUserID,
+			PocketCode:       payload.PocketCode,
+			Metadata:         metadata,
+		}
+
+		terminal := row.ScheduleKind == "once"
+		var postErr error
+		if s.executor != nil {
+			postErr = s.executor.Execute(ctx, cmd, commandservice.ExecutionContext{
+				ActorID: row.UserID, Source: "scheduler", CorrelationID: cmd.IdempotencyKey,
+				RequestOrigin: "legacy-schedule-runner", Currency: cmd.Currency,
+			})
+		} else {
+			postErr = commandservice.Run(ctx, s.poster, cmd, commandservice.ExecutionContext{
+				ActorID: row.UserID, Source: "scheduler", CorrelationID: cmd.IdempotencyKey,
+				RequestOrigin: "legacy-schedule-runner", Currency: cmd.Currency,
+			})
+		}
+		switch {
+		case postErr == nil || errors.Is(postErr, apperror.ErrAlreadyPosted):
+			// ErrAlreadyPosted means a prior run already posted this exact
+			// (id, asOf) key and crashed before this row's last_run_date was
+			// updated — treated as success, which is what makes the whole
+			// job idempotent across crash/restart (docs/roadmap/archive/19 Task T1
+			// step 3, the "crash window" test).
+			if markErr := s.markSuccess(ctx, row.ID, asOf, terminal); markErr != nil {
+				s.logger.Error("schedule: posted but failed to mark success", slog.String("id", row.ID.String()), slog.Any("error", markErr))
+				failed++
+				continue
+			}
+			executed++
+		case isBusinessFailure(postErr):
+			s.markBusinessFailure(ctx, row.ID, postErr.Error(), terminal)
+			failed++
+		default:
+			// Infra failure (DB blip, etc.) — deliberately leave the row
+			// untouched so the NEXT run (same day after a crash, or the
+			// next scheduled occurrence) reconsiders it as due, per
+			// docs/roadmap/archive/19 Task T1 step 3 ("infrastructure failure → do not touch the row").
+			s.logger.Error("schedule: infra error running due schedule, leaving row untouched for retry",
+				slog.String("id", row.ID.String()), slog.Any("error", postErr))
+			failed++
+		}
+	}
+	return executed, failed, nil
+}
+
+func (s *Service) markSuccess(ctx context.Context, id uuid.UUID, asOf time.Time, finish bool) error {
+	return s.db.WithTx(ctx, nil, func(tx *sql.Tx) error {
+		return s.repo.MarkSuccess(ctx, tx, id, asOf, finish)
+	})
+}
+
+func (s *Service) markBusinessFailure(ctx context.Context, id uuid.UUID, errMsg string, terminal bool) {
+	err := s.db.WithTx(ctx, nil, func(tx *sql.Tx) error {
+		return s.repo.MarkBusinessFailure(ctx, tx, id, errMsg, terminal)
+	})
+	if err != nil {
+		s.logger.Error("schedule: failed to record business failure", slog.String("id", id.String()), slog.Any("error", err))
+	}
+}
+
+// isBusinessFailure classifies an error from Handle() as a business failure
+// (permanent given current account state — insufficient funds, suspended
+// account, etc.) vs an infra failure (DB blip, context deadline). This
+// codebase's own convention (services/ledger/internal/ledger/errors's "Business
+// sentinels" vs "Structural sentinels" comment blocks) is that business
+// failures are wrapped in *apperror.LedgerError via apperror.NewBizErr,
+// while structural/infra errors are not — errors.As is therefore a
+// reliable, already-established way to tell them apart without a bespoke
+// error-code allowlist here.
+func isBusinessFailure(err error) bool {
+	var bizErr *apperror.LedgerError
+	return errors.As(err, &bizErr)
+}
+
+// scheduleIdempotencyKey is deterministic per (schedule, run date) — the
+// core mechanism that makes crash/retry at any point safe (docs/roadmap/archive/19
+// Task T1's locked pattern): "has this run" is answered by the ledger, not
+// by application state.
+func scheduleIdempotencyKey(id uuid.UUID, asOf time.Time) string {
+	return "sched:" + id.String() + ":" + asOf.Format("2006-01-02")
+}

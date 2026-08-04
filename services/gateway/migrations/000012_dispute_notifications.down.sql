@@ -1,0 +1,5 @@
+DELETE FROM notif_template_versions
+WHERE template_id = '10000000-0000-0000-0000-000000000007';
+
+DELETE FROM notif_templates
+WHERE id = '10000000-0000-0000-0000-000000000007';

@@ -1,0 +1,438 @@
+package http
+
+import (
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"time"
+
+	"github.com/google/uuid"
+
+	"github.com/herdifirdausss/seev/internal/platform/security/middleware"
+	"github.com/herdifirdausss/seev/internal/platform/transport/http/response"
+	"github.com/herdifirdausss/seev/services/auth/internal/auth/model"
+	"github.com/herdifirdausss/seev/services/auth/internal/repository"
+)
+
+// currentUserID extracts and parses the authenticated user's ID from the
+// JWT claims already validated by internal/platform/security/middleware.WithAuth — same helper
+// shape as services/payout/internal/transport/http/http.go.
+func currentUserID(r *http.Request) (uuid.UUID, bool) {
+	raw := middleware.UserIDFromCtx(r.Context())
+	id, err := uuid.Parse(raw)
+	if err != nil {
+		return uuid.Nil, false
+	}
+	return id, true
+}
+
+type userResponse struct {
+	ID        uuid.UUID `json:"id"`
+	Email     string    `json:"email"`
+	FullName  string    `json:"full_name"`
+	Role      string    `json:"role"`
+	KYCLevel  int       `json:"kyc_level"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+func toUserResponse(u User) userResponse {
+	return userResponse{ID: u.ID, Email: u.Email, FullName: u.FullName, Role: u.Role, KYCLevel: u.KYCLevel, CreatedAt: u.CreatedAt}
+}
+
+type tokenResponse struct {
+	AccessToken      string    `json:"access_token"`
+	RefreshToken     string    `json:"refresh_token"`
+	AccessExpiresAt  time.Time `json:"access_expires_at"`
+	RefreshExpiresAt time.Time `json:"refresh_expires_at"`
+}
+
+func toTokenResponse(p TokenPair) tokenResponse {
+	return tokenResponse(p)
+}
+
+type authResponse struct {
+	User   userResponse  `json:"user"`
+	Tokens tokenResponse `json:"tokens"`
+}
+
+// writeAuthError maps the module's sentinel errors to HTTP statuses —
+// transport-layer concern kept out of the facade, same convention as every
+// other module.
+func writeAuthError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, ErrValidation):
+		response.BadRequest(w, err.Error())
+	case errors.Is(err, ErrEmailTaken):
+		response.Conflict(w, "email already registered")
+	case errors.Is(err, ErrInvalidCredentials):
+		response.Unauthorized(w, "invalid email or password")
+	case errors.Is(err, ErrInvalidRefreshToken):
+		response.Unauthorized(w, "invalid refresh token")
+	case errors.Is(err, ErrUserDisabled):
+		response.Forbidden(w, "account disabled")
+	case errors.Is(err, ErrKYCLevelSequence):
+		response.BadRequest(w, "level_requested must be the next KYC level")
+	case errors.Is(err, repository.ErrKYCTierConflict):
+		response.Conflict(w, "KYC level change conflicts with the current level")
+	case errors.Is(err, ErrKYCPending), errors.Is(err, repository.ErrKYCSubmissionNotPending):
+		response.Conflict(w, "a KYC submission is already pending or decided")
+	case errors.Is(err, repository.ErrKYCSubmissionNotFound):
+		response.NotFound(w, "KYC submission not found")
+	default:
+		response.InternalServerError(w, err)
+	}
+}
+
+type registerRequest struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+	FullName string `json:"full_name"`
+}
+
+// RegisterHandler serves POST /api/v1/auth/register.
+func (h *Handler) RegisterHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req registerRequest
+		if !response.Decode(w, r, &req) {
+			return
+		}
+		u, pair, err := h.module.Register(r.Context(), req.Email, req.Password, req.FullName)
+		if err != nil {
+			writeAuthError(w, err)
+			return
+		}
+		response.Created(w, authResponse{User: toUserResponse(u), Tokens: toTokenResponse(pair)})
+	}
+}
+
+type loginRequest struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
+
+// LoginHandler serves POST /api/v1/auth/login.
+func (h *Handler) LoginHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req loginRequest
+		if !response.Decode(w, r, &req) {
+			return
+		}
+		u, pair, err := h.module.Login(r.Context(), req.Email, req.Password)
+		if err != nil {
+			writeAuthError(w, err)
+			return
+		}
+		response.OK(w, authResponse{User: toUserResponse(u), Tokens: toTokenResponse(pair)})
+	}
+}
+
+type refreshRequest struct {
+	RefreshToken string `json:"refresh_token"`
+}
+
+// RefreshHandler serves POST /api/v1/auth/refresh.
+func (h *Handler) RefreshHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req refreshRequest
+		if !response.Decode(w, r, &req) {
+			return
+		}
+		if req.RefreshToken == "" {
+			response.BadRequest(w, "refresh_token is required")
+			return
+		}
+		u, pair, err := h.module.Refresh(r.Context(), req.RefreshToken)
+		if err != nil {
+			writeAuthError(w, err)
+			return
+		}
+		response.OK(w, authResponse{User: toUserResponse(u), Tokens: toTokenResponse(pair)})
+	}
+}
+
+// MeHandler serves GET /api/v1/users/me (authed chain — WithAuth already ran).
+func (h *Handler) MeHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID, ok := currentUserID(r)
+		if !ok {
+			response.Unauthorized(w, "invalid or missing user identity")
+			return
+		}
+		u, err := h.module.Me(r.Context(), userID)
+		if err != nil {
+			writeAuthError(w, err)
+			return
+		}
+		response.OK(w, toUserResponse(u))
+	}
+}
+
+type updateMeRequest struct {
+	FullName string `json:"full_name"`
+}
+
+// UpdateMeHandler serves PUT /api/v1/users/me (authed chain).
+func (h *Handler) UpdateMeHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID, ok := currentUserID(r)
+		if !ok {
+			response.Unauthorized(w, "invalid or missing user identity")
+			return
+		}
+		var req updateMeRequest
+		if !response.Decode(w, r, &req) {
+			return
+		}
+		u, err := h.module.UpdateMe(r.Context(), userID, req.FullName)
+		if err != nil {
+			writeAuthError(w, err)
+			return
+		}
+		response.OK(w, toUserResponse(u))
+	}
+}
+
+type kycSubmissionRequest struct {
+	LevelRequested int            `json:"level_requested"`
+	Payload        map[string]any `json:"payload"`
+}
+
+type kycSubmissionResponse struct {
+	ID             uuid.UUID      `json:"id"`
+	UserID         uuid.UUID      `json:"user_id"`
+	LevelRequested int            `json:"level_requested"`
+	Status         string         `json:"status"`
+	Payload        map[string]any `json:"payload"`
+	Provider       string         `json:"provider"`
+	ProviderRef    string         `json:"provider_ref,omitempty"`
+	DecidedBy      string         `json:"decided_by,omitempty"`
+	DecisionReason string         `json:"decision_reason,omitempty"`
+	CreatedAt      time.Time      `json:"created_at"`
+	DecidedAt      *time.Time     `json:"decided_at,omitempty"`
+}
+
+func toKYCSubmissionResponse(s model.KYCSubmission) kycSubmissionResponse {
+	return kycSubmissionResponse{ID: s.ID, UserID: s.UserID, LevelRequested: s.LevelRequested, Status: s.Status, Payload: s.Payload, Provider: s.Provider, ProviderRef: s.ProviderRef, DecidedBy: s.DecidedBy, DecisionReason: s.DecisionReason, CreatedAt: s.CreatedAt, DecidedAt: s.DecidedAt}
+}
+
+type kycStatusResponse struct {
+	Level         int                    `json:"kyc_level"`
+	Submission    *kycSubmissionResponse `json:"latest_submission,omitempty"`
+	VerifiedUntil *time.Time             `json:"kyc_verified_until,omitempty"`
+}
+
+func (h *Handler) SubmitKYCHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID, ok := currentUserID(r)
+		if !ok {
+			response.Unauthorized(w, "invalid or missing user identity")
+			return
+		}
+		var req kycSubmissionRequest
+		if !response.Decode(w, r, &req) {
+			return
+		}
+		s, err := h.module.SubmitKYC(r.Context(), userID, req.LevelRequested, req.Payload)
+		if err != nil {
+			var queued *KYCApplyQueuedError
+			if errors.As(err, &queued) {
+				response.Accepted(w, map[string]any{"status": "queued", "retry_id": queued.RetryID, "submission": toKYCSubmissionResponse(s)})
+				return
+			}
+			writeAuthError(w, err)
+			return
+		}
+		if s.Status == "approved" || s.Status == "rejected" {
+			response.OK(w, toKYCSubmissionResponse(s))
+			return
+		}
+		response.Created(w, toKYCSubmissionResponse(s))
+	}
+}
+
+func (h *Handler) KYCStatusHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID, ok := currentUserID(r)
+		if !ok {
+			response.Unauthorized(w, "invalid or missing user identity")
+			return
+		}
+		status, err := h.module.KYC(r.Context(), userID)
+		if err != nil {
+			writeAuthError(w, err)
+			return
+		}
+		out := kycStatusResponse{Level: status.Level, VerifiedUntil: status.VerifiedUntil}
+		if status.Submission != nil {
+			converted := toKYCSubmissionResponse(*status.Submission)
+			out.Submission = &converted
+		}
+		response.OK(w, out)
+	}
+}
+
+func (h *Handler) UploadKYCDocumentHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID, ok := currentUserID(r)
+		if !ok {
+			response.Unauthorized(w, "invalid or missing user identity")
+			return
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, 10<<20)
+		if err := r.ParseMultipartForm(10 << 20); err != nil {
+			response.BadRequest(w, "invalid multipart document")
+			return
+		}
+		file, header, err := r.FormFile("file")
+		if err != nil {
+			response.BadRequest(w, "file is required")
+			return
+		}
+		defer file.Close()
+		if header.Size <= 0 || header.Size > 10<<20 {
+			response.BadRequest(w, "file must be between 1 and 10 MiB")
+			return
+		}
+		content, err := io.ReadAll(io.LimitReader(file, 10<<20+1))
+		if err != nil || len(content) > 10<<20 {
+			response.BadRequest(w, "file is too large")
+			return
+		}
+		contentType := http.DetectContentType(content)
+		document, err := h.module.UploadKYCDocument(r.Context(), userID, contentType, content)
+		if err != nil {
+			writeDocumentError(w, err)
+			return
+		}
+		response.Created(w, map[string]any{"id": document.ID, "size_bytes": document.SizeBytes, "content_type": document.ContentType, "sha256": document.SHA256})
+	}
+}
+
+func writeDocumentError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, ErrDocumentStorageUnavailable):
+		response.ServiceUnavailable(w, "DOCUMENT_STORAGE_UNAVAILABLE", "document storage is not configured or unavailable")
+	case errors.Is(err, ErrDocumentInvalid):
+		response.BadRequest(w, err.Error())
+	case errors.Is(err, repository.ErrNotFound):
+		response.NotFound(w, "KYC document or submission not found")
+	default:
+		response.InternalServerError(w, err)
+	}
+}
+
+func (h *Handler) AdminDownloadKYCDocumentHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, err := uuid.Parse(r.PathValue("id"))
+		if err != nil {
+			response.BadRequest(w, "invalid document id")
+			return
+		}
+		document, content, err := h.module.DownloadKYCDocument(r.Context(), id)
+		if err != nil {
+			writeDocumentError(w, err)
+			return
+		}
+		w.Header().Set("Content-Type", document.ContentType)
+		w.Header().Set("Content-Length", fmt.Sprint(len(content)))
+		w.Header().Set("Content-Disposition", `attachment; filename="kyc-document"`)
+		_, _ = w.Write(content)
+	}
+}
+
+func adminID(r *http.Request) string {
+	claims := middleware.GetClaims(r.Context())
+	if claims == nil {
+		return ""
+	}
+	return claims.UserID
+}
+
+func (h *Handler) AdminListKYCHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		submissions, err := h.module.ListKYCSubmissions(r.Context(), r.URL.Query().Get("status"))
+		if err != nil {
+			writeAuthError(w, err)
+			return
+		}
+		out := make([]kycSubmissionResponse, len(submissions))
+		for i, s := range submissions {
+			out[i] = toKYCSubmissionResponse(s)
+		}
+		response.OK(w, map[string]any{"submissions": out})
+	}
+}
+
+func submissionID(r *http.Request) (uuid.UUID, bool) {
+	id, err := uuid.Parse(r.PathValue("id"))
+	return id, err == nil
+}
+
+func (h *Handler) AdminApproveKYCHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, ok := submissionID(r)
+		if !ok {
+			response.BadRequest(w, "invalid submission id")
+			return
+		}
+		if err := h.module.ApproveKYC(r.Context(), id, adminID(r)); err != nil {
+			var queued *KYCApplyQueuedError
+			if errors.As(err, &queued) {
+				response.Accepted(w, map[string]any{"status": "queued", "retry_id": queued.RetryID, "id": id})
+				return
+			}
+			writeAuthError(w, err)
+			return
+		}
+		response.OK(w, map[string]any{"status": "approved", "id": id})
+	}
+}
+
+func (h *Handler) AdminDowngradeKYCHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID, err := uuid.Parse(r.PathValue("id"))
+		if err != nil {
+			response.BadRequest(w, "invalid user id")
+			return
+		}
+		var req struct {
+			Level  int    `json:"level"`
+			Reason string `json:"reason"`
+		}
+		if !response.Decode(w, r, &req) {
+			return
+		}
+		if err := h.module.DowngradeKYC(r.Context(), userID, req.Level, adminID(r), req.Reason); err != nil {
+			var queued *KYCApplyQueuedError
+			if errors.As(err, &queued) {
+				response.Accepted(w, map[string]any{"status": "queued", "retry_id": queued.RetryID, "user_id": userID, "level": req.Level})
+				return
+			}
+			writeAuthError(w, err)
+			return
+		}
+		response.OK(w, map[string]any{"status": "downgraded", "user_id": userID, "level": req.Level})
+	}
+}
+
+func (h *Handler) AdminRejectKYCHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, ok := submissionID(r)
+		if !ok {
+			response.BadRequest(w, "invalid submission id")
+			return
+		}
+		var req struct {
+			Reason string `json:"reason"`
+		}
+		if !response.Decode(w, r, &req) {
+			return
+		}
+		if err := h.module.RejectKYC(r.Context(), id, adminID(r), req.Reason); err != nil {
+			writeAuthError(w, err)
+			return
+		}
+		response.OK(w, map[string]any{"status": "rejected", "id": id})
+	}
+}

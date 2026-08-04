@@ -3,8 +3,10 @@ set -eu
 for service in ledger auth payin payout fraud gateway vendor; do
   database="seev_load_${service}"
   role="${service}_app"
+  migration_service="${service}"
+  [ "$service" = vendor ] && migration_service=vendor-service
   latest=0
-  for migration in "/migrations/${service}"/*.up.sql; do
+  for migration in "/services/${migration_service}/migrations"/*.up.sql; do
     [ -f "$migration" ] || continue
     psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$database" -f "$migration"
     prefix="$(basename "$migration" | cut -d_ -f1 | sed 's/^0*//')"

@@ -4,7 +4,7 @@ Prerequisite: [plan 22](22-phase4a-payin-vendorgw.md), which provides the vendor
 
 ## T1 — Payout state machine and persistence
 
-Add `internal/payout` and migration `000020_payout` with a `payout_requests` table. A request records the user, amount, currency, destination, vendor, state, idempotency key, ledger transaction references, vendor reference, and error information. State transitions are guarded atomically in SQL; callers do not provide an arbitrary predecessor state, preventing TOCTOU races.
+Add `services/payout` and migration `000020_payout` with a `payout_requests` table. A request records the user, amount, currency, destination, vendor, state, idempotency key, ledger transaction references, vendor reference, and error information. State transitions are guarded atomically in SQL; callers do not provide an arbitrary predecessor state, preventing TOCTOU races.
 
 The intended states are:
 

@@ -22,6 +22,7 @@ export ASSURANCE_INTERVAL=1s
 export ASSURANCE_CONSISTENCY_DELAY=0s
 start_services
 
+set +e
 AUTH_URL="http://localhost:$AUTH_APP_PORT" \
 	ASSURANCE_URL="https://localhost:$ASSURANCE_PORT" \
 	TLS_CERT_DIR="$CERT_DIR" \
@@ -31,4 +32,10 @@ AUTH_URL="http://localhost:$AUTH_APP_PORT" \
 	POSTGRES_PORT="$DB_HOST_PORT" \
 	POSTGRES_USER=seev_app \
 	POSTGRES_PASSWORD=seev_app \
-	"$ROOT_DIR/scripts/privacy-e2e.sh"
+	"$ROOT_DIR/scripts/privacy-e2e.sh" 2>&1 | tee "$WORK_DIR/privacy-e2e.stdout.log"
+statuses=("${PIPESTATUS[@]}")
+set -e
+if [ "${statuses[0]}" -ne 0 ]; then
+	exit "${statuses[0]}"
+fi
+exit "${statuses[1]}"

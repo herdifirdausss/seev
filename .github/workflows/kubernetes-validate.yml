@@ -8,8 +8,8 @@ on:
       - "deploy/terraform/**"
       - "deploy/gitops/**"
       - "docs/deployment/**"
-      - "pkg/egressproxy/**"
-      - "cmd/migrate/**"
+      - "internal/platform/resilience/egressproxy/**"
+      - "tools/migrate/**"
       - ".github/workflows/kubernetes-validate.yml"
   push:
     branches: [main]
@@ -19,8 +19,8 @@ on:
       - "deploy/terraform/**"
       - "deploy/gitops/**"
       - "docs/deployment/**"
-      - "pkg/egressproxy/**"
-      - "cmd/migrate/**"
+      - "internal/platform/resilience/egressproxy/**"
+      - "tools/migrate/**"
 
 permissions:
   contents: read
@@ -52,19 +52,26 @@ jobs:
           terraform_wrapper: false
 
       - name: Test migration and proxy seams
-        run: go test ./cmd/migrate ./pkg/egressproxy ./internal/config ./internal/vendorboundary
+        run: go test ./tools/migrate ./internal/platform/resilience/egressproxy ./internal/platform/config ./services/vendor-service/internal
 
-      - name: Terraform format
-        run: terraform fmt -check -recursive deploy/terraform
+      - name: Terraform format and validation
+        run: ./scripts/ci/check-iac.sh
 
       - name: Helm lint through pinned container
         run: |
-          docker run --rm -v "$PWD:/work" -w /work alpine/helm:3.17.3 lint deploy/helm/seev
-          docker run --rm -v "$PWD:/work" -w /work alpine/helm:3.17.3 lint deploy/helm/seev -f deploy/helm/seev/values-local.yaml
-          docker run --rm -v "$PWD:/work" -w /work alpine/helm:3.17.3 lint deploy/helm/seev -f deploy/helm/seev/values-gcp-dev.yaml
-          docker run --rm -v "$PWD:/work" -w /work alpine/helm:3.17.3 lint deploy/helm/seev -f deploy/helm/seev/values-aws-dev.yaml
+          HELM_IMAGE='alpine/helm:3.17.3@sha256:d899e6316789fec04ee95300a18e454b7942539cbb3d89bde3e0655d6ca2e895'
+          docker run --rm -v "$PWD:/work" -w /work "$HELM_IMAGE" lint deploy/helm/seev
+          docker run --rm -v "$PWD:/work" -w /work "$HELM_IMAGE" lint deploy/helm/seev -f deploy/helm/seev/values-local.yaml
+          docker run --rm -v "$PWD:/work" -w /work "$HELM_IMAGE" lint deploy/helm/seev -f deploy/helm/seev/values-gcp-dev.yaml
+          docker run --rm -v "$PWD:/work" -w /work "$HELM_IMAGE" lint deploy/helm/seev -f deploy/helm/seev/values-aws-dev.yaml
+          docker run --rm -v "$PWD:/work" -w /work "$HELM_IMAGE" lint deploy/helm/seev -f deploy/helm/seev/values-staging.yaml
+
+      - name: Deployment integration contract
+        run: ./scripts/ci/check-platform-integration.sh
 
       - name: ShellCheck deployment scripts
         run: |
           command -v shellcheck >/dev/null
           find deploy/kubernetes/scripts -name '*.sh' -print0 | xargs -0 shellcheck --severity=error
+          shellcheck --severity=error scripts/ci/check-iac.sh
+          shellcheck --severity=error scripts/ci/check-platform-integration.sh

@@ -21,7 +21,7 @@ Allow compliance rules to observe a proposed posting before ledger entries are c
 
 1. Add the `PrePostHook` interface and wire an optional hook list into the ledger service. The hook runs only after all business validation succeeds.
 
-2. Add `internal/ledger/screening` with:
+2. Add `services/ledger/internal/screening` with:
 
    - `AmountThresholdRule`;
    - `VelocityAnomalyRule`;

@@ -26,7 +26,7 @@
 
 ### A1. Ordinary users can call system transaction types
 
-`internal/ledger/transport/http.go:19-29` (`adminOnlyTypes`) gates only seven
+`services/ledger/internal/transport/http.go:19-29` (`adminOnlyTypes`) gates only seven
 types (`adjustment_*`, `freeze_*`, `reversal`, and `chargeback`). Ordinary JWT
 users can call the remaining types, including:
 
@@ -87,7 +87,7 @@ internal router uses the calling service's scope name. See [10 T2](10-phase2a-se
 
 ### B1. No PostgreSQL-level timeouts
 
-`DSN()` (`internal/config/config.go:305-310`) has no
+`DSN()` (`internal/platform/config/config.go:305-310`) has no
 `statement_timeout`, `lock_timeout`, or `idle_in_transaction_session_timeout`,
 and worker queries have no context deadline. One hanging transaction can hold a
 row lock, fill the 25-connection pool, and take down the entire API rather than
@@ -95,7 +95,7 @@ just the affected path. See [11 T5](11-phase2b-efficiency-locking.md).
 
 ### B2. Rate limiting fails open without a Redis fallback
 
-`WithRateLimit` (`pkg/middleware/rate_limit.go:12-39`) forwards the request when
+`WithRateLimit` (`internal/platform/security/middleware/rate_limit.go:12-39`) forwards the request when
 the limiter returns an error. The in-memory fallback exists only in commented
 code (`:54-109`). When Redis is down, there is no rate limit. See [12 T1](12-phase2c-resilience-ops.md).
 
@@ -121,7 +121,7 @@ backoff column; retries follow only the global 30-second tick. See [12 T2](12-ph
 
 ### B6. OTel is instrumented but no provider is installed
 
-`service/handle` and `pkg/messaging` create spans through `otel.Tracer(...)`,
+`service/handle` and `internal/platform/messaging` create spans through `otel.Tracer(...)`,
 but there is no `SetTracerProvider` or exporter anywhere. All spans are no-ops:
 small overhead with no benefit, and misleading to readers. See [12 T5](12-phase2c-resilience-ops.md).
 
@@ -179,7 +179,7 @@ and larger WAL. `google/uuid` ≥1.6 provides time-ordered `uuid.NewV7()` (RFC
 ### C17. Redis is required for minimal usage
 
 Redis is used only for rate limiting and scheduler locks; both can use memory
-on a single node (`MemoryLock` already exists in `pkg/scheduler`). Make Redis
+on a single node (`MemoryLock` already exists in `internal/platform/scheduling`). Make Redis
 optional under K2. See [12 T1](12-phase2c-resilience-ops.md).
 
 ### C18. The 25/25 pool default is too large for a small host
@@ -197,10 +197,10 @@ Combine them into one `GROUP BY status` query. This is minor. See [11 T6](11-pha
 
 | # | Finding | Location | Fix |
 |---|---|---|---|
-| D1 | JWT lacks `nbf`/`iss`/`aud`; `JWTConfig.Issuer` is unused. HMAC verification is otherwise correct and resistant to algorithm confusion: the header algorithm is ignored, HS256 is enforced server-side, and `hmac.Equal` is constant-time. | `pkg/middleware/auth.go:55-90` | [10 T6](10-phase2a-security-gating.md) |
-| D2 | `/metrics` has no authentication and is outside the middleware chain. | `internal/handler/router.go:31-37` | [10 T6](10-phase2a-security-gating.md), bind it to the internal listener (K1) |
-| D3 | HSTS is enabled only when `r.TLS != nil`, so it is never sent behind a reverse proxy. | `pkg/middleware/security.go:35` | [10 T6](10-phase2a-security-gating.md), add trusted-proxy configuration |
-| D4 | The request body has a total 1 MiB limit, but metadata has no independent key/size limit. | `pkg/response/response.go:110` | [10 T3](10-phase2a-security-gating.md), allowlist and size limit |
+| D1 | JWT lacks `nbf`/`iss`/`aud`; `JWTConfig.Issuer` is unused. HMAC verification is otherwise correct and resistant to algorithm confusion: the header algorithm is ignored, HS256 is enforced server-side, and `hmac.Equal` is constant-time. | `internal/platform/security/middleware/auth.go:55-90` | [10 T6](10-phase2a-security-gating.md) |
+| D2 | `/metrics` has no authentication and is outside the middleware chain. | `services/gateway/internal/transport/http/router.go:31-37` | [10 T6](10-phase2a-security-gating.md), bind it to the internal listener (K1) |
+| D3 | HSTS is enabled only when `r.TLS != nil`, so it is never sent behind a reverse proxy. | `internal/platform/security/middleware/security.go:35` | [10 T6](10-phase2a-security-gating.md), add trusted-proxy configuration |
+| D4 | The request body has a total 1 MiB limit, but metadata has no independent key/size limit. | `internal/platform/transport/http/response/response.go:110` | [10 T3](10-phase2a-security-gating.md), allowlist and size limit |
 | D5 | RLS is still deferred from D11. | `migrations/000001:244-245` | Keep it in [07 Task H8](07-phase-2-hardening.md); do not lose the item |
 
 ## E. Correct behavior to preserve
@@ -214,7 +214,7 @@ contracts:
    published by Stripe.
 2. **The outbox pattern is complete:** write the event in the posting
    transaction, claim with `FOR UPDATE SKIP LOCKED`, wait for broker confirms
-   (`pkg/messaging/publisher.go:163-195`), and reap stuck rows. Delivery is
+   (`internal/platform/messaging/publisher.go:163-195`), and reap stuck rows. Delivery is
    **at least once**, so consumers MUST deduplicate by event ID
    (`outbox_events.id` = AMQP `message_id`). Add this contract to event
    documentation ([07 Task H1](07-phase-2-hardening.md)).

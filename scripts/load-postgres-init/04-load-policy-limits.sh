@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 # Disposable-load-only override: production's policy_tier_limits
-# (migrations/ledger/000022_policy_tier_limits.up.sql) caps a KYC level-1
+# (services/ledger/migrations/000022_policy_tier_limits.up.sql) caps a KYC level-1
 # account at 20 transfer_p2p and 5 withdraw_initiate per day — correct
 # fraud-prevention behavior in production, but it makes a single
 # load-scenario sender (or a small, deliberately concentrated pool for a

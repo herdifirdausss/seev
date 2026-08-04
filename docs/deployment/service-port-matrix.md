@@ -20,5 +20,5 @@ itself a Kubernetes exposure decision.
 | RabbitMQ | `5672`; management `15672` | — | AMQP ClusterIP; management disabled externally | broker diagnostics | Data |
 | Squid | proxy `3128` | — | ClusterIP in `seev-egress` only | TCP / proxy metrics | Egress |
 
-Source references: `docker-compose.yml`, each `cmd/*/main.go`, and the
-listener registrations in `internal/*`.
+Source references: `docker-compose.yml`, each `services/*/cmd/*/main.go`, and
+the listener registrations in `services/*/internal/*`.

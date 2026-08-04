@@ -18,5 +18,5 @@ an application permission. DLQ replay is an explicit operations action and no
 message payloads are stored in K0 evidence.
 
 Source: [messaging.yaml](../../deploy/inventory/messaging.yaml),
-pkg/messaging/topology.go, pkg/messaging/publisher.go,
-pkg/messaging/consumer.go, and the queue-owning modules.
+internal/platform/messaging/topology.go, internal/platform/messaging/publisher.go,
+internal/platform/messaging/consumer.go, and the queue-owning modules.

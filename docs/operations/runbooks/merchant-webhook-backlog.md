@@ -15,7 +15,7 @@ status," a rising "oldest delivery age," or a nonzero `dead` rate.
 
 ## Understand the mechanism
 
-T7's relay worker (`internal/merchant/webhook.RelayWorker`) polls for due
+T7's relay worker (`services/gateway/internal/merchant/webhook.RelayWorker`) polls for due
 deliveries every 10s (`DefaultWebhookRelayInterval`), dispatches with a
 5s connect / 10s response timeout, and retries a failure with exponential
 backoff: base 30s, factor 2, capped at 15 minutes, plus up to 50% jitter.
@@ -70,7 +70,7 @@ A delivery only reaches `'dead'` after 15 failed attempts OR an explicit
    `http_status`, and the endpoint's `environment = 'live'`): confirm the
    URL genuinely resolves to a public address from your network — a
    private/loopback/link-local/cloud-metadata target is refused
-   structurally in live mode (`internal/merchant/webhook/ssrf.go`), not a
+   structurally in live mode (`services/gateway/internal/merchant/webhook/ssrf.go`), not a
    bug. If the merchant insists their receiver is genuinely public, check
    for DNS misconfiguration or a CDN/load-balancer resolving to an
    internal address from Gateway's own network position.

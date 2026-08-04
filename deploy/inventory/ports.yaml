@@ -17,7 +17,7 @@ listeners:
     authentication: bearer-or-public-route-policy
     exposure_class: PUBLIC_EDGE
     downstream_owner: K4 edge routing and rate limits
-    sources: [docker-compose.yml, cmd/gateway/main.go, internal/handler/router.go]
+    sources: [docker-compose.yml, services/gateway/cmd/gateway/main.go, services/gateway/internal/transport/http/router.go]
   - name: gateway-internal-https
     service: gateway
     port: 8081
@@ -30,7 +30,7 @@ listeners:
     authentication: mTLS-and-service-auth
     exposure_class: INTERNAL_HTTP
     downstream_owner: K3 service wiring and K5 NetworkPolicy
-    sources: [docker-compose.yml, cmd/gateway/main.go]
+    sources: [docker-compose.yml, services/gateway/cmd/gateway/main.go]
 
   - name: auth-public-http
     service: auth
@@ -44,7 +44,7 @@ listeners:
     authentication: public-auth-route-policy
     exposure_class: PUBLIC_EDGE
     downstream_owner: K4 edge routing and rate limits
-    sources: [docker-compose.yml, cmd/auth-service/main.go, internal/auth]
+    sources: [docker-compose.yml, services/auth/cmd/auth/main.go, services/auth]
   - name: auth-internal-https
     service: auth
     port: 8083
@@ -57,7 +57,7 @@ listeners:
     authentication: mTLS-and-service-auth
     exposure_class: INTERNAL_HTTP
     downstream_owner: K3 service wiring and K5 NetworkPolicy
-    sources: [docker-compose.yml, cmd/auth-service/main.go]
+    sources: [docker-compose.yml, services/auth/cmd/auth/main.go]
 
   - name: ledger-user-http
     service: ledger
@@ -71,7 +71,7 @@ listeners:
     authentication: mTLS-or-end-user-token
     exposure_class: PRIVATE_ADMIN
     downstream_owner: K4 private route policy
-    sources: [docker-compose.yml, cmd/ledger-service/main.go, internal/ledger]
+    sources: [docker-compose.yml, services/ledger/cmd/ledger/main.go, services/ledger]
   - name: ledger-internal-https
     service: ledger
     port: 8091
@@ -84,7 +84,7 @@ listeners:
     authentication: mTLS-and-service-auth
     exposure_class: INTERNAL_HTTP
     downstream_owner: K5 NetworkPolicy
-    sources: [docker-compose.yml, cmd/ledger-service/main.go]
+    sources: [docker-compose.yml, services/ledger/cmd/ledger/main.go]
   - name: ledger-grpc
     service: ledger
     port: 9091
@@ -97,7 +97,7 @@ listeners:
     authentication: mTLS
     exposure_class: INTERNAL_GRPC
     downstream_owner: K3 service wiring and K5 NetworkPolicy
-    sources: [docker-compose.yml, cmd/ledger-service/main.go]
+    sources: [docker-compose.yml, services/ledger/cmd/ledger/main.go]
 
   - name: payin-http
     service: payin
@@ -111,7 +111,7 @@ listeners:
     authentication: mTLS-and-admin-policy
     exposure_class: PRIVATE_ADMIN
     downstream_owner: K4 private route policy
-    sources: [docker-compose.yml, cmd/payin-service/main.go]
+    sources: [docker-compose.yml, services/payin/cmd/payin/main.go]
   - name: payin-grpc
     service: payin
     port: 9092
@@ -124,7 +124,7 @@ listeners:
     authentication: mTLS
     exposure_class: INTERNAL_GRPC
     downstream_owner: K3 service wiring and K5 NetworkPolicy
-    sources: [docker-compose.yml, cmd/payin-service/main.go]
+    sources: [docker-compose.yml, services/payin/cmd/payin/main.go]
 
   - name: payout-http
     service: payout
@@ -138,7 +138,7 @@ listeners:
     authentication: mTLS-and-admin-policy
     exposure_class: PRIVATE_ADMIN
     downstream_owner: K4 private route policy
-    sources: [docker-compose.yml, cmd/payout-service/main.go]
+    sources: [docker-compose.yml, services/payout/cmd/payout/main.go]
   - name: payout-grpc
     service: payout
     port: 9093
@@ -151,7 +151,7 @@ listeners:
     authentication: mTLS
     exposure_class: INTERNAL_GRPC
     downstream_owner: K3 service wiring and K5 NetworkPolicy
-    sources: [docker-compose.yml, cmd/payout-service/main.go]
+    sources: [docker-compose.yml, services/payout/cmd/payout/main.go]
 
   - name: fraud-http
     service: fraud
@@ -165,7 +165,7 @@ listeners:
     authentication: mTLS-and-admin-policy
     exposure_class: PRIVATE_ADMIN
     downstream_owner: K4 private route policy
-    sources: [docker-compose.yml, cmd/fraud-service/main.go]
+    sources: [docker-compose.yml, services/fraud/cmd/fraud/main.go]
   - name: fraud-grpc
     service: fraud
     port: 9094
@@ -178,7 +178,7 @@ listeners:
     authentication: mTLS
     exposure_class: INTERNAL_GRPC
     downstream_owner: K3 service wiring and K5 NetworkPolicy
-    sources: [docker-compose.yml, cmd/fraud-service/main.go]
+    sources: [docker-compose.yml, services/fraud/cmd/fraud/main.go]
 
   - name: admin-bff-http
     service: admin-bff
@@ -192,7 +192,7 @@ listeners:
     authentication: mTLS-and-admin-session
     exposure_class: PRIVATE_ADMIN
     downstream_owner: K4 private route policy
-    sources: [docker-compose.yml, cmd/admin-bff-service/main.go, internal/adminbff]
+    sources: [docker-compose.yml, services/adminbff/cmd/adminbff/main.go, services/adminbff]
 
   - name: assurance-http
     service: assurance
@@ -206,7 +206,7 @@ listeners:
     authentication: mTLS-and-admin-policy
     exposure_class: PRIVATE_ADMIN
     downstream_owner: K4 private route policy
-    sources: [docker-compose.yml, cmd/assurance-service/main.go]
+    sources: [docker-compose.yml, services/assurance/cmd/assurance/main.go]
   - name: assurance-grpc
     service: assurance
     port: 9096
@@ -219,7 +219,7 @@ listeners:
     authentication: mTLS
     exposure_class: INTERNAL_GRPC
     downstream_owner: K3 service wiring and K5 NetworkPolicy
-    sources: [docker-compose.yml, cmd/assurance-service/main.go]
+    sources: [docker-compose.yml, services/assurance/cmd/assurance/main.go]
 
   - name: vendor-http
     service: vendor
@@ -233,7 +233,7 @@ listeners:
     authentication: callback-signature-or-mTLS
     exposure_class: CALLBACK_EDGE
     downstream_owner: K4 callback source-IP and signature policy
-    sources: [docker-compose.yml, cmd/vendor-service/main.go, internal/vendor]
+    sources: [docker-compose.yml, services/vendor-service/cmd/vendor/main.go, services/vendor-service]
   - name: vendor-grpc
     service: vendor
     port: 9098
@@ -246,7 +246,7 @@ listeners:
     authentication: mTLS
     exposure_class: INTERNAL_GRPC
     downstream_owner: K3 service wiring and K5 NetworkPolicy
-    sources: [docker-compose.yml, cmd/vendor-service/main.go]
+    sources: [docker-compose.yml, services/vendor-service/cmd/vendor/main.go]
 
   - name: postgres
     service: postgres
@@ -273,7 +273,7 @@ listeners:
     authentication: optional-local-password
     exposure_class: DATA_PRIVATE
     downstream_owner: K2 data dependency and K5 allowlist
-    sources: [docker-compose.yml, internal/config]
+    sources: [docker-compose.yml, internal/platform/config]
   - name: rabbitmq-amqp
     service: rabbitmq
     port: 5672
@@ -286,7 +286,7 @@ listeners:
     authentication: broker-user-and-password
     exposure_class: DATA_PRIVATE
     downstream_owner: K2 data dependency and K5 allowlist
-    sources: [docker-compose.yml, pkg/messaging]
+    sources: [docker-compose.yml, internal/platform/messaging]
   - name: rabbitmq-management
     service: rabbitmq
     port: 15672

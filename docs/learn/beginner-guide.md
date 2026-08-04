@@ -366,11 +366,12 @@ You can understand the main folders without reading Go code:
 
 | Folder or file | Plain-language meaning |
 |---|---|
-| `cmd/` | The switches that start each service or one-time utility |
-| `internal/` | The business decisions and service implementations |
-| `api/proto/` | Written agreements for typed internal requests |
-| `migrations/` | Instructions that create or change each service's filing cabinet |
-| `pkg/` | Reusable plumbing that does not decide wallet business rules |
+| `services/<service>/cmd/` | The switches that start a business service |
+| `tools/` and `operations/` | One-time developer utilities and operator workflows |
+| `services/<service>/internal/` | The service's private business decisions and adapters |
+| `contracts/proto/` | Written agreements for typed internal requests |
+| `services/<service>/migrations/` | Instructions that create or change that service's filing cabinet |
+| `internal/platform/` | Reusable plumbing that does not decide wallet business rules |
 | `scripts/` | Repeatable rehearsals that prove important journeys and failures |
 | `deploy/` | Local monitoring and deployment-related configuration |
 | `docs/roadmap/` | The dated history of decisions and future implementation plans |

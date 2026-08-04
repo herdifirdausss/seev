@@ -41,7 +41,7 @@ column shows how closely the current code is moving toward each capability.
 | Multi-currency and FX | Post across currencies through conversion accounts; store the exchange rate as a transaction fact |
 | Limits and velocity | Per-transaction, daily, and monthly limits in the policy layer, not in the ledger |
 | Maker-checker | `adjustment_*` transactions require approval by a second person before posting |
-| Scheduled and batch posting | Scheduled transactions and bulk disbursement using `pkg/scheduler` |
+| Scheduled and batch posting | Scheduled transactions and bulk disbursement using `internal/platform/scheduling` |
 | Hot-account mitigation | System accounts are already sharded by gateway; next steps include entry batching or asynchronous balances for extremely hot accounts |
 | Partitioning and archival | Monthly `ledger_entries` partitions, retention, and archival |
 | Pagination and read replicas | Move statement and balance-history reads to a replica |

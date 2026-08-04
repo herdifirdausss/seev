@@ -9,7 +9,7 @@ Read [plan 36](36-phase7a-request-tracing.md) first. The goal is to remove the f
 - Payouts: payout-service, before the hold.
 - Settlement and cancellation: never screen; funds are already held.
 
-The ledger core becomes write-and-validate only. Remove the old `PrePostHook` seam and `internal/ledger/screening` implementation entirely. The asynchronous velocity consumer remains unchanged and continues to count posted events in Redis DB 1.
+The ledger core becomes write-and-validate only. Remove the old `PrePostHook` seam and `services/ledger/internal/screening` implementation entirely. The asynchronous velocity consumer remains unchanged and continues to count posted events in Redis DB 1.
 
 ## T1 — Add request context to the fraud contract
 
@@ -17,7 +17,7 @@ Add `request_id` and `flow` to `FraudService.ScreenRequest` as additive protobuf
 
 **Result:** generated code, lint, round-trip tests, legacy callers without the new fields, and real database persistence all passed. The change is additive; the repository's current branch has no committed proto baseline for a meaningful breaking comparison.
 
-## T2 — Shared `pkg/fraudcheck` client
+## T2 — Shared `contracts/clients/fraud` client
 
 Create a public shared client used by ledger, payin, and payout. It must not import internal modules. The client:
 

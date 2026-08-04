@@ -101,7 +101,15 @@ preflight() {
       printf '%s\n' "$value" > "$SECRET_DIR/$secret"
     fi
   done
-  GOCACHE="${GOCACHE:-/tmp/seev-go-cache}" go run ./cmd/loadcheck -profile "$PROFILE" -manifest "$ARTIFACT_ROOT/manifest.json" -write-manifest -run-id "$RUN_ID" -workload "${SEEV_LOAD_WORKLOAD:-bootstrap}" -dataset-hash "${SEEV_LOAD_DATASET_HASH:-sha256:0000000000000000000000000000000000000000000000000000000000000000}" -ack "$ACK" >/dev/null
+  GOCACHE="${GOCACHE:-/tmp/seev-go-cache}" go run ./tools/loadcheck -profile "$PROFILE" -manifest "$ARTIFACT_ROOT/manifest.json" -write-manifest -run-id "$RUN_ID" -workload "${SEEV_LOAD_WORKLOAD:-bootstrap}" -dataset-hash "${SEEV_LOAD_DATASET_HASH:-sha256:0000000000000000000000000000000000000000000000000000000000000000}" -ack "$ACK" >/dev/null
+  PROFILE_LOGICAL_CPUS="$(GOCACHE="${GOCACHE:-/tmp/seev-go-cache}" go run ./tools/loadcheck -profile "$PROFILE" -print-logical-cpus)"
+  [[ "$PROFILE_LOGICAL_CPUS" =~ ^[1-9][0-9]*$ ]] || die "profile $PROFILE_ID returned an invalid logical CPU budget: $PROFILE_LOGICAL_CPUS"
+  # Compose interprets deploy.resources.limits.cpus as a host CPU count. Keep
+  # the profile as the single source of truth while allowing an explicit cap
+  # for elasticity experiments; the compose file's fallback is only for
+  # callers that bypass this runner.
+  export SEEV_LOAD_CPUS_POSTGRES="${SEEV_LOAD_CPUS_POSTGRES:-$PROFILE_LOGICAL_CPUS}"
+  export SEEV_LOAD_CPUS_LEDGER="${SEEV_LOAD_CPUS_LEDGER:-$PROFILE_LOGICAL_CPUS}"
 }
 compose() { docker compose -p "$PROJECT" -f docker-compose.yml -f deploy/load/compose.load.yaml --profile load "$@"; }
 LEDGER_DB="seev_load_ledger"
@@ -155,7 +163,7 @@ start_container_stats() {
 }
 
 # start_postgres_probe runs the existing (previously never-invoked)
-# cmd/loadprobe against the disposable ledger DB for PostgreSQL activity,
+# tools/loadprobe against the disposable ledger DB for PostgreSQL activity,
 # lock waits, and top statements — Phase 0 §24.4's "PostgreSQL activity,
 # waits, locks, top SQL, and sizes" bullet. Runs for a generous fixed
 # duration and is killed early by stop_background_collectors once k6
@@ -171,7 +179,7 @@ start_container_stats() {
 # is negligible overhead at that cadence). A §16.4/§25-item-7 finding: 1s
 # was too coarse to catch brief, sub-second lock contention in the
 # disbursement-burst scenario (each burst run only lasts ~2-8s total, so a
-# handful of 1s samples is a thin trace) — cmd/loadprobe's own README has
+# handful of 1s samples is a thin trace) — tools/loadprobe's own README has
 # always documented `-interval 100ms` as supported; the harness runner
 # simply never exposed it. Set this explicitly (e.g. `100ms`) for short,
 # high-intensity scenarios; leave it at the default for long steady-state
@@ -193,7 +201,7 @@ start_postgres_probe() {
   # hangs this session hit. Building once up front and backgrounding the
   # real binary means `$!` is the actual worker's pid.
   local probe_bin="${GOCACHE:-/tmp/seev-go-cache}/bin-loadprobe"
-  GOCACHE="${GOCACHE:-/tmp/seev-go-cache}" go build -o "$probe_bin" ./cmd/loadprobe
+  GOCACHE="${GOCACHE:-/tmp/seev-go-cache}" go build -o "$probe_bin" ./tools/loadprobe
   "$probe_bin" -dsn "$OBSERVER_DSN" -interval "$interval" -duration 2h -out "$ARTIFACT_ROOT/postgres-summary.jsonl" &
   POSTGRES_PROBE_PID=$!
 }
@@ -318,7 +326,7 @@ hash_artifacts() {
 # stack. gate_passed is deliberately left false even on clean integrity —
 # resource-timeseries.jsonl/postgres-summary.jsonl now capture raw CPU,
 # memory, and PostgreSQL evidence (Phase 0 §24.4), but turning that into a
-# pass/fail against deploy/load/thresholds.yaml is cmd/loadreport's job
+# pass/fail against deploy/load/thresholds.yaml is tools/loadreport's job
 # (its own -thresholds flag), not this script's; claiming gate_passed=true
 # here without running that evaluation would be a false green.
 #
@@ -351,7 +359,7 @@ on_failure() {
 case "$COMMAND" in
   validate)
     preflight
-    GOCACHE="${GOCACHE:-/tmp/seev-go-cache}" go run ./cmd/loadcheck -profile "$PROFILE" -manifest "$ARTIFACT_ROOT/manifest.json"
+    GOCACHE="${GOCACHE:-/tmp/seev-go-cache}" go run ./tools/loadcheck -profile "$PROFILE" -manifest "$ARTIFACT_ROOT/manifest.json"
     compose config >/dev/null
     echo "load-test: safety and compose preflight passed for $PROJECT"
     ;;
@@ -400,7 +408,7 @@ case "$COMMAND" in
       dataset_tier_arg="-tier $SEEV_LOAD_DATASET_TIER"
     fi
     # shellcheck disable=SC2086 # intentional word-splitting: dataset_tier_arg is either empty or exactly "-tier VALUE"
-    GOCACHE="${GOCACHE:-/tmp/seev-go-cache}" go run ./cmd/loaddataset -dsn "$OBSERVER_DSN" -run-id "$RUN_ID" $dataset_tier_arg -out "$ARTIFACT_ROOT/dataset-manifest.json" || true
+    GOCACHE="${GOCACHE:-/tmp/seev-go-cache}" go run ./tools/loaddataset -dsn "$OBSERVER_DSN" -run-id "$RUN_ID" $dataset_tier_arg -out "$ARTIFACT_ROOT/dataset-manifest.json" || true
     phase drain
     drain_seconds="$(wait_for_outbox_drain)"
     phase verification

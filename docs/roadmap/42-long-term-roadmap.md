@@ -109,7 +109,7 @@ Build k6 scenarios for P2P posting, webhook bursts, payout batches, and mixed MV
 
 Decided: [2026-07-31 baseline §16.3, §20](../performance/reports/2026-07-31-baseline.md#20-b1--hot-account-sub-sharding).
 Six alternating one-account/two-account runs at the confirmed hot-account
-MSSL, with `cmd/loadprobe` extended to sample `wait_event_type = 'Lock'`
+MSSL, with `tools/loadprobe` extended to sample `wait_event_type = 'Lock'`
 specifically, found lock-wait share never exceeded 2.24% against the 20%
 activation threshold, and the split-account variant was measurably *worse*
 on throughput and p95, not better. Do not reopen without a materially

@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.seev.invalid/events/ledger/dispute-lifecycle/v1.schema.json",
+  "title": "ledger.dispute.lifecycle.v1",
+  "type": "object",
+  "additionalProperties": true,
+  "description": "A bounded, at-least-once chargeback lifecycle signal. Evidence contents are never carried on the wire.",
+  "required": ["schema_version", "event_id", "dispute_id", "original_tx_id", "dispute_ref", "card_network", "amount", "currency", "to_status", "occurred_at"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "event_id": {"type": "string", "format": "uuid"},
+    "dispute_id": {"type": "string", "format": "uuid"},
+    "original_tx_id": {"type": "string", "format": "uuid"},
+    "recipient_user_id": {"type": "string", "format": "uuid"},
+    "dispute_ref": {"type": "string", "minLength": 1},
+    "card_network": {"type": "string", "enum": ["visa", "mastercard", "jcb", "amex"]},
+    "reason_code": {"type": "string"},
+    "amount": {"type": "string", "pattern": "^[0-9]*[1-9][0-9]*$"},
+    "currency": {"type": "string", "pattern": "^[A-Z]{3}$"},
+    "from_status": {"type": "string", "enum": ["open", "evidence_submitted", "won", "lost", "expired"]},
+    "to_status": {"type": "string", "enum": ["open", "evidence_submitted", "won", "lost", "expired"]},
+    "evidence_due_at": {"type": "string", "format": "date-time"},
+    "occurred_at": {"type": "string", "format": "date-time"}
+  }
+}

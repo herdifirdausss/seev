@@ -4,33 +4,33 @@ managed:
   enabled: true
   override:
     - file_option: go_package_prefix
-      value: github.com/herdifirdausss/seev/gen
+      value: github.com/herdifirdausss/seev/gen/go
     - file_option: go_package
       path: seev/ping/v1
-      value: github.com/herdifirdausss/seev/gen/ping/v1
+      value: github.com/herdifirdausss/seev/gen/go/ping/v1
     - file_option: go_package
       path: seev/ledger/v1
-      value: github.com/herdifirdausss/seev/gen/ledger/v1
+      value: github.com/herdifirdausss/seev/gen/go/ledger/v1
     - file_option: go_package
       path: seev/payin/v1
-      value: github.com/herdifirdausss/seev/gen/payin/v1
+      value: github.com/herdifirdausss/seev/gen/go/payin/v1
     - file_option: go_package
       path: seev/payout/v1
-      value: github.com/herdifirdausss/seev/gen/payout/v1
+      value: github.com/herdifirdausss/seev/gen/go/payout/v1
     - file_option: go_package
       path: seev/fraud/v1
-      value: github.com/herdifirdausss/seev/gen/fraud/v1
+      value: github.com/herdifirdausss/seev/gen/go/fraud/v1
     - file_option: go_package
       path: seev/vendorservice/v1
-      value: github.com/herdifirdausss/seev/gen/vendorservice/v1
+      value: github.com/herdifirdausss/seev/gen/go/vendorservice/v1
 plugins:
   - local: protoc-gen-go
-    out: gen
+    out: gen/go
     opt:
       - paths=import
-      - module=github.com/herdifirdausss/seev/gen
+      - module=github.com/herdifirdausss/seev/gen/go
   - local: protoc-gen-go-grpc
-    out: gen
+    out: gen/go
     opt:
       - paths=import
-      - module=github.com/herdifirdausss/seev/gen
+      - module=github.com/herdifirdausss/seev/gen/go

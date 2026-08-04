@@ -13,7 +13,7 @@ scopes exercised, requests from an unexpected environment).
 
 1. Identify the key's public prefix from the merchant's report or from
    traffic logs (`X-Request-Id`-correlated access logs — the plaintext key
-   is never logged, only `public_prefix`, per `internal/merchant/auth`'s
+   is never logged, only `public_prefix`, per `services/gateway/internal/merchant/auth`'s
    own log-masking discipline).
 2. Revoke it immediately via the Admin BFF merchant console
    (`/api/v1/admin/merchant`, "API keys" panel) or directly:

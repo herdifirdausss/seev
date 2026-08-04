@@ -32,5 +32,5 @@ and downstream owner, is in
 
 Health, readiness, metrics, gRPC, database, broker management, and proxy
 listeners are never public edge routes. Source references are the listener
-registrations in each cmd/*/main.go, Dockerfile, Compose, and the
+registrations in each services/*/cmd/*/main.go, Dockerfile, Compose, and the
 [generated baseline commands](../evidence/k0/command-output/).

@@ -6,7 +6,7 @@
 
 ## Boundary
 
-Notifications stay inside Gateway as `internal/notify`. The module owns the
+Notifications stay inside Gateway as `services/gateway/internal/notification`. The module owns the
 user-facing projection and durable delivery state; it does not become a new
 business service and it never participates in a money-posting transaction.
 Ledger remains the source of truth for facts. Auth remains the source of truth

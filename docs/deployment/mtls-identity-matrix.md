@@ -21,5 +21,5 @@ signature-checked and then mTLS-protected from edge to VendorService. Health
 probes must use an explicitly allowed probe identity or the documented local
 probe exception; metrics remain internal.
 
-Sources: pkg/tlsx, each service cmd/*/main.go, the gRPC server allowlists,
+Sources: internal/platform/security/tls, each services/*/cmd/*/main.go, the gRPC server allowlists,
 and [dependencies.yaml](../../deploy/inventory/dependencies.yaml).

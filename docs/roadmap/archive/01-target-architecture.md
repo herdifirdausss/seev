@@ -28,9 +28,9 @@ docs/design/legacy-schemas/ # archived schemas for reference; never executed
 
 ### Boundary rules (enforced by code and review)
 
-1. Other modules may import only the root `internal/ledger` package, which
+1. Other modules may import only the root `services/ledger` package, which
    exposes public interfaces and DTO types. Code outside the ledger module must
-   not import `internal/ledger/repository`, `internal/ledger/processors`, or
+   not import `services/ledger/internal/repository`, `services/ledger/internal/processors`, or
    other ledger subpackages. The only exception is
    `internal/<mod>/events`, which contains event-payload contracts; see 14 T3.
 2. Modules communicate either through synchronous calls to public module
@@ -60,8 +60,8 @@ docs/design/legacy-schemas/ # archived schemas for reference; never executed
 | D5 | **System accounts use `accounts.system_qualifier TEXT`**, such as settlement per gateway (`'bca'`), platform fees (`'platform'`), and escrow per currency (`'IDR'`). `GetSystemAccountID(type, qualifier)` looks up this column. | Processors already call `GetSystemAccountID(ctx, type, gateway)`. Reusing `pocket_code` would be a confusing hack; an explicit column is clearer. |
 | D6 | **`ledger_entries.balance_after` is the account balance after the complete transaction**, not a running balance after each entry. Do not port the per-entry `chk_balance_math` constraint from `ledgernew.sql`. | `applyEntries` and `InsertEntries` write the same final value for every entry belonging to an account in one transaction. Changing this would touch the posting engine's core for little MVP value. Integrity is enforced by `validateBalanced` and the verification functions. |
 | D7 | **Port the complete outbox lifecycle** (`pending/processing/published/failed/dead`, `retry_count`, `max_retries`, and automatic dead-lettering) from `ledgernew.sql`. | The relay worker needs this state machine; the existing six-column insert can rely on defaults for the remaining columns. |
-| D8 | **Publish events through RabbitMQ via `pkg/messaging`**, using the `ledger.events` topic exchange and `event_type` as the routing key. | The infrastructure already includes the broker and DLQ support. |
-| D9 | **Move `cmd/scheduler/scheduler_final.go` to `pkg/scheduler` as a library.** For MVP, run the outbox and verification workers inside the `cmd/server` process as goroutines, protected by the scheduler's distributed Redis lock. | Start with one modular-monolith process. A separate worker binary is a deployment decision, not a code-architecture decision, and can be introduced later because the worker is already a package. |
+| D8 | **Publish events through RabbitMQ via `internal/platform/messaging`**, using the `ledger.events` topic exchange and `event_type` as the routing key. | The infrastructure already includes the broker and DLQ support. |
+| D9 | **Move `cmd/scheduler/scheduler_final.go` to `internal/platform/scheduling` as a library.** For MVP, run the outbox and verification workers inside the `cmd/server` process as goroutines, protected by the scheduler's distributed Redis lock. | Start with one modular-monolith process. A separate worker binary is a deployment decision, not a code-architecture decision, and can be introduced later because the worker is already a package. |
 | D10 | **Use one generic API endpoint:** `POST /api/v1/ledger/transactions` with `type` in the request body, mapped directly to the processor registry, plus read endpoints. Admin transaction types (`adjustment_*`, `freeze_*`, and `reversal`) require the `admin` role. | The registry already exists; one handler per type would create 22 boilerplate handlers. |
 | D11 | **Defer RLS to Phase 2.** For MVP, use a non-superuser application database role and `REVOKE CREATE ON SCHEMA public`. | The RLS design in `ledgernew.sql` adds local setup complexity and becomes more valuable once read-only or analytics connections exist. |
 | D12 | **User management is outside the ledger scope.** MVP uses the existing JWT middleware and reads `user_id` from the claim. The `auth` module comes after the ledger MVP. | Keep the initial scope focused. |

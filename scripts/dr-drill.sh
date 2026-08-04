@@ -6,8 +6,8 @@
 # one), creates a small representative cross-service fixture, records a
 # recovery target, takes a backup, destroys ONLY the gameday's own
 # volumes (the simulated disaster), then chains every tool T1-T5 already
-# built: scripts/restore-cluster.sh (restore+promote) -> cmd/drverify
-# (zero-fatal gate) -> cmd/drreseed (Redis reconstruction) ->
+# built: scripts/restore-cluster.sh (restore+promote) -> operations/recovery/drverify/cmd/drverify
+# (zero-fatal gate) -> operations/recovery/drreseed/cmd/drreseed (Redis reconstruction) ->
 # scripts/post-restore-security.sh (session/token fence) -> starts the
 # application against the restored cluster and proves the fixture
 # survived (and, in pitr mode, that post-target activity did not).
@@ -403,9 +403,9 @@ wait_healthy "$DRILL_REDIS"
 wait_healthy "$DRILL_RABBITMQ"
 record_stage restore_infra_up
 
-echo "dr-drill.sh: === Phase F: cmd/drverify — zero-fatal cross-database gate ==="
+echo "dr-drill.sh: === Phase F: operations/recovery/drverify/cmd/drverify — zero-fatal cross-database gate ==="
 DRVERIFY_BIN="$WORK_DIR/drverify"
-go build -o "$DRVERIFY_BIN" ./cmd/drverify
+go build -o "$DRVERIFY_BIN" ./operations/recovery/drverify/cmd/drverify
 verify_env=(
 	"LEDGER_DSN=postgres://$DB_USER:$DB_USER@localhost:$DRILL_POSTGRES_PORT/seev_ledger?sslmode=disable"
 	"AUTH_DSN=postgres://$DB_USER:$DB_USER@localhost:$DRILL_POSTGRES_PORT/seev_auth?sslmode=disable"
@@ -418,7 +418,7 @@ verify_env=(
 )
 DRVERIFY_REPORT="$WORK_DIR/drverify-report.json"
 if ! env "${verify_env[@]}" "$DRVERIFY_BIN" >"$DRVERIFY_REPORT"; then
-	echo "dr-drill.sh: cmd/drverify reported failures:" >&2
+	echo "dr-drill.sh: operations/recovery/drverify/cmd/drverify reported failures:" >&2
 	cat "$DRVERIFY_REPORT" >&2
 	exit 1
 fi
@@ -426,15 +426,15 @@ echo "dr-drill.sh: drverify passed — report:"
 cat "$DRVERIFY_REPORT"
 record_stage drverify_pass
 
-echo "dr-drill.sh: === Phase G: cmd/drreseed — Redis policy/fraud reconstruction ==="
+echo "dr-drill.sh: === Phase G: operations/recovery/drreseed/cmd/drreseed — Redis policy/fraud reconstruction ==="
 DRRESEED_BIN="$WORK_DIR/drreseed"
-go build -o "$DRRESEED_BIN" ./cmd/drreseed
+go build -o "$DRRESEED_BIN" ./operations/recovery/drreseed/cmd/drreseed
 DRRESEED_REPORT="$WORK_DIR/drreseed-report.json"
 if ! LEDGER_DSN="postgres://$DB_USER:$DB_USER@localhost:$DRILL_POSTGRES_PORT/seev_ledger?sslmode=disable" \
 	FRAUD_DSN="postgres://$DB_USER:$DB_USER@localhost:$DRILL_POSTGRES_PORT/seev_fraud?sslmode=disable" \
 	REDIS_ADDR="localhost:$REDIS_HOST_PORT" \
 	"$DRRESEED_BIN" >"$DRRESEED_REPORT"; then
-	echo "dr-drill.sh: cmd/drreseed reported failures:" >&2
+	echo "dr-drill.sh: operations/recovery/drreseed/cmd/drreseed reported failures:" >&2
 	cat "$DRRESEED_REPORT" >&2
 	exit 1
 fi
@@ -508,7 +508,7 @@ if [ "$MODE" = "latest" ]; then
 fi
 
 # T4/T6 acceptance: "a clean assurance backfill has zero unresolved critical
-# findings." internal/assurance's Module.Start (internal/assurance/module.go)
+# findings." services/assurance's Module.Start (services/assurance/internal/assurance/module.go)
 # unconditionally runs a mode="backfill" scan on every process start — Phase I
 # above already triggered it just by starting assurance-service. It runs
 # async in its own goroutine, so wait for that specific run to leave

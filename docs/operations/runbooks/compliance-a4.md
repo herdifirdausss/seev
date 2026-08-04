@@ -24,7 +24,7 @@ reconstruct or delete screening events by hand.
 
 ## Sanctions dataset
 
-Use `go run ./cmd/sanctions-loader -file <jsonl> -version <version>` with a
+Use `go run ./services/fraud/cmd/sanctions-loader -file <jsonl> -version <version>` with a
 verified offline export. The loader replaces the local subset transactionally.
 The source documentation describes the latest metadata/index and bulk export
 workflow; record the version and checksum in the change ticket.
@@ -32,7 +32,7 @@ workflow; record the version and checksum in the change ticket.
 ## KYC documents
 
 Without a configured object-store adapter or `CRYPTOX_KEY_V1` (docs/roadmap/archive/51
-T2.2's shared cluster-wide `pkg/cryptox` key ring — see
+T2.2's shared cluster-wide `internal/platform/security/crypto` key ring — see
 [cryptox-key-rotation.md](cryptox-key-rotation.md)), uploads return `503
 DOCUMENT_STORAGE_UNAVAILABLE`; this is intentional. Never log the key,
 plaintext bytes, or object contents. Download is internal admin-only and

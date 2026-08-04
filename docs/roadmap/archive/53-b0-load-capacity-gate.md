@@ -486,7 +486,7 @@ failing saturation/correctness evidence, never silently discarded.
 
 ### K15 — Application database-pool metrics are shared and bounded
 
-Add a collector in `pkg/database` using `sql.DBStats` and register it once per
+Add a collector in `internal/platform/database` using `sql.DBStats` and register it once per
 service database. Export open, in-use, idle, max-open, wait-count,
 wait-duration, max-idle-closed, max-idle-time-closed, and max-lifetime-closed
 metrics. Prometheus `job` identifies the service; do not add DSN, database name,
@@ -622,7 +622,7 @@ Core foundation complete 2026-07-28. Added the
 load-only Compose override with isolated `seev_load_*` databases and
 `pg_stat_statements`/I/O timing, synthetic load secrets, baseline inventory,
 and `scripts/load-test.sh` refusal/cleanup boundaries. Evidence:
-`go test ./pkg/loadlab ./cmd/loadcheck`, load Compose `config`, the no-ack
+`go test ./tools/load/lab ./cmd/loadcheck`, load Compose `config`, the no-ack
 refusal test, and `SEEV_LOAD_ACK=disposable-only ./scripts/load-test.sh validate`.
 No measured capacity claim is made by T0.
 
@@ -704,7 +704,7 @@ state and obtain a validated, redacted result bundle from one command.
 Core foundation complete 2026-07-28. Added deterministic synthetic journey/ledger seed
 material generation with hash manifests, strict output/database boundaries,
 compressed per-database snapshot/restore with checksum verification,
-signal-safe disposable lifecycle cleanup, and `pkg/loadreport`
+signal-safe disposable lifecycle cleanup, and `tools/load/report`
 validation/aggregation/threshold evaluation that rejects mixed profiles and
 missing percentiles. The seed command remains emit-only until a canonical
 business-state adapter is defined; restore interruption and two-clean-restore

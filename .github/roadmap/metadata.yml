@@ -1,0 +1,38 @@
+version: 1
+source_of_truth: docs/improvement/seev-world-class-engineering-improvement-plan-en.md
+repository_objects:
+  labels:
+    - name: improvement:p0-correctness
+      color: b60205
+      description: Financial correctness, authorization, or trust-boundary work
+    - name: improvement:p1-reliability
+      color: d93f0b
+      description: Golden route, failure handling, recovery, or operational proof
+    - name: improvement:p2-platform
+      color: fbca04
+      description: Environment, cloud, deployment, vendor, or supply-chain work
+    - name: improvement:p3-portfolio
+      color: 0e8a16
+      description: Simplification, documentation, and reviewer-facing proof
+    - name: evidence:required
+      color: 5319e7
+      description: Implementation exists; external evidence is still required
+    - name: decision:required
+      color: c5def5
+      description: Product, ownership, or capacity decision blocks safe closure
+  milestones:
+    - title: World-class P0 correctness
+      phase: P0
+      due: decision-required
+    - title: World-class P1 reliability
+      phase: P1
+      due: decision-required
+    - title: World-class P2 platform
+      phase: P2
+      due: decision-required
+    - title: World-class P3 portfolio proof
+      phase: P3
+      due: decision-required
+workflow:
+  remote_creation: "Apply labels and milestones with repository-admin credentials; do not claim they exist from this file alone."
+  issue_template_fields: [phase, owner, risk, acceptance, evidence, rollback]

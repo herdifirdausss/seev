@@ -46,27 +46,27 @@ case-management data model existed at all; three amount/quantity columns
 
 **Fixed:**
 
-- `migrations/ledger/000034_entries_balance_trigger.up.sql` — a `DEFERRABLE
+- `services/ledger/migrations/000034_entries_balance_trigger.up.sql` — a `DEFERRABLE
   INITIALLY DEFERRED` constraint trigger on `ledger_entries` that rejects any
   unbalanced transaction at commit time, not just via the periodic
   `fn_verify_ledger_balance` detective check.
-- `internal/ledger/processors/refund.go` + `internal/ledger/service/handle/service.go`'s
+- `services/ledger/internal/processors/refund.go` + `services/ledger/internal/ledger/handle/service.go`'s
   `lifecycleCloseReason` map — refund now requires `ReferenceID` (the
   original charge) and closes it via the same atomic `CloseOriginal`
   mechanism reversal/escrow-release/withdraw-settle already used, making
   double-refund impossible even under a race
-  (`internal/ledger/schema_contract_test.go`'s
+  (`services/ledger/internal/ledger/schema_contract_test.go`'s
   `TestSchemaContract_Refund_LinksToOriginalCharge`).
-- `migrations/auth/000018_kyc_expiry.up.sql` (`auth_users.kyc_verified_until`)
-  + `internal/auth/worker/expiry.go` — a periodic job downgrades a user to
+- `services/auth/migrations/000018_kyc_expiry.up.sql` (`auth_users.kyc_verified_until`)
+  + `services/auth/internal/worker/expiry.go` — a periodic job downgrades a user to
   KYC level 0 once their verification window lapses, forcing
   re-verification; mirrors the existing sanctions-rescreen job's shape.
-- `migrations/ledger/000035_chargeback_disputes.up.sql` — a full
+- `services/ledger/migrations/000035_chargeback_disputes.up.sql` — a full
   open/evidence_submitted/won/lost/expired case lifecycle, linked to both
   the original charge and the chargeback money-movement transaction
-  (`internal/ledger/service/dispute/`).
-- `migrations/fraud/000008_*`, `migrations/ledger/000033_*`,
-  `migrations/assurance/000008_*` — the three missing positivity CHECKs,
+  (`services/ledger/internal/ledger/dispute/`).
+- `services/fraud/migrations/000008_*`, `services/ledger/migrations/000033_*`,
+  `services/assurance/migrations/000008_*` — the three missing positivity CHECKs,
   each verified safe against existing insert paths before adding.
 
 ## 3. Round 2 — findings and fixes (done)
@@ -78,7 +78,7 @@ at all, unlike every other raw-payload column in the codebase; chargeback
 dispute resolution recorded no actor (no `resolved_by`, no transition
 history); four high-risk admin action types (`freeze_confiscate`,
 `reversal`, `chargeback`, bulk disbursement) required only a single admin's
-authorization, unlike `internal/ledger/service/adjustments`'s existing
+authorization, unlike `services/ledger/internal/ledger/adjustments`'s existing
 maker-checker precedent; several smaller gaps (missing FK indexes, a
 redundant index on `sanctions_entries`, two more missing amount CHECKs, a
 missing `NOT EXISTS` guard in a retention purge function, unused DELETE
@@ -87,27 +87,27 @@ not fixed that session).
 
 **Fixed:**
 
-- `migrations/vendor/000004_boundary_rls_and_encryption.up.sql` +
-  `internal/vendorboundary/callback.go` — RLS added (scoped to the
+- `services/vendor-service/migrations/000004_boundary_rls_and_encryption.up.sql` +
+  `services/vendor-service/internal/callback.go` — RLS added (scoped to the
   `vendor_app` role, matching that table's existing narrow-grant design);
-  `raw_body`/`selected_headers` now sealed via `pkg/cryptox` before INSERT.
-  Verified live: `cmd/loaddataset`'s dataset-manifest tooling initially hit
+  `raw_body`/`selected_headers` now sealed via `internal/platform/security/crypto` before INSERT.
+  Verified live: `tools/loaddataset`'s dataset-manifest tooling initially hit
   "permission denied" reading business tables through the `load_observer`
   role, which surfaced that `load_observer` needed `app_readonly`
   membership plus an explicit grant on `schema_migrations_ledger` — fixed
   in `scripts/load-postgres-init/05-load-observer-readonly.sh`.
-- `migrations/ledger/000037_chargeback_dispute_audit_trail.up.sql` —
+- `services/ledger/migrations/000037_chargeback_dispute_audit_trail.up.sql` —
   `resolved_by` plus a `chargeback_dispute_status_changes` transition-history
   table, mirroring `kyc_level_changes`'s existing shape.
 - Maker-checker extended to `freeze_confiscate`/`reversal`/`chargeback` by
   reusing the existing `pending_adjustments` table (no new schema needed —
   correctly recognized as the same shape); bulk disbursement got its own
   approval columns on `disbursement_batches`
-  (`migrations/ledger/000038_disbursement_maker_checker.up.sql`).
-- `migrations/gateway/000009_*` (missing FK index), 
-  `migrations/fraud/000009_sanctions_entries_drop_redundant_index.up.sql`,
-  `migrations/payin/000016_*`, `migrations/payout/000016_*` (two more amount
-  CHECKs), `migrations/assurance/000009_runs_purge_cursor_guard_and_index.up.sql`
+  (`services/ledger/migrations/000038_disbursement_maker_checker.up.sql`).
+- `services/gateway/migrations/000009_*` (missing FK index),
+  `services/fraud/migrations/000009_sanctions_entries_drop_redundant_index.up.sql`,
+  `services/payin/migrations/000016_*`, `services/payout/migrations/000016_*` (two more amount
+  CHECKs), `services/assurance/migrations/000009_runs_purge_cursor_guard_and_index.up.sql`
   (the `NOT EXISTS` guard).
 
 **Explicitly not fixed that round** (recorded here so it isn't silently
@@ -127,34 +127,34 @@ deferred vs. genuinely open for a future session.
 ### 4.1 High priority — business and DB-level consistency
 
 - **Fee-rule changes are single-admin.** `POST/PUT /admin/ledger/fee-rules`
-  (`internal/ledger/transport/http.go:283,316`) is gated only by
+  (`services/ledger/internal/transport/http.go:283,316`) is gated only by
   `isAdmin(r)` — no maker-checker, even though Round 2 established that
   exact pattern (a second identity required) for adjustments, reversals,
   chargebacks, and bulk disbursement. A bad or malicious fee-rule change has
   ongoing, compounding revenue impact, arguably larger than any single
   adjustment.
 - **`fee_rules.flat_minor_units` has no non-negativity CHECK**
-  (`migrations/ledger/000019_fee_rules.up.sql:9`) — its sibling column,
+  (`services/ledger/migrations/000019_fee_rules.up.sql:9`) — its sibling column,
   `percent_basis_pts`, has one two lines below. The HTTP layer validates
   this, but there is no DB-level backstop; a negative flat fee would make
   `FeeCalculator` credit users instead of charging them.
 - **`disbursement_batches`' maker-checker gate is app-code-only.** Round 2's
-  own doc comment in `internal/ledger/service/disbursement/disbursement.go:124`
+  own doc comment in `services/ledger/internal/ledger/disbursement/disbursement.go:124`
   claims it is "enforced by a DB CHECK constraint as the backstop," but
-  `migrations/ledger/000038` only added a `chk_disbursement_batches_approver_not_creator`
+  `services/ledger/migrations/000038` only added a `chk_disbursement_batches_approver_not_creator`
   check — nothing enforces that `status IN ('processing', ...)` implies
   `approved_by IS NOT NULL`. A direct SQL fix or a future non-`ApproveBatch`
   code path could flip a batch to processing with no approval on record.
 - **Chargeback dispute case management has zero API exposure.** The full
-  service (`internal/ledger/service/dispute/dispute.go`) is never wired into
-  any router — `grep` for `dispute` across `internal/ledger/transport/http.go`
-  and `internal/adminbff/` returns nothing. Nobody can open a case, submit
+  service (`services/ledger/internal/ledger/dispute/dispute.go`) is never wired into
+  any router — `grep` for `dispute` across `services/ledger/internal/transport/http.go`
+  and `services/adminbff/internal/` returns nothing. Nobody can open a case, submit
   evidence, or see the open-dispute queue except via raw SQL. There is also
   no worker analogous to the KYC-expiry job (§2) that auto-transitions a
   case past its `evidence_due_at` deadline to a loss — a real card-network
   SLA-compliance gap sitting on top of otherwise-complete Round 1 work.
 - **Scheduled/recurring transactions bypass the policy engine entirely.**
-  `internal/ledger/service/schedule/schedule.go`'s `Poster` interface calls
+  `services/ledger/internal/ledger/schedule/schedule.go`'s `Poster` interface calls
   `svc.Post` directly, never through the `PolicyChecker` the public HTTP
   router applies before posting. A recurring transfer created while a user
   was KYC level 2 keeps firing at level-2 limits indefinitely after
@@ -202,11 +202,11 @@ deferred vs. genuinely open for a future session.
   (see §4.2) and `chargeback_dispute_status_changes`' pagination index omits
   the `id DESC` tiebreaker `kyc_level_changes`' equivalent index has.
 - `merchant_idempotency_records.idempotency_key` is stored in plaintext, not
-  through the digest pattern `migrations/ledger/000028_idempotency_digest.up.sql`
+  through the digest pattern `services/ledger/migrations/000028_idempotency_digest.up.sql`
   established — lower risk since the whole row hard-deletes 24h after
   expiry, but a pattern inconsistency worth a follow-up if that changes.
 - KYC tier approval (`Module.ApproveKYC`/`RejectKYC`,
-  `internal/auth/kyc.go:204-220`) is still single-approver — confirmed still
+  `services/auth/internal/auth/kyc.go:204-220`) is still single-approver — confirmed still
   open, unaddressed by Round 2's maker-checker work.
 
 ## 5. Still explicitly deferred (not new findings, carried forward for context)
@@ -227,8 +227,8 @@ deferred:
   purely on-demand payout.
 - **No dormant-account/escheatment workflow.**
 - **payin/payout routing-table and repository duplication** — byte-for-byte
-  duplicated schema and Go code between `internal/payin/repository/routing_repository.go`
-  and `internal/payout/repository/routing_repository.go`, already drifted
+  duplicated schema and Go code between `services/payin/internal/repository/routing_repository.go`
+  and `services/payout/internal/repository/routing_repository.go`, already drifted
   (payin has `ListVendorGateways`, payout doesn't).
 - **Inconsistent currency typing** — `CHAR(3)` in most tables, plain `TEXT`
   in `fee_rules`/`fee_quotes`/routing tables/`vendor_callback_inbox`.
@@ -238,9 +238,9 @@ deferred:
 No dedicated load-test-style evidence directory — this plan's evidence is
 the migration files themselves (each self-documenting its own audit-finding
 provenance in its header comment) plus the integration tests added alongside
-each Round 1/2 fix (`internal/ledger/schema_contract_test.go`,
-`internal/vendorboundary/callback_integration_test.go`,
-`internal/auth/kyc_integration_test.go`, and others named in each fix's own
+each Round 1/2 fix (`services/ledger/internal/ledger/schema_contract_test.go`,
+`services/vendor-service/internal/callback_integration_test.go`,
+`services/auth/internal/auth/kyc_integration_test.go`, and others named in each fix's own
 commit). `go build ./...`, `go vet ./...`, and
 `go test -tags=integration ./...` all pass clean as of the last Round 3
 documentation pass.

@@ -109,7 +109,7 @@ money owner services.
 Initial package boundary:
 
 ```text
-internal/merchant/
+services/gateway/internal/merchant/
 ├── api/                 # HTTP handlers and DTO mapping
 ├── application/         # use cases and orchestration
 ├── auth/                # API-key verification and scopes
@@ -276,13 +276,13 @@ C1 does not include:
 Add:
 
 ```text
-api/openapi/b2b-v1.yaml
+contracts/http/b2b-v1.yaml
 ```
 
 Register every operation in:
 
 ```text
-api/contracts/surfaces.yaml
+contracts/compatibility/surfaces.yaml
 ```
 
 Every operation must have:
@@ -1707,7 +1707,7 @@ checklist + command log) and
 (contract/event/migration inventory, user-specific blocking-field findings,
 reusable-helper confirmation, dependency/blast-radius table).
 
-Most consequential finding: `internal/ledger`'s `accounts.owner_type` CHECK
+Most consequential finding: `services/ledger`'s `accounts.owner_type` CHECK
 constraint has allowed `'merchant'` since the very first migration
 (`000001_ledger_core.up.sql`) — the schema already anticipated this track.
 T5 extends existing repository query methods rather than designing a new
@@ -1757,15 +1757,15 @@ Gateway crash after owner success
 
 Delivered 2026-07-28:
 
-- **Contract**: [api/openapi/b2b-v1.yaml](../../../api/openapi/b2b-v1.yaml) —
+- **Contract**: [contracts/http/b2b-v1.yaml](../../../contracts/http/b2b-v1.yaml) —
   21 operations across 7 resource groups, registered in
-  [api/contracts/surfaces.yaml](../../../api/contracts/surfaces.yaml)
+  [contracts/compatibility/surfaces.yaml](../../../contracts/compatibility/surfaces.yaml)
   (audience `merchant`, newly added to the allowed-audience enum in
-  `api/contracts/surfaces_test.go`). Reuses the repo-wide `SuccessEnvelope`/
+  `contracts/compatibility/surfaces_test.go`). Reuses the repo-wide `SuccessEnvelope`/
   `ErrorEnvelope` (no forked envelope) — the only addition is an optional,
   additive `request_id` field on `Error` and a new `merchantApiKey` security
-  scheme, both in `api/openapi/components/common.yaml`. 16 new stable error
-  codes added to `api/contracts/errors.yaml` per §6.7. One deliberate
+  scheme, both in `contracts/http/components/common.yaml`. 16 new stable error
+  codes added to `contracts/compatibility/errors.yaml` per §6.7. One deliberate
   deviation from §6.4's illustrative path: `POST
   .../webhook-endpoints/{id}/rotate-secret` is registered as `.../rotate`
   instead — the literal word "secret" in a path/inventory-ID trips this
@@ -1782,7 +1782,7 @@ Delivered 2026-07-28:
   plaintext, quota-exhaustion blast radius) — status "Planned control",
   each pointing at the T-task that closes it.
 - **Service ownership**: `docs/reference/services.md`'s Gateway entry notes
-  the planned `internal/merchant` sub-module.
+  the planned `services/gateway/internal/merchant` sub-module.
 - **Real bug found and fixed while wiring this in**: `cmd/contractcheck`'s
   `compareParameters` matched `$ref`-shaped parameters by `name`/`in`, but
   the bundler (`cmd/contractgenerate`) represents a resolved `$ref` as
@@ -1798,7 +1798,7 @@ Delivered 2026-07-28:
   `cmd/contractcheck/main_test.go`, proven both ways (identical fixture
   passes, a genuine field change is still caught).
 - **Verified**: `make contracts` (generate/lint/breaking/test — a fresh
-  `api/contracts/baseline/openapi/b2b-v1.yaml` bootstrap snapshot was
+  `contracts/compatibility/baseline/openapi/b2b-v1.yaml` bootstrap snapshot was
   needed since this is the first-ever bundle for the file, same pattern
   ci.yml's own bootstrap fallback already documents), `make docs-check`,
   `go build ./...`, `go vet -tags=integration ./...`, and
@@ -1812,7 +1812,7 @@ T2 may begin.
 
 ### Work
 
-- Add `internal/merchant`.
+- Add `services/gateway/internal/merchant`.
 - Add configuration with secure defaults.
 - Add additive Gateway migrations.
 - Add repositories with mandatory tenant-scoped methods.
@@ -1843,13 +1843,13 @@ Delivered 2026-07-28:
   migrate-up`/`migrate-down SERVICE=gateway`), both directions clean.
 - **Retention**: 10 new `gateway.merchant.*` classes added to
   `config/data-retention.yaml` (`make retention-check`: 100 entries valid).
-  `internal/merchant.Module.StartRetentionRunner` wires the 5 age-based
-  classes on their own scheduler, mirroring `internal/notify`'s own
+  `services/gateway/internal/merchant.Module.StartRetentionRunner` wires the 5 age-based
+  classes on their own scheduler, mirroring `services/gateway/internal/notification`'s own
   pattern (both are Gateway submodules).
-- **Package**: `internal/merchant/{model,repository}` populated;
+- **Package**: `services/gateway/internal/merchant/{model,repository}` populated;
   `{api,application,auth,quota,idempotency,webhook,client,observability}`
   scaffolded as empty directories per §3.1's layout, populated task by
-  task starting T3. `internal/config.MerchantConfig` (API-key pepper,
+  task starting T3. `internal/platform/config.MerchantConfig` (API-key pepper,
   idempotency default TTL, quota fail-closed default) follows the same
   secret-loading-boundary pattern as `ClosureConfig`/`CryptoxConfig`.
 - **Real bug found and fixed during its own integration test**: the first
@@ -1876,8 +1876,8 @@ Delivered 2026-07-28:
 - **Verified**: `go build ./...`, `go vet -tags=integration ./...`, `make
   lint` (0 issues), `go test -race ./...` (full repo, all green), `make
   docs-check`, `make retention-check`, the full
-  `internal/merchant/repository` integration suite (8/8 pass), and the
-  full pre-existing `internal/notify` integration suite (27/27 pass,
+  `services/gateway/internal/merchant/repository` integration suite (8/8 pass), and the
+  full pre-existing `services/gateway/internal/notification` integration suite (27/27 pass,
   confirming existing Gateway notification tables/routes are unaffected).
 
 T3 may begin.
@@ -1915,11 +1915,11 @@ T3 may begin.
 
 Delivered 2026-07-28:
 
-- **Package**: `internal/merchant/auth` — key generation/parsing
+- **Package**: `services/gateway/internal/merchant/auth` — key generation/parsing
   (`key.go`), HMAC-SHA-256 digest with constant-time compare
   (`digest.go`), the machine `Principal` type + context helpers
   (`principal.go`), the central scope registry (`scopes.go`, kept in sync
-  with `api/openapi/b2b-v1.yaml`'s `x-see-scopes` by
+  with `contracts/http/b2b-v1.yaml`'s `x-see-scopes` by
   `TestScopeRegistryMatchesContract`), the `RequireMerchantAuth`/
   `RequireScope` HTTP middleware (`middleware.go`), and the operator
   `KeyService` (create/rotate/revoke, `service.go`).
@@ -1930,11 +1930,11 @@ Delivered 2026-07-28:
   per-operation split.
 - **Log masking reused, not rebuilt**: the merchant API key travels on
   the same `Authorization: Bearer ...` header AuthService's JWTs already
-  use — `pkg/logger`'s existing `sensitiveKeys`/`SanitizeHeaders` masking
+  use — `internal/platform/observability/logging`'s existing `sensitiveKeys`/`SanitizeHeaders` masking
   already covers it with no code change. Proven, not assumed:
   `TestRequireMerchantAuth_KeyPlaintextNeverAppearsInLogs` and its
   tampered-attempt counterpart both capture real log output through
-  `pkg/middleware.WithLogger` and assert the plaintext never appears.
+  `internal/platform/security/middleware.WithLogger` and assert the plaintext never appears.
 - **Two real bugs found and fixed via this task's own tests**:
   1. `ParseKey` split the key on the first `_` character to separate the
      public prefix from the secret — but `base64.RawURLEncoding`'s own
@@ -1947,7 +1947,7 @@ Delivered 2026-07-28:
   2. `go fix`'s safe-modernizer check (`make lint`'s own
      `modernize-check` step) flagged two hand-written linear scans
      (`Principal.HasScope`, `ValidScope`) that `slices.Contains` already
-     expresses — applied via `go fix -omitzero=false ./internal/merchant/...`
+     expresses — applied via `go fix -omitzero=false ./services/gateway/internal/merchant/...`
      rather than left for a future pass.
 - **Verified**: unit tests (23, all pass), a 368,392-execution/15s fuzz
   run of `ParseKey` (0 crashes), `-race` on both the plain and
@@ -1995,11 +1995,11 @@ T4 may begin.
 
 Delivered 2026-07-29:
 
-- **Package `internal/merchant/quota`** — `Enforcer` wraps T2's existing
-  `merchant_quota_policies` repository around `pkg/cache.RedisRateLimiter`'s
+- **Package `services/gateway/internal/merchant/quota`** — `Enforcer` wraps T2's existing
+  `merchant_quota_policies` repository around `internal/platform/cache.RedisRateLimiter`'s
   already-proven atomic Lua token-bucket script (reused, not reimplemented
   — the only new logic is loading a PER-TENANT policy at request time,
-  since the shared `pkg/cache` type bakes its rate/burst in at
+  since the shared `internal/platform/cache` type bakes its rate/burst in at
   construction). Fail-closed on write when Redis is unreachable
   (`ErrQuotaBackendUnavailable`, bounded by a 200ms `redisPingTimeout` so a
   half-dead Redis can't eat the caller's whole deadline — same principle
@@ -2008,7 +2008,7 @@ Delivered 2026-07-29:
   `defaultPolicy` (60 req/min) when a tenant has no configured row.
   `middleware.go`'s `RequireQuota` sets §6.3's `RateLimit-*`/`Retry-After`
   headers and returns 429 (over quota) or 503 (backend down).
-- **Package `internal/merchant/idempotency`** — canonical request hashing
+- **Package `services/gateway/internal/merchant/idempotency`** — canonical request hashing
   (`hash.go`: SHA-256 of operationID + raw body), deterministic
   downstream-key derivation (stable across retries so the owner service
   sees one logical operation), and `Service.Begin`'s full claim/replay/
@@ -2030,7 +2030,7 @@ Delivered 2026-07-29:
 - **Idempotency expiry job**: already bounded — T2 built
   `fn_retention_purge_merchant_idempotency_records` (batched, hold-aware)
   and wired it into the shared retention worker
-  (`internal/merchant/merchant.go`'s `StartRetentionRunner`); T4 added no
+  (`services/gateway/internal/merchant/merchant.go`'s `StartRetentionRunner`); T4 added no
   new purge path, `make retention-check` confirms the policy is still
   current.
 - **Verified**: 18 unit tests across `quota`/`idempotency` (miniredis for
@@ -2100,7 +2100,7 @@ Delivered 2026-07-29:
   `TransactionRepository.ListByAccountEitherSide` — so every existing
   user-scoped call site is byte-for-byte unchanged.
 - **New processor `merchant_transfer`**
-  (`internal/ledger/processors/merchant_transfer.go`): source is ALWAYS
+  (`services/ledger/internal/processors/merchant_transfer.go`): source is ALWAYS
   `GetMerchantAccountID(cmd.MerchantTenantID)` — there is no
   source-account-id input anywhere on the path, so the caller
   structurally cannot substitute it (proven by
@@ -2124,8 +2124,8 @@ Delivered 2026-07-29:
 - **Contracts, additive**: 3 new `LedgerService` RPCs
   (`ProvisionMerchant`, `GetMerchantAccount`, `ListMerchantTransactions`)
   and one new `PostRequest.merchant_tenant_id` field —
-  `api/proto/seev/ledger/v1/ledger.proto`, regenerated via `make proto`,
-  registered in `api/contracts/surfaces.yaml`. `GetMerchantAccount`/
+  `contracts/proto/seev/ledger/v1/ledger.proto`, regenerated via `make proto`,
+  registered in `contracts/compatibility/surfaces.yaml`. `GetMerchantAccount`/
   `ListMerchantTransactions` accept ONLY `tenant_id` — there is no
   account-id parameter anywhere on these RPCs, so a caller can never read
   another tenant's data by guessing an account id.
@@ -2141,15 +2141,15 @@ Delivered 2026-07-29:
   and a rollout test proving a NEW payload still decodes cleanly into an
   OLDER consumer struct that has never heard of the field
   (`TestTransactionPosted_RolloutCompatibility_NewProducerOldConsumer`).
-- **pkg/ledgerclient** (the shared gRPC client every service reuses) got
+- **contracts/clients/ledger** (the shared gRPC client every service reuses) got
   `ProvisionMerchant`/`GetMerchantAccount`/`ListMerchantTransactions`
-  methods and `Command.MerchantTenantID`, so Gateway's `internal/merchant`
+  methods and `Command.MerchantTenantID`, so Gateway's `services/gateway/internal/merchant`
   module (T6+) and Admin BFF can call the new surface without any new
   boilerplate.
 - **Verified end-to-end against real Postgres, through the actual gRPC
   surface** (not just the repository or processor in isolation): 5
   integration tests in
-  `internal/ledger/grpcserver/merchant_transfer_integration_test.go`
+  `services/ledger/internal/transport/grpc/merchant_transfer_integration_test.go`
   covering every acceptance line — idempotent provisioning, balanced
   posting (`fn_verify_ledger_balance` returns zero unbalanced), a
   currency-mismatch rejection that posts ZERO ledger entries, a
@@ -2158,12 +2158,12 @@ Delivered 2026-07-29:
   independent, both legitimately see a transaction between them, and an
   unprovisioned tenant gets a clean error rather than another tenant's
   data). Plus 12 processor unit tests
-  (`internal/ledger/processors/merchant_transfer_test.go`) with a real
+  (`services/ledger/internal/processors/merchant_transfer_test.go`) with a real
   `MockAccountRepository`.
 - **Full-repo regression, unaffected**: `go test -race ./...` (whole
   repo) is green. While investigating an unrelated `-tags=integration`
   full-suite run, found 3 pre-existing failures in
-  `internal/ledger/schema_contract_test.go`
+  `services/ledger/internal/ledger/schema_contract_test.go`
   (`TestSchemaContract_Accrual_BasicFlow_IdempotentAcrossRuns`,
   `..._BasisIsSnapshotNotLiveBalance`,
   `TestSchemaContract_Reporting_DailyPositionMatchesManualAggregate`) —
@@ -2235,8 +2235,8 @@ Delivered 2026-07-29:
   unmatched callback legitimately has neither owner yet — pre-existing
   behavior since migration 000013, not new).
 - **New create use cases**: `CreateMerchantTopupIntent`
-  (`internal/payin/merchant.go`) and `CreateMerchant`
-  (`internal/payout/merchant.go`) — currency is caller-supplied (the B2B
+  (`services/payin/internal/merchant.go`) and `CreateMerchant`
+  (`services/payout/internal/merchant.go`) — currency is caller-supplied (the B2B
   contract's own field), unlike the user path's `GetUserCurrency`
   resolution. Fee-quote consumption is not offered on the merchant payout
   path (no `quote_id` field on the B2B contract) — settle() falls back to
@@ -2280,7 +2280,7 @@ Delivered 2026-07-29:
   as T7's own prerequisite if the locked webhook envelope turns out to
   need it.
 - **No vendor-native response leakage — confirmed pre-existing, not built
-  here**: `internal/vendorboundary`'s double normalization (vendor-native →
+  here**: `services/vendor-service/internal`'s double normalization (vendor-native →
   VendorService's own typed proto → `vendorgw.PayoutResult`/normalized
   payin callback) already made this true before T6 touched anything;
   merchant requests flow through the exact same normalized surface.
@@ -2295,16 +2295,16 @@ Delivered 2026-07-29:
   until this one-line fix landed.
 - **Deferred, tracked separately, NOT silently skipped**: the plan's own
   Work list item "Add B2B Gateway handlers only after owner contracts are
-  green" — `internal/merchant`'s actual `/api/v1/b2b/payins`/`/payouts`
+  green" — `services/gateway/internal/merchant`'s actual `/api/v1/b2b/payins`/`/payouts`
   HTTP route wiring (request parsing, T3's API-key auth, T4's
   quota/idempotency middleware, public status mapping) is real,
   substantial, distinct work that no T6 acceptance criterion actually
   requires (all 8 are owner-service-level and are now proven end to end
   without it existing). Flagged as a separate follow-up task.
 - **Verified end to end against real Postgres**: 3 payin integration
-  tests (`internal/payin/merchant_integration_test.go` — credits once,
+  tests (`services/payin/internal/merchant_integration_test.go` — credits once,
   duplicate callback safe, sandbox routing) + 4 payout integration tests
-  (`internal/payout/merchant_integration_test.go` — instant-settle
+  (`services/payout/internal/merchant_integration_test.go` — instant-settle
   hold→debit→release, async resume-job recovery, vendor-failure release,
   sandbox routing), all passing live, plus 8 payin unit tests and 8
   payout unit tests (processor-type branching, sandbox structural
@@ -2363,7 +2363,7 @@ T7 may begin.
 Delivered 2026-07-29:
 
 - **Endpoint management + delivery/dispatch split into two sides of one
-  package** (`internal/merchant/webhook`): `Service` (tenant-facing —
+  package** (`services/gateway/internal/merchant/webhook`): `Service` (tenant-facing —
   create/rotate/list/delete endpoints, list/get deliveries) is the
   counterpart of `RelayWorker` (the dispatch side, `relay.go`). `Consumer`
   (`consumer.go`) is the inbound side that turns internal ledger events
@@ -2376,7 +2376,7 @@ Delivered 2026-07-29:
 - **Envelope/signature/SSRF exactly per the T1 lock**
   (`docs/reference/c1-b2b-design.md §2/§4`): `envelope.go` builds the
   locked `{id, type, livemode, created_at, data}` body with `id` derived
-  from the SAME internal logical `EventID` convention `internal/ledger/events`
+  from the SAME internal logical `EventID` convention `contracts/events/ledger`
   already uses (no second hash); `signature.go` implements
   `t=<unix>,v1=<hmac-sha256 hex>` with `t` bound to the delivery row's own
   immutable `CreatedAt` — reused, never recomputed per attempt, so retries
@@ -2388,7 +2388,7 @@ Delivered 2026-07-29:
 - **Retry/backoff kept in lockstep with the rest of the codebase's outbox
   implementations, on purpose**: `relay.go`'s `nextAttemptAt` uses the
   identical formula to
-  `internal/payout/repository/vendor_command_repository.go`'s
+  `services/payout/internal/repository/vendor_command_repository.go`'s
   `FailCommand` (itself matched to the ledger outbox's `MarkFailed`) —
   base 30s, factor 2, cap 15m, +50% jitter. Unlike
   `payout_vendor_commands`, `merchant_webhook_deliveries` has no per-row
@@ -2412,7 +2412,7 @@ Delivered 2026-07-29:
   type string into type *[]string` the first time `ListEndpoints` was
   exercised against real Postgres. Fixed by scanning through
   `pgtype.Map.SQLScanner(&e.SubscribedEvents)`
-  (`internal/merchant/repository/webhook_repository.go`) — pgx's own
+  (`services/gateway/internal/merchant/repository/webhook_repository.go`) — pgx's own
   documented bridge for exactly this case, no new dependency (pgtype is
   already a subpackage of the pgx/v5 module this repo already depends
   on). This is the only `TEXT[]` column in the entire schema, so there
@@ -2422,7 +2422,7 @@ Delivered 2026-07-29:
   their own outside a `Map`), which is what led to the `SQLScanner`
   fix.
 - **Second bug found the same way**: two PRE-EXISTING integration tests in
-  `internal/merchant/repository/repository_integration_test.go`
+  `services/gateway/internal/merchant/repository/repository_integration_test.go`
   (`TestWebhookRepository_DeliveryUniqueness_RaceSafe`,
   `TestWebhookRepository_AttemptsCascadeDeleteWithDelivery`, both written
   before this task added the `environment` column + its
@@ -2439,7 +2439,7 @@ Delivered 2026-07-29:
   implementation's key invariants (`ClaimDue`'s lease exclusivity,
   `CreateDelivery`'s dedup vs. `CreateReplayDelivery`'s exemption from
   it) rather than being a dumb stub. `messaging.MockBroker` (already
-  shared by `pkg/messaging`) is reused for `Consumer` tests instead of a
+  shared by `internal/platform/messaging`) is reused for `Consumer` tests instead of a
   second hand-rolled broker fake.
 - **Verified end-to-end against real Postgres and a real HTTP server**
   (`webhook_integration_test.go`, `-tags=integration`):
@@ -2466,9 +2466,9 @@ Delivered 2026-07-29:
   scoping notes in `envelope.go`): `payin.updated.v1`/`payout.updated.v1`
   external event types — these require a payin/payout-owned pending-state
   outbox that T6 explicitly deferred; no T7 acceptance criterion requires
-  them. Wiring `internal/merchant.Module.StartWebhookConsumer`/
+  them. Wiring `services/gateway/internal/merchant.Module.StartWebhookConsumer`/
   `StartWebhookRelay` into `cmd/gateway/main.go` is also not done here —
-  `internal/merchant.Module` has never been wired into `cmd/gateway` at
+  `services/gateway/internal/merchant.Module` has never been wired into `cmd/gateway` at
   all (confirmed: zero references anywhere under `cmd/`), a pre-existing
   gap from T2 onward and already tracked separately (`task_6214960b`,
   flagged during T6 for the B2B HTTP handlers specifically); this task
@@ -2480,7 +2480,7 @@ Delivered 2026-07-29:
   `make lint` (0 issues, after applying `go fix -omitzero=false`'s two
   suggested modernizations — a `slices.Contains` replacement and a
   range-over-int loop), `go test -race ./...` (full repo, green),
-  `go test -tags=integration ./internal/merchant/...` (repository +
+  `go test -tags=integration ./services/gateway/internal/merchant/...` (repository +
   webhook packages against real Postgres, green — including the two
   pre-existing tests fixed above), `go run ./cmd/doccheck` (129 files
   valid, including the new receiver guide), `go run ./cmd/retentioncheck`
@@ -2527,23 +2527,23 @@ T8 may begin.
 
 Delivered 2026-07-29:
 
-- **The real gap wasn't Admin BFF — it was that `internal/merchant` had no
+- **The real gap wasn't Admin BFF — it was that `services/gateway/internal/merchant` had no
   HTTP surface at all, and was never wired into `cmd/gateway`.** Admin
   BFF's own `/api/v1/admin/gateway/` route, generic proxy, CSRF
   middleware, and `AuditMutation` call were ALL already fully wired from
-  earlier work (`internal/adminbff/module.go:125`,
-  `internal/adminbff/proxy.go`'s `m.proxy(...)`) — they simply had nothing
+  earlier work (`services/adminbff/internal/module.go:125`,
+  `services/adminbff/internal/proxy.go`'s `m.proxy(...)`) — they simply had nothing
   behind them to proxy to. T8's actual scope, once that was established,
-  was: (1) build `internal/merchant`'s own admin HTTP router
-  (`internal/merchant/adminhttp.go`, new), (2) add the maker-checker gate
-  T8 needed that didn't exist yet (`internal/merchant/lifecycle`, new),
-  (3) wire `internal/merchant.Module` into `cmd/gateway/main.go` for the
+  was: (1) build `services/gateway/internal/merchant`'s own admin HTTP router
+  (`services/gateway/internal/merchant/adminhttp.go`, new), (2) add the maker-checker gate
+  T8 needed that didn't exist yet (`services/gateway/internal/merchant/lifecycle`, new),
+  (3) wire `services/gateway/internal/merchant.Module` into `cmd/gateway/main.go` for the
   first time ever, and (4) add one console page to Admin BFF. No new
-  Go code was needed in `internal/adminbff` itself beyond the template —
+  Go code was needed in `services/adminbff` itself beyond the template —
   CSRF, audit, and the downstream call were free.
 - **Maker-checker for tenant lifecycle**
-  (`internal/merchant/lifecycle`, migration `000007_merchant_tenant_lifecycle`):
-  mirrors `internal/auth`'s own `OperatorOffboardingRequest` shape almost
+  (`services/gateway/internal/merchant/lifecycle`, migration `000007_merchant_tenant_lifecycle`):
+  mirrors `services/auth`'s own `OperatorOffboardingRequest` shape almost
   exactly — `Propose`/`Approve`/`Reject` on a
   `merchant_tenant_lifecycle_requests` table with a
   `CHECK (approved_by IS NULL OR approved_by <> requested_by)` backstop
@@ -2563,13 +2563,13 @@ Delivered 2026-07-29:
   these two enforcement shapes and this implementation preserves the
   distinction) — a maker can never sneak an oversized quota through by
   pairing it with an unrelated field change.
-- **`internal/merchant/adminhttp.go`** (new, 22 routes on
+- **`services/gateway/internal/merchant/adminhttp.go`** (new, 22 routes on
   `Module.AdminRouter()`): tenant create/list/get/suspend, lifecycle
   propose/approve/reject/list, account provision/get, key
   create/list/rotate/revoke, quota get/update, webhook endpoint
   create/list/rotate-secret/disable, delivery list/replay. Role gates
   (`isAdmin`/`isAdminMaker`/`isAdminChecker`) are byte-identical in shape
-  to `internal/ledger/transport/http.go`'s own trio — this codebase's
+  to `services/ledger/internal/transport/http.go`'s own trio — this codebase's
   established per-package duplication convention for this exact check,
   not a new pattern. One-time secrets (API key plaintext, webhook signing
   secret) are returned ONLY from the create/rotate response body, never
@@ -2586,7 +2586,7 @@ Delivered 2026-07-29:
   `TestAdminRouter_CreateKey_UnknownScopeIsBadRequest`.
 - **Two contract gates caught by `go test -race ./...`, both fixed
   before commit**: (1) `TestModuleBoundaries` — `cmd/gateway` and
-  `internal/handler` importing `internal/merchant` for the first time
+  `services/gateway/internal/transport/http` importing `services/gateway/internal/merchant` for the first time
   tripped the module-ownership allowlist in `boundary_test.go`; fixed by
   adding `"merchant": true` to gateway's owned-module set (one line,
   `boundary_test.go:55`). (2) `TestValidate_RealPolicyIsClean` — the new
@@ -2597,7 +2597,7 @@ Delivered 2026-07-29:
   entry and rationale — both are permanent two-person-control audit
   trails), then regenerating `docs/data/retention.md` via
   `make retention-docs`.
-- **Wiring** (`cmd/gateway/main.go`, `internal/handler/{dependencies,router}.go`):
+- **Wiring** (`cmd/gateway/main.go`, `services/gateway/internal/transport/http/{dependencies,router}.go`):
   `cfg.Cryptox.Ring()` (boot-fails on a missing/malformed ring, same
   "money-safety, never optional" posture as every other cryptox-dependent
   service) and `ledgerclient.New(ledgerConn)` (reusing Gateway's existing
@@ -2605,7 +2605,7 @@ Delivered 2026-07-29:
   `StartWebhookRelay`/`StartWebhookConsumer`/`StartRetentionRunner` (all
   already built in T7 but never started anywhere) are now started
   alongside Gateway's other background workers, with matching cleanup on
-  shutdown. `internal/handler.NewInternalRouter` gained its first-ever JWT
+  shutdown. `services/gateway/internal/transport/http.NewInternalRouter` gained its first-ever JWT
   `authed` chain (`middleware.WithAuth`, matching ledger/payin/payout's
   own convention) specifically to mount
   `AdminRouter()` at `/api/v1/admin/gateway/`.
@@ -2643,10 +2643,10 @@ Delivered 2026-07-29:
   (129 files valid, including the new merchant console template),
   `go run ./cmd/retentioncheck` (101 policy entries valid,
   `docs/data/retention.md` regenerated and current). 14 new unit tests in
-  `internal/merchant/adminhttp_test.go` (hand-written fakes, matching this
+  `services/gateway/internal/merchant/adminhttp_test.go` (hand-written fakes, matching this
   package's own no-gomock convention, driven through the REAL
   `middleware.WithAuth` JWT chain rather than injecting claims directly)
-  plus 9 in `internal/merchant/lifecycle/lifecycle_test.go` cover every
+  plus 9 in `services/gateway/internal/merchant/lifecycle/lifecycle_test.go` cover every
   role gate, the self-approval rejection, the quota baseline boundary,
   the one-time-secret contract, and a `TestAdminRouter_FullSandboxOnboardingFlow`
   test that chains create-tenant → create-key → create-webhook-endpoint →
@@ -2724,8 +2724,8 @@ Delivered 2026-07-29:
   enforced location — and cross-linked from
   `docs/operations/runbooks/README.md`'s own "choose by symptom" and
   index tables.
-- **Metrics** (`internal/merchant/metrics.go`,
-  `internal/merchant/webhook/metrics.go`, new): `seev_merchant_idempotency_records{state}`,
+- **Metrics** (`services/gateway/internal/merchant/metrics.go`,
+  `services/gateway/internal/merchant/webhook/metrics.go`, new): `seev_merchant_idempotency_records{state}`,
   `seev_merchant_idempotency_stuck_leases`,
   `seev_merchant_webhook_deliveries{status}`,
   `seev_merchant_webhook_backlog_oldest_age_seconds`,
@@ -2737,18 +2737,18 @@ Delivered 2026-07-29:
   is no per-tenant label anywhere to accidentally add one to). The three
   snapshot gauges are refreshed every 30s by a new
   `Module.StartObservabilityRefresher` ticker
-  (`internal/merchant/metrics.go`), mirroring
-  `internal/auth.refreshPrivacyRequestsGauge`'s own established
+  (`services/gateway/internal/merchant/metrics.go`), mirroring
+  `services/auth.refreshPrivacyRequestsGauge`'s own established
   "recompute from the database once per tick" convention; the delivery
   counter increments inline in `relay.go`'s own `processDelivery`.
 - **Stuck-idempotency and webhook-backlog visibility** (T9's own two named
   acceptance lines): backed by two new repository methods proven against
   real Postgres in this task
   (`IdempotencyRepository.StateCounts`/`CountStuckLeases`,
-  `WebhookRepository.BacklogStats` — `internal/merchant/repository/{idempotency,webhook}_repository.go`)
+  `WebhookRepository.BacklogStats` — `services/gateway/internal/merchant/repository/{idempotency,webhook}_repository.go`)
   — `TestIdempotencyRepository_ObservabilityQueries_T9` and
   `TestWebhookRepository_BacklogStats_T9` in
-  `internal/merchant/repository/repository_integration_test.go`.
+  `services/gateway/internal/merchant/repository/repository_integration_test.go`.
 - **Alerts** (`deploy/observability/prometheus/rules/merchant.yml`, new,
   registered in `prometheus.yml`'s `rule_files`, validated live via
   `promtool check rules` in a throwaway `prom/prometheus` container — 5
@@ -2766,7 +2766,7 @@ Delivered 2026-07-29:
   yellow/red thresholds at 5/15 minutes matching the alert), delivery
   attempt rate by result, and the global kill-switch state.
 - **Global route-disable control**
-  (`internal/merchant/auth.GlobalFlag`/`RequireB2BEnabled`, new;
+  (`services/gateway/internal/merchant/auth.GlobalFlag`/`RequireB2BEnabled`, new;
   `merchant_settings` table, migration `000008`): a generic key/value
   operational-settings table (extensible to future toggles with no new
   migration) backs an in-memory-cached, atomically-read flag —
@@ -2794,7 +2794,7 @@ Delivered 2026-07-29:
   "suspended"` and returning `403` before this task began — this task's
   job was verifying and documenting the behavior, not building it. Traced
   through both existing unit test coverage
-  (`internal/merchant/auth/middleware_test.go`'s own
+  (`services/gateway/internal/merchant/auth/middleware_test.go`'s own
   `suspended_tenant` subtest) and the new
   [merchant-tenant-suspension.md](../../operations/runbooks/merchant-tenant-suspension.md)
   runbook, which also documents the two things suspension deliberately
@@ -2813,21 +2813,21 @@ Delivered 2026-07-29:
   `TestWebhookRelay_EndToEnd` live proof of lease reclaim after a
   simulated crash).
 - **Trace evidence across the async boundary already existed
-  structurally, confirmed rather than built**: `pkg/messaging`'s own
+  structurally, confirmed rather than built**: `internal/platform/messaging`'s own
   `Publisher`/`Consumer` inject and extract OpenTelemetry trace context
   into/from AMQP headers unconditionally
-  (`pkg/messaging/publisher.go:124`, `pkg/messaging/consumer.go:196`) —
+  (`internal/platform/messaging/publisher.go:124`, `internal/platform/messaging/consumer.go:196`) —
   since T7's `webhook.Consumer.Start` calls `c.broker.Consume(...)` the
-  identical way `internal/notify`'s own consumer does, it inherits this
+  identical way `services/gateway/internal/notification`'s own consumer does, it inherits this
   propagation for free. The synchronous HTTP boundary (Admin BFF →
   Gateway's internal listener) is covered the same way: `AdminRouter()`
-  is mounted inside `internal/handler.NewInternalRouter`'s existing
+  is mounted inside `services/gateway/internal/transport/http.NewInternalRouter`'s existing
   `global` middleware chain, which already includes
   `middleware.WithTracing` for every request. No new tracing code was
   needed anywhere in this task.
 - **Full sweep**: `go build ./...`, `go vet -tags=integration ./...`,
   `make lint` (0 issues), `go test -race ./...` (full repo, green),
-  `go test -tags=integration ./internal/merchant/...` (repository +
+  `go test -tags=integration ./services/gateway/internal/merchant/...` (repository +
   webhook + auth packages against real Postgres, green — including three
   new T9-specific integration tests), `go run ./cmd/doccheck` (136 files
   valid, including all seven new runbooks and the new design-doc
@@ -2835,8 +2835,8 @@ Delivered 2026-07-29:
   covering the new `merchant_tenant_lifecycle_requests` — filed under T8
   but only now retention-classified — and `merchant_settings` tables),
   `promtool check rules` on the new alert file (5 rules, 0 errors). 15
-  new unit tests (`internal/merchant/auth/globalflag_test.go` plus
-  additions to `internal/merchant/adminhttp_test.go`) cover the flag's
+  new unit tests (`services/gateway/internal/merchant/auth/globalflag_test.go` plus
+  additions to `services/gateway/internal/merchant/adminhttp_test.go`) cover the flag's
   default-enabled state, immediate-effect `SetEnabled`, the
   multi-instance refresh-lag behavior, `RequireB2BEnabled`'s pass/block
   paths, and the admin route's own checker-only gate.
@@ -2932,7 +2932,7 @@ private-address) — but no scenario re-runs those failure modes through the
 merchant-specific surface precisely. Tracked as T10b.
 
 **Cross-tenant matrix (§23.7).** Audited all 9 required cases against the
-existing test suite (`internal/merchant/**/*_test.go`):
+existing test suite (`services/gateway/internal/merchant/**/*_test.go`):
 tenant-reads-tenant, tenant-mutates-tenant, idempotency-key-reuse, and
 delivery-replay are covered by existing tests
 (`b2b_integration_test.go`, `idempotency_test.go`, `replay_test.go`,
@@ -2943,7 +2943,7 @@ real gap fixed above, now covered by
 `TestRequireMerchantAuth_TenantKeyEnvironmentMismatch_FailsClosed`.
 Source-account targeting does not apply to the current API shape:
 `source_account_id` is always derived server-side from the caller's own
-tenant (`internal/merchant/api/transactions_handler.go`), never taken from
+tenant (`services/gateway/internal/merchant/api/transactions_handler.go`), never taken from
 the request body, so there is no field for tenant A to nominate tenant B's
 account as a debit source. Suspended-tenant reads vs. writes: the
 middleware currently fails closed uniformly for a suspended tenant
@@ -2952,7 +2952,7 @@ than §23.7's stated default policy ("read access may remain available for
 reconciliation") — no test (or code path) currently distinguishes the two.
 Tracked as T10b.
 
-**Race tests (§23.8).** `go test -race ./internal/merchant/...` (plain and
+**Race tests (§23.8).** `go test -race ./services/gateway/internal/merchant/...` (plain and
 `-tags=integration`) is clean — no data races in anything that exists. Of
 the 7 required scenarios: concurrent-same-idempotency-key is fully covered
 (3 tests, unit + real-Postgres); duplicate-owner-events is covered
@@ -2975,7 +2975,7 @@ manual trigger racing the `ASSURANCE_INTERVAL=1s` background scheduler it
 also configures (a 409-style collision under `curl -sf` kills the script via
 `set -e`, which tears down services mid-run). Confirmed via
 `git log -- scripts/privacy-e2e.sh scripts/privacy-e2e-host.sh
-internal/assurance` that none of these have been touched by any commit in
+services/assurance` that none of these have been touched by any commit in
 this plan — this is a pre-existing bug in plan 51's own test tooling, not a
 Plan 57 regression, and does not exercise anything Plan 57 owns. Filed as
 its own follow-up task rather than fixed here (out of this plan's blast
@@ -2987,7 +2987,7 @@ real blockers to running the gate honestly):** the accumulated
 work left 66 leaked testcontainers Postgres instances and 1 leaked
 testcontainers RabbitMQ instance running, and separately left ~11 GB of
 stale Go build/lint/module caches under `/tmp`, pushing the host disk to
-95% full — together these caused a transient `pkg/database` testcontainers
+95% full — together these caused a transient `internal/platform/database` testcontainers
 timeout and a `seev-rabbitmq-1` health-check failure that had nothing to do
 with any code change. Cleaned up (containers stopped/removed by name,
 scoped to exclude the real `seev-*` compose stack; stale `/tmp/seev-*`
@@ -3024,12 +3024,12 @@ All three T10b follow-up items are now closed.
 `-race` against real Postgres (commit `e30e283`):
 
 - concurrent key rotation/revocation vs. an in-flight request
-  (`internal/merchant/auth/auth_race_test.go`);
+  (`services/gateway/internal/merchant/auth/auth_race_test.go`);
 - concurrent webhook workers claiming the same due delivery, concurrent
   replay of the same original delivery, and concurrent endpoint disable
-  vs. an in-flight delivery batch (`internal/merchant/webhook/webhook_race_test.go`);
+  vs. an in-flight delivery batch (`services/gateway/internal/merchant/webhook/webhook_race_test.go`);
 - concurrent tenant suspension vs. a financial write
-  (`internal/merchant/api/b2b_integration_test.go`).
+  (`services/gateway/internal/merchant/api/b2b_integration_test.go`).
 
 Each proves the real invariant — no double-dispatch, no delivery escapes
 to a disabled endpoint, no write reports success without completing —
@@ -3051,7 +3051,7 @@ write is denied, both recover immediately on reactivation (commit
 and 23 (commit `bcdee3f`), both passing live:
 
 - **Scenario 22** stops the real Redis container and proves
-  `internal/merchant/quota.Enforcer`'s outage posture through the actual
+  `services/gateway/internal/merchant/quota.Enforcer`'s outage posture through the actual
   assembled Gateway — writes fail closed with 503 `QUOTA_UNAVAILABLE`,
   reads degrade to a bounded allow, both recover immediately once Redis
   returns, no restart needed. Previously only proven against a
@@ -3083,8 +3083,8 @@ is actually admin-only) and named external event types
 `transaction.posted.v1` is the one real external event type.
 
 **Final gate re-run after T10b:** `go build ./...`, `go vet ./...`,
-`make lint` (0 issues), `go test -race ./internal/merchant/...` and
-`go test -race -tags=integration ./internal/merchant/...` (both clean, no
+`make lint` (0 issues), `go test -race ./services/gateway/internal/merchant/...` and
+`go test -race -tags=integration ./services/gateway/internal/merchant/...` (both clean, no
 data races), `shellcheck scripts/chaos-test.sh` (no new warning classes),
 and a fresh `scripts/merchant-e2e.sh` run (all assertions passing) — all
 this pass.
@@ -3578,17 +3578,17 @@ Examples must use fake secrets and clearly synthetic data.
 Expected areas:
 
 ```text
-api/openapi/b2b-v1.yaml
-api/contracts/surfaces.yaml
-api/events/catalog.yaml
-api/events/schemas/
-api/proto/
+contracts/http/b2b-v1.yaml
+contracts/compatibility/surfaces.yaml
+contracts/events/catalog.yaml
+contracts/events/schemas/
+contracts/proto/
 
-internal/merchant/
-internal/handler/router.go
-internal/config/
-pkg/middleware/
-pkg/cryptox/
+services/gateway/internal/merchant/
+services/gateway/internal/transport/http/router.go
+internal/platform/config/
+internal/platform/security/middleware/
+internal/platform/security/crypto/
 
 migrations/gateway/
 migrations/ledger/
@@ -3710,8 +3710,8 @@ C1 is complete only when:
 |---|---|---:|---|
 | C1 entry gate | `docs/evidence/c1-entry-gate.md` | pass | T0 |
 | B2B OpenAPI gate | `make contracts` | pass | clean, this pass |
-| API-key security | `internal/merchant/auth` | pass | digest-only at rest; environment-mismatch bypass found+fixed `86b4824` |
-| Quota outage | `internal/merchant/quota` tests | pass | T4 |
+| API-key security | `services/gateway/internal/merchant/auth` | pass | digest-only at rest; environment-mismatch bypass found+fixed `86b4824` |
+| Quota outage | `services/gateway/internal/merchant/quota` tests | pass | T4 |
 | Idempotency concurrency | `idempotency_test.go`, `idempotency_integration_test.go`, `repository_integration_test.go` | pass | real-Postgres concurrent-claim races, T4 |
 | Merchant account provisioning | `b2b_integration_test.go` | pass | T5 |
 | Transfer E2E | `merchant-e2e.sh` §4, chaos scenario 21 | pass | idempotent replay + genuine crash, no double-debit |

@@ -13,6 +13,6 @@
 
 `retention.md` is generated from
 [config/data-retention.yaml](../../config/data-retention.yaml) by
-`cmd/retentioncheck`; do not hand-edit it. Run `make retention-docs` after
+`tools/retentioncheck`; do not hand-edit it. Run `make retention-docs` after
 changing the policy file, and `make retention-check` to verify the two stay
 in sync (both wired into CI).

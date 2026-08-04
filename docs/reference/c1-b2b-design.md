@@ -7,8 +7,8 @@ This is the T1 deliverable required by
 [Plan 57 §20 T1](../roadmap/archive/57-c1-merchant-b2b-api.md#t1--lock-contracts-states-and-trust-boundaries):
 public state mappings, the webhook envelope/signature scheme, every required
 sequence diagram, and the failure matrix. The OpenAPI contract itself is
-[api/openapi/b2b-v1.yaml](../../api/openapi/b2b-v1.yaml), registered in
-[api/contracts/surfaces.yaml](../../api/contracts/surfaces.yaml).
+[contracts/http/b2b-v1.yaml](../../contracts/http/b2b-v1.yaml), registered in
+[contracts/compatibility/surfaces.yaml](../../contracts/compatibility/surfaces.yaml).
 
 ## 1. Public state mappings
 
@@ -66,7 +66,7 @@ Every outbound delivery body is:
 
 - `id` is the external event ID — derived from (and stable across redelivery
   with) the same internal logical `EventID` convention already used by
-  `internal/ledger/events` (`uuid.NewSHA1(eventType+identity)`), NOT
+  `contracts/events/ledger` (`uuid.NewSHA1(eventType+identity)`), NOT
   `outbox_events.id` (§3.5 of the entry-gate inventory explains why this
   distinction matters).
 - `livemode` reflects the tenant/key environment (§3.4).
@@ -92,7 +92,7 @@ Every outbound delivery body is:
 sequenceDiagram
     participant Op as Operator
     participant BFF as Admin BFF
-    participant GW as Gateway (internal/merchant)
+    participant GW as Gateway (services/gateway/internal/merchant)
     participant L as LedgerService
     Op->>BFF: Create tenant (sandbox or live)
     BFF->>GW: POST tenant (session+CSRF, maker/checker for live)
@@ -282,13 +282,13 @@ sequenceDiagram
 New trust boundary and findings recorded in
 [docs/security/threat-model.md](../security/threat-model.md) (TM-15 through
 TM-19). Service ownership recorded in
-[docs/reference/services.md](services.md)'s Gateway entry (`internal/merchant`
+[docs/reference/services.md](services.md)'s Gateway entry (`services/gateway/internal/merchant`
 sub-module, Gateway-owned persistence only, no cross-service DB access —
 Plan 57 §3.1/§3.3).
 
 ## 6. Restart and recovery behavior (T9)
 
-Every background component `internal/merchant` runs is designed to
+Every background component `services/gateway/internal/merchant` runs is designed to
 recover from a crash or rolling restart with no separate recovery pass —
 the same claim/lease pattern repeats at every layer instead of a
 bespoke recovery procedure per component:
@@ -309,13 +309,13 @@ bespoke recovery procedure per component:
   deliveries become claimable again by ANY worker instance (including a
   freshly restarted one) the moment `lease_expires_at` passes. Verified
   live in T7's own end-to-end integration test
-  (`internal/merchant/webhook/webhook_integration_test.go`,
+  (`services/gateway/internal/merchant/webhook/webhook_integration_test.go`,
   `TestWebhookRelay_EndToEnd`'s final phase): a delivery given a
   deliberately expired lease is reclaimed and dispatched by the very
   next `ProcessOnce` poll.
 - **Webhook consumer** (T7): the RabbitMQ consumer redeclares its own
   topology and re-subscribes on every `Start()` call — a process restart
-  simply re-runs `Start()` (see `cmd/gateway/main.go`); RabbitMQ's own
+  simply re-runs `Start()` (see `services/gateway/cmd/gateway/main.go`); RabbitMQ's own
   at-least-once redelivery for any message that was in flight when the
   old consumer died is handled by the consumer's existing dedup
   (`GetEventBySource`), the same mechanism that already tolerates
@@ -343,13 +343,13 @@ T6's own Result section deliberately deferred wiring the merchant-facing
 HTTP surface for `GET /merchant`, `GET /accounts*`, `GET /transactions*`,
 and `POST/GET /transfers*` — the OpenAPI operations, scopes, and quota
 classes were all locked in T1, but no handler existed until this pass.
-`internal/merchant/api`'s payin/payout handlers (T6) were the template;
+`services/gateway/internal/merchant/api`'s payin/payout handlers (T6) were the template;
 this section records what's specific to the Ledger-backed routes.
 
 - **No new LedgerService RPC for transfers.** `POST /transfers` posts a
   `merchant_transfer`-typed `Command` through the SAME generic `Post` RPC
   every other transaction type already uses
-  (`internal/ledger/processors/merchant_transfer.go`, T5) — there is no
+  (`services/ledger/internal/processors/merchant_transfer.go`, T5) — there is no
   dedicated `CreateMerchantTransfer` RPC. The resulting transaction is
   then fetched via the existing `GetTransactionByIdempotencyKey`, scoped
   by `(downstreamKey, tenantID.String())`.
@@ -377,10 +377,10 @@ this section records what's specific to the Ledger-backed routes.
   identity is edge-owned data (§3.1), not something Ledger has any
   opinion about.
 - **Verification:** `TestGetMerchantTransaction_ScopedByTenant_RealPostgres`
-  (`internal/ledger/grpcserver`) proves the new RPC's tenant-membership
+  (`services/ledger/internal/transport/grpc`) proves the new RPC's tenant-membership
   check at the gRPC layer; `TestB2BRouter_MerchantAccountsAndTransfers`
-  (`internal/merchant/api`) proves the full HTTP surface against a REAL
-  in-process `ledger.Module` (`internal/testutil.LedgerHarness`, extended
+  (`services/gateway/internal/merchant/api`) proves the full HTTP surface against a REAL
+  in-process `ledger.Module` (`internal/testkit.LedgerHarness`, extended
   with the three new merchant read methods) rather than a fake — unlike
   the payin/payout test in the same package, Ledger's own correctness is
   exactly what this surface depends on, so it is never faked here. That

@@ -12,6 +12,12 @@
 
 # ─── Config (overridable by the caller before sourcing) ────────────────────
 
+POSTGRES_CONTAINER_EXPLICIT="${POSTGRES_CONTAINER:+1}"
+POSTGRES_CONTAINER_EXPLICIT="${POSTGRES_CONTAINER_EXPLICIT:-0}"
+REDIS_CONTAINER_EXPLICIT="${REDIS_CONTAINER:+1}"
+REDIS_CONTAINER_EXPLICIT="${REDIS_CONTAINER_EXPLICIT:-0}"
+RABBITMQ_CONTAINER_EXPLICIT="${RABBITMQ_CONTAINER:+1}"
+RABBITMQ_CONTAINER_EXPLICIT="${RABBITMQ_CONTAINER_EXPLICIT:-0}"
 POSTGRES_CONTAINER="${POSTGRES_CONTAINER:-seev-postgres-1}"
 REDIS_CONTAINER="${REDIS_CONTAINER:-seev-redis-1}"
 RABBITMQ_CONTAINER="${RABBITMQ_CONTAINER:-seev-rabbitmq-1}"
@@ -28,11 +34,11 @@ ASSURANCE_DB_NAME="${ASSURANCE_DB_NAME:-seev_assurance}"
 VENDOR_DB_NAME="${VENDOR_DB_NAME:-seev_vendor}"
 JWT_SECRET="${JWT_SECRET:-change-me-to-a-random-32-plus-character-secret}"
 # docs/roadmap/archive/49 TM-07: every service now REFUSES to boot with an empty
-# JWT_ISSUER (internal/config validate()) — issuer validation used to be
+# JWT_ISSUER (internal/platform/config validate()) — issuer validation used to be
 # silently skippable by leaving this unset.
 JWT_ISSUER="${JWT_ISSUER:-seev}"
 # docs/roadmap/archive/49 K5: every gRPC server now REFUSES to boot with an empty
-# token (pkg/grpcx.NewServer fails fast — the old no-op-when-empty
+# token (internal/platform/transport/grpc.NewServer fails fast — the old no-op-when-empty
 # behavior that silently accepted every call is gone), so this can no
 # longer default to empty the way it used to across this whole harness.
 INTERNAL_GRPC_TOKEN="${INTERNAL_GRPC_TOKEN:-change-me-to-a-random-32-plus-character-token}"
@@ -56,7 +62,7 @@ LEDGER_IDEMPOTENCY_KEY_V1="${LEDGER_IDEMPOTENCY_KEY_V1:-111111111111111111111111
 EXPORT_KEK_V1="${EXPORT_KEK_V1:-2222222222222222222222222222222222222222222222222222222222222222}"
 CLOSURE_KEK_V1="${CLOSURE_KEK_V1:-3333333333333333333333333333333333333333333333333333333333333333}"
 # Plan 57 T2/T3: gateway now REFUSES to boot without a non-empty
-# MERCHANT_API_KEY_PEPPER (internal/merchant.NewModule panics on an empty
+# MERCHANT_API_KEY_PEPPER (services/gateway/internal/merchant.NewModule panics on an empty
 # pepper — the same "money-safety secret, never optional" posture as
 # LEDGER_IDEMPOTENCY_KEY_V1 above) and unconditionally builds a cryptox
 # ring for webhook-secret encryption (T7), so CRYPTOX_KEY_V1/
@@ -151,7 +157,7 @@ GENTOKEN_BIN="$WORK_DIR/gentoken"
 CERTGEN_BIN="$WORK_DIR/certgen"
 CRYPTOX_FIXTURE_BIN="$WORK_DIR/cryptox-fixture"
 # docs/roadmap/archive/49 K3: every service loads its own identity + the shared CA
-# from one directory (cmd/certgen's output layout) — generated fresh into
+# from one directory (tools/certgen's output layout) — generated fresh into
 # this run's own WORK_DIR, never committed, never reused across runs.
 CERT_DIR="$WORK_DIR/certs"
 GATEWAY_LOG="$WORK_DIR/gateway.log"
@@ -190,6 +196,22 @@ FAILED=0
 log "work dir: $WORK_DIR (binaries + *.log; KEEP_WORK_DIR=1 preserves it past exit for postmortem)"
 
 # ─── Docker / Postgres bootstrap ────────────────────────────────────────────
+
+resolve_compose_containers() {
+	local resolved
+	if [ "$POSTGRES_CONTAINER_EXPLICIT" -eq 0 ]; then
+		resolved="$(docker compose ps -q postgres 2>/dev/null || true)"
+		[ -n "$resolved" ] && POSTGRES_CONTAINER="$resolved"
+	fi
+	if [ "$REDIS_CONTAINER_EXPLICIT" -eq 0 ]; then
+		resolved="$(docker compose ps -q redis 2>/dev/null || true)"
+		[ -n "$resolved" ] && REDIS_CONTAINER="$resolved"
+	fi
+	if [ "$RABBITMQ_CONTAINER_EXPLICIT" -eq 0 ]; then
+		resolved="$(docker compose ps -q rabbitmq 2>/dev/null || true)"
+		[ -n "$resolved" ] && RABBITMQ_CONTAINER="$resolved"
+	fi
+}
 
 detect_db_port() {
 	DB_HOST_PORT="$(docker port "$POSTGRES_CONTAINER" 5432/tcp 2>/dev/null | head -1 | cut -d: -f2)"
@@ -249,6 +271,10 @@ wait_for_container_restart() {
 ensure_deps_up() {
 	log "ensuring postgres/redis/rabbitmq are up..."
 	docker compose up -d postgres redis rabbitmq >/dev/null 2>&1
+	# Resolve the containers from the active Compose project. The full gate uses
+	# COMPOSE_PROJECT_NAME=seev-verify, while local scripts normally use the
+	# default project; fixed seev-* names are valid only for the latter.
+	resolve_compose_containers
 	wait_for_container_healthy "$POSTGRES_CONTAINER"
 	wait_for_container_healthy "$REDIS_CONTAINER"
 	wait_for_container_healthy "$RABBITMQ_CONTAINER"
@@ -284,45 +310,45 @@ apply_migrations() {
 	log "applying migrations (idempotent — CREATE TABLE IF... guards not present, so this is a no-op error we suppress if already applied)..."
 	# Ledger must run first because migration 000009 creates the shared
 	# app_service/app_readonly roles referenced by the other service SQL.
-	for f in migrations/ledger/*.up.sql; do
+	for f in services/ledger/migrations/*.up.sql; do
 		docker exec -i "$POSTGRES_CONTAINER" psql -U "$DB_USER" -d "$LEDGER_DB_NAME" -v ON_ERROR_STOP=0 <"$f" >/dev/null 2>&1 || true
 	done
-	for f in migrations/auth/*.up.sql; do
+	for f in services/auth/migrations/*.up.sql; do
 		docker exec -i "$POSTGRES_CONTAINER" psql -U "$DB_USER" -d "$AUTH_DB_NAME" -v ON_ERROR_STOP=0 <"$f" >/dev/null 2>&1 || true
 	done
-	for f in migrations/payin/*.up.sql; do
+	for f in services/payin/migrations/*.up.sql; do
 		docker exec -i "$POSTGRES_CONTAINER" psql -U "$DB_USER" -d "$PAYIN_DB_NAME" -v ON_ERROR_STOP=0 <"$f" >/dev/null 2>&1 || true
 	done
-	for f in migrations/payout/*.up.sql; do
+	for f in services/payout/migrations/*.up.sql; do
 		docker exec -i "$POSTGRES_CONTAINER" psql -U "$DB_USER" -d "$PAYOUT_DB_NAME" -v ON_ERROR_STOP=0 <"$f" >/dev/null 2>&1 || true
 	done
-	for f in migrations/fraud/*.up.sql; do
+	for f in services/fraud/migrations/*.up.sql; do
 		docker exec -i "$POSTGRES_CONTAINER" psql -U "$DB_USER" -d "$FRAUD_DB_NAME" -v ON_ERROR_STOP=0 <"$f" >/dev/null 2>&1 || true
 	done
-	for f in migrations/gateway/*.up.sql; do
+	for f in services/gateway/migrations/*.up.sql; do
 		docker exec -i "$POSTGRES_CONTAINER" psql -U "$DB_USER" -d "$GATEWAY_DB_NAME" -v ON_ERROR_STOP=0 <"$f" >/dev/null 2>&1 || true
 	done
-	for f in migrations/adminbff/*.up.sql; do
+	for f in services/adminbff/migrations/*.up.sql; do
 		docker exec -i "$POSTGRES_CONTAINER" psql -U "$DB_USER" -d "$ADMINBFF_DB_NAME" -v ON_ERROR_STOP=0 <"$f" >/dev/null 2>&1 || true
 	done
-	for f in migrations/assurance/*.up.sql; do
+	for f in services/assurance/migrations/*.up.sql; do
 		docker exec -i "$POSTGRES_CONTAINER" psql -U "$DB_USER" -d "$ASSURANCE_DB_NAME" -v ON_ERROR_STOP=0 <"$f" >/dev/null 2>&1 || true
 	done
-	for f in migrations/vendor/*.up.sql; do
+	for f in services/vendor-service/migrations/*.up.sql; do
 		docker exec -i "$POSTGRES_CONTAINER" psql -U "$DB_USER" -d "$VENDOR_DB_NAME" -v ON_ERROR_STOP=0 <"$f" >/dev/null 2>&1 || true
 	done
 	local service_dir
-	for service_dir in migrations/*; do
+	for service_dir in services/*/migrations; do
 		[ -d "$service_dir" ] || continue
-		[ "$service_dir" = "migrations/ledger" ] && continue
-		[ "$service_dir" = "migrations/auth" ] && continue
-		[ "$service_dir" = "migrations/payin" ] && continue
-		[ "$service_dir" = "migrations/payout" ] && continue
-		[ "$service_dir" = "migrations/fraud" ] && continue
-		[ "$service_dir" = "migrations/gateway" ] && continue
-		[ "$service_dir" = "migrations/adminbff" ] && continue
-		[ "$service_dir" = "migrations/assurance" ] && continue
-		[ "$service_dir" = "migrations/vendor" ] && continue
+		[ "$service_dir" = "services/ledger/migrations" ] && continue
+		[ "$service_dir" = "services/auth/migrations" ] && continue
+		[ "$service_dir" = "services/payin/migrations" ] && continue
+		[ "$service_dir" = "services/payout/migrations" ] && continue
+		[ "$service_dir" = "services/fraud/migrations" ] && continue
+		[ "$service_dir" = "services/gateway/migrations" ] && continue
+		[ "$service_dir" = "services/adminbff/migrations" ] && continue
+		[ "$service_dir" = "services/assurance/migrations" ] && continue
+		[ "$service_dir" = "services/vendor-service/migrations" ] && continue
 		for f in "$service_dir"/*.up.sql; do
 			[ -f "$f" ] || continue
 			docker exec -i "$POSTGRES_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=0 <"$f" >/dev/null 2>&1 || true
@@ -371,18 +397,18 @@ build_server() {
 		return
 	fi
 	log "building gateway + ledger-service + auth-service + payin-service + payout-service + fraud-service + admin-bff-service + assurance-service + vendor-service + gentoken + certgen binaries..."
-	go build -o "$GATEWAY_BIN" ./cmd/gateway
-	go build -o "$LEDGER_BIN" ./cmd/ledger-service
-	go build -o "$AUTH_BIN" ./cmd/auth-service
-	go build -o "$PAYIN_BIN" ./cmd/payin-service
-	go build -o "$PAYOUT_BIN" ./cmd/payout-service
-	go build -o "$FRAUD_BIN" ./cmd/fraud-service
-	go build -o "$ADMINBFF_BIN" ./cmd/admin-bff-service
-	go build -o "$ASSURANCE_BIN" ./cmd/assurance-service
-	go build -o "$VENDOR_BIN" ./cmd/vendor-service
-	go build -o "$GENTOKEN_BIN" ./cmd/gentoken
-	go build -o "$CERTGEN_BIN" ./cmd/certgen
-	go build -o "$CRYPTOX_FIXTURE_BIN" ./cmd/cryptox-fixture
+	go build -o "$GATEWAY_BIN" ./services/gateway/cmd/gateway
+	go build -o "$LEDGER_BIN" ./services/ledger/cmd/ledger
+	go build -o "$AUTH_BIN" ./services/auth/cmd/auth
+	go build -o "$PAYIN_BIN" ./services/payin/cmd/payin
+	go build -o "$PAYOUT_BIN" ./services/payout/cmd/payout
+	go build -o "$FRAUD_BIN" ./services/fraud/cmd/fraud
+	go build -o "$ADMINBFF_BIN" ./services/adminbff/cmd/adminbff
+	go build -o "$ASSURANCE_BIN" ./services/assurance/cmd/assurance
+	go build -o "$VENDOR_BIN" ./services/vendor-service/cmd/vendor
+	go build -o "$GENTOKEN_BIN" ./tools/gentoken
+	go build -o "$CERTGEN_BIN" ./tools/certgen
+	go build -o "$CRYPTOX_FIXTURE_BIN" ./tools/cryptox-fixture
 	generate_certs
 }
 
@@ -560,6 +586,7 @@ start_vendor_service() {
 		export JWT_ISSUER=$JWT_ISSUER
 		export TLS_CERT_DIR=$CERT_DIR
 		export INTERNAL_GRPC_TOKEN=$INTERNAL_GRPC_TOKEN
+		export CRYPTOX_KEY_V1=$CRYPTOX_KEY_V1
 		export VENDOR_CALLBACK_CIDRS=127.0.0.1/32,::1/128
 		export VENDOR_MOCKVENDOR_ENABLED=true
 		export VENDOR_MOCKVENDOR_SECRET="${VENDOR_MOCKVENDOR_SECRET:-script-test-mockvendor-secret-at-least-32-chars-long}"
@@ -606,7 +633,7 @@ start_payin_service() {
 	wait_for_service_up payin-service "https://localhost:$PAYIN_ADMIN_PORT/health" "$PAYIN_PID_FILE" "$PAYIN_LOG"
 }
 
-# gen_token mints a JWT via cmd/gentoken (see that package's own doc comment)
+# gen_token mints a JWT via tools/gentoken (see that package's own doc comment)
 # — the single canonical implementation, no more hand-rolled heredocs.
 # gentoken defaults kyc_level to 1 (docs/roadmap/archive/39 Task T6, gotcha #9) so
 # every existing gen_token call site in smoke-test.sh/chaos-test.sh keeps
@@ -768,6 +795,11 @@ start_assurance_service() {
 		export PAYIN_GRPC_ADDR=localhost:$PAYIN_GRPC_PORT
 		export PAYOUT_GRPC_ADDR=localhost:$PAYOUT_GRPC_PORT
 		export LEDGER_GRPC_ADDR=localhost:$LEDGER_GRPC_PORT
+		# Assurance's FX reconciliation reader uses Ledger's internal HTTPS
+		# listener, not the public user API. Keep the drill/capability port
+		# override wired through; the default in config is only for a manually
+		# started dev process on :8091.
+		export LEDGER_INTERNAL_API_URL=https://localhost:$LEDGER_INTERNAL_PORT
 		export INTERNAL_GRPC_TOKEN=$INTERNAL_GRPC_TOKEN
 		export TLS_CERT_DIR=$CERT_DIR
 		export JWT_SECRET=$JWT_SECRET
@@ -831,7 +863,7 @@ start_adminbff_service() {
 #
 # -k/--insecure is required, not optional: this repo's certs carry ONLY a
 # URI SAN (spiffe://seev/<service>, docs/roadmap/archive/49 K3/K4), never a DNS SAN —
-# pkg/tlsx's Go clients handle that via a custom VerifyConnection hook
+# internal/platform/security/tls's Go clients handle that via a custom VerifyConnection hook
 # (InsecureSkipVerify + manual chain verification + URI SAN check), but
 # curl exposes no equivalent "verify the chain, skip hostname matching"
 # knob — only all-or-nothing. --cacert/--cert/--key above still present a
@@ -1075,6 +1107,15 @@ provision_user() {
 		INSERT INTO account_balances (account_id)
 		SELECT id FROM accounts WHERE owner_id = '$user_id' AND type = 'cash'
 		ON CONFLICT DO NOTHING;" >/dev/null
+	# Keep the SQL fixture aligned with the gen_token fixture contract: account
+	# provisioning also creates the fail-closed execution-time auth projection,
+	# and gen_token's default claim is KYC level 1.
+	psql_exec "$LEDGER_DB_NAME" -c "
+		INSERT INTO money_movement_execution_subjects
+			(user_id, status, kyc_level, tenant_status)
+		VALUES ('$user_id', 'active', 1, 'active')
+		ON CONFLICT (user_id, tenant_id) DO UPDATE SET
+			status = 'active', kyc_level = 1, tenant_status = 'active', updated_at = now();" >/dev/null
 	psql_exec "$LEDGER_DB_NAME" -c "SELECT id FROM accounts WHERE owner_id = '$user_id' AND type = 'cash' LIMIT 1;"
 }
 
@@ -1099,7 +1140,7 @@ provision_hold_account() {
 # funding itself stays part of the double-entry ledger and doesn't trip
 # v_account_balance_audit the way a raw `UPDATE account_balances` would.
 # money_in credits whoever's JWT `sub` claim is on the request, NOT any
-# target_user_id in the body (internal/ledger/processors/money_in.go) — so
+# target_user_id in the body (services/ledger/internal/processors/money_in.go) — so
 # this mints a token for user_id itself, not the caller/service identity.
 # Repeated runs against a reused development volume top up only the delta to
 # the requested target. The delta uses its own idempotency key, so the helper
@@ -1260,7 +1301,7 @@ kyc_submit_l2_and_admin_approve() {
 # await_notification polls GET /api/v1/notifications (on the gateway,
 # $APP_PORT) for token until a notification with the given title substring
 # appears, or fails after ~10s — the outbox relay -> RabbitMQ ->
-# internal/notify consumer path is asynchronous, so this can't be a single
+# services/gateway/internal/notification consumer path is asynchronous, so this can't be a single
 # immediate curl+grep like most other assertions in these scripts.
 await_notification() {
 	local token=$1 title=$2 tries=20

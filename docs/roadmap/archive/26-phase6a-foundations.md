@@ -30,7 +30,7 @@ Two business capabilities are introduced during the split:
 | Webhooks | Gateway owns the public webhook edge and forwards vendor, headers, and raw body bytes to payin. |
 | Fee rules | `fee_rules` stays in `seev_ledger` because ledger posts the fee leg. “Route” is the existing ledger gateway string. |
 | Routing rules | Payin rules live in `seev_payin`; payout rules live in `seev_payout`. Do not alter ledger disbursement, which has no vendor concept. |
-| Fraud | New `internal/fraud` module and `seev_fraud` database. Ledger keeps a 500 ms timeout, fail-open gRPC pre-post hook. Velocity is counted from posted events in Redis DB 1. |
+| Fraud | New `services/fraud` module and `seev_fraud` database. Ledger keeps a 500 ms timeout, fail-open gRPC pre-post hook. Velocity is counted from posted events in Redis DB 1. |
 | Admin HTTP | Every service owns its internal admin listener. An admin BFF is future work. |
 | JWT | All services share `JWT_SECRET` and verify tokens locally. |
 | Internal auth | Static `INTERNAL_GRPC_TOKEN` in Bearer metadata; mTLS is future work. |
@@ -93,7 +93,7 @@ Payin accepts vendor, headers, and raw body bytes and returns an explicit busine
 12. Every service must use the same `JWT_SECRET`.
 13. Boundary tests intentionally skip `_test.go`; cross-module integration tests remain legal.
 14. With 3.9 GB of development RAM, do not run the full Compose app, Jaeger, and testcontainers at the same time.
-15. Do not modify `internal/ledger/service/disbursement` for vendor routing.
+15. Do not modify `services/ledger/internal/service/disbursement` for vendor routing.
 16. Existing accrual snapshot-test flakiness is tracked separately and is not a split regression.
 
 ## Phase gate
@@ -111,13 +111,13 @@ Development database cutovers may use `docker compose down -v`. After each task,
 
 ## Foundations work
 
-The foundations phase must not change monolith behavior. It removes the grandfathered `pkg → internal/config` dependency, installs the Buf and gRPC toolchain, adds shared gRPC plumbing, and reorganizes migrations by service.
+The foundations phase must not change monolith behavior. It removes the grandfathered `pkg → internal/platform/config` dependency, installs the Buf and gRPC toolchain, adds shared gRPC plumbing, and reorganizes migrations by service.
 
 ### T1 — Local config types in `pkg`
 
-Create local config structs for database, cache, logger, and messaging packages. Add conversion methods in `internal/config` and use them only at the composition root. Remove all `internal/config` imports from `pkg/`, empty the grandfathered exception map, and prove runtime configuration remains equivalent.
+Create local config structs for database, cache, logger, and messaging packages. Add conversion methods in `internal/platform/config` and use them only at the composition root. Remove all `internal/platform/config` imports from `pkg/`, empty the grandfathered exception map, and prove runtime configuration remains equivalent.
 
-**DoD:** `grep -rn "internal/config" pkg/` returns no results and the full test and boundary suites pass.
+**DoD:** `grep -rn "internal/platform/config" pkg/` returns no results and the full test and boundary suites pass.
 
 Status: not started.
 
@@ -131,7 +131,7 @@ Status: not started.
 
 ### T3 — Shared gRPC and error packages
 
-Add `pkg/grpcx` with recovery, logging, token authentication, health serving, and client dialing. Add `pkg/ledgererr` with typed ledger errors, `ErrAlreadyClosed`, and status round-trip decoding. Test through bufconn with the Ping service and keep both packages independent from `internal/*`.
+Add `internal/platform/transport/grpc` with recovery, logging, token authentication, health serving, and client dialing. Add `contracts/clients/ledger/errors` with typed ledger errors, `ErrAlreadyClosed`, and status round-trip decoding. Test through bufconn with the Ping service and keep both packages independent from `internal/*`.
 
 **DoD:** gRPC services can use the shared plumbing without importing internal modules.
 

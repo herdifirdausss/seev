@@ -1,0 +1,42 @@
+# A9 T0 observations only. These are not desired contract rules and must not
+# be copied into T1 OpenAPI examples or error registries without a decision.
+schema_version: 1
+observed:
+  - id: http-errors.ad-hoc
+    family: http
+    owners: [assurance, admin-bff, middleware]
+    observation: Some paths use http.Error or ad-hoc JSON instead of response.Envelope.
+    evidence: services/assurance/internal/assurance/http.go; services/adminbff/internal/admin/proxy.go; internal/platform/security/middleware
+    target_task: T1
+  - id: http-errors.default-status
+    family: http
+    owners: [all]
+    observation: Default net/http 404 and 405 responses are not consistently JSON envelopes.
+    evidence: net/http ServeMux fallback behavior and router tests
+    target_task: T1
+  - id: http-wire.domain-serialization
+    family: http
+    owners: [ledger, admin-bff]
+    observation: Some handlers serialize domain structs or unbounded map values at the boundary.
+    evidence: services/ledger/internal/transport; services/adminbff
+    target_task: T1
+  - id: http-client.tolerance-unasserted
+    family: http
+    owners: [gateway, admin-bff]
+    observation: Internal clients rely on default tolerant JSON decoding without an explicit compatibility test.
+    evidence: services/adminbff/internal/client; contracts/clients/ledger
+    target_task: T2
+  - id: event.schema-missing
+    family: event
+    owners: [ledger, fraud, notify]
+    status: resolved
+    observation: Historical T0 observation; checked-in JSON Schemas and the event catalog now exist.
+    resolution: contracts/events/catalog.yaml and contracts/events/ledger/schemas/**/v1.schema.json
+    target_task: T4
+  - id: event.dedup.message-id
+    family: event
+    owners: [fraud, notify]
+    status: resolved
+    observation: Historical T0 observation; current payloads carry logical event_id and consumers retain AMQP message_id fallback for legacy deliveries.
+    resolution: contracts/events/ledger/events.go; services/fraud/internal/fraud/consumer.go; services/gateway/internal/notification/inbox/notify.go
+    target_task: T4

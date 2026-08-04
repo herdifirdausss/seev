@@ -38,7 +38,7 @@ export function authJson(method, path, payload, extra = {}, authToken = token) {
 // forwards /api/v1/ledger/*, and ledger's own public :8090 listener only
 // serves that same prefix; /api/v1/admin/ledger/* (the disbursement admin
 // routes live under it) is mounted on internalRouter's :8091 instead
-// (cmd/ledger-service/main.go:332-338).
+// (services/ledger/cmd/ledger/main.go:332-338).
 export function ledgerJson(method, path, payload, extra = {}, authToken = token) {
   const body = JSON.stringify(payload);
   return http.request(method, `${ledgerBaseURL}${path}`, body, { headers: headers(extra, authToken), tags: { workload: __ENV.LOAD_WORKLOAD || 'unknown', operation: `ledger:${path}` } });

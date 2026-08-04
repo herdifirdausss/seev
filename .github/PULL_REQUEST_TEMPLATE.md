@@ -6,6 +6,8 @@
 
 <!-- Anything deliberately left out of scope, and why. -->
 
+- [ ] This is a path/ownership-only change; no runtime, schema, contract, or
+      operational behavior was intentionally changed.
 - [ ] This touches a financial invariant, service boundary, or security
       control ([project guide](../docs/development/project-guide.md)) — called
       out explicitly below if so.

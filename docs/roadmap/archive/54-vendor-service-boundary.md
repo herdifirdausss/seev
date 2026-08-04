@@ -291,6 +291,6 @@ chaos run; they are intentionally not claimed from unit or repository checks.
   duplicate callback replay, and lost-response retry checks. The script is
   manual and has not been run as part of this implementation turn.
 - [x] 2026-07-28 stale Gateway webhook integration fixtures were removed and
-  replaced with a route-ownership regression test in `internal/handler`.
+  replaced with a route-ownership regression test in `services/gateway/internal/transport/http`.
 - [ ] Final acceptance remains: live multi-service integration trace,
   notification/outbox reconciliation failure injection, and chaos/restart gate.

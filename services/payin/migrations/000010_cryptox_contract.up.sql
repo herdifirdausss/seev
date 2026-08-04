@@ -1,0 +1,13 @@
+-- docs/roadmap/archive/51-a8-data-lifecycle-privacy.md "A8 T2.5b" (contract migration):
+-- drops the plaintext raw column now that the expand-phase backfill has
+-- baked. Deliberately does NOT make raw_ciphertext/raw_key_version
+-- NOT NULL — unlike auth_users.email/full_name (services/auth/migrations/000014,
+-- which have no redact-after-age retention class), T2.6's own
+-- fn_retention_purge_webhook_events_raw legitimately NULLs raw_ciphertext
+-- after 30 days (services/payin/migrations/000009) — a NULL ciphertext here is a
+-- real, expected "this row was redacted" state, not a bug, so the column
+-- must stay nullable. Application code (repository.go's scanEvent) now
+-- treats a NULL ciphertext as "redacted" and returns the same
+-- {"redacted":true} marker the retention function used to write into the
+-- plaintext column directly.
+ALTER TABLE payin_webhook_events DROP COLUMN raw;

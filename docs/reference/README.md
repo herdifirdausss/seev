@@ -10,7 +10,7 @@ one according to the question you are answering.
 | What is implemented and verified in the current checkout? | [Current state](current-state.md) |
 | Why is the system designed this way? | [Architecture](architecture.md) |
 | What does each service own and expose? | [Services](services.md) |
-| What belongs in shared `pkg/` code? | [Shared packages](shared-packages.md) |
+| What belongs in shared `internal/platform/` code? | [Shared packages](shared-packages.md) |
 | Why was a safety decision chosen? | [Rationale](rationale.md) |
 | What does an unfamiliar term mean? | [Glossary](glossary.md) |
 | What HTTP, protobuf, and event contracts are current? | [API contracts](api-contracts.md) |

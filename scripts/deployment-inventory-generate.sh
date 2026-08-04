@@ -43,8 +43,8 @@ df -h "$ROOT_DIR" >"$COMMAND_DIR/filesystem-free-space.txt"
 docker info --format 'server={{.ServerVersion}}\narchitecture={{.Architecture}}\nos={{.OperatingSystem}}\nmem_total_bytes={{.MemTotal}}' \
   >"$COMMAND_DIR/docker-info-safe.txt" 2>&1 || true
 
-find "$ROOT_DIR/cmd" -mindepth 1 -maxdepth 1 -type d -print | sort >"$COMMAND_DIR/cmd-directories.txt"
-go list ./cmd/... | sort >"$COMMAND_DIR/go-cmd-packages.txt"
+find "$ROOT_DIR/services" "$ROOT_DIR/tools" "$ROOT_DIR/operations" -type f -name main.go -print | sort >"$COMMAND_DIR/entrypoint-files.txt"
+go list ./services/... ./tools/... ./operations/... | sort >"$COMMAND_DIR/go-entrypoint-packages.txt"
 docker compose config --services | sort >"$COMMAND_DIR/compose-base-services.txt"
 docker compose --profile app config --services | sort >"$COMMAND_DIR/compose-app-services.txt"
 docker compose --profile app config --images | sort -u >"$COMMAND_DIR/compose-images.txt"
@@ -61,7 +61,7 @@ docker compose --profile app config --format json --no-interpolate --no-env-reso
   >"$GENERATED_DIR/compose-runtime-shape.json"
 
 rg -n 'getenv|os\\.Getenv|os\\.LookupEnv|requireValue|parseDuration' \
-  "$ROOT_DIR/internal/config" "$ROOT_DIR/cmd" "$ROOT_DIR/internal" "$ROOT_DIR/pkg" \
+  "$ROOT_DIR/internal/platform/config" "$ROOT_DIR/services" "$ROOT_DIR/tools" "$ROOT_DIR/operations" "$ROOT_DIR/internal" \
   --glob '*.go' >"$COMMAND_DIR/configuration-key-sources.txt" || true
 
 image_list="$(docker image ls --format '{{.Repository}}:{{.Tag}}' | rg '^seev/' | sort -u || true)"
@@ -77,10 +77,10 @@ key_file="$(mktemp)"
 trap 'rm -f "$key_file"' EXIT
 sed -n 's/^[[:space:]]*#\{0,1\}[[:space:]]*\([A-Z][A-Z0-9_]*\)=.*/\1/p' "$ROOT_DIR/.env.example" >>"$key_file" || true
 rg -o 'getenv\("[A-Z][A-Z0-9_]*"\)|os\.Getenv\("[A-Z][A-Z0-9_]*"\)|os\.LookupEnv\("[A-Z][A-Z0-9_]*"\)' \
-  "$ROOT_DIR/internal" "$ROOT_DIR/cmd" "$ROOT_DIR/pkg" --glob '*.go' \
+  "$ROOT_DIR/internal" "$ROOT_DIR/services" "$ROOT_DIR/tools" "$ROOT_DIR/operations" --glob '*.go' \
   | sed -E 's/.*(getenv|Getenv|LookupEnv)\("([A-Z][A-Z0-9_]*)"\).*/\2/' >>"$key_file" || true
 rg -o 'getWithDefault\(getenv, "[A-Z][A-Z0-9_]*"' \
-  "$ROOT_DIR/internal" "$ROOT_DIR/cmd" "$ROOT_DIR/pkg" --glob '*.go' \
+  "$ROOT_DIR/internal" "$ROOT_DIR/services" "$ROOT_DIR/tools" "$ROOT_DIR/operations" --glob '*.go' \
   | sed -E 's/.*getWithDefault\(getenv, "([A-Z][A-Z0-9_]*)"/\1/' >>"$key_file" || true
 sort -u "$key_file" >"$GENERATED_DIR/configuration-key-names.txt"
 
@@ -126,7 +126,7 @@ is_sensitive() {
     printf '    required: UNKNOWN\n'
     printf '    default: UNKNOWN\n'
     printf '    reloadable: UNKNOWN\n'
-    printf '    source_refs: [.env.example, internal/config, Compose/service wiring]\n'
+    printf '    source_refs: [.env.example, internal/platform/config, Compose/service wiring]\n'
   done <"$GENERATED_DIR/configuration-key-names.txt"
 } >"$CONFIGURATION_FILE"
 

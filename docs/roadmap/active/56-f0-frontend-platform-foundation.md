@@ -107,12 +107,12 @@ live tree before changing code or documentation.
 
 - The repository does not contain a root `web/` workspace or a root
   `package.json`.
-- Admin BFF contains `internal/adminbff/web/` with embedded Go templates and
+- Admin BFF contains `services/adminbff/internal/web/` with embedded Go templates and
   embedded assets.
 - The current embedded assets include `htmx.min.js` and `pico.min.css`.
 - Current templates include dashboard, catalog, maker, payout, and reconciliation
   pages.
-- `internal/adminbff/web/web.go` states that the console has no CDN or Node
+- `services/adminbff/internal/web/web.go` states that the console has no CDN or Node
   runtime dependency and that operators use htmx requests to Admin BFF for live
   data.
 - The current console is therefore a supported operational surface, not a
@@ -316,7 +316,7 @@ seev/
 ├── gen/
 ├── internal/
 ├── migrations/
-├── pkg/
+├── internal/platform/
 ├── scripts/
 ├── web/
 │   ├── apps/

@@ -1,11 +1,11 @@
-# Runbook: pkg/cryptox Key Rotation
+# Runbook: internal/platform/security/crypto Key Rotation
 
 > [Documentation home](../../README.md) · [Operations](../README.md) · [Runbooks](README.md)
 
 > **Status: Current. Audience: operators.** Follow this procedure only in an
 > environment where you are authorized to change encryption key material.
 
-Covers rotating the shared, cluster-wide `pkg/cryptox` KEK ring (docs/roadmap/archive/51-a8-data-lifecycle-privacy.md
+Covers rotating the shared, cluster-wide `internal/platform/security/crypto` KEK ring (docs/roadmap/archive/51-a8-data-lifecycle-privacy.md
 K2/K3/T2.2) — the versioned AES-256 key set every service that encrypts a
 sensitive field (auth email/full name/KYC payload/KYC documents, pay-in raw
 webhooks, payout destinations, ledger reconciliation raw data, admin BFF
@@ -16,8 +16,8 @@ by design — the same deliberate choice this repo already made for
 (service/table/column/row ID), not from separate key material per service.
 
 Unlike [cert-rotation.md](cert-rotation.md), this is **not** a hot-reload:
-`pkg/cryptox.Ring` is constructed once at process boot from
-`internal/config.CryptoxConfig`, and rotating a key requires a config
+`internal/platform/security/crypto.Ring` is constructed once at process boot from
+`internal/platform/config.CryptoxConfig`, and rotating a key requires a config
 change plus a restart of every service that constructed one — there is no
 poll-based reload here, because unlike a TLS cert, silently swapping key
 material live under in-flight encrypt/decrypt calls has no safe analogue.
@@ -42,7 +42,7 @@ material live under in-flight encrypt/decrypt calls has no safe analogue.
 
 ## Step 1 — Understand the rotation model (K3: expand/backfill/contract)
 
-A `pkg/cryptox.Ring` holds every key version a service was given, but only
+A `internal/platform/security/crypto.Ring` holds every key version a service was given, but only
 ever **writes** under `CurrentVersion`. Every version in the ring —
 including retired ones — stays available for `Open`, so a row encrypted
 under an older version keeps decrypting after rotation. This means
@@ -53,7 +53,7 @@ rotation is inherently gradual:
    restarts able to decrypt both versions, still writing under the old one.
 2. **Cut writes over** — bump `CRYPTOX_KEY_CURRENT_VERSION` and restart
    again. New writes use the new version; old rows are untouched and still
-   decrypt fine (`pkg/cryptox.Ring.Open` reads the version from each
+   decrypt fine (`internal/platform/security/crypto.Ring.Open` reads the version from each
    envelope's own header, never from `CurrentVersion`).
 3. **Backfill (optional, only if you need every row re-encrypted under the
    new version)** — a service-owned re-encrypt-in-place job: read each row
@@ -104,7 +104,7 @@ alongside the existing `JWT_SECRET`/`INTERNAL_GRPC_TOKEN` pattern).
 
 Restart every affected service with the new version present but
 `CRYPTOX_KEY_CURRENT_VERSION` still unchanged. Confirm each one booted
-cleanly — `internal/config.validate`'s production check
+cleanly — `internal/platform/config.validate`'s production check
 (`CRYPTOX_KEY_V<current> is required in production`) only checks the
 *current* version is present, so this step alone does not yet require
 anything from the new key beyond it being syntactically valid hex.
@@ -116,11 +116,11 @@ environment and restart again. From this point, every new `Seal` call
 uses the new version. Verify:
 
 ```bash
-go run ./cmd/... # or curl an authenticated request that triggers a write
+go run ./services/gateway/cmd/gateway # or curl an authenticated request that triggers a write
 ```
 
 Confirm via `seev_cryptox_seal_total{key_version="<N>",result="ok"}`
-(`pkg/cryptox/metrics.go`, K13) that new writes are landing under the new
+(`internal/platform/security/crypto/metrics.go`, K13) that new writes are landing under the new
 version. `seev_cryptox_open_total{key_version="<old>",result="ok"}`
 continuing to increment is expected and healthy — it means old rows are
 still decrypting correctly under the retired version, exactly as designed.
@@ -131,13 +131,13 @@ Do not remove `CRYPTOX_KEY_V<old>` from any service's environment until a
 direct query confirms no row anywhere still carries that version (per
 Step 1.4 and docs/roadmap/archive/51 T2.5's own verification gate). Once confirmed, remove
 the old version's env var/secret file/Vault field from every service and
-restart once more — `pkg/cryptox.NewRing` only requires `CurrentVersion` be
+restart once more — `internal/platform/security/crypto.NewRing` only requires `CurrentVersion` be
 present, so dropping a retired version is safe once nothing needs it.
 
 ## If something goes wrong
 
-- **A service fails to boot after Step 4** — `internal/config.CryptoxConfig.Ring`
-  surfaces both hex-decode errors and `pkg/cryptox.NewRing`'s own
+- **A service fails to boot after Step 4** — `internal/platform/config.CryptoxConfig.Ring`
+  surfaces both hex-decode errors and `internal/platform/security/crypto.NewRing`'s own
   validation (wrong key length, current version absent) as a boot-time
   config error, never a silent fallback. Fix the flagged env var and
   restart; nothing partially applies.
@@ -148,7 +148,7 @@ present, so dropping a retired version is safe once nothing needs it.
   the same old version number, since that key material is gone for good)
   and re-run Step 1.4's verification query before retrying retirement.
 - **`ErrInvalidEnvelope` on a row that should decrypt fine** — this is
-  `pkg/cryptox`'s AAD binding doing its job: the row's service/table/
+  `internal/platform/security/crypto`'s AAD binding doing its job: the row's service/table/
   column/ID context at read time doesn't match what it was sealed with.
   This is a data-integrity signal (a moved/corrupted row), not a rotation
   bug — do not "fix" it by disabling AAD checking, there is no such
@@ -156,8 +156,8 @@ present, so dropping a retired version is safe once nothing needs it.
 
 ## Related
 
-- [pkg/cryptox](../../../pkg/cryptox) — the envelope/ring/lookup-key implementation and its own test suite (round-trip, wrong key, wrong AAD, copied ciphertext, truncated envelope, old-key-read/new-key-write).
-- [internal/config/config.go](../../../internal/config/config.go) — `CryptoxConfig`, `loadCryptoxKeys`, and the production fail-fast check.
+- [internal/platform/security/crypto](../../../internal/platform/security/crypto) — the envelope/ring/lookup-key implementation and its own test suite (round-trip, wrong key, wrong AAD, copied ciphertext, truncated envelope, old-key-read/new-key-write).
+- [internal/platform/config/config.go](../../../internal/platform/config/config.go) — `CryptoxConfig`, `loadCryptoxKeys`, and the production fail-fast check.
 - [Makefile](../../../Makefile) — `cryptox-secret` target.
 - [vault-seed.md](vault-seed.md) — the Vault-backed alternative to file-based dev secrets.
 - [compliance-a4.md](compliance-a4.md) — what an unconfigured/misconfigured key ring looks like from the KYC-document-upload side.

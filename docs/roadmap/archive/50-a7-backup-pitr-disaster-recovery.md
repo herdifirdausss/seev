@@ -417,7 +417,7 @@ assumed from §2:**
   This is not golang-migrate's default table name (`schema_migrations`) —
   it's explicitly overridden via `x-migrations-table=schema_migrations_
   $(SERVICE)` in the Makefile's `SERVICE_MIGRATE_DSN` and mirrored in
-  `internal/testutil/migrations.go`. The first-boot bootstrap script
+  `internal/testkit/migrations.go`. The first-boot bootstrap script
   (`03-service-migrations.sh`) writes this same table directly via raw SQL,
   so there is exactly one table per database, agreed on by both the bootstrap
   path and `golang-migrate`, not two competing ones. This is the exact table
@@ -735,7 +735,7 @@ visible, and manual and scheduled paths use the same implementation.
 ### Result
 
 **1. `cmd/backup-agent` — new Go binary, new `internal/backupagent` package.**
-mTLS identity `spiffe://seev/backup-agent` added to `pkg/tlsx/identity.go`,
+mTLS identity `spiffe://seev/backup-agent` added to `internal/platform/security/tls/identity.go`,
 registered in `cmd/certgen`'s `knownServices`, and added to the `make
 certs`/`scripts/lib.sh generate_certs()` fixed service lists. The agent
 runs `pgbackrest` itself — co-located with Postgres by sharing two named
@@ -752,16 +752,16 @@ duplicated rather than built `FROM` that image, to avoid a Compose
 build-order dependency — the two Dockerfiles are cross-referenced by
 comment and must be kept in sync by hand).
 
-**2. K4 policy implemented via `pkg/scheduler`, not a hand-rolled ticker.**
+**2. K4 policy implemented via `internal/platform/scheduling`, not a hand-rolled ticker.**
 `(*Agent).StartScheduler` registers two cron jobs —
 `"10 2 * * 0"` (full, Sunday) and `"10 2 * * 1-6"` (differential,
 Monday-Saturday) — against a
 `scheduler.NewScheduler(..., scheduler.WithLocation(jakartaLoc))`, with `scheduler.WithJobTimeout`
 bounding each job (1h full / 20m diff, generous for this lab-scale
 database — tune before any larger deployment, per §8). Overlap rejection
-and graceful shutdown come from `pkg/scheduler` itself
+and graceful shutdown come from `internal/platform/scheduling` itself
 (`scheduler.NewMemoryLock`, already used identically elsewhere in this
-repo — `internal/adminbff/module.go`, `internal/ledger/worker/*.go`) —
+repo — `services/adminbff/internal/module.go`, `services/ledger/internal/worker/*.go`) —
 this task did not re-implement or re-test that package's own lock
 correctness, only verified it was wired correctly (see Result 5 below).
 Both cron specs are env-overridable
@@ -882,7 +882,7 @@ before and after: empty).** Built both images, bootstrapped
   prometheus.yml` — including the seven added by docs/roadmap/archive/43 and two
   more by docs/roadmap/archive/49 — uses `scheme: https` with a `tls_config` that
   has no `insecure_skip_verify`. Since this repo's certificates carry a
-  SPIFFE URI SAN only, never a DNS SAN (`pkg/tlsx/config.go`'s own
+  SPIFFE URI SAN only, never a DNS SAN (`internal/platform/security/tls/config.go`'s own
   comment), Prometheus's stock Go TLS client can never satisfy standard
   hostname verification against *any* of these listeners — confirmed
   live: the new `backup-agent` scrape job showed `health: "down"`,
@@ -928,16 +928,16 @@ registers.
 **7. Explicitly NOT verified this task — scope boundaries, not
 oversights:**
 - **Overlap/duplicate-run rejection under true concurrency.** Relied on
-  `pkg/scheduler`'s own established `TryLock`/lock-TTL mechanism (already
+  `internal/platform/scheduling`'s own established `TryLock`/lock-TTL mechanism (already
   in production use elsewhere in this repo) plus confirming this task's
   own wiring is correct (right constructor calls, right options,
   confirmed by the scheduled run executing exactly once at the right
   time) — did not additionally spin up two truly-concurrent trigger paths
-  to re-prove `pkg/scheduler`'s own generic correctness, since that
+  to re-prove `internal/platform/scheduling`'s own generic correctness, since that
   package is out of this track's scope and not modified here.
 - **Command timeout/cancellation under an artificially slow backup.**
   `scheduler.WithJobTimeout` is wired (1h full / 20m diff) and
-  `context.WithTimeout` is `pkg/scheduler`'s own already-tested mechanism
+  `context.WithTimeout` is `internal/platform/scheduling`'s own already-tested mechanism
   — not re-proven against a real multi-hour-scale backup, which this
   lab-scale database cannot produce.
 - **The other eight Prometheus scrape jobs' TLS verification gap**
@@ -1188,26 +1188,26 @@ is bounded by `DRVERIFY_MAX_CONCURRENCY` (default 4) via
 
 **2. Three-tier classification (K9), separate from assurance's own
 scale.** `Severity` is `fatal`/`recoverable`/`informational` —
-deliberately not internal/assurance/rules's medium/high/critical, which
+deliberately not services/assurance/rules's medium/high/critical, which
 answers a different question ("how urgent for a human") than drverify's
 ("can traffic safely resume"). `classify.go` maps every
-`internal/assurance/rules.Finding` rule code drverify reuses onto this
+`services/assurance/rules.Finding` rule code drverify reuses onto this
 scale by rule-code family (critical rules → fatal, "stale but retryable"
 high rules → recoverable, request-id-hygiene medium rules →
 informational), documented inline with the reasoning per family — see
 `TestClassifyAssuranceFinding`, which fails loudly if a future rule code
-is ever added to `internal/assurance/rules` without an explicit mapping
+is ever added to `services/assurance/rules` without an explicit mapping
 decision here (falls through to `UNCLASSIFIED_ASSURANCE_FINDING` rather
 than silently disappearing).
 
-**3. Reuses `internal/assurance/rules`'s DTOs and invariant functions
+**3. Reuses `services/assurance/rules`'s DTOs and invariant functions
 directly** (K9's explicit allowance to share assurance DTOs without
 importing service internals) — `EvaluatePayin`/`EvaluatePayout` are the
-exact same tested functions `internal/assurance`'s live gRPC-based
+exact same tested functions `services/assurance`'s live gRPC-based
 correlation runs, now fed from raw SQL instead of RPC responses.
 `internal/drverify/ledgerproof.go`'s two lookup functions
 (`ledgerProofByCorrelation`/`ledgerProofByID`) are a byte-for-byte port of
-`internal/ledger/assurance.go`'s `assuranceLookup`/`bookedFee` — same
+`services/ledger/assurance.go`'s `assuranceLookup`/`bookedFee` — same
 WHERE clauses, same `closed_by_tx_id` reverse lookup for
 `OriginalReferenceID`, same fee aggregate — read directly from that
 handler's source rather than reverse-engineered from its wire contract,
@@ -1390,14 +1390,14 @@ testcontainers, no Docker Compose needed) — CI-runnable versions of the
 required tests that don't depend on hand-seeded live fixtures:**
 `TestRunCleanClusterPasses` (provisions all eight real databases inside
 one testcontainers Postgres, applies every service's real migrations via
-`internal/testutil.ApplyMigration`, asserts a freshly-migrated cluster
+`internal/testkit.ApplyMigration`, asserts a freshly-migrated cluster
 passes with zero findings), `TestRunDetectsDirtyMigration` (same setup,
 flips one dirty flag, asserts the gate fails with `MIGRATION_DIRTY`), and
 `TestNoWriteIsPossible`. All three pass under `go test -race`, confirming
 bug 2 above stays fixed. `internal/drverify/types_test.go` and
 `classify_test.go` (no database needed) cover `Report`'s determinism/
 severity-counting/`ProjectionOnlyMismatch` logic and every
-`internal/assurance/rules` rule code's classification mapping including
+`services/assurance/rules` rule code's classification mapping including
 an explicit "unknown rule code" case.
 
 **Explicitly NOT built this task — later Track A7 work, not oversights:**
@@ -1458,20 +1458,20 @@ resurrected past their legitimate revocation point (K11).
 - `policy.go`'s `reachablePolicyTypes` scopes reconstruction to exactly
   the four transaction types the live system ever policy-checks:
   `transfer_p2p`, `transfer_pocket`, `withdraw_initiate`,
-  `escrow_hold` — read directly off `internal/ledger/transport/http.go`'s
+  `escrow_hold` — read directly off `services/ledger/internal/transport/http.go`'s
   `publicUserTypes` map, the only router wired with a `PolicyChecker`.
   `money_in` is deliberately excluded: `NewInternalRouterWithFeePolicy`
   never receives a `PolicyChecker`, so no live counter for it ever
   exists to reconstruct. Each type also had to be checked for which
   side is "the user" — confirmed `escrow_hold`'s source account is the
-  buyer's cash account by reading `internal/ledger/processors/escrow_hold.go`
+  buyer's cash account by reading `services/ledger/internal/processors/escrow_hold.go`
   directly rather than assuming.
 - Rather than re-deriving Redis key formats by hand (a silent-drift
   risk explicitly called out in code comments), `drreseed` reuses the
-  live formats directly: `internal/policy.DailyAmountKey` /
+  live formats directly: `services/ledger/policy.DailyAmountKey` /
   `DailyCountKey` / `MonthlyAmountKey` were exported for this purpose
   (previously unexported `dailyAmountKey` etc., internal call sites in
-  `Check`/`Record` updated), and `internal/fraud/rules.VelocityKey`
+  `Check`/`Record` updated), and `services/fraud/rules.VelocityKey`
   (already exported) plus `fraud.NewRedisVelocityStore(...).Record`
   (the same atomic Lua script the live consumer uses) are called
   directly — a reconstructed key/dedup pair is bit-for-bit
@@ -1492,7 +1492,7 @@ resurrected past their legitimate revocation point (K11).
 - RabbitMQ needed no reseed step at all: every queue this repo
   declares (ledger-service, fraud-service, gateway's notify module) is
   declared idempotently inside each service's own `Start()` via
-  `pkg/messaging.RabbitMQ.DeclareTopology` — confirmed by reading every
+  `internal/platform/messaging.RabbitMQ.DeclareTopology` — confirmed by reading every
   call site, no one-time/manual declaration path exists anywhere.
   Starting those three services against an empty broker recreates the
   full topology with nothing left for this tool to do.
@@ -1546,7 +1546,7 @@ instead** (both pre-existing, unmodified functionality, not touched by
 T5's changes):
 
 - "RabbitMQ topology recreates on an empty broker" — proven by reading
-  `pkg/messaging.RabbitMQ.DeclareTopology` (idempotent, called
+  `internal/platform/messaging.RabbitMQ.DeclareTopology` (idempotent, called
   unconditionally from every service's own `Start()`) rather than
   re-running a live empty-broker drill; already exercised by this
   repo's existing chaos-test suite.
@@ -1645,7 +1645,7 @@ guard shape T3 already established, extended to both halves of this drill.
 **Real gap found and closed while cross-checking §6's acceptance
 checklist against what the script actually does:** "a clean assurance
 backfill has zero unresolved critical findings" had no explicit assertion
-anywhere. Reading `internal/assurance/module.go`'s `Start` showed
+anywhere. Reading `services/assurance/internal/module.go`'s `Start` showed
 `assurance-service` unconditionally runs a `mode="backfill"` scan on every
 process start — Phase I already triggers this just by starting the
 service — but nothing waited for that specific async run to finish or
@@ -1784,7 +1784,7 @@ reported zero discrepancies on every affected run — this was a **recovery
 latency gap**, not a correctness or money-safety bug.
 
 Root-caused from the raw JSON logs (`payout-service.log`/`ledger-service.log`),
-not guessed: `pkg/grpcx`'s ledger client dial uses grpc-go's **default,
+not guessed: `internal/platform/transport/grpc`'s ledger client dial uses grpc-go's **default,
 explicitly-intentional "lazy reconnect" backoff** (the package's own code
 comment: `// Lazy reconnect behavior is intentional.`) rather than an eager
 reconnect. Once the persistent connection to ledger enters

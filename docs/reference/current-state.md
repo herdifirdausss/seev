@@ -63,7 +63,7 @@ make docs-check      PASS
 The latest focused runtime regression run also passes:
 
 ```text
-go test -tags=integration ./internal/payin ./internal/notify ./internal/drreseed -count=1  PASS
+go test -tags=integration ./services/payin ./services/gateway/internal/notification ./operations/recovery/drreseed -count=1  PASS
 Ledger/Auth currency and multi-owner regression tests                 PASS
 ```
 

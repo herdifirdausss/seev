@@ -11,7 +11,7 @@ or the merchant's own request — without affecting any other tenant and
 without touching the merchant's existing data.
 
 This is narrower than the global kill switch
-(`internal/merchant/auth.GlobalFlag`, T9's own "global route-disable
+(`services/gateway/internal/merchant/auth.GlobalFlag`, T9's own "global route-disable
 control") — suspension acts on ONE tenant; the kill switch acts on the
 entire merchant B2B surface for every tenant at once. Use suspension for
 a single-merchant incident; reserve the kill switch for a platform-wide
@@ -29,7 +29,7 @@ one (see that control's own admin route,
    closure as checker-gated; suspension is a reversible, immediately
    protective action).
 2. **This takes effect immediately and structurally, not eventually**:
-   `RequireMerchantAuth` (`internal/merchant/auth/middleware.go`) checks
+   `RequireMerchantAuth` (`services/gateway/internal/merchant/auth/middleware.go`) checks
    `tenant.Status` on every authenticated request, before any other
    processing. A suspended tenant's very next request — with the SAME
    still-valid API key — receives `403 tenant suspended`, distinct from

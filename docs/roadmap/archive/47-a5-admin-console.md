@@ -10,7 +10,7 @@ Plans 36–41, fee rules, KYC, vendor health, and payout resilience are complete
 
 ### K1 — HTTP-only admin BFF
 
-Add `admin-bff-service` on container port 8095 and host port 18095. It has no gRPC listener. The boundary map owns `internal/adminbff`; other services cannot import it.
+Add `admin-bff-service` on container port 8095 and host port 18095. It has no gRPC listener. The boundary map owns `services/adminbff`; other services cannot import it.
 
 ### K2 — Thin HTTP clients
 

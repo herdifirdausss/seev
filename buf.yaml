@@ -1,6 +1,6 @@
 version: v2
 modules:
-  - path: api/proto
+  - path: contracts/proto
 lint:
   use:
     - STANDARD

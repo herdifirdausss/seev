@@ -26,7 +26,7 @@ export default function (data) {
   // a real caller's actual request shape.
   const cardinality = Number(__ENV.LOAD_KEY_CARDINALITY || 10);
   const amount = String(1000 + (__ITER % cardinality));
-  // createQuote (internal/ledger/transport/http.go) returns 201 Created on
+  // createQuote (services/ledger/internal/transport/http.go) returns 201 Created on
   // success, not 200 — this scenario was written but never actually run
   // until this session (§22's own "Experiment never run"), so the wrong
   // status code went uncaught; confirmed live (every request 201, all

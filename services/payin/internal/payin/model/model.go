@@ -1,0 +1,143 @@
+package model
+
+import (
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
+)
+
+// WebhookEvent is one row of payin_webhook_events (docs/roadmap/archive/22 Task T2) —
+// one vendor webhook delivery, deduped by (Vendor, VendorEventID).
+type WebhookEvent struct {
+	ID            uuid.UUID
+	Vendor        string
+	VendorEventID string
+	ExternalRef   string
+	UserID        uuid.UUID
+	// MerchantTenantID (Plan 57 T6) is set instead of UserID for a
+	// merchant-owned event — exactly one of the two is ever non-zero,
+	// mirroring services/ledger/internal/processors.Command's own
+	// MerchantTenantID sentinel convention (Plan 57 T5). Zero (uuid.Nil)
+	// for every event that hasn't matched an intent yet, or that belongs
+	// to a user, unchanged from before T6.
+	MerchantTenantID uuid.UUID
+	Amount           decimal.Decimal
+	// FeeAmount is the Ledger-owned platform fee captured at quote/intent
+	// creation. For a matched callback it is added on top of the provider
+	// amount represented by the legacy webhook Amount column; the requested
+	// wallet credit is reconstructed as TotalDebit - FeeAmount.
+	FeeAmount          decimal.Decimal
+	TotalDebit         decimal.Decimal
+	FeeGateway         string
+	FeeQuoteID         *uuid.UUID
+	FeeRuleID          *uuid.UUID
+	FeeApplication     string
+	FeeQuoteConsumedAt *time.Time
+	FeeSnapshotVersion int
+	Currency           string
+	Raw                []byte // raw webhook body, forensic/replay — never exposed in any reporting view
+	Status             string // received | posted | failed
+	ErrorMessage       string
+	// RequestID (docs/roadmap/archive/36 Task T5) is the HTTP request_id of the gateway
+	// call that received this webhook delivery — end-to-end trace anchor.
+	RequestID string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+// Topup intent status values (docs/roadmap/archive/25 Task T3).
+const (
+	TopupStatusPending = "pending"
+	TopupStatusSettled = "settled"
+	TopupStatusExpired = "expired"
+)
+
+// TopupIntent is one row of payin_topup_intents (docs/roadmap/archive/25 Task T3) — a
+// user-initiated top-up request. Reference is what the user quotes at the
+// vendor, carried back in the settling webhook's existing ExternalRef
+// field (zero vendorgw/mockvendor schema change).
+type TopupIntent struct {
+	ID        uuid.UUID
+	Reference string
+	UserID    uuid.UUID
+	// MerchantTenantID (Plan 57 T6) is set instead of UserID for a
+	// merchant-owned intent — exactly one of the two is ever non-zero.
+	MerchantTenantID uuid.UUID
+	Amount           decimal.Decimal
+	// FeeAmount and TotalDebit are the immutable Ledger-owned settlement
+	// snapshot. Amount remains the principal credited to the wallet; the
+	// provider collects TotalDebit = Amount + FeeAmount.
+	FeeAmount          decimal.Decimal
+	TotalDebit         decimal.Decimal
+	FeeGateway         string
+	FeeQuoteID         *uuid.UUID
+	FeeRuleID          *uuid.UUID
+	FeeApplication     string
+	FeeQuoteConsumedAt *time.Time
+	FeeSnapshotVersion int
+	Currency           string
+	Vendor             string
+	Gateway            string
+	Status             string // pending | settled | expired
+	SettledEventID     *uuid.UUID
+	// DownstreamKey (B2B HTTP handlers follow-up to Plan 57 T6) is the
+	// deterministic key Gateway derives per (tenant, operation, merchant
+	// idempotency key) — set only for a merchant-owned intent, empty for a
+	// user-owned one. A unique (merchant_tenant_id, downstream_key) index
+	// is what makes CreateMerchantTopupIntent idempotent against a Gateway
+	// retry (docs/reference/c1-b2b-design.md §10.4).
+	DownstreamKey string
+	ExpiresAt     time.Time
+	// RequestID (docs/roadmap/archive/36 Task T5) is the HTTP request_id of the call
+	// that created this intent — end-to-end trace anchor.
+	RequestID string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+const TopupFeeApplicationAddedOnTop = "added_on_top"
+
+// NormalizeFinancials keeps pre-C5 rows readable while making all new
+// lifecycle paths explicit. A legacy fee-free intent has total_debit equal to
+// its principal amount.
+func (i *TopupIntent) NormalizeFinancials() {
+	if i.FeeAmount.IsNegative() {
+		i.FeeAmount = decimal.Zero
+	}
+	if i.TotalDebit.IsZero() {
+		i.TotalDebit = i.Amount.Add(i.FeeAmount)
+	}
+	if i.FeeApplication == "" {
+		i.FeeApplication = TopupFeeApplicationAddedOnTop
+	}
+}
+
+// RoutingRule selects a vendor for a flow. Nil match fields are wildcards.
+type RoutingRule struct {
+	ID        uuid.UUID  `json:"id"`
+	Flow      string     `json:"flow"`
+	Priority  int        `json:"priority"`
+	Enabled   bool       `json:"enabled"`
+	Currency  *string    `json:"currency,omitempty"`
+	MinAmount *int64     `json:"min_amount,omitempty"`
+	MaxAmount *int64     `json:"max_amount,omitempty"`
+	UserID    *uuid.UUID `json:"user_id,omitempty"`
+	Vendor    string     `json:"vendor"`
+	CreatedAt time.Time  `json:"created_at"`
+	UpdatedAt time.Time  `json:"updated_at"`
+}
+
+type VendorGateway struct {
+	Vendor  string `json:"vendor"`
+	Gateway string `json:"gateway"`
+}
+
+// RoutingCandidate is one matching routing rule's vendor+gateway, part of
+// the ordered candidate list ResolveCandidates returns (docs/roadmap/archive/40 Task
+// T2) — replaces the old single-winner Resolve so the caller can skip a
+// candidate whose circuit is open and fall through to the next.
+type RoutingCandidate struct {
+	Vendor  string
+	Gateway string
+}

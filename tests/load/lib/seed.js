@@ -14,7 +14,7 @@ const VENDOR2_SECRET = __ENV.LOAD_VENDOR2_SECRET || '';
 const RUN_ID = __ENV.LOAD_RUN_ID || 'unbound';
 const VENDOR_SECRETS = { mockvendor: VENDOR_SECRET, mockvendor2: VENDOR2_SECRET };
 
-// mustJSON unwraps pkg/response's standard envelope ({success, data:{...}})
+// mustJSON unwraps internal/platform/transport/http/response's standard envelope ({success, data:{...}})
 // that every handler used here returns — every call site below reads the
 // inner shape (e.g. body.user.id, body.tokens.access_token) directly.
 function mustJSON(response, label) {
@@ -154,7 +154,7 @@ function fundUser(userToken, amount) {
 // system settlement account without touching the default rule at all.
 //
 // payin_routing_rules.vendor has a hard FK to payin_vendor_gateways(vendor)
-// (migrations/payin/000003_routing.up.sql), which seeds only "mockvendor"
+// (services/payin/migrations/000003_routing.up.sql), which seeds only "mockvendor"
 // by default — creating a rule for an unregistered vendor violates that FK
 // and surfaces as a generic 500 (discovered live). The vendor-gateways PUT
 // is upsert-idempotent, same as ensureTopupRoute's call for mockvendor.
@@ -164,7 +164,7 @@ function ensureVendorOverride(adminToken, userId, vendor) {
   mustJSON(http.post(`${payinAdminBaseURL}/admin/payin/routing-rules`, JSON.stringify({ flow: 'topup', priority: 1, enabled: true, currency: 'IDR', vendor, user_id: userId }), { headers: adminHeaders }), `create vendor override for ${userId}`);
 }
 
-// policy_tier_limits (migrations/ledger/000022_policy_tier_limits.up.sql)
+// policy_tier_limits (services/ledger/migrations/000022_policy_tier_limits.up.sql)
 // caps a KYC level-1 account at 20 transfer_p2p / 5 withdraw_initiate per
 // day, enforced on the PUBLIC user-initiated posting endpoints —
 // discovered live: a single shared sender doing repeated transfers or
@@ -261,7 +261,7 @@ export function seedHotspotPool(variant, amountPerIntent = 1000) {
 
 // seedPayoutSender registers, KYC-approves, and funds a POOL of senders for
 // W3, for realistic multi-account concurrent traffic. Payout's own default
-// routing rule is seeded by migrations/payout/000002_routing.up.sql,
+// routing rule is seeded by services/payout/migrations/000002_routing.up.sql,
 // unlike payin's topup route, so there is no ensurePayoutRoute step here.
 export function seedPayoutSender(amountPerPayout = 1000) {
   const adminToken = adminLogin();
@@ -326,7 +326,7 @@ export function seedWebhookPool(amountPerIntent = 1000) {
 // refresh" category — a fresh login every occurrence, not a captured
 // refresh_token: refresh tokens are one-time-use, and reusing an
 // already-consumed one is treated as replay and revokes EVERY token for
-// that user (internal/auth/auth.go:258-262) — including the access_token
+// that user (services/auth.go:258-262) — including the access_token
 // every other category in this scenario depends on. Discovered live: a
 // captured refresh_token reused across a run's several "refresh" slots
 // cascaded into failures across unrelated categories. Repeatable login has
@@ -359,12 +359,12 @@ export function seedMixedPool(amountPerAction = 1000) {
 // proving real business state through real endpoints) for the burst
 // hot-account experiment: every disbursement item, regardless of batch,
 // debits the SAME singleton settlement[platform][currency] account
-// (migrations/ledger/000015_disbursement.up.sql) — a different, untested
+// (services/ledger/migrations/000015_disbursement.up.sql) — a different, untested
 // contention point from W5's settlement[gateway] account. Recipients are a
 // small, reused pool (they are credited, not the contended side, so unlike
 // W1/W3/W4's sender pools they don't need to be sized 1:1 with item count).
 // itemsPerBatch defaults well under runDisbursement's 500-per-call cap
-// (internal/ledger/service/disbursement/disbursement.go) so a single
+// (services/ledger/internal/ledger/disbursement/disbursement.go) so a single
 // POST /run drains a whole batch in one call — the load phase's workload
 // unit is "one batch fully run," not "one item."
 export function seedDisbursementBatches(batchCount = 20, itemsPerBatch = 100, amountPerItem = 1000) {
@@ -397,12 +397,12 @@ export function seedDisbursementBatches(batchCount = 20, itemsPerBatch = 100, am
     }
     const form = { file: http.file(rows.join('\n'), `batch-${b}.csv`, 'text/csv') };
     // /api/v1/admin/ledger/disbursements (the path suggested by admin-bff's
-    // own proxy, internal/adminbff/module.go:117) 404s — discovered live:
-    // cmd/ledger-service/main.go:338 mounts the admin routes with
+    // own proxy, services/adminbff/internal/admin/module.go:117) 404s — discovered live:
+    // services/ledger/cmd/ledger/main.go:338 mounts the admin routes with
     // `http.StripPrefix("/api/v1", ...)` under the OUTER pattern
     // "/api/v1/admin/ledger/", which only strips "/api/v1" and leaves
     // "/admin/ledger/disbursements" for a mux that only registers
-    // "/admin/disbursements" (internal/ledger/transport/http.go:194) — a
+    // "/admin/disbursements" (services/ledger/internal/transport/http.go:194) — a
     // real, apparently-never-exercised-end-to-end routing bug (existing
     // tests only call the inner mux directly, bypassing this mount
     // entirely). The OTHER mount at line 337, "/api/v1/ledger/" with
@@ -413,7 +413,7 @@ export function seedDisbursementBatches(batchCount = 20, itemsPerBatch = 100, am
     const resp = http.post(`${ledgerBaseURL}/api/v1/ledger/admin/disbursements`, form, { headers: { Authorization: `Bearer ${adminToken}` } });
     const body = mustJSON(resp, `create disbursement batch ${b}`);
     // A batch starts 'pending_approval' (business-completeness audit
-    // finding, migrations/ledger/000038) — POST .../run 409s until a SECOND
+    // finding, services/ledger/migrations/000038) — POST .../run 409s until a SECOND
     // identity (checkerToken, never adminToken) approves it.
     mustJSON(http.post(`${ledgerBaseURL}/api/v1/ledger/admin/disbursements/${body.id}/approve`, '{}', { headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${checkerToken}` } }), `approve disbursement batch ${b}`);
     batchIds.push(body.id);

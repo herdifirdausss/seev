@@ -6,8 +6,8 @@ split it.
 
 | Property | Current behavior | K1 consequence |
 |---|---|---|
-| Builder | golang:1.26.5-alpine | pinned builder; rebuild per selected service |
-| Runtime | gcr.io/distroless/static-debian12:nonroot | no shell/package manager for debugging |
+| Builder | golang:1.26.5-alpine@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2 | digest-pinned builder; rebuild per selected service |
+| Runtime | gcr.io/distroless/static-debian12:nonroot@sha256:f5b485ea962d9bd1186b2f6b3a061191539b905b82ec395de78cbfae51f20e35 | minimal image with no shell/package manager for debugging |
 | User | nonroot | writable paths must be explicit |
 | Binary | /app/service | one process per Pod |
 | Entrypoint | /app/service | no hidden supervisor |

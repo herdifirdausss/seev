@@ -1,0 +1,11 @@
+-- assurance_findings.amount_minor was unconstrained on the one table whose
+-- entire purpose is to be the platform's own financial-anomaly evidence
+-- (found during a broader schema audit). Uses >= 0, not > 0 like most other
+-- amount columns in this schema: the column has DEFAULT 0
+-- (services/assurance/migrations/000001_core.up.sql) for findings that carry no
+-- monetary magnitude of their own, and services/assurance/internal/assurance/finding.go's
+-- ON CONFLICT DO UPDATE writes finding.AmountMinor directly on every
+-- occurrence, so a negative value would silently corrupt
+-- assurance_findings' own SUM(amount_minor) aggregate queries
+-- (services/assurance/internal/assurance/metrics.go, http.go) instead of failing fast.
+ALTER TABLE assurance_findings ADD CONSTRAINT chk_assurance_findings_amount_minor_nonnegative CHECK (amount_minor >= 0);

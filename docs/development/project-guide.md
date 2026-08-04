@@ -26,16 +26,16 @@ CI and container builders read the same version.
   explicit operator actions, never automatic remediation.
 - Each service owns its database. Cross-service database queries are forbidden;
   use the published HTTP, gRPC, or event contract instead.
-- internal/ledger exposes its public facade from the package root. External
+- services/ledger exposes its public facade from the package root. External
   packages must not import ledger repositories, processors, or other internal
   implementation packages.
-- internal/ledger/events is the deliberate exception to the previous rule:
+- contracts/events/ledger is the deliberate exception to the previous rule:
   it contains the versioned wire contract for ledger events and may be imported
   by consumers.
-- pkg/ must not import internal/. Shared packages must remain independent of
-  service implementations.
-- Generated protobuf bindings under gen/ are part of the committed contract.
-  Change the source under api/proto/, regenerate, lint, and run the breaking
+- internal/platform/ must not import services/ or encode service-owned business
+  decisions. Shared packages remain independent of service implementations.
+- Generated protobuf bindings under gen/go/ are part of the committed contract.
+  Change the source under contracts/proto/, regenerate, lint, and run the breaking
   check together.
 
 ## Financial invariants
@@ -47,7 +47,7 @@ CI and container builders read the same version.
 3. Every transaction must balance: total debit equals total credit.
 4. Every posting command requires an idempotency key.
 5. Do not reorder execTransfer in
-   internal/ledger/service/handle/service.go without understanding the
+   services/ledger/internal/ledger/handle/service.go without understanding the
    idempotency gate, lock order, validation order, balance projection, posting,
    and outbox guarantees documented in plans 04 and 14.
 6. A service must never write another service's tables, including through a
@@ -62,14 +62,14 @@ CI and container builders read the same version.
   boundaries. Internal gRPC authentication is not a replacement for user
   authorization.
 - Every internal hop (gRPC and internal HTTP, across all nine core services) is
-  mutually authenticated with a SPIFFE-style URI SAN identity (pkg/tlsx,
-  cmd/certgen — docs/roadmap/archive/49). Identity is the URI SAN, never a Common Name
+  mutually authenticated with a SPIFFE-style URI SAN identity (internal/platform/security/tls,
+  tools/certgen — docs/roadmap/archive/49). Identity is the URI SAN, never a Common Name
   or "signed by our CA" alone; a new hop must be added to its listener's
   allowlist explicitly, not inferred. Certificates are short-lived and
   rotate via `certgen rotate` (docs/operations/runbooks/cert-rotation.md); never
   extend a leaf's TTL as a workaround for a missed rotation.
 - Keep public logs free of raw credentials, full idempotency keys, and other
-  replayable values. Reuse pkg/logger masking helpers.
+  replayable values. Reuse internal/platform/observability/logging masking helpers.
 - Validate webhook signatures before any state change.
 - Preserve fail-open or fail-closed behavior where it is explicitly part of a
   service contract; changing that behavior requires tests and documentation.
@@ -172,7 +172,17 @@ for `docker-compose.yml`, the Makefile, CI, and the observability stack.
 
 ## Package layout conventions
 
-Each service's `internal/<domain>` module escalates through three tiers as it
+The ownership map for `internal/` is documented in
+[`internal/README.md`](../../internal/README.md). Keep the first directory
+below `internal/` meaningful: Gateway-owned code belongs under
+`services/gateway`, Seev-specific shared support under `internal/platform`,
+vendor boundary code under `services/vendor-service`, and business code under the
+bounded context that owns it. Within a service, use
+`transport/http`, `transport/grpc`, `repository`, `worker`, and capability
+packages only when the responsibility exists. Do not create a new generic
+bucket such as `application`, `common`, `helpers`, or `utils`.
+
+Within a service module, the package layout escalates through three tiers as it
 grows — start at tier 0, move up only when a file actually earns it:
 
 - **Tier 0 (default)**: one `http.go` for HTTP handlers, one `<name>.go` for
@@ -183,14 +193,14 @@ grows — start at tier 0, move up only when a file actually earns it:
   concerns or crosses ~400-500 lines. For repositories specifically: one file
   = one interface = one private struct = one constructor = one `_mock.go` —
   never a shared struct backing multiple interfaces. See
-  `internal/ledger/repository/*.go` for the reference shape, including the
+  `services/ledger/internal/repository/*.go` for the reference shape, including the
   `//go:generate mockgen -source=<file>.go -destination=<file>_mock.go
   -package=repository` directive each file carries. Regenerate with
-  `go generate ./internal/<service>/repository/...` (no `make mocks` target
+  `go generate ./services/<service>/internal/repository/...` (no `make mocks` target
   exists).
 - **Tier 2 (subpackage-per-concern)**: reserved for a domain with multiple
   genuinely independent sub-processes, each with its own lifecycle and test
-  surface — see `internal/ledger/service/{accrual,adjustments,disbursement,
+  surface — see `services/ledger/internal/ledger/{accrual,adjustments,disbursement,
   provision,recon,schedule,handle}`. Don't jump here just because a service
   is growing; promote a Tier 1 file only once it would itself need splitting.
 
@@ -208,11 +218,11 @@ grows — start at tier 0, move up only when a file actually earns it:
   per-service deep dive; [Onboarding](onboarding.md) is the code-navigation
   guide; [Operations](../operations/README.md) covers Compose, the Makefile,
   scripts/, CI, and observability; [Shared packages](../reference/shared-packages.md)
-  covers every shared `pkg/` package.
+  covers every shared `internal/platform/` package.
 - docs/roadmap/ records implementation decisions, completed phases, and future
   work; older plans may describe the repository at an earlier phase.
 - docs/operations/runbooks/ contains operational recovery procedures.
-- `api/contracts/` and `api/events/` are executable contract registries. A
+- `contracts/compatibility/` and `contracts/events/` are executable contract registries. A
   consumed route, RPC, or event must be inventoried and pass `make contracts`
   before it is merged; see [API contracts](../reference/api-contracts.md).
 - B0 load work is disposable-only and profile-bound. Run `make load-lint` for

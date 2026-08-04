@@ -1,0 +1,37 @@
+# World-class engineering improvement controls: execution-boundary and
+# stuck-state alerts. Thresholds are intentionally low-severity defaults and
+# must be tuned from staging evidence before paging production.
+groups:
+  - name: seev_money_execution
+    interval: 30s
+    rules:
+      - alert: SeevLedgerStuckMoneyState
+        expr: max by (state) (ledger_stuck_state_count{state=~"scheduled_processing_expired|dispute_deadline"}) > 0
+        for: 5m
+        labels:
+          severity: warning
+          component: ledger
+        annotations:
+          summary: "ledger has a due or expired money-flow state"
+          description: "state={{ $labels.state }} has remained non-zero for five minutes; inspect the durable state and run the stuck-state playbook before replaying anything."
+          runbook: docs/operations/runbooks/stuck-state-runbook.md
+      - alert: SeevLedgerOutboxStuckState
+        expr: ledger_stuck_state_count{state="outbox"} > 0 and ledger_outbox_oldest_pending_age_seconds > 900
+        for: 5m
+        labels:
+          severity: warning
+          component: ledger
+        annotations:
+          summary: "ledger outbox has an old pending event"
+          description: "the oldest pending outbox event exceeds fifteen minutes; confirm broker health and follow the outbox playbook."
+          runbook: docs/operations/runbooks/outbox-backlog-runbook.md
+      - alert: SeevMoneyMovementPolicyDenialSpike
+        expr: sum(rate(ledger_money_movement_policy_decisions_total{decision="denied"}[5m])) > 5
+        for: 10m
+        labels:
+          severity: info
+          component: ledger
+        annotations:
+          summary: "money-movement policy denials increased"
+          description: "review source/reason labels for an authorization or policy regression; this alert is informational until a staging baseline is established."
+          runbook: docs/operations/runbooks/stuck-state-runbook.md

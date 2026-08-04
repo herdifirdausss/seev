@@ -30,10 +30,10 @@ it depends on, and what it deliberately does not do. The opening paragraphs
 are the mental model; endpoint and package tables are implementation
 reference.
 
-One boundary is intentionally easy to misread: `internal/vendorgw` contains
+One boundary is intentionally easy to misread: `contracts/vendorgw` contains
 shared routing/provider contracts, breaker code, and mock adapter types used by
-Payin and Payout. The running `cmd/vendor-service`, together with
-`internal/vendorboundary`, owns active vendor connectivity and callback ingress.
+Payin and Payout. The running `services/vendor-service/cmd/vendor`, together with
+`services/vendor-service/internal`, owns active vendor connectivity and callback ingress.
 
 ---
 
@@ -49,15 +49,15 @@ headers — without knowing that "the backend" is actually several other
 services. Gateway is the composition layer that makes the rest of the
 system look like a single API from the outside.
 
-**What's inside**: `internal/handler` (routing + composition),
-`internal/server` (HTTP server, graceful shutdown), `internal/notify`
+**What's inside**: `services/gateway/internal/transport/http` (routing + composition),
+`internal/platform/transport/httpserver` (HTTP server, graceful shutdown), `services/gateway/internal/notification`
 (user-facing notifications, its own bounded module). Gateway owns
 `seev_gateway`, containing notification history plus durable planning,
 delivery, preference, device, template, digest, and channel-control tables.
 It holds almost no business logic of its own —
 everything it does is validate/compose/forward.
 
-Implemented (Plan 57 / track C1): `internal/merchant` — a bounded module
+Implemented (Plan 57 / track C1): `services/gateway/internal/merchant` — a bounded module
 for the tenant-isolated Merchant/B2B API. API-key auth (separate from
 Auth-service's JWT users), per-tenant/per-key quotas, durable
 idempotency, merchant ledger accounts/transfers, merchant pay-in/payout,
@@ -75,16 +75,16 @@ for the full route list, contracts, and verification evidence.
 | HTTP (public) | `POST /api/v1/topup`, `GET /api/v1/topup/{id}` | JWT + KYC tier 1 required — calls Payin over gRPC |
 | HTTP (public) | `POST /api/v1/payout`, `GET /api/v1/payout/{id}` | JWT + KYC tier 1 required — calls Payout over gRPC |
 | HTTP (public) | `/api/v1/ledger/*` | JWT (+ KYC tier for postings) — reverse-proxies the ledger API surface to ledger-service |
-| HTTP (public) | `GET /api/v1/notifications[?... ]`, `GET /api/v1/notifications/{id}`, `GET /api/v1/notifications/unread-count`, `POST /api/v1/notifications/{id}/read`, `POST /api/v1/notifications/read-all` | JWT — served directly by Gateway's `internal/notify` |
+| HTTP (public) | `GET /api/v1/notifications[?... ]`, `GET /api/v1/notifications/{id}`, `GET /api/v1/notifications/unread-count`, `POST /api/v1/notifications/{id}/read`, `POST /api/v1/notifications/read-all` | JWT — served directly by Gateway's `services/gateway/internal/notification` |
 | HTTP (public) | `GET/PUT /api/v1/notification-settings`, `GET/PUT /api/v1/notification-preferences`, `GET/POST /api/v1/notification-devices`, `DELETE /api/v1/notification-devices/{id}` | JWT — user-scoped notification controls |
 | HTTP (internal admin) | `/api/v1/admin/gateway/notifications/*` | mTLS + admin JWT through Admin BFF; templates, delivery inspection/replay, and channel controls |
 | HTTP (public probes) | `GET /health`, `GET /ready` | none |
 | HTTP (internal ops) | `GET /metrics` on `:8081` | mTLS service identity |
-| Background | RabbitMQ consumer in `internal/notify` | consumes `ledger.transaction.posted.v1`, atomically plans in-app/external work, and ACKs after durable planning |
-| Background | Email, push, and digest workers in `internal/notify` | leases Gateway-owned delivery rows; calls Auth contact resolution and local SMTP/mock-push adapters outside DB transactions |
-| HTTP (public B2B) | `/api/v1/b2b/{merchant,accounts,transactions,transfers,payins,payouts}` | Merchant API key (`Authorization: Bearer mk_live_...`/`mk_sandbox_...`) — `internal/merchant/api` |
+| Background | RabbitMQ consumer in `services/gateway/internal/notification` | consumes `ledger.transaction.posted.v1`, atomically plans in-app/external work, and ACKs after durable planning |
+| Background | Email, push, and digest workers in `services/gateway/internal/notification` | leases Gateway-owned delivery rows; calls Auth contact resolution and local SMTP/mock-push adapters outside DB transactions |
+| HTTP (public B2B) | `/api/v1/b2b/{merchant,accounts,transactions,transfers,payins,payouts}` | Merchant API key (`Authorization: Bearer mk_live_...`/`mk_sandbox_...`) — `services/gateway/internal/merchant/api` |
 | HTTP (internal admin) | `/api/v1/admin/gateway/tenants/*`, `/api/v1/admin/gateway/tenants/{id}/webhooks`, `/api/v1/admin/gateway/global/b2b-api` | mTLS + JWT `authed` — tenant/key/quota lifecycle, webhook endpoint management (operator-managed, no merchant self-service route), maker/checker, global kill switch |
-| Background | Webhook relay + RabbitMQ consumer in `internal/merchant/webhook` | fans out `transaction.posted.v1` (the one external event type) to subscribed tenant endpoints, HMAC-signed |
+| Background | Webhook relay + RabbitMQ consumer in `services/gateway/internal/merchant/webhook` | fans out `transaction.posted.v1` (the one external event type) to subscribed tenant endpoints, HMAC-signed |
 
 **Notably does NOT do**: registration, login, or KYC — those hit
 Auth-service directly on its own public port (`:8082`), not through
@@ -116,12 +116,12 @@ a user's KYC tier.
 `auth.go` (register/login/refresh/me), `bootstrap.go` (seeding the first
 admin account), `kyc.go` (submission/approval/rejection flow),
 `kyc_retry.go` (durable retry worker wiring), `documents.go` (encrypted
-KYC document storage). `internal/auth/repository` is split into
+KYC document storage). `services/auth/internal/repository` is split into
 `UserRepository`, `RefreshTokenRepository`, and `KYCRepository` (one
 struct per interface — see [Onboarding](../development/onboarding.md#naming-conventions)
-for why). `internal/auth/worker` holds the two background jobs.
-`internal/kycvendor` (sibling package, not under `internal/auth`) is the
-pluggable third-party KYC verification client. Owns `seev_auth`:
+for why). `services/auth/internal/worker` holds the two background jobs.
+`services/auth/internal/adapter/kycvendor` is the Auth-owned pluggable third-party KYC
+verification client. Owns `seev_auth`:
 `auth_users`, `auth_credentials`, `auth_refresh_tokens`,
 `kyc_submissions`, `kyc_documents`, `kyc_level_changes`,
 `kyc_apply_retries`.
@@ -135,8 +135,8 @@ pluggable third-party KYC verification client. Owns `seev_auth`:
 | HTTP (public) | `POST /api/v1/users/me/kyc`, `GET /api/v1/users/me/kyc`, `POST /api/v1/users/me/kyc/documents` | JWT |
 | HTTP (internal admin) | `GET /api/v1/admin/kyc/submissions`, `POST .../approve`, `POST .../reject`, `POST /api/v1/admin/kyc/users/{id}/downgrade`, `GET /api/v1/admin/kyc/documents/{id}` | admin/maker/checker role |
 | HTTP (internal service) | `GET /internal/v1/users/{id}/notification-contact` | Gateway-only internal token; returns active user email and verified-contact state, never credentials |
-| Background | KYC apply-retry job | claims durable intents when a KYC approval's ledger-side tier apply failed transiently; re-runs the full limits-first flow (`internal/auth/worker/retry.go`) |
-| Background | Sanctions re-screen job | periodically re-submits already-approved KYC subjects to the sanctions checker (`internal/auth/worker/rescreen.go`) |
+| Background | KYC apply-retry job | claims durable intents when a KYC approval's ledger-side tier apply failed transiently; re-runs the full limits-first flow (`services/auth/internal/worker/retry.go`) |
+| Background | Sanctions re-screen job | periodically re-submits already-approved KYC subjects to the sanctions checker (`services/auth/internal/worker/rescreen.go`) |
 
 **A KYC approval is deliberately limits-first, not claim-first**: the
 ledger's policy-tier limits are applied *before* the user's `kyc_level` is
@@ -147,7 +147,7 @@ allowed to do.
 
 **Depends on**: Ledger (`ProvisionUser` on register, `ApplyKycTier` on
 approval/downgrade), Fraud (sanctions screening on KYC submission,
-optional), `internal/kycvendor` (pluggable identity verification
+optional), `services/auth/internal/adapter/kycvendor` (pluggable identity verification
 provider).
 **Depended on by**: Gateway and Admin BFF (JWT verification is stateless
 — they just need the shared secret, not a live call to Auth), every
@@ -174,7 +174,7 @@ recon,schedule}` (one subpackage per independent sub-process),
 `repository/` (one file per aggregate), `processors/` (per-transaction-type
 posting logic — `money_in`, `money_out`, `transfer_p2p`, holds, reversals,
 FX pairs, and more), `feepolicy/`, `worker/` (four background jobs),
-`transport/` (the HTTP surface), `grpcserver/` (the internal RPC surface).
+`transport/` (the HTTP surface and internal `transport/grpc/` RPC surface).
 Owns `seev_ledger`: `accounts`, `account_balances`,
 `account_balance_snapshots`, `ledger_transactions`, `ledger_entries`,
 `currencies`, `policy_limits`, `policy_tier_limits`, `fee_rules`,
@@ -254,8 +254,8 @@ gateway handles which top-up, and failover between them), `intake.go`
 `assurance.go` (the read-only projection Assurance is allowed to read),
 `repository/` (topup + routing, split per
 [Onboarding](../development/onboarding.md#naming-conventions)'s repository rule),
-`grpcserver/` (internal RPC), and the VendorService boundary client. Payin
-uses only the `internal/vendorgw` routing/provider contracts; concrete
+`transport/grpc/` (internal RPC), and the VendorService boundary client. Payin
+uses only the `contracts/vendorgw` routing/provider contracts; concrete
 callback verification is composed by VendorService. Owns
 `seev_payin`: `payin_topup_intents`,
 `payin_webhook_events`, `payin_routing_rules`, `payin_vendor_gateways`,
@@ -277,7 +277,7 @@ callback verification is composed by VendorService. Owns
 
 **Vendor resilience**: routing is priority-ordered and database-driven
 (no redeploy to add/reorder a vendor), with a circuit breaker per vendor
-(`internal/vendorgw`) so a failing gateway degrades gracefully to the next
+(`contracts/vendorgw`) so a failing gateway degrades gracefully to the next
 one instead of blocking every top-up.
 
 **Depends on**: Ledger (post the confirmed top-up), Fraud (synchronous
@@ -294,7 +294,7 @@ intake state, can pause intake), and VendorService (callback delivery).
 and external payment/payout vendors. It owns the vendor wire protocol, not the
 wallet decision.
 
-**What's inside**: `cmd/vendor-service`, `internal/vendorboundary`, and the
+**What's inside**: `services/vendor-service/cmd/vendor`, `services/vendor-service/internal`, and the
 configured adapters. It authenticates callback source/signature, caps and
 normalizes the payload, persists `vendor_callback_inbox`, records sanitized
 `vendor_outbound_attempts`, and delivers owner-neutral callbacks over mTLS to
@@ -337,7 +337,7 @@ chaos run is the acceptance evidence rather than an assumed passing result.
 → settle/cancel), `http.go`, `routing.go` (database-driven vendor
 selection, mirroring Payin), `intake.go`/`assurance.go` (same pattern as
 Payin), `worker/resume.go` (the crash-recovery job — the single most
-important background job in this service), `repository/`, `grpcserver/`,
+important background job in this service), `repository/`, `transport/grpc/`,
 uses the VendorService boundary client. Owns `seev_payout`:
 `payout_requests`, `payout_vendor_calls`, `payout_vendor_commands`,
 `payout_routing_rules`, `payout_vendor_gateways`, `payout_intake_control`,
@@ -384,7 +384,7 @@ from the synchronous path), `velocity_store.go` (the fail-closed Redis
 velocity counter — hardened after finding TM-14 in the A6 review; see
 `docs/security/threat-model.md`), `rules/` (screening
 rule implementations), `sanctions/` (sanctions-list matching, loaded
-offline by `cmd/sanctions-loader`), `repository/` (three interfaces:
+offline by `services/fraud/cmd/sanctions-loader`), `repository/` (three interfaces:
 screening, rule-mode, sanctions — one struct each, not a shared one — see
 [Onboarding](../development/onboarding.md#naming-conventions)). Owns `seev_fraud`:
 `screening_events`, `screening_rule_modes`, `sanctions_entries`.
@@ -520,22 +520,23 @@ as the trust layer over everything else.
 
 | Binary | Problem it solves |
 |---|---|
-| `cmd/certgen` | Issues and rotates the internal mini-CA and every service's short-lived mTLS leaf certificate — the identity foundation the whole internal-security model (§5.4 of [Architecture](architecture.md)) depends on. |
-| `cmd/doccheck` | Validates local Markdown links and heading anchors with no external runtime dependency; `make docs-check` and CI use it. |
-| `cmd/gentoken` | Mints a JWT for scripts/chaos/smoke tests without going through a real login — a test-harness concern, never used in a request path. |
-| `cmd/sanctions-loader` | Imports an offline sanctions-list export into Fraud's database. No network access by design, so CI stays deterministic and reproducible. |
-| `cmd/mock-push-provider` | Local deterministic push sink for C3 acceptance and outage/invalid-token drills on port 8097; it is not a business service. |
+| `tools/certgen` | Issues and rotates the internal mini-CA and every service's short-lived mTLS leaf certificate — the identity foundation the whole internal-security model (§5.4 of [Architecture](architecture.md)) depends on. |
+| `tools/doccheck` | Validates local Markdown links and heading anchors with no external runtime dependency; `make docs-check` and CI use it. |
+| `tools/gentoken` | Mints a JWT for scripts/chaos/smoke tests without going through a real login — a test-harness concern, never used in a request path. |
+| `services/fraud/cmd/sanctions-loader` | Imports an offline sanctions-list export into Fraud's database. No network access by design, so CI stays deterministic and reproducible. |
+| `tools/mock-push-provider` | Local deterministic push sink for C3 acceptance and outage/invalid-token drills on port 8097; it is not a business service. |
 
 ## Cross-cutting: what's genuinely shared
 
-- `internal/config` — env loading, imported by every service.
-- `pkg/*` — infrastructure with zero business logic (database, cache,
-  messaging, middleware, logger, scheduler, tlsx, grpcx). `pkg/` must
-  never import `internal/`; dependencies only flow one way.
-- `internal/vendorgw` — shared routing/provider contracts, breaker code, and
+- `internal/platform/config` — env loading, imported by every service.
+- `internal/platform/*` — infrastructure with zero business logic (database, cache,
+  messaging, security, observability, scheduling, lifecycle, resilience, and
+  transport). Platform code must not import `services/`; dependencies only flow
+  toward the platform boundary.
+- `contracts/vendorgw` — shared routing/provider contracts, breaker code, and
   mock adapter types used by Payin/Payout. Active vendor I/O is composed by
-  VendorService through `internal/vendorboundary`.
-- `internal/testutil` — shared integration-test bootstrap.
+  VendorService through `services/vendor-service/internal`.
+- `internal/testkit` — shared integration-test bootstrap.
 
 See [Project guide](../development/project-guide.md#service-boundaries) for the
 enforced rule behind all of this: a service must never write another
@@ -545,5 +546,5 @@ through a published HTTP, gRPC, or event contract — never a direct query.
 For how these nine core services are actually built, verified, run locally,
 and observed — Docker Compose, the Makefile, every script under
 `scripts/`, CI, and the observability stack — see
-[Operations](../operations/README.md). For what every `pkg/*` package listed
+[Operations](../operations/README.md). For what every `internal/platform/*` package listed
 above actually does and who calls it, see [Shared packages](shared-packages.md).

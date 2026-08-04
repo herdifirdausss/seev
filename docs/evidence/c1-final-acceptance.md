@@ -49,12 +49,12 @@ $ make lint
 0 issues.
 
 $ make contracts
-go run ./cmd/contractgenerate
-go test ./api/contracts        ok
-go run ./cmd/contractcheck -mode breaking
-go test ./pkg/httpcontract ./api/contracts   ok
+go run ./tools/contractgenerate
+go test ./contracts/compatibility        ok
+go run ./tools/contractcheck -mode breaking
+go test ./internal/platform/transport/httpcontract ./contracts/compatibility   ok
 
-$ go run ./cmd/doccheck
+$ go run ./tools/doccheck
 doccheck: checked 139 Markdown files; required guides, language,
 visual and interactive assets, local links, and anchors are valid
 
@@ -66,7 +66,7 @@ $ go test -race ./...
 
 $ go test -tags=integration ./...
 0 failures (after the disk-space/container cleanup above; the initial
-run before cleanup showed one transient pkg/database testcontainers
+run before cleanup showed one transient internal/platform/database testcontainers
 timeout, confirmed non-reproducible by an isolated re-run before the
 cleanup, and fully clean after)
 
@@ -99,10 +99,10 @@ $ go build ./... && go vet ./...
 $ make lint
 0 issues.
 
-$ go test -race ./internal/merchant/...
+$ go test -race ./services/gateway/internal/merchant/...
 ok (all 9 packages, 0 data races)
 
-$ go test -race -tags=integration ./internal/merchant/...
+$ go test -race -tags=integration ./services/gateway/internal/merchant/...
 ok (all 9 packages, 0 data races)
 
 $ shellcheck scripts/chaos-test.sh
@@ -134,7 +134,7 @@ manual trigger) kills the script under `set -e`, which tears down every
 service mid-run.
 
 ```text
-$ git log --oneline -- scripts/privacy-e2e.sh scripts/privacy-e2e-host.sh internal/assurance
+$ git log --oneline -- scripts/privacy-e2e.sh scripts/privacy-e2e-host.sh services/assurance
 ```
 
 confirms none of these files have been touched by any commit in Plan 57 —
@@ -159,7 +159,7 @@ outside this plan's blast radius.
 
 ## Race tests (§23.8) — final result
 
-`go test -race ./internal/merchant/...` (plain and `-tags=integration`) is
+`go test -race ./services/gateway/internal/merchant/...` (plain and `-tags=integration`) is
 clean, 0 data races. All 7 required scenarios now have dedicated coverage,
 added in T10b:
 

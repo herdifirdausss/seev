@@ -5,13 +5,13 @@
 > **Status: Current. Audience: ledger operators.** Do not mutate or delete
 > ledger entries while investigating an integrity alert.
 
-Triggered by: `internal/ledger/worker/verifier.go` — `checkTrialBalance` (hourly) or `checkProjectionAudit` (daily), delivered via `ALERT_WEBHOOK_URL` (docs/roadmap/archive/12 Task T4) if configured, and always logged at `ERROR` + counted in the `ledger_verification_discrepancies_total` Prometheus metric regardless of whether a webhook is configured.
+Triggered by: `services/ledger/internal/worker/verifier.go` — `checkTrialBalance` (hourly) or `checkProjectionAudit` (daily), delivered via `ALERT_WEBHOOK_URL` (docs/roadmap/archive/12 Task T4) if configured, and always logged at `ERROR` + counted in the `ledger_verification_discrepancies_total` Prometheus metric regardless of whether a webhook is configured.
 
 Also reachable via Grafana unified alerting (docs/roadmap/archive/43 Task T5, folder "Seev"): `seev-op-ledger-verifier-discrepancy`, `seev-op-outbox-pending-backlog`, `seev-op-outbox-dead-events`, and the three `seev-slo-posting-*` posting_availability burn-rate alerts all carry this runbook's path in their `runbook` annotation.
 
 Two distinct alert messages map to this runbook:
 
-- **"unbalanced transaction detected"** — `fn_verify_ledger_balance()` found a `balance_transaction`/`ledger_transactions` row where `Σdebit ≠ Σcredit`. This should be structurally impossible (`validateBalanced` in `internal/ledger/service/handle/service.go` checks this before every insert) — seeing this alert means either a genuine bug slipped past that check, or something wrote to `ledger_entries` outside the normal posting path.
+- **"unbalanced transaction detected"** — `fn_verify_ledger_balance()` found a `balance_transaction`/`ledger_transactions` row where `Σdebit ≠ Σcredit`. This should be structurally impossible (`validateBalanced` in `services/ledger/internal/ledger/handle/service.go` checks this before every insert) — seeing this alert means either a genuine bug slipped past that check, or something wrote to `ledger_entries` outside the normal posting path.
 - **"balance projection inconsistent"** — `v_account_balance_audit` found an account where `account_balances.balance` (the fast-read projection) disagrees with the balance computed by summing that account's `ledger_entries`. The entries are the source of truth; the projection is a cache that's supposed to always match them.
 
 ## Step 1 — Don't panic, don't touch anything yet
@@ -50,7 +50,7 @@ SELECT * FROM ledger_entries WHERE account_id = '<account_id>' ORDER BY created_
 
 Things to determine:
 
-1. **Is this a processor bug** (a `TxProcessor` implementation in `internal/ledger/processors/` built an unbalanced set of entries, or `applyEntries`/`ApplySystemDeltas` in `internal/ledger/service/handle/service.go` computed a balance wrong)? Check recent deploys around the transaction's `created_at` — did a processor change ship recently?
+1. **Is this a processor bug** (a `TxProcessor` implementation in `services/ledger/internal/processors/` built an unbalanced set of entries, or `applyEntries`/`ApplySystemDeltas` in `services/ledger/internal/ledger/handle/service.go` computed a balance wrong)? Check recent deploys around the transaction's `created_at` — did a processor change ship recently?
 2. **Is this data corruption** (manual DB intervention, a migration that touched `ledger_entries` or `account_balances` directly, a restore from an inconsistent backup)? Check `pg_stat_activity`/audit logs for direct SQL around the time of the earliest affected row.
 3. **Is this a single isolated incident or an ongoing pattern**? Re-run the query from Step 2 — if new rows keep appearing, something is actively still wrong (stop here, escalate immediately per Step 5, don't spend more time investigating solo).
 
@@ -60,8 +60,8 @@ Things to determine:
 
 The only correct way to fix a ledger discrepancy is a **new reversal transaction**:
 
-- Use the `reversal` transaction type via the **internal router** (`POST /admin/... /transactions` with `type: "reversal"`, `reference_id: <original_transaction_id>`) — this is admin-gated (`adminOnlyTypes` in `internal/ledger/transport/http.go`) and only reachable on the internal-only listener (docs/roadmap/archive/10 Task T1), never from the public API.
-- The `Reversal` processor (`internal/ledger/processors/reversal.go`) builds entries that exactly invert the original transaction's entries, re-establishing balance.
+- Use the `reversal` transaction type via the **internal router** (`POST /admin/... /transactions` with `type: "reversal"`, `reference_id: <original_transaction_id>`) — this is admin-gated (`adminOnlyTypes` in `services/ledger/internal/transport/http.go`) and only reachable on the internal-only listener (docs/roadmap/archive/10 Task T1), never from the public API.
+- The `Reversal` processor (`services/ledger/internal/processors/reversal.go`) builds entries that exactly invert the original transaction's entries, re-establishing balance.
 - For a projection-only inconsistency (entries are balanced, but `account_balances.balance` itself drifted — e.g. from a bug predating the `ApplySystemDeltas` atomic-delta redesign in docs/roadmap/archive/11 Task T1), a reversal transaction against the affected account is still the right tool: it's the only sanctioned way to move `account_balances.balance`, and it leaves an audit trail explaining why.
 
 After correcting, re-run the Step 2 query to confirm the discrepancy is gone (or, for an unbalanced transaction, confirm the reversal produced net-zero across original + reversal).

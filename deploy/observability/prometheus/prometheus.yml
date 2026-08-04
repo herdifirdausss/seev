@@ -7,14 +7,14 @@
 # insecure_skip_verify: true is required in every tls_config below — found
 # live in docs/roadmap/archive/50 T2 execution, not a pre-existing pattern to copy
 # without it: this repo's leaf certs carry a SPIFFE URI SAN only, never a
-# DNS SAN (pkg/tlsx/config.go's own comments), so Prometheus's stock Go TLS
+# DNS SAN (internal/platform/security/tls/config.go's own comments), so Prometheus's stock Go TLS
 # client can never satisfy standard hostname verification against any of
 # these listeners no matter how correct ca_file/cert_file/key_file are.
 # Confirmed live: every job below reported health "down" with
 # "x509: certificate is not valid for any names, but wanted to match
 # <hostname>" until this was added. Client identity is still fully
 # enforced — this only skips Prometheus's own verification of the SERVER;
-# the server side (pkg/tlsx.ServerConfig) still requires and verifies
+# the server side (internal/platform/security/tls.ServerConfig) still requires and verifies
 # Prometheus's own client certificate against the CA and the
 # IdentityPrometheus allowlist, exactly as it does for every other caller.
 global:
@@ -27,6 +27,7 @@ rule_files:
   - /etc/prometheus/rules/retention.yml
   - /etc/prometheus/rules/merchant.yml
   - /etc/prometheus/rules/notifications.yml
+  - /etc/prometheus/rules/improvement.yml
 
 scrape_configs:
   - job_name: gateway-service

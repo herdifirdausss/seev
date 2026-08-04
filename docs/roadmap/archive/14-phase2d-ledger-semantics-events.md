@@ -77,7 +77,7 @@ keeps the guard in one place and avoids changing `BuildEntries` signatures.
 
 ## T3 — Versioned event contract (07 H1, K4)
 
-Create `internal/ledger/events` with no imports from other ledger subpackages:
+Create `contracts/events/ledger` with no imports from other ledger subpackages:
 
 ```go
 const (

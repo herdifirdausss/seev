@@ -1,6 +1,6 @@
 BINARY          := gateway
 BUILD_DIR       := bin
-CMD_DIR         := ./cmd/gateway
+CMD_DIR         := ./services/gateway/cmd/gateway
 GO_BUILD_FLAGS  := -trimpath -ldflags="-s -w"
 SERVICE_NAMES   := gateway auth-service ledger-service payin-service payout-service fraud-service admin-bff-service assurance-service vendor-service mock-push-provider
 CERT_IDENTITIES := gateway auth ledger payin payout fraud admin-bff assurance vendor dev-operator prometheus backup-agent
@@ -26,7 +26,7 @@ GOLANGCI_LINT := $(GOLANGCI_LINT_DIR)/golangci-lint
 GOVULNCHECK_DIR := $(TOOLS_DIR)/govulncheck-$(GOVULNCHECK_VERSION)
 GOVULNCHECK := $(GOVULNCHECK_DIR)/govulncheck
 
-.PHONY: build build-all run dev test test/cover clean lint modernize-check ci-lint print-golangci-lint-version print-govulncheck-version docs-check tidy tools tools-lint tools-security security-vuln proto proto-lint proto-breaking contract-generate contract-lint contract-breaking contract-test contracts load-lint load-test load-seed load-snapshot load-restore load-smoke load-run load-capacity load-report-check load-clean vet docker-up docker-down smoke-container smoke-test business-e2e admin-e2e privacy-e2e merchant-e2e verify-static verify-full verify-chaos chaos-debug migrate-up migrate-up-all migrate-down grant-app-role observability-secret observability-down certs backup-secret backup-role-bootstrap backup-checksums-enable backup-stanza-init backup-full backup-diff backup-check backup-status backup-expire cryptox-secret retention-docs retention-check analytics-secret analytics-config-check analytics-up-core analytics-up-ui analytics-up-ops analytics-health analytics-source-setup analytics-connectors-validate analytics-connectors-apply analytics-connectors-status analytics-connectors-pause analytics-connectors-resume analytics-connectors-delete analytics-clickhouse-migrate analytics-dbt-deps analytics-dbt-build analytics-dbt-test analytics-reconcile analytics-e2e analytics-chaos analytics-reset analytics-down analytics-verify k0-inventory k0-inventory-check k0-resource-sample k0-network-probe helm-lint k8s-preflight k8s-bootstrap k8s-smoke k8s-verify-callback k8s-verify-egress help
+.PHONY: build build-all build-services build-service build-tools build-operations run dev test test/cover test-service integration-service clean lint modernize-check ci-lint print-golangci-lint-version print-govulncheck-version docs-check onboarding-check doctor architecture-check architecture-graph architecture-metrics ide-config improvement-check risk-gate-check supply-chain-check supply-chain-evidence-check environment-contract-check vendor-sandbox-check tidy tools tools-lint tools-security security-vuln proto proto-lint proto-breaking contract-generate contract-lint contract-breaking contract-test contracts load-lint load-test load-seed load-snapshot load-restore load-smoke load-run load-capacity load-report-check load-clean vet docker-up docker-down smoke-container smoke-test business-e2e capability-e2e admin-e2e privacy-e2e merchant-e2e dr-integration verify-static verify-full verify-chaos chaos-debug migrate-up migrate-up-all migrate-down grant-app-role observability-secret observability-down certs backup-secret backup-role-bootstrap backup-checksums-enable backup-stanza-init backup-full backup-diff backup-check backup-status backup-expire cryptox-secret retention-docs retention-check analytics-secret analytics-config-check analytics-up-core analytics-up-ui analytics-up-ops analytics-health analytics-source-setup analytics-connectors-validate analytics-connectors-apply analytics-connectors-status analytics-connectors-pause analytics-connectors-resume analytics-connectors-delete analytics-clickhouse-migrate analytics-dbt-deps analytics-dbt-build analytics-dbt-test analytics-reconcile analytics-e2e analytics-chaos analytics-reset analytics-down analytics-verify k0-inventory k0-inventory-check k0-resource-sample k0-network-probe helm-lint platform-integration-check k8s-preflight k8s-bootstrap k8s-integration k8s-smoke k8s-verify-callback k8s-verify-egress help
 
 ## build: Compile the binary
 build:
@@ -36,7 +36,75 @@ build:
 ## build-all: Compile nine core service binaries plus the local push sink
 build-all:
 	@mkdir -p "$(BUILD_DIR)"
-	go build $(GO_BUILD_FLAGS) -o "$(BUILD_DIR)/" $(addprefix ./cmd/,$(SERVICE_NAMES))
+	@set -eu; \
+	for service in $(SERVICE_NAMES); do \
+		case "$$service" in \
+			gateway) path=./services/gateway/cmd/gateway;; \
+			auth-service) path=./services/auth/cmd/auth;; \
+			ledger-service) path=./services/ledger/cmd/ledger;; \
+			payin-service) path=./services/payin/cmd/payin;; \
+			payout-service) path=./services/payout/cmd/payout;; \
+			fraud-service) path=./services/fraud/cmd/fraud;; \
+			admin-bff-service) path=./services/adminbff/cmd/adminbff;; \
+			assurance-service) path=./services/assurance/cmd/assurance;; \
+			vendor-service) path=./services/vendor-service/cmd/vendor;; \
+			mock-push-provider) path=./tools/mock-push-provider;; \
+			*) echo "build-all: unsupported service $$service" >&2; exit 2;; \
+		esac; \
+		go build $(GO_BUILD_FLAGS) -o "$(BUILD_DIR)/$$service" "$$path"; \
+		done
+
+## build-services: Compile the canonical service binaries into bin/<service>
+build-services:
+	@for service in gateway auth ledger payin payout fraud adminbff assurance vendor; do \
+		$(MAKE) --no-print-directory build-service SERVICE="$$service" || exit $$?; \
+	done
+
+## build-service: Compile one canonical service (SERVICE=gateway|auth|...)
+build-service:
+	@set -eu; \
+	case "$(SERVICE)" in \
+		gateway) path=./services/gateway/cmd/gateway;; \
+		auth) path=./services/auth/cmd/auth;; \
+		ledger) path=./services/ledger/cmd/ledger;; \
+		payin) path=./services/payin/cmd/payin;; \
+		payout) path=./services/payout/cmd/payout;; \
+		fraud) path=./services/fraud/cmd/fraud;; \
+		adminbff) path=./services/adminbff/cmd/adminbff;; \
+		assurance) path=./services/assurance/cmd/assurance;; \
+		vendor) path=./services/vendor-service/cmd/vendor;; \
+		*) echo "build-service: unsupported SERVICE=$(SERVICE)" >&2; exit 2;; \
+	esac; \
+	mkdir -p "$(BUILD_DIR)"; \
+	go build $(GO_BUILD_FLAGS) -o "$(BUILD_DIR)/$(SERVICE)" "$$path"
+
+## build-tools: Compile all developer and CI tools
+build-tools:
+	go build ./tools/...
+
+## build-operations: Compile all operator agents and recovery workflows
+build-operations:
+	go build ./operations/...
+
+## test-service: Run all tests for one canonical service (SERVICE=auth)
+test-service:
+	@case "$(SERVICE)" in \
+		gateway|auth|ledger|payin|payout|fraud|assurance) path=./services/$(SERVICE);; \
+		adminbff) path=./services/adminbff;; \
+		vendor) path=./services/vendor-service;; \
+		*) echo "test-service: unsupported SERVICE=$(SERVICE)" >&2; exit 2;; \
+	esac; \
+	go test "$$path/..."
+
+## integration-service: Run one service's integration-tagged tests (SERVICE=auth)
+integration-service:
+	@case "$(SERVICE)" in \
+		gateway|auth|ledger|payin|payout|fraud|assurance) path=./services/$(SERVICE);; \
+		adminbff) path=./services/adminbff;; \
+		vendor) path=./services/vendor-service;; \
+		*) echo "integration-service: unsupported SERVICE=$(SERVICE)" >&2; exit 2;; \
+	esac; \
+	go test -tags=integration "$$path/..."
 
 ## run: Run the compiled binary
 run: build
@@ -93,7 +161,76 @@ print-govulncheck-version:
 
 ## docs-check: Validate required guides, local Markdown links, and heading anchors
 docs-check:
-	go run ./cmd/doccheck
+	go run ./tools/doccheck
+
+## onboarding-check: Keep the contributor navigation map aligned with the tree
+onboarding-check:
+	./scripts/ci/check-onboarding-paths.sh
+
+## doctor: Check local Go/repository prerequisites and deterministic generated artifacts
+doctor:
+	@set -eu; \
+	command -v go >/dev/null 2>&1 || { echo "doctor: Go is required" >&2; exit 1; }; \
+	expected=$$(awk '$$1 == "go" { print $$2; exit }' go.mod); \
+	actual=$$(go env GOVERSION | sed 's/^go//'); \
+	[ "$$actual" = "$$expected" ] || { echo "doctor: Go $$expected required, found $$actual" >&2; exit 1; }; \
+	for path in services internal/platform internal/testkit contracts gen/go tools operations tests/architecture; do \
+		test -d "$$path" || { echo "doctor: missing required directory $$path" >&2; exit 1; }; \
+	done; \
+	go test ./tests/architecture; \
+	tmp=$$(mktemp -d); \
+	trap 'rm -rf "$$tmp"' EXIT INT TERM; \
+	go run ./tools/contractgenerate -out "$$tmp/http"; \
+	diff -rq contracts/http/dist "$$tmp/http"; \
+	go run ./tools/doccheck; \
+	if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then \
+		echo "doctor: Docker daemon available"; \
+	else \
+		echo "doctor: Docker daemon unavailable (unit/static checks remain available; integration tests need Docker)"; \
+	fi; \
+	echo "doctor: repository layout, Go toolchain, docs, and generated HTTP contracts are healthy"
+
+## architecture-check: Validate service ownership and repository shape
+architecture-check:
+	go test . ./tests/architecture
+
+## architecture-graph: Print the current direct Go package import graph
+architecture-graph:
+	go list -f '{{.ImportPath}} -> {{join .Imports " "}}' ./...
+
+## architecture-metrics: Report package size and dependency metrics for the current tree
+architecture-metrics:
+	@go run ./tools/architecturemetrics
+
+## ide-config: Generate debugger launch configurations from the service registry
+ide-config:
+	@go run ./tools/ideconfig
+
+## improvement-check: Validate the improvement-plan implementation index
+improvement-check:
+	./scripts/ci/verify-improvement-plan.sh
+	./scripts/ci/verify-p0-p1-risk-gate.sh
+
+## risk-gate-check: Validate the P0/P1 release-approval contract
+risk-gate-check:
+	./scripts/ci/verify-p0-p1-risk-gate.sh
+
+## supply-chain-check: Validate repository-local release controls
+supply-chain-check:
+	./scripts/ci/supply-chain-check.sh
+
+## supply-chain-evidence-check: Validate a retained protected-release bundle
+supply-chain-evidence-check:
+	@test -n "$(EVIDENCE_DIR)" || { echo "EVIDENCE_DIR is required" >&2; exit 2; }
+	./scripts/ci/verify-supply-chain-evidence.sh "$(EVIDENCE_DIR)"
+
+## environment-contract-check: Validate the current rendered deployment environment
+environment-contract-check:
+	./scripts/ci/check-environment-contract.sh
+
+## vendor-sandbox-check: Validate the current rendered vendor environment
+vendor-sandbox-check:
+	./scripts/ci/check-vendor-sandbox-config.sh
 
 ## analytics-secret: Generate local-only C2 salt and service passwords
 analytics-secret:
@@ -212,6 +349,10 @@ helm-lint:
 	helm lint deploy/helm/seev -f deploy/helm/seev/values-gcp-dev.yaml
 	helm lint deploy/helm/seev -f deploy/helm/seev/values-aws-dev.yaml
 
+## platform-integration-check: Terraform, Helm, and provider workload-identity contract
+platform-integration-check:
+	@./scripts/ci/check-platform-integration.sh
+
 ## k8s-preflight: Prove local NetworkPolicy enforcement with the selected CNI
 k8s-preflight:
 	@./deploy/kubernetes/scripts/networkpolicy-preflight.sh
@@ -219,6 +360,11 @@ k8s-preflight:
 ## k8s-bootstrap: Create the disposable kind + Calico learning cluster
 k8s-bootstrap:
 	@./deploy/kubernetes/scripts/bootstrap-local.sh
+
+## k8s-integration: Bootstrap the disposable cluster and run the Kubernetes smoke journey
+k8s-integration:
+	@$(MAKE) --no-print-directory k8s-bootstrap
+	@$(MAKE) --no-print-directory k8s-smoke
 
 ## k8s-smoke: Run the local Kubernetes readiness and edge smoke test
 k8s-smoke:
@@ -234,11 +380,11 @@ k8s-verify-egress:
 
 ## retention-docs: Regenerate docs/data/retention.md from config/data-retention.yaml
 retention-docs:
-	go run ./cmd/retentioncheck -write
+	go run ./tools/retentioncheck -write
 
 ## retention-check: Validate config/data-retention.yaml and confirm docs/data/retention.md is current (CI)
 retention-check:
-	go run ./cmd/retentioncheck
+	go run ./tools/retentioncheck
 
 ## tidy: Tidy go.mod and go.sum
 tidy:
@@ -294,19 +440,19 @@ proto-breaking:
 
 ## contract-generate: Resolve checked-in relative OpenAPI references deterministically
 contract-generate:
-	go run ./cmd/contractgenerate
+	go run ./tools/contractgenerate
 
 ## contract-lint: Validate OpenAPI sources, refs, error registry, and inventory
 contract-lint:
-	go test ./api/contracts
+	go test ./contracts/compatibility
 
 ## contract-breaking: Compare generated HTTP bundles with the checked-in bootstrap baseline
 contract-breaking:
-	go run ./cmd/contractcheck -mode breaking
+	go run ./tools/contractcheck -mode breaking
 
 ## contract-test: Run route metadata and contract fixture checks
 contract-test:
-	go test ./pkg/httpcontract ./api/contracts
+	go test ./internal/platform/transport/httpcontract ./contracts/compatibility
 
 ## contracts: Run the local A9 contract gate without installing tools
 contract-lint contract-breaking contract-test: contract-generate
@@ -315,8 +461,8 @@ contracts: contract-lint contract-breaking contract-test
 
 ## load-lint: Validate B0 profiles, safety schemas, and helper/scenario tests without Docker mutation
 load-lint:
-	go test ./pkg/loadlab ./pkg/loadreport ./pkg/loadmetrics ./cmd/loadcheck ./cmd/loadseed ./cmd/loadreport ./cmd/loadprobe ./cmd/loaddataset ./tests/load
-	go run ./cmd/loadcheck -profile deploy/load/profiles/local-small.yaml
+	go test ./tools/load/lab ./tools/load/report ./internal/platform/observability/metrics ./tools/loadcheck ./tools/loadseed ./tools/loadreport ./tools/loadprobe ./tools/loaddataset ./tests/load
+	go run ./tools/loadcheck -profile deploy/load/profiles/local-small.yaml
 
 ## load-test: Fast B0 helper/analyzer/safety tests; this does not claim capacity
 load-test: load-lint
@@ -384,6 +530,14 @@ smoke-test:
 business-e2e:
 	./scripts/business-e2e.sh
 
+## capability-e2e: Direct E2E coverage for scheduled, governed, reconciled, dispute, and FX paths
+capability-e2e:
+	./scripts/capability-e2e.sh
+
+## dr-integration: Disposable latest-backup restore rehearsal (requires the dev stack to be stopped)
+dr-integration:
+	@./scripts/dr-drill.sh latest
+
 ## admin-e2e: Admin BFF session, CSRF, mutation, and audit journey
 admin-e2e:
 	./scripts/admin-e2e.sh
@@ -400,11 +554,15 @@ merchant-e2e:
 verify-static:
 	go build $(GO_BUILD_FLAGS) ./...
 	go vet ./...
+	$(MAKE) architecture-check
 	go mod verify
 	$(MAKE) ci-lint
 	$(MAKE) lint
 	$(MAKE) security-vuln
 	$(MAKE) docs-check
+	$(MAKE) onboarding-check
+	$(MAKE) improvement-check
+	$(MAKE) supply-chain-check
 	$(MAKE) retention-check
 	$(MAKE) contracts
 	$(MAKE) analytics-config-check
@@ -439,6 +597,7 @@ verify-full:
 	$(MAKE) --no-print-directory smoke-container; \
 	$(MAKE) --no-print-directory smoke-test; \
 	$(MAKE) --no-print-directory business-e2e; \
+	$(MAKE) --no-print-directory capability-e2e; \
 	$(MAKE) --no-print-directory admin-e2e; \
 	$(MAKE) --no-print-directory privacy-e2e; \
 	$(MAKE) --no-print-directory merchant-e2e; \
@@ -483,9 +642,10 @@ migrate-up:
 ## migrate-up-all: Run every service migration folder against the current database
 migrate-up-all:
 	$(MAKE) --no-print-directory migrate-up SERVICE=ledger || exit $$?
-	@for path in migrations/*; do \
+	@for path in services/*/migrations; do \
 		[ -d "$$path" ] || continue; \
-		service=$${path##*/}; \
+		service=$$(basename "$$(dirname "$$path")"); \
+		[ "$$service" = vendor-service ] && service=vendor; \
 		[ "$$service" = ledger ] && continue; \
 		$(MAKE) --no-print-directory migrate-up SERVICE="$$service" || exit $$?; \
 	done
@@ -530,7 +690,7 @@ observability-down:
 ## certs: Generate the local mTLS CA + per-service leaf certs (run before `docker compose --profile app up`)
 certs:
 	@mkdir -p "$(BUILD_DIR)"
-	go build $(GO_BUILD_FLAGS) -o "$(BUILD_DIR)/certgen" ./cmd/certgen
+	go build $(GO_BUILD_FLAGS) -o "$(BUILD_DIR)/certgen" ./tools/certgen
 	"$(BUILD_DIR)/certgen" init-ca --out deploy/certs
 	@for service in $(CERT_IDENTITIES); do \
 		"$(BUILD_DIR)/certgen" issue --service "$$service" --out deploy/certs || exit $$?; \
@@ -580,13 +740,13 @@ backup-secret:
 # Track A7 existed) never re-runs first-boot scripts, so this target
 # re-invokes the EXACT SAME script inside the running container — never a
 # hand-copied variant that could drift from the first-boot behavior.
-# docs/roadmap/archive/51 T2.2: dev-only pkg/cryptox key material — shared
+# docs/roadmap/archive/51 T2.2: dev-only internal/platform/security/crypto key material — shared
 # cluster-wide (K2's own deliberate choice, same as JWT_SECRET/
 # INTERNAL_GRPC_TOKEN, see scripts/vault-seed.sh's own comment), so ONE
 # key pair is generated here, not one per service. 32-byte keys hex-encoded
-# (64 hex chars) — internal/config.CryptoxConfig.Ring/Lookup decode hex,
+# (64 hex chars) — internal/platform/config.CryptoxConfig.Ring/Lookup decode hex,
 # never base64, unlike backup-secret's own base64 passphrases above.
-## cryptox-secret: Generate the dev pkg/cryptox KEK (v1) and lookup key (run once per machine)
+## cryptox-secret: Generate the dev internal/platform/security/crypto KEK (v1) and lookup key (run once per machine)
 cryptox-secret:
 	@mkdir -p deploy/cryptox/secrets
 	@if [ ! -f deploy/cryptox/secrets/cryptox_key_v1 ]; then \

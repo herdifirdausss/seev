@@ -1,0 +1,70 @@
+schema_version: 1
+description: Canonical AMQP event ownership, delivery, and evolution catalog.
+events:
+  - id: ledger.transaction.posted.v1
+    routing_key: ledger.transaction.posted.v1
+    producer: ledger
+    schema: contracts/events/ledger/schemas/transaction-posted/v1.schema.json
+    schema_version: 1
+    aggregate: ledger_transaction
+    delivery_guarantee: at-least-once
+    ordering_guarantee: none
+    retry: first-error-redelivery-then-dlq
+    dead_letter: [ledger.events.fraud.dlq, ledger.events.notifications.dlq]
+    deduplication_key: event_id-or-amqp-message_id
+    data_classification: confidential
+    consumers:
+      - {name: fraud, owner: fraud, queue: ledger.events.fraud, effect: velocity-record}
+      - {name: notify, owner: notify, queue: ledger.events.notifications, effect: notification-insert}
+    lifecycle: active
+    compatibility: additive-optional-v1
+    example: {schema_version: 1, event_id: 00000000-0000-7000-8000-000000000001, tx_id: 00000000-0000-7000-8000-000000000002, transaction_type: money_in, amount: '125000', currency: IDR, entries: [], occurred_at: '2026-01-02T03:04:05Z'}
+  - id: ledger.transaction.reversed.v1
+    routing_key: ledger.transaction.reversed.v1
+    producer: ledger
+    schema: contracts/events/ledger/schemas/transaction-reversed/v1.schema.json
+    schema_version: 1
+    aggregate: ledger_transaction
+    delivery_guarantee: at-least-once
+    ordering_guarantee: none
+    retry: first-error-redelivery-then-dlq
+    dead_letter: [ledger.events.audit.dlq]
+    deduplication_key: event_id-or-amqp-message_id
+    data_classification: confidential
+    consumers: [{name: ledger-audit, owner: ledger, queue: ledger.events.audit, effect: audit-record}]
+    lifecycle: active
+    compatibility: additive-optional-v1
+    example: {schema_version: 1, event_id: 00000000-0000-7000-8000-000000000003, reversal_tx_id: 00000000-0000-7000-8000-000000000004, original_tx_id: 00000000-0000-7000-8000-000000000005, amount: '5000', currency: IDR, occurred_at: '2026-01-02T03:04:05Z'}
+  - id: ledger.adjustment.decided.v1
+    routing_key: ledger.adjustment.decided.v1
+    producer: ledger
+    schema: contracts/events/ledger/schemas/adjustment-decided/v1.schema.json
+    schema_version: 1
+    aggregate: pending_adjustment
+    delivery_guarantee: at-least-once
+    ordering_guarantee: none
+    retry: first-error-redelivery-then-dlq
+    dead_letter: [ledger.events.audit.dlq]
+    deduplication_key: event_id-or-amqp-message_id
+    data_classification: confidential
+    consumers: [{name: ledger-audit, owner: ledger, queue: ledger.events.audit, effect: audit-record}]
+    lifecycle: active
+    compatibility: additive-optional-v1
+    example: {schema_version: 1, event_id: 00000000-0000-7000-8000-000000000006, pending_id: 00000000-0000-7000-8000-000000000007, requested_by: synthetic-requester, approved_by: synthetic-approver, decision: rejected, occurred_at: '2026-01-02T03:04:05Z'}
+  - id: ledger.dispute.lifecycle.v1
+    routing_key: ledger.dispute.lifecycle.v1
+    producer: ledger
+    schema: contracts/events/ledger/schemas/dispute-lifecycle/v1.schema.json
+    schema_version: 1
+    aggregate: chargeback_dispute
+    delivery_guarantee: at-least-once
+    ordering_guarantee: none
+    retry: first-error-redelivery-then-dlq
+    dead_letter: [ledger.events.notifications.dlq]
+    deduplication_key: event_id-or-amqp-message_id
+    data_classification: confidential
+    consumers:
+      - {name: notify, owner: notify, queue: ledger.events.notifications, effect: notification-insert-and-delivery-plan}
+    lifecycle: active
+    compatibility: additive-optional-v1
+    example: {schema_version: 1, event_id: 00000000-0000-7000-8000-000000000008, dispute_id: 00000000-0000-7000-8000-000000000009, original_tx_id: 00000000-0000-7000-8000-000000000010, recipient_user_id: 00000000-0000-7000-8000-000000000011, dispute_ref: synthetic-dispute, card_network: visa, reason_code: '10.4', amount: '125000', currency: IDR, to_status: open, evidence_due_at: '2026-01-16T03:04:05Z', occurred_at: '2026-01-02T03:04:05Z'}

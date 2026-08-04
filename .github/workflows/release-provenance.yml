@@ -1,0 +1,302 @@
+name: release-provenance
+
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: verify release controls
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Read Go version from go.mod
+        id: goversion
+        run: echo "version=$(grep -E '^go ' go.mod | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ steps.goversion.outputs.version }}
+          cache: true
+      - name: Verify plan and source supply-chain controls
+        run: |
+          ./scripts/ci/verify-improvement-plan.sh
+          ./scripts/ci/supply-chain-check.sh
+          go mod verify
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+      - name: Prepare release evidence
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/seev-release-supply-chain"
+          {
+            echo "schema=seev.release-supply-chain.v1"
+            echo "commit=${{ github.sha }}"
+            echo "workflow_run=${{ github.run_id }}"
+            echo "workflow_attempt=${{ github.run_attempt }}"
+            echo "generated_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } > "$RUNNER_TEMP/seev-release-supply-chain/run-manifest.txt"
+      - name: Build attestable image
+        env:
+          REVISION: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          docker buildx build \
+            --file Dockerfile \
+            --tag "seev/release:${REVISION}" \
+            --build-arg "REVISION=${REVISION}" \
+            --metadata-file "$RUNNER_TEMP/seev-release-supply-chain/release-metadata.json" \
+            --load \
+            --attest=type=provenance,mode=max \
+            --attest=type=sbom,generator=docker/buildkit-syft-scanner:stable-1@sha256:79e7b013cbec16bbb436f312819a49a4a57752b2270c1a9332ae1a10fcc82a68 \
+            .
+      - name: Install Trivy
+        uses: aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567 # v0.3.1
+        with:
+          version: v0.73.0
+          cache: true
+      - name: Scan release image and generate SBOM
+        id: release-scan
+        if: always()
+        continue-on-error: true
+        env:
+          REVISION: ${{ github.sha }}
+        run: |
+          set -u
+          evidence_dir="$RUNNER_TEMP/seev-release-supply-chain"
+          image="seev/release:${REVISION}"
+          scan_status=0
+          if ! trivy image \
+            --format json \
+            --output "$evidence_dir/release-trivy.json" \
+            --severity HIGH,CRITICAL \
+            --pkg-types os,library \
+            --no-progress \
+            --exit-code 1 \
+            "$image"; then
+            scan_status=1
+          fi
+          if ! trivy image \
+            --format cyclonedx \
+            --output "$evidence_dir/release-sbom.cdx.json" \
+            --pkg-types os,library \
+            --no-progress \
+            "$image"; then
+            scan_status=1
+          fi
+          exit "$scan_status"
+      - name: Enforce release vulnerability and SBOM gate
+        if: always()
+        run: |
+          set -euo pipefail
+          if [ "${{ steps.release-scan.outcome }}" != "success" ]; then
+            echo "::error::release image vulnerability scan or SBOM generation failed"
+            exit 1
+          fi
+      - name: Upload release verification evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-verification-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/seev-release-supply-chain/
+          retention-days: 90
+          if-no-files-found: warn
+
+  publish:
+    name: publish signed and attested release image
+    needs: verify
+    if: ${{ startsWith(github.ref, 'refs/tags/') && vars.RELEASE_REGISTRY != '' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    environment:
+      # Repository administrators must configure required reviewers and the
+      # protected-registry variables/secrets on this environment.
+      name: protected-release
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+      - name: Prepare publish evidence
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/seev-release-publish"
+          {
+            echo "schema=seev.release-publish.v1"
+            echo "commit=${{ github.sha }}"
+            echo "tag=${GITHUB_REF_NAME}"
+            echo "workflow_run=${{ github.run_id }}"
+            echo "workflow_attempt=${{ github.run_attempt }}"
+            echo "generated_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } > "$RUNNER_TEMP/seev-release-publish/run-manifest.txt"
+      - name: Log in to protected registry
+        env:
+          REGISTRY: ${{ vars.RELEASE_REGISTRY }}
+          USERNAME: ${{ secrets.RELEASE_REGISTRY_USERNAME }}
+          PASSWORD: ${{ secrets.RELEASE_REGISTRY_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$REGISTRY"
+          test -n "$USERNAME" && test -n "$PASSWORD"
+          printf '%s' "$PASSWORD" | docker login "$REGISTRY" --username "$USERNAME" --password-stdin
+      - name: Build and publish with SBOM and provenance
+        env:
+          REGISTRY: ${{ vars.RELEASE_REGISTRY }}
+          IMAGE_NAME: ${{ vars.RELEASE_IMAGE_NAME }}
+          REVISION: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          registry="${REGISTRY%/}"
+          test -n "$IMAGE_NAME"
+          docker buildx build \
+            --file Dockerfile \
+            --tag "${registry}/${IMAGE_NAME}:${GITHUB_REF_NAME}" \
+            --tag "${registry}/${IMAGE_NAME}:${REVISION}" \
+            --build-arg "REVISION=${REVISION}" \
+            --metadata-file "$RUNNER_TEMP/seev-release-publish/release-metadata.json" \
+            --attest=type=provenance,mode=max \
+            --attest=type=sbom,generator=docker/buildkit-syft-scanner:stable-1@sha256:79e7b013cbec16bbb436f312819a49a4a57752b2270c1a9332ae1a10fcc82a68 \
+            --push \
+            .
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.0.6
+      - name: Install Trivy
+        uses: aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567 # v0.3.1
+        with:
+          version: v0.73.0
+          cache: true
+      - name: Resolve published digest
+        id: resolve-image
+        env:
+          REGISTRY: ${{ vars.RELEASE_REGISTRY }}
+          IMAGE_NAME: ${{ vars.RELEASE_IMAGE_NAME }}
+        run: |
+          set -euo pipefail
+          registry="${REGISTRY%/}"
+          metadata="$RUNNER_TEMP/seev-release-publish/release-metadata.json"
+          digest="$(jq -r '."containerimage.digest" // empty' "$metadata")"
+          if ! [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::Buildx did not produce a valid published image digest"
+            exit 1
+          fi
+          image_ref="${registry}/${IMAGE_NAME}@${digest}"
+          {
+            echo "RELEASE_IMAGE_REF=$image_ref"
+            echo "RELEASE_IMAGE_DIGEST=$digest"
+          } >> "$GITHUB_ENV"
+          {
+            echo "registry=$registry"
+            echo "image_name=$IMAGE_NAME"
+            echo "image_ref=$image_ref"
+            echo "digest=$digest"
+          } > "$RUNNER_TEMP/seev-release-publish/published-image.txt"
+      - name: Scan published digest and generate SBOM
+        id: published-scan
+        if: always()
+        continue-on-error: true
+        run: |
+          set -u
+          evidence_dir="$RUNNER_TEMP/seev-release-publish"
+          scan_status=0
+          if [ -z "${RELEASE_IMAGE_REF:-}" ]; then
+            echo "::error::published image reference was not resolved"
+            exit 1
+          fi
+          if ! trivy image \
+            --format json \
+            --output "$evidence_dir/published-trivy.json" \
+            --severity HIGH,CRITICAL \
+            --pkg-types os,library \
+            --no-progress \
+            --exit-code 1 \
+            "$RELEASE_IMAGE_REF"; then
+            scan_status=1
+          fi
+          if ! trivy image \
+            --format cyclonedx \
+            --output "$evidence_dir/published-sbom.cdx.json" \
+            --pkg-types os,library \
+            --no-progress \
+            "$RELEASE_IMAGE_REF"; then
+            scan_status=1
+          fi
+          exit "$scan_status"
+      - name: Sign published image with keyless Cosign
+        id: sign
+        if: steps.published-scan.outcome == 'success'
+        run: |
+          set -euo pipefail
+          cosign sign --yes "$RELEASE_IMAGE_REF" > "$RUNNER_TEMP/seev-release-publish/cosign-sign.txt"
+      - name: Verify signature, SBOM, and provenance descriptors
+        id: verify-published
+        if: steps.sign.outcome == 'success'
+        env:
+          REPOSITORY: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          identity="https://github.com/${REPOSITORY}/.github/workflows/release-provenance.yml@refs/tags/${TAG}"
+          cosign verify \
+            --output json \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            --certificate-identity "$identity" \
+            "$RELEASE_IMAGE_REF" > "$RUNNER_TEMP/seev-release-publish/cosign-verify.json"
+
+          docker buildx imagetools inspect --raw "$RELEASE_IMAGE_REF" > "$RUNNER_TEMP/seev-release-publish/published-index.json"
+          attestation_digest="$(jq -r '[.manifests[]? | select(.annotations["vnd.docker.reference.type"] == "attestation-manifest") | .digest] | .[0] // empty' "$RUNNER_TEMP/seev-release-publish/published-index.json")"
+          if ! [[ "$attestation_digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::published image does not expose an OCI attestation manifest"
+            exit 1
+          fi
+          image_without_digest="${RELEASE_IMAGE_REF%@*}"
+          attestation_ref="${image_without_digest}@${attestation_digest}"
+          docker buildx imagetools inspect --raw "$attestation_ref" > "$RUNNER_TEMP/seev-release-publish/attestation-manifest.json"
+          sbom_layers="$(jq '[.layers[]? | select(.annotations["in-toto.io/predicate-type"] == "https://spdx.dev/Document")] | length' "$RUNNER_TEMP/seev-release-publish/attestation-manifest.json")"
+          provenance_layers="$(jq '[.layers[]? | select((.annotations["in-toto.io/predicate-type"] // "") | startswith("https://slsa.dev/provenance/"))] | length' "$RUNNER_TEMP/seev-release-publish/attestation-manifest.json")"
+          if [ "$sbom_layers" -lt 1 ] || [ "$provenance_layers" -lt 1 ]; then
+            echo "::error::published attestation manifest is missing an SBOM or provenance layer"
+            exit 1
+          fi
+          {
+            echo "attestation_digest=$attestation_digest"
+            echo "sbom_layers=$sbom_layers"
+            echo "provenance_layers=$provenance_layers"
+          } > "$RUNNER_TEMP/seev-release-publish/attestation-verification.txt"
+      - name: Enforce protected release gates
+        if: always()
+        run: |
+          set -euo pipefail
+          for outcome in \
+            "${{ steps.resolve-image.outcome }}" \
+            "${{ steps.published-scan.outcome }}" \
+            "${{ steps.sign.outcome }}" \
+            "${{ steps.verify-published.outcome }}"; do
+            if [ "$outcome" != "success" ]; then
+              echo "::error::protected release gate outcome was '$outcome'"
+              exit 1
+            fi
+          done
+      - name: Upload protected release evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-publish-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/seev-release-publish/
+          retention-days: 90
+          if-no-files-found: warn

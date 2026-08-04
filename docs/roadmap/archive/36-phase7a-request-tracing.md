@@ -63,7 +63,7 @@ Propagate one request ID from the gateway through HTTP proxying, gRPC, AMQP, log
 
 ### T1 — Request ID source and sanitization
 
-Update `pkg/middleware.WithRequestID` to write the generated or validated value to both request and response headers. Reject oversized or unsafe client values. Add a logger helper that includes the ID in every HTTP access log.
+Update `internal/platform/security/middleware.WithRequestID` to write the generated or validated value to both request and response headers. Reject oversized or unsafe client values. Add a logger helper that includes the ID in every HTTP access log.
 
 **Result:** generated IDs are now available to reverse proxies; valid IDs are preserved; unsafe IDs are replaced. Seven middleware tests passed.
 

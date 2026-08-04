@@ -12,7 +12,7 @@ Covers the six operational situations Track A8 (data lifecycle and
 privacy) produces: an active retention hold blocking cleanup, a failing
 retention purge/redact class, a failed user-export request, a stuck or
 dead-lettered account-closure request, a key-version mismatch on any of
-the three dedicated `pkg/cryptox.Ring`s this track introduced, and a
+the three dedicated `internal/platform/security/crypto.Ring`s this track introduced, and a
 failing object-store delete. Backup residuals (what an already-taken A7
 backup may still contain after a redaction/closure, K12) are covered by
 [dr-restore-drill.md](dr-restore-drill.md)/[backup-failure.md](backup-failure.md)/
@@ -69,12 +69,12 @@ reason like `"N active retention hold(s)"`.
    increase(seev_retention_runs_total{result="error"}[1h])
    ```
    grouped by `owner`/`action` in the alert labels.
-2. Check the service's own logs around the failure — `pkg/retentionworker`
+2. Check the service's own logs around the failure — `internal/platform/lifecycle/retention/worker`
    logs the class name and the underlying SQL error, never row-level data
    (K13's own no-PII-in-logs constraint).
 3. Common causes:
    - **A SECURITY DEFINER purge/redact function was renamed or dropped** —
-     `pkg/retentionworker.Runner`'s `Class{FunctionName: ...}` is a fixed
+     `internal/platform/lifecycle/retention/worker.Runner`'s `Class{FunctionName: ...}` is a fixed
      literal checked at `NewRunner` construction time (a typo here panics
      at boot, not silently at first run) — if this is failing at RUNTIME
      instead, the function existed at boot but was removed later (a bad
@@ -122,7 +122,7 @@ reason like `"N active retention hold(s)"`.
    call, so a re-run from `pending` never leaves a duplicate object
    behind.)
 3. `status='failed'` — read `error_message` (truncated to 500 chars,
-   `internal/auth/privacy_worker.go`'s `truncateErrorMessage`). The most
+   `services/auth/internal/auth/privacy_worker.go`'s `truncateErrorMessage`). The most
    common real cause is a document-store outage during upload; retry by
    resetting to `pending` the same way as step 2 once the store is back.
 4. Never construct a decrypted export by hand as a workaround — the whole
@@ -196,7 +196,7 @@ reason like `"N active retention hold(s)"`.
 requests failing immediately (not after building/committing anything) with
 a decrypt/encrypt error.
 
-This track introduced **three** dedicated `pkg/cryptox.Ring`s beyond the
+This track introduced **three** dedicated `internal/platform/security/crypto.Ring`s beyond the
 shared `Cryptox` ring, each its own key namespace (K2): `EXPORT_KEK_V<N>`
 (T4, export archives), `CLOSURE_KEK_V<N>` (T5, active-subject ciphertext
 during a closure saga), and `LEDGER_IDEMPOTENCY_KEY_V<N>` (T3, a
@@ -223,7 +223,7 @@ archive whose only copy was sealed under a now-gone key.
 **Symptom:** `SeevObjectOutboxDeleteFailing` fires
 (`deploy/observability/prometheus/rules/retention.yml`, T1.8) — an export
 archive's object was enqueued for deletion (successful download or TTL
-expiry, K9) but `pkg/objectoutbox.Worker` can't actually remove it from
+expiry, K9) but `internal/platform/lifecycle/objectoutbox.Worker` can't actually remove it from
 the store.
 
 1. This is fail-safe by design: `object_outbox` metadata never claims an
@@ -247,8 +247,8 @@ the store.
 
 - [docs/roadmap/archive/51-a8-data-lifecycle-privacy.md](../../roadmap/archive/51-a8-data-lifecycle-privacy.md) — the full track design (K1–K13) and every task's Result section.
 - [cryptox-key-rotation.md](cryptox-key-rotation.md) — the shared field-encryption ring; the expand/backfill/contract model this runbook's Situation 5 reuses.
-- [internal/auth/privacy.go](../../../internal/auth/privacy.go), [privacy_worker.go](../../../internal/auth/privacy_worker.go) — export request/assembly/download.
-- [internal/auth/closure.go](../../../internal/auth/closure.go), [closure_worker.go](../../../internal/auth/closure_worker.go) — closure request/saga.
-- [internal/ledger/service/closure](../../../internal/ledger/service/closure) — ledger's own Prepare/Commit owner contract.
-- [pkg/retentionworker](../../../pkg/retentionworker) — the shared retention-class runner every owner's purge/redact classes use.
+- [services/auth/internal/auth/privacy.go](../../../services/auth/internal/auth/privacy.go), [privacy_worker.go](../../../services/auth/internal/auth/privacy_worker.go) — export request/assembly/download.
+- [services/auth/internal/auth/closure.go](../../../services/auth/internal/auth/closure.go), [closure_worker.go](../../../services/auth/internal/auth/closure_worker.go) — closure request/saga.
+- [services/ledger/internal/ledger/closure](../../../services/ledger/internal/ledger/closure) — ledger's own Prepare/Commit owner contract.
+- [internal/platform/lifecycle/retention/worker](../../../internal/platform/lifecycle/retention/worker) — the shared retention-class runner every owner's purge/redact classes use.
 - [deploy/observability/prometheus/rules/retention.yml](../../../deploy/observability/prometheus/rules/retention.yml) — every alert this runbook responds to.

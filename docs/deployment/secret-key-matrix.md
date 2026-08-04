@@ -22,5 +22,5 @@ finding. The Kubernetes contract is one leaf identity and one private-key
 mount per workload; dev-operator is a separate operator-only identity.
 
 Source: [secrets.yaml](../../deploy/inventory/secrets.yaml),
-[mtls-identity-matrix.md](mtls-identity-matrix.md), .env.example, pkg/tlsx,
-and internal/config.
+[mtls-identity-matrix.md](mtls-identity-matrix.md), .env.example, internal/platform/security/tls,
+and internal/platform/config.

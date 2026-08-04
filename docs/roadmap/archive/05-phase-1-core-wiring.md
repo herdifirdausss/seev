@@ -4,7 +4,7 @@ Prerequisite: 04 is complete (canonical schema and passing contract test).
 
 ## Task 1b.1 — SQL `AccountRepository` implementation
 
-`internal/ledger/repository/account_repository.go` currently contains only an
+`services/ledger/internal/repository/account_repository.go` currently contains only an
 interface and a mock. Add a `pgAccountRepo` implementation that accepts
 `*sql.DB` or the same query interface used by the other repositories:
 
@@ -19,12 +19,12 @@ interface and a mock. Add a `pgAccountRepo` implementation that accepts
   type, qualifier, or user ID.
 - For the single-currency MVP, the system-account lookup does not filter by
   currency. Add a TODO comment; this becomes relevant in Phase 3.
-- Add `go-sqlmock` unit tests, following the existing `pkg/database` pattern,
+- Add `go-sqlmock` unit tests, following the existing `internal/platform/database` pattern,
   and add the relevant scenario to the integration contract test.
 
 ## Task 1b.2 — Account-provisioning service
 
-Create `internal/ledger/service/provision/provision.go`:
+Create `services/ledger/internal/service/provision/provision.go`:
 
 ```go
 // CreateUserAccounts creates the standard account set for a new user. It is idempotent.
@@ -49,7 +49,7 @@ Behavior:
    `pocket_code` against `[a-z0-9_]{1,32}`.
 5. Add unit and integration tests.
 
-## Task 1b.3 — Public module API (`internal/ledger/ledger.go`)
+## Task 1b.3 — Public module API (`services/ledger/internal/ledger/ledger.go`)
 
 Create the root `ledger` package as the module's only public entry point, as
 required by boundary rule 01:
@@ -80,7 +80,7 @@ repositories rather than introducing another layer:
   `WHERE account_id=$1 AND (created_at, id) < ($2, $3) ORDER BY created_at DESC, id DESC LIMIT $4`.
   Encode the cursor from `created_at|id` as base64.
 
-## Task 1b.4 — HTTP transport (`internal/ledger/transport/http.go`)
+## Task 1b.4 — HTTP transport (`services/ledger/internal/transport/http.go`)
 
 Mount these routes below `/api/v1/ledger`; all requests pass through the
 existing authentication middleware:
@@ -109,7 +109,7 @@ Request body for `POST /transactions`:
 ```
 
 Successful response: `201` with
-`{ "status": "posted", "idempotency_key": "…" }` in the `pkg/response`
+`{ "status": "posted", "idempotency_key": "…" }` in the `internal/platform/transport/http/response`
 envelope. An idempotent replay returns `200` with the same body.
 
 Map errors to HTTP with one unit-tested `apperrToStatus` function:
@@ -130,10 +130,10 @@ and a mocked `Module`.
 
 ## Task 1b.5 — Composition-root wiring
 
-1. Add `Ledger *ledger.Module` to `internal/handler/dependencies.go`.
+1. Add `Ledger *ledger.Module` to `services/gateway/internal/transport/http/dependencies.go`.
 2. Construct `ledger.NewModule(db, log)` in `cmd/server/main.go` and add it to
    the dependencies.
-3. Mount the module in `internal/handler/router.go` with
+3. Mount the module in `services/gateway/internal/transport/http/router.go` with
    `apiMux.Handle("/ledger/", http.StripPrefix("/ledger", authed(deps.Ledger.Router())))`.
    Remove unused placeholders, or keep `/auth/*` for the future auth module;
    do not remove health/readiness routes.
@@ -161,6 +161,6 @@ in `NewModule`.
       the same key produce one 201 and one 200/409, never duplicate a posting.
 - [ ] `make lint`, `make test`, and the integration contract test pass.
 - [ ] Boundary check:
-      `grep -rn "internal/ledger/" --include="*.go" cmd/ internal/handler/`
-      finds only the root `internal/ledger` import, never a ledger subpackage
+      `grep -rn "services/ledger/internal/" --include="*.go" cmd/ services/gateway/internal/transport/http/`
+      finds only the root `services/ledger` import, never a ledger subpackage
       imported from outside the module.

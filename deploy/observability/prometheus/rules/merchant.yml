@@ -1,6 +1,6 @@
 # docs/roadmap/active/57-c1-merchant-b2b-api.md T9 — alerts on
-# internal/merchant's own metrics (internal/merchant/metrics.go,
-# internal/merchant/webhook/metrics.go). Every expression below reads only
+# services/gateway/internal/merchant's own metrics (services/gateway/internal/merchant/orchestration/metrics.go,
+# services/gateway/internal/merchant/webhook/metrics.go). Every expression below reads only
 # the fixed, low-cardinality label set those files expose — state, status,
 # result — never a tenant id, delivery id, endpoint id, or idempotency
 # key (T9 acceptance: "dashboards avoid tenant-level metric cardinality").

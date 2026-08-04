@@ -34,7 +34,7 @@ therefore serialized across the entire validation pipeline.
 
 ### Implementation
 
-1. Add `AllowNegative bool` to `internal/ledger/model/account_balance.go`.
+1. Add `AllowNegative bool` to `services/ledger/internal/model/account_balance.go`.
 2. Add repository support:
    - `GetAccountFlags(ctx, tx, ids)` reads `allow_negative` without a lock.
      These flags are immutable after provisioning.

@@ -1,0 +1,241 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"flag"
+	"fmt"
+	"log/slog"
+	"net"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	"github.com/shopspring/decimal"
+	"google.golang.org/grpc"
+
+	"github.com/herdifirdausss/seev/internal/platform/cache"
+	"github.com/herdifirdausss/seev/internal/platform/config"
+	"github.com/herdifirdausss/seev/internal/platform/database"
+	"github.com/herdifirdausss/seev/internal/platform/messaging"
+	"github.com/herdifirdausss/seev/internal/platform/observability/logging"
+	"github.com/herdifirdausss/seev/internal/platform/observability/tracing"
+	"github.com/herdifirdausss/seev/internal/platform/security/tls"
+	"github.com/herdifirdausss/seev/internal/platform/transport/grpc"
+	"github.com/herdifirdausss/seev/services/fraud"
+)
+
+func main() {
+	healthcheck := flag.Bool("healthcheck", false, "probe fraud-service liveness endpoint")
+	flag.Parse()
+	if *healthcheck {
+		if err := probeHealth(os.Getenv); err != nil {
+			slog.Error("healthcheck failed", "error", err)
+			os.Exit(1)
+		}
+		return
+	}
+	if err := run(context.Background()); err != nil {
+		slog.Error("fraud-service stopped", "error", err)
+		os.Exit(1)
+	}
+}
+
+func probeHealth(getenv func(string) string) error {
+	port := getenv("APP_PORT")
+	if port == "" {
+		port = "8094"
+	}
+	certDir := getenv("TLS_CERT_DIR")
+	if certDir == "" {
+		certDir = "deploy/certs"
+	}
+	certSrc, err := tlsx.LoadFromDir(certDir, "dev-operator", slog.Default())
+	if err != nil {
+		return fmt.Errorf("load healthcheck TLS identity: %w", err)
+	}
+	defer certSrc.Stop()
+	response, err := tlsx.HTTPClient(certSrc, tlsx.IdentityFraud, 3*time.Second).Get("https://127.0.0.1:" + port + "/health")
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return fmt.Errorf("health endpoint returned %s", response.Status)
+	}
+	return nil
+}
+
+func run(parent context.Context) error {
+	cfg, err := config.LoadFraudService()
+	if err != nil {
+		return fmt.Errorf("load config: %w", err)
+	}
+	if os.Getenv("APP_PORT") == "" {
+		cfg.App.Port = "8094"
+	}
+	if os.Getenv("GRPC_PORT") == "" {
+		cfg.GRPCPort = "9094"
+	}
+	log := logger.New(cfg.Logger.Pkg())
+	// docs/roadmap/archive/49 K3/K5: load this process's own identity + the shared CA
+	// before anything else — a service must never boot believing it's
+	// running mTLS when its certificates are missing or invalid.
+	certSrc, err := tlsx.LoadFromDir(cfg.TLSCertDir, "fraud", log)
+	if err != nil {
+		return fmt.Errorf("load TLS certificates: %w", err)
+	}
+	defer certSrc.Stop()
+	ctx, cancel := signal.NotifyContext(parent, syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
+	shutdownTracing, err := tracing.Setup(ctx, tracing.Config{
+		ServiceName: "fraud-service",
+		Endpoint:    cfg.Tracing.OTLPEndpoint,
+		SampleRatio: cfg.Tracing.SampleRatio,
+		Insecure:    cfg.Tracing.Insecure,
+	})
+	if err != nil {
+		log.Error("tracing: setup failed, continuing without a tracer provider", "error", err)
+		shutdownTracing = func(context.Context) error { return nil }
+	}
+
+	db, err := database.New(ctx, cfg.Postgres.Pkg())
+	if err != nil {
+		return fmt.Errorf("connect postgres: %w", err)
+	}
+	cfg.Redis.Enabled = true
+	cfg.Redis.DB = 1
+	// docs/roadmap/archive/45 Task T3/K4: fraud-service may now START without Redis
+	// being reachable — NewClientWithoutPing never fails at construction,
+	// unlike cache.New's eager Ping. FailClosedVelocityStore's own
+	// background probe (started inside its constructor) is what actually
+	// detects Redis health from here on; velocity operations fail closed
+	// with model.ErrDependencyUnavailable while it's down instead of the
+	// service refusing to boot at all. Amount-threshold screening (which
+	// doesn't touch Redis) keeps working the entire time.
+	redisClient := cache.NewClientWithoutPing(cfg.Redis.Pkg())
+	broker, err := messaging.New(ctx, cfg.RabbitMQ.Broker())
+	if err != nil {
+		_ = redisClient.Close()
+		_ = db.Close()
+		return fmt.Errorf("connect rabbitmq: %w", err)
+	}
+	store := fraud.NewFailClosedVelocityStore(redisClient, log)
+	amountThresholds := make(map[string]decimal.Decimal, len(cfg.Fraud.ScreeningAmountThresholdByCurrency))
+	for code, amount := range cfg.Fraud.ScreeningAmountThresholdByCurrency {
+		amountThresholds[code] = decimal.NewFromInt(amount)
+	}
+	module := fraud.NewModule(db, store, broker, fraud.Config{
+		Mode:                      cfg.Fraud.ScreeningMode,
+		AmountThreshold:           decimal.NewFromInt(cfg.Fraud.ScreeningAmountThreshold),
+		AmountThresholdByCurrency: amountThresholds,
+		VelocityMaxPerHour:        cfg.Fraud.ScreeningVelocityMaxPerHour,
+	}, log)
+	if err := module.Start(ctx); err != nil {
+		store.Stop()
+		_ = broker.Close()
+		_ = redisClient.Close()
+		_ = db.Close()
+		return err
+	}
+	stopRetention, err := module.StartRetentionRunner(redisClient, log)
+	if err != nil {
+		module.Stop()
+		store.Stop()
+		_ = broker.Close()
+		_ = redisClient.Close()
+		_ = db.Close()
+		return fmt.Errorf("start retention runner: %w", err)
+	}
+	defer stopRetention()
+
+	// docs/roadmap/archive/49 K4: fraud's gRPC listener only accepts the three
+	// services that legitimately call it.
+	grpcServer, err := grpcx.NewServer(log, cfg.InternalGRPCToken, tlsx.ServerConfig(certSrc, []string{
+		tlsx.IdentityLedger, tlsx.IdentityPayin, tlsx.IdentityPayout,
+	}))
+	if err != nil {
+		module.Stop()
+		store.Stop()
+		_ = broker.Close()
+		_ = redisClient.Close()
+		_ = db.Close()
+		return fmt.Errorf("create grpc server: %w", err)
+	}
+	module.RegisterGRPC(grpcServer)
+	listener, err := net.Listen("tcp", ":"+cfg.GRPCPort)
+	if err != nil {
+		module.Stop()
+		store.Stop()
+		_ = broker.Close()
+		_ = redisClient.Close()
+		_ = db.Close()
+		return err
+	}
+	// docs/roadmap/archive/49 K6: fraud's admin listener is internal-only mTLS.
+	httpServer := &http.Server{
+		Addr: ":" + cfg.App.Port, Handler: adminRouter(cfg, module, log),
+		ReadTimeout: cfg.App.ReadTimeout, WriteTimeout: cfg.App.WriteTimeout,
+		IdleTimeout: cfg.App.IdleTimeout, ReadHeaderTimeout: 5 * time.Second,
+		MaxHeaderBytes: 1 << 20,
+		TLSConfig: tlsx.ServerConfig(certSrc, []string{
+			tlsx.IdentityDevOperator, tlsx.IdentityPrometheus, tlsx.IdentityAdminBFF,
+			// docs/roadmap/archive/51 T4b/T5b: auth-service calls the new /privacy/
+			// export+closure routes as the export/closure saga's coordinator.
+			tlsx.IdentityAuth,
+		}),
+	}
+	errCh := make(chan error, 2)
+	go serveGRPC(grpcServer, listener, errCh)
+	go serveHTTP(httpServer, errCh)
+	log.Info("fraud-service started", "grpc", listener.Addr(), "admin_http", httpServer.Addr, "redis_db", 1)
+	var serveErr error
+	select {
+	case <-ctx.Done():
+	case serveErr = <-errCh:
+		cancel()
+	}
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), cfg.App.ShutdownTimeout)
+	defer shutdownCancel()
+	if err := httpServer.Shutdown(shutdownCtx); err != nil && serveErr == nil {
+		serveErr = err
+	}
+	gracefulStopGRPC(grpcServer, cfg.App.ShutdownTimeout)
+	module.Stop()
+	store.Stop()
+	_ = broker.Close()
+	_ = redisClient.Close()
+	_ = db.Close()
+	_ = shutdownTracing(context.Background())
+	return serveErr
+}
+
+func serveHTTP(server *http.Server, errorsOut chan<- error) {
+	var err error
+	if server.TLSConfig != nil {
+		err = server.ListenAndServeTLS("", "")
+	} else {
+		err = server.ListenAndServe()
+	}
+	if err != nil && !errors.Is(err, http.ErrServerClosed) {
+		errorsOut <- err
+	}
+}
+
+func serveGRPC(server *grpc.Server, listener net.Listener, errorsOut chan<- error) {
+	if err := server.Serve(listener); err != nil && !errors.Is(err, grpc.ErrServerStopped) {
+		errorsOut <- err
+	}
+}
+
+func gracefulStopGRPC(server *grpc.Server, timeout time.Duration) {
+	done := make(chan struct{})
+	go func() { server.GracefulStop(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(timeout):
+		server.Stop()
+	}
+}

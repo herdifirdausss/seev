@@ -57,7 +57,7 @@ missing foundations.
 
 ### 2.1 HTTP surfaces
 
-- Nine deployable Go services register routes through `pkg/httpcontract.Mux`,
+- Nine deployable Go services register routes through `internal/platform/transport/httpcontract.Mux`,
   preserving Go 1.22 `http.ServeMux` matching semantics.
 - Auth exposes user routes under `/api/v1` and separate admin KYC routes on its
   internal listener.
@@ -67,15 +67,15 @@ missing foundations.
   admin HTTP routes. Admin BFF proxies selected operations and also serves HTML.
 - Route registration remains distributed across `cmd/` and `internal/` packages
   and can be conditional on configured dependencies. The contract wrapper now
-  exposes operation metadata and snapshots; `api/contracts/` checks inventory
+  exposes operation metadata and snapshots; `contracts/compatibility/` checks inventory
   and OpenAPI coverage.
 - OpenAPI source/bundle generation, lint, compatibility checks, and route
   coverage exist. Full dependency response fixtures remain incomplete.
 
 ### 2.2 HTTP representation behavior
 
-- `pkg/response.Envelope` defines a useful success/error/meta JSON shape and
-  `pkg/response.Decode` rejects unknown request fields.
+- `internal/platform/transport/http/response.Envelope` defines a useful success/error/meta JSON shape and
+  `internal/platform/transport/http/response.Decode` rejects unknown request fields.
 - Not all API paths use that shape. Some middleware returns ad hoc JSON, several
   assurance/admin paths call `http.Error`, and default 404/405 responses are
   plain text.
@@ -113,7 +113,7 @@ missing foundations.
   harness keyed by one logical event ID. No fabricated production v2 routing key
   is published.
 - `docs/reference/events.md` is reconciled with the current structs and the
-  machine-readable catalog under `api/events/`.
+  machine-readable catalog under `contracts/events/`.
 
 ### 2.5 Existing CI baseline
 
@@ -164,12 +164,12 @@ missing foundations.
 
 | Family | Canonical artifact | Compatibility boundary |
 | --- | --- | --- |
-| Public user HTTP | `api/openapi/public-v1.yaml` | Auth and gateway user APIs, including proxied ledger operations |
-| Vendor callback HTTP | `api/openapi/webhooks-v1.yaml` | Inbound payment-vendor callbacks and signature/error behavior |
-| Admin BFF HTTP | `api/openapi/admin-v1.yaml` | JSON/form endpoints used by the operator console |
-| Direct internal HTTP | `api/openapi/internal-v1.yaml` | Service admin APIs called by Admin BFF or operational tooling |
-| gRPC | `api/proto/seev/<owner>/vN/*.proto` | Internal service RPC packages protected by Buf |
-| AMQP events | `api/events/catalog.yaml` plus `api/events/**/vN.schema.json` | Routing key, payload, delivery, and consumer contract |
+| Public user HTTP | `contracts/http/public-v1.yaml` | Auth and gateway user APIs, including proxied ledger operations |
+| Vendor callback HTTP | `contracts/http/webhooks-v1.yaml` | Inbound payment-vendor callbacks and signature/error behavior |
+| Admin BFF HTTP | `contracts/http/admin-v1.yaml` | JSON/form endpoints used by the operator console |
+| Direct internal HTTP | `contracts/http/internal-v1.yaml` | Service admin APIs called by Admin BFF or operational tooling |
+| gRPC | `contracts/proto/seev/<owner>/vN/*.proto` | Internal service RPC packages protected by Buf |
+| AMQP events | `contracts/events/catalog.yaml` plus `contracts/events/**/vN.schema.json` | Routing key, payload, delivery, and consumer contract |
 
 Health, readiness, metrics, and browser HTML routes remain in the route
 inventory but are classified as `operational` or `browser`, not represented as
@@ -199,7 +199,7 @@ to permanent 422 is breaking even if the JSON type is unchanged.
 
 ### K1 — Every boundary has an owner, audience, and consumer
 
-Add `api/contracts/surfaces.yaml` with one entry per HTTP operation, RPC, and
+Add `contracts/compatibility/surfaces.yaml` with one entry per HTTP operation, RPC, and
 event. Each entry records:
 
 - stable contract ID and owner service;
@@ -222,8 +222,8 @@ personal names.
 
 Use OpenAPI 3.1 YAML for the four HTTP families in section 4.1. Shared schemas,
 parameters, headers, and security schemes live under
-`api/openapi/components/`. Relative references are allowed in source files;
-deterministically bundled files are written to `api/openapi/dist/` and committed
+`contracts/http/components/`. Relative references are allowed in source files;
+deterministically bundled files are written to `contracts/http/dist/` and committed
 for simple public consumption.
 
 The public document contains separate auth and gateway server entries. Each
@@ -249,7 +249,7 @@ Static local rendering may be provided through a Make target.
 
 ### K3 — Route registration metadata proves coverage
 
-Add a small `pkg/httpcontract` registration wrapper around `http.ServeMux`. It
+Add a small `internal/platform/transport/httpcontract` registration wrapper around `http.ServeMux`. It
 records method, route pattern, owner, audience, and `operationId` while
 delegating to the standard mux. It must preserve Go 1.22 matching, path values,
 middleware order, and existing proxy behavior.
@@ -287,12 +287,12 @@ JSON errors use:
 ```
 
 `code`, HTTP status, and documented detail keys are contractual. Human-readable
-message text is not a parsing surface. Add `api/contracts/errors.yaml` as the
+message text is not a parsing surface. Add `contracts/compatibility/errors.yaml` as the
 machine-readable registry of stable codes, allowed statuses, owners, and
 retryability.
 
 Normalize API middleware, 404, 405, rate-limit, KYC, assurance, proxy, and
-dependency failures through `pkg/response`. HTML pages may continue to return
+dependency failures through `internal/platform/transport/http/response`. HTML pages may continue to return
 HTML/plain-text errors, and 204/CSV/binary responses remain unenveloped when the
 OpenAPI operation says so.
 
@@ -337,7 +337,7 @@ replacement uses a parallel explicit path such as `/webhooks/v2/{vendor}` or
 `/admin/v2/...`; it never changes the old path in place. Routers and proxies
 serve old and replacement operations together until retirement completes.
 
-Add `api/contracts/deprecations.yaml` and operation-aware middleware. Deprecated
+Add `contracts/compatibility/deprecations.yaml` and operation-aware middleware. Deprecated
 responses use:
 
 ```text
@@ -385,23 +385,23 @@ be removed only after every registered consumer acknowledges v2 and v1 has zero
 calls for 30 consecutive days. Mark deprecated protobuf elements with the
 standard deprecated option; do not edit generated files manually.
 
-Add `api/contracts/proto-semantics.yaml` for behavior Buf cannot infer, including
+Add `contracts/compatibility/proto-semantics.yaml` for behavior Buf cannot infer, including
 money units, authentication, authorization, idempotency, retryability, and error
 mapping per RPC. Every RPC must have an entry, and semantic changes are reviewed
 by the same merge-base compatibility gate.
 
 ### K8 — JSON Schema and a catalog are canonical for events
 
-Add `api/events/catalog.yaml`. Each routing key records producer, payload schema,
+Add `contracts/events/catalog.yaml`. Each routing key records producer, payload schema,
 schema version, aggregate, delivery guarantee, ordering guarantee, retry/DLQ
 behavior, deduplication key, data classification, consumers, and lifecycle.
 
 Use JSON Schema 2020-12 under paths such as:
 
 ```text
-api/events/ledger/transaction-posted/v1.schema.json
-api/events/ledger/transaction-reversed/v1.schema.json
-api/events/ledger/adjustment-decided/v1.schema.json
+contracts/events/ledger/transaction-posted/v1.schema.json
+contracts/events/ledger/transaction-reversed/v1.schema.json
+contracts/events/ledger/adjustment-decided/v1.schema.json
 ```
 
 The schemas are canonical; Go event structs remain hand-written implementation
@@ -467,7 +467,7 @@ error. Tolerance is not permission to reinterpret invalid data.
 
 ### K11 — Contract fixtures are safe, deterministic, and reviewable
 
-Store synthetic fixtures under `api/contracts/testdata/` by family and
+Store synthetic fixtures under `contracts/compatibility/testdata/` by family and
 operation. Every fixture records the contract version and expected status or
 consumer result. UUIDs, timestamps, and monetary values are deterministic.
 
@@ -554,7 +554,7 @@ families agree on ownership and terminology.
    consumer.
 3. Capture current method/path, auth, content type, request/response DTO, status,
    error code, pagination, and idempotency behavior.
-4. Create `api/contracts/surfaces.yaml` and the initial consumer ownership map.
+4. Create `contracts/compatibility/surfaces.yaml` and the initial consumer ownership map.
 5. Identify domain structs and ad hoc maps currently crossing API boundaries.
 6. Record known inconsistencies separately; do not encode accidental/plain-text
    errors as the desired canonical baseline.
@@ -576,20 +576,20 @@ boundary and every known consumer, with no unclassified route/RPC/event.
 
 Completed 2026-07-28 as the reviewed baseline inventory.
 
-- Added [`api/contracts/surfaces.yaml`](../../../api/contracts/surfaces.yaml)
+- Added [`contracts/compatibility/surfaces.yaml`](../../../contracts/compatibility/surfaces.yaml)
   with 112 HTTP surface entries, six protobuf services with 26 RPC methods,
   and three AMQP routing keys, including owner, behavior owner, audience,
   listener/mount boundary, lifecycle, artifact, and consumer ownership.
-- Added [`api/contracts/leaf-registrations.yaml`](../../../api/contracts/leaf-registrations.yaml)
+- Added [`contracts/compatibility/leaf-registrations.yaml`](../../../contracts/compatibility/leaf-registrations.yaml)
   with 129 nested leaf registrations, including conditional fee-quote and
   Admin BFF proxy mounts.
-- Added [`api/contracts/known-inconsistencies.yaml`](../../../api/contracts/known-inconsistencies.yaml)
+- Added [`contracts/compatibility/known-inconsistencies.yaml`](../../../contracts/compatibility/known-inconsistencies.yaml)
   so observed plain-text/ad-hoc responses and event limitations are not
   accidentally frozen as desired API behavior.
-- Added `api/contracts/surfaces_test.go`; it parses both inventories, rejects
+- Added `contracts/compatibility/surfaces_test.go`; it parses both inventories, rejects
   incomplete/unsafe entries, verifies source paths, matches every RPC method
   against its `.proto`, and verifies the three routing-key constants against
-  `internal/ledger/events/events.go`.
+  `contracts/events/ledger/events.go`.
 - Evidence: `GOCACHE=/tmp/seev-go-cache go test ./api/contracts` and
   `git diff --check` passed.
 
@@ -602,8 +602,8 @@ Completed 2026-07-28 as the reviewed baseline inventory.
    security, errors, headers, units, pagination, and examples.
 3. Add explicit transport DTOs where handlers currently expose domain structs
    or unbounded maps.
-4. Create `api/contracts/errors.yaml` and normalize API middleware/handlers,
-   including JSON 404/405 behavior, through `pkg/response`.
+4. Create `contracts/compatibility/errors.yaml` and normalize API middleware/handlers,
+   including JSON 404/405 behavior, through `internal/platform/transport/http/response`.
 5. Preserve HTML, probe, metrics, CSV, and binary behavior where intentionally
    excluded from the JSON envelope.
 6. Add deterministic bundling and local static documentation generation.
@@ -640,7 +640,7 @@ by a static schema claim.
 
 **Work**
 
-1. Add the `pkg/httpcontract` mux wrapper and migrate every registration site
+1. Add the `internal/platform/transport/httpcontract` mux wrapper and migrate every registration site
    without changing route or middleware behavior.
 2. Build full-dependency route snapshots for auth, gateway, ledger, pay-in,
    payout, fraud, assurance, and Admin BFF.
@@ -670,7 +670,7 @@ contract and a live conformance test.
 ### Result
 
 Implemented 2026-07-28. All deployable service root routers, including
-VendorService, now use `pkg/httpcontract.Mux`, retaining Go 1.22 matching and exposing stable
+VendorService, now use `internal/platform/transport/httpcontract.Mux`, retaining Go 1.22 matching and exposing stable
 operation metadata through `Snapshot`. Duplicate method/path and operation IDs
 fail validation; route middleware uses the wrapper's pure `Handler` lookup.
 Focused matching/path-value/405 tests pass. The bidirectional
@@ -692,7 +692,7 @@ ownership remains with VendorService.
 2. Compare contracts to the Git merge base in local scripts and PR CI.
 3. Add synthetic additive and breaking mutation fixtures for paths, fields,
    status codes, security, units, and validation.
-4. Add `api/contracts/deprecations.yaml`, standards-compliant middleware, and
+4. Add `contracts/compatibility/deprecations.yaml`, standards-compliant middleware, and
    configuration validation.
 5. Add version/operation metrics and a dashboard panel for deprecated usage.
 6. Run a test-only v1→v2 operation drill: coexistence, headers, replacement
@@ -723,7 +723,7 @@ policy, contract Make targets, bounded deprecated-traffic dashboard metrics,
 retirement evidence validation, and a test-only v1/v2 HTTP coexistence harness.
 The Gateway → VendorService webhook ownership change is represented by
 the reviewed, plan-linked entry in
-[`api/contracts/approved-breaking.yaml`](../../../api/contracts/approved-breaking.yaml);
+[`contracts/compatibility/approved-breaking.yaml`](../../../contracts/compatibility/approved-breaking.yaml);
 other breaking changes remain rejected. CI supplies the pull-request merge
 base for HTTP compatibility instead of relying on a local branch name.
 
@@ -913,7 +913,7 @@ after the smoke fixture was rerun from a clean Compose volume.
 
 - [x] Deprecation, Sunset, and Link metadata conform to their documented syntax.
 - [x] Major versions coexist without changing old-version behavior in the
-      test-only HTTP rollout harness (`pkg/httpcontract/versioning_test.go`).
+      test-only HTTP rollout harness (`internal/platform/transport/httpcontract/versioning_test.go`).
 - [x] Minimum windows cannot be shortened below the repository policy.
 - [x] Retirement requires replacement, guide, acknowledgements, and zero use;
       `Deprecation.ValidateRetirement` and lifecycle tests enforce all gates.

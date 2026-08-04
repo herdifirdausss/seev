@@ -15,7 +15,7 @@ Add opt-in, per-user and per-transaction-type limits that are more precise than 
 
 ### Locked design
 
-- Add a new `internal/policy` module. The ledger module must not import or depend on it. Policy checks run in the public transport layer before `ledger.Post`.
+- Add a new `services/ledger/policy` module. The ledger module must not import or depend on it. Policy checks run in the public transport layer before `ledger.Post`.
 - Use the existing cache abstraction pattern: Redis when `REDIS_ENABLED=true`, with an in-memory fallback when it is false. Do not introduce a third fallback mechanism.
 - Store policy configuration in PostgreSQL and cache it in-process for 60 seconds. Operators must be able to change limits without deploying the service.
 - Use Asia/Jakarta for daily and monthly calendar windows so policy boundaries match snapshots and statements.
@@ -26,14 +26,14 @@ Add opt-in, per-user and per-transaction-type limits that are more precise than 
 
 1. Add migration `000010_policy_limits.up.sql` and its down migration. The table contains optional `max_per_tx`, `max_daily_amount`, `max_daily_count`, and `max_monthly_amount` values. `NULL` means that dimension is not limited. A partial unique index enforces one default row per transaction type when `user_id IS NULL`. The migration also adds the `app_service` and `app_readonly` grants and enables/fixes the table's RLS policies.
 
-2. Add `internal/policy` with an engine that:
+2. Add `services/ledger/policy` with an engine that:
 
    - resolves a user-specific row before the default row;
    - checks transaction amount, daily amount/count, and monthly amount;
    - records usage only after a successful ledger post;
    - documents that concurrent requests may both pass the check before recording usage. This is an approximate business control, not a monetary invariant; ledger invariants remain authoritative.
 
-3. Extend `pkg/cache` with a `Counter` interface and Redis and memory implementations. Store amount and count in separate keys, for example:
+3. Extend `internal/platform/cache` with a `Counter` interface and Redis and memory implementations. Store amount and count in separate keys, for example:
 
    ```text
    pol:<userID>:<txType>:d:<YYYY-MM-DD>:amt
@@ -65,18 +65,18 @@ Add opt-in, per-user and per-transaction-type limits that are more precise than 
 
 ### Definition of done
 
-- [x] `internal/ledger` has no dependency on `internal/policy`.
+- [x] `services/ledger` has no dependency on `services/ledger/policy`.
 - [x] The in-memory fallback works with `REDIS_ENABLED=false`.
 - [x] Migration up/down cycles pass, and the new table carries its own grants and RLS policies.
 
 ### Result (2026-07-12)
 
-The policy layer was implemented with a deliberately small structural interface. `Check` returns `(allowed bool, rule string, detail string, error)` instead of sharing a `Decision` type between packages. This keeps the ledger and policy modules independent while still allowing `internal/policy.Engine` to satisfy the transport interface.
+The policy layer was implemented with a deliberately small structural interface. `Check` returns `(allowed bool, rule string, detail string, error)` instead of sharing a `Decision` type between packages. This keeps the ledger and policy modules independent while still allowing `services/ledger/policy.Engine` to satisfy the transport interface.
 
 Implemented components include:
 
 - `migrations/000010_policy_limits.{up,down}.sql` with per-user overrides, default rows, grants, and RLS;
-- `pkg/cache/counter.go` with `Counter`, `RedisCounter`, and `MemoryCounter`;
+- `internal/platform/cache/counter.go` with `Counter`, `RedisCounter`, and `MemoryCounter`;
 - policy repository, engine, cache, and admin HTTP handlers;
 - public-router wiring that checks before posting and records only after success;
 - an explicit fail-open path for policy repository/counter infrastructure errors, while `max_per_tx` remains enforced because it does not depend on a counter;

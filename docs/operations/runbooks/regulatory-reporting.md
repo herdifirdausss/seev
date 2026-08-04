@@ -19,7 +19,7 @@ GET /admin/reports/mutation?from=2026-07-01&to=2026-07-31&format=csv
 GET /admin/reports/recon?from=2026-07-01&to=2026-07-31&format=csv
 ```
 
-Internal-only listener, admin-gated (`isAdmin`, same as every other `/admin/*` endpoint). `format=csv` streams row-by-row (never fully buffered — same pattern as the statement export, docs/roadmap/archive/15 Task T2). Date range capped at 366 days per request (`maxReportDays`, `internal/ledger/transport/http.go`) — a box-size guard, not a business rule; pull month-by-month for a multi-year export.
+Internal-only listener, admin-gated (`isAdmin`, same as every other `/admin/*` endpoint). `format=csv` streams row-by-row (never fully buffered — same pattern as the statement export, docs/roadmap/archive/15 Task T2). Date range capped at 366 days per request (`maxReportDays`, `services/ledger/internal/transport/http.go`) — a box-size guard, not a business rule; pull month-by-month for a multi-year export.
 
 Queries here run through the normal `app_service` application connection pool — this path is for people using the app's own admin surface, not for a BI tool.
 

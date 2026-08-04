@@ -166,7 +166,7 @@ jobs:
       # Only the drill's own sanitized JSON reports (stage timestamps,
       # measured RPO/RTO, pass/fail) — never backup data, never
       # deploy/backup/secrets, never deploy/certs, never a raw work-dir
-      # dump. cmd/drverify and cmd/drreseed's own reports (surfaced only
+      # dump. operations/recovery/drverify/cmd/drverify and operations/recovery/drreseed/cmd/drreseed's own reports (surfaced only
       # in the job log on failure, per the drill script itself, not
       # uploaded here) contain counts and UUIDs, never row values or
       # secrets, but are deliberately kept out of the long-lived artifact

@@ -39,7 +39,8 @@ The following characteristics should be treated as architectural assets and must
 - Explicit database ownership per service.
 - Communication through HTTP, gRPC, or events rather than cross-service database access.
 - Automated import-boundary validation.
-- Separation between `cmd`, `internal`, `pkg`, API contracts, migrations, deployment files, and documentation.
+- Separation between service entrypoints, service internals, `internal/platform`,
+  API contracts, migrations, deployment files, and documentation.
 - Local interfaces around external or cross-module dependencies.
 - Public root-package facades for important modules.
 - Strong verification culture through unit, integration, race, contract, smoke, privacy, and chaos tests.
@@ -128,7 +129,7 @@ Refactor behind stable module APIs where practical. This reduces migration risk 
 
 ### 4.5 Share Concepts, Not Merely Similar Code
 
-Code should move to `pkg` only when:
+Code should move to `internal/platform` only when:
 
 - At least two modules need it.
 - The concept has the same meaning in both modules.
@@ -858,7 +859,7 @@ Approximately 2–4 weeks, delivered package by package.
 ### Proposed Payin Structure
 
 ```text
-internal/payin/
+services/payin/internal/
 ├── payin.go
 ├── callback/
 │   ├── service.go
@@ -877,14 +878,15 @@ internal/payin/
 │   ├── policy.go
 │   └── policy_test.go
 ├── repository/
-├── grpcserver/
+├── transport/
+│   └── grpc/
 └── internaltest/
 ```
 
 ### Proposed Payout Structure
 
 ```text
-internal/payout/
+services/payout/internal/
 ├── payout.go
 ├── create/
 │   ├── service.go
@@ -898,7 +900,8 @@ internal/payout/
 ├── intake/
 ├── routing/
 ├── repository/
-└── grpcserver/
+└── transport/
+    └── grpc/
 ```
 
 ### Rules
@@ -952,7 +955,7 @@ Confirm that both modules share the same meaning for:
 Potential shared package:
 
 ```text
-pkg/intakectl/
+internal/platform/intakectl/
 ├── state.go
 ├── command.go
 ├── transition.go
@@ -1021,7 +1024,7 @@ It should not freely import:
 Example:
 
 ```text
-internal/payout/wiring/
+services/payout/internal/wiring/
 ├── module.go
 └── dependencies.go
 ```
@@ -1054,7 +1057,7 @@ Add rules such as:
 
 ### Objective
 
-Prevent `pkg` from becoming a generic shared-code dumping ground.
+Prevent `internal/platform` from becoming a generic shared-code dumping ground.
 
 ### Duration
 
@@ -1093,7 +1096,8 @@ A utility used by one module should normally live inside that module.
 
 #### 10.4 Prohibit Business Logic in Generic Infrastructure Packages
 
-Add review and boundary rules preventing `pkg` from importing business modules or encoding service-specific decisions.
+Add review and boundary rules preventing `internal/platform` from importing
+business modules or encoding service-specific decisions.
 
 ### Deliverables
 
@@ -1104,7 +1108,7 @@ Add review and boundary rules preventing `pkg` from importing business modules o
 
 ### Exit Criteria
 
-- Every `pkg` package has a clear purpose and at least one justified consumer set.
+- Every `internal/platform` package has a clear purpose and at least one justified consumer set.
 - No package name relies on words such as `general`, `common`, or `misc` without a precise abstraction.
 - Shared code does not encode hidden business ownership.
 
@@ -1201,23 +1205,23 @@ Example:
 services:
   payin:
     binary: cmd/payin
-    module: internal/payin
+    module: services/payin
     database_owner: payin
     allowed_dependencies:
-      - pkg/ledgerclient
-      - pkg/messaging
+      - contracts/clients/ledger
+      - internal/platform/messaging
     exposed_contracts:
-      - api/proto/payin
+      - contracts/proto/payin
 
   payout:
     binary: cmd/payout
-    module: internal/payout
+    module: services/payout
     database_owner: payout
     allowed_dependencies:
-      - pkg/ledgerclient
-      - pkg/messaging
+      - contracts/clients/ledger
+      - internal/platform/messaging
     exposed_contracts:
-      - api/proto/payout
+      - contracts/proto/payout
 ```
 
 ### Generate or Validate

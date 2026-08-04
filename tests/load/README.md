@@ -48,7 +48,7 @@ evenly split second account (`two`, registers a second user pinned to
 `mockvendor2` via a payin routing override). `setup()` pre-creates one
 pending topup intent per planned iteration so the load phase measures
 webhook/lock contention, not intent-creation cost. Actually running the
-locked K11 protocol (alternating `A-B-B-A` runs, `cmd/loadprobe` lock-wait
+locked K11 protocol (alternating `A-B-B-A` runs, `tools/loadprobe` lock-wait
 sampling, the throughput/p95 comparison) is a Phase 3/4 execution step, not
 part of this harness.
 
@@ -68,7 +68,7 @@ K7's own design intent ("W1 uses disjoint funded account pairs" — realistic
 concurrent traffic across genuinely different accounts, not one pair hit
 repeatedly), and because `transfer_p2p`/`withdraw_initiate` are gated by a
 per-(user, transaction_type) daily count policy limit
-(`migrations/ledger/000022_policy_tier_limits.up.sql` — 20/day and 5/day at
+(`services/ledger/migrations/000022_policy_tier_limits.up.sql` — 20/day and 5/day at
 KYC level 1) that a single shared sender hits mid-run, discovered live as a
 422 "policy limit exceeded (max_daily_count)". `money_in` (topup
 settlement) is not gated this way — it posts through payin's internal
@@ -90,11 +90,11 @@ the ledger balance, account-projection, and pending-transaction checks before
 teardown. It patches the redacted k6 summary with drain time and the integrity
 result. The measurement phase also samples per-container CPU/memory (`docker
 stats`, `resource-timeseries.jsonl`) and PostgreSQL activity/locks/top
-statements (`cmd/loadprobe`, `postgres-summary.jsonl`); right after, it reads
+statements (`tools/loadprobe`, `postgres-summary.jsonl`); right after, it reads
 application connection-pool in-use/wait from the load Prometheus instance
 (`pool-summary.json`) and RabbitMQ queue depth/consumers via `rabbitmqctl`
 (`broker-summary.json`, RabbitMQ's own management port is deliberately not
 published to the host) — Phase 0 §24.4. `gate_passed` remains false
 regardless: turning that evidence into a pass/fail against
-`deploy/load/thresholds.yaml` is `cmd/loadreport`'s job (`-thresholds`), not
+`deploy/load/thresholds.yaml` is `tools/loadreport`'s job (`-thresholds`), not
 this script's. Redis throughput/backlog is not yet collected.

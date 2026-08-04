@@ -154,6 +154,13 @@ spec:
             - name: VENDOR_EGRESS_PROXY_REQUIRED
               value: {{ $spec.egressProxyRequired | quote }}
             {{ end }}
+            {{ if eq $name "auth" }}
+            - name: KYC_PROVIDER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $root.Values.global.runtimeSecret }}
+                  key: kyc-provider-token
+            {{ end }}
             {{ range $envName, $envValue := $spec.env }}
             - name: {{ $envName }}
               value: {{ $envValue | quote }}

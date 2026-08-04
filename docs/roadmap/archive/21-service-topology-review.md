@@ -11,10 +11,10 @@ The following facts were checked against the codebase:
 | Area | Current state |
 |---|---|
 | Runtime and database | One `cmd/server` binary, one PostgreSQL schema, one migration timeline (000001–000018), publish-only RabbitMQ outbox, and optional Redis. |
-| Modules | Mature `internal/ledger`; `internal/policy`; and `internal/handler` as the composition root. Auth, user, and admin routes are still placeholders. |
+| Modules | Mature `services/ledger`; `services/ledger/policy`; and `services/gateway/internal/transport/http` as the composition root. Auth, user, and admin routes are still placeholders. |
 | Listeners | Public `:8080` with an allowlisted transaction surface, rate limiting, CORS, and policy checks; internal `127.0.0.1:8081` with admin tooling, metrics, and no public rate limit. |
 | Vendor integration | No real vendor calls or webhook receiver yet. `money_in` and `money_out` can currently be posted only by an internal trusted caller. Recon is CSV-based, and disbursement posts to the ledger without contacting a bank. |
-| Boundaries | Module boundaries are clean. Consumers may import `internal/ledger/events`; policy and ledger meet only through a structural interface. |
+| Boundaries | Module boundaries are clean. Consumers may import `contracts/events/ledger`; policy and ledger meet only through a structural interface. |
 
 Payin, payout, vendor adapters, and fraud are not separate services yet. That is intentional: they can be introduced as service-grade modules before a deployment split is justified.
 
@@ -22,13 +22,13 @@ Payin, payout, vendor adapters, and fraud are not separate services yet. That is
 
 | Future service | Exposure | Monolith module today | Data ownership | Split boundary |
 |---|---|---|---|---|
-| Ledger | Internal only | `internal/ledger` | Existing unprefixed ledger tables | The internal `:8081` router already provides the future service API. |
-| Payin | Internal core; thin public webhook edge | `internal/payin` | `payin_*` | Replace in-process `ledger.Post` with the ledger HTTP client and move the webhook edge with payin. |
-| Payout | Internal only | `internal/payout` | `payout_*` | Move the state machine and vendor orchestration together. |
-| Vendor adapters | Library, not a service by default | `internal/vendorgw` | Stateless | Keep with payin/payout unless operational isolation requires a sidecar. |
-| Fraud | Internal only | `internal/ledger/screening` | `screening_events` until extraction | Replace the synchronous hook with a fail-open HTTP client and move fraud data when the service is extracted. |
+| Ledger | Internal only | `services/ledger` | Existing unprefixed ledger tables | The internal `:8081` router already provides the future service API. |
+| Payin | Internal core; thin public webhook edge | `services/payin` | `payin_*` | Replace in-process `ledger.Post` with the ledger HTTP client and move the webhook edge with payin. |
+| Payout | Internal only | `services/payout` | `payout_*` | Move the state machine and vendor orchestration together. |
+| Vendor adapters | Library, not a service by default | `contracts/vendorgw` | Stateless | Keep with payin/payout unless operational isolation requires a sidecar. |
+| Fraud | Internal only | `services/ledger/internal/screening` | `screening_events` until extraction | Replace the synchronous hook with a fail-open HTTP client and move fraud data when the service is extracted. |
 | Internal admin | Internal only | No new module | None | Build a BFF that calls each service's frozen internal API. |
-| User-facing | Public | Public router plus future `internal/auth` | `auth_*` later | Move the public surface and auth module together. |
+| User-facing | Public | Public router plus future `services/auth` | `auth_*` later | Move the public surface and auth module together. |
 
 The intended flow after plans 22 and 23 are complete is:
 
@@ -37,12 +37,12 @@ Internet
   ├── public :8080 ── user-facing routes ──┐
   └── /webhooks/{vendor} ── payin edge ────┤
                                            ▼
-                                  internal/ledger
+                                  services/ledger
                                   (the only money owner)
                                            ▲
                  withdraw hold/settle/cancel│
                                            │
-                    internal/payout ── vendor adapter ── vendor API
+                    services/payout ── vendor adapter ── vendor API
 
 127.0.0.1:8081: internal admin and operational API
 ```
@@ -76,7 +76,7 @@ The synchronous seam is `processors.PrePostHook`, already fail-open. The asynchr
 - payin and payout do not import each other;
 - new tables use module prefixes (`payin_*`, `payout_*`, `auth_*`), while legacy ledger tables remain unprefixed.
 
-The composition root (`cmd/`) and test files are explicitly exempt where construction or integration tests require it. Existing `pkg/*` imports of `internal/config` are grandfathered as a single tracked exception and must be removed before the first service extraction.
+The composition root (`cmd/`) and test files are explicitly exempt where construction or integration tests require it. Existing `pkg/*` imports of `internal/platform/config` are grandfathered as a single tracked exception and must be removed before the first service extraction.
 
 Per-service database roles are deferred until extraction; separate roles inside one process would add grants without meaningful isolation.
 

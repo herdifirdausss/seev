@@ -15,7 +15,7 @@ jobs:
     first_deployment: true
     replica_safety: lease-or-database-claim; horizontally safe
     failure_behavior: retain outbox row and retry; publisher confirms required
-    source: internal/ledger/worker/outbox_relay.go
+    source: services/ledger/internal/worker/outbox_relay.go
   - name: ledger-integrity-verifier
     owner: ledger
     service: ledger
@@ -26,7 +26,7 @@ jobs:
     first_deployment: true
     replica_safety: one-active-via-distributed-lock
     failure_behavior: alert and continue; no money mutation
-    source: internal/ledger/worker/verifier.go
+    source: services/ledger/internal/worker/verifier.go
   - name: ledger-balance-snapshot
     owner: ledger
     service: ledger
@@ -37,7 +37,7 @@ jobs:
     first_deployment: true
     replica_safety: one-active-via-distributed-lock
     failure_behavior: catch up on restart; alert on failure
-    source: internal/ledger/worker/snapshot.go
+    source: services/ledger/internal/worker/snapshot.go
   - name: ledger-schedule-runner
     owner: ledger
     service: ledger
@@ -48,7 +48,7 @@ jobs:
     first_deployment: true
     replica_safety: one-active-via-distributed-lock
     failure_behavior: idempotent due-run; report failed items
-    source: internal/ledger/worker/schedule_runner.go
+    source: services/ledger/internal/worker/schedule_runner.go
   - name: ledger-interest-accrual
     owner: ledger
     service: ledger
@@ -59,7 +59,7 @@ jobs:
     first_deployment: true
     replica_safety: one-active-via-distributed-lock
     failure_behavior: skip/report individual failures; do not duplicate accrual
-    source: internal/ledger/worker/accrual.go
+    source: services/ledger/internal/worker/accrual.go
   - name: ledger-retention
     owner: ledger
     service: ledger
@@ -70,7 +70,7 @@ jobs:
     first_deployment: true
     replica_safety: one-active-via-distributed-lock
     failure_behavior: audit and retry next run
-    source: internal/ledger/retention.go
+    source: services/ledger/internal/ledger/ledger.go
 
   - name: auth-kyc-apply-retry
     owner: auth
@@ -81,7 +81,7 @@ jobs:
     first_deployment: true
     replica_safety: database-claim-and-lock
     failure_behavior: exponential retry then dead state
-    source: internal/auth/worker/retry.go
+    source: services/auth/internal/worker/retry.go
   - name: auth-kyc-expiry
     owner: auth
     service: auth
@@ -91,7 +91,7 @@ jobs:
     first_deployment: true
     replica_safety: distributed-lock
     failure_behavior: downgrade in bounded batches; retain audit trail
-    source: internal/auth/worker/expiry.go
+    source: services/auth/internal/worker/expiry.go
   - name: auth-retention
     owner: auth
     service: auth
@@ -102,7 +102,7 @@ jobs:
     first_deployment: true
     replica_safety: one-active-via-distributed-lock
     failure_behavior: audit and retry next run
-    source: internal/auth/retention.go
+    source: services/auth/internal/auth/retention.go
   - name: auth-sanctions-rescreen
     owner: auth
     service: auth
@@ -112,7 +112,7 @@ jobs:
     first_deployment: true
     replica_safety: distributed-lock
     failure_behavior: fail closed for affected KYC decision; retain retry state
-    source: internal/auth/worker/rescreen.go
+    source: services/auth/internal/worker/rescreen.go
   - name: auth-object-delete-outbox
     owner: auth
     service: auth
@@ -122,7 +122,7 @@ jobs:
     first_deployment: true
     replica_safety: database-claim
     failure_behavior: retain object deletion intent and retry
-    source: internal/auth/object_outbox.go
+    source: services/auth/internal/auth/object_outbox.go
   - name: auth-privacy-export
     owner: auth
     service: auth
@@ -134,7 +134,7 @@ jobs:
     failure_behavior: durable request status and retry; object TTL cleanup
     deferred_reason: requires configured export key and production object-store contract
     downstream_owner: K3/K7 privacy operations
-    source: internal/auth/privacy_worker.go
+    source: services/auth/internal/auth/privacy_worker.go
   - name: auth-closure-saga
     owner: auth
     service: auth
@@ -146,7 +146,7 @@ jobs:
     failure_behavior: durable per-owner progress and compensation
     deferred_reason: requires closure key material and certified owner endpoints
     downstream_owner: K3/K7 privacy operations
-    source: internal/auth/closure_worker.go
+    source: services/auth/internal/auth/closure_worker.go
 
   - name: payin-retention
     owner: payin
@@ -158,7 +158,7 @@ jobs:
     first_deployment: true
     replica_safety: one-active-via-distributed-lock
     failure_behavior: audit and retry next run
-    source: internal/payin/retention.go
+    source: services/payin/internal/payin/retention.go
 
   - name: payout-resume
     owner: payout
@@ -169,7 +169,7 @@ jobs:
     first_deployment: true
     replica_safety: one-active-via-distributed-lock
     failure_behavior: bounded recovery and idempotent status query
-    source: internal/payout/worker/resume.go
+    source: services/payout/internal/worker/resume.go
   - name: payout-vendor-relay
     owner: payout
     service: payout
@@ -179,7 +179,7 @@ jobs:
     first_deployment: true
     replica_safety: database-claim
     failure_behavior: retain pending state and retry/reconcile
-    source: internal/payout/worker/vendor_relay.go
+    source: services/payout/internal/worker/vendor_relay.go
   - name: payout-retention
     owner: payout
     service: payout
@@ -190,7 +190,7 @@ jobs:
     first_deployment: true
     replica_safety: one-active-via-distributed-lock
     failure_behavior: audit and retry next run
-    source: internal/payout/retention.go
+    source: services/payout/internal/payout/retention.go
 
   - name: fraud-velocity-consumer
     owner: fraud
@@ -201,7 +201,7 @@ jobs:
     first_deployment: true
     replica_safety: competing-consumer-with-idempotent-handler
     failure_behavior: bounded redelivery then DLQ; velocity store fails closed
-    source: internal/fraud/consumer.go
+    source: services/fraud/internal/fraud/consumer.go
   - name: fraud-spill-flusher
     owner: fraud
     service: fraud
@@ -211,7 +211,7 @@ jobs:
     first_deployment: true
     replica_safety: per-process; scale behavior requires K3 decision
     failure_behavior: record loss metric and fail closed for screening
-    source: internal/fraud/fraud.go
+    source: services/fraud/internal/fraud/spill.go
   - name: fraud-retention
     owner: fraud
     service: fraud
@@ -222,7 +222,7 @@ jobs:
     first_deployment: true
     replica_safety: one-active-via-distributed-lock
     failure_behavior: audit and retry next run
-    source: internal/fraud/retention.go
+    source: services/fraud/internal/fraud/retention.go
 
   - name: gateway-notification-consumer
     owner: gateway
@@ -233,7 +233,7 @@ jobs:
     first_deployment: true
     replica_safety: competing-consumer-with-idempotent-handler
     failure_behavior: bounded redelivery then DLQ
-    source: internal/notify/notify.go
+    source: services/gateway/internal/notification/inbox/notify.go
   - name: gateway-notification-retention
     owner: gateway
     service: gateway
@@ -244,7 +244,7 @@ jobs:
     first_deployment: true
     replica_safety: one-active-via-distributed-lock
     failure_behavior: audit and retry next run
-    source: internal/notify/retention.go
+    source: services/gateway/internal/notification/inbox/retention.go
   - name: gateway-merchant-webhook-relay
     owner: gateway
     service: gateway
@@ -254,7 +254,7 @@ jobs:
     first_deployment: true
     replica_safety: database-lease
     failure_behavior: durable delivery state and retry
-    source: internal/merchant/webhook/relay.go
+    source: services/gateway/internal/merchant/webhook/relay.go
   - name: gateway-merchant-webhook-consumer
     owner: gateway
     service: gateway
@@ -264,7 +264,7 @@ jobs:
     first_deployment: true
     replica_safety: competing-consumer-with-idempotent-handler
     failure_behavior: bounded redelivery then DLQ
-    source: internal/merchant/webhook/consumer.go
+    source: services/gateway/internal/merchant/webhook/consumer.go
   - name: gateway-merchant-retention
     owner: gateway
     service: gateway
@@ -275,7 +275,7 @@ jobs:
     first_deployment: true
     replica_safety: one-active-via-distributed-lock
     failure_behavior: audit and retry next run
-    source: internal/merchant/merchant.go
+    source: services/gateway/internal/merchant/orchestration/merchant.go
   - name: gateway-merchant-observability
     owner: gateway
     service: gateway
@@ -285,7 +285,7 @@ jobs:
     first_deployment: true
     replica_safety: per-process gauge refresh; values are observational
     failure_behavior: metrics staleness only
-    source: internal/merchant/metrics.go
+    source: services/gateway/internal/merchant/orchestration/metrics.go
 
   - name: admin-bff-session-cleanup
     owner: admin-bff
@@ -296,7 +296,7 @@ jobs:
     first_deployment: true
     replica_safety: memory-lock today; one replica until K3 externalizes lock
     failure_behavior: retry next run; session remains valid until cleanup
-    source: internal/adminbff/module.go
+    source: services/adminbff/internal/admin/module.go
   - name: admin-bff-retention
     owner: admin-bff
     service: admin-bff
@@ -307,7 +307,7 @@ jobs:
     first_deployment: true
     replica_safety: memory-lock today; one replica until K3 externalizes lock
     failure_behavior: audit and retry next run
-    source: internal/adminbff/module.go
+    source: services/adminbff/internal/admin/module.go
 
   - name: assurance-correlation
     owner: assurance
@@ -318,7 +318,7 @@ jobs:
     first_deployment: true
     replica_safety: one-active-via-database-or-lock-policy
     failure_behavior: mark correlation pending and alert
-    source: internal/assurance
+    source: services/assurance
   - name: assurance-retention
     owner: assurance
     service: assurance
@@ -329,7 +329,7 @@ jobs:
     first_deployment: true
     replica_safety: one-active-via-distributed-lock
     failure_behavior: audit and retry next run
-    source: cmd/assurance-service/main.go
+    source: services/assurance/cmd/assurance/main.go
 
   - name: vendor-retention
     owner: vendor
@@ -341,7 +341,7 @@ jobs:
     first_deployment: true
     replica_safety: one-active-via-distributed-lock
     failure_behavior: audit and retry next run
-    source: cmd/vendor-service/main.go
+    source: services/vendor-service/cmd/vendor/main.go
   - name: backup-scheduler
     owner: operations
     service: backup-agent
@@ -353,4 +353,4 @@ jobs:
     failure_behavior: alert and do not claim recovery
     deferred_reason: operations profile; repository endpoint and restore evidence are UNKNOWN
     downstream_owner: K7 backup and disaster recovery
-    source: cmd/backup-agent/main.go
+    source: operations/agents/backup/cmd/backup-agent/main.go

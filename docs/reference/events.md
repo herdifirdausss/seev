@@ -21,8 +21,8 @@ payload until their existing retention policy removes it.
 
 Wire format for events the ledger module publishes via the transactional
 outbox → RabbitMQ (docs/roadmap/archive/14 Task T3, decision K4). The authoritative types
-live in [`internal/ledger/events`](../../internal/ledger/events/events.go) — that
-package is the **only** subpackage of `internal/ledger` external code may
+live in [`contracts/events/ledger`](../../contracts/events/ledger/events.go) — that
+package is the **only** subpackage of `services/ledger` external code may
 import (see [Project guide](../development/project-guide.md) Module Boundaries). Import
 it directly rather than hand-rolling a decoder from this doc. Definitions of
 outbox, idempotency, and at-least-once delivery are in the
@@ -116,6 +116,33 @@ type AdjustmentDecided struct {
 }
 ```
 
+### `ledger.dispute.lifecycle.v1`
+
+Emitted from the same Ledger transaction that creates or transitions a
+chargeback dispute. It is the notification boundary for `open`,
+`evidence_submitted`, `won`, `lost`, and `expired` states. `recipient_user_id`
+is optional for system/merchant-only cases; evidence contents, storage
+locations, and operator identities remain in Ledger's audit tables.
+
+```go
+type DisputeLifecycle struct {
+    SchemaVersion   int        `json:"schema_version"`
+    EventID         *uuid.UUID `json:"event_id"`
+    DisputeID       uuid.UUID  `json:"dispute_id"`
+    OriginalTxID    uuid.UUID  `json:"original_tx_id"`
+    RecipientUserID *uuid.UUID `json:"recipient_user_id,omitempty"`
+    DisputeRef      string     `json:"dispute_ref"`
+    CardNetwork     string     `json:"card_network"`
+    ReasonCode      string     `json:"reason_code,omitempty"`
+    Amount          string     `json:"amount"`
+    Currency        string     `json:"currency"`
+    FromStatus      string     `json:"from_status,omitempty"`
+    ToStatus        string     `json:"to_status"`
+    EvidenceDueAt   *time.Time `json:"evidence_due_at,omitempty"`
+    OccurredAt      time.Time  `json:"occurred_at"`
+}
+```
+
 ## Example: a `money_in` posting
 
 ```json
@@ -145,11 +172,11 @@ type AdjustmentDecided struct {
 
 ## Consuming these events
 
-1. Import `github.com/herdifirdausss/seev/internal/ledger/events` for the types and constants — don't hand-roll a decoder.
-2. Subscribe to the routing keys you care about (`ledger.transaction.posted.v1`, `ledger.transaction.reversed.v1`, `ledger.adjustment.decided.v1`).
+1. Import `github.com/herdifirdausss/seev/contracts/events/ledger` for the types and constants — don't hand-roll a decoder.
+2. Subscribe to the routing keys you care about (`ledger.transaction.posted.v1`, `ledger.transaction.reversed.v1`, `ledger.adjustment.decided.v1`, `ledger.dispute.lifecycle.v1`).
 3. Prefer the payload's logical `event_id` for deduplication. For historical
    payloads without it, require and use the AMQP `message_id`.
 4. `json.Unmarshal` the message body into `events.TransactionPosted` / `events.TransactionReversed`.
 5. Check `SchemaVersion` if you need to branch on schema evolution.
 
-See [internal/ledger/events/events_test.go](../../internal/ledger/events/events_test.go) for golden examples of the exact wire bytes each type produces.
+See [contracts/events/ledger/events_test.go](../../contracts/events/ledger/events_test.go) for golden examples of the exact wire bytes each type produces.

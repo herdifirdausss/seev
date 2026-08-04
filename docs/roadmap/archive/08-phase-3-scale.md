@@ -28,7 +28,7 @@ are listed from highest to lowest.
 > per-user, per-type, and daily/monthly velocity limits, to be implemented
 > after T5.
 
-Create `internal/policy` with per-transaction, daily, and monthly limits per
+Create `services/ledger/policy` with per-transaction, daily, and monthly limits per
 user and transaction type. Evaluate them **before** `ledger.Post` in the
 transport layer. Store counters in Redis with a sliding window per user/type,
 or in memory when `REDIS_ENABLED=false` (use the fallback pattern from
@@ -48,7 +48,7 @@ limit configuration in a table. The ledger itself remains unaware of policy.
 
 ## S3 — Scheduled and batch posting
 
-- Add `scheduled_transactions` and a `pkg/scheduler` job. Execute ordinary
+- Add `scheduled_transactions` and a `internal/platform/scheduling` job. Execute ordinary
   `ledger.Post` calls with deterministic keys such as
   `sched:<id>:<run_date>`.
 - Batch disbursement reads one file or manifest, posts each item with progress

@@ -114,7 +114,7 @@ Minimum structure:
 
 | Control | Owner | Location | Enforcement | Verification | Status |
 |---|---|---|---|---|---|
-| Internal mTLS | Platform | `pkg/tlsx` | Runtime | Integration test | Existing |
+| Internal mTLS | Platform | `internal/platform/security/tls` | Runtime | Integration test | Existing |
 | JWT validation | Auth | Middleware | Runtime | Unit/integration test | Existing |
 | Secret isolation | Platform | Helm | Deployment | Rendered manifest test | Missing |
 | Artifact signing | Platform | CI/CD | Admission | Signature verification | Missing |
@@ -403,7 +403,7 @@ Unsafe settings can still reach production through human error.
 Create a centralized validation package, for example:
 
 ```text
-internal/configguard
+internal/platform/configguard
 ```
 
 When the environment is `production`, application startup must fail if:

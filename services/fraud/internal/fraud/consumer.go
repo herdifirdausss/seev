@@ -1,0 +1,132 @@
+package fraud
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"time"
+
+	amqp "github.com/rabbitmq/amqp091-go"
+
+	"github.com/herdifirdausss/seev/contracts/events/ledger"
+	"github.com/herdifirdausss/seev/internal/platform/messaging"
+	"github.com/herdifirdausss/seev/internal/platform/security/middleware"
+	"github.com/herdifirdausss/seev/services/fraud/rules"
+)
+
+// Broker is what the async velocity consumer needs from the message broker
+// — topology declaration plus consumption, nothing publish-side.
+type Broker interface {
+	messaging.Consumer
+	messaging.TopologyManager
+}
+
+const (
+	velocityQueue       = "ledger.events.fraud"
+	velocityConsumerTag = "fraud-velocity-consumer"
+	velocityTTL         = 2 * time.Hour
+)
+
+func (m *Module) Start(ctx context.Context) error {
+	m.startSpillFlusher(ctx)
+	if m.broker == nil || m.store == nil {
+		return nil
+	}
+	if err := m.broker.DeclareTopology(ctx, messaging.QueueConfig{
+		Queue: velocityQueue, RoutingKeys: []string{events.TypeTransactionPosted, events.TypeFXConversionPosted},
+	}); err != nil {
+		return fmt.Errorf("fraud: declare topology: %w", err)
+	}
+	consumeCtx, cancel := context.WithCancel(ctx)
+	m.cancel = cancel
+	go func() {
+		if err := m.broker.Consume(consumeCtx, messaging.ConsumeOptions{
+			Queue: velocityQueue, ConsumerTag: velocityConsumerTag,
+			PrefetchCount: 10, MaxDeliveryAttempts: 5,
+		}, m.handleDelivery); err != nil {
+			m.logger.Error("fraud: velocity consumer stopped", "error", err)
+		}
+	}()
+	return nil
+}
+
+func (m *Module) Stop() {
+	if m.cancel != nil {
+		m.cancel()
+	}
+	if m.spillCancel != nil {
+		m.spillCancel()
+	}
+}
+
+func (m *Module) handleDelivery(ctx context.Context, delivery amqp.Delivery) error {
+	if delivery.RoutingKey == events.TypeFXConversionPosted {
+		return m.handleFXConversionDelivery(ctx, delivery)
+	}
+
+	var event events.TransactionPosted
+	if err := json.Unmarshal(delivery.Body, &event); err != nil {
+		return fmt.Errorf("fraud: decode TransactionPosted: %w", err)
+	}
+	if err := event.Validate(); err != nil {
+		return fmt.Errorf("fraud: validate TransactionPosted: %w", err)
+	}
+	if event.UserID == nil {
+		return nil
+	}
+	// FX legs are implementation details of one atomic conversion. The
+	// aggregate event below records both currency buckets exactly once; do not
+	// count the two leg events as additional user activity.
+	if event.TransactionType == "fx_out" || event.TransactionType == "fx_in" {
+		return nil
+	}
+	deduplicationID := delivery.MessageId
+	if event.EventID != nil {
+		deduplicationID = event.EventID.String()
+	} else if deduplicationID == "" {
+		return fmt.Errorf("fraud: message id is required for legacy event")
+	}
+	at := event.OccurredAt
+	if at.IsZero() {
+		at = time.Now()
+	}
+	key := rules.CurrencyVelocityKey(event.UserID.String(), event.Currency, at)
+	if err := m.store.Record(ctx, deduplicationID, key, velocityTTL); err != nil {
+		return fmt.Errorf("fraud: increment velocity: %w", err)
+	}
+	// request_id here is the CorrelationId the publisher stamped on this
+	// message (docs/roadmap/archive/36 Task T4/T6) — logging it is what lets a trace
+	// span the async hop from "HTTP/gRPC request that posted the
+	// transaction" to "this velocity counter increment", the same way the
+	// synchronous screening call already does via contracts/clients/fraud.
+	m.logger.Info("fraud: velocity recorded", "request_id", middleware.RequestIDFromCtx(ctx), "user_id", event.UserID.String())
+	return nil
+}
+
+func (m *Module) handleFXConversionDelivery(ctx context.Context, delivery amqp.Delivery) error {
+	var event events.FXConversionPosted
+	if err := json.Unmarshal(delivery.Body, &event); err != nil {
+		return fmt.Errorf("fraud: decode FXConversionPosted: %w", err)
+	}
+	if err := event.Validate(); err != nil {
+		return fmt.Errorf("fraud: validate FXConversionPosted: %w", err)
+	}
+
+	at := event.PostedAt
+	if at.IsZero() {
+		at = time.Now()
+	}
+	baseEventID := event.EventID.String()
+	if err := m.store.Record(ctx, baseEventID+":source",
+		rules.CurrencyVelocityKey(event.UserID.String(), event.SourceCurrency, at), velocityTTL); err != nil {
+		return fmt.Errorf("fraud: increment FX source velocity: %w", err)
+	}
+	if err := m.store.Record(ctx, baseEventID+":target",
+		rules.CurrencyVelocityKey(event.UserID.String(), event.TargetCurrency, at), velocityTTL); err != nil {
+		return fmt.Errorf("fraud: increment FX target velocity: %w", err)
+	}
+	if m.logger != nil {
+		m.logger.Info("fraud: FX conversion velocity recorded", "request_id", middleware.RequestIDFromCtx(ctx), "user_id", event.UserID.String())
+	}
+	return nil
+}

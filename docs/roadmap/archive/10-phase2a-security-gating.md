@@ -7,7 +7,7 @@
 
 ## T1 — Separate the internal router for system transaction types
 
-**Problem:** `internal/ledger/transport/http.go:19-29` (`adminOnlyTypes`) gates
+**Problem:** `services/ledger/internal/transport/http.go:19-29` (`adminOnlyTypes`) gates
 only seven types through one public router. Ordinary users can call other
 system-account operations, including `money_in`, `refund`, withdrawal-settle
 variants, `escrow_release`, `escrow_refund`, and `fee_collect` through
@@ -15,7 +15,7 @@ variants, `escrow_release`, `escrow_refund`, and `fee_collect` through
 
 **Decision (K1):** use two routers and two HTTP listeners:
 
-- **Public router** (`internal/handler/router.go`, `APP_PORT`) accepts only
+- **Public router** (`services/gateway/internal/transport/http/router.go`, `APP_PORT`) accepts only
   end-user operations: `transfer_p2p`, `transfer_pocket`,
   `withdraw_initiate`, and `escrow_hold`. Every other type returns 403.
 - **Internal router** listens on a separate address, defaulting to
@@ -25,7 +25,7 @@ variants, `escrow_release`, `escrow_refund`, and `fee_collect` through
 
 ### Implementation
 
-1. Replace `adminOnlyTypes` in `internal/ledger/transport/http.go` with an
+1. Replace `adminOnlyTypes` in `services/ledger/internal/transport/http.go` with an
    explicit public allowlist:
 
    ```go
@@ -47,13 +47,13 @@ variants, `escrow_release`, `escrow_refund`, and `fee_collect` through
 4. Keep the old admin check as a second defense inside the internal router.
    `freeze_*`, `adjustment_*`, `reversal`, and `chargeback` still require the
    admin role even on the internal network.
-5. Add `Module.InternalRouter() http.Handler` in `internal/ledger/ledger.go`.
+5. Add `Module.InternalRouter() http.Handler` in `services/ledger/internal/ledger/ledger.go`.
 6. Add `AppConfig.InternalPort` and `AppConfig.InternalBindAddr`, defaulting to
    8081 and `127.0.0.1`, plus `INTERNAL_APP_PORT` and
    `INTERNAL_APP_BIND_ADDR`. In production, reject `0.0.0.0` by default;
    if an operator explicitly overrides it, accept the value but log a startup
    warning rather than hard-failing container-network deployments.
-7. Add `NewInternalRouter` to `internal/handler/router.go`. Mount the ledger
+7. Add `NewInternalRouter` to `services/gateway/internal/transport/http/router.go`. Mount the ledger
    internal router with the same authentication and JSON middleware, but do not
    apply the public rate limit. JWT authentication remains mandatory; use a
    service role for internal callers. Global security headers remain useful;
@@ -122,7 +122,7 @@ client to set `gateway`, `fee_amount`, and `fee_gateway`.
    points, and the destination fee gateway. A hard-coded MVP map is sufficient;
    an admin-configurable policy can come in Phase 3.
 2. In the public transport:
-   - validate `gateway` against `internal/ledger/constant`;
+   - validate `gateway` against `services/ledger/internal/constant`;
    - ignore client-supplied `fee_amount` and `fee_gateway` (log and strip them
      for backward compatibility);
    - calculate the fee with `feepolicy.Resolve` and inject the result into

@@ -20,7 +20,7 @@ reasonable single-node fallbacks.
    configuration error. When disabled, log that rate limiting and scheduler
    locks are running in memory and are single-instance only.
 3. Make the router select a Redis or memory limiter depending on whether the
-   cache is nil. Add `MemoryRateLimiter` in `pkg/cache` with the same `Limiter`
+   cache is nil. Add `MemoryRateLimiter` in `internal/platform/cache` with the same `Limiter`
    interface, a mutex-protected token bucket, and periodic cleanup of expired
    entries.
 4. Keep the current rate-limiter fail-open behavior when Redis fails during
@@ -85,7 +85,7 @@ events are claimed by the relay and published after the broker recovers.
 2. Give the verifier an injectable
    `alertFn(ctx, severity, message) error`. Call it for trial-balance and
    projection discrepancies, alongside the error log.
-3. Add reusable `pkg/alerting/webhook.go` that sends one short-timeout JSON
+3. Add reusable `internal/platform/resilience/alerting/webhook.go` that sends one short-timeout JSON
    request (`severity`, `message`, `service`, and `timestamp`). It must never
    block or retry the verifier; log a delivery failure and continue.
 4. Wire the hook in `cmd/server/main.go`.

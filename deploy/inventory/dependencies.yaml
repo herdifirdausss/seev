@@ -17,7 +17,7 @@ calls:
     readiness_class: critical
     first_deployment: true
     downstream_owner: K3 and K5
-    sources: [cmd/gateway/main.go, internal/ledgerclient]
+    sources: [services/gateway/cmd/gateway/main.go, contracts/clients/ledger]
   - name: gateway-to-ledger-http
     caller: gateway
     target: ledger
@@ -30,7 +30,7 @@ calls:
     readiness_class: critical
     first_deployment: true
     downstream_owner: K3 and K5
-    sources: [cmd/gateway/main.go, internal/handler]
+    sources: [services/gateway/cmd/gateway/main.go, services/gateway/internal/transport/http]
   - name: gateway-to-payin-grpc
     caller: gateway
     target: payin
@@ -43,7 +43,7 @@ calls:
     readiness_class: critical
     first_deployment: true
     downstream_owner: K3 and K5
-    sources: [cmd/gateway/main.go, internal/payinclient]
+    sources: [services/gateway/cmd/gateway/main.go, gen/go/payin/v1]
   - name: gateway-to-payout-grpc
     caller: gateway
     target: payout
@@ -56,7 +56,7 @@ calls:
     readiness_class: critical
     first_deployment: true
     downstream_owner: K3 and K5
-    sources: [cmd/gateway/main.go, internal/payoutclient]
+    sources: [services/gateway/cmd/gateway/main.go, gen/go/payout/v1]
 
   - name: auth-to-ledger-grpc
     caller: auth
@@ -70,7 +70,7 @@ calls:
     readiness_class: critical
     first_deployment: true
     downstream_owner: K3 and K5
-    sources: [cmd/auth-service/main.go, internal/auth]
+    sources: [services/auth/cmd/auth/main.go, services/auth]
   - name: auth-to-ledger-http
     caller: auth
     target: ledger
@@ -83,7 +83,7 @@ calls:
     readiness_class: critical
     first_deployment: true
     downstream_owner: K3 and K5
-    sources: [cmd/auth-service/main.go, internal/auth]
+    sources: [services/auth/cmd/auth/main.go, services/auth]
   - name: auth-to-payin
     caller: auth
     target: payin
@@ -96,7 +96,7 @@ calls:
     readiness_class: critical
     first_deployment: true
     downstream_owner: K3 and K5
-    sources: [cmd/auth-service/main.go]
+    sources: [services/auth/cmd/auth/main.go]
   - name: auth-to-payout
     caller: auth
     target: payout
@@ -109,7 +109,7 @@ calls:
     readiness_class: critical
     first_deployment: true
     downstream_owner: K3 and K5
-    sources: [cmd/auth-service/main.go]
+    sources: [services/auth/cmd/auth/main.go]
   - name: auth-to-fraud
     caller: auth
     target: fraud
@@ -122,7 +122,7 @@ calls:
     readiness_class: critical
     first_deployment: true
     downstream_owner: K3 and K5
-    sources: [cmd/auth-service/main.go]
+    sources: [services/auth/cmd/auth/main.go]
   - name: auth-to-gateway
     caller: auth
     target: gateway
@@ -135,7 +135,7 @@ calls:
     readiness_class: critical
     first_deployment: true
     downstream_owner: K3 and K5
-    sources: [cmd/auth-service/main.go]
+    sources: [services/auth/cmd/auth/main.go]
 
   - name: payin-to-ledger
     caller: payin
@@ -149,7 +149,7 @@ calls:
     readiness_class: critical
     first_deployment: true
     downstream_owner: K3 and K5
-    sources: [cmd/payin-service/main.go, internal/payin]
+    sources: [services/payin/cmd/payin/main.go, services/payin]
   - name: payin-to-fraud
     caller: payin
     target: fraud
@@ -162,7 +162,7 @@ calls:
     readiness_class: critical
     first_deployment: true
     downstream_owner: K3 and K5
-    sources: [cmd/payin-service/main.go]
+    sources: [services/payin/cmd/payin/main.go]
   - name: payin-to-vendor
     caller: payin
     target: vendor
@@ -175,7 +175,7 @@ calls:
     readiness_class: critical
     first_deployment: true
     downstream_owner: K3 and K5
-    sources: [cmd/payin-service/main.go, internal/payin]
+    sources: [services/payin/cmd/payin/main.go, services/payin]
 
   - name: payout-to-ledger
     caller: payout
@@ -189,7 +189,7 @@ calls:
     readiness_class: critical
     first_deployment: true
     downstream_owner: K3 and K5
-    sources: [cmd/payout-service/main.go, internal/payout]
+    sources: [services/payout/cmd/payout/main.go, services/payout]
   - name: payout-to-fraud
     caller: payout
     target: fraud
@@ -202,7 +202,7 @@ calls:
     readiness_class: critical
     first_deployment: true
     downstream_owner: K3 and K5
-    sources: [cmd/payout-service/main.go]
+    sources: [services/payout/cmd/payout/main.go]
   - name: payout-to-vendor
     caller: payout
     target: vendor
@@ -215,7 +215,7 @@ calls:
     readiness_class: critical
     first_deployment: true
     downstream_owner: K3 and K5
-    sources: [cmd/payout-service/main.go, internal/payout]
+    sources: [services/payout/cmd/payout/main.go, services/payout]
 
   - name: vendor-to-payin
     caller: vendor
@@ -229,7 +229,7 @@ calls:
     readiness_class: callback
     first_deployment: true
     downstream_owner: K3 and K5
-    sources: [cmd/vendor-service/main.go]
+    sources: [services/vendor-service/cmd/vendor/main.go]
   - name: vendor-to-payout
     caller: vendor
     target: payout
@@ -242,7 +242,7 @@ calls:
     readiness_class: callback
     first_deployment: true
     downstream_owner: K3 and K5
-    sources: [cmd/vendor-service/main.go]
+    sources: [services/vendor-service/cmd/vendor/main.go]
 
   - name: admin-bff-to-auth
     caller: admin-bff
@@ -256,7 +256,7 @@ calls:
     readiness_class: admin
     first_deployment: true
     downstream_owner: K3 and K5
-    sources: [cmd/admin-bff-service/main.go, internal/adminbff]
+    sources: [services/adminbff/cmd/adminbff/main.go, services/adminbff]
   - name: admin-bff-to-ledger
     caller: admin-bff
     target: ledger
@@ -269,7 +269,7 @@ calls:
     readiness_class: admin
     first_deployment: true
     downstream_owner: K3 and K5
-    sources: [cmd/admin-bff-service/main.go]
+    sources: [services/adminbff/cmd/adminbff/main.go]
   - name: admin-bff-to-payin
     caller: admin-bff
     target: payin
@@ -282,7 +282,7 @@ calls:
     readiness_class: admin
     first_deployment: true
     downstream_owner: K3 and K5
-    sources: [cmd/admin-bff-service/main.go]
+    sources: [services/adminbff/cmd/adminbff/main.go]
   - name: admin-bff-to-payout
     caller: admin-bff
     target: payout
@@ -295,7 +295,7 @@ calls:
     readiness_class: admin
     first_deployment: true
     downstream_owner: K3 and K5
-    sources: [cmd/admin-bff-service/main.go]
+    sources: [services/adminbff/cmd/adminbff/main.go]
   - name: admin-bff-to-fraud
     caller: admin-bff
     target: fraud
@@ -308,7 +308,7 @@ calls:
     readiness_class: admin
     first_deployment: true
     downstream_owner: K3 and K5
-    sources: [cmd/admin-bff-service/main.go]
+    sources: [services/adminbff/cmd/adminbff/main.go]
   - name: admin-bff-to-gateway
     caller: admin-bff
     target: gateway
@@ -321,7 +321,7 @@ calls:
     readiness_class: admin
     first_deployment: true
     downstream_owner: K3 and K5
-    sources: [cmd/admin-bff-service/main.go]
+    sources: [services/adminbff/cmd/adminbff/main.go]
 
   - name: assurance-to-ledger
     caller: assurance
@@ -335,7 +335,7 @@ calls:
     readiness_class: audit
     first_deployment: true
     downstream_owner: K3 and K5
-    sources: [cmd/assurance-service/main.go]
+    sources: [services/assurance/cmd/assurance/main.go]
   - name: assurance-to-payin
     caller: assurance
     target: payin
@@ -348,7 +348,7 @@ calls:
     readiness_class: audit
     first_deployment: true
     downstream_owner: K3 and K5
-    sources: [cmd/assurance-service/main.go]
+    sources: [services/assurance/cmd/assurance/main.go]
   - name: assurance-to-payout
     caller: assurance
     target: payout
@@ -361,7 +361,7 @@ calls:
     readiness_class: audit
     first_deployment: true
     downstream_owner: K3 and K5
-    sources: [cmd/assurance-service/main.go]
+    sources: [services/assurance/cmd/assurance/main.go]
 
   - name: services-to-postgres
     caller: nine application services
@@ -375,7 +375,7 @@ calls:
     readiness_class: critical
     first_deployment: true
     downstream_owner: K2 and K5
-    sources: [internal/config, scripts/postgres-init, migrations]
+    sources: [internal/platform/config, scripts/postgres-init, migrations]
   - name: services-to-redis
     caller: nine application services
     target: redis
@@ -388,7 +388,7 @@ calls:
     readiness_class: critical
     first_deployment: true
     downstream_owner: K2 and K5
-    sources: [internal/config, pkg/cache]
+    sources: [internal/platform/config, internal/platform/cache]
   - name: services-to-rabbitmq
     caller: ledger, fraud, gateway
     target: rabbitmq
@@ -401,7 +401,7 @@ calls:
     readiness_class: critical
     first_deployment: true
     downstream_owner: K2 and K5
-    sources: [pkg/messaging, docker-compose.yml]
+    sources: [internal/platform/messaging, docker-compose.yml]
   - name: services-to-dns
     caller: all application services
     target: cluster-dns
@@ -427,7 +427,7 @@ calls:
     readiness_class: vendor
     first_deployment: false
     downstream_owner: K6
-    sources: [pkg/egressproxy, deploy/kubernetes/squid]
+    sources: [internal/platform/resilience/egressproxy, deploy/kubernetes/squid]
   - name: services-to-telemetry
     caller: all application services
     target: telemetry-collector
@@ -453,4 +453,4 @@ calls:
     readiness_class: deferred
     first_deployment: false
     downstream_owner: K6 and vendor-integration owner
-    sources: [internal/vendor, docs/deployment/vendor-network-matrix.md]
+    sources: [services/vendor-service, docs/deployment/vendor-network-matrix.md]

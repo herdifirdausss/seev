@@ -8,7 +8,7 @@
 # stack's lifecycle itself.
 #
 # Reuses scripts/privacy-export.sh unchanged for the export leg rather
-# than duplicating it. Reaches Postgres DIRECTLY (via cmd/retentionctl,
+# than duplicating it. Reaches Postgres DIRECTLY (via tools/retentionctl,
 # the same admin CLI docs/roadmap/archive/51 T1.6 built) for the retention/hold legs — those
 # have no HTTP surface by design (K5's own "generic across every owner
 # service rather than one endpoint per service").
@@ -67,7 +67,7 @@ json_field() {
 }
 
 retentionctl() {
-	(cd "$REPO_ROOT" && go run ./cmd/retentionctl "$@")
+	(cd "$REPO_ROOT" && go run ./tools/retentionctl "$@")
 }
 
 register_user() {
@@ -83,7 +83,7 @@ assurance_runs_json() {
 	local token="$1" body
 	for _ in $(seq 1 10); do
 		body="$(curl_assurance -s "$ASSURANCE_URL/admin/assurance/runs" -H "Authorization: Bearer $token" || true)"
-		if printf '%s' "$body" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert isinstance(d.get("runs"), list)' >/dev/null 2>&1; then
+		if printf '%s' "$body" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert isinstance((d.get("data") or {}).get("runs"), list)' >/dev/null 2>&1; then
 			printf '%s' "$body"
 			return
 		fi
@@ -95,20 +95,20 @@ assurance_runs_json() {
 assurance_run() {
 	local label="$1" token before_id status run_id runs_json
 	token="$(cd "$REPO_ROOT" && JWT_SECRET="$JWT_SECRET" JWT_ISSUER="$JWT_ISSUER" \
-		go run ./cmd/gentoken "$(uuidgen | tr '[:upper:]' '[:lower:]')" admin)"
+		go run ./tools/gentoken "$(uuidgen | tr '[:upper:]' '[:lower:]')" admin)"
 	for _ in $(seq 1 60); do
 		runs_json="$(assurance_runs_json "$token")"
-		status="$(python3 -c 'import json,sys; r=json.loads(sys.argv[1]).get("runs",[]); print(r[0].get("status","") if r else "")' "$runs_json")"
+	status="$(python3 -c 'import json,sys; d=json.loads(sys.argv[1]); r=(d.get("data") or {}).get("runs",[]); print(r[0].get("status","") if r else "")' "$runs_json")"
 		[ "$status" != "running" ] && break
 		sleep 2
 	done
 	runs_json="$(assurance_runs_json "$token")"
-	before_id="$(python3 -c 'import json,sys; r=json.loads(sys.argv[1]).get("runs",[]); print(r[0].get("id","") if r else "")' "$runs_json")"
+	before_id="$(python3 -c 'import json,sys; d=json.loads(sys.argv[1]); r=(d.get("data") or {}).get("runs",[]); print(r[0].get("id","") if r else "")' "$runs_json")"
 	curl_assurance -sf -o /dev/null -X POST "$ASSURANCE_URL/admin/assurance/runs" \
 		-H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d '{}'
 	for _ in $(seq 1 60); do
 		runs_json="$(assurance_runs_json "$token")"
-		read -r run_id status < <(python3 -c 'import json,sys; r=json.loads(sys.argv[1]).get("runs",[]); print((r[0].get("id","")+" "+r[0].get("status","")) if r else " ")' "$runs_json")
+		read -r run_id status < <(python3 -c 'import json,sys; d=json.loads(sys.argv[1]); r=(d.get("data") or {}).get("runs",[]); print((r[0].get("id","")+" "+r[0].get("status","")) if r else " ")' "$runs_json")
 		[ -n "$run_id" ] && [ "$run_id" != "$before_id" ] && [ "$status" = "succeeded" ] && {
 			ok "assurance verification succeeded $label"
 			return

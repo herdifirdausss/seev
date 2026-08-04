@@ -3723,9 +3723,9 @@ analytics/
 docker-compose.yml
 Makefile
 
-migrations/ledger/
-migrations/payin/
-migrations/payout/
+services/ledger/migrations/
+services/payin/migrations/
+services/payout/migrations/
 
 configs or setup for source replication users/publications
 monitoring/prometheus/

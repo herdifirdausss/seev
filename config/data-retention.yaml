@@ -10,7 +10,7 @@
 # §3 "Out of scope"). `docs/data/retention.md` is generated from this file —
 # do not hand-edit that file; regenerate it (T0.4) after any change here.
 #
-# Schema: config/data-retention.schema.json. CI (cmd/retentioncheck, added in
+# Schema: config/data-retention.schema.json. CI (tools/retentioncheck, added in
 # T0.5) fails the build when a migration creates a table absent from
 # `entries[].table` below (excluding `schema_migrations_*`, which is
 # migration tooling, not application data), or when an entry targets a
@@ -383,7 +383,7 @@ entries:
     hold_scope: subject
     policy_version: 1
     notes: >
-      Object key is "kyc/<document_uuid>" (internal/auth/documents.go,
+      Object key is "kyc/<document_uuid>" (services/auth/internal/auth/documents.go,
       docs/roadmap/archive/51 T2.3) — opaque, carries no user reference; the
       document/user relationship lives only in the encrypted
       auth.kyc_documents row. Deletion must use K6's
@@ -441,7 +441,7 @@ entries:
     policy_version: 1
     notes: >
       Third-party (non-platform-user) sanctions/watchlist data from an
-      external dataset. internal/fraud/repository/sanctions_repository.go
+      external dataset. services/fraud/internal/repository/sanctions_repository.go
       already fully replaces the table on every dataset load
       (DELETE-all + re-INSERT) — no independent age-based job needed or
       wanted; a stale entry must not silently persist past its dataset
@@ -711,7 +711,7 @@ entries:
     batch_size: 0
     hold_scope: none
     policy_version: 1
-    notes: "Live endpoint configuration (secret_ciphertext is already encrypted via pkg/cryptox, T7); deletion is an explicit merchant/operator action (DELETE /webhook-endpoints/{id}), not an automatic age rule."
+    notes: "Live endpoint configuration (secret_ciphertext is already encrypted via internal/platform/security/crypto, T7); deletion is an explicit merchant/operator action (DELETE /webhook-endpoints/{id}), not an automatic age rule."
 
   - owner: gateway
     class: gateway.merchant.webhook_events
@@ -968,6 +968,42 @@ entries:
     notes: "Live pricing configuration, not event history. A disabled/superseded rule needs its own explicit future policy per docs/roadmap/archive/51 §4.2's closing note, not a generic age rule."
 
   - owner: ledger
+    class: ledger.fee_rule_versions
+    table: ledger.fee_rule_versions
+    classification: financial
+    terminal_timestamp: null
+    duration: null
+    action: retain_immutable
+    batch_size: 0
+    hold_scope: none
+    policy_version: 1
+    notes: "Immutable maker-checker pricing history; retained for deterministic historical fee reconstruction."
+
+  - owner: ledger
+    class: ledger.money_movement_policy_decisions
+    table: ledger.money_movement_policy_decisions
+    classification: financial
+    terminal_timestamp: null
+    duration: null
+    action: retain_immutable
+    batch_size: 0
+    hold_scope: none
+    policy_version: 1
+    notes: "Append-only allow/deny decisions for money execution; retained as authorization and financial-control evidence."
+
+  - owner: ledger
+    class: ledger.money_movement_execution_subjects
+    table: ledger.money_movement_execution_subjects
+    classification: personal
+    terminal_timestamp: null
+    duration: null
+    action: retain_state
+    batch_size: 0
+    hold_scope: subject
+    policy_version: 1
+    notes: "Current execution-time KYC, user, and tenant gate state; retained as live policy state rather than an age-purged event log."
+
+  - owner: ledger
     class: ledger.fee_quotes.unconsumed
     table: ledger.fee_quotes
     classification: financial
@@ -1043,7 +1079,7 @@ entries:
     batch_size: 0
     hold_scope: none
     policy_version: 1
-    notes: "Business-completeness audit finding (migrations/ledger/000035_chargeback_disputes) — card-network dispute case evidence, same permanent-retention posture as disbursement_items/recon_batches: a resolved dispute (won/lost/expired) is exactly the kind of record a card network or regulator can re-open years later."
+    notes: "Business-completeness audit finding (services/ledger/migrations/000035_chargeback_disputes) — card-network dispute case evidence, same permanent-retention posture as disbursement_items/recon_batches: a resolved dispute (won/lost/expired) is exactly the kind of record a card network or regulator can re-open years later."
 
   - owner: ledger
     class: ledger.chargeback_dispute_status_changes
@@ -1055,7 +1091,7 @@ entries:
     batch_size: 0
     hold_scope: none
     policy_version: 1
-    notes: "Security audit finding (migrations/ledger/000037_chargeback_dispute_audit_trail) — the actor/history trail for chargeback_disputes resolution; same permanent-retention posture as its parent table (an accountability record has no reason to expire before the case it documents does)."
+    notes: "Security audit finding (services/ledger/migrations/000037_chargeback_dispute_audit_trail) — the actor/history trail for chargeback_disputes resolution; same permanent-retention posture as its parent table (an accountability record has no reason to expire before the case it documents does)."
 
   - owner: ledger
     class: ledger.savings_config
@@ -1373,7 +1409,7 @@ entries:
     hold_scope: subject
     policy_version: 1
     notes: >
-      internal/policy.DailyAmountKey/DailyCountKey/MonthlyAmountKey. Self-
+      services/ledger/policy.DailyAmountKey/DailyCountKey/MonthlyAmountKey. Self-
       expiring counters (Redis key TTL, not a Postgres retention job) — daily
       keys naturally roll off within ~48h, monthly within ~35d, matching
       docs/roadmap/archive/50 T5's own drreseed reconstruction assumptions.
@@ -1563,7 +1599,7 @@ entries:
     hold_scope: subject
     policy_version: 1
     notes: >
-      internal/fraud/rules.VelocityKey; self-expiring via Redis EXPIRE (~2h
+      services/fraud/rules.VelocityKey; self-expiring via Redis EXPIRE (~2h
       window), not a Postgres retention job. Reconstructable from posted
       ledger transactions plus published outbox proof at any time (A7 K10)
       — never a data-loss event on expiry.
@@ -1580,7 +1616,7 @@ entries:
     batch_size: 0
     hold_scope: none
     policy_version: 1
-    notes: "pkg/middleware/rate_limit.go. Self-expiring fixed-window counters; safe to start empty after any restore (A7 K10 §4)."
+    notes: "internal/platform/security/middleware/rate_limit.go. Self-expiring fixed-window counters; safe to start empty after any restore (A7 K10 §4)."
 
   - owner: shared
     class: shared.redis_circuit_breaker
@@ -1593,7 +1629,7 @@ entries:
     batch_size: 0
     hold_scope: none
     policy_version: 1
-    notes: "internal/vendorgw/distributed_breaker.go (used by payin+payout). Operational state only, no personal data; safe to start empty after any restore."
+    notes: "contracts/vendorgw/distributed_breaker.go (used by payin+payout). Operational state only, no personal data; safe to start empty after any restore."
 
   - owner: shared
     class: shared.redis_job_locks
@@ -1606,13 +1642,13 @@ entries:
     batch_size: 0
     hold_scope: none
     policy_version: 1
-    notes: "pkg/scheduler.NewRedisLock. Short-lived distributed cron locks; no personal data."
+    notes: "internal/platform/scheduling.NewRedisLock. Short-lived distributed cron locks; no personal data."
 
   # ── shared infrastructure: RabbitMQ, logs, traces, backups ─────────────────
   - owner: shared
     class: shared.rabbitmq_event_transit
     table: null
-    object_class: "RabbitMQ in-flight event delivery (internal/ledger/events)"
+    object_class: "RabbitMQ in-flight event delivery (contracts/events/ledger)"
     classification: financial
     terminal_timestamp: null
     duration: null
@@ -1643,7 +1679,7 @@ entries:
     notes: >
       docs/roadmap/archive/51 §2.4: passwords, tokens, authorization values, documents,
       raw webhook fields, payout destinations, and full idempotency keys are
-      masked at the point of logging (pkg/logger), not retained-then-purged.
+      masked at the point of logging (internal/platform/observability/logging), not retained-then-purged.
       Loki/Tempo's own configured retention window governs storage duration
       for whatever remains (deploy/observability/); this class documents the
       protection mechanism rather than defining a new database-style purge
@@ -1753,7 +1789,7 @@ entries:
     batch_size: 0
     hold_scope: none
     policy_version: 1
-    notes: "docs/roadmap/archive/51 K6 (T1.6). pkg/objectoutbox's transactional outbox for object-store deletes — 'done' rows are the permanent proof an object-delete intent was actually carried out, same append-only rationale as auth.retention_audit. Never age-purged."
+    notes: "docs/roadmap/archive/51 K6 (T1.6). internal/platform/lifecycle/objectoutbox's transactional outbox for object-store deletes — 'done' rows are the permanent proof an object-delete intent was actually carried out, same append-only rationale as auth.retention_audit. Never age-purged."
 
   - owner: auth
     class: auth.privacy_requests

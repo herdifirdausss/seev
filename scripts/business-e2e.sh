@@ -56,6 +56,12 @@ source "$ROOT_DIR/scripts/lib.sh"
 
 trap cleanup EXIT
 
+# Keep the journey's stdout with the service logs when KEEP_WORK_DIR=1 is used
+# by a scheduled evidence run. The work directory is created by lib.sh before
+# this redirect, so it does not interfere with SEEV_WORK_DIR's fresh-directory
+# validation.
+exec > >(tee "$WORK_DIR/business-e2e.stdout.log") 2>&1
+
 # docs/roadmap/archive/44 K6: same env var name lib.sh's start_*_service functions
 # export to the service processes — a CI-generated VENDOR_MOCKVENDOR_SECRET
 # must sign AND verify with the identical value, not silently diverge
@@ -73,6 +79,56 @@ fee_platform_balance() {
 		SELECT COALESCE(b.balance, 0) FROM accounts a
 		JOIN account_balances b ON b.account_id = a.id
 		WHERE a.owner_type = 'system' AND a.type = 'fee' AND a.system_qualifier = 'platform' AND a.currency = 'IDR';"
+}
+
+# fee_rule_apply drives the production maker-checker contract for fee pricing.
+# Ledger keeps fee_rules as an approved projection, so POST/PUT intentionally
+# returns a draft (202); the rule does not affect quotes until the maker submits
+# it and a distinct checker approves it. Keeping that lifecycle here makes the
+# business journey exercise the same control plane as operators use in prod.
+fee_rule_apply() {
+	local fee_url=$1 maker_token=$2 checker_token=$3 existing_rule_id=$4 payload=$5 label=$6
+	local draft_response draft_code draft_body version_id rule_id submit_code approve_code
+	FEE_RULE_ID=""
+
+	if [ -n "$existing_rule_id" ]; then
+		draft_response="$(curl_internal -s -w '\n%{http_code}' -X PUT "$fee_url/$existing_rule_id" \
+			-H "Authorization: Bearer $maker_token" -H "Content-Type: application/json" -d "$payload")"
+	else
+		draft_response="$(curl_internal -s -w '\n%{http_code}' -X POST "$fee_url" \
+			-H "Authorization: Bearer $maker_token" -H "Content-Type: application/json" -d "$payload")"
+	fi
+	draft_code="${draft_response##*$'\n'}"
+	draft_body="${draft_response%$'\n'*}"
+	if [ "$draft_code" != "202" ]; then
+		fail "$label draft got HTTP $draft_code: $draft_body"
+		return 0
+	fi
+
+	version_id="$(printf '%s' "$draft_body" | json_field id)"
+	rule_id="$(printf '%s' "$draft_body" | json_field rule_id)"
+	if [ -z "$version_id" ] || [ -z "$rule_id" ]; then
+		fail "$label draft did not return rule/version ids: $draft_body"
+		return 0
+	fi
+
+	submit_code=$(curl_internal -s -o /dev/null -w '%{http_code}' -X POST "$fee_url/$version_id/submit" \
+		-H "Authorization: Bearer $maker_token" -H "Content-Type: application/json" -d '{}')
+	if [[ "$submit_code" != 2* ]]; then
+		fail "$label submit got HTTP $submit_code"
+		return 0
+	fi
+
+	approve_code=$(curl_internal -s -o /dev/null -w '%{http_code}' -X POST "$fee_url/$version_id/approve" \
+		-H "Authorization: Bearer $checker_token" -H "Content-Type: application/json" \
+		-d '{"reason":"business-e2e approval"}')
+	if [[ "$approve_code" != 2* ]]; then
+		fail "$label approval got HTTP $approve_code"
+		return 0
+	fi
+
+	FEE_RULE_ID="$rule_id"
+	ok "$label applied through maker-checker (rule=$rule_id)"
 }
 
 # ─── Section 1: onboarding — real register + login, not gentoken ────────────
@@ -143,33 +199,34 @@ onboard() {
 	# exactly despite an admin changing fee_rules in between.
 	local admin_token fee_url code resp
 	admin_token="$(gen_token "$(uuidgen | tr '[:upper:]' '[:lower:]')" admin)"
+	FEE_MAKER_TOKEN="$(gen_token "$(uuidgen | tr '[:upper:]' '[:lower:]')" admin_maker)"
+	FEE_CHECKER_TOKEN="$(gen_token "$(uuidgen | tr '[:upper:]' '[:lower:]')" admin_checker)"
 	fee_url="http://localhost:$LEDGER_INTERNAL_PORT/api/v1/ledger/admin/ledger/fee-rules"
 	# The ledger DB is intentionally reusable between local runs. A global rule
 	# is unique by (tx_type,gateway,currency,NULL user), so update an existing
 	# seed instead of turning a harmless rerun into HTTP 500.
 	local global_transfer_id global_withdraw_id
 	global_transfer_id="$(psql_exec "$LEDGER_DB_NAME" -c "SELECT id FROM fee_rules WHERE tx_type = 'transfer_p2p' AND currency = 'IDR' AND user_id IS NULL ORDER BY updated_at DESC LIMIT 1;")"
-	if [ -n "$global_transfer_id" ]; then
-		code=$(curl_internal -s -o /dev/null -w '%{http_code}' -X PUT "$fee_url/$global_transfer_id" -H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" -d '{"tx_type":"transfer_p2p","currency":"IDR","flat_minor_units":1000,"fee_gateway":"platform"}')
-	else
-		code=$(curl_internal -s -o /dev/null -w '%{http_code}' -X POST "$fee_url" -H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" -d '{"tx_type":"transfer_p2p","currency":"IDR","flat_minor_units":1000,"fee_gateway":"platform"}')
-	fi
-	if [ "$code" = "200" ] || [ "$code" = "201" ]; then
-		ok "seeded global transfer fee via admin API"
-	else
-		fail "global fee seed got HTTP $code"
-	fi
-	resp="$(curl_internal -s -X POST "$fee_url" -H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" -d "{\"tx_type\":\"transfer_p2p\",\"currency\":\"IDR\",\"user_id\":\"$USER_A\",\"flat_minor_units\":500,\"fee_gateway\":\"platform\"}")"
-	TRANSFER_FEE_RULE_ID="$(echo "$resp" | json_field id)"
-	[ -n "$TRANSFER_FEE_RULE_ID" ] && ok "seeded per-user transfer override via admin API ($TRANSFER_FEE_RULE_ID)" || fail "per-user fee seed failed: $resp"
+	fee_rule_apply "$fee_url" "$FEE_MAKER_TOKEN" "$FEE_CHECKER_TOKEN" "$global_transfer_id" \
+		'{"tx_type":"transfer_p2p","currency":"IDR","flat_minor_units":1000,"fee_gateway":"platform"}' \
+		"global transfer fee"
+	global_transfer_id="$FEE_RULE_ID"
+	[ -n "$global_transfer_id" ] || fail "global transfer fee seed did not produce an approved rule"
+
+	local user_transfer_id
+	user_transfer_id="$(psql_exec "$LEDGER_DB_NAME" -c "SELECT id FROM fee_rules WHERE tx_type = 'transfer_p2p' AND currency = 'IDR' AND user_id = '$USER_A' ORDER BY updated_at DESC LIMIT 1;")"
+	fee_rule_apply "$fee_url" "$FEE_MAKER_TOKEN" "$FEE_CHECKER_TOKEN" "$user_transfer_id" \
+		"{\"tx_type\":\"transfer_p2p\",\"currency\":\"IDR\",\"user_id\":\"$USER_A\",\"flat_minor_units\":500,\"fee_gateway\":\"platform\"}" \
+		"per-user transfer fee"
+	TRANSFER_FEE_RULE_ID="$FEE_RULE_ID"
+	[ -n "$TRANSFER_FEE_RULE_ID" ] || fail "per-user fee seed did not produce an approved rule"
+
 	global_withdraw_id="$(psql_exec "$LEDGER_DB_NAME" -c "SELECT id FROM fee_rules WHERE tx_type = 'withdraw_settle' AND currency = 'IDR' AND user_id IS NULL ORDER BY updated_at DESC LIMIT 1;")"
-	if [ -n "$global_withdraw_id" ]; then
-		resp="$(curl_internal -s -X PUT "$fee_url/$global_withdraw_id" -H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" -d '{"tx_type":"withdraw_settle","currency":"IDR","flat_minor_units":2000,"fee_gateway":"platform"}')"
-	else
-		resp="$(curl_internal -s -X POST "$fee_url" -H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" -d '{"tx_type":"withdraw_settle","currency":"IDR","flat_minor_units":2000,"fee_gateway":"platform"}')"
-	fi
-	WITHDRAW_FEE_RULE_ID="$(echo "$resp" | json_field id)"
-	[ -n "$WITHDRAW_FEE_RULE_ID" ] && ok "seeded withdraw fee via admin API ($WITHDRAW_FEE_RULE_ID)" || fail "withdraw fee seed failed: $resp"
+	fee_rule_apply "$fee_url" "$FEE_MAKER_TOKEN" "$FEE_CHECKER_TOKEN" "$global_withdraw_id" \
+		'{"tx_type":"withdraw_settle","currency":"IDR","flat_minor_units":2000,"fee_gateway":"platform"}' \
+		"withdraw fee"
+	WITHDRAW_FEE_RULE_ID="$FEE_RULE_ID"
+	[ -n "$WITHDRAW_FEE_RULE_ID" ] || fail "withdraw fee seed did not produce an approved rule"
 }
 
 # ─── Section 2: top-up via signed vendor webhook ─────────────────────────────
@@ -449,7 +506,6 @@ withdraw() {
 
 quote_journey() {
 	log "=== 6. Fee quote journey: honored exactly, tamper detection, single-use, payout quote ==="
-
 	local admin_token
 	admin_token="$(gen_token "$(uuidgen | tr '[:upper:]' '[:lower:]')" admin)"
 
@@ -464,11 +520,11 @@ quote_journey() {
 		|| fail "quote creation unexpected: $quote_resp"
 
 	log "admin re-prices A's transfer_p2p override to 9000 AFTER the quote was created..."
-	local code
-	code=$(curl_internal -s -o /dev/null -w '%{http_code}' -X PUT "http://localhost:$LEDGER_INTERNAL_PORT/api/v1/ledger/admin/ledger/fee-rules/$TRANSFER_FEE_RULE_ID" \
-		-H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" \
-		-d "{\"tx_type\":\"transfer_p2p\",\"currency\":\"IDR\",\"user_id\":\"$USER_A\",\"flat_minor_units\":9000,\"fee_gateway\":\"platform\"}")
-	[ "$code" = "200" ] && ok "fee_rules re-priced to 9000 via admin API" || fail "fee rule update got $code, expected 200"
+	local code fee_url
+	fee_url="http://localhost:$LEDGER_INTERNAL_PORT/api/v1/ledger/admin/ledger/fee-rules"
+	fee_rule_apply "$fee_url" "$FEE_MAKER_TOKEN" "$FEE_CHECKER_TOKEN" "$TRANSFER_FEE_RULE_ID" \
+		"{\"tx_type\":\"transfer_p2p\",\"currency\":\"IDR\",\"user_id\":\"$USER_A\",\"flat_minor_units\":9000,\"fee_gateway\":\"platform\"}" \
+		"transfer fee repricing"
 
 	local fee_before
 	fee_before="$(fee_platform_balance)"
@@ -538,10 +594,9 @@ quote_journey() {
 	[ -n "$payout_quote_id" ] && [ "$payout_fee_amount" = "2000" ] && ok "payout quote created (id=$payout_quote_id fee=$payout_fee_amount)" \
 		|| fail "payout quote creation unexpected: $payout_quote_resp"
 
-	code=$(curl_internal -s -o /dev/null -w '%{http_code}' -X PUT "http://localhost:$LEDGER_INTERNAL_PORT/api/v1/ledger/admin/ledger/fee-rules/$WITHDRAW_FEE_RULE_ID" \
-		-H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" \
-		-d '{"tx_type":"withdraw_settle","currency":"IDR","flat_minor_units":8000,"fee_gateway":"platform"}')
-	[ "$code" = "200" ] && ok "withdraw_settle re-priced to 8000 via admin API" || fail "fee rule update got $code, expected 200"
+	fee_rule_apply "$fee_url" "$FEE_MAKER_TOKEN" "$FEE_CHECKER_TOKEN" "$WITHDRAW_FEE_RULE_ID" \
+		'{"tx_type":"withdraw_settle","currency":"IDR","flat_minor_units":8000,"fee_gateway":"platform"}' \
+		"withdraw fee repricing"
 
 	local fee_before_payout
 	fee_before_payout="$(fee_platform_balance)"
