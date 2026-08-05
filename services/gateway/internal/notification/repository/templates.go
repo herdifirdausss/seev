@@ -67,29 +67,50 @@ func (r *platformRepo) CreateTemplateDraft(ctx context.Context, v notifytemplate
 	if v.ID == uuid.Nil {
 		v.ID = uuid.New()
 	}
-	if v.TemplateID == uuid.Nil {
-		v.TemplateID = uuid.New()
-	}
-	if v.Version <= 0 {
-		v.Version = 1
-	}
 	hash := sha256.Sum256([]byte(v.SubjectTemplate + "\x00" + v.TitleTemplate + "\x00" + v.BodyTextTemplate + "\x00" + v.BodyHTMLTemplate))
-	err := r.db.WithTx(ctx, nil, func(tx *sql.Tx) error {
-		if _, err := tx.ExecContext(ctx, `INSERT INTO notif_templates(id,kind,description,variable_schema) VALUES($1,$2,$3,$4) ON CONFLICT(kind) DO NOTHING`, v.TemplateID, v.Kind, v.Kind, []byte(`{"version":1}`)); err != nil {
+	return r.db.WithTx(ctx, nil, func(tx *sql.Tx) error {
+		if v.TemplateID == uuid.Nil {
+			if _, err := tx.ExecContext(ctx, `INSERT INTO notif_templates(id,kind,description,variable_schema) VALUES($1,$2,$3,$4) ON CONFLICT(kind) DO NOTHING`, uuid.New(), v.Kind, v.Kind, []byte(`{"version":1}`)); err != nil {
+				return err
+			}
+			if err := tx.QueryRowContext(ctx, `SELECT id FROM notif_templates WHERE kind=$1`, v.Kind).Scan(&v.TemplateID); err != nil {
+				return err
+			}
+		}
+		// Version is always computed here, ignoring any caller-supplied
+		// value: every seeded default kind already has an active v1, so a
+		// hardcoded "default to 1" (the previous behavior) hit the unique
+		// (template_id,channel,locale,version) constraint on the very first
+		// draft of an existing kind — draft creation for any pre-seeded kind
+		// was unconditionally broken until this query replaced it.
+		var maxVersion int
+		if err := tx.QueryRowContext(ctx, `SELECT COALESCE(MAX(version),0) FROM notif_template_versions WHERE template_id=$1 AND channel=$2 AND locale=$3`, v.TemplateID, v.Channel, v.Locale).Scan(&maxVersion); err != nil {
 			return err
 		}
-		var templateID uuid.UUID
-		if err := tx.QueryRowContext(ctx, `SELECT id FROM notif_templates WHERE kind=$1`, v.Kind).Scan(&templateID); err != nil {
-			return err
-		}
-		_, err := tx.ExecContext(ctx, `INSERT INTO notif_template_versions(id,template_id,channel,locale,version,status,subject_template,title_template,body_text_template,body_html_template,content_hash,created_by) VALUES($1,$2,$3,$4,$5,'draft',NULLIF($6,''),NULLIF($7,''),$8,NULLIF($9,''),$10,$11)`, v.ID, templateID, v.Channel, v.Locale, v.Version, v.SubjectTemplate, v.TitleTemplate, v.BodyTextTemplate, v.BodyHTMLTemplate, hash[:], actor)
+		v.Version = maxVersion + 1
+		_, err := tx.ExecContext(ctx, `INSERT INTO notif_template_versions(id,template_id,channel,locale,version,status,subject_template,title_template,body_text_template,body_html_template,content_hash,created_by) VALUES($1,$2,$3,$4,$5,'draft',NULLIF($6,''),NULLIF($7,''),$8,NULLIF($9,''),$10,$11)`, v.ID, v.TemplateID, v.Channel, v.Locale, v.Version, v.SubjectTemplate, v.TitleTemplate, v.BodyTextTemplate, v.BodyHTMLTemplate, hash[:], actor)
 		return err
 	})
-	return err
 }
 func (r *platformRepo) SubmitTemplate(ctx context.Context, id uuid.UUID, actor string) error {
-	_, err := r.db.ExecContext(ctx, `UPDATE notif_template_versions SET status='pending_approval',submitted_by=$2,submitted_at=now() WHERE id=$1 AND status='draft' AND created_by<>$2`, id, actor)
-	return err
+	// Submission is a maker-only action on their own draft — unlike approve/
+	// reject, there is no actor-must-differ rule here (that check belongs to
+	// the checker step, further down). RowsAffected is checked explicitly
+	// because a plain UPDATE with no matching row silently reports success,
+	// which would leave the draft stuck invisible to checkers with the
+	// caller none the wiser.
+	result, err := r.db.ExecContext(ctx, `UPDATE notif_template_versions SET status='pending_approval',submitted_by=$2,submitted_at=now() WHERE id=$1 AND status='draft'`, id, actor)
+	if err != nil {
+		return err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return fmt.Errorf("template draft not found or already submitted")
+	}
+	return nil
 }
 func (r *platformRepo) ApproveTemplate(ctx context.Context, id uuid.UUID, actor string) error {
 	return r.db.WithTx(ctx, nil, func(tx *sql.Tx) error {

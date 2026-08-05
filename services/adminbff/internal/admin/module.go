@@ -145,6 +145,21 @@ func (m *Module) AdminRouter() http.Handler {
 	// (never subject data — see services/auth.AdminPrivacyRequest's own doc comment).
 	mux.Handle("/api/v1/admin/privacy/", m.proxy("auth", m.clients.AuthAdmin, "/api/v1/admin/privacy/", "/api/v1/admin/privacy/"))
 	mux.Handle("/api/v1/admin/gateway/", m.proxy("gateway", m.clients.Gateway, "/api/v1/admin/gateway/", "/api/v1/admin/gateway/"))
+	// Form-driven notification maker/checker and channel-control actions need
+	// their own handlers, not the generic gateway proxy above: an HTML <form>
+	// can only submit GET/POST (channel control needs PUT) and cannot carry
+	// an ID in the target URL without JS, so each action posts fixed fields
+	// to a fixed URL and the proxy below builds the real downstream request.
+	mux.Handle("POST /api/v1/admin/notifications/templates/draft", m.notificationTemplateDraftProxy())
+	mux.Handle("POST /api/v1/admin/notifications/templates/submit", m.notificationTemplateDecisionProxy("submit"))
+	mux.Handle("POST /api/v1/admin/notifications/templates/approve", m.notificationTemplateDecisionProxy("approve"))
+	mux.Handle("POST /api/v1/admin/notifications/templates/reject", m.notificationTemplateDecisionProxy("reject"))
+	mux.Handle("POST /api/v1/admin/notifications/templates/retire", m.notificationTemplateDecisionProxy("retire"))
+	mux.Handle("GET /api/v1/admin/notifications/deliveries/detail", m.notificationDeliveryDetailProxy())
+	mux.Handle("POST /api/v1/admin/notifications/deliveries/replay", m.notificationDeliveryReplayProxy())
+	mux.Handle("POST /api/v1/admin/notifications/channels/pause", m.notificationChannelControlProxy("paused"))
+	mux.Handle("POST /api/v1/admin/notifications/channels/resume", m.notificationChannelControlProxy("running"))
+	mux.Handle("POST /api/v1/admin/notifications/channels/drain", m.notificationChannelControlProxy("drain_only"))
 	mux.HandleFunc("/api/v1/admin/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/v1/admin/" {
 			htmlHeader(w)

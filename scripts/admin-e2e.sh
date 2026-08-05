@@ -51,6 +51,55 @@ after="$(psql_exec "$ADMINBFF_DB_NAME" -c "SELECT count(*) FROM audit_log;" | tr
 curl_internal -fsS -b "$COOKIE_JAR" "http://localhost:$ADMINBFF_PORT/api/v1/admin/catalog" | grep -q 'Audit log' \
 	&& ok "batch-2 operations panels render" || fail "batch-2 operations panel missing"
 
+log "notification console: template maker/checker, channel controls, and audit (Plan 59)"
+
+audit_before="$(psql_exec "$ADMINBFF_DB_NAME" -c "SELECT count(*) FROM audit_log WHERE target_service='gateway';" | tr -d '[:space:]')"
+
+draft_resp="$(curl_internal -fsS -b "$COOKIE_JAR" -X POST "http://localhost:$ADMINBFF_PORT/api/v1/admin/notifications/templates/draft" \
+	-H 'Content-Type: application/x-www-form-urlencoded' \
+	--data-urlencode "kind=money.transfer.sent" --data-urlencode "channel=email" --data-urlencode "locale=en-US" \
+	--data-urlencode "subject_template=admin-e2e subject" --data-urlencode "body_text_template=admin-e2e body" \
+	--data-urlencode "csrf_token=$csrf")"
+template_id="$(echo "$draft_resp" | json_field id)"
+[ -n "$template_id" ] && ok "notification template draft created through the CSRF-protected form" \
+	|| fail "notification template draft did not return an id: $draft_resp"
+
+submit_code="$(curl_internal -sS -o "$WORK_DIR/notif-submit.json" -w '%{http_code}' -b "$COOKIE_JAR" -X POST \
+	"http://localhost:$ADMINBFF_PORT/api/v1/admin/notifications/templates/submit" \
+	-H 'Content-Type: application/x-www-form-urlencoded' \
+	--data-urlencode "id=$template_id" --data-urlencode "csrf_token=$csrf")"
+[ "$submit_code" = "204" ] && ok "notification template submitted for approval" || fail "template submit returned HTTP $submit_code"
+
+# The single bootstrapped operator account cannot approve its own draft:
+# repository/templates.go enforces maker/checker actor separation
+# independent of role, so this must fail even though this account holds the
+# superuser "admin" role that would otherwise pass the checker role gate.
+same_actor_code="$(curl_internal -sS -o /dev/null -w '%{http_code}' -b "$COOKIE_JAR" -X POST \
+	"http://localhost:$ADMINBFF_PORT/api/v1/admin/notifications/templates/approve" \
+	-H 'Content-Type: application/x-www-form-urlencoded' \
+	--data-urlencode "id=$template_id" --data-urlencode "csrf_token=$csrf")"
+[ "$same_actor_code" = "409" ] && ok "same-actor template approval is rejected end to end" \
+	|| fail "same-actor approval returned HTTP $same_actor_code, want 409"
+
+pause_code="$(curl_internal -sS -o /dev/null -w '%{http_code}' -b "$COOKIE_JAR" -X POST \
+	"http://localhost:$ADMINBFF_PORT/api/v1/admin/notifications/channels/pause" \
+	-H 'Content-Type: application/x-www-form-urlencoded' \
+	--data-urlencode "channel=email" --data-urlencode "reason=admin-e2e drill" --data-urlencode "csrf_token=$csrf")"
+[ "$pause_code" = "204" ] && ok "email channel pause accepted" || fail "channel pause returned HTTP $pause_code"
+
+channel_state="$(curl_internal -fsS -b "$COOKIE_JAR" "http://localhost:$ADMINBFF_PORT/api/v1/admin/gateway/notifications/channels/email" | json_field state)"
+[ "$channel_state" = "paused" ] && ok "email channel state reflects the pause" || fail "email channel state is '$channel_state', want paused"
+
+resume_code="$(curl_internal -sS -o /dev/null -w '%{http_code}' -b "$COOKIE_JAR" -X POST \
+	"http://localhost:$ADMINBFF_PORT/api/v1/admin/notifications/channels/resume" \
+	-H 'Content-Type: application/x-www-form-urlencoded' \
+	--data-urlencode "channel=email" --data-urlencode "csrf_token=$csrf")"
+[ "$resume_code" = "204" ] && ok "email channel resume accepted" || fail "channel resume returned HTTP $resume_code"
+
+audit_after="$(psql_exec "$ADMINBFF_DB_NAME" -c "SELECT count(*) FROM audit_log WHERE target_service='gateway';" | tr -d '[:space:]')"
+[ "$audit_after" -gt "$audit_before" ] && ok "notification admin mutations were audited" \
+	|| fail "gateway audit row count did not increase ($audit_before -> $audit_after)"
+
 if [ "${FAILED:-0}" -ne 0 ]; then
 	exit 1
 fi

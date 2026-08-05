@@ -5,18 +5,107 @@ sanitized: recipient addresses, device tokens, rendered user content, and
 provider secrets are never shown in the operator console.</p>
 
 <section>
-  <h2>Templates</h2>
+  <h2>Template catalog</h2>
   <button hx-get="/api/v1/admin/gateway/notifications/templates"
           hx-target="#notification-templates" hx-swap="textContent">Refresh catalog</button>
   <pre id="notification-templates">No template catalog loaded.</pre>
 </section>
 
+{{if .IsMaker}}<section>
+  <h2>Create template draft</h2>
+  <p>Fixture rendering and variable-schema checks run server-side before the
+  draft is stored; a version that fails to render is rejected outright.</p>
+  <form method="post" action="/api/v1/admin/notifications/templates/draft">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <label>Kind <input name="kind" placeholder="money.transfer.sent" required></label>
+    <label>Channel <select name="channel" required>
+      <option value="in_app">in_app</option>
+      <option value="email">email</option>
+      <option value="push">push</option>
+    </select></label>
+    <label>Locale <input name="locale" value="en-US" required></label>
+    <label>Subject (email only) <input name="subject_template"></label>
+    <label>Title (in_app/push) <input name="title_template"></label>
+    <label>Body text <textarea name="body_text_template" required></textarea></label>
+    <label>Body HTML (email only) <textarea name="body_html_template"></textarea></label>
+    <button type="submit">Create draft</button>
+  </form>
+</section>
 <section>
-  <h2>Delivery backlog</h2>
-  <button hx-get="/api/v1/admin/gateway/notifications/deliveries"
-          hx-target="#notification-deliveries" hx-swap="textContent">Refresh deliveries</button>
+  <h2>Submit draft for approval</h2>
+  <form method="post" action="/api/v1/admin/notifications/templates/submit">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <label>Template version ID <input name="id" required></label>
+    <button type="submit">Submit for approval</button>
+  </form>
+</section>{{end}}
+
+{{if .IsChecker}}<section>
+  <h2>Approve, reject, or retire a template version</h2>
+  <p>The maker who created a draft cannot also approve it — Gateway rejects
+  same-actor approval regardless of what this form allows.</p>
+  <form method="post" action="/api/v1/admin/notifications/templates/approve">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <label>Template version ID <input name="id" required></label>
+    <button type="submit">Approve</button>
+  </form>
+  <form method="post" action="/api/v1/admin/notifications/templates/reject">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <label>Template version ID <input name="id" required></label>
+    <label>Reason <input name="reason" required></label>
+    <button type="submit" class="secondary">Reject</button>
+  </form>
+  <form method="post" action="/api/v1/admin/notifications/templates/retire">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <label>Active template version ID <input name="id" required></label>
+    <button type="submit" class="secondary">Retire</button>
+  </form>
+</section>{{end}}
+
+<section>
+  <h2>Delivery search</h2>
+  <form hx-get="/api/v1/admin/gateway/notifications/deliveries"
+        hx-target="#notification-deliveries" hx-swap="textContent">
+    <label>Status <select name="status">
+      <option value="">any</option>
+      <option value="dead">dead</option>
+      <option value="blocked">blocked</option>
+      <option value="retry_wait">retry_wait</option>
+      <option value="delivered">delivered</option>
+      <option value="suppressed">suppressed</option>
+    </select></label>
+    <label>Channel <select name="channel">
+      <option value="">any</option>
+      <option value="in_app">in_app</option>
+      <option value="email">email</option>
+      <option value="push">push</option>
+    </select></label>
+    <button type="submit">Search deliveries</button>
+  </form>
   <pre id="notification-deliveries">No delivery data loaded.</pre>
 </section>
+
+<section>
+  <h2>Delivery detail</h2>
+  <form hx-get="/api/v1/admin/notifications/deliveries/detail"
+        hx-target="#notification-delivery-detail" hx-swap="textContent">
+    <label>Delivery ID <input name="id" required></label>
+    <button type="submit">Look up</button>
+  </form>
+  <pre id="notification-delivery-detail">No delivery looked up.</pre>
+</section>
+
+{{if or .IsMaker .IsChecker}}<section>
+  <h2>Replay a dead or blocked delivery</h2>
+  <p>Replay reuses the original rendered snapshot and notification ID; it
+  cannot resurrect a suppressed opt-out or a revoked device.</p>
+  <form method="post" action="/api/v1/admin/notifications/deliveries/replay">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <label>Delivery ID <input name="id" required></label>
+    <label>Reason <input name="reason" required></label>
+    <button type="submit">Replay delivery</button>
+  </form>
+</section>{{end}}
 
 <section>
   <h2>Channel controls</h2>
@@ -25,5 +114,23 @@ provider secrets are never shown in the operator console.</p>
     <article><h3>Push</h3><pre hx-get="/api/v1/admin/gateway/notifications/channels/push" hx-trigger="load" hx-swap="textContent"></pre></article>
     <article><h3>Digest</h3><pre hx-get="/api/v1/admin/gateway/notifications/channels/digest" hx-trigger="load" hx-swap="textContent"></pre></article>
   </div>
+  {{if or .IsMaker .IsChecker}}<form method="post" action="/api/v1/admin/notifications/channels/pause">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <label>Channel <select name="channel" required><option value="email">email</option><option value="push">push</option><option value="digest">digest</option></select></label>
+    <label>Reason <input name="reason" required></label>
+    <button type="submit" class="secondary">Pause</button>
+  </form>
+  <form method="post" action="/api/v1/admin/notifications/channels/drain">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <label>Channel <select name="channel" required><option value="email">email</option><option value="push">push</option><option value="digest">digest</option></select></label>
+    <label>Reason <input name="reason" required></label>
+    <button type="submit" class="secondary">Drain only</button>
+  </form>
+  <form method="post" action="/api/v1/admin/notifications/channels/resume">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <label>Channel <select name="channel" required><option value="email">email</option><option value="push">push</option><option value="digest">digest</option></select></label>
+    <label>Reason <input name="reason"></label>
+    <button type="submit">Resume</button>
+  </form>{{end}}
 </section>
 {{end}}

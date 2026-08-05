@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"net/url"
 	"strings"
 
 	"github.com/google/uuid"
@@ -33,20 +32,23 @@ func rewriteProxyPath(requestPath, rawQuery, publicPrefix, downstreamPrefix stri
 
 func (m *Module) proxy(target string, downstream *client.ServiceClient, publicPrefix, downstreamPrefix string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, err := io.ReadAll(io.LimitReader(r.Body, 4<<20))
-		if err != nil {
-			response.BadRequest(w, "invalid request body")
-			return
-		}
+		var body []byte
+		var err error
 		contentType := r.Header.Get("Content-Type")
 		if strings.HasPrefix(contentType, "application/x-www-form-urlencoded") {
-			values, parseErr := url.ParseQuery(string(body))
-			if parseErr != nil {
+			// ParseForm is idempotent: if RequireCSRF already called it and
+			// drained r.Body, r.PostForm is already populated; calling again is
+			// a no-op that reads the cached map rather than re-reading the now-
+			// empty body stream.
+			if parseErr := r.ParseForm(); parseErr != nil {
 				response.BadRequest(w, "invalid form body")
 				return
 			}
-			payload := make(map[string]any, len(values))
-			for key, items := range values {
+			payload := make(map[string]any, len(r.PostForm))
+			for key, items := range r.PostForm {
+				if key == "csrf_token" {
+					continue // never forward the CSRF token downstream
+				}
 				if len(items) == 1 {
 					payload[key] = items[0]
 				} else {
@@ -59,6 +61,12 @@ func (m *Module) proxy(target string, downstream *client.ServiceClient, publicPr
 				return
 			}
 			contentType = "application/json"
+		} else {
+			body, err = io.ReadAll(io.LimitReader(r.Body, 4<<20))
+			if err != nil {
+				response.BadRequest(w, "invalid request body")
+				return
+			}
 		}
 		token, err := m.MintDownstreamToken(r.Context())
 		if err != nil {
@@ -208,6 +216,249 @@ func (m *Module) fxRateDecisionProxy(action string) http.Handler {
 		m.AuditMutation(r.Context(), r, "ledger", status, map[string]any{"downstream_status": status, "operation": "fx_rate_" + action})
 		w.WriteHeader(status)
 		_, _ = w.Write(responseBody)
+	})
+}
+
+// notificationTemplateDraftRequest mirrors services/gateway's
+// notifytemplate.Version field-for-field with no json tags on either side,
+// so plain Go field-name matching (not snake_case) is what the downstream
+// decoder expects.
+type notificationTemplateDraftRequest struct {
+	Kind             string `json:"Kind"`
+	Channel          string `json:"Channel"`
+	Locale           string `json:"Locale"`
+	SubjectTemplate  string `json:"SubjectTemplate"`
+	TitleTemplate    string `json:"TitleTemplate"`
+	BodyTextTemplate string `json:"BodyTextTemplate"`
+	BodyHTMLTemplate string `json:"BodyHTMLTemplate"`
+}
+
+// notificationTemplateDraftProxy, notificationTemplateDecisionProxy,
+// notificationDeliveryReplayProxy, and notificationChannelControlProxy all
+// use r.ParseForm()+r.FormValue like adjustmentDecisionProxy/
+// fxRateDecisionProxy above, not a raw r.Body re-read like proxy(): RequireCSRF
+// (login.go) already calls r.ParseForm() to read the hidden csrf_token field
+// on every plain HTML <form> submission (browsers cannot set the
+// X-CSRF-Token header), which permanently drains r.Body. A handler that
+// tried its own io.ReadAll(r.Body) afterward — as the generic proxy() does —
+// would forward an empty payload downstream.
+func (m *Module) notificationTemplateDraftProxy() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			response.BadRequest(w, "invalid form")
+			return
+		}
+		payload := notificationTemplateDraftRequest{
+			Kind:             strings.TrimSpace(r.FormValue("kind")),
+			Channel:          strings.TrimSpace(r.FormValue("channel")),
+			Locale:           strings.TrimSpace(r.FormValue("locale")),
+			SubjectTemplate:  r.FormValue("subject_template"),
+			TitleTemplate:    r.FormValue("title_template"),
+			BodyTextTemplate: r.FormValue("body_text_template"),
+			BodyHTMLTemplate: r.FormValue("body_html_template"),
+		}
+		body, err := json.Marshal(payload)
+		if err != nil {
+			response.BadRequest(w, "invalid template draft")
+			return
+		}
+		token, err := m.MintDownstreamToken(r.Context())
+		if err != nil {
+			response.Unauthorized(w, "authentication required")
+			return
+		}
+		path := "/api/v1/admin/gateway/notifications/templates/draft"
+		status, headers, responseBody, callErr := m.clients.Gateway.DoRaw(r.Context(), token, http.MethodPost, path, body, "application/json")
+		if callErr != nil && status == 0 {
+			m.AuditMutation(r.Context(), r, "gateway", http.StatusServiceUnavailable, map[string]any{"error": "unavailable", "operation": "notification_template_draft"})
+			writeJSONError(w, http.StatusServiceUnavailable, "DOWNSTREAM_UNAVAILABLE", "admin service temporarily unavailable")
+			return
+		}
+		if status == 0 {
+			status = http.StatusBadGateway
+		}
+		if ct := headers.Get("Content-Type"); ct != "" {
+			w.Header().Set("Content-Type", ct)
+		} else {
+			w.Header().Set("Content-Type", "application/json")
+		}
+		m.AuditMutation(r.Context(), r, "gateway", status, map[string]any{"downstream_status": status, "operation": "notification_template_draft", "kind": payload.Kind, "channel": payload.Channel})
+		w.WriteHeader(status)
+		_, _ = w.Write(responseBody)
+	})
+}
+
+func (m *Module) notificationTemplateDecisionProxy(action string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			response.BadRequest(w, "invalid form")
+			return
+		}
+		id, err := uuid.Parse(r.FormValue("id"))
+		if err != nil {
+			response.BadRequest(w, "invalid template id")
+			return
+		}
+		token, err := m.MintDownstreamToken(r.Context())
+		if err != nil {
+			response.Unauthorized(w, "authentication required")
+			return
+		}
+		body := []byte("{}")
+		if action == "reject" {
+			body, err = json.Marshal(map[string]string{"reason": strings.TrimSpace(r.FormValue("reason"))})
+			if err != nil {
+				response.BadRequest(w, "invalid rejection reason")
+				return
+			}
+		}
+		path := "/api/v1/admin/gateway/notifications/templates/" + id.String() + "/" + action
+		status, headers, responseBody, callErr := m.clients.Gateway.DoRaw(r.Context(), token, http.MethodPost, path, body, "application/json")
+		if callErr != nil && status == 0 {
+			m.AuditMutation(r.Context(), r, "gateway", http.StatusServiceUnavailable, map[string]any{"error": "unavailable", "operation": "notification_template_" + action})
+			writeJSONError(w, http.StatusServiceUnavailable, "DOWNSTREAM_UNAVAILABLE", "admin service temporarily unavailable")
+			return
+		}
+		if status == 0 {
+			status = http.StatusBadGateway
+		}
+		if ct := headers.Get("Content-Type"); ct != "" {
+			w.Header().Set("Content-Type", ct)
+		} else {
+			w.Header().Set("Content-Type", "application/json")
+		}
+		m.AuditMutation(r.Context(), r, "gateway", status, map[string]any{"downstream_status": status, "operation": "notification_template_" + action})
+		w.WriteHeader(status)
+		_, _ = w.Write(responseBody)
+	})
+}
+
+func (m *Module) notificationDeliveryReplayProxy() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			response.BadRequest(w, "invalid form")
+			return
+		}
+		id, err := uuid.Parse(r.FormValue("id"))
+		if err != nil {
+			response.BadRequest(w, "invalid delivery id")
+			return
+		}
+		reason := strings.TrimSpace(r.FormValue("reason"))
+		if reason == "" {
+			response.BadRequest(w, "replay reason is required")
+			return
+		}
+		token, err := m.MintDownstreamToken(r.Context())
+		if err != nil {
+			response.Unauthorized(w, "authentication required")
+			return
+		}
+		body, err := json.Marshal(map[string]string{"reason": reason})
+		if err != nil {
+			response.BadRequest(w, "invalid reason")
+			return
+		}
+		path := "/api/v1/admin/gateway/notifications/deliveries/" + id.String() + "/replay"
+		status, headers, responseBody, callErr := m.clients.Gateway.DoRaw(r.Context(), token, http.MethodPost, path, body, "application/json")
+		if callErr != nil && status == 0 {
+			m.AuditMutation(r.Context(), r, "gateway", http.StatusServiceUnavailable, map[string]any{"error": "unavailable", "operation": "notification_delivery_replay"})
+			writeJSONError(w, http.StatusServiceUnavailable, "DOWNSTREAM_UNAVAILABLE", "admin service temporarily unavailable")
+			return
+		}
+		if status == 0 {
+			status = http.StatusBadGateway
+		}
+		if ct := headers.Get("Content-Type"); ct != "" {
+			w.Header().Set("Content-Type", ct)
+		} else {
+			w.Header().Set("Content-Type", "application/json")
+		}
+		m.AuditMutation(r.Context(), r, "gateway", status, map[string]any{"downstream_status": status, "operation": "notification_delivery_replay"})
+		w.WriteHeader(status)
+		_, _ = w.Write(responseBody)
+	})
+}
+
+// notificationChannelControlProxy binds one handler per target state
+// (paused/running/drain_only) so each operator button posts to a fixed,
+// self-describing URL instead of the browser having to submit an arbitrary
+// state value.
+func (m *Module) notificationChannelControlProxy(state string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			response.BadRequest(w, "invalid form")
+			return
+		}
+		channel := strings.TrimSpace(r.FormValue("channel"))
+		if channel != "email" && channel != "push" && channel != "digest" {
+			response.BadRequest(w, "invalid channel")
+			return
+		}
+		reason := strings.TrimSpace(r.FormValue("reason"))
+		token, err := m.MintDownstreamToken(r.Context())
+		if err != nil {
+			response.Unauthorized(w, "authentication required")
+			return
+		}
+		body, err := json.Marshal(map[string]string{"state": state, "reason": reason})
+		if err != nil {
+			response.BadRequest(w, "invalid channel control request")
+			return
+		}
+		path := "/api/v1/admin/gateway/notifications/channels/" + channel
+		status, headers, responseBody, callErr := m.clients.Gateway.DoRaw(r.Context(), token, http.MethodPut, path, body, "application/json")
+		if callErr != nil && status == 0 {
+			m.AuditMutation(r.Context(), r, "gateway", http.StatusServiceUnavailable, map[string]any{"error": "unavailable", "operation": "notification_channel_" + state})
+			writeJSONError(w, http.StatusServiceUnavailable, "DOWNSTREAM_UNAVAILABLE", "admin service temporarily unavailable")
+			return
+		}
+		if status == 0 {
+			status = http.StatusBadGateway
+		}
+		if ct := headers.Get("Content-Type"); ct != "" {
+			w.Header().Set("Content-Type", ct)
+		} else {
+			w.Header().Set("Content-Type", "application/json")
+		}
+		m.AuditMutation(r.Context(), r, "gateway", status, map[string]any{"downstream_status": status, "operation": "notification_channel_" + state, "channel": channel})
+		w.WriteHeader(status)
+		_, _ = w.Write(responseBody)
+	})
+}
+
+// notificationDeliveryDetailProxy takes the delivery ID from a query
+// parameter rather than the URL path: a plain HTML <form method="get"> can
+// only append its fields as a query string, it cannot interpolate a value
+// into the middle of the target path the way a JS client could.
+func (m *Module) notificationDeliveryDetailProxy() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		id, err := uuid.Parse(r.URL.Query().Get("id"))
+		if err != nil {
+			response.BadRequest(w, "invalid delivery id")
+			return
+		}
+		token, err := m.MintDownstreamToken(r.Context())
+		if err != nil {
+			response.Unauthorized(w, "authentication required")
+			return
+		}
+		path := "/api/v1/admin/gateway/notifications/deliveries/" + id.String()
+		status, headers, body, callErr := m.clients.Gateway.DoRaw(r.Context(), token, http.MethodGet, path, nil, "")
+		if callErr != nil && status == 0 {
+			writeJSONError(w, http.StatusServiceUnavailable, "DOWNSTREAM_UNAVAILABLE", "admin service temporarily unavailable")
+			return
+		}
+		if status == 0 {
+			status = http.StatusBadGateway
+		}
+		if ct := headers.Get("Content-Type"); ct != "" {
+			w.Header().Set("Content-Type", ct)
+		} else {
+			w.Header().Set("Content-Type", "application/json")
+		}
+		w.WriteHeader(status)
+		_, _ = w.Write(body)
 	})
 }
 

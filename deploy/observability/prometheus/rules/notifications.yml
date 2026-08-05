@@ -13,7 +13,7 @@ groups:
       service: notifications
     annotations:
       summary: "notification event messages are entering the ledger notification DLQ"
-      runbook: docs/runbooks/notification-event-dlq.md
+      runbook: docs/operations/runbooks/notification-event-dlq.md
 
   - alert: SeevNotificationMandatoryTemplateMissing
     expr: increase(seev_notification_template_missing_total{channel="in_app"}[10m]) > 0
@@ -23,7 +23,7 @@ groups:
       service: notifications
     annotations:
       summary: "a mandatory in-app notification template is missing"
-      runbook: docs/runbooks/notification-template-missing.md
+      runbook: docs/operations/runbooks/notification-template-missing.md
 
   - alert: SeevNotificationPlanningFailure
     expr: increase(seev_notification_planning_failures_total[10m]) > 0
@@ -33,7 +33,7 @@ groups:
       service: notifications
     annotations:
       summary: "notification planning failures were recorded"
-      runbook: docs/runbooks/notification-template-incident.md
+      runbook: docs/operations/runbooks/notification-template-incident.md
 
   - alert: SeevNotificationEmailBacklog
     expr: seev_notification_oldest_due_age_seconds{channel="email"} > 300
@@ -44,7 +44,7 @@ groups:
       channel: email
     annotations:
       summary: "the oldest email notification delivery has been due for over five minutes"
-      runbook: docs/runbooks/notification-email-backlog.md
+      runbook: docs/operations/runbooks/notification-email-backlog.md
 
   - alert: SeevNotificationPushBacklog
     expr: seev_notification_oldest_due_age_seconds{channel="push"} > 300
@@ -55,7 +55,7 @@ groups:
       channel: push
     annotations:
       summary: "the oldest push notification delivery has been due for over five minutes"
-      runbook: docs/runbooks/notification-push-backlog.md
+      runbook: docs/operations/runbooks/notification-push-backlog.md
 
   - alert: SeevNotificationContactResolutionFailure
     expr: increase(seev_notification_contact_resolution_total{result="error"}[15m]) > 0
@@ -65,7 +65,7 @@ groups:
       service: notifications
     annotations:
       summary: "Auth notification-contact resolution is failing"
-      runbook: docs/runbooks/notification-auth-contact-outage.md
+      runbook: docs/operations/runbooks/notification-auth-contact-outage.md
 
   - alert: SeevNotificationDeadDeliveryGrowth
     expr: increase(seev_notification_dead_total[15m]) > 0
@@ -75,7 +75,7 @@ groups:
       service: notifications
     annotations:
       summary: "notification deliveries have exhausted their retry budget"
-      runbook: docs/runbooks/notification-dead-delivery.md
+      runbook: docs/operations/runbooks/notification-dead-delivery.md
 
   - alert: SeevNotificationBlockedDeliveryGrowth
     expr: increase(seev_notification_blocked_total[15m]) > 0
@@ -85,7 +85,7 @@ groups:
       service: notifications
     annotations:
       summary: "notification deliveries are being blocked before provider dispatch"
-      runbook: docs/runbooks/notification-template-missing.md
+      runbook: docs/operations/runbooks/notification-template-missing.md
 
   - alert: SeevNotificationDigestScheduleLag
     expr: seev_notification_digest_schedule_lag_seconds > 900
@@ -96,7 +96,7 @@ groups:
       channel: digest
     annotations:
       summary: "daily notification digest scheduling is over fifteen minutes late"
-      runbook: docs/runbooks/notification-digest-lag.md
+      runbook: docs/operations/runbooks/notification-digest-lag.md
 
   - alert: SeevNotificationChannelPaused
     expr: seev_notification_channel_state{state="paused"} == 1
@@ -106,7 +106,7 @@ groups:
       service: notifications
     annotations:
       summary: "a notification channel has remained paused"
-      runbook: docs/runbooks/notification-channel-pause.md
+      runbook: docs/operations/runbooks/notification-channel-pause.md
 
   - alert: SeevNotificationInvalidDeviceSpike
     expr: increase(seev_notification_delivery_attempts_total{channel="push",result="invalid_endpoint"}[15m]) >= 5
@@ -117,7 +117,7 @@ groups:
       channel: push
     annotations:
       summary: "push invalid-device responses are spiking"
-      runbook: docs/runbooks/notification-device-token-compromise.md
+      runbook: docs/operations/runbooks/notification-device-token-compromise.md
 
   - alert: SeevNotificationProviderFailureRate
     expr: |
@@ -132,7 +132,7 @@ groups:
       service: notifications
     annotations:
       summary: "notification provider failure rate is above twenty percent"
-      runbook: docs/runbooks/notification-provider-outage.md
+      runbook: docs/operations/runbooks/notification-provider-outage.md
 
   - alert: SeevNotificationRetentionFailure
     expr: increase(seev_retention_runs_total{owner="gateway",result="error"}[1h]) > 0
@@ -142,4 +142,4 @@ groups:
       service: notifications
     annotations:
       summary: "Gateway notification retention or recipient-erasure work is failing"
-      runbook: docs/runbooks/notification-recipient-data-exposure.md
+      runbook: docs/operations/runbooks/notification-recipient-data-exposure.md

@@ -26,7 +26,7 @@ GOLANGCI_LINT := $(GOLANGCI_LINT_DIR)/golangci-lint
 GOVULNCHECK_DIR := $(TOOLS_DIR)/govulncheck-$(GOVULNCHECK_VERSION)
 GOVULNCHECK := $(GOVULNCHECK_DIR)/govulncheck
 
-.PHONY: build build-all build-services build-service build-tools build-operations run dev test test/cover test-service integration-service clean lint modernize-check ci-lint print-golangci-lint-version print-govulncheck-version docs-check onboarding-check doctor architecture-check architecture-graph architecture-metrics ide-config improvement-check risk-gate-check supply-chain-check supply-chain-evidence-check environment-contract-check vendor-sandbox-check tidy tools tools-lint tools-security security-vuln proto proto-lint proto-breaking contract-generate contract-lint contract-breaking contract-test contracts load-lint load-test load-seed load-snapshot load-restore load-smoke load-run load-capacity load-report-check load-clean vet docker-up docker-down smoke-container smoke-test business-e2e capability-e2e admin-e2e privacy-e2e merchant-e2e dr-integration verify-static verify-full verify-chaos chaos-debug migrate-up migrate-up-all migrate-down grant-app-role observability-secret observability-down certs backup-secret backup-role-bootstrap backup-checksums-enable backup-stanza-init backup-full backup-diff backup-check backup-status backup-expire cryptox-secret retention-docs retention-check analytics-secret analytics-config-check analytics-up-core analytics-up-ui analytics-up-ops analytics-health analytics-source-setup analytics-connectors-validate analytics-connectors-apply analytics-connectors-status analytics-connectors-pause analytics-connectors-resume analytics-connectors-delete analytics-clickhouse-migrate analytics-dbt-deps analytics-dbt-build analytics-dbt-test analytics-reconcile analytics-metrics-exporter analytics-e2e analytics-chaos analytics-reset analytics-down analytics-verify k0-inventory k0-inventory-check k0-resource-sample k0-network-probe helm-lint platform-integration-check k8s-preflight k8s-bootstrap k8s-integration k8s-smoke k8s-verify-callback k8s-verify-egress help
+.PHONY: build build-all build-services build-service build-tools build-operations run dev test test/cover test-service integration-service clean lint modernize-check ci-lint print-golangci-lint-version print-govulncheck-version docs-check onboarding-check doctor architecture-check architecture-graph architecture-metrics ide-config improvement-check risk-gate-check supply-chain-check supply-chain-evidence-check environment-contract-check vendor-sandbox-check tidy tools tools-lint tools-security security-vuln proto proto-lint proto-breaking contract-generate contract-lint contract-breaking contract-test contracts load-lint load-test load-seed load-snapshot load-restore load-smoke load-run load-capacity load-report-check load-clean vet docker-up docker-down smoke-container smoke-test business-e2e capability-e2e admin-e2e privacy-e2e merchant-e2e notification-config-check notification-templates-check notification-fixtures notification-providers-up notification-providers-down notification-e2e notification-retention-test notification-verify dr-integration verify-static verify-full verify-chaos chaos-debug migrate-up migrate-up-all migrate-down grant-app-role observability-secret observability-down certs backup-secret backup-role-bootstrap backup-checksums-enable backup-stanza-init backup-full backup-diff backup-check backup-status backup-expire cryptox-secret retention-docs retention-check analytics-secret analytics-config-check analytics-up-core analytics-up-ui analytics-up-ops analytics-health analytics-source-setup analytics-connectors-validate analytics-connectors-apply analytics-connectors-status analytics-connectors-pause analytics-connectors-resume analytics-connectors-delete analytics-clickhouse-migrate analytics-dbt-deps analytics-dbt-build analytics-dbt-test analytics-reconcile analytics-metrics-exporter analytics-e2e analytics-chaos analytics-reset analytics-down analytics-verify k0-inventory k0-inventory-check k0-resource-sample k0-network-probe helm-lint platform-integration-check k8s-preflight k8s-bootstrap k8s-integration k8s-smoke k8s-verify-callback k8s-verify-egress help
 
 ## build: Compile the binary
 build:
@@ -553,6 +553,48 @@ privacy-e2e:
 ## merchant-e2e: Merchant/B2B onboarding, payin, transfer, isolation, and kill-switch journey (Plan 57 T10)
 merchant-e2e:
 	./scripts/merchant-e2e.sh
+
+## notification-config-check: Validate the C3 notification env/config contract (SMTP, push provider, fingerprint key, worker sizing)
+notification-config-check:
+	go run ./tools/notificationcheck
+
+## notification-templates-check: Run the notification template renderer, fixture, and registry mapping tests
+notification-templates-check:
+	go test ./services/gateway/internal/notification/template/...
+	go test ./services/gateway/internal/notification/registry/...
+
+## notification-fixtures: Verify every registered notification kind has a rendering built-in template for its required default-locale channels
+notification-fixtures:
+	go test ./services/gateway/internal/notification/registry/... -run TestBuiltinTemplatesCoverRegistry -v
+
+## notification-providers-up: Start the app stack plus Mailpit/mock-push-provider with email/push/digest enabled
+notification-providers-up:
+	NOTIFY_EMAIL_ENABLED=true NOTIFY_PUSH_ENABLED=true NOTIFY_DIGEST_ENABLED=true \
+		docker compose --profile app --profile notifications up -d --wait
+	@echo "Mailpit UI: http://127.0.0.1:8025  mock-push-provider: http://127.0.0.1:8097"
+
+## notification-providers-down: Tear down the app stack and notification provider containers, including volumes
+notification-providers-down:
+	docker compose --profile app --profile notifications down -v --remove-orphans
+
+## notification-e2e: Exercise the real Mailpit/mock-push delivery path end to end (requires notification-providers-up)
+notification-e2e:
+	go test -tags=integration ./services/gateway/internal/notification/... -run 'RealStack|E2E' -v
+
+## notification-retention-test: Run C3 retention/privacy erasure integration tests
+notification-retention-test:
+	go test -tags=integration ./services/gateway/internal/notification/inbox/... -run 'Retention|Privacy' -v
+
+## notification-verify: Local, non-destructive C3 gate (config, templates, fixtures, providers, e2e, retention/privacy)
+notification-verify:
+	@set -eu; \
+	$(MAKE) --no-print-directory notification-config-check; \
+	$(MAKE) --no-print-directory notification-templates-check; \
+	$(MAKE) --no-print-directory notification-fixtures; \
+	$(MAKE) --no-print-directory notification-retention-test; \
+	$(MAKE) --no-print-directory notification-providers-up; \
+	trap '$(MAKE) --no-print-directory notification-providers-down' EXIT; \
+	$(MAKE) --no-print-directory notification-e2e
 
 ## verify-static: Repeatable non-Docker build, static, contract, security, and safety gate
 verify-static:
