@@ -40,6 +40,10 @@ and [Services](../../reference/services.md) for that.
 | Analytics replication, connector, or dbt health is degraded | [Analytics connector](analytics-connector-failed.md), [source WAL](analytics-source-wal-pressure.md), or [dbt failure](analytics-dbt-failure.md) | Check lag and retention before restarting or rebuilding |
 | A notification queue, template, provider, or recipient flow is failing | [Notification provider](notification-provider-outage.md), [delivery backlog](notification-email-backlog.md), or [template incident](notification-template-incident.md) | Preserve the durable notification state; do not send outside the delivery ledger |
 | A ledger schedule, dispute deadline, or outbox row is stuck | [Stuck state](stuck-state-runbook.md) | Do not replay until the current state, lease, and idempotency key are recorded |
+| Balance API returns wrong values after a migration read ramp | [Migration: instant read rollback](migration-instant-read-rollback.md) | Set read_percentage to 0 first, investigate second |
+| Postings returning 5xx after migration entered ShadowRead or later | [Migration: strict dual-write failure](migration-strict-dual-write-failure.md) | Confirm the target write is the cause before switching mode |
+| Reconciliation produces open mismatches or checksum_mismatch alert fires | [Migration: shadow mismatch](migration-shadow-mismatch.md) | Never approve repair for shared_corruption classification |
+| Migration stuck in backfilling with no progress for > expected duration | [Migration: backfill stalled](migration-backfill-stalled.md) | Wait for lease expiry before restarting; do not truncate the target table |
 
 | Runbook | Covers |
 |---|---|
@@ -75,6 +79,10 @@ and [Services](../../reference/services.md) for that.
 | [stuck-state-runbook.md](stuck-state-runbook.md) | Triage for scheduled, dispute, and outbox stuck-state gauges |
 | [analytics-*.md](.) | C2 CDC, OLAP ingestion, dbt, reconciliation, rebuild, and sensitive-data incident procedures |
 | [notification-*.md](.) | C3 notification event, template, provider, channel, backlog, and recipient-protection procedures |
+| [migration-instant-read-rollback.md](migration-instant-read-rollback.md) | Rolling back the v2 read path to source in one API call when anomalous balances are detected post-ramp |
+| [migration-strict-dual-write-failure.md](migration-strict-dual-write-failure.md) | Restoring posting availability after a strict dual-write target failure, and switching to shadow mode |
+| [migration-shadow-mismatch.md](migration-shadow-mismatch.md) | Triaging and repairing open mismatches from reconciliation, with maker/checker repair flow |
+| [migration-backfill-stalled.md](migration-backfill-stalled.md) | Diagnosing and recovering from a stalled or never-started balance-projection backfill |
 
 Each runbook is self-contained: what triggers it, what to check, and the
 exact commands to run — no need to read another document first to act on

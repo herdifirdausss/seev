@@ -1,8 +1,198 @@
 {{define "content"}}<h1>Data migration control</h1>
-<p>The Ledger owns lifecycle transitions and financial safety gates. This BFF surface only proxies typed operator requests.</p>
-<section>
-  <h2>Current migrations</h2>
-  <pre hx-get="/api/v1/admin/migrations" hx-trigger="load, every 15s">Loading migration state…</pre>
-</section>
-<p>Use the Ledger migration API for maker/checker actions, pre-cutover reconciliation, and target-only repairs.</p>
+<p>State transitions, dual-write mode, read ramp, reconciliation, and target repairs — all proxied from the Ledger migration control plane. Maker/checker roles are enforced server-side on every mutation; the forms below surface the correct surface per role.</p>
+
+<script>
+var _csrf = {{.CSRFToken | printf "%q"}};
+function migId() {
+  return document.getElementById('mig-id').value.trim();
+}
+function resultEl(id) {
+  return document.getElementById(id || 'action-result');
+}
+function showResult(data, id) {
+  resultEl(id).textContent = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
+}
+function postJSON(path, body, resultId) {
+  fetch(path, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json', 'X-CSRF-Token': _csrf},
+    body: JSON.stringify(body)
+  }).then(function(r) { return r.json().catch(function() { return {status: r.status}; }); })
+    .then(function(d) { showResult(d, resultId); })
+    .catch(function(e) { showResult('Fetch error: ' + e, resultId); });
+}
+function loadDetail() {
+  var id = migId();
+  if (!id) { showResult('Enter a migration ID first.', 'detail-result'); return; }
+  fetch('/api/v1/admin/migrations/' + id, {headers: {'X-CSRF-Token': _csrf}})
+    .then(function(r) { return r.json(); })
+    .then(function(d) { showResult(d, 'detail-result'); })
+    .catch(function(e) { showResult('Fetch error: ' + e, 'detail-result'); });
+}
+function loadMismatches() {
+  var id = migId();
+  if (!id) { showResult('Enter a migration ID first.', 'mismatch-result'); return; }
+  var status = document.getElementById('mismatch-status').value;
+  fetch('/api/v1/admin/migrations/' + id + '/mismatches?status=' + encodeURIComponent(status) + '&limit=50', {
+    headers: {'X-CSRF-Token': _csrf}
+  }).then(function(r) { return r.json(); })
+    .then(function(d) { showResult(d, 'mismatch-result'); })
+    .catch(function(e) { showResult('Fetch error: ' + e, 'mismatch-result'); });
+}
+</script>
+
+<article>
+  <h2>All migrations <small>(live, 15 s)</small></h2>
+  <pre hx-get="/api/v1/admin/migrations" hx-trigger="load, every 15s" hx-headers='{"X-CSRF-Token": {{.CSRFToken | printf "%q"}}}'>Loading…</pre>
+</article>
+
+<article>
+  <h2>Migration inspector</h2>
+  <p>Paste a migration ID from the list above, then use the panels below.</p>
+  <label>Migration ID <input id="mig-id" name="mig_id" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" style="font-family:monospace"></label>
+  <button onclick="loadDetail()">Load detail</button>
+  <pre id="detail-result">Not loaded.</pre>
+</article>
+
+<article>
+  <h2>Mismatches</h2>
+  <label>Status filter
+    <select id="mismatch-status">
+      <option value="">all</option>
+      <option value="open">open</option>
+      <option value="repair_requested">repair_requested</option>
+      <option value="repair_approved">repair_approved</option>
+      <option value="resolved">resolved</option>
+    </select>
+  </label>
+  <button onclick="loadMismatches()">Load mismatches</button>
+  <pre id="mismatch-result">Not loaded.</pre>
+</article>
+
+{{if .IsMaker}}
+<article>
+  <h2>Maker: state transition</h2>
+  <p>Safe forward transitions (<code>validated → target_ready → backfilling → shadow_read → canary_read → ramping_read</code>) require only a maker. Dangerous transitions (<code>source_write_disabled, observation, completed, rolling_back</code>) also require checker approval — tick <em>Approve as checker</em> only if you hold checker privileges.</p>
+  <form onsubmit="event.preventDefault();
+    var ver = parseInt(this.expected_version.value, 10);
+    var approve = this.approve_checker.checked;
+    postJSON('/api/v1/admin/migrations/' + migId() + '/transition',
+      {to_state: this.to_state.value, reason: this.reason.value,
+       expected_version: ver, approve: approve});">
+    <label>Target state
+      <select name="to_state" required>
+        <option value="validated">validated</option>
+        <option value="target_ready">target_ready</option>
+        <option value="backfilling">backfilling</option>
+        <option value="shadow_read">shadow_read</option>
+        <option value="canary_read">canary_read</option>
+        <option value="ramping_read">ramping_read</option>
+        <option value="target_primary">target_primary</option>
+        <option value="source_write_disabled">source_write_disabled ⚠ checker</option>
+        <option value="observation">observation ⚠ checker</option>
+        <option value="completed">completed ⚠ checker</option>
+        <option value="rolling_back">rolling_back ⚠ checker</option>
+      </select>
+    </label>
+    <label>Expected version (from detail) <input name="expected_version" type="number" min="1" required></label>
+    <label>Reason <input name="reason" required></label>
+    {{if .IsChecker}}<label><input type="checkbox" name="approve_checker"> Approve as checker (dangerous transitions)</label>{{end}}
+    <button type="submit">Transition</button>
+  </form>
+  <pre id="action-result">Not yet.</pre>
+</article>
+
+<article>
+  <h2>Maker: set read percentage</h2>
+  <p>0–2500 bp (0–25 %) require only a maker. 2501–10000 bp (>25 %) also require checker approval.</p>
+  <form onsubmit="event.preventDefault();
+    var approve = this.approve_checker.checked;
+    postJSON('/api/v1/admin/migrations/' + migId() + '/read-percentage',
+      {basis_points: parseInt(this.basis_points.value, 10),
+       reason: this.reason.value,
+       expected_version: parseInt(this.expected_version.value, 10),
+       approve: approve});">
+    <label>Basis points (0–10000) <input name="basis_points" type="number" min="0" max="10000" value="0" required></label>
+    <label>Expected version <input name="expected_version" type="number" min="1" required></label>
+    <label>Reason <input name="reason" required></label>
+    {{if .IsChecker}}<label><input type="checkbox" name="approve_checker"> Approve as checker (>25 % ramp)</label>{{end}}
+    <button type="submit">Set read percentage</button>
+  </form>
+</article>
+
+<article>
+  <h2>Maker: dual-write mode</h2>
+  <p>Switch strict/shadow dual-write without a state transition. Strict mode fails the whole posting transaction on any target write error; shadow mode swallows target errors and records a gap instead.</p>
+  <form onsubmit="event.preventDefault();
+    postJSON('/api/v1/admin/migrations/' + migId() + '/dual-write',
+      {strict: this.strict.checked, reason: this.reason.value,
+       expected_version: parseInt(this.expected_version.value, 10)});">
+    <label><input type="checkbox" name="strict"> Strict mode (fail posting on target error)</label>
+    <label>Expected version <input name="expected_version" type="number" min="1" required></label>
+    <label>Reason <input name="reason" required></label>
+    <button type="submit">Update dual-write mode</button>
+  </form>
+</article>
+
+<article>
+  <h2>Maker: pause / resume</h2>
+  <form onsubmit="event.preventDefault();
+    var action = this.pause_action.value;
+    postJSON('/api/v1/admin/migrations/' + migId() + '/' + action,
+      {reason: this.reason.value, expected_version: parseInt(this.expected_version.value, 10)});">
+    <label>Action
+      <select name="pause_action">
+        <option value="pause">pause</option>
+        <option value="resume">resume</option>
+      </select>
+    </label>
+    <label>Expected version <input name="expected_version" type="number" min="1" required></label>
+    <label>Reason <input name="reason" required></label>
+    <button type="submit" class="secondary">Pause / resume</button>
+  </form>
+</article>
+
+<article>
+  <h2>Maker: request repair</h2>
+  <p>Creates a pending repair for a detected mismatch. A checker must approve it before the target row is overwritten.</p>
+  <form onsubmit="event.preventDefault();
+    var mmId = this.mismatch_id.value.trim();
+    postJSON('/api/v1/admin/migrations/' + migId() + '/mismatches/' + mmId + '/repair',
+      {reason: this.reason.value}, 'repair-result');">
+    <label>Mismatch ID <input name="mismatch_id" placeholder="UUID" style="font-family:monospace" required></label>
+    <label>Reason <input name="reason" required></label>
+    <button type="submit">Request repair</button>
+  </form>
+  <pre id="repair-result">Not yet.</pre>
+</article>
+{{end}}
+
+{{if .IsChecker}}
+<article>
+  <h2>Checker: run pre-cutover reconciliation</h2>
+  <p>Runs the three-layer reconciliation scan synchronously. Returns when all accounts are scanned; any detected mismatches are written to the mismatch table above.</p>
+  <form onsubmit="event.preventDefault();
+    postJSON('/api/v1/admin/migrations/' + migId() + '/reconcile',
+      {backup_fresh: this.backup_fresh.checked}, 'recon-result');">
+    <label><input type="checkbox" name="backup_fresh"> Mark backup as fresh (confirm a clean snapshot exists)</label>
+    <button type="submit">Run reconciliation</button>
+  </form>
+  <pre id="recon-result">Not yet.</pre>
+</article>
+
+<article>
+  <h2>Checker: approve repair</h2>
+  <p>Overwrites the target row with values computed from the canonical source. Irreversible — verify the mismatch detail before approving.</p>
+  <form onsubmit="event.preventDefault();
+    var repairId = this.repair_id.value.trim();
+    postJSON('/api/v1/admin/migrations/' + migId() + '/repairs/' + repairId + '/approve',
+      {account_id: this.account_id.value.trim(), reason: this.reason.value}, 'approve-repair-result');">
+    <label>Repair ID <input name="repair_id" placeholder="UUID" style="font-family:monospace" required></label>
+    <label>Account ID (confirm from mismatch detail) <input name="account_id" placeholder="UUID" style="font-family:monospace" required></label>
+    <label>Reason <input name="reason" required></label>
+    <button type="submit">Approve repair</button>
+  </form>
+  <pre id="approve-repair-result">Not yet.</pre>
+</article>
+{{end}}
 {{end}}

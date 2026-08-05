@@ -46,7 +46,7 @@ When a trigger is met:
 | C3 | Multi-channel notifications | H3 | User-facing delivery pipeline learning is desired | ✅ Complete — [plan 59](archive/59-c3-multi-channel-notifications.md) archived 2026-08-05 |
 | C4 | End-to-end multi-currency activation | H3 | FX learning is desired; currency primitives are ready | Active via [plan 60](active/60-c4-end-to-end-multi-currency.md); implementation committed; runtime acceptance evidence pending |
 | C5 | Advanced financial products | H3 | Accrual and fee quotes are complete; period-close learning is desired | Active via [plan 61](active/61-c5-advanced-financial-products-period-close.md); implementation committed; runtime acceptance evidence pending |
-| C6 | Zero-downtime migration engine | H3 | A large live migration or migration practice is needed | Active via [plan 62](active/62-c6-zero-downtime-migration-engine.md); implementation committed; runtime acceptance evidence pending |
+| C6 | Zero-downtime migration engine | H3 | A large live migration or migration practice is needed | Core done via [plan 62](archive/62-c6-zero-downtime-migration-engine.md); unit/integration tests + E2E drill + evidence written (2026-08-05); chaos/load/PITR gates remain open follow-ups; plan archived |
 
 ## Horizon 1 — Operational foundations
 
