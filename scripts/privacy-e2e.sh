@@ -23,6 +23,7 @@
 set -euo pipefail
 
 AUTH_URL="${AUTH_URL:-http://localhost:8082}"
+GATEWAY_URL="${GATEWAY_URL:-http://localhost:18080}"
 ASSURANCE_URL="${ASSURANCE_URL:-https://localhost:8096}"
 TLS_CERT_DIR="${TLS_CERT_DIR:-deploy/certs}"
 JWT_SECRET="${JWT_SECRET:-change-me-to-a-random-32-plus-character-secret}"
@@ -56,6 +57,10 @@ curl_auth() {
 curl_assurance() {
 	curl -k --cacert "$TLS_CERT_DIR/ca.pem" --cert "$TLS_CERT_DIR/dev-operator.pem" \
 		--key "$TLS_CERT_DIR/dev-operator-key.pem" "$@"
+}
+curl_gateway() {
+	# gateway runs plain HTTP in this stack; no TLS needed
+	curl "$@"
 }
 
 json_field() {
@@ -182,6 +187,19 @@ CLOSE_TOKEN="$(register_user "$CLOSE_EMAIL" "$CLOSE_PASSWORD")"
 [ -n "$CLOSE_TOKEN" ] || fail "register (closure leg) did not return an access token"
 ok "registered closure-leg user"
 
+CLOSE_USER_ID="$(curl_auth -sf "$AUTH_URL/api/v1/users/me" -H "Authorization: Bearer $CLOSE_TOKEN" | json_field data.id)"
+[ -n "$CLOSE_USER_ID" ] || fail "could not resolve the closure-leg user's own id"
+
+log "registering push device token for closure-leg user $CLOSE_USER_ID"
+DEVICE_TOKEN="privacy-e2e-token-$(openssl rand -hex 16)"
+DEVICE_RESP="$(curl_gateway -sf -X POST "$GATEWAY_URL/api/v1/notification-devices" \
+	-H "Authorization: Bearer $CLOSE_TOKEN" \
+	-H 'Content-Type: application/json' \
+	-d "{\"platform\":\"test\",\"token\":\"$DEVICE_TOKEN\",\"device_name\":\"privacy-e2e\"}")"
+DEVICE_ID="$(echo "$DEVICE_RESP" | json_field data.id)"
+[ -n "$DEVICE_ID" ] || fail "device registration did not return an id: $DEVICE_RESP"
+ok "registered device endpoint $DEVICE_ID for user $CLOSE_USER_ID"
+
 assurance_run "before closure"
 
 CLOSE_CREATE="$(curl_auth -sf -X POST "$AUTH_URL/api/v1/users/me/privacy/closure" \
@@ -206,6 +224,14 @@ for _ in $(seq 1 40); do
 done
 [ "$CLOSE_STATUS" = "completed" ] || fail "closure never reached 'completed' within the poll budget (last status: $CLOSE_STATUS)"
 ok "closure completed"
+
+log "asserting push device token erased by the closure saga"
+DEVICE_COUNT="$(PGPASSWORD="$POSTGRES_PASSWORD" psql \
+	-h "$POSTGRES_HOST" -p "$POSTGRES_PORT" -U "$POSTGRES_USER" \
+	-d seev_gateway -t -A \
+	-c "SELECT count(*) FROM notif_device_endpoints WHERE user_id='$CLOSE_USER_ID'")"
+[ "$DEVICE_COUNT" = "0" ] || fail "expected 0 device rows for user $CLOSE_USER_ID after closure, got $DEVICE_COUNT"
+ok "push device token erased: 0 rows remain in notif_device_endpoints for user $CLOSE_USER_ID"
 
 assurance_run "after closure"
 

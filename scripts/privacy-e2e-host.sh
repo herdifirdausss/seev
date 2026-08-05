@@ -24,6 +24,7 @@ start_services
 
 set +e
 AUTH_URL="http://localhost:$AUTH_APP_PORT" \
+	GATEWAY_URL="http://localhost:$APP_PORT" \
 	ASSURANCE_URL="https://localhost:$ASSURANCE_PORT" \
 	TLS_CERT_DIR="$CERT_DIR" \
 	JWT_SECRET="$JWT_SECRET" \

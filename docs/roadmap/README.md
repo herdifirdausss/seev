@@ -16,7 +16,6 @@ trigger, prerequisites, and owner decision are satisfied.
 |---|---|---|---|
 | 35 | [Optional local Kubernetes](active/35-phase6j-kubernetes.md) | Learn local orchestration with kind | Todo |
 | 56 · F0 | [Frontend platform foundation](active/56-f0-frontend-platform-foundation.md) | Establish the browser product and shared frontend rules | Active — ready for execution; implementation not started |
-| 59 · C3 | [Multi-channel notifications](active/59-c3-multi-channel-notifications.md) | Extend Gateway notifications with durable email, push, preferences, and replay | In progress — implementation present; acceptance evidence pending |
 | 60 · C4 | [End-to-end multi-currency](active/60-c4-end-to-end-multi-currency.md) | Activate existing currency primitives across the full money journey | In progress — implementation present; runtime acceptance evidence pending |
 | 61 · C5 | [Advanced financial products and period close](active/61-c5-advanced-financial-products-period-close.md) | Add controlled accrual, scheduled-failure policy, and top-up fees | In progress — implementation present; runtime acceptance evidence pending |
 | 62 · C6 | [Zero-downtime migration engine](active/62-c6-zero-downtime-migration-engine.md) | Build evidence-driven expand/contract and cutover machinery | In progress — implementation present; runtime acceptance evidence pending |
@@ -38,6 +37,7 @@ claims that Kubernetes or cloud deployment exists today.
 
 ## Archive
 
+Plan 59 · C3 is complete: [Multi-channel notifications](archive/59-c3-multi-channel-notifications.md).
 Plan 58 · C2 is core done: [Data platform and revenue analytics](archive/58-c2-data-platform-revenue-analytics.md).
 Plan 57 · C1 is complete: [Merchant/B2B API](archive/57-c1-merchant-b2b-api.md).
 Plan 53 · B0 is core done: [Load and capacity gate](archive/53-b0-load-capacity-gate.md).

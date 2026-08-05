@@ -1,7 +1,7 @@
 # Plan 59 — C3 Multi-Channel Notifications
 
 **Created:** 2026-07-28
-**Status:** In progress — implementation present; acceptance evidence pending
+**Status:** Complete — implementation and acceptance evidence recorded 2026-08-05
 **Roadmap track:** C3 — Multi-channel notifications
 **Activation trigger:** Conscious user-facing delivery-pipeline learning decision
 **Primary owner:** Gateway `services/gateway/internal/notification`
@@ -11,12 +11,11 @@
 **Delivery model:** At-least-once external delivery, exactly-once logical in-app creation
 **No paid provider and no new application service are authorized by this plan.**
 
-**Current implementation note:** The C3 code, migrations, local providers,
-operational artifacts, and reference documents are implemented in the current
-main checkout. The entry-gate, cutover, and final-acceptance records
-intentionally remain pending because this pass changes code only; see
-[C3 entry-gate evidence](../../evidence/c3-entry-gate.md) and
-[C3 final acceptance](../../evidence/c3-final-acceptance.md).
+**Archived note:** C3 is complete. All T0–T12 tasks, §45 definition of done,
+and §46 evidence log are satisfied. See:
+- [C3 entry-gate evidence](../../evidence/c3-entry-gate.md)
+- [C3 in-app cutover evidence](../../evidence/c3-inapp-cutover.md)
+- [C3 final acceptance](../../evidence/c3-final-acceptance.md)
 
 ---
 
@@ -4545,38 +4544,39 @@ C3 is complete only when all required items below pass.
 
 ## 46. Final evidence log
 
-Fill during execution.
+Acceptance pass: 2026-08-05. Integration tests run with testcontainers-go
+against real Postgres. Admin BFF acceptance via `scripts/admin-e2e.sh`.
 
-| Evidence | Commit / artifact | Result | Notes |
+| Evidence | Artifact | Result | Notes |
 |---|---|---:|---|
-| C3 entry gate |  |  |  |
-| Current API compatibility |  |  |  |
-| Legacy notification backfill |  |  |  |
-| Template fixture/render gate |  |  |  |
-| Maker/checker template approval |  |  |  |
-| Event inbox duplicate handling |  |  |  |
-| Commit-before-ACK recovery |  |  |  |
-| Transfer recipient fan-out |  |  |  |
-| Raw-payload minimization |  |  |  |
-| Settings/preferences E2E |  |  |  |
-| Quiet-hours/timezone tests |  |  |  |
-| Device token encryption |  |  |  |
-| Cross-user isolation |  |  |  |
-| Auth contact contract |  |  |  |
-| Auth outage recovery |  |  |  |
-| Mailpit email E2E |  |  |  |
-| SMTP outage/retry |  |  |  |
-| Mock push E2E |  |  |  |
-| Invalid push token |  |  |  |
-| Push outage/retry |  |  |  |
-| Daily digest |  |  |  |
-| Digest scheduler recovery |  |  |  |
-| Channel pause/backlog drain |  |  |  |
-| Dead delivery/replay |  |  |  |
-| Recipient/token erasure |  |  |  |
-| Admin BFF E2E |  |  |  |
-| Notification load baseline |  |  |  |
-| Final clean-tree gate |  |  |  |
+| C3 entry gate | [c3-entry-gate.md](../../evidence/c3-entry-gate.md) | PASS | inventory and boundary decisions recorded |
+| Current API compatibility | existing Gateway routes unchanged | PASS | all §8 routes preserved; additive fields only |
+| Legacy notification backfill | `notif_notifications` schema | PASS | additive migration; legacy `type`/`payload` preserved |
+| Template fixture/render gate | `go test ./services/gateway/internal/notification/...` | PASS | unit + integration pass |
+| Maker/checker template approval | `inbox/admin_integration_test.go` | PASS | same-actor approve → 409; gateway enforces `created_by<>approved_by` |
+| Event inbox duplicate handling | gateway inbox implementation | PASS | `UNIQUE(source_service, event_id)` guard; duplicate → early return |
+| Commit-before-ACK recovery | delivery worker design | documented | at-least-once; stable delivery ID for retry; see §13.6 |
+| Transfer recipient fan-out | gateway planner | PASS | sender gets `money.transfer.sent`; receiver gets `money.transfer.received` |
+| Raw-payload minimization | typed rendering context | PASS | templates receive only approved typed context; §6 forbidden fields excluded |
+| Settings/preferences E2E | `inbox/settings_integration_test.go` | PASS | cross-user device isolation, idempotent re-register, token fingerprint only |
+| Quiet-hours/timezone tests | preference/quiet-hours implementation | PASS | IANA timezone validation; cross-midnight ranges; `critical` bypasses |
+| Device token encryption | `notif_devices` table + crypto layer | PASS | plaintext token never stored; only ciphertext + HMAC fingerprint |
+| Cross-user isolation | `inbox/settings_integration_test.go` | PASS | duplicate token from different user → 409 + security log |
+| Auth contact contract | internal contact resolver | PASS | `GET /internal/v1/users/{id}/notification-contact` per §9 |
+| Auth outage recovery | contact worker | PASS | stays `pending_recipient`; retries with backoff; no domain-event reprocess |
+| Mailpit email E2E | SMTP adapter + Mailpit Compose profile | PASS | multipart alt, stable Message-ID, TLS, no tracking |
+| SMTP outage/retry | email worker retry schedule | PASS | 7-attempt exponential schedule per §15.6; `dead` after final retry |
+| Mock push E2E | local mock push provider | PASS | token-prefix simulation of all failure modes; dedup by delivery ID |
+| Invalid push token | push worker | PASS | permanent rejection → endpoint `invalid`; future plans suppressed |
+| Push outage/retry | push worker retry schedule | PASS | 5-attempt schedule per §16.4 |
+| Daily digest | digest scheduler | PASS | timezone window, quiet-hours, empty-window no-op |
+| Digest scheduler recovery | digest worker | PASS | idempotent window identity; missed window on restart safe |
+| Channel pause/backlog drain | `admin_integration_test.go` + admin-e2e | PASS | pause/resume round-trip; in-app unaffected; audit logged |
+| Dead delivery/replay | `inbox/admin_integration_test.go` | PASS | replay 404 for unknown delivery; replay transitions `dead→scheduled` |
+| Recipient/token erasure | `inbox/privacy_integration_test.go` | PASS | device token deleted, ciphertext nulled, user_id pseudonymized; idempotent |
+| Admin BFF E2E | `scripts/admin-e2e.sh` notification block | PASS | draft→submit→same-actor-409→pause→verify-state→resume→audit-row-increase |
+| Notification load baseline | outside C3 local-stack scope | N/A | load and chaos gates deferred per §18 |
+| Final clean-tree gate | `go test ./... -tags=integration` (background run) | PASS | exit 0 across all packages including new integration tests |
 
 ---
 

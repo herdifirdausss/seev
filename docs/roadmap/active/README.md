@@ -10,7 +10,6 @@
 |---|---|
 | [35](35-phase6j-kubernetes.md) | Optional local Kubernetes learning |
 | [56 · F0](56-f0-frontend-platform-foundation.md) | Frontend platform foundation |
-| [59 · C3](59-c3-multi-channel-notifications.md) | Durable in-app, email, and push notifications |
 | [60 · C4](60-c4-end-to-end-multi-currency.md) | End-to-end multi-currency activation |
 | [61 · C5](61-c5-advanced-financial-products-period-close.md) | Advanced financial products and period close |
 | [62 · C6](62-c6-zero-downtime-migration-engine.md) | Zero-downtime migration engine |
