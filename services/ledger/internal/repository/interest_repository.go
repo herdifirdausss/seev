@@ -1,5 +1,7 @@
 package repository
 
+//go:generate mockgen -source=interest_repository.go -destination=interest_repository_mock.go -package=repository
+
 import (
 	"context"
 	"database/sql"
@@ -605,11 +607,18 @@ func (r *interestRepo) ListEnrollmentCapitalizations(ctx context.Context, enroll
 }
 
 func (r *interestRepo) RefreshExpectedItemCount(ctx context.Context, periodID uuid.UUID) error {
+	// The LEAST upper bound uses (period_end_at AT TIME ZONE tz)::date without +1
+	// because period_end_at is the exclusive-end timestamp (midnight of the next
+	// day in local time), so its date component is already the first day OUTSIDE
+	// the period.  Adding 1 here would overcount by one day, making ClosePeriod
+	// always fail with MissingItems=1 for every period.  The WHERE filters below
+	// keep their +1 because they guard against entries starting on the exclusive
+	// boundary itself, which is correct.
 	_, err := r.db.ExecContext(ctx, `UPDATE interest_periods p SET expected_item_count=COALESCE((
 		SELECT SUM(GREATEST(0,
-			(LEAST(COALESCE(e.effective_until, (p.period_end_at AT TIME ZONE sp.timezone)::date + 1),
-					COALESCE(h.next_effective_from, (p.period_end_at AT TIME ZONE sp.timezone)::date + 1),
-					(p.period_end_at AT TIME ZONE sp.timezone)::date + 1)
+			(LEAST(COALESCE(e.effective_until, (p.period_end_at AT TIME ZONE sp.timezone)::date),
+					COALESCE(h.next_effective_from, (p.period_end_at AT TIME ZONE sp.timezone)::date),
+					(p.period_end_at AT TIME ZONE sp.timezone)::date)
 					- GREATEST(e.effective_from, h.effective_from, (p.period_start_at AT TIME ZONE sp.timezone)::date))
 		))
 		FROM (
@@ -725,9 +734,17 @@ func (r *interestRepo) MarkPeriodStatus(ctx context.Context, tx *sql.Tx, id uuid
 	return requireRows(result, "mark interest period status")
 }
 
+// COALESCE(col::text,'') converts the four NUMERIC(78,0) carry/calc columns
+// to text so they can be scanned into plain Go string fields without requiring
+// *string or sql.NullString across the model.  These columns are NULL until
+// SaveDailyCalculation runs; a pending or just-claimed row has no calculation.
 const dailyAccrualColumns = `id, period_id, enrollment_id, account_id, accrual_date,
-snapshot_id, closing_balance, rate_version_id, annual_rate_bps, exact_numerator,
-denominator, opening_carry_numerator, recognized_amount, closing_carry_numerator,
+snapshot_id, closing_balance, rate_version_id, annual_rate_bps,
+COALESCE(exact_numerator::text,'') AS exact_numerator,
+COALESCE(denominator::text,'') AS denominator,
+COALESCE(opening_carry_numerator::text,'') AS opening_carry_numerator,
+recognized_amount,
+COALESCE(closing_carry_numerator::text,'') AS closing_carry_numerator,
 status, attempt_count, next_attempt_at, lease_owner, lease_expires_at,
 ledger_transaction_id, error_code, created_at, updated_at`
 
