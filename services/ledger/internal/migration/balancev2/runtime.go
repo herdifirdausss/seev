@@ -369,7 +369,7 @@ func (r *Runtime) ApproveRepair(ctx context.Context, repairID, accountID uuid.UU
 	if err != nil {
 		return Repair{}, err
 	}
-	if err := r.controls.MarkRepairRunning(ctx, repairID); err != nil {
+	if err := r.controls.MarkRepairRunning(ctx, repairID, r.owner); err != nil {
 		return Repair{}, err
 	}
 	var repairErr error
@@ -662,6 +662,9 @@ func (r *Runtime) lifecycleWorker(parent context.Context) {
 }
 
 func (r *Runtime) runLifecycleOnce(ctx context.Context) error {
+	if _, err := r.controls.ReclaimStuckRepairs(ctx); err != nil {
+		r.logger.Error("balancev2: reclaim stuck repairs failed", "error", err)
+	}
 	migration, err := r.migration(ctx)
 	if err != nil {
 		return err

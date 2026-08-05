@@ -23,6 +23,12 @@ var (
 	ErrNoActiveMigration  = errors.New("balancev2: no active migration")
 )
 
+// repairLeaseDuration bounds how long a single approve-and-execute repair
+// (§13.4/§18.5) may hold the 'running' status before ReclaimStuckRepairs
+// treats it as abandoned by a crashed process, mirroring the checkpoint
+// lease pattern in AcquireCheckpoint.
+const repairLeaseDuration = 5 * time.Minute
+
 const migrationColumns = `
 	id, public_id, name, resource, source_version, target_version, state,
 	previous_state, read_percentage_basis_points, shadow_percentage_basis_points,
@@ -1017,13 +1023,14 @@ func (r *ControlRepository) ApproveRepair(ctx context.Context, id uuid.UUID, app
 	return repair, err
 }
 
-func (r *ControlRepository) MarkRepairRunning(ctx context.Context, id uuid.UUID) error {
+func (r *ControlRepository) MarkRepairRunning(ctx context.Context, id uuid.UUID, owner string) error {
 	return r.db.WithTx(ctx, nil, func(tx *sql.Tx) error {
 		result, err := tx.ExecContext(ctx, `
 			UPDATE data_migration_repairs
 			SET status = 'running', attempt_count = attempt_count + 1,
-				started_at = now(), updated_at = now()
-			WHERE id = $1 AND status = 'approved'`, id)
+				started_at = now(), updated_at = now(),
+				lease_owner = $2, lease_expires_at = now() + $3::interval
+			WHERE id = $1 AND status = 'approved'`, id, owner, intervalLiteral(repairLeaseDuration))
 		if err != nil {
 			return err
 		}
@@ -1040,6 +1047,52 @@ func (r *ControlRepository) MarkRepairRunning(ctx context.Context, id uuid.UUID)
 	})
 }
 
+// ReclaimStuckRepairs resets any repair a crashed process left in 'running'
+// past its lease back to 'pending_approval' (clearing the prior approval),
+// letting the existing ApproveRepair maker/checker flow retry it rather than
+// requiring a bespoke recovery path. Mirrors AcquireCheckpoint's lease
+// reclaim, but repairs have no natural "next acquire" moment to piggyback
+// on, so this runs opportunistically from the lifecycle worker instead.
+func (r *ControlRepository) ReclaimStuckRepairs(ctx context.Context) (int64, error) {
+	var reclaimed int64
+	err := r.db.WithTx(ctx, nil, func(tx *sql.Tx) error {
+		rows, err := tx.QueryContext(ctx, `
+			UPDATE data_migration_repairs
+			SET status = 'pending_approval', approved_by = NULL,
+				lease_owner = NULL, lease_expires_at = NULL, updated_at = now()
+			WHERE status = 'running' AND lease_expires_at IS NOT NULL AND lease_expires_at < now()
+			RETURNING mismatch_id`)
+		if err != nil {
+			return fmt.Errorf("balancev2: reclaim stuck repairs: %w", err)
+		}
+		defer rows.Close()
+		var mismatchIDs []uuid.UUID
+		for rows.Next() {
+			var id uuid.UUID
+			if scanErr := rows.Scan(&id); scanErr != nil {
+				return fmt.Errorf("balancev2: scan reclaimed repair: %w", scanErr)
+			}
+			mismatchIDs = append(mismatchIDs, id)
+		}
+		if err := rows.Err(); err != nil {
+			return fmt.Errorf("balancev2: iterate reclaimed repairs: %w", err)
+		}
+		reclaimed = int64(len(mismatchIDs))
+		for _, id := range mismatchIDs {
+			if _, err := tx.ExecContext(ctx, `
+				UPDATE data_migration_mismatches SET status = 'repair_pending', updated_at = now()
+				WHERE id = $1 AND status = 'repairing'`, id); err != nil {
+				return fmt.Errorf("balancev2: reset mismatch after reclaim: %w", err)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	return reclaimed, nil
+}
+
 func (r *ControlRepository) FinishRepair(ctx context.Context, repairID, mismatchID uuid.UUID, success bool, errorCode string) error {
 	status := "completed"
 	if !success {
@@ -1047,7 +1100,8 @@ func (r *ControlRepository) FinishRepair(ctx context.Context, repairID, mismatch
 	}
 	_, err := r.db.ExecContext(ctx, `
 		UPDATE data_migration_repairs
-		SET status = $1, finished_at = now(), error_code = NULLIF($2, ''), updated_at = now()
+		SET status = $1, finished_at = now(), error_code = NULLIF($2, ''), updated_at = now(),
+			lease_owner = NULL, lease_expires_at = NULL
 		WHERE id = $3`, status, boundedErrorCode(errorCode), repairID)
 	if err != nil {
 		return err

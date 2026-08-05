@@ -18,7 +18,7 @@ trigger, prerequisites, and owner decision are satisfied.
 | 56 · F0 | [Frontend platform foundation](active/56-f0-frontend-platform-foundation.md) | Establish the browser product and shared frontend rules | Active — ready for execution; implementation not started |
 | 60 · C4 | [End-to-end multi-currency](archive/60-c4-end-to-end-multi-currency.md) | Activate existing currency primitives across the full money journey | Accepted 2026-08-05 — runtime evidence recorded; plan archived |
 | 61 · C5 | [Advanced financial products and period close](archive/61-c5-advanced-financial-products-period-close.md) | Add controlled accrual, scheduled-failure policy, and top-up fees | Accepted 2026-08-05 — core correctness evidence recorded; chaos/load/operations gates deferred; plan archived |
-| 62 · C6 | [Zero-downtime migration engine](active/62-c6-zero-downtime-migration-engine.md) | Build evidence-driven expand/contract and cutover machinery | In progress — implementation present; runtime acceptance evidence pending |
+| 62 · C6 | [Zero-downtime migration engine](archive/62-c6-zero-downtime-migration-engine.md) | Build evidence-driven expand/contract and cutover machinery | Core done 2026-08-05 — unit/integration tests, E2E drill, Admin BFF console, 4 runbooks, evidence written; chaos/load/PITR gates are tracked follow-ups; plan archived |
 | 64 · K0 | [Deployment inventory and Kubernetes readiness baseline](active/64-k0-deployment-inventory-baseline.md) | Freeze and verify the runtime contract before Kubernetes manifests | In progress — inventory committed; runtime acceptance partial and K1 handoff pending |
 | 65 · A11 | [Database audit and hardening](active/65-a11-database-audit-and-hardening.md) | Repeated schema-safety, security, and business-completeness audit passes | In progress — Rounds 1–2 fixed; Round 3 findings documented, not yet fixed |
 
@@ -37,6 +37,7 @@ claims that Kubernetes or cloud deployment exists today.
 
 ## Archive
 
+Plan 62 · C6 is core done: [Zero-downtime migration engine](archive/62-c6-zero-downtime-migration-engine.md).
 Plan 59 · C3 is complete: [Multi-channel notifications](archive/59-c3-multi-channel-notifications.md).
 Plan 58 · C2 is core done: [Data platform and revenue analytics](archive/58-c2-data-platform-revenue-analytics.md).
 Plan 57 · C1 is complete: [Merchant/B2B API](archive/57-c1-merchant-b2b-api.md).
