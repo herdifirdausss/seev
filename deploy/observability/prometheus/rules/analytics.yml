@@ -1,0 +1,56 @@
+# Plan 58 (C2) section 24.6 — alerts backed by real metrics from
+# analytics/reconciliation/cmd/metrics-exporter (started via
+# `make analytics-metrics-exporter`, scraped as job "analytics-metrics-exporter"
+# in deploy/observability/prometheus/prometheus.yml). This covers 4 of the
+# 11 alert types the plan lists; the rest (replication-slot-inactive,
+# retained-WAL threshold, Redpanda consumer-lag-growing as a rate rather
+# than a point-in-time check, sensitive-column-validator-failed as a
+# continuous signal, Metabase-unable-to-query) still need either an
+# additional exporter metric or remain CI/script-checked
+# (make analytics-verify) rather than continuously alerted — see
+# docs/evidence/c2-final-acceptance.md for the residual list.
+groups:
+- name: analytics-c2
+  interval: 30s
+  rules:
+  - alert: SeevAnalyticsConnectorDown
+    expr: seev_analytics_connector_up == 0
+    for: 2m
+    labels:
+      severity: warning
+      service: analytics
+    annotations:
+      summary: A C2 Debezium connector's tasks are not all RUNNING
+      runbook: docs/runbooks/analytics-connector-failed.md
+
+  - alert: SeevAnalyticsFreshnessStale
+    # Plan section 37's local target is <=120s p95; alert well above that
+    # (5 minutes) so a normal processing blip doesn't page.
+    expr: seev_analytics_data_freshness_seconds > 300
+    for: 5m
+    labels:
+      severity: warning
+      service: analytics
+    annotations:
+      summary: A C2 source table has not ingested a new row within 5 minutes
+      runbook: docs/runbooks/analytics-replication-slot-lag.md
+
+  - alert: SeevAnalyticsReconciliationCriticalFailure
+    expr: seev_analytics_reconciliation_critical_failures > 0
+    for: 1m
+    labels:
+      severity: critical
+      service: analytics
+    annotations:
+      summary: The latest C2 reconciliation run reported a critical failure
+      runbook: docs/runbooks/analytics-reconciliation-failed.md
+
+  - alert: SeevAnalyticsDbtRunFailed
+    expr: increase(seev_analytics_dbt_run_total{result="failed"}[1h]) > 0
+    for: 1m
+    labels:
+      severity: warning
+      service: analytics
+    annotations:
+      summary: A C2 dbt invocation failed in the last hour
+      runbook: docs/runbooks/analytics-dbt-failure.md

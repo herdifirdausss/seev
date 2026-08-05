@@ -12,5 +12,5 @@ for topic in \
   seev.cdc.payin.public.payin_webhook_events.v1 \
   seev.cdc.payout.public.payout_requests.v1 \
   seev.cdc.payout.public.payout_vendor_calls.v1; do
-  rpk topic create "$topic" --brokers "$broker" --partitions 1 --replicas 1 --topic-config retention.ms=604800000 --topic-config cleanup.policy=delete --if-not-exists
+  rpk topic create "$topic" -X "brokers=$broker" --partitions 1 --replicas 1 --topic-config retention.ms=604800000 --topic-config cleanup.policy=delete || true
 done

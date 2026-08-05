@@ -28,6 +28,7 @@ rule_files:
   - /etc/prometheus/rules/merchant.yml
   - /etc/prometheus/rules/notifications.yml
   - /etc/prometheus/rules/improvement.yml
+  - /etc/prometheus/rules/analytics.yml
 
 scrape_configs:
   - job_name: gateway-service
@@ -137,3 +138,35 @@ scrape_configs:
     metrics_path: /metrics
     static_configs:
       - targets: ["backup-agent:8097"]
+
+  # Plan 58 (C2) section 24 — the analytics stack runs on its own Compose
+  # project/network (analytics/compose/docker-compose.analytics.yml, opt-in
+  # "analytics-core"/"analytics-ops" profiles) with no mTLS: ClickHouse and
+  # Redpanda are third-party images that don't speak this repo's SPIFFE-based
+  # client-cert pattern, and ports are already loopback-only per plan
+  # section 12.2/23.2. Reached via host.docker.internal + the published
+  # host ports, the same pattern the connect service already uses to reach
+  # the source Postgres. These targets legitimately show "down" whenever
+  # the opt-in analytics profile is not running — that is not an incident.
+  - job_name: analytics-clickhouse
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["host.docker.internal:9363"]
+
+  - job_name: analytics-redpanda
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["host.docker.internal:9644"]
+
+  # Serves seev_analytics_reconciliation_*/data_freshness_seconds/
+  # dbt_run_total/connector_up (analytics/reconciliation/cmd/metrics-exporter),
+  # started locally via `make analytics-metrics-exporter`. Kafka Connect
+  # itself is not scraped here — this Debezium image build has no JMX
+  # exporter bundled, and the plan's own dashboard spec already treats
+  # connector status as external operational evidence
+  # (analytics/metabase/dashboards/data-platform-health.yaml); the exporter
+  # covers that gap by polling Connect's REST API directly instead.
+  - job_name: analytics-metrics-exporter
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["host.docker.internal:9308"]

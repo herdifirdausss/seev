@@ -25,7 +25,11 @@ CREATE TABLE IF NOT EXISTS control.reconciliation_runs
     warning_failures UInt32,
     details String
 )
-ENGINE = ReplacingMergeTree(finished_at)
+-- No version column: finished_at is Nullable (a run may still be in
+-- progress), and ReplacingMergeTree rejects a Nullable version column.
+-- Each run_id is written once (see reconciliation cmd/reconcile), so plain
+-- last-inserted-wins dedup is sufficient.
+ENGINE = ReplacingMergeTree
 ORDER BY (environment, run_id);
 
 CREATE TABLE IF NOT EXISTS control.reconciliation_items
@@ -50,7 +54,7 @@ CREATE TABLE IF NOT EXISTS control.reconciliation_items
 ENGINE = MergeTree
 PARTITION BY toYYYYMM(created_at)
 ORDER BY (created_at, run_id, check_name, source_service, currency)
-TTL created_at + INTERVAL 180 DAY DELETE;
+TTL toDateTime(created_at) + INTERVAL 180 DAY DELETE;
 
 CREATE TABLE IF NOT EXISTS control.schema_fingerprints
 (
@@ -76,7 +80,7 @@ CREATE TABLE IF NOT EXISTS control.dbt_invocations
 )
 ENGINE = MergeTree
 ORDER BY (started_at, invocation_id)
-TTL started_at + INTERVAL 30 DAY DELETE;
+TTL toDateTime(started_at) + INTERVAL 30 DAY DELETE;
 
 CREATE TABLE IF NOT EXISTS control.data_quality_failures
 (
@@ -89,7 +93,7 @@ CREATE TABLE IF NOT EXISTS control.data_quality_failures
 )
 ENGINE = MergeTree
 ORDER BY (observed_at, check_name)
-TTL observed_at + INTERVAL 180 DAY DELETE;
+TTL toDateTime(observed_at) + INTERVAL 180 DAY DELETE;
 
 CREATE TABLE IF NOT EXISTS control.backfill_runs
 (
@@ -104,4 +108,4 @@ CREATE TABLE IF NOT EXISTS control.backfill_runs
 )
 ENGINE = MergeTree
 ORDER BY (started_at, run_id)
-TTL started_at + INTERVAL 180 DAY DELETE;
+TTL toDateTime(started_at) + INTERVAL 180 DAY DELETE;

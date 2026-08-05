@@ -9,7 +9,7 @@ system shape.
 Use the current [architecture](../../reference/architecture.md) and
 [services](../../reference/services.md) for runtime truth. Open one archived
 record only when you need the reasoning or acceptance evidence for that phase.
-The directory has 56 files represented by 54 numbered rows because plan 45
+The directory has 57 files represented by 55 numbered rows because plan 45
 links to two supporting review records.
 
 | # | Document | Scope | Final status |
@@ -68,3 +68,4 @@ links to two supporting review records.
 | 53 · B0 | [53-b0-load-capacity-gate.md](53-b0-load-capacity-gate.md) | Disposable load harness, safety boundaries, and capacity evidence protocol | ✅ Core done — canonical measurements pending |
 | 54 | [54-vendor-service-boundary.md](54-vendor-service-boundary.md) | VendorService boundary, normalized callback ingress, and vendor adapter ownership | ✅ Core done — final live/chaos gate pending |
 | 57 · C1 | [57-c1-merchant-b2b-api.md](57-c1-merchant-b2b-api.md) | Tenant-isolated Merchant/B2B API on the existing Gateway: API-key auth, quotas, idempotency, merchant transfers/pay-in/payout, signed outbound webhooks, and maker/checker tenant lifecycle | ✅ Done |
+| 58 · C2 | [58-c2-data-platform-revenue-analytics.md](58-c2-data-platform-revenue-analytics.md) | CDC-to-OLAP data platform: Debezium/Redpanda/ClickHouse pipeline, dbt revenue/unit-economics marts, reconciliation, Metabase dashboards, and Prometheus metrics/alerts | ✅ Core done — Grafana dashboard, schema-change/WAL-pressure drills, some alerts, and a load baseline pending |

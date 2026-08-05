@@ -1,10 +1,34 @@
 <clickhouse>
-    <max_memory_usage>1073741824</max_memory_usage>
-    <max_threads>2</max_threads>
+    <!-- Local-only metrics endpoint for Prometheus scraping (plan 58 section
+         24.3). Not exposed on a host port beyond the existing 8123 HTTP
+         bind, which is already loopback-only. -->
+    <prometheus>
+        <endpoint>/metrics</endpoint>
+        <port>9363</port>
+        <metrics>true</metrics>
+        <events>true</events>
+        <asynchronous_metrics>true</asynchronous_metrics>
+    </prometheus>
     <background_pool_size>2</background_pool_size>
     <background_schedule_pool_size>2</background_schedule_pool_size>
-    <max_partitions_per_insert_block>100</max_partitions_per_insert_block>
     <merge_tree>
         <max_bytes_to_merge_at_max_space_in_pool>1073741824</max_bytes_to_merge_at_max_space_in_pool>
+        <!-- Must stay <= background_pool_size * background_merges_mutations_concurrency_ratio
+             (2 * 2 = 4 here) or the server refuses to start (confirmed 2026-08-05:
+             BAD_ARGUMENTS against the built-in default of 20). -->
+        <number_of_free_entries_in_pool_to_execute_mutation>2</number_of_free_entries_in_pool_to_execute_mutation>
+        <number_of_free_entries_in_pool_to_lower_max_size_of_merge>2</number_of_free_entries_in_pool_to_lower_max_size_of_merge>
+        <number_of_free_entries_in_pool_to_execute_optimize_entire_partition>2</number_of_free_entries_in_pool_to_execute_optimize_entire_partition>
     </merge_tree>
+    <!-- max_memory_usage/max_threads/max_partitions_per_insert_block are
+         user-level settings — ClickHouse 25.3 rejects them at server-config
+         top level (confirmed 2026-08-05: UNKNOWN_ELEMENT_IN_CONFIG), so they
+         belong under the default profile instead. -->
+    <profiles>
+        <default>
+            <max_memory_usage>1073741824</max_memory_usage>
+            <max_threads>2</max_threads>
+            <max_partitions_per_insert_block>100</max_partitions_per_insert_block>
+        </default>
+    </profiles>
 </clickhouse>

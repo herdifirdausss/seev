@@ -19,5 +19,5 @@ select
 from {{ ref('stg_ledger__entries') }}
 where not is_deleted
 {% if is_incremental() %}
-where ingested_at >= (select date_sub(minute, 10, max(ingested_at)) from {{ this }})
+and ingested_at >= (select date_sub(minute, 10, max(ingested_at)) from {{ this }})
 {% endif %}
