@@ -39,6 +39,13 @@ var (
 	// belongs to the Ledger error contract rather than the HTTP transport so
 	// every adapter can preserve the same business rejection semantics.
 	ErrPolicyLimitExceeded = errors.New("POLICY_LIMIT_EXCEEDED")
+	// Execution-time subject checks are business outcomes, not infrastructure
+	// failures. They are kept distinct from account balance errors so the
+	// command boundary can preserve the authorization reason across HTTP and
+	// gRPC adapters.
+	ErrSubjectDisabled = errors.New("SUBJECT_DISABLED")
+	ErrKYCRequired     = errors.New("KYC_REQUIRED")
+	ErrKYCExpired      = errors.New("KYC_EXPIRED")
 	// ErrAlreadyClosed is returned when a lifecycle transaction (settle,
 	// cancel, release, refund, reversal) targets an original transaction
 	// that another transaction already closed first — either a genuine
@@ -247,7 +254,7 @@ var businessRejectionSentinels = []error{
 	ErrDailyLimitExceeded, ErrFeeExceedsAmount, ErrAlreadyReversed,
 	ErrNotReversible, ErrAlreadyClosed, ErrOriginalTypeMismatch,
 	ErrLifecycleAmountMismatch, ErrUnbalancedEntries, ErrScreeningBlocked,
-	ErrPolicyLimitExceeded,
+	ErrPolicyLimitExceeded, ErrSubjectDisabled, ErrKYCRequired, ErrKYCExpired,
 	ErrQuoteExpired, ErrQuoteMismatch, ErrStillProcessing, ErrPreviousFailed,
 	ErrAdjustmentAlreadyDecided, ErrReconItemAlreadyResolved, ErrIdempotencyConflict,
 	ErrChargebackDisputeNotFound, ErrChargebackDisputeAlreadyResolved,

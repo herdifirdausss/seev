@@ -24,7 +24,10 @@ func writeError(w http.ResponseWriter, err error) {
 		errors.Is(err, apperror.ErrFXRateInvalid):
 		response.BadRequest(w, err.Error())
 
-	case errors.Is(err, apperror.ErrSelfApproval):
+	case errors.Is(err, apperror.ErrSelfApproval),
+		errors.Is(err, apperror.ErrSubjectDisabled),
+		errors.Is(err, apperror.ErrKYCRequired),
+		errors.Is(err, apperror.ErrKYCExpired):
 		response.Forbidden(w, err.Error())
 
 	case errors.Is(err, apperror.ErrAccountNotFound),

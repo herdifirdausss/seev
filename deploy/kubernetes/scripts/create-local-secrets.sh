@@ -57,9 +57,11 @@ JWT_SECRET="${JWT_SECRET:-$(reuse_or_random seev-app seev-runtime-secrets jwt-se
 INTERNAL_GRPC_TOKEN="${INTERNAL_GRPC_TOKEN:-$(reuse_or_random seev-app seev-runtime-secrets internal-grpc-token)}"
 MOCKVENDOR_SECRET="${MOCKVENDOR_SECRET:-$(reuse_or_random seev-app seev-runtime-secrets vendor-mockvendor-secret)}"
 MOCKVENDOR2_SECRET="${MOCKVENDOR2_SECRET:-$(reuse_or_random seev-app seev-runtime-secrets vendor-mockvendor2-secret)}"
+KYC_PROVIDER_TOKEN="${KYC_PROVIDER_TOKEN:-$(reuse_or_random seev-app seev-runtime-secrets kyc-provider-token)}"
 "$KUBECTL_BIN" create secret generic seev-runtime-secrets -n seev-app \
   --from-literal=jwt-secret="$JWT_SECRET" \
   --from-literal=internal-grpc-token="$INTERNAL_GRPC_TOKEN" \
+  --from-literal=kyc-provider-token="$KYC_PROVIDER_TOKEN" \
   --from-literal=vendor-mockvendor-secret="$MOCKVENDOR_SECRET" \
   --from-literal=vendor-mockvendor2-secret="$MOCKVENDOR2_SECRET" \
   --dry-run=client -o yaml | "$KUBECTL_BIN" apply -f - >/dev/null

@@ -175,6 +175,9 @@ jobs:
       - name: Supply-chain source controls
         run: ./scripts/ci/supply-chain-check.sh
 
+      - name: Supply-chain evidence verifier E2E
+        run: ./scripts/ci/supply-chain-e2e.sh
+
       # Makefile's GOLANGCI_LINT_VERSION/GOVULNCHECK_VERSION are the single
       # source of truth for these two pins — read them here instead of
       # hardcoding a second copy in this workflow, so bumping the Makefile

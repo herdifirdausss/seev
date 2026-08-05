@@ -46,6 +46,7 @@ LAST_BODY=""
 USER_A=""
 USER_B=""
 TOKEN_A=""
+TOKEN_B=""
 MAKER_TOKEN=""
 CHECKER_TOKEN=""
 MAKER_ID=""
@@ -116,6 +117,7 @@ setup() {
 	fund_user "$USER_A" 1000000
 
 	TOKEN_A="$(gen_token "$USER_A")"
+	TOKEN_B="$(gen_token "$USER_B")"
 	MAKER_TOKEN="$(gen_token "$MAKER_ID" admin_maker)"
 	CHECKER_TOKEN="$(gen_token "$CHECKER_ID" admin_checker)"
 	ok "users, maker, and checker are provisioned"
@@ -357,9 +359,88 @@ fx_flow() {
 	fi
 }
 
+payout_unknown_state_flow() {
+	log "=== payout recovery: vendor timeout -> pinned unknown state -> same-vendor recovery ==="
+	local admin_token payout_id vendor call_count destination accepted_calls
+	admin_token="$(gen_token "$(uuidgen | tr '[:upper:]' '[:lower:]')" admin)"
+
+	# Keep this journey deterministic: the migration's default route remains as
+	# a fallback, while priority 10/11 explicitly model the primary and backup
+	# vendors used by the recovery proof.
+	psql_exec "$PAYOUT_DB_NAME" -c "DELETE FROM payout_routing_rules WHERE priority IN (10, 11);" >/dev/null
+	curl_internal -s -o /dev/null -X PUT "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendor-gateways/mockvendor" \
+		-H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" \
+		-d '{"gateway":"bca"}'
+	curl_internal -s -o /dev/null -X PUT "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendor-gateways/mockvendor2" \
+		-H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" \
+		-d '{"gateway":"gopay"}'
+	curl_internal -s -o /dev/null -X POST "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/routing-rules" \
+		-H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" \
+		-d '{"flow":"payout","priority":10,"enabled":true,"currency":"IDR","vendor":"mockvendor"}'
+	curl_internal -s -o /dev/null -X POST "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/routing-rules" \
+		-H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" \
+		-d '{"flow":"payout","priority":11,"enabled":true,"currency":"IDR","vendor":"mockvendor2"}'
+
+	curl_internal -sS -o /dev/null -X POST "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendors/mockvendor/force-fail" \
+		-H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" \
+		-d '{"fail":true}'
+
+	public_request "payout-unknown-create" -X POST "http://localhost:$APP_PORT/api/v1/payout" \
+		-H "Authorization: Bearer $TOKEN_A" -H "Content-Type: application/json" \
+		-d '{"amount":"1000","destination":{"bank_code":"014","account_no":"1","mock_mode":"timeout"}}'
+	expect_success "payout with an uncertain vendor response was accepted for async processing" || return 1
+	payout_id="$(printf '%s' "$LAST_BODY" | json_field id)"
+	require_id "unknown-state payout" "$payout_id" || return 1
+	wait_for_payout_status "$payout_id" "submitted" 10 || return 1
+	wait_for_vendor_call "$payout_id" "uncertain" 20 || return 1
+	wait_for_vendor_command_status "$payout_id" "failed" 15 || return 1
+	vendor="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT vendor FROM payout_requests WHERE id = '$payout_id';")"
+	call_count="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT count(*) FROM payout_vendor_calls WHERE payout_request_id = '$payout_id' AND outcome = 'uncertain';")"
+	if [ "$vendor" = "mockvendor" ] && [ "$call_count" = "1" ]; then
+		ok "unknown payout is pinned to mockvendor after one uncertain call"
+	else
+		fail "unknown payout pinning was not preserved (vendor=$vendor uncertain_calls=$call_count)"
+		return 1
+	fi
+
+	# Remove the simulated transport failure without changing the persisted
+	# vendor. Re-seal the destination so the next relay attempt represents the
+	# same vendor request after the outage clears; a failover to mockvendor2
+	# would violate the anti-double-payout contract.
+	destination="$(CRYPTOX_KEY_V1="$CRYPTOX_KEY_V1" "$CRYPTOX_FIXTURE_BIN" payout payout_requests destination "$payout_id" '{"bank_code":"014","account_no":"1"}')"
+	psql_exec "$PAYOUT_DB_NAME" -c "UPDATE payout_requests SET destination_ciphertext = decode('$destination','hex'), destination_key_version = 1, updated_at = now() - interval '2 minutes' WHERE id = '$payout_id'; UPDATE payout_vendor_commands SET next_attempt_at = now() WHERE payout_request_id = '$payout_id';" >/dev/null
+	curl_internal -sS -o /dev/null -X POST "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendors/mockvendor/force-fail" \
+		-H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" \
+		-d '{"fail":false}'
+
+	# A restart proves the durable recovery worker, rather than an in-memory
+	# request retry, drives the same-vendor attempt to completion.
+	kill_payout_hard
+	start_payout_service
+	wait_for_payout_status "$payout_id" "settled" 35 || return 1
+	accepted_calls="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT count(*) FROM payout_vendor_calls WHERE payout_request_id = '$payout_id' AND outcome = 'accepted';")"
+	vendor="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT vendor FROM payout_requests WHERE id = '$payout_id';")"
+	if [ "$vendor" = "mockvendor" ] && [ "$accepted_calls" -ge 1 ]; then
+		ok "unknown payout recovered and settled through the pinned mockvendor after service restart"
+	else
+		fail "unknown payout did not settle through the pinned vendor (vendor=$vendor accepted_calls=$accepted_calls)"
+		return 1
+	fi
+}
+
 command_policy_flow() {
-	log "=== command policy boundary: public API -> scheduler -> approved admin execution ==="
-	local public_decisions scheduler_decisions disbursement_decisions malformed_decisions
+	log "=== command policy boundary: allow, deny, public API -> scheduler -> approved admin execution ==="
+	local public_decisions scheduler_decisions disbursement_decisions denied_decisions malformed_decisions
+
+	# Exercise the execution-time subject gate through the public route. The
+	# executor must record a denied decision before it rejects the command, and
+	# restoring the projection keeps the rest of this disposable run usable.
+	psql_exec "$LEDGER_DB_NAME" -c "UPDATE money_movement_execution_subjects SET status = 'disabled', updated_at = now() WHERE user_id = '$USER_B';" >/dev/null
+	public_request "command-policy-disabled-subject" -X POST "http://localhost:$APP_PORT/api/v1/ledger/transactions" \
+		-H "Authorization: Bearer $TOKEN_B" -H "Content-Type: application/json" \
+		-d "{\"idempotency_key\":\"capability-policy-denied-$RUN_ID\",\"type\":\"transfer_p2p\",\"amount\":\"1\",\"target_user_id\":\"$USER_A\"}"
+	expect_client_failure "disabled subject was rejected at the shared command boundary" || return 1
+	psql_exec "$LEDGER_DB_NAME" -c "UPDATE money_movement_execution_subjects SET status = 'active', updated_at = now() WHERE user_id = '$USER_B';" >/dev/null
 
 	# The command executor writes the immutable decision before the low-level
 	# posting service runs.  Check the three materially different callers used
@@ -368,12 +449,13 @@ command_policy_flow() {
 	public_decisions="$(psql_exec "$LEDGER_DB_NAME" -c "SELECT count(*) FROM money_movement_policy_decisions WHERE created_at >= '$RUN_STARTED_AT' AND user_id = '$USER_A' AND source = 'public-api' AND allowed = true AND correlation_id <> '' AND request_origin <> '';")"
 	scheduler_decisions="$(psql_exec "$LEDGER_DB_NAME" -c "SELECT count(*) FROM money_movement_policy_decisions WHERE created_at >= '$RUN_STARTED_AT' AND user_id = '$USER_A' AND source = 'scheduler' AND allowed = true AND correlation_id <> '' AND request_origin <> '';")"
 	disbursement_decisions="$(psql_exec "$LEDGER_DB_NAME" -c "SELECT count(*) FROM money_movement_policy_decisions WHERE created_at >= '$RUN_STARTED_AT' AND user_id = '$USER_A' AND source = 'bulk-disbursement' AND allowed = true AND correlation_id <> '' AND request_origin <> '';")"
+	denied_decisions="$(psql_exec "$LEDGER_DB_NAME" -c "SELECT count(*) FROM money_movement_policy_decisions WHERE created_at >= '$RUN_STARTED_AT' AND user_id = '$USER_B' AND source = 'public-api' AND allowed = false AND reason = 'subject_disabled' AND correlation_id <> '' AND request_origin <> '';")"
 	malformed_decisions="$(psql_exec "$LEDGER_DB_NAME" -c "SELECT count(*) FROM money_movement_policy_decisions WHERE created_at >= '$RUN_STARTED_AT' AND user_id = '$USER_A' AND (source = '' OR correlation_id = '' OR request_origin = '');")"
 
-	if [ "$public_decisions" -ge 1 ] && [ "$scheduler_decisions" -ge 1 ] && [ "$disbursement_decisions" -ge 1 ]; then
-		ok "public, scheduler, and approved bulk-disbursement callers entered the shared policy boundary"
+	if [ "$public_decisions" -ge 1 ] && [ "$scheduler_decisions" -ge 1 ] && [ "$disbursement_decisions" -ge 1 ] && [ "$denied_decisions" -ge 1 ]; then
+		ok "public, scheduler, approved bulk-disbursement, and denied callers entered the shared policy boundary"
 	else
-		fail "missing command-policy audit coverage (public=$public_decisions scheduler=$scheduler_decisions disbursement=$disbursement_decisions)"
+		fail "missing command-policy audit coverage (public=$public_decisions scheduler=$scheduler_decisions disbursement=$disbursement_decisions denied=$denied_decisions)"
 		return 1
 	fi
 	if [ "$malformed_decisions" -eq 0 ]; then
@@ -391,6 +473,7 @@ disbursement_flow
 recon_flow
 dispute_flow
 fx_flow
+payout_unknown_state_flow
 command_policy_flow
 
 assert_ledger_balanced

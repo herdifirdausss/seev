@@ -98,20 +98,24 @@ func (a SubjectAuthorizer) Authorize(ctx context.Context, cmd processors.Command
 		return "subject state unavailable", fmt.Errorf("execution subject lookup: %w", err)
 	}
 	if state.Status != "" && state.Status != "active" {
-		return "subject_disabled", fmt.Errorf("subject status %q is not active", state.Status)
+		return "subject_disabled", ledgererror.NewBizErr(ledgererror.ErrSubjectDisabled,
+			fmt.Sprintf("subject status %q is not active", state.Status))
 	}
 	if state.TenantStatus != "" && state.TenantStatus != "active" {
-		return "tenant_disabled", fmt.Errorf("tenant status %q is not active", state.TenantStatus)
+		return "tenant_disabled", ledgererror.NewBizErr(ledgererror.ErrSubjectDisabled,
+			fmt.Sprintf("tenant status %q is not active", state.TenantStatus))
 	}
 	minKYC := a.MinKYC
 	if minKYC == 0 {
 		minKYC = 1
 	}
 	if state.KYCLevel < minKYC {
-		return "kyc_required", fmt.Errorf("KYC level %d is below required level %d", state.KYCLevel, minKYC)
+		return "kyc_required", ledgererror.NewBizErr(ledgererror.ErrKYCRequired,
+			fmt.Sprintf("KYC level %d is below required level %d", state.KYCLevel, minKYC))
 	}
 	if state.KYCVerifiedUntil != nil && !state.KYCVerifiedUntil.After(exec.EffectiveTime) {
-		return "kyc_expired", fmt.Errorf("KYC verification expired at %s", state.KYCVerifiedUntil.UTC().Format(time.RFC3339))
+		return "kyc_expired", ledgererror.NewBizErr(ledgererror.ErrKYCExpired,
+			fmt.Sprintf("KYC verification expired at %s", state.KYCVerifiedUntil.UTC().Format(time.RFC3339)))
 	}
 	return "", nil
 }

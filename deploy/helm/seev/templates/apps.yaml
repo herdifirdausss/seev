@@ -46,6 +46,53 @@ spec:
         fsGroup: 65532
         seccompProfile:
           type: RuntimeDefault
+      initContainers:
+        - name: wait-for-data
+          image: busybox:1.38@sha256:dc2d74b28e4cf8984fa52af1f39bc7c3d9c73760b41a74d629f5d11b1ab28616
+          imagePullPolicy: IfNotPresent
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -eu
+              wait_for() {
+                name="$1"
+                host="$2"
+                port="$3"
+                until nc -z -w 2 "$host" "$port"; do
+                  echo "waiting for $name at $host:$port"
+                  sleep 2
+                done
+              }
+              wait_for postgres "$POSTGRES_HOST" "$POSTGRES_PORT"
+              {{- if or (eq $name "gateway") (eq $name "auth") (eq $name "ledger") (eq $name "payin") (eq $name "payout") (eq $name "fraud") }}
+              if [ "$REDIS_ENABLED" = "true" ]; then
+                wait_for redis "${REDIS_ADDR%:*}" "${REDIS_ADDR##*:}"
+              fi
+              {{- end }}
+              {{- if or (eq $name "gateway") (eq $name "ledger") (eq $name "fraud") }}
+              wait_for rabbitmq "$RABBITMQ_HOST" "$RABBITMQ_PORT"
+              {{- end }}
+          env:
+            - name: POSTGRES_HOST
+              value: {{ $root.Values.global.postgres.host | quote }}
+            - name: POSTGRES_PORT
+              value: {{ $root.Values.global.postgres.port | quote }}
+            - name: REDIS_ENABLED
+              value: {{ $root.Values.global.redis.enabled | quote }}
+            - name: REDIS_ADDR
+              value: {{ $root.Values.global.redis.addr | quote }}
+            - name: RABBITMQ_HOST
+              value: {{ $root.Values.global.rabbitmq.host | quote }}
+            - name: RABBITMQ_PORT
+              value: {{ $root.Values.global.rabbitmq.port | quote }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests: {cpu: 5m, memory: 8Mi}
+            limits: {cpu: 20m, memory: 16Mi}
       {{ with $root.Values.global.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}

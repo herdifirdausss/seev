@@ -69,9 +69,14 @@ jobs:
       - name: Deployment integration contract
         run: ./scripts/ci/check-platform-integration.sh
 
+      - name: Deployment platform E2E contract
+        run: ./scripts/platform-e2e.sh
+
       - name: ShellCheck deployment scripts
         run: |
           command -v shellcheck >/dev/null
           find deploy/kubernetes/scripts -name '*.sh' -print0 | xargs -0 shellcheck --severity=error
           shellcheck --severity=error scripts/ci/check-iac.sh
           shellcheck --severity=error scripts/ci/check-platform-integration.sh
+          shellcheck --severity=error scripts/platform-e2e.sh
+          shellcheck --severity=error deploy/kubernetes/scripts/e2e.sh

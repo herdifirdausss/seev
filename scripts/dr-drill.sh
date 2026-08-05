@@ -443,7 +443,12 @@ cat "$DRRESEED_REPORT"
 record_stage drreseed_pass
 
 echo "dr-drill.sh: === Phase H: post-restore security fence (K11) ==="
-POSTGRES_CONTAINER="$DRILL_POSTGRES" POSTGRES_MIGRATE_USER="$DB_USER" POSTGRES_MIGRATE_PASSWORD="$DB_USER" \
+
+# The restore Compose project publishes Postgres on an ephemeral host port.
+# Pass that endpoint explicitly to the fence; otherwise its standalone local
+# default (5433) can accidentally target a stopped development stack.
+POSTGRES_HOST=localhost POSTGRES_PORT="$DRILL_POSTGRES_PORT" POSTGRES_CONTAINER="$DRILL_POSTGRES" \
+	POSTGRES_MIGRATE_USER="$DB_USER" POSTGRES_MIGRATE_PASSWORD="$DB_USER" \
 	./scripts/post-restore-security.sh --confirm
 record_stage security_fence_pass
 

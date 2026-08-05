@@ -60,6 +60,8 @@ for path in \
 	deploy/terraform/gcp/platform/versions.tf \
 	deploy/helm/seev/Chart.yaml \
 	deploy/helm/seev/templates/apps.yaml \
+	deploy/helm/seev/templates/gateway-api.yaml \
+	deploy/kubernetes/scripts/e2e.sh \
 	deploy/helm/seev/templates/serviceaccounts.yaml; do
 	require_file "$path"
 done
@@ -82,10 +84,13 @@ done
 # separately authorized environment action.
 require_text deploy/terraform/aws/dev/main.tf 'sts:AssumeRoleWithWebIdentity'
 require_text deploy/terraform/aws/dev/main.tf 'system:serviceaccount:seev-app:seev-vendor'
-require_text deploy/terraform/gcp/dev/main.tf 'workload_pool = "${var.project_id}.svc.id.goog"'
+require_text deploy/terraform/gcp/dev/main.tf "workload_pool = \"\${var.project_id}.svc.id.goog\""
 require_text deploy/terraform/gcp/dev/main.tf 'seev-app/seev-vendor'
 require_text deploy/helm/seev/templates/serviceaccounts.yaml 'serviceAccountAnnotations'
 require_text deploy/helm/seev/templates/apps.yaml 'serviceAccountName:'
+require_text deploy/helm/seev/templates/apps.yaml 'name: wait-for-data'
+require_text deploy/helm/seev/templates/gateway-api.yaml 'value: /api/v1/users'
+require_text deploy/kubernetes/scripts/e2e.sh 'RECIPIENT_ID='
 
 tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/seev-platform-integration.XXXXXX")"
 trap 'rm -rf "$tmp_dir"' EXIT
