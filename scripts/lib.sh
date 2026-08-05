@@ -69,6 +69,11 @@ CLOSURE_KEK_V1="${CLOSURE_KEK_V1:-3333333333333333333333333333333333333333333333
 # CRYPTOX_LOOKUP_KEY (already defined above for auth-service) must also
 # reach gateway's own process now, not just auth's.
 MERCHANT_API_KEY_PEPPER="${MERCHANT_API_KEY_PEPPER:-6666666666666666666666666666666666666666666666666666666666666666}"
+# Plan 59 C3: gateway's notification module requires this HMAC key to
+# fingerprint push-device tokens for deduplication (DevicesHandler returns 503
+# NOTIFICATION_CHANNEL_UNAVAILABLE when it's absent — same boot-blocking
+# posture as MERCHANT_API_KEY_PEPPER above for the merchant module).
+NOTIFY_TOKEN_FINGERPRINT_KEY="${NOTIFY_TOKEN_FINGERPRINT_KEY:-7777777777777777777777777777777777777777777777777777777777777777}"
 # docs/roadmap/archive/49 TM-11: the per-IP(+path) rate limiter now actually enforces
 # (previously bypassed by keying on the ephemeral source port) — this
 # harness legitimately fires many requests per minute from ONE machine
@@ -718,6 +723,7 @@ start_gateway() {
 		export CRYPTOX_KEY_V1=$CRYPTOX_KEY_V1
 		export CRYPTOX_LOOKUP_KEY=$CRYPTOX_LOOKUP_KEY
 		export MERCHANT_API_KEY_PEPPER=$MERCHANT_API_KEY_PEPPER
+		export NOTIFY_TOKEN_FINGERPRINT_KEY=$NOTIFY_TOKEN_FINGERPRINT_KEY
 		export LOG_FORMAT=json
 		# Vendor callbacks are served by vendor-service; gateway only owns the
 		# public API and no longer registers a /webhooks route.
