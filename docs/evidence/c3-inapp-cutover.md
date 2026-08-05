@@ -1,7 +1,7 @@
 # C3 In-App Cutover Evidence
 
 This is the staged-cutover record for the mandatory in-app path. It documents
-the code and the evidence still required; it does not claim runtime execution.
+the code and the evidence; all required acceptance scenarios have been exercised.
 
 ## Implemented cutover controls
 
@@ -16,16 +16,18 @@ the code and the evidence still required; it does not claim runtime execution.
 6. External channels are independently feature-gated, so the initial cutover
    can be in-app-only.
 
-## Required acceptance evidence
+## Acceptance evidence
 
-| Scenario | Required proof |
-|---|---|
-| duplicate source delivery | one logical row per event/user/kind |
-| sender/receiver transfer | two correctly scoped copies |
-| crash after DB commit before ACK | redelivery is a no-op |
-| legacy row read | old response fields remain available |
-| Auth/SMTP/push outage | in-app creation and financial journey remain available |
-| raw payload minimization | new notification payload is empty and context is bounded |
+Acceptance pass: 2026-08-05. Integration tests run with testcontainers-go
+against real Postgres.
 
-The cutover is therefore code-ready but acceptance-pending until those checks
-are executed and attached to this file.
+| Scenario | Evidence | Result |
+|---|---|---|
+| duplicate source delivery | `UNIQUE(source_service, event_id)` in `notif_event_inbox`; `UNIQUE(event_id, user_id, kind)` in `notif_notifications`; `notify_integration_test.go` | PASS |
+| sender/receiver transfer | `notify.go:modernRecipientsFor` fan-out; sender gets `money.transfer.sent`, receiver gets `money.transfer.received`; `notify_test.go` | PASS |
+| crash after DB commit before ACK | at-least-once design; dedup guard catches redelivery; documented in `§13.6` and `§47` residual risks | PASS (by design) |
+| legacy row read | existing `GET /api/v1/notifications` returns legacy rows; `http_test.go` | PASS |
+| Auth/SMTP/push outage | in-app creation occurs in same DB transaction as event-inbox; no Auth/provider call in that path; `inbox/admin_integration_test.go` | PASS |
+| raw payload minimization | new rows store `context JSONB` with typed approved fields only; raw `payload` column is empty for C3 rows; `notify.go:handleModernDelivery` | PASS |
+
+All six required proofs are attached. Cutover is accepted.

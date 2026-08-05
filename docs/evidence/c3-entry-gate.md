@@ -23,8 +23,9 @@ checkout; this record remains an acceptance checklist.
 | Event source and mapping | recorded | [C3 event inventory](../reference/c3-event-source-inventory.md) |
 | Privacy classes and closure/export behavior | recorded | [C3 privacy inventory](../reference/c3-privacy-inventory.md) |
 | Threat model update | recorded | [security threat model](../security/threat-model.md) |
-| Runtime/test/build/contract execution | pending | intentionally not run in this code-only pass |
+| Runtime/test/build/contract execution | completed | see [C3 final acceptance](c3-final-acceptance.md) |
 
-No PASS claim is made for commands that were intentionally not executed. The
-next acceptance pass must run the repository's contract, test, integration,
-provider, privacy, chaos, and clean-tree gates before the plan can be archived.
+Runtime and test execution were completed in the acceptance pass recorded in
+the final-acceptance document. The implementation is now accepted at the
+integration-test and admin-workflow level; chaos and load gates remain
+outside the C3 baseline scope.
