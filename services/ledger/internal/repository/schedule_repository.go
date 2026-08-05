@@ -1,5 +1,7 @@
 package repository
 
+//go:generate mockgen -source=schedule_repository.go -destination=scheduled_occurrence_repository_mock.go -package=repository
+
 import (
 	"context"
 	"database/sql"

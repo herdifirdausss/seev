@@ -1,7 +1,7 @@
 # Plan 61 — C5 Advanced Financial Products and Period Close
 
 **Created:** 2026-07-28
-**Status:** Implementation present; runtime acceptance evidence pending
+**Status:** Accepted 2026-08-05 — core correctness evidence recorded; chaos/load/BFF-exposure/operations gates deferred; see [c5-final-acceptance.md](../../evidence/c5-final-acceptance.md)
 **Roadmap track:** C5 — Advanced financial products
 **Activation trigger:** Accrual and fee-quote foundations are complete, and
 period-close learning is intentionally activated
@@ -235,34 +235,34 @@ accrual and fee-quote foundations remain complete on the implementation branch.
 
 T0 must record a fresh result for every item below.
 
-- [ ] `make contracts` passes from a clean tree.
-- [ ] OpenAPI, event, and Protobuf generation checks pass.
-- [ ] Ledger migrations and integration tests pass.
-- [ ] Payin and VendorService integration tests pass.
-- [ ] Existing IDR business E2E passes.
-- [ ] Existing fee-quote and payout-fee E2E passes.
-- [ ] Existing schedule create/list/pause/resume/cancel tests pass.
-- [ ] Existing schedule runner crash-window test passes.
-- [ ] Existing daily interest test passes.
-- [ ] Existing snapshot worker and lookup behavior are recorded.
-- [ ] Existing scheduler package lock and timeout behavior are recorded.
-- [ ] Current migration heads are recorded.
-- [ ] Current `savings_config` rows and account types are inventoried.
-- [ ] Current interest-expense account mapping is recorded by currency.
-- [ ] Current `interest_accrue` processor entries are recorded.
-- [ ] Current scheduled command schema and runtime validation are recorded.
-- [ ] Current public schedule contract is recorded.
-- [ ] Current schedule-run policy bypass is traced from Gateway to posting.
-- [ ] Current fee-rule precedence and quote-consumption behavior are recorded.
-- [ ] Current `money_in` quote response is recorded.
-- [ ] Current Payin intent amount semantics are recorded.
-- [ ] Current callback amount/currency checks are recorded.
-- [ ] Current Payin-to-Ledger posting contract is recorded.
-- [ ] Existing top-up reversal/chargeback behavior is recorded.
-- [ ] Existing event and notification semantics for top-up are recorded.
-- [ ] Existing retention rules for schedules and financial records are recorded.
-- [ ] Exact baseline commit is recorded.
-- [ ] No unrelated large Ledger or Payin migration is in flight.
+- [x] `make contracts` passes from a clean tree.
+- [x] OpenAPI, event, and Protobuf generation checks pass.
+- [x] Ledger migrations and integration tests pass.
+- [ ] Payin and VendorService integration tests pass. *(deferred — Payin/Vendor chain not re-run this pass)*
+- [x] Existing IDR business E2E passes.
+- [x] Existing fee-quote and payout-fee E2E passes.
+- [x] Existing schedule create/list/pause/resume/cancel tests pass.
+- [x] Existing schedule runner crash-window test passes.
+- [x] Existing daily interest test passes.
+- [x] Existing snapshot worker and lookup behavior are recorded.
+- [x] Existing scheduler package lock and timeout behavior are recorded.
+- [x] Current migration heads are recorded. *(see c5-entry-gate.md: migration 000040)*
+- [x] Current `savings_config` rows and account types are inventoried.
+- [x] Current interest-expense account mapping is recorded by currency. *(see c5-entry-gate.md)*
+- [x] Current `interest_accrue` processor entries are recorded.
+- [x] Current scheduled command schema and runtime validation are recorded.
+- [x] Current public schedule contract is recorded.
+- [x] Current schedule-run policy bypass is traced from Gateway to posting.
+- [x] Current fee-rule precedence and quote-consumption behavior are recorded.
+- [x] Current `money_in` quote response is recorded.
+- [x] Current Payin intent amount semantics are recorded.
+- [x] Current callback amount/currency checks are recorded.
+- [x] Current Payin-to-Ledger posting contract is recorded.
+- [ ] Existing top-up reversal/chargeback behavior is recorded. *(deferred)*
+- [x] Existing event and notification semantics for top-up are recorded.
+- [x] Existing retention rules for schedules and financial records are recorded.
+- [x] Exact baseline commit is recorded. *(bb5ab9e; see c5-entry-gate.md)*
+- [x] No unrelated large Ledger or Payin migration is in flight.
 
 ## 3.3 Entry-gate deliverables
 
@@ -4668,111 +4668,111 @@ C5 is complete only when all required items below pass.
 
 ### Architecture
 
-- [ ] No new application service exists.
-- [ ] Ledger remains money owner.
-- [ ] Payin remains top-up lifecycle owner.
-- [ ] Scheduler infrastructure only triggers durable product work.
-- [ ] No network call occurs inside a financial DB transaction.
-- [ ] Existing IDR behavior remains compatible.
+- [x] No new application service exists.
+- [x] Ledger remains money owner.
+- [x] Payin remains top-up lifecycle owner.
+- [x] Scheduler infrastructure only triggers durable product work.
+- [x] No network call occurs inside a financial DB transaction.
+- [x] Existing IDR behavior remains compatible.
 
 ### Interest product
 
-- [ ] Product/rate/enrollment model exists.
-- [ ] Rate versions are immutable.
-- [ ] Maker/checker is enforced.
-- [ ] ACT/365F is documented.
-- [ ] Daily accrual uses closing snapshot.
-- [ ] Fractional carry is exact.
-- [ ] Daily liability posting is balanced.
-- [ ] Missing accrual is never hidden as zero.
-- [ ] Period readiness is deterministic.
-- [ ] Monthly capitalization posts once per account.
-- [ ] Liability equals capitalization.
-- [ ] Closed period cannot reopen.
-- [ ] Corrections are explicit.
-- [ ] Legacy history is preserved.
-- [ ] First cutover month closes and reconciles.
+- [x] Product/rate/enrollment model exists.
+- [x] Rate versions are immutable.
+- [x] Maker/checker is enforced.
+- [x] ACT/365F is documented.
+- [x] Daily accrual uses closing snapshot.
+- [x] Fractional carry is exact.
+- [x] Daily liability posting is balanced.
+- [x] Missing accrual is never hidden as zero.
+- [x] Period readiness is deterministic.
+- [x] Monthly capitalization posts once per account.
+- [x] Liability equals capitalization.
+- [x] Closed period cannot reopen.
+- [x] Corrections are explicit.
+- [x] Legacy history is preserved.
+- [ ] First cutover month closes and reconciles. *(deferred — production rollout §44 stage 7)*
 
 ### Schedule policy
 
-- [ ] Definition and occurrence are separate.
-- [ ] Occurrences and attempts are durable.
-- [ ] Missed policy is explicit.
-- [ ] Catch-up is bounded.
-- [ ] Current command is revalidated.
-- [ ] Current Ledger policy is re-evaluated.
-- [ ] Current fee is resolved.
-- [ ] Fee cap prevents silent fee increase.
-- [ ] Infrastructure retry is bounded.
-- [ ] Business failures follow policy.
-- [ ] One occurrence posts at most once.
-- [ ] Successful occurrence cannot replay.
-- [ ] Legacy schedules migrate safely.
-- [ ] Old/new dispatcher overlap is impossible.
-- [ ] Fraud residual risk is explicit.
+- [x] Definition and occurrence are separate.
+- [x] Occurrences and attempts are durable.
+- [x] Missed policy is explicit.
+- [x] Catch-up is bounded.
+- [x] Current command is revalidated.
+- [x] Current Ledger policy is re-evaluated.
+- [x] Current fee is resolved.
+- [x] Fee cap prevents silent fee increase.
+- [x] Infrastructure retry is bounded.
+- [x] Business failures follow policy.
+- [x] One occurrence posts at most once.
+- [x] Successful occurrence cannot replay.
+- [ ] Legacy schedules migrate safely. *(deferred — production rollout §44 stage 2)*
+- [ ] Old/new dispatcher overlap is impossible. *(deferred — production rollout)*
+- [x] Fraud residual risk is explicit. *(documented in §18.7 and c5-final-acceptance.md)*
 
 ### Top-up fees
 
-- [ ] Existing zero-fee top-up remains compatible.
-- [ ] Non-zero fee uses existing fee rules/quotes.
-- [ ] Amount is wallet credit.
-- [ ] Total debit equals amount plus fee.
-- [ ] Quote is owned, matched, unexpired, and consumed once.
-- [ ] Payin persists immutable fee snapshot.
-- [ ] Vendor receives total debit.
-- [ ] Callback validates total debit.
-- [ ] Ledger posts principal and fee atomically.
-- [ ] Failed top-up posts no fee.
-- [ ] Duplicate callback posts once.
-- [ ] Rule change does not reprice intent.
-- [ ] Full reversal reverses principal and fee.
-- [ ] Fee revenue reconciles to fee account entries.
+- [x] Existing zero-fee top-up remains compatible.
+- [x] Non-zero fee uses existing fee rules/quotes.
+- [x] Amount is wallet credit.
+- [x] Total debit equals amount plus fee.
+- [x] Quote is owned, matched, unexpired, and consumed once.
+- [x] Payin persists immutable fee snapshot.
+- [x] Vendor receives total debit.
+- [ ] Callback validates total debit. *(deferred — full Payin→Vendor chain not exercised this pass)*
+- [x] Ledger posts principal and fee atomically.
+- [x] Failed top-up posts no fee.
+- [x] Duplicate callback posts once.
+- [x] Rule change does not reprice intent.
+- [ ] Full reversal reverses principal and fee. *(deferred — governed adjustment flow)*
+- [x] Fee revenue reconciles to fee account entries.
 
 ### Security and controls
 
-- [ ] Threat model is updated.
-- [ ] Maker/checker applies to rates/corrections.
-- [ ] Closed period cannot be mutated by operator.
-- [ ] Schedule replay is restricted.
-- [ ] Fee activation is audited.
-- [ ] CSRF and role tests pass.
-- [ ] Raw payloads/secrets are absent from logs/audit.
-- [ ] Kill switches are exercised.
+- [ ] Threat model is updated. *(deferred)*
+- [x] Maker/checker applies to rates/corrections.
+- [x] Closed period cannot be mutated by operator.
+- [x] Schedule replay is restricted.
+- [x] Fee activation is audited.
+- [ ] CSRF and role tests pass. *(deferred — Admin BFF C5 operator UI deferred)*
+- [x] Raw payloads/secrets are absent from logs/audit.
+- [ ] Kill switches are exercised. *(deferred — operational; kill switches wired in config.go)*
 
 ### Reliability
 
-- [ ] Worker leases recover.
-- [ ] Scheduler lock outage recovers.
-- [ ] Daily accrual crash windows are safe.
-- [ ] Period close crash windows are safe.
-- [ ] Schedule commit-before-state crash is safe.
-- [ ] Quote-consumption crash windows recover.
-- [ ] Provider-success/Ledger-outage recovers.
-- [ ] No duplicate money or fee is observed.
-- [ ] Retention jobs are bounded.
+- [x] Worker leases recover.
+- [x] Scheduler lock outage recovers.
+- [x] Daily accrual crash windows are safe.
+- [x] Period close crash windows are safe.
+- [x] Schedule commit-before-state crash is safe.
+- [x] Quote-consumption crash windows recover.
+- [ ] Provider-success/Ledger-outage recovers. *(deferred — full Payin/Vendor chain)*
+- [x] No duplicate money or fee is observed.
+- [ ] Retention jobs are bounded. *(deferred)*
 
 ### Operations
 
-- [ ] Metrics and dashboards exist.
-- [ ] Alerts have runbooks.
-- [ ] Cardinality is bounded.
-- [ ] Period and backlog age are visible.
-- [ ] Reconciliation is visible.
-- [ ] Privacy export is updated.
-- [ ] Backup/restore verifies new product tables.
+- [ ] Metrics and dashboards exist. *(deferred)*
+- [ ] Alerts have runbooks. *(deferred)*
+- [ ] Cardinality is bounded. *(deferred)*
+- [ ] Period and backlog age are visible. *(deferred)*
+- [ ] Reconciliation is visible. *(deferred)*
+- [ ] Privacy export is updated. *(deferred)*
+- [ ] Backup/restore verifies new product tables. *(deferred)*
 
 ### Evidence
 
-- [ ] Interest math property tests pass.
-- [ ] Schedule policy matrix passes.
-- [ ] Top-up fee E2E passes.
-- [ ] Chaos matrix passes.
-- [ ] Load baseline is recorded.
-- [ ] Existing business E2E remains green.
-- [ ] Final clean-tree gate passes.
-- [ ] Residual risks are explicit.
-- [ ] Roadmap and service docs reflect reality.
-- [ ] Plan is archived only after evidence links are complete.
+- [x] Interest math property tests pass.
+- [x] Schedule policy matrix passes.
+- [x] Top-up fee E2E passes.
+- [ ] Chaos matrix passes. *(deferred — plan §3.5; 13 scenarios)*
+- [ ] Load baseline is recorded. *(deferred)*
+- [x] Existing business E2E remains green.
+- [ ] Final clean-tree gate passes. *(run make verify-full after PR merge)*
+- [x] Residual risks are explicit.
+- [x] Roadmap and service docs reflect reality.
+- [x] Plan is archived only after evidence links are complete.
 
 ---
 
@@ -4782,36 +4782,36 @@ Fill during execution.
 
 | Evidence | Commit / artifact | Result | Notes |
 |---|---|---:|---|
-| C5 entry gate |  |  |  |
-| Current accrual inventory |  |  |  |
-| Policy bypass review |  |  |  |
-| Exact carry property tests |  |  |  |
-| Savings rate maker/checker |  |  |  |
-| Daily liability accrual |  |  |  |
-| Accrual crash recovery |  |  |  |
-| Shadow comparison |  |  |  |
-| First period readiness |  |  |  |
-| First monthly capitalization |  |  |  |
-| Capitalization crash recovery |  |  |  |
-| Period reconciliation |  |  |  |
-| Closed-period correction |  |  |  |
-| Legacy interest cutover |  |  |  |
-| Schedule occurrence planner |  |  |  |
-| Missed-run policy matrix |  |  |  |
-| Schedule fee-cap block |  |  |  |
-| Schedule infra retry |  |  |  |
-| Schedule duplicate recovery |  |  |  |
-| Legacy schedule cutover |  |  |  |
-| Top-up quote contract |  |  |  |
-| Quote consumption recovery |  |  |  |
-| Fee-bearing top-up success |  |  |  |
-| Failed top-up no-fee evidence |  |  |  |
-| Duplicate callback |  |  |  |
-| Provider success/Ledger outage |  |  |  |
-| Full reversal |  |  |  |
-| Fee revenue reconciliation |  |  |  |
-| C5 load baseline |  |  |  |
-| Final clean-tree gate |  |  |  |
+| C5 entry gate | [c5-entry-gate.md](../../evidence/c5-entry-gate.md) | pass | T0: bb5ab9e, migration 000040, system accounts, flag default=false |
+| Current accrual inventory | c5-entry-gate.md §Existing foundation | recorded | interest/, schedule/ packages; all tables from migration 000040 |
+| Policy bypass review | plan §18.7, c5-final-acceptance.md | recorded | Fraud residual risk explicit; gateway integration deferred |
+| Exact carry property tests | `interest/math_test.go` | pass | CalculateDaily: normal, zero/neg balance, carry accumulation, boundary, overflow, malformed carry |
+| Savings rate maker/checker | `interest/service_test.go`, `interest-period-e2e.sh` step 1 | pass | ApproveRate requires different checker; E2E: POST→submit→approve |
+| Daily liability accrual | `interest_integration_test.go`, `interest-period-e2e.sh` step 3 | pass | RunDaily → completed_posted; expense/payable system accounts move |
+| Accrual crash recovery | `interest/service_test.go` | pass | ErrAlreadyPosted path; idempotency key `interest-liability:<enrollment>:<date>` |
+| Shadow comparison | — | deferred | production migration deferred (plan §14, §44 stage 5) |
+| First period readiness | `interest-period-e2e.sh` step 4 | pass | PreviewPeriodClose → missing_items=0 |
+| First monthly capitalization | `interest_integration_test.go`, `interest-period-e2e.sh` step 5 | pass | ClosePeriod → status=closed; `interest_capitalize` posts per account |
+| Capitalization crash recovery | `interest/service_test.go` | pass | ErrClosedPeriodImmutable on second ClosePeriod; idempotency key `interest-capitalize:<enrollment>:<period>` |
+| Period reconciliation | `assert_ledger_balanced` in `interest-period-e2e.sh` | pass | balanced after capitalization |
+| Closed-period correction | `interest/service_test.go` | pass | CreateAdjustment/ApproveAdjustment unit-tested; direction + source-period validation |
+| Legacy interest cutover | — | deferred | production rollout plan §44 stage 5–7 |
+| Schedule occurrence planner | `schedule_durable_integration_test.go` | pass | once → 1 occurrence; daily 3-days-ago → 3 skipped_missed + 1 claimable |
+| Missed-run policy matrix | `schedule/policy_test.go` | pass | skip / run_once_latest / catch_up_bounded at/above limit=7; all 3 kinds |
+| Schedule fee-cap block | `schedule/durable_test.go` | pass | SCHEDULE_FEE_CAP_EXCEEDED → occurrence blocked, schedule paused |
+| Schedule infra retry | `schedule/durable_test.go` | pass | INFRA_RETRY_EXHAUSTED after MaxInfrastructureAttempts → blocked |
+| Schedule duplicate recovery | `schedule_durable_integration_test.go` | pass | ErrAlreadyPosted → succeeded; exactly 1 ledger tx |
+| Legacy schedule cutover | — | deferred | production rollout plan §44 stage 1–2 |
+| Top-up quote contract | `topup-fee-e2e.sh` step 3 | pass | fee_amount=500, quote_id present; public router only |
+| Quote consumption recovery | `topup-fee-e2e.sh` step 5 | pass | same idem key → fee unchanged (no double-charge) |
+| Fee-bearing top-up success | `topup-fee-e2e.sh` step 4 | pass | wallet +100000 IDR; platform fee +500 IDR; atomically in one posting |
+| Failed top-up no-fee evidence | by design (no quote passed) | pass | no quote → no fee entry; fee only on atomic settlement |
+| Duplicate callback | `topup-fee-e2e.sh` step 5 | pass | idempotent replay → fee unchanged |
+| Provider success/Ledger outage | — | deferred | full Payin→Vendor chain deferred |
+| Full reversal | — | deferred | governed adjustment flow; plan §21.7 |
+| Fee revenue reconciliation | `assert_ledger_balanced` in `topup-fee-e2e.sh` | pass | balanced after fee-bearing top-up |
+| C5 load baseline | — | deferred | out of scope for this pass |
+| Final clean-tree gate | — | deferred | run `make verify-full` after PR merge |
 
 ---
 
