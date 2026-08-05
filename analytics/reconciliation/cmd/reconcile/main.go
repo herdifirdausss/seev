@@ -320,7 +320,11 @@ func persistResult(ctx context.Context, cfg config, runID uuid.UUID, cutoff time
 	run := map[string]any{
 		"run_id": runID.String(), "environment": cfg.Environment, "status": result.CompletedStatus,
 		"cutoff_type": "source_latest_time_minimum", "cutoff_value": cutoff.Format(time.RFC3339Nano),
-		"started_at": time.Now().UTC().Format(time.RFC3339Nano), "finished_at": time.Now().UTC().Format(time.RFC3339Nano),
+		// ClickHouse's default (non-best-effort) DateTime64 JSON parser
+		// rejects RFC3339's trailing 'Z' (confirmed 2026-08-05); these two
+		// columns are DateTime64(6, 'UTC'), unlike the String cutoff_value
+		// above, so they need the bare ClickHouse-native layout instead.
+		"started_at": time.Now().UTC().Format("2006-01-02 15:04:05.000000"), "finished_at": time.Now().UTC().Format("2006-01-02 15:04:05.000000"),
 		"critical_failures": result.CriticalFailed, "warning_failures": result.WarningFailed,
 		"details": "bounded read-only Ledger summary reconciliation",
 	}
@@ -339,7 +343,7 @@ func persistResult(ctx context.Context, cfg config, runID uuid.UUID, cutoff time
 			"expected_value": check.Expected, "actual_value": check.Actual, "delta_value": core.Delta(check.Expected, check.Actual),
 			"severity": core.SeverityFor(core.Delta(check.Expected, check.Actual), check.Critical),
 			"status":   map[bool]string{true: "passed", false: "failed"}[check.Expected == check.Actual],
-			"details":  core.RedactDetails(check.Details), "created_at": time.Now().UTC().Format(time.RFC3339Nano),
+			"details":  core.RedactDetails(check.Details), "created_at": time.Now().UTC().Format("2006-01-02 15:04:05.000000"),
 		}
 		data, err := json.Marshal(item)
 		if err != nil {

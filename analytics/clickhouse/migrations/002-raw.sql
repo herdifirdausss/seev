@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS raw.cdc_events
 ENGINE = MergeTree
 PARTITION BY toYYYYMM(event_date)
 ORDER BY (source_service, source_table, topic, partition, offset)
-TTL ingested_at + INTERVAL 30 DAY DELETE;
+TTL event_date + INTERVAL 30 DAY DELETE;
 
 CREATE TABLE IF NOT EXISTS raw.cdc_events_kafka
 (

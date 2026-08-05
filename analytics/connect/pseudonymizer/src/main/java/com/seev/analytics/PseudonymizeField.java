@@ -2,6 +2,10 @@ package com.seev.analytics;
 
 import org.apache.kafka.common.config.ConfigDef;
 import org.apache.kafka.connect.connector.ConnectRecord;
+import org.apache.kafka.connect.data.Field;
+import org.apache.kafka.connect.data.Schema;
+import org.apache.kafka.connect.data.SchemaBuilder;
+import org.apache.kafka.connect.data.Struct;
 import org.apache.kafka.connect.transforms.Transformation;
 
 import java.nio.charset.StandardCharsets;
@@ -20,9 +24,14 @@ import javax.crypto.spec.SecretKeySpec;
 
 /**
  * Kafka Connect SMT that removes approved identity fields and replaces them
- * with deterministic HMAC-SHA-256 pseudonyms. The connector uses JSON without
- * schemas after Debezium's unwrap transform, so this transform intentionally
- * handles Map values recursively and never logs field values.
+ * with deterministic HMAC-SHA-256 pseudonyms. This runs in the SMT chain
+ * after Debezium's unwrap transform, where a record's value is still a typed
+ * Connect Struct/Schema pair (schemas.enable=false only affects the final
+ * JSON serialization, not the internal SMT pipeline) — so this transform
+ * rebuilds both the Struct and its Schema, rather than treating the value as
+ * a plain Map. Schemaless Map values are also supported, for configurations
+ * that disable Struct-based conversion upstream. This transform never logs
+ * field values.
  */
 public class PseudonymizeField<R extends ConnectRecord<R>> implements Transformation<R> {
     private static final String FIELDS = "fields";
@@ -36,14 +45,26 @@ public class PseudonymizeField<R extends ConnectRecord<R>> implements Transforma
         if (record == null || record.value() == null) {
             return record;
         }
-        Object value = rewrite(record.value());
+        Object originalValue = record.value();
+        Schema originalSchema = record.valueSchema();
+        Object newValue;
+        Schema newSchema;
+        if (originalValue instanceof Struct struct) {
+            newSchema = rewriteSchema(struct.schema());
+            newValue = rewriteStruct(struct, newSchema);
+        } else if (originalValue instanceof Map<?, ?> map) {
+            newSchema = originalSchema;
+            newValue = rewriteMap(map);
+        } else {
+            return record;
+        }
         return record.newRecord(
                 record.topic(),
                 record.kafkaPartition(),
                 record.keySchema(),
                 record.key(),
-                record.valueSchema(),
-                value,
+                newSchema,
+                newValue,
                 record.timestamp(),
                 record.headers());
     }
@@ -61,7 +82,7 @@ public class PseudonymizeField<R extends ConnectRecord<R>> implements Transforma
     public void configure(Map<String, ?> configs) {
         Object rawFields = configs.get(FIELDS);
         if (rawFields instanceof List<?> list) {
-            fields = list.stream().map(Object::toString).map(this::normalise).toList();
+            fields = list.stream().map(Object::toString).map(PseudonymizeField::normalise).toList();
         } else {
             fields = parseFields(Objects.toString(rawFields, ""));
         }
@@ -88,18 +109,45 @@ public class PseudonymizeField<R extends ConnectRecord<R>> implements Transforma
         fields = Collections.emptyList();
     }
 
-    private Object rewrite(Object value) {
-        if (!(value instanceof Map<?, ?> map)) {
-            return value;
+    private Schema rewriteSchema(Schema originalSchema) {
+        SchemaBuilder builder = SchemaBuilder.struct().name(originalSchema.name()).version(originalSchema.version());
+        if (originalSchema.isOptional()) {
+            builder.optional();
         }
+        for (Field field : originalSchema.fields()) {
+            if (fields.contains(normalise(field.name()))) {
+                builder.field(outputName(field.name()), Schema.OPTIONAL_STRING_SCHEMA);
+            } else {
+                builder.field(field.name(), field.schema());
+            }
+        }
+        return builder.build();
+    }
+
+    private Struct rewriteStruct(Struct original, Schema newSchema) {
+        Struct output = new Struct(newSchema);
+        for (Field field : original.schema().fields()) {
+            Object fieldValue = original.get(field);
+            if (fields.contains(normalise(field.name()))) {
+                output.put(outputName(field.name()), fieldValue == null ? null : pseudonym(fieldValue.toString()));
+            } else {
+                output.put(field.name(), fieldValue);
+            }
+        }
+        return output;
+    }
+
+    private Object rewriteMap(Map<?, ?> map) {
         Map<String, Object> output = new LinkedHashMap<>();
         for (Map.Entry<?, ?> entry : map.entrySet()) {
             String name = Objects.toString(entry.getKey(), "");
             Object fieldValue = entry.getValue();
             if (fields.contains(normalise(name))) {
                 output.put(outputName(name), fieldValue == null ? null : pseudonym(fieldValue.toString()));
+            } else if (fieldValue instanceof Map<?, ?> nested) {
+                output.put(name, rewriteMap(nested));
             } else {
-                output.put(name, rewrite(fieldValue));
+                output.put(name, fieldValue);
             }
         }
         return output;

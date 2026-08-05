@@ -6,7 +6,11 @@ cd "$root_dir"
 
 go run ./analytics/reconciliation/cmd/validate -root analytics
 
-if rg -n -i 'raw_payload|raw_request|raw_response|destination_ciphertext|account_number|password_hash|refresh_token|private_key|authorization' \
+# rg is not guaranteed to be installed (confirmed 2026-08-05: on a machine
+# without it, `if rg ...` silently treated "command not found" as "no match"
+# and this check reported success without ever scanning anything); grep -r
+# is portable and available everywhere this script's POSIX sh runs.
+if grep -rEn -i 'raw_payload|raw_request|raw_response|destination_ciphertext|account_number|password_hash|refresh_token|private_key|authorization' \
   analytics/connect/connectors analytics/dbt/models analytics/clickhouse/migrations; then
   echo 'sensitive-column scan failed' >&2
   exit 1

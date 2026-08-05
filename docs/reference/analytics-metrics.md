@@ -29,6 +29,31 @@ dates use `toDate(toTimeZone(timestamp, 'Asia/Jakarta'))`. Dashboard cards show
 `data_updated_at_utc`, freshness seconds, and the latest control reconciliation
 status. Stale analytics never blocks OLTP or claims transactional correctness.
 
+## Operational metrics (Prometheus)
+
+Served by `analytics/reconciliation/cmd/metrics-exporter` (`make
+analytics-metrics-exporter`, scraped by the app's Prometheus as jobs
+`analytics-metrics-exporter`/`analytics-clickhouse`/`analytics-redpanda`),
+runtime-verified 2026-08-05:
+
+| Metric | Type | Labels | Source |
+| --- | --- | --- | --- |
+| `seev_analytics_connector_up` | gauge | `source` | Kafka Connect REST API (polled directly — no JMX exporter in this Debezium image build) |
+| `seev_analytics_reconciliation_passed` | gauge | none | `control.reconciliation_runs` (latest) |
+| `seev_analytics_reconciliation_critical_failures` | gauge | none | `control.reconciliation_runs` (latest) |
+| `seev_analytics_reconciliation_warning_failures` | gauge | none | `control.reconciliation_runs` (latest) |
+| `seev_analytics_data_freshness_seconds` | gauge | `source`, `table` | `mart.mart_freshness` |
+| `seev_analytics_dbt_run_total` | counter | `result` | `control.dbt_invocations` (last 24h), populated by the `record_dbt_invocation` dbt `on-run-end` hook |
+
+Plus ClickHouse's and Redpanda's own native `/metrics` endpoints (not
+`seev_analytics_`-prefixed). Alert rules in
+`deploy/observability/prometheus/rules/analytics.yml` link each alert to a
+runbook under `docs/operations/runbooks/`. Not yet covered: Redpanda
+consumer-lag-growing, replication-slot-inactive, retained-WAL-threshold, and
+Metabase-query-failure — see
+[c2-final-acceptance.md](../evidence/c2-final-acceptance.md) for the full
+residual list.
+
 ## Ownership
 
 LedgerService owns fee and Ledger metrics. PayinService and PayoutService own

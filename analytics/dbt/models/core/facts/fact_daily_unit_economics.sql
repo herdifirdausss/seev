@@ -21,9 +21,9 @@ with revenue as (
     select * from {{ ref('vendor_cost_schedule') }}
 )
 select
-    v.report_date,
-    v.currency,
-    v.product,
+    v.report_date as report_date,
+    v.currency as currency,
+    v.product as product,
     coalesce(s.vendor, 'unmodeled') as vendor,
     v.successful_processed_volume_minor as processed_volume_minor,
     coalesce(r.recognized_fee_revenue_minor, 0) as recognized_fee_revenue_minor,

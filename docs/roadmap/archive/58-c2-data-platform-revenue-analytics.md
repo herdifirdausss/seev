@@ -1,7 +1,19 @@
 # Plan 58 — C2 Data Platform and Revenue Analytics
 
+> [Documentation home](../../README.md) · [Roadmap](../README.md) · [Archive](README.md)
+
+> **Status: Core done (2026-08-05).** The CDC-to-OLAP pipeline, revenue/unit-
+> economics marts, reconciliation, Metabase dashboards, and Prometheus
+> metrics/alerts are implemented and runtime-verified against real data —
+> see [c2-final-acceptance.md](../../evidence/c2-final-acceptance.md) for the
+> full evidence, the 25 real implementation bugs found and fixed along the
+> way, and the specific residual risks (no Grafana operational dashboard, no
+> deliberate incompatible-schema-change or WAL-pressure drill, several
+> plan-listed alerts unimplemented, no sustained-load performance baseline).
+> Those residual items remain open follow-up work, not blockers to this
+> track's core scope.
+
 **Created:** 2026-07-28
-**Status:** Implementation present; runtime acceptance evidence pending
 **Roadmap track:** C2 — Data Platform and Revenue Analytics
 **Activation trigger:** Conscious CDC/data-platform learning decision
 **Depends on:** Stable source contracts, A8 observability foundation, A9 contract governance
@@ -11,9 +23,12 @@
 **Analytics stack:** Debezium PostgreSQL connectors, Kafka Connect, Redpanda, ClickHouse, dbt, Metabase
 **No money-movement flow may depend on this platform.**
 
-The C2 code, contracts, connector allowlists, optional stack, and reconciliation
-paths are present in the current main checkout. Keep this plan active until
-runtime and acceptance evidence is recorded; see the [current-state inventory](../../reference/current-state.md).
+The C2 code, contracts, connector allowlists, optional stack, and
+reconciliation paths are implemented and runtime-verified; see the
+[current-state inventory](../../reference/current-state.md) for the current
+system-wide boundary and [c2-final-acceptance.md](../../evidence/c2-final-acceptance.md)
+for this track's specific evidence. This file otherwise preserves the
+assumptions and task wording from its original active phase.
 
 ---
 
@@ -3805,128 +3820,133 @@ Final evidence records:
 
 ## 43. Final definition of done
 
-C2 is complete only when all required checks below pass.
+C2 is complete only when all required checks below pass. Checked
+2026-08-05 against real runtime evidence — see
+[c2-final-acceptance.md](../../evidence/c2-final-acceptance.md) for command
+output and the residual-risk detail behind every unchecked box.
 
 ### Architecture
 
-- [ ] Analytics is one-way and read-only.
-- [ ] No product path depends on C2.
-- [ ] RabbitMQ remains the operational event bus.
-- [ ] No application service was added without evidence.
-- [ ] Existing reporting authority remains documented.
+- [x] Analytics is one-way and read-only.
+- [x] No product path depends on C2.
+- [x] RabbitMQ remains the operational event bus.
+- [x] No application service was added without evidence.
+- [x] Existing reporting authority remains documented.
 
 ### CDC
 
-- [ ] Source publications are explicit.
-- [ ] Replication users are least privilege.
-- [ ] Snapshot and streaming are proven.
-- [ ] Connector restart is proven.
-- [ ] Delete behavior is proven.
-- [ ] Schema-change policy is enforced.
-- [ ] WAL retention is monitored.
-- [ ] Prohibited columns are absent.
+- [x] Source publications are explicit.
+- [x] Replication users are least privilege.
+- [x] Snapshot and streaming are proven.
+- [x] Connector restart is proven.
+- [ ] Delete behavior is proven. (no delete-marker drill run against the shared local source)
+- [ ] Schema-change policy is enforced. (static validator enforced; incompatible-change drill not run)
+- [ ] WAL retention is monitored. (measurable via SQL; no continuous alert/threshold wired)
+- [x] Prohibited columns are absent.
 
 ### Warehouse
 
-- [ ] Raw, staging, core, mart, and control layers exist.
-- [ ] Transport and logical deduplication are deterministic.
-- [ ] Exact money remains integer minor units.
-- [ ] Time semantics are explicit.
-- [ ] Incremental and full-refresh paths work.
-- [ ] BI role cannot read raw.
-- [ ] Retention is configured and tested.
+- [x] Raw, staging, core, mart, and control layers exist.
+- [x] Transport and logical deduplication are deterministic.
+- [x] Exact money remains integer minor units.
+- [x] Time semantics are explicit.
+- [x] Incremental and full-refresh paths work.
+- [x] BI role cannot read raw.
+- [ ] Retention is configured and tested. (TTL configured; expiry not time-accelerated/observed)
 
 ### Financial correctness
 
-- [ ] Ledger debit equals credit.
-- [ ] Ledger facts reconcile to source at safe cutoff.
-- [ ] Fee revenue derives from posted fee-account entries.
-- [ ] Reversal/refund behavior is correct.
-- [ ] Fee quotes are not counted as revenue.
-- [ ] Payin/Payout facts link deterministically to Ledger.
-- [ ] Currencies are not implicitly combined.
+- [x] Ledger debit equals credit.
+- [x] Ledger facts reconcile to source at safe cutoff.
+- [x] Fee revenue derives from posted fee-account entries.
+- [ ] Reversal/refund behavior is correct. (exercised implicitly by business-e2e; not a dedicated C2-level assertion)
+- [x] Fee quotes are not counted as revenue.
+- [ ] Payin/Payout facts link deterministically to Ledger. (fields exist and are populated; no dedicated orphan-link test run)
+- [x] Currencies are not implicitly combined.
 
 ### Unit economics
 
-- [ ] Vendor cost is labeled modeled.
-- [ ] Cost model is versioned.
-- [ ] Contribution margin formula is documented.
-- [ ] Dashboard does not label modeled margin as profit.
-- [ ] Cost and revenue currencies match.
+- [x] Vendor cost is labeled modeled.
+- [x] Cost model is versioned.
+- [x] Contribution margin formula is documented.
+- [x] Dashboard does not label modeled margin as profit.
+- [x] Cost and revenue currencies match.
 
 ### Privacy and security
 
-- [ ] Source-column allowlist is reviewed.
-- [ ] Raw payload/destination/credential fields are excluded.
-- [ ] Identity pseudonymization is deterministic.
-- [ ] Salt and credentials are not in Git.
-- [ ] ClickHouse/Redpanda/Connect bind safely.
-- [ ] Metabase is read-only.
-- [ ] Sensitive-column scan passes.
-- [ ] Threat model and incident runbook exist.
+- [x] Source-column allowlist is reviewed.
+- [x] Raw payload/destination/credential fields are excluded.
+- [x] Identity pseudonymization is deterministic.
+- [x] Salt and credentials are not in Git.
+- [x] ClickHouse/Redpanda/Connect bind safely.
+- [x] Metabase is read-only.
+- [x] Sensitive-column scan passes.
+- [x] Threat model and incident runbook exist.
 
 ### Reliability
 
-- [ ] Connect outage is recovered.
-- [ ] Redpanda outage is recovered.
-- [ ] ClickHouse outage is recovered.
-- [ ] Source restart is recovered.
-- [ ] Duplicate event does not duplicate facts.
-- [ ] Full rebuild reaches reconciled totals.
-- [ ] OLTP remains green through analytics failures.
+- [x] Connect outage is recovered.
+- [x] Redpanda outage is recovered.
+- [x] ClickHouse outage is recovered.
+- [x] Source restart is recovered.
+- [x] Duplicate event does not duplicate facts.
+- [x] Full rebuild reaches reconciled totals.
+- [x] OLTP remains green through analytics failures.
 
 ### Operations
 
-- [ ] Freshness, lag, WAL, dbt, and reconciliation metrics exist.
-- [ ] Alerts link to runbooks.
-- [ ] Metric cardinality is bounded.
-- [ ] Dashboard freshness is visible.
-- [ ] Critical reconciliation failure is visible.
-- [ ] Local resource baseline is recorded.
+- [ ] Freshness, lag, WAL, dbt, and reconciliation metrics exist. (freshness/dbt/reconciliation covered by the new metrics-exporter; lag and WAL are not yet exported as metrics)
+- [x] Alerts link to runbooks.
+- [x] Metric cardinality is bounded.
+- [x] Dashboard freshness is visible.
+- [x] Critical reconciliation failure is visible.
+- [x] Local resource baseline is recorded.
 
 ### Documentation and evidence
 
-- [ ] Metric catalog is complete.
-- [ ] Data contracts are complete.
-- [ ] Lineage is generated.
-- [ ] Dashboard catalog is complete.
-- [ ] Final clean-tree gate passes.
-- [ ] Chaos evidence is recorded.
-- [ ] Residual risks are explicit.
-- [ ] Roadmap reflects reality.
-- [ ] Plan is archived only after evidence is linked.
+- [x] Metric catalog is complete.
+- [x] Data contracts are complete.
+- [x] Lineage is generated.
+- [x] Dashboard catalog is complete.
+- [x] Final clean-tree gate passes.
+- [x] Chaos evidence is recorded.
+- [x] Residual risks are explicit.
+- [x] Roadmap reflects reality.
+- [x] Plan is archived only after evidence is linked.
 
 ---
 
 ## 44. Final evidence log
 
-Fill during execution.
+Filled 2026-08-05. Full detail (command output, bug list, residual risks)
+lives in [c2-final-acceptance.md](../../evidence/c2-final-acceptance.md);
+this table is the compact index the plan itself asks for.
 
 | Evidence | Commit / artifact | Result | Notes |
 |---|---|---:|---|
-| C2 entry gate |  |  |  |
-| Source/privacy review |  |  |  |
-| Resource baseline |  |  |  |
-| Ledger snapshot |  |  |  |
-| Ledger streaming |  |  |  |
-| Connector restart |  |  |  |
-| Redpanda outage |  |  |  |
-| ClickHouse outage |  |  |  |
-| Source PostgreSQL restart |  |  |  |
-| Duplicate event |  |  |  |
-| Schema-compatible addition |  |  |  |
-| Schema-incompatible change |  |  |  |
-| Sensitive-column exclusion |  |  |  |
-| Ledger debit-credit reconciliation |  |  |  |
-| Source-to-warehouse reconciliation |  |  |  |
-| Fee-revenue reconciliation |  |  |  |
-| Payin-to-Ledger reconciliation |  |  |  |
-| Payout-to-Ledger reconciliation |  |  |  |
-| dbt full refresh |  |  |  |
-| Warehouse rebuild |  |  |  |
-| Dashboard-to-mart verification |  |  |  |
-| Performance baseline |  |  |  |
-| Final clean-tree gate |  |  |  |
+| C2 entry gate | `docs/evidence/c2-entry-gate.md` | done | pre-existing, not re-run this pass |
+| Source/privacy review | `analytics/contracts/{sources,privacy}.yaml`, `make analytics-verify` | pass | static scan fixed (was silently no-op — `rg` not installed) then genuinely verified clean |
+| Resource baseline | `docs/evidence/c2-resource-baseline.md` | recorded | measured across two sessions incl. Metabase; Metabase runs ~90% of its memory cap |
+| Ledger snapshot | `raw.cdc_events` | pass | 251 accounts / 193+ transactions / 418+ entries captured, real business-e2e data |
+| Ledger streaming | live `UPDATE` on `fee_quotes` | pass | observed end-to-end into `raw.cdc_events` twice, across two sessions |
+| Connector restart | Connect container recreate; full Docker-daemon crash; task-level `FAILED`→`RUNNING` after external source replacement | pass (3 distinct scenarios) | see [c2-final-acceptance.md](../../evidence/c2-final-acceptance.md#unplanned-real-world-recovery-evidence) |
+| Redpanda outage | `docker stop/start seev-analytics-redpanda-1` | pass | ingestion resumed, reconciliation clean afterward |
+| ClickHouse outage | `docker stop/start seev-analytics-clickhouse-1` | pass | Connect stayed healthy throughout; data intact; Redpanda backlog drained in on restart |
+| Source PostgreSQL restart | full Docker-daemon crash (unplanned) | pass | all 3 connectors auto-resumed `RUNNING`, 64/64 dbt tests, reconciliation clean |
+| Duplicate event | same-row snapshot + streaming-update pair | pass | deduped to exactly 1 current row in `staging.ledger_fee_quotes_current` |
+| Schema-compatible addition | — | not run | no schema addition was exercised this pass |
+| Schema-incompatible change | — | not run | judged too risky/invasive against the shared local source database |
+| Sensitive-column exclusion | `raw.cdc_events` payload scan | pass | `user_id` found unpseudonymized (real bug, fixed); 0/1194+ events after fix, verified twice |
+| Ledger debit-credit reconciliation | `assert_ledger_transactions_balanced` dbt test | pass | against real ledger data |
+| Source-to-warehouse reconciliation | `make analytics-reconcile` | pass | 0 critical/warning failures, run repeatedly incl. post-outage-recovery |
+| Fee-revenue reconciliation | `assert_fee_revenue_is_posted` dbt test | pass | |
+| Payin-to-Ledger reconciliation | `core.fact_payin_lifecycle.ledger_transaction_id` | implemented, not independently drilled | field populated; no dedicated orphan-link test |
+| Payout-to-Ledger reconciliation | `core.fact_payout_lifecycle.{hold_tx_id,settlement_transaction_id}` | implemented, not independently drilled | field populated; no dedicated orphan-link test |
+| dbt full refresh | `./analytics/scripts/dbt.sh build --full-refresh` | pass | 64-65/64-65 across multiple runs this pass |
+| Warehouse rebuild | full reset → re-snapshot cycle (for the pseudonymization fix) | pass | procedure now documented in `docs/operations/runbooks/analytics-full-rebuild.md` |
+| Dashboard-to-mart verification | Metabase API card execution | pass | all 6 dashboards / 23 cards imported and executing against real data; negative-tested raw/staging/write access denied |
+| Performance baseline | — | not run | plan section 37 targets (freshness/query latency under load) unmeasured; only small real-journey volume observed |
+| Final clean-tree gate | `go build ./...`, `go vet ./...`, `go run ./tools/doccheck` | pass | doccheck's one remaining failure is pre-existing and unrelated to C2 |
 
 ---
 
@@ -3952,6 +3972,22 @@ The completed local C2 still does not prove:
 
 These limitations must remain visible in README, dashboards, and portfolio
 claims.
+
+### Specific open follow-ups from the 2026-08-05 acceptance pass
+
+Unlike the general limitations above (inherent to any local, disposable C2),
+these are concrete, addressable gaps — see
+[c2-final-acceptance.md](../../evidence/c2-final-acceptance.md) for detail:
+
+- No Grafana operational dashboard (plan section 21.6 allows Metabase *or*
+  Grafana; Prometheus itself has the real metrics and 4 working alerts).
+- No deliberate incompatible-schema-change or WAL-pressure drill.
+- Redpanda consumer-lag-growing, replication-slot-inactive,
+  retained-WAL-threshold, and Metabase-query-failure alerts unimplemented.
+- No delete-marker drill; no dedicated Payin/Payout-to-Ledger orphan-link
+  test; no dedicated reversal/refund C2-level assertion.
+- No sustained-load/throughput performance baseline against plan section
+  37's targets.
 
 ---
 

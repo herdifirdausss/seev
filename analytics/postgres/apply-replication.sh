@@ -29,6 +29,15 @@ GRANT USAGE ON SCHEMA public TO seev_analytics_ledger;
 REVOKE CREATE ON SCHEMA public FROM seev_analytics_ledger;
 REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM seev_analytics_ledger;
 GRANT SELECT ON TABLE accounts, account_balances, ledger_transactions, ledger_entries, fee_quotes TO seev_analytics_ledger;
+-- These tables force row-level security, so a plain table GRANT is not
+-- enough for the snapshot phase's regular SELECTs to see existing rows
+-- (streaming/logical decoding bypasses RLS, but the initial snapshot does
+-- not). app_readonly already carries the read-only RLS policy these tables
+-- expect; WITH INHERIT TRUE is required because the role itself is
+-- NOINHERIT, and Postgres 16's RLS role check does not honor a NOINHERIT
+-- membership (confirmed 2026-08-05: without it, snapshot queries silently
+-- returned zero rows instead of erring).
+GRANT app_readonly TO seev_analytics_ledger WITH INHERIT TRUE;
 SELECT format('CREATE PUBLICATION %I FOR TABLE accounts, account_balances, ledger_transactions, ledger_entries, fee_quotes', 'seev_analytics_ledger_pub')
 WHERE NOT EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'seev_analytics_ledger_pub')\gexec
 ALTER PUBLICATION seev_analytics_ledger_pub SET TABLE accounts, account_balances, ledger_transactions, ledger_entries, fee_quotes;
@@ -43,6 +52,7 @@ GRANT USAGE ON SCHEMA public TO seev_analytics_payin;
 REVOKE CREATE ON SCHEMA public FROM seev_analytics_payin;
 REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM seev_analytics_payin;
 GRANT SELECT ON TABLE payin_topup_intents, payin_webhook_events TO seev_analytics_payin;
+GRANT app_readonly TO seev_analytics_payin WITH INHERIT TRUE;
 SELECT format('CREATE PUBLICATION %I FOR TABLE payin_topup_intents, payin_webhook_events', 'seev_analytics_payin_pub')
 WHERE NOT EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'seev_analytics_payin_pub')\gexec
 ALTER PUBLICATION seev_analytics_payin_pub SET TABLE payin_topup_intents, payin_webhook_events;
@@ -57,6 +67,7 @@ GRANT USAGE ON SCHEMA public TO seev_analytics_payout;
 REVOKE CREATE ON SCHEMA public FROM seev_analytics_payout;
 REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM seev_analytics_payout;
 GRANT SELECT ON TABLE payout_requests, payout_vendor_calls TO seev_analytics_payout;
+GRANT app_readonly TO seev_analytics_payout WITH INHERIT TRUE;
 SELECT format('CREATE PUBLICATION %I FOR TABLE payout_requests, payout_vendor_calls', 'seev_analytics_payout_pub')
 WHERE NOT EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'seev_analytics_payout_pub')\gexec
 ALTER PUBLICATION seev_analytics_payout_pub SET TABLE payout_requests, payout_vendor_calls;

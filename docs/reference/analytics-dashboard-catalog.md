@@ -1,6 +1,14 @@
 # C2 dashboard catalog
 
-Dashboard manifests live in [analytics/metabase/dashboards](../../analytics/metabase/dashboards/).
+Dashboard manifests live in [analytics/metabase/dashboards](../../analytics/metabase/dashboards/)
+and are imported into a running Metabase instance via
+[analytics/metabase/setup/import_dashboards.py](../../analytics/metabase/setup/import_dashboards.py).
+
+Runtime-verified 2026-08-05: all 6 dashboards imported, all 23 cards
+executed successfully against real business-e2e data through the
+`bi_readonly` ClickHouse role (`metabase_bi` user), and the governance
+constraints below were confirmed by direct negative test (raw/staging reads
+and writes denied — see [c2-final-acceptance.md](../evidence/c2-final-acceptance.md)).
 
 | Dashboard | Audience | Approved sources | Required warning |
 | --- | --- | --- | --- |

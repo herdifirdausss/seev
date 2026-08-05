@@ -23,8 +23,13 @@ services:
       - --overprovisioned
       - --smp
       - "1"
+      # Must stay comfortably below the container's 768M cgroup limit below —
+      # seastar needs its full --memory budget actually available inside the
+      # container, and cgroup/seastar bookkeeping overhead eats part of the
+      # 768M ceiling (confirmed 2026-08-05: 768M here left the container
+      # reporting only ~724MiB available, so redpanda refused to start).
       - --memory
-      - ${ANALYTICS_REDPANDA_MEMORY:-768M}
+      - ${ANALYTICS_REDPANDA_MEMORY:-640M}
       - --reserve-memory
       - 0M
       - --node-id
@@ -36,10 +41,11 @@ services:
       - internal://redpanda:9092,external://127.0.0.1:19092
     ports:
       - "127.0.0.1:19092:19092"
+      - "127.0.0.1:9644:9644"
     volumes:
       - seev_analytics_redpanda_data:/var/lib/redpanda/data
     healthcheck:
-      test: ["CMD-SHELL", "rpk cluster health --brokers 127.0.0.1:9092 | grep -q Healthy"]
+      test: ["CMD-SHELL", "rpk cluster health | grep -q 'Healthy:.*true'"]
       interval: 5s
       timeout: 5s
       retries: 20
@@ -66,7 +72,9 @@ services:
           seev.cdc.payin.public.payin_webhook_events.v1 \
           seev.cdc.payout.public.payout_requests.v1 \
           seev.cdc.payout.public.payout_vendor_calls.v1; do
-          rpk topic create "$topic" --brokers redpanda:9092 --partitions 1 --replicas 1 --topic-config retention.ms=604800000 --topic-config cleanup.policy=delete --if-not-exists
+          # This rpk version has no --if-not-exists (confirmed 2026-08-05);
+          # tolerate a rerun against an already-provisioned topic instead.
+          rpk topic create "$$topic" -X brokers=redpanda:9092 --partitions 1 --replicas 1 --topic-config retention.ms=604800000 --topic-config cleanup.policy=delete || true
         done
 
   connect:
@@ -91,7 +99,15 @@ services:
       VALUE_CONVERTER_SCHEMAS_ENABLE: "false"
       CONNECT_PLUGIN_PATH: /kafka/connect,/kafka/connect/plugins
       CONNECT_LOG4J_ROOT_LOGLEVEL: ${ANALYTICS_CONNECT_LOG_LEVEL:-INFO}
-      CONNECT_HEARTBEAT_INTERVAL_MS: "10000"
+      # Worker-level consumer-group heartbeat/session (distinct from the
+      # per-connector Debezium heartbeat.interval.ms already set in each
+      # connector JSON per plan section 11.8). Left unset, this worker's
+      # startup non-deterministically hit "Heartbeat must be set lower than
+      # the session timeout" depending on which consumer group protocol got
+      # negotiated with Redpanda (confirmed 2026-08-05); pinning both removes
+      # the ambiguity.
+      CONNECT_HEARTBEAT_INTERVAL_MS: "3000"
+      CONNECT_SESSION_TIMEOUT_MS: "45000"
       ANALYTICS_SOURCE_DB_HOST: ${ANALYTICS_SOURCE_DB_HOST:-host.docker.internal}
       ANALYTICS_SOURCE_DB_PORT: ${ANALYTICS_SOURCE_DB_PORT:-5433}
     secrets:
@@ -121,9 +137,15 @@ services:
     ports:
       - "127.0.0.1:8123:8123"
       - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9363:9363"
     volumes:
       - seev_analytics_clickhouse_data:/var/lib/clickhouse
-      - ../clickhouse/config/config.d:/etc/clickhouse-server/config.d:ro
+      # A directory bind mount here would replace the whole config.d dir,
+      # silently dropping the image's own docker_related_config.xml (the
+      # file that sets listen_host to 0.0.0.0). Confirmed 2026-08-05: that
+      # left the server reachable only on its own loopback, so every other
+      # container (warehouse-init, dbt, Connect) got connection refused.
+      - ../clickhouse/config/config.d/analytics-settings.xml:/etc/clickhouse-server/config.d/analytics-settings.xml:ro
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8123/ping | grep -q Ok"]
       interval: 5s
@@ -145,8 +167,6 @@ services:
       CLICKHOUSE_BI_PASSWORD_FILE: /run/secrets/analytics_bi_password
       CLICKHOUSE_DBT_PASSWORD_FILE: /run/secrets/analytics_dbt_password
       CLICKHOUSE_RECONCILIATION_PASSWORD_FILE: /run/secrets/analytics_reconciliation_password
-      CLICKHOUSE_BI_PASSWORD_FILE: /run/secrets/analytics_bi_password
-      CLICKHOUSE_DBT_PASSWORD_FILE: /run/secrets/analytics_dbt_password
     secrets:
       - analytics_bi_password
       - analytics_dbt_password
@@ -159,7 +179,10 @@ services:
 
   dbt:
     profiles: ["analytics-core"]
-    image: ghcr.io/dbt-labs/dbt-clickhouse:1.9.2
+    build:
+      context: ../dbt
+      dockerfile: Dockerfile
+    image: seev/analytics-dbt:1.10.9
     depends_on:
       warehouse-init:
         condition: service_completed_successfully
@@ -170,6 +193,12 @@ services:
       DBT_CLICKHOUSE_PORT: "8123"
       DBT_CLICKHOUSE_USER: analytics_dbt
       DBT_CLICKHOUSE_PASSWORD_FILE: /run/secrets/analytics_dbt_password
+      # /workspace is a read-only bind mount of the dbt project; dbt needs a
+      # writable target/log/packages dir, so those are pointed at the
+      # container's own writable layer instead of the mounted project tree.
+      DBT_TARGET_PATH: /tmp/dbt-target
+      DBT_LOG_PATH: /tmp/dbt-logs
+      DBT_PACKAGES_INSTALL_PATH: /tmp/dbt-packages
     secrets:
       - analytics_dbt_password
     volumes:
@@ -188,6 +217,7 @@ services:
       MB_DB_FILE: /metabase-data/metabase.db
       MB_JETTY_PORT: "3000"
       MB_ANON_TRACKING_ENABLED: "false"
+      MB_LOAD_SAMPLE_CONTENT: "false"
       JAVA_TIMEZONE: Asia/Jakarta
       JAVA_OPTS: ${ANALYTICS_METABASE_JAVA_OPTS:--Xmx512m}
     ports:
