@@ -9,7 +9,7 @@ system shape.
 Use the current [architecture](../../reference/architecture.md) and
 [services](../../reference/services.md) for runtime truth. Open one archived
 record only when you need the reasoning or acceptance evidence for that phase.
-The directory has 57 files represented by 55 numbered rows because plan 45
+The directory has 58 files represented by 56 numbered rows because plan 45
 links to two supporting review records.
 
 | # | Document | Scope | Final status |
@@ -70,3 +70,4 @@ links to two supporting review records.
 | 57 · C1 | [57-c1-merchant-b2b-api.md](57-c1-merchant-b2b-api.md) | Tenant-isolated Merchant/B2B API on the existing Gateway: API-key auth, quotas, idempotency, merchant transfers/pay-in/payout, signed outbound webhooks, and maker/checker tenant lifecycle | ✅ Done |
 | 58 · C2 | [58-c2-data-platform-revenue-analytics.md](58-c2-data-platform-revenue-analytics.md) | CDC-to-OLAP data platform: Debezium/Redpanda/ClickHouse pipeline, dbt revenue/unit-economics marts, reconciliation, Metabase dashboards, and Prometheus metrics/alerts | ✅ Core done — Grafana dashboard, schema-change/WAL-pressure drills, some alerts, and a load baseline pending |
 | 59 · C3 | [59-c3-multi-channel-notifications.md](59-c3-multi-channel-notifications.md) | Durable multi-channel notifications in Gateway: kind registry, versioned templates with maker/checker, event inbox, email/push/digest workers, Mailpit + mock-push local providers, user settings/preferences/devices, channel controls, admin operator surface, privacy erasure, and full observability | ✅ Done |
+| 60 · C4 | [60-c4-end-to-end-multi-currency.md](60-c4-end-to-end-multi-currency.md) | End-to-end multi-currency activation: IDR+USD account provisioning, same-currency transfers, explicit FX quote/conversion with atomic two-leg posting, position limits, per-currency balance API, and KYC-reset bug fix | ✅ Done |

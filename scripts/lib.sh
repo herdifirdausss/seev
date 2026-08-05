@@ -292,7 +292,7 @@ ensure_deps_up() {
 # existing Docker volumes, where entrypoint init scripts no longer run.
 ensure_service_dbs() {
 	local service database role exists
-	for service in ledger auth payin payout fraud gateway adminbff assurance; do
+	for service in ledger auth payin payout fraud gateway adminbff assurance vendor; do
 		database="seev_${service}"
 		role="${service}_app"
 		exists="$(docker exec -i "$POSTGRES_CONTAINER" psql -U "$DB_USER" -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname = '$database'")"
