@@ -1106,7 +1106,20 @@ func (m *Module) ProvisionUser(ctx context.Context, userID uuid.UUID, currency s
 	// Auth-service subsequently overwrites this baseline with the authoritative
 	// status/KYC projection, so this remains safe for both direct ledger callers
 	// and the normal auth-led provisioning flow.
-	if err := m.SetExecutionSubjectState(ctx, userID, "active", 0, nil); err != nil {
+	//
+	// EnsureExecutionSubjectBaseline (insert-if-absent), never
+	// SetExecutionSubjectState (unconditional upsert): ProvisionUser also runs
+	// every time an already-KYC'd user enables an additional currency
+	// (EnableUserCurrency -> ProvisionUser), which happens well after Auth's
+	// authoritative sync already ran. An unconditional upsert here would
+	// silently regress that user's execution-subject KYC level back to 0 on
+	// every subsequent currency enable, permanently blocking their own
+	// money movement with an opaque error despite their real KYC state (and
+	// JWT) remaining correctly elevated — found via the C4 multi-currency
+	// E2E journey (docs/roadmap/active/60-c4-end-to-end-multi-currency.md).
+	if err := m.executionSubjects.EnsureExecutionSubjectBaseline(ctx, model.ExecutionSubject{
+		UserID: userID, Status: "active", KYCLevel: 0, TenantStatus: "active",
+	}); err != nil {
 		return nil, fmt.Errorf("provision execution subject: %w", err)
 	}
 	return accounts, nil

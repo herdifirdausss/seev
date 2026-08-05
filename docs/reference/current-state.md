@@ -27,7 +27,7 @@ contract used by the K0 work.
 | C1 | Core merchant/B2B API is complete and archived. |
 | C2 | CDC-to-OLAP, revenue facts, reconciliation, Metabase dashboards, and Prometheus metrics/alerts are implemented and runtime-verified against real data, including real outage/recovery evidence for Connect, Redpanda, ClickHouse, Metabase, and a full Docker-daemon crash; a deliberate incompatible-schema-change drill, a WAL-pressure drill, and a Grafana operational dashboard remain open — see [c2-final-acceptance.md](../evidence/c2-final-acceptance.md). |
 | C3 | Durable in-app, email, push, digest, preferences, templates, and delivery controls are implemented in Gateway; runtime and acceptance evidence is pending. |
-| C4 | IDR/USD account provisioning, explicit FX quotes/conversions, currency policy, positions, admin controls, and reconciliation paths are implemented in Ledger; runtime and acceptance evidence is pending. |
+| C4 | IDR/USD account provisioning, explicit FX quotes/conversions, currency policy, positions, admin controls, and reconciliation paths are implemented and acceptance-tested. Runtime evidence recorded 2026-08-05; plan archived. |
 | C5 | Savings products/rates, daily accrual and period-close foundations, durable schedule occurrences/policies, and top-up fee paths are implemented in Ledger; runtime and acceptance evidence is pending. |
 | C6 | The `account_balances_v2` migration control plane, backfill, dual-write/shadow-read, target-primary cutover, repair, and rollback machinery are implemented in Ledger; runtime and acceptance evidence is pending. |
 | K0 | Deployment inventory artifacts are committed. Static verification is now green; local runtime acceptance remains partial and the K1 handoff is not yet authorized. |

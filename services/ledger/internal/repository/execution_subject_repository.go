@@ -15,6 +15,13 @@ import (
 // implementation to avoid transport-specific authorization dependencies.
 type ExecutionSubjectRepository interface {
 	UpsertExecutionSubject(context.Context, model.ExecutionSubject) error
+	// EnsureExecutionSubjectBaseline inserts the fail-closed default row only
+	// if none exists yet for (user_id, tenant_id) — unlike
+	// UpsertExecutionSubject, a second call is a no-op rather than an
+	// overwrite. Re-provisioning an existing user (e.g. enabling a second
+	// currency) must never regress an already-synchronized KYC state back to
+	// the zero baseline.
+	EnsureExecutionSubjectBaseline(context.Context, model.ExecutionSubject) error
 	GetExecutionSubject(context.Context, uuid.UUID, uuid.UUID) (model.ExecutionSubject, error)
 }
 
@@ -33,6 +40,17 @@ func (r *executionSubjectRepo) UpsertExecutionSubject(ctx context.Context, subje
 		status=EXCLUDED.status, kyc_level=EXCLUDED.kyc_level,
 		kyc_verified_until=EXCLUDED.kyc_verified_until,
 		tenant_status=EXCLUDED.tenant_status, updated_at=now()`,
+		subject.UserID, nullableUUID(subject.TenantID), subject.Status, subject.KYCLevel,
+		subject.KYCVerifiedUntil, subject.TenantStatus)
+	return err
+}
+
+func (r *executionSubjectRepo) EnsureExecutionSubjectBaseline(ctx context.Context, subject model.ExecutionSubject) error {
+	_, err := r.db.ExecContext(ctx, `
+		INSERT INTO money_movement_execution_subjects
+		(user_id, tenant_id, status, kyc_level, kyc_verified_until, tenant_status)
+		VALUES ($1,$2,$3,$4,$5,$6)
+		ON CONFLICT (user_id, tenant_id) DO NOTHING`,
 		subject.UserID, nullableUUID(subject.TenantID), subject.Status, subject.KYCLevel,
 		subject.KYCVerifiedUntil, subject.TenantStatus)
 	return err
