@@ -184,7 +184,7 @@ services:
           memory: 128M
 
   redis:
-    image: redis:8.0.0-alpine@sha256:0779069b3c24a47a2f681855c1c01d046793e7c5f7d2b079c2aa0652c42eaf0e # digest verified 2026-08-04
+    image: redis:8.10.0-alpine@sha256:978f0e01593e65eed801f2402944efcd936d43b5027e4908a7897baf88ed6241 # digest verified 2026-08-04
     ports:
       # Host uses 6380 to avoid colliding with a locally installed Redis.
       # Containers keep reaching this service as redis:6379.
