@@ -25,9 +25,12 @@ TLS_CERT_DIR="${TLS_CERT_DIR:-deploy/certs}"
 WORKDIR="$(mktemp -d)"
 trap 'rm -rf "$WORKDIR"' EXIT
 
-log()  { printf '\033[1;34m[privacy-export]\033[0m %s\n' "$*"; }
-ok()   { printf '\033[1;32m[ pass]\033[0m %s\n' "$*"; }
-fail() { printf '\033[1;31m[ FAIL]\033[0m %s\n' "$*"; exit 1; }
+log() { printf '\033[1;34m[privacy-export]\033[0m %s\n' "$*"; }
+ok() { printf '\033[1;32m[ pass]\033[0m %s\n' "$*"; }
+fail() {
+	printf '\033[1;31m[ FAIL]\033[0m %s\n' "$*"
+	exit 1
+}
 
 # App-profile HTTP listeners are mTLS-protected. Keep an explicit HTTP
 # escape hatch for callers that intentionally run a non-mTLS local binary.
@@ -114,8 +117,8 @@ grep -q "manifest.json" "$WORKDIR/listing.txt" || fail "archive is missing manif
 grep -q "auth.ndjson" "$WORKDIR/listing.txt" || fail "archive is missing auth.ndjson"
 ok "archive contains manifest.json + auth.ndjson"
 
-unzip -p "$ARCHIVE" manifest.json > "$WORKDIR/manifest.json"
-SCHEMA_VERSION="$(json_field schema_version < "$WORKDIR/manifest.json")"
-ROW_COUNT="$(json_field owners < "$WORKDIR/manifest.json" | head -c 200)"
+unzip -p "$ARCHIVE" manifest.json >"$WORKDIR/manifest.json"
+SCHEMA_VERSION="$(json_field schema_version <"$WORKDIR/manifest.json")"
+ROW_COUNT="$(json_field owners <"$WORKDIR/manifest.json" | head -c 200)"
 log "manifest schema_version=$SCHEMA_VERSION owners=$ROW_COUNT"
 ok "privacy-export.sh completed successfully for request $REQUEST_ID"

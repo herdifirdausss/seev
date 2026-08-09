@@ -43,7 +43,10 @@ prepare_case() {
 		-H "Authorization: Bearer $token" -H "Content-Type: application/json" \
 		-d "{\"amount\":\"$amount\"}")"
 	reference="$(printf '%s' "$topup" | json_field reference)"
-	[ -n "$reference" ] || { fail "$label: top-up intent creation failed: $topup"; return 1; }
+	[ -n "$reference" ] || {
+		fail "$label: top-up intent creation failed: $topup"
+		return 1
+	}
 	event_id="vendor-chaos-$label-$(date -u +%Y%m%dT%H%M%SZ)-$RANDOM"
 	CASE_BODY="{\"event_id\":\"$event_id\",\"external_ref\":\"$reference\",\"user_id\":\"$CASE_USER\",\"amount\":\"$amount\",\"currency\":\"IDR\",\"occurred_at\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"type\":\"payment.settled\"}"
 	CASE_SIGNATURE="$(printf '%s' "$CASE_BODY" | openssl dgst -sha256 -hmac "$VENDOR_MOCKVENDOR_SECRET" -r | awk '{print $1}')"
@@ -58,9 +61,9 @@ assert_credit_once() {
 	local label=$1 amount=$2 after expected
 	after="$(account_balance "$CASE_CASH")"
 	expected=$((CASE_BEFORE + amount))
-	[ "$after" = "$expected" ] \
-		&& ok "$label credited exactly once ($CASE_BEFORE -> $after)" \
-		|| fail "$label balance mismatch: before=$CASE_BEFORE after=$after expected=$expected"
+	[ "$after" = "$expected" ] &&
+		ok "$label credited exactly once ($CASE_BEFORE -> $after)" ||
+		fail "$label balance mismatch: before=$CASE_BEFORE after=$after expected=$expected"
 }
 
 scenario_restart() {
@@ -81,8 +84,8 @@ scenario_restart() {
 		sleep 1
 		tries=$((tries - 1))
 	done
-	[ "$code" = "200" ] && ok "callback redelivery accepted after VendorService restart" \
-		|| fail "callback redelivery returned $code, expected 200"
+	[ "$code" = "200" ] && ok "callback redelivery accepted after VendorService restart" ||
+		fail "callback redelivery returned $code, expected 200"
 	assert_credit_once "restart redelivery" "$amount"
 }
 
@@ -108,8 +111,8 @@ scenario_lost_response() {
 		-X POST "https://localhost:$VENDOR_APP_PORT/webhooks/mockvendor" \
 		-H "X-Mock-Signature: $CASE_SIGNATURE" -H "Content-Type: application/json" -d "$CASE_BODY" || true)"
 	second="$(post_callback || true)"
-	[ "$first" != "401" ] && [ "$first" != "403" ] && ok "lost-response first attempt did not fail authentication/policy (code=$first)" \
-		|| fail "lost-response first attempt was rejected before processing (code=$first)"
+	[ "$first" != "401" ] && [ "$first" != "403" ] && ok "lost-response first attempt did not fail authentication/policy (code=$first)" ||
+		fail "lost-response first attempt was rejected before processing (code=$first)"
 	[ "${second:0:1}" = "2" ] && ok "same callback accepted on retry ($second)" || fail "lost-response retry returned $second"
 	assert_credit_once "lost-response retry" "$amount"
 }

@@ -113,7 +113,7 @@ func activePlanStatusFailures(root string) []string {
 			continue
 		}
 		frontmatter := text[3 : 3+fmEnd]
-		for _, line := range strings.Split(frontmatter, "\n") {
+		for line := range strings.SplitSeq(frontmatter, "\n") {
 			trimmed := strings.TrimSpace(line)
 			if trimmed == "status: done" || trimmed == "status: superseded" {
 				failures = append(failures, fmt.Sprintf(

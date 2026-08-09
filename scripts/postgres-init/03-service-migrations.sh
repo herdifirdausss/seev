@@ -5,30 +5,30 @@
 set -eu
 
 for service in ledger auth payin payout fraud gateway vendor adminbff assurance; do
-    database="seev_${service}"
-    migration_service="$service"
-    [ "$service" = vendor ] && migration_service=vendor-service
-    latest=0
+	database="seev_${service}"
+	migration_service="$service"
+	[ "$service" = vendor ] && migration_service=vendor-service
+	latest=0
 
-    for migration in "/services/${migration_service}/migrations"/*.up.sql; do
-        [ -f "$migration" ] || continue
-        psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$database" -f "$migration"
-        prefix="$(basename "$migration" | cut -d_ -f1 | sed 's/^0*//')"
-        latest="${prefix:-0}"
-    done
+	for migration in "/services/${migration_service}/migrations"/*.up.sql; do
+		[ -f "$migration" ] || continue
+		psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$database" -f "$migration"
+		prefix="$(basename "$migration" | cut -d_ -f1 | sed 's/^0*//')"
+		latest="${prefix:-0}"
+	done
 
-    psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$database" <<-EOSQL
-        CREATE TABLE IF NOT EXISTS schema_migrations_${service} (
-            version BIGINT NOT NULL PRIMARY KEY,
-            dirty BOOLEAN NOT NULL
-        );
-        DELETE FROM schema_migrations_${service};
-        INSERT INTO schema_migrations_${service} (version, dirty) VALUES (${latest}, false);
-EOSQL
+	psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$database" <<-EOSQL
+		        CREATE TABLE IF NOT EXISTS schema_migrations_${service} (
+		            version BIGINT NOT NULL PRIMARY KEY,
+		            dirty BOOLEAN NOT NULL
+		        );
+		        DELETE FROM schema_migrations_${service};
+		        INSERT INTO schema_migrations_${service} (version, dirty) VALUES (${latest}, false);
+	EOSQL
 done
 
 # Role membership is cluster-wide. The table privileges and RLS policies are
 # still scoped independently inside each service database.
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname postgres <<-EOSQL
-    GRANT app_service TO ledger_app, auth_app, payin_app, payout_app, fraud_app, gateway_app, vendor_app, adminbff_app, assurance_app;
+	    GRANT app_service TO ledger_app, auth_app, payin_app, payout_app, fraud_app, gateway_app, vendor_app, adminbff_app, assurance_app;
 EOSQL

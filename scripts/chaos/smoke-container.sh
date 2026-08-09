@@ -230,7 +230,10 @@ login="$(curl -s -X POST "http://127.0.0.1:8082/api/v1/auth/login" \
 	-d "{\"email\":\"$EMAIL\",\"password\":\"$PASSWORD\"}")"
 ACCESS_TOKEN="$(echo "$login" | json_field data.tokens.access_token)"
 REFRESH_TOKEN="$(echo "$login" | json_field data.tokens.refresh_token)"
-[ -n "$ACCESS_TOKEN" ] && ok "logged in with a real JWT" || { fail "login failed: $login"; exit 1; }
+[ -n "$ACCESS_TOKEN" ] && ok "logged in with a real JWT" || {
+	fail "login failed: $login"
+	exit 1
+}
 
 log "clearing the KYC gate (L1, mock provider auto-approves)..."
 curl -s -o /dev/null -X POST "http://127.0.0.1:8082/api/v1/users/me/kyc" \
@@ -239,7 +242,10 @@ curl -s -o /dev/null -X POST "http://127.0.0.1:8082/api/v1/users/me/kyc" \
 refresh="$(curl -s -X POST "http://127.0.0.1:8082/api/v1/auth/refresh" \
 	-H "Content-Type: application/json" -d "{\"refresh_token\":\"$REFRESH_TOKEN\"}")"
 ACCESS_TOKEN="$(echo "$refresh" | json_field data.tokens.access_token)"
-[ -n "$ACCESS_TOKEN" ] && ok "KYC L1 approved, token refreshed" || { fail "KYC L1 dance failed: $refresh"; exit 1; }
+[ -n "$ACCESS_TOKEN" ] && ok "KYC L1 approved, token refreshed" || {
+	fail "KYC L1 dance failed: $refresh"
+	exit 1
+}
 
 log "POST /api/v1/topup via gateway (:8080)..."
 create="$(curl -s -X POST "http://127.0.0.1:8080/api/v1/topup" \
@@ -259,7 +265,10 @@ BODY="{\"event_id\":\"smoke-container-$(date +%s)\",\"external_ref\":\"$REFERENC
 SIG="$(printf '%s' "$BODY" | openssl dgst -sha256 -hmac "$VENDOR_MOCKVENDOR_SECRET" -r | awk '{print $1}')"
 code=$(vendor_curl -s -o /dev/null -w '%{http_code}' -X POST "https://127.0.0.1:8098/webhooks/mockvendor" \
 	-H "X-Mock-Signature: $SIG" -H "Content-Type: application/json" -d "$BODY")
-[ "${code:0:1}" = "2" ] && ok "signed webhook accepted (code=$code)" || { fail "webhook got $code, expected 2xx"; exit 1; }
+[ "${code:0:1}" = "2" ] && ok "signed webhook accepted (code=$code)" || {
+	fail "webhook got $code, expected 2xx"
+	exit 1
+}
 
 log "polling topup intent until settled (deadline ${SETTLE_DEADLINE_SECS}s)..."
 deadline=$((SECONDS + SETTLE_DEADLINE_SECS))
@@ -269,7 +278,10 @@ while [ "$SECONDS" -lt "$deadline" ]; do
 	[ "$status" = "settled" ] && break
 	sleep 1
 done
-[ "$status" = "settled" ] && ok "topup intent settled" || { fail "topup intent status was '$status' after ${SETTLE_DEADLINE_SECS}s, expected 'settled'"; exit 1; }
+[ "$status" = "settled" ] && ok "topup intent settled" || {
+	fail "topup intent status was '$status' after ${SETTLE_DEADLINE_SECS}s, expected 'settled'"
+	exit 1
+}
 
 # ─── Assert via docker exec psql (K4 step 6) ─────────────────────────────────
 # UUID/amount are validated by regex BEFORE reaching SQL, and passed as a

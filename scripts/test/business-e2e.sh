@@ -69,7 +69,6 @@ exec > >(tee "$WORK_DIR/business-e2e.stdout.log") 2>&1
 MOCKVENDOR_SECRET="${VENDOR_MOCKVENDOR_SECRET:-script-test-mockvendor-secret-at-least-32-chars-long}"
 RUN_ID="$(date +%s)-$$"
 
-
 # json_field and await_notification now live in scripts/lib.sh (shared by
 # every script that curls the JSON API — single source of truth instead of
 # drifting copies).
@@ -188,8 +187,8 @@ onboard() {
 
 	local cash_a
 	cash_a="$(cash_account_id "$USER_A")"
-	[ -n "$cash_a" ] && ok "user A's ledger cash account was auto-provisioned on register" \
-		|| fail "user A has no cash account — provisioning on register did not happen"
+	[ -n "$cash_a" ] && ok "user A's ledger cash account was auto-provisioned on register" ||
+		fail "user A has no cash account — provisioning on register did not happen"
 
 	# Seed DB-backed fee rules through the operator API (docs/roadmap/archive/33 T4).
 	# A receives a per-user override (500) while the global default is 1000.
@@ -251,8 +250,8 @@ topup() {
 	local intent_id reference
 	intent_id="$(echo "$create" | json_field data.id)"
 	reference="$(echo "$create" | json_field data.reference)"
-	[ -n "$intent_id" ] && [ -n "$reference" ] && ok "topup intent created (id=$intent_id reference=$reference)" \
-		|| fail "topup intent creation failed: $create"
+	[ -n "$intent_id" ] && [ -n "$reference" ] && ok "topup intent created (id=$intent_id reference=$reference)" ||
+		fail "topup intent creation failed: $create"
 
 	local body
 	body="{\"event_id\":\"e2e-topup-$RUN_ID\",\"external_ref\":\"$reference\",\"user_id\":\"$(uuidgen | tr '[:upper:]' '[:lower:]')\",\"amount\":\"500000\",\"currency\":\"IDR\",\"occurred_at\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"type\":\"payment.settled\"}"
@@ -267,8 +266,8 @@ topup() {
 	local cash_a balance_a
 	cash_a="$(cash_account_id "$USER_A")"
 	balance_a="$(account_balance "$cash_a")"
-	[ "$balance_a" = "500000" ] && ok "user A's balance is 500000 after top-up" \
-		|| fail "user A balance after top-up was '$balance_a', expected 500000"
+	[ "$balance_a" = "500000" ] && ok "user A's balance is 500000 after top-up" ||
+		fail "user A balance after top-up was '$balance_a', expected 500000"
 
 	local intent_status
 	intent_status="$(curl -s "http://localhost:$APP_PORT/api/v1/topup/$intent_id" -H "Authorization: Bearer $TOKEN_A" | json_field data.status)"
@@ -284,8 +283,8 @@ topup() {
 	local no_route
 	no_route="$(curl -s -w '\n%{http_code}' -X POST "http://localhost:$APP_PORT/api/v1/topup" \
 		-H "Authorization: Bearer $TOKEN_A" -H "Content-Type: application/json" -d '{"amount":"1000"}')"
-	echo "$no_route" | grep -q '"code":"NO_ROUTE"' && [ "$(echo "$no_route" | tail -1)" = "422" ] \
-		&& ok "disabled rules return 422 NO_ROUTE" || fail "expected 422 NO_ROUTE, got: $no_route"
+	echo "$no_route" | grep -q '"code":"NO_ROUTE"' && [ "$(echo "$no_route" | tail -1)" = "422" ] &&
+		ok "disabled rules return 422 NO_ROUTE" || fail "expected 422 NO_ROUTE, got: $no_route"
 	curl_internal -s -o /dev/null -X PUT "http://localhost:$PAYIN_ADMIN_PORT/admin/payin/routing-rules/$route_id" \
 		-H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" \
 		-d '{"flow":"topup","priority":10,"enabled":true,"currency":"IDR","vendor":"mockvendor"}'
@@ -332,9 +331,9 @@ kyc_journey() {
 		-H "Authorization: Bearer $TOKEN_C" -H "Content-Type: application/json" \
 		-d "{\"idempotency_key\":\"e2e-kyc-blocked-$RUN_ID\",\"type\":\"transfer_p2p\",\"amount\":\"10000\",\"target_user_id\":\"$USER_D\"}")"
 	blocked_code="$(echo "$blocked_resp" | tail -1)"
-	[ "$blocked_code" = "403" ] && echo "$blocked_resp" | grep -q "KYC_REQUIRED" \
-		&& ok "L0 transfer rejected with 403 KYC_REQUIRED" \
-		|| fail "expected 403 KYC_REQUIRED, got: $blocked_resp"
+	[ "$blocked_code" = "403" ] && echo "$blocked_resp" | grep -q "KYC_REQUIRED" &&
+		ok "L0 transfer rejected with 403 KYC_REQUIRED" ||
+		fail "expected 403 KYC_REQUIRED, got: $blocked_resp"
 
 	log "submitting L1 (mock auto-approves) and refreshing the token..."
 	local kyc_resp
@@ -350,8 +349,8 @@ kyc_journey() {
 		-d '{"amount":"3000000"}')"
 	intent_id="$(echo "$create" | json_field data.id)"
 	reference="$(echo "$create" | json_field data.reference)"
-	[ -n "$intent_id" ] && [ -n "$reference" ] && ok "user C topup intent created post-L1 (id=$intent_id)" \
-		|| fail "user C topup intent creation failed: $create"
+	[ -n "$intent_id" ] && [ -n "$reference" ] && ok "user C topup intent created post-L1 (id=$intent_id)" ||
+		fail "user C topup intent creation failed: $create"
 
 	local body sig code
 	body="{\"event_id\":\"e2e-kyc-topup-$RUN_ID\",\"external_ref\":\"$reference\",\"user_id\":\"$(uuidgen | tr '[:upper:]' '[:lower:]')\",\"amount\":\"3000000\",\"currency\":\"IDR\",\"occurred_at\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"type\":\"payment.settled\"}"
@@ -372,9 +371,9 @@ kyc_journey() {
 		-H "Authorization: Bearer $TOKEN_C" -H "Content-Type: application/json" \
 		-d "{\"idempotency_key\":\"e2e-kyc-over-cap-$RUN_ID\",\"type\":\"transfer_p2p\",\"amount\":\"2000000\",\"target_user_id\":\"$USER_D\"}")"
 	limit_code="$(echo "$limit_resp" | tail -1)"
-	[ "$limit_code" = "422" ] && echo "$limit_resp" | grep -q "policy limit exceeded" \
-		&& ok "over-cap transfer rejected with 422 policy limit exceeded" \
-		|| fail "expected 422 policy limit exceeded, got: $limit_resp"
+	[ "$limit_code" = "422" ] && echo "$limit_resp" | grep -q "policy limit exceeded" &&
+		ok "over-cap transfer rejected with 422 policy limit exceeded" ||
+		fail "expected 422 policy limit exceeded, got: $limit_resp"
 
 	log "submitting L2 (mock ALWAYS refers) and having an admin approve it..."
 	local admin_token
@@ -417,12 +416,12 @@ transfer() {
 	balance_b="$(account_balance "$cash_b")"
 	fee_after="$(fee_platform_balance)"
 
-	[ "$balance_a" = "400000" ] && ok "sender A debited the full 100000 (balance now 400000)" \
-		|| fail "sender A balance was '$balance_a', expected 400000"
-	[ "$balance_b" = "99500" ] && ok "recipient B credited 100000 minus A's 500 override (balance now 99500)" \
-		|| fail "recipient B balance was '$balance_b', expected 99500"
-	[ "$((fee_after - fee_before))" = "500" ] && ok "fee[platform] increased by exactly A's 500 per-user fee" \
-		|| fail "fee[platform] changed by $((fee_after - fee_before)), expected 500"
+	[ "$balance_a" = "400000" ] && ok "sender A debited the full 100000 (balance now 400000)" ||
+		fail "sender A balance was '$balance_a', expected 400000"
+	[ "$balance_b" = "99500" ] && ok "recipient B credited 100000 minus A's 500 override (balance now 99500)" ||
+		fail "recipient B balance was '$balance_b', expected 99500"
+	[ "$((fee_after - fee_before))" = "500" ] && ok "fee[platform] increased by exactly A's 500 per-user fee" ||
+		fail "fee[platform] changed by $((fee_after - fee_before)), expected 500"
 
 	await_notification "$TOKEN_A" "Transfer sent" || true
 	await_notification "$TOKEN_B" "Transfer received" || true
@@ -464,10 +463,10 @@ withdraw() {
 	balance_after="$(account_balance "$cash_a")"
 	fee_after="$(fee_platform_balance)"
 	local expected_balance=$((balance_before - 200000))
-	[ "$balance_after" = "$expected_balance" ] && ok "cash debited the full 200000 withdrawn (balance now $balance_after)" \
-		|| fail "cash balance after withdraw was '$balance_after', expected $expected_balance"
-	[ "$((fee_after - fee_before))" = "2000" ] && ok "fee[platform] increased by exactly the 2000 withdraw fee" \
-		|| fail "fee[platform] changed by $((fee_after - fee_before)), expected 2000"
+	[ "$balance_after" = "$expected_balance" ] && ok "cash debited the full 200000 withdrawn (balance now $balance_after)" ||
+		fail "cash balance after withdraw was '$balance_after', expected $expected_balance"
+	[ "$((fee_after - fee_before))" = "2000" ] && ok "fee[platform] increased by exactly the 2000 withdraw fee" ||
+		fail "fee[platform] changed by $((fee_after - fee_before)), expected 2000"
 
 	await_notification "$TOKEN_A" "Withdrawal successful" || true
 
@@ -494,10 +493,10 @@ withdraw() {
 	local balance_after_cancel fee_after_cancel
 	balance_after_cancel="$(account_balance "$cash_a")"
 	fee_after_cancel="$(fee_platform_balance)"
-	[ "$balance_after_cancel" = "$balance_before_cancel" ] && ok "cancelled withdraw refunded in full (balance unchanged: $balance_after_cancel)" \
-		|| fail "cash balance changed across the cancelled withdraw: before=$balance_before_cancel after=$balance_after_cancel"
-	[ "$fee_after_cancel" = "$fee_before_cancel" ] && ok "cancelled withdraw charged NO fee (fee[platform] unchanged)" \
-		|| fail "fee[platform] changed on a cancelled withdraw: before=$fee_before_cancel after=$fee_after_cancel"
+	[ "$balance_after_cancel" = "$balance_before_cancel" ] && ok "cancelled withdraw refunded in full (balance unchanged: $balance_after_cancel)" ||
+		fail "cash balance changed across the cancelled withdraw: before=$balance_before_cancel after=$balance_after_cancel"
+	[ "$fee_after_cancel" = "$fee_before_cancel" ] && ok "cancelled withdraw charged NO fee (fee[platform] unchanged)" ||
+		fail "fee[platform] changed on a cancelled withdraw: before=$fee_before_cancel after=$fee_after_cancel"
 
 	await_notification "$TOKEN_A" "Withdrawal canceled" || true
 }
@@ -516,8 +515,8 @@ quote_journey() {
 		-d '{"transaction_type":"transfer_p2p","amount":"50000"}')"
 	quote_id="$(echo "$quote_resp" | json_field data.quote_id)"
 	fee_amount="$(echo "$quote_resp" | json_field data.fee_amount)"
-	[ -n "$quote_id" ] && [ "$fee_amount" = "500" ] && ok "quote created (id=$quote_id fee=$fee_amount)" \
-		|| fail "quote creation unexpected: $quote_resp"
+	[ -n "$quote_id" ] && [ "$fee_amount" = "500" ] && ok "quote created (id=$quote_id fee=$fee_amount)" ||
+		fail "quote creation unexpected: $quote_resp"
 
 	log "admin re-prices A's transfer_p2p override to 9000 AFTER the quote was created..."
 	local code fee_url
@@ -535,8 +534,8 @@ quote_journey() {
 
 	local fee_after
 	fee_after="$(fee_platform_balance)"
-	[ "$((fee_after - fee_before))" = "500" ] && ok "fee[platform] increased by EXACTLY the quoted 500, not the changed 9000 rule" \
-		|| fail "fee[platform] changed by $((fee_after - fee_before)), expected 500 (quote must be honored despite rule change)"
+	[ "$((fee_after - fee_before))" = "500" ] && ok "fee[platform] increased by EXACTLY the quoted 500, not the changed 9000 rule" ||
+		fail "fee[platform] changed by $((fee_after - fee_before)), expected 500 (quote must be honored despite rule change)"
 
 	log "tampering the amount after quoting must reject with 422 QUOTE_MISMATCH, WITHOUT burning the quote..."
 	local quote2_resp quote2_id
@@ -551,16 +550,16 @@ quote_journey() {
 		-H "Authorization: Bearer $TOKEN_A" -H "Content-Type: application/json" \
 		-d "{\"idempotency_key\":\"e2e-quote-mismatch-$RUN_ID\",\"type\":\"transfer_p2p\",\"amount\":\"99999\",\"target_user_id\":\"$USER_B\",\"quote_id\":\"$quote2_id\"}")"
 	mismatch_code="$(echo "$mismatch_resp" | tail -1)"
-	echo "$mismatch_resp" | grep -q '\[QUOTE_MISMATCH\]' && [ "$mismatch_code" = "422" ] \
-		&& ok "tampered amount rejected with 422 QUOTE_MISMATCH" \
-		|| fail "expected 422 QUOTE_MISMATCH, got: $mismatch_resp"
+	echo "$mismatch_resp" | grep -q '\[QUOTE_MISMATCH\]' && [ "$mismatch_code" = "422" ] &&
+		ok "tampered amount rejected with 422 QUOTE_MISMATCH" ||
+		fail "expected 422 QUOTE_MISMATCH, got: $mismatch_resp"
 
 	log "the SAME quote survived the mismatch attempt — posting the CORRECT amount now succeeds..."
 	code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$APP_PORT/api/v1/ledger/transactions" \
 		-H "Authorization: Bearer $TOKEN_A" -H "Content-Type: application/json" \
 		-d "{\"idempotency_key\":\"e2e-quote2-$RUN_ID\",\"type\":\"transfer_p2p\",\"amount\":\"20000\",\"target_user_id\":\"$USER_B\",\"quote_id\":\"$quote2_id\"}")
-	[ "${code:0:1}" = "2" ] && ok "quote consumed successfully after surviving the mismatch attempt (code=$code)" \
-		|| fail "correct-amount post after mismatch got $code, expected 2xx"
+	[ "${code:0:1}" = "2" ] && ok "quote consumed successfully after surviving the mismatch attempt (code=$code)" ||
+		fail "correct-amount post after mismatch got $code, expected 2xx"
 
 	log "consuming the SAME quote again must reject with 422 QUOTE_EXPIRED (single-use)..."
 	local reuse_resp reuse_code
@@ -568,9 +567,9 @@ quote_journey() {
 		-H "Authorization: Bearer $TOKEN_A" -H "Content-Type: application/json" \
 		-d "{\"idempotency_key\":\"e2e-quote-reuse-$RUN_ID\",\"type\":\"transfer_p2p\",\"amount\":\"20000\",\"target_user_id\":\"$USER_B\",\"quote_id\":\"$quote2_id\"}")"
 	reuse_code="$(echo "$reuse_resp" | tail -1)"
-	echo "$reuse_resp" | grep -q '\[QUOTE_EXPIRED\]' && [ "$reuse_code" = "422" ] \
-		&& ok "reusing an already-consumed quote rejected with 422 QUOTE_EXPIRED" \
-		|| fail "expected 422 QUOTE_EXPIRED, got: $reuse_resp"
+	echo "$reuse_resp" | grep -q '\[QUOTE_EXPIRED\]' && [ "$reuse_code" = "422" ] &&
+		ok "reusing an already-consumed quote rejected with 422 QUOTE_EXPIRED" ||
+		fail "expected 422 QUOTE_EXPIRED, got: $reuse_resp"
 
 	log "re-quoting fresh succeeds..."
 	local quote3_resp quote3_id
@@ -581,8 +580,8 @@ quote_journey() {
 	code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$APP_PORT/api/v1/ledger/transactions" \
 		-H "Authorization: Bearer $TOKEN_A" -H "Content-Type: application/json" \
 		-d "{\"idempotency_key\":\"e2e-quote3-$RUN_ID\",\"type\":\"transfer_p2p\",\"amount\":\"10000\",\"target_user_id\":\"$USER_B\",\"quote_id\":\"$quote3_id\"}")
-	[ -n "$quote3_id" ] && [ "${code:0:1}" = "2" ] && ok "re-quote after rejection/consumption succeeds (code=$code)" \
-		|| fail "re-quote journey failed: quote_id=$quote3_id code=$code"
+	[ -n "$quote3_id" ] && [ "${code:0:1}" = "2" ] && ok "re-quote after rejection/consumption succeeds (code=$code)" ||
+		fail "re-quote journey failed: quote_id=$quote3_id code=$code"
 
 	log "payout ber-quote: fee charged at settle = quote, even though fee_rules changes mid-flight..."
 	local payout_quote_resp payout_quote_id payout_fee_amount
@@ -591,8 +590,8 @@ quote_journey() {
 		-d '{"transaction_type":"withdraw_settle","amount":"40000"}')"
 	payout_quote_id="$(echo "$payout_quote_resp" | json_field data.quote_id)"
 	payout_fee_amount="$(echo "$payout_quote_resp" | json_field data.fee_amount)"
-	[ -n "$payout_quote_id" ] && [ "$payout_fee_amount" = "2000" ] && ok "payout quote created (id=$payout_quote_id fee=$payout_fee_amount)" \
-		|| fail "payout quote creation unexpected: $payout_quote_resp"
+	[ -n "$payout_quote_id" ] && [ "$payout_fee_amount" = "2000" ] && ok "payout quote created (id=$payout_quote_id fee=$payout_fee_amount)" ||
+		fail "payout quote creation unexpected: $payout_quote_resp"
 
 	fee_rule_apply "$fee_url" "$FEE_MAKER_TOKEN" "$FEE_CHECKER_TOKEN" "$WITHDRAW_FEE_RULE_ID" \
 		'{"tx_type":"withdraw_settle","currency":"IDR","flat_minor_units":8000,"fee_gateway":"platform"}' \
@@ -611,8 +610,8 @@ quote_journey() {
 
 	local fee_after_payout
 	fee_after_payout="$(fee_platform_balance)"
-	[ "$((fee_after_payout - fee_before_payout))" = "2000" ] && ok "fee[platform] increased by EXACTLY the quoted 2000, not the changed 8000 rule" \
-		|| fail "fee[platform] changed by $((fee_after_payout - fee_before_payout)), expected 2000 (payout quote honored despite mid-flight rule change)"
+	[ "$((fee_after_payout - fee_before_payout))" = "2000" ] && ok "fee[platform] increased by EXACTLY the quoted 2000, not the changed 8000 rule" ||
+		fail "fee[platform] changed by $((fee_after_payout - fee_before_payout)), expected 2000 (payout quote honored despite mid-flight rule change)"
 
 	log "payout ber-quote + drill failover (docs/roadmap/archive/40): force-fail mockvendor -> quote-backed payout routes to mockvendor2..."
 	local failover_quote_resp failover_quote_id failover_fee_amount
@@ -621,8 +620,8 @@ quote_journey() {
 		-d '{"transaction_type":"withdraw_settle","amount":"25000"}')"
 	failover_quote_id="$(echo "$failover_quote_resp" | json_field data.quote_id)"
 	failover_fee_amount="$(echo "$failover_quote_resp" | json_field data.fee_amount)"
-	[ -n "$failover_quote_id" ] && ok "failover-drill quote created (id=$failover_quote_id fee=$failover_fee_amount)" \
-		|| fail "failover-drill quote creation unexpected: $failover_quote_resp"
+	[ -n "$failover_quote_id" ] && ok "failover-drill quote created (id=$failover_quote_id fee=$failover_fee_amount)" ||
+		fail "failover-drill quote creation unexpected: $failover_quote_resp"
 
 	# mockvendor2 seeded as a FALLBACK behind mockvendor's existing priority-10
 	# rule (from section 5) — priority 11 is a LARGER number, tried SECOND,
@@ -636,8 +635,8 @@ quote_journey() {
 		-H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" \
 		-d '{"flow":"payout","priority":11,"enabled":true,"vendor":"mockvendor2"}')"
 	mv2_route_id="$(echo "$mv2_route_json" | json_field data.id)"
-	[ -n "$mv2_route_id" ] && ok "admin seeded mockvendor2 as fallback routing rule ($mv2_route_id)" \
-		|| fail "mockvendor2 routing rule creation failed: $mv2_route_json"
+	[ -n "$mv2_route_id" ] && ok "admin seeded mockvendor2 as fallback routing rule ($mv2_route_id)" ||
+		fail "mockvendor2 routing rule creation failed: $mv2_route_json"
 
 	curl_internal -s -o /dev/null -X POST "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendors/mockvendor/force-fail" \
 		-H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" -d '{"fail":true}'
@@ -655,15 +654,15 @@ quote_journey() {
 	wait_for_vendor_call "$probe_id" "uncertain" 15
 	probe_vendor="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT vendor FROM payout_requests WHERE id='$probe_id';")"
 	probe_status="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT status FROM payout_requests WHERE id='$probe_id';")"
-	[ "$probe_vendor" = "mockvendor" ] && [ "$probe_status" = "submitted" ] \
-		&& ok "probe payout pinned to mockvendor, uncertain (trips the circuit)" \
-		|| fail "probe payout unexpected vendor='$probe_vendor' status='$probe_status'"
+	[ "$probe_vendor" = "mockvendor" ] && [ "$probe_status" = "submitted" ] &&
+		ok "probe payout pinned to mockvendor, uncertain (trips the circuit)" ||
+		fail "probe payout unexpected vendor='$probe_vendor' status='$probe_status'"
 
 	local health_resp
 	health_resp="$(curl_internal -s "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendors/health" -H "Authorization: Bearer $admin_token")"
-	echo "$health_resp" | grep -q '"vendor":"mockvendor","state":"open"' \
-		&& ok "admin vendor health confirms mockvendor's circuit is open" \
-		|| fail "admin vendor health did not report mockvendor open: $health_resp"
+	echo "$health_resp" | grep -q '"vendor":"mockvendor","state":"open"' &&
+		ok "admin vendor health confirms mockvendor's circuit is open" ||
+		fail "admin vendor health did not report mockvendor open: $health_resp"
 
 	local failover_before_fee
 	failover_before_fee="$(fee_platform_balance)"
@@ -678,15 +677,15 @@ quote_journey() {
 	wait_for_payout_status "$FAILOVER_PAYOUT_ID" "settled" 10
 	local failover_payout_vendor
 	failover_payout_vendor="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT vendor FROM payout_requests WHERE id='$FAILOVER_PAYOUT_ID';")"
-	[ "$failover_payout_vendor" = "mockvendor2" ] \
-		&& ok "quote-backed payout routed straight to mockvendor2 (mockvendor's circuit is open) and settled via the relay ($FAILOVER_PAYOUT_ID)" \
-		|| fail "failover payout routed to unexpected vendor='$failover_payout_vendor'"
+	[ "$failover_payout_vendor" = "mockvendor2" ] &&
+		ok "quote-backed payout routed straight to mockvendor2 (mockvendor's circuit is open) and settled via the relay ($FAILOVER_PAYOUT_ID)" ||
+		fail "failover payout routed to unexpected vendor='$failover_payout_vendor'"
 
 	local failover_after_fee
 	failover_after_fee="$(fee_platform_balance)"
-	[ "$((failover_after_fee - failover_before_fee))" = "$failover_fee_amount" ] \
-		&& ok "failover payout charged EXACTLY the stored quote fee ($failover_fee_amount)" \
-		|| fail "fee[platform] changed by $((failover_after_fee - failover_before_fee)), expected $failover_fee_amount"
+	[ "$((failover_after_fee - failover_before_fee))" = "$failover_fee_amount" ] &&
+		ok "failover payout charged EXACTLY the stored quote fee ($failover_fee_amount)" ||
+		fail "fee[platform] changed by $((failover_after_fee - failover_before_fee)), expected $failover_fee_amount"
 
 	log "recovering mockvendor..."
 	curl_internal -s -o /dev/null -X POST "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendors/mockvendor/force-fail" \
@@ -735,9 +734,9 @@ ops() {
 	log "GET /admin/ledger/fee-rules — operator sees the pricing seeded in section 1 without SQL..."
 	local fee_rules_resp
 	fee_rules_resp="$(curl_internal -s "http://localhost:$LEDGER_INTERNAL_PORT/api/v1/ledger/admin/ledger/fee-rules" -H "Authorization: Bearer $admin_token")"
-	echo "$fee_rules_resp" | grep -q '"tx_type":"transfer_p2p"' \
-		&& ok "fee-rules admin surface shows the configured transfer_p2p pricing" \
-		|| fail "fee-rules admin surface missing expected rules: $fee_rules_resp"
+	echo "$fee_rules_resp" | grep -q '"tx_type":"transfer_p2p"' &&
+		ok "fee-rules admin surface shows the configured transfer_p2p pricing" ||
+		fail "fee-rules admin surface missing expected rules: $fee_rules_resp"
 
 	log "GET /admin/fraud/events (fraud-service) — operator tooling reachable without SQL..."
 	code=$(curl_internal -s -o /dev/null -w '%{http_code}' "http://localhost:$FRAUD_ADMIN_PORT/api/v1/admin/fraud/events" \
@@ -772,30 +771,30 @@ trace_check() {
 		-d "{\"idempotency_key\":\"e2e-trace-$RUN_ID\",\"type\":\"transfer_p2p\",\"amount\":\"1\",\"target_user_id\":\"$USER_B\"}")
 	[ "${code:0:1}" = "2" ] && ok "trace transfer posted (code=$code)" || fail "trace transfer got $code, expected 2xx"
 
-	grep -qi "^X-Request-Id: $trace_id" "$headers_file" \
-		&& ok "gateway response echoes X-Request-Id" \
-		|| fail "gateway response did not echo X-Request-Id $trace_id"
+	grep -qi "^X-Request-Id: $trace_id" "$headers_file" &&
+		ok "gateway response echoes X-Request-Id" ||
+		fail "gateway response did not echo X-Request-Id $trace_id"
 	rm -f "$headers_file"
 
-	grep -q "$trace_id" "$GATEWAY_LOG" \
-		&& ok "gateway log contains request_id $trace_id" \
-		|| fail "gateway log missing request_id $trace_id"
-	grep -q "$trace_id" "$LEDGER_LOG" \
-		&& ok "ledger-service log contains request_id $trace_id" \
-		|| fail "ledger-service log missing request_id $trace_id"
+	grep -q "$trace_id" "$GATEWAY_LOG" &&
+		ok "gateway log contains request_id $trace_id" ||
+		fail "gateway log missing request_id $trace_id"
+	grep -q "$trace_id" "$LEDGER_LOG" &&
+		ok "ledger-service log contains request_id $trace_id" ||
+		fail "ledger-service log missing request_id $trace_id"
 
 	local stored
 	stored="$(psql_exec "$LEDGER_DB_NAME" -c "SELECT request_id FROM ledger_transactions WHERE idempotency_key = 'e2e-trace-$RUN_ID';")"
-	[ "$stored" = "$trace_id" ] \
-		&& ok "ledger_transactions.request_id matches ($trace_id)" \
-		|| fail "stored request_id was '$stored', expected $trace_id"
+	[ "$stored" = "$trace_id" ] &&
+		ok "ledger_transactions.request_id matches ($trace_id)" ||
+		fail "stored request_id was '$stored', expected $trace_id"
 
 	log "tracing the failover payout from section 6: payout_requests.request_id + CorrelationId reaching fraud's async velocity consumer..."
 	local stored_payout_request_id
 	stored_payout_request_id="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT request_id FROM payout_requests WHERE id = '$FAILOVER_PAYOUT_ID';")"
-	[ "$stored_payout_request_id" = "$FAILOVER_REQUEST_ID" ] \
-		&& ok "payout_requests.request_id matches ($FAILOVER_REQUEST_ID)" \
-		|| fail "stored payout request_id was '$stored_payout_request_id', expected $FAILOVER_REQUEST_ID"
+	[ "$stored_payout_request_id" = "$FAILOVER_REQUEST_ID" ] &&
+		ok "payout_requests.request_id matches ($FAILOVER_REQUEST_ID)" ||
+		fail "stored payout request_id was '$stored_payout_request_id', expected $FAILOVER_REQUEST_ID"
 
 	# The payout's withdraw_settle only publishes ledger.transaction.posted.v1
 	# once settled; fraud-service's velocity consumer then processes it off

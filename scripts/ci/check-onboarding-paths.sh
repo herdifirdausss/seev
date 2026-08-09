@@ -58,7 +58,7 @@ require_text services/payin/README.md 'go test -run '\''^$'\'' ./services/payin/
 require_text services/ledger/README.md 'go test -run '\''^$'\'' ./services/ledger/...'
 require_text docs/development/onboarding.md 'make verify-full'
 
-if (( failures > 0 )); then
+if ((failures > 0)); then
 	printf 'onboarding-check: %d navigation assertions failed\n' "$failures" >&2
 	exit 1
 fi

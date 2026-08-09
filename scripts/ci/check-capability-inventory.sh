@@ -6,7 +6,7 @@
 set -euo pipefail
 
 root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-inventory="$root_dir/docs/engineering/capability-inventory.md"
+inventory="$root_dir/docs/reference/capability-inventory.md"
 
 if [[ ! -s "$inventory" ]]; then
 	printf 'check-capability-inventory: missing inventory: %s\n' "$inventory" >&2
@@ -24,7 +24,7 @@ trim() {
 
 check_repo_status() {
 	case "$1" in
-		implemented|partially_implemented|not_started|not_applicable) return 0 ;;
+		implemented | partially_implemented | not_started | not_applicable) return 0 ;;
 		*) return 1 ;;
 	esac
 }
@@ -41,10 +41,10 @@ check_evidence_paths() {
 	while IFS= read -r path; do
 		[[ -z "$path" ]] && continue
 		if [[ ! -e "$root_dir/$path" ]]; then
-			printf '::error file=docs/engineering/capability-inventory.md::evidence path does not exist: %s\n' "$path" >&2
+			printf '::error file=docs/reference/capability-inventory.md::evidence path does not exist: %s\n' "$path" >&2
 			return 1
 		fi
-	done <<< "$paths"
+	done <<<"$paths"
 }
 
 # shellcheck disable=SC2034
@@ -57,43 +57,43 @@ while IFS='|' read -r _ capability code schema unit integration e2e chaos runtim
 	for field in code schema unit integration e2e chaos; do
 		value="$(trim "${!field:-}")"
 		if ! check_repo_status "$value"; then
-			printf '::error file=docs/engineering/capability-inventory.md::%s has invalid %s=%s; expected one of implemented, partially_implemented, not_started, not_applicable\n' "$capability" "$field" "${value:-<empty>}" >&2
+			printf '::error file=docs/reference/capability-inventory.md::%s has invalid %s=%s; expected one of implemented, partially_implemented, not_started, not_applicable\n' "$capability" "$field" "${value:-<empty>}" >&2
 			failed=1
 		fi
 		if [[ "$field" == "integration" && "$value" != "implemented" ]]; then
-			printf '::error file=docs/engineering/capability-inventory.md::%s must have Integration=implemented; found %s\n' "$capability" "${value:-<empty>}" >&2
+			printf '::error file=docs/reference/capability-inventory.md::%s must have Integration=implemented; found %s\n' "$capability" "${value:-<empty>}" >&2
 			failed=1
 		fi
 		if [[ "$field" == "e2e" && "$value" != "implemented" ]]; then
-			printf '::error file=docs/engineering/capability-inventory.md::%s must have E2E=implemented; found %s\n' "$capability" "${value:-<empty>}" >&2
+			printf '::error file=docs/reference/capability-inventory.md::%s must have E2E=implemented; found %s\n' "$capability" "${value:-<empty>}" >&2
 			failed=1
 		fi
 		if [[ "$field" == "chaos" && "$value" != "implemented" && "$value" != "not_applicable" ]]; then
-			printf '::error file=docs/engineering/capability-inventory.md::%s must have Chaos=implemented or not_applicable; found %s\n' "$capability" "${value:-<empty>}" >&2
+			printf '::error file=docs/reference/capability-inventory.md::%s must have Chaos=implemented or not_applicable; found %s\n' "$capability" "${value:-<empty>}" >&2
 			failed=1
 		fi
 	done
 	runtime="$(trim "${runtime:-}")"
 	if [[ "$runtime" != "evidence_required" && "$runtime" != "accepted" ]]; then
-		printf '::error file=docs/engineering/capability-inventory.md::%s has invalid runtime accepted status=%s; expected evidence_required or accepted\n' "$capability" "${runtime:-<empty>}" >&2
+		printf '::error file=docs/reference/capability-inventory.md::%s has invalid runtime accepted status=%s; expected evidence_required or accepted\n' "$capability" "${runtime:-<empty>}" >&2
 		failed=1
 	fi
 	production="$(trim "${production:-}")"
 	if [[ "$production" != "evidence_required" && "$production" != "production_ready" ]]; then
-		printf '::error file=docs/engineering/capability-inventory.md::%s has invalid production ready status=%s; expected evidence_required or production_ready\n' "$capability" "${production:-<empty>}" >&2
+		printf '::error file=docs/reference/capability-inventory.md::%s has invalid production ready status=%s; expected evidence_required or production_ready\n' "$capability" "${production:-<empty>}" >&2
 		failed=1
 	fi
 	if [[ -z "$(trim "${evidence:-}")" ]]; then
-		printf '::error file=docs/engineering/capability-inventory.md::%s has no owner/evidence reference\n' "$capability" >&2
+		printf '::error file=docs/reference/capability-inventory.md::%s has no owner/evidence reference\n' "$capability" >&2
 		failed=1
 	elif ! check_evidence_paths "$evidence"; then
-		printf '::error file=docs/engineering/capability-inventory.md::%s has no valid repository evidence path\n' "$capability" >&2
+		printf '::error file=docs/reference/capability-inventory.md::%s has no valid repository evidence path\n' "$capability" >&2
 		failed=1
 	fi
 done < <(awk '/^\|/ { print }' "$inventory")
 
 if [[ "$required_rows" -ne 17 ]]; then
-	printf '::error file=docs/engineering/capability-inventory.md::expected 17 capability rows, found %s\n' "$required_rows" >&2
+	printf '::error file=docs/reference/capability-inventory.md::expected 17 capability rows, found %s\n' "$required_rows" >&2
 	failed=1
 fi
 

@@ -30,11 +30,22 @@ DRY_RUN=0
 COMMAND=""
 for arg in "$@"; do
 	case "$arg" in
-	--help | -h) usage; exit 0 ;;
-	--dry-run) DRY_RUN=1 ;;
-	up | down) COMMAND="$arg" ;;
-	--*) echo "migrate: unknown option: $arg" >&2; usage; exit 2 ;;
-	*) echo "migrate: unexpected argument: $arg" >&2; usage; exit 2 ;;
+		--help | -h)
+			usage
+			exit 0
+			;;
+		--dry-run) DRY_RUN=1 ;;
+		up | down) COMMAND="$arg" ;;
+		--*)
+			echo "migrate: unknown option: $arg" >&2
+			usage
+			exit 2
+			;;
+		*)
+			echo "migrate: unexpected argument: $arg" >&2
+			usage
+			exit 2
+			;;
 	esac
 done
 
@@ -51,11 +62,11 @@ if [ -z "$SERVICE" ]; then
 	exit 2
 fi
 case "$SERVICE" in
-adminbff | assurance | auth | fraud | gateway | ledger | payin | payout | vendor) ;;
-*)
-	echo "migrate: unsupported service: $SERVICE" >&2
-	exit 2
-	;;
+	adminbff | assurance | auth | fraud | gateway | ledger | payin | payout | vendor) ;;
+	*)
+		echo "migrate: unsupported service: $SERVICE" >&2
+		exit 2
+		;;
 esac
 
 MIGRATE_USER="${POSTGRES_MIGRATE_USER:-seev}"
@@ -65,14 +76,29 @@ PORT="${POSTGRES_PORT:-5433}"
 SSL_MODE="${POSTGRES_SSL_MODE:-disable}"
 APP_ENV="${APP_ENV:-development}"
 
-[[ "$MIGRATE_USER" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || { echo "migrate: unsafe POSTGRES_MIGRATE_USER" >&2; exit 2; }
-[[ "$HOST" =~ ^[A-Za-z0-9._:-]+$ ]] || { echo "migrate: unsafe POSTGRES_HOST" >&2; exit 2; }
-[[ "$PORT" =~ ^[0-9]+$ && "$PORT" -ge 1 && "$PORT" -le 65535 ]] || { echo "migrate: POSTGRES_PORT must be between 1 and 65535" >&2; exit 2; }
+[[ "$MIGRATE_USER" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || {
+	echo "migrate: unsafe POSTGRES_MIGRATE_USER" >&2
+	exit 2
+}
+[[ "$HOST" =~ ^[A-Za-z0-9._:-]+$ ]] || {
+	echo "migrate: unsafe POSTGRES_HOST" >&2
+	exit 2
+}
+[[ "$PORT" =~ ^[0-9]+$ && "$PORT" -ge 1 && "$PORT" -le 65535 ]] || {
+	echo "migrate: POSTGRES_PORT must be between 1 and 65535" >&2
+	exit 2
+}
 case "$SSL_MODE" in
-disable | allow | prefer | require | verify-ca | verify-full) ;;
-*) echo "migrate: unsupported POSTGRES_SSL_MODE: $SSL_MODE" >&2; exit 2 ;;
+	disable | allow | prefer | require | verify-ca | verify-full) ;;
+	*)
+		echo "migrate: unsupported POSTGRES_SSL_MODE: $SSL_MODE" >&2
+		exit 2
+		;;
 esac
-command -v migrate >/dev/null 2>&1 || { echo "migrate: golang-migrate is required in PATH" >&2; exit 2; }
+command -v migrate >/dev/null 2>&1 || {
+	echo "migrate: golang-migrate is required in PATH" >&2
+	exit 2
+}
 
 # Keep the password in the child environment, not in the DSN/argv or Make's
 # echoed recipe. lib/pq reads PGPASSWORD when the URL has no password field.

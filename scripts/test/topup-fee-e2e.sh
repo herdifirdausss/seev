@@ -56,20 +56,28 @@ fee_rule_apply() {
 	draft_code="${draft_response##*$'\n'}"
 	draft_body="${draft_response%$'\n'*}"
 	if [ "$draft_code" != "202" ]; then
-		fail "$label draft got HTTP $draft_code: $draft_body"; return 0
+		fail "$label draft got HTTP $draft_code: $draft_body"
+		return 0
 	fi
 	version_id="$(printf '%s' "$draft_body" | json_field id)"
 	rule_id="$(printf '%s' "$draft_body" | json_field rule_id)"
 	if [ -z "$version_id" ] || [ -z "$rule_id" ]; then
-		fail "$label draft did not return ids: $draft_body"; return 0
+		fail "$label draft did not return ids: $draft_body"
+		return 0
 	fi
 	submit_code="$(curl_internal -s -o /dev/null -w '%{http_code}' -X POST "$FEE_URL/$version_id/submit" \
 		-H "Authorization: Bearer $MAKER_TOKEN" -H "Content-Type: application/json" -d '{}')"
-	[[ "$submit_code" == 2* ]] || { fail "$label submit got HTTP $submit_code"; return 0; }
+	[[ "$submit_code" == 2* ]] || {
+		fail "$label submit got HTTP $submit_code"
+		return 0
+	}
 	approve_code="$(curl_internal -s -o /dev/null -w '%{http_code}' -X POST "$FEE_URL/$version_id/approve" \
 		-H "Authorization: Bearer $CHECKER_TOKEN" -H "Content-Type: application/json" \
 		-d '{"reason":"topup-fee-e2e"}')"
-	[[ "$approve_code" == 2* ]] || { fail "$label approve got HTTP $approve_code"; return 0; }
+	[[ "$approve_code" == 2* ]] || {
+		fail "$label approve got HTTP $approve_code"
+		return 0
+	}
 	FEE_RULE_ID="$rule_id"
 	ok "$label applied through maker-checker (rule=$rule_id)"
 }
@@ -77,7 +85,10 @@ fee_rule_apply() {
 fee_rule_apply "" \
 	'{"tx_type":"money_in","currency":"IDR","gateway":"bca","flat_minor_units":500,"fee_gateway":"platform"}' \
 	"money_in/bca fee rule (500 IDR flat)"
-[ -n "$FEE_RULE_ID" ] || { echo "FAIL: fee rule not created" >&2; exit 1; }
+[ -n "$FEE_RULE_ID" ] || {
+	echo "FAIL: fee rule not created" >&2
+	exit 1
+}
 
 # ─── 2. Provision user ────────────────────────────────────────────────────────
 
@@ -99,9 +110,9 @@ quote_resp="$(curl_internal -sS -X POST \
 	-d '{"transaction_type":"money_in","amount":"100000","gateway":"bca"}')"
 QUOTE_ID="$(echo "$quote_resp" | json_field quote_id)"
 quote_fee="$(echo "$quote_resp" | json_field fee_amount)"
-[ -n "$QUOTE_ID" ] && [ "$quote_fee" = "500" ] \
-	&& ok "fee quote created (id=$QUOTE_ID fee=500 IDR)" \
-	|| fail "fee quote creation failed (expected fee=500): $quote_resp"
+[ -n "$QUOTE_ID" ] && [ "$quote_fee" = "500" ] &&
+	ok "fee quote created (id=$QUOTE_ID fee=500 IDR)" ||
+	fail "fee quote creation failed (expected fee=500): $quote_resp"
 
 # ─── 4. money_in atomically consumes the quote ────────────────────────────────
 
@@ -119,23 +130,23 @@ topup_code="$(curl_internal -sS -o "$WORK_DIR/topup1.json" -w '%{http_code}' \
 	-d "{\"idempotency_key\":\"topup-fee-e2e-1-$RUN_ID\",\"type\":\"money_in\",\
 \"amount\":\"100000\",\"quote_id\":\"$QUOTE_ID\",\"metadata\":{\"gateway\":\"bca\"}}")"
 topup_body="$(cat "$WORK_DIR/topup1.json")"
-[ "${topup_code:0:1}" = "2" ] && ok "money_in with fee quote accepted (code=$topup_code)" \
-	|| fail "money_in with fee quote got $topup_code: $topup_body"
+[ "${topup_code:0:1}" = "2" ] && ok "money_in with fee quote accepted (code=$topup_code)" ||
+	fail "money_in with fee quote got $topup_code: $topup_body"
 
 CASH_ID="$(cash_account_id "$USER_ID")"
 user_balance="$(account_balance "$CASH_ID" | tr -d '[:space:]')"
-[ "$user_balance" = "100000" ] \
-	&& ok "user wallet credited full 100000 (fee is a separate ledger entry)" \
-	|| fail "expected user balance=100000, got $user_balance"
+[ "$user_balance" = "100000" ] &&
+	ok "user wallet credited full 100000 (fee is a separate ledger entry)" ||
+	fail "expected user balance=100000, got $user_balance"
 
 fee_after="$(psql_exec "$LEDGER_DB_NAME" -c "
 	SELECT COALESCE(b.balance,0) FROM accounts a
 	JOIN account_balances b ON b.account_id=a.id
 	WHERE a.owner_type='system' AND a.type='fee'
 	  AND a.system_qualifier='platform' AND a.currency='IDR';" | tr -d '[:space:]')"
-[ "$((fee_after - fee_before))" = "500" ] \
-	&& ok "fee[platform] increased by exactly 500 IDR (the quoted fee)" \
-	|| fail "fee[platform] delta was $((fee_after - fee_before)), expected 500"
+[ "$((fee_after - fee_before))" = "500" ] &&
+	ok "fee[platform] increased by exactly 500 IDR (the quoted fee)" ||
+	fail "fee[platform] delta was $((fee_after - fee_before)), expected 500"
 
 # ─── 5. Idempotent replay: same key, quote already consumed ───────────────────
 
@@ -154,9 +165,9 @@ fee_after_replay="$(psql_exec "$LEDGER_DB_NAME" -c "
 	  AND a.system_qualifier='platform' AND a.currency='IDR';" | tr -d '[:space:]')"
 # Idempotent replay: either 201 with same transaction OR 200/202 ErrAlreadyPosted.
 # In both cases the fee must NOT increase again.
-[ "$fee_after_replay" = "$fee_after" ] \
-	&& ok "fee unchanged after idempotent replay (code=$replay_code) — no double-charge" \
-	|| fail "fee increased on idempotent replay (before=$fee_after after=$fee_after_replay) — double-charge bug"
+[ "$fee_after_replay" = "$fee_after" ] &&
+	ok "fee unchanged after idempotent replay (code=$replay_code) — no double-charge" ||
+	fail "fee increased on idempotent replay (before=$fee_after after=$fee_after_replay) — double-charge bug"
 
 # ─── 6. QUOTE_EXPIRED: consumed quote rejected on a fresh idempotency key ─────
 
@@ -168,9 +179,9 @@ reuse_resp="$(curl_internal -sS -w '\n%{http_code}' \
 	-d "{\"idempotency_key\":\"topup-fee-reuse-$RUN_ID\",\"type\":\"money_in\",\
 \"amount\":\"100000\",\"quote_id\":\"$QUOTE_ID\",\"metadata\":{\"gateway\":\"bca\"}}")"
 reuse_code="$(echo "$reuse_resp" | tail -1)"
-echo "$reuse_resp" | grep -q 'QUOTE_EXPIRED' && [ "$reuse_code" = "422" ] \
-	&& ok "consumed quote rejected with 422 QUOTE_EXPIRED — single-use enforced" \
-	|| fail "expected 422 QUOTE_EXPIRED, got code=$reuse_code body=${reuse_resp%$'\n'*}"
+echo "$reuse_resp" | grep -q 'QUOTE_EXPIRED' && [ "$reuse_code" = "422" ] &&
+	ok "consumed quote rejected with 422 QUOTE_EXPIRED — single-use enforced" ||
+	fail "expected 422 QUOTE_EXPIRED, got code=$reuse_code body=${reuse_resp%$'\n'*}"
 
 # ─── 7. Ledger integrity ──────────────────────────────────────────────────────
 

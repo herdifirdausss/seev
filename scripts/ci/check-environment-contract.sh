@@ -63,7 +63,7 @@ for key in POSTGRES_HOST REDIS_ADDR RABBITMQ_HOST VENDOR_EGRESS_PROXY_URL KYC_PR
 	fi
 done
 
-if (( failed != 0 )); then
+if ((failed != 0)); then
 	exit 1
 fi
 printf 'check-environment-contract: %s passed (secret values were not displayed)\n' "$env_name"

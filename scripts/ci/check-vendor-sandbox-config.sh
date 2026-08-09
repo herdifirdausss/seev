@@ -33,7 +33,7 @@ if [[ "${VENDOR_EGRESS_PROXY_URL:-}" == *localhost* || "${VENDOR_EGRESS_PROXY_UR
 	failed=1
 fi
 
-if (( failed != 0 )); then
+if ((failed != 0)); then
 	exit 1
 fi
 printf 'check-vendor-sandbox-config: %s provider wiring passed (credentials were not displayed)\n' "$env_name"

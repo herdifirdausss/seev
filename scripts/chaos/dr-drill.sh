@@ -111,11 +111,11 @@ fi
 
 MODE="${1:-}"
 case "$MODE" in
-latest | pitr) ;;
-*)
-	usage
-	exit 2
-	;;
+	latest | pitr) ;;
+	*)
+		usage
+		exit 2
+		;;
 esac
 
 # Safety: the normal drill uses the development dependency ports and refuses

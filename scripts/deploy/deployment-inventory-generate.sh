@@ -12,10 +12,10 @@ GENERATED_DIR="${EVIDENCE_DIR}/generated"
 CONFIGURATION_FILE="${ROOT_DIR}/deploy/inventory/configuration.yaml"
 
 for command in git go docker jq ruby; do
-  command -v "$command" >/dev/null || {
-    echo "deployment-inventory-generate: $command is required" >&2
-    exit 2
-  }
+	command -v "$command" >/dev/null || {
+		echo "deployment-inventory-generate: $command is required" >&2
+		exit 2
+	}
 done
 
 mkdir -p "$COMMAND_DIR" "$GENERATED_DIR"
@@ -41,93 +41,93 @@ uname -a >"$COMMAND_DIR/uname.txt"
 df -h "$ROOT_DIR" >"$COMMAND_DIR/filesystem-free-space.txt"
 
 docker info --format 'server={{.ServerVersion}}\narchitecture={{.Architecture}}\nos={{.OperatingSystem}}\nmem_total_bytes={{.MemTotal}}' \
-  >"$COMMAND_DIR/docker-info-safe.txt" 2>&1 || true
+	>"$COMMAND_DIR/docker-info-safe.txt" 2>&1 || true
 
 find "$ROOT_DIR/services" "$ROOT_DIR/tools" "$ROOT_DIR/operations" -type f -name main.go -print | sort >"$COMMAND_DIR/entrypoint-files.txt"
 go list ./services/... ./tools/... ./operations/... | sort >"$COMMAND_DIR/go-entrypoint-packages.txt"
 docker compose config --services | sort >"$COMMAND_DIR/compose-base-services.txt"
 docker compose --profile app config --services | sort >"$COMMAND_DIR/compose-app-services.txt"
 docker compose --profile app config --images | sort -u >"$COMMAND_DIR/compose-images.txt"
-docker compose --profile app config --format json --no-interpolate --no-env-resolution \
-  | jq -S '.services |= with_entries(.value.environment = ((.value.environment // {}) | with_entries(.value = "<redacted>"))) | .secrets |= with_entries(.value.file = "<redacted>")' \
-  >"$GENERATED_DIR/compose-normalized.json"
+docker compose --profile app config --format json --no-interpolate --no-env-resolution |
+	jq -S '.services |= with_entries(.value.environment = ((.value.environment // {}) | with_entries(.value = "<redacted>"))) | .secrets |= with_entries(.value.file = "<redacted>")' \
+		>"$GENERATED_DIR/compose-normalized.json"
 ruby -rjson -ryaml -e 'puts YAML.dump(JSON.parse(STDIN.read))' \
-  <"$GENERATED_DIR/compose-normalized.json" \
-  | sed -E 's/[[:blank:]]+$//' >"$EVIDENCE_DIR/compose-normalized.yaml"
+	<"$GENERATED_DIR/compose-normalized.json" |
+	sed -E 's/[[:blank:]]+$//' >"$EVIDENCE_DIR/compose-normalized.yaml"
 rm -f "$GENERATED_DIR/compose-normalized.json"
 
-docker compose --profile app config --format json --no-interpolate --no-env-resolution \
-  | jq -S '{services: (.services | with_entries({key: .key, value: {image: .value.image, build_service: (.value.build.args.SERVICE // null), ports: (.value.ports // []), profiles: (.value.profiles // []), depends_on: (.value.depends_on // {})}})), volumes: (.volumes // {})}' \
-  >"$GENERATED_DIR/compose-runtime-shape.json"
+docker compose --profile app config --format json --no-interpolate --no-env-resolution |
+	jq -S '{services: (.services | with_entries({key: .key, value: {image: .value.image, build_service: (.value.build.args.SERVICE // null), ports: (.value.ports // []), profiles: (.value.profiles // []), depends_on: (.value.depends_on // {})}})), volumes: (.volumes // {})}' \
+		>"$GENERATED_DIR/compose-runtime-shape.json"
 
 rg -n 'getenv|os\\.Getenv|os\\.LookupEnv|requireValue|parseDuration' \
-  "$ROOT_DIR/internal/platform/config" "$ROOT_DIR/services" "$ROOT_DIR/tools" "$ROOT_DIR/operations" "$ROOT_DIR/internal" \
-  --glob '*.go' >"$COMMAND_DIR/configuration-key-sources.txt" || true
+	"$ROOT_DIR/internal/platform/config" "$ROOT_DIR/services" "$ROOT_DIR/tools" "$ROOT_DIR/operations" "$ROOT_DIR/internal" \
+	--glob '*.go' >"$COMMAND_DIR/configuration-key-sources.txt" || true
 
 image_list="$(docker image ls --format '{{.Repository}}:{{.Tag}}' | rg '^seev/' | sort -u || true)"
 if [ -n "$image_list" ]; then
-  while IFS= read -r image; do
-    docker image inspect "$image" | jq '.[0] | {repo_tags: .RepoTags, repo_digests: .RepoDigests, id: .Id, created: .Created, size_bytes: .Size, architecture: .Architecture, os: .Os, user: .Config.User, entrypoint: .Config.Entrypoint, working_dir: .Config.WorkingDir, exposed_ports: (.Config.ExposedPorts // {})}'
-  done <<<"$image_list" | jq -s '.' >"$GENERATED_DIR/image-inventory.json"
+	while IFS= read -r image; do
+		docker image inspect "$image" | jq '.[0] | {repo_tags: .RepoTags, repo_digests: .RepoDigests, id: .Id, created: .Created, size_bytes: .Size, architecture: .Architecture, os: .Os, user: .Config.User, entrypoint: .Config.Entrypoint, working_dir: .Config.WorkingDir, exposed_ports: (.Config.ExposedPorts // {})}'
+	done <<<"$image_list" | jq -s '.' >"$GENERATED_DIR/image-inventory.json"
 else
-  printf '[]\n' >"$GENERATED_DIR/image-inventory.json"
+	printf '[]\n' >"$GENERATED_DIR/image-inventory.json"
 fi
 
 key_file="$(mktemp)"
 trap 'rm -f "$key_file"' EXIT
 sed -n 's/^[[:space:]]*#\{0,1\}[[:space:]]*\([A-Z][A-Z0-9_]*\)=.*/\1/p' "$ROOT_DIR/.env.example" >>"$key_file" || true
 rg -o 'getenv\("[A-Z][A-Z0-9_]*"\)|os\.Getenv\("[A-Z][A-Z0-9_]*"\)|os\.LookupEnv\("[A-Z][A-Z0-9_]*"\)' \
-  "$ROOT_DIR/internal" "$ROOT_DIR/services" "$ROOT_DIR/tools" "$ROOT_DIR/operations" --glob '*.go' \
-  | sed -E 's/.*(getenv|Getenv|LookupEnv)\("([A-Z][A-Z0-9_]*)"\).*/\2/' >>"$key_file" || true
+	"$ROOT_DIR/internal" "$ROOT_DIR/services" "$ROOT_DIR/tools" "$ROOT_DIR/operations" --glob '*.go' |
+	sed -E 's/.*(getenv|Getenv|LookupEnv)\("([A-Z][A-Z0-9_]*)"\).*/\2/' >>"$key_file" || true
 rg -o 'getWithDefault\(getenv, "[A-Z][A-Z0-9_]*"' \
-  "$ROOT_DIR/internal" "$ROOT_DIR/services" "$ROOT_DIR/tools" "$ROOT_DIR/operations" --glob '*.go' \
-  | sed -E 's/.*getWithDefault\(getenv, "([A-Z][A-Z0-9_]*)"/\1/' >>"$key_file" || true
+	"$ROOT_DIR/internal" "$ROOT_DIR/services" "$ROOT_DIR/tools" "$ROOT_DIR/operations" --glob '*.go' |
+	sed -E 's/.*getWithDefault\(getenv, "([A-Z][A-Z0-9_]*)"/\1/' >>"$key_file" || true
 sort -u "$key_file" >"$GENERATED_DIR/configuration-key-names.txt"
 
 owner_for_key() {
-  case "$1" in
-    LEDGER_*|OUTBOX_*|FEE_*|SCHEDULE_*|INTEREST_*|WORKER_*) printf '%s' ledger ;;
-    AUTH_*|KYC_*|CLOSURE_*|EXPORT_*|OBJECT_STORE_*) printf '%s' auth ;;
-    PAYIN_*|TOPUP_*) printf '%s' payin ;;
-    PAYOUT_*) printf '%s' payout ;;
-    FRAUD_*|SCREENING_*) printf '%s' fraud ;;
-    VENDOR_*|MOCKVENDOR_*) printf '%s' vendor ;;
-    ADMIN_BFF_*) printf '%s' admin-bff ;;
-    ASSURANCE_*|ALERT_*) printf '%s' assurance ;;
-    GATEWAY_*|MERCHANT_*) printf '%s' gateway ;;
-    *) printf '%s' shared-platform ;;
-  esac
+	case "$1" in
+		LEDGER_* | OUTBOX_* | FEE_* | SCHEDULE_* | INTEREST_* | WORKER_*) printf '%s' ledger ;;
+		AUTH_* | KYC_* | CLOSURE_* | EXPORT_* | OBJECT_STORE_*) printf '%s' auth ;;
+		PAYIN_* | TOPUP_*) printf '%s' payin ;;
+		PAYOUT_*) printf '%s' payout ;;
+		FRAUD_* | SCREENING_*) printf '%s' fraud ;;
+		VENDOR_* | MOCKVENDOR_*) printf '%s' vendor ;;
+		ADMIN_BFF_*) printf '%s' admin-bff ;;
+		ASSURANCE_* | ALERT_*) printf '%s' assurance ;;
+		GATEWAY_* | MERCHANT_*) printf '%s' gateway ;;
+		*) printf '%s' shared-platform ;;
+	esac
 }
 
 is_sensitive() {
-  [[ "$1" =~ (PASSWORD|SECRET|TOKEN|KEY|PEPPER|PASSPHRASE|PRIVATE|CREDENTIAL|API_KEY) ]]
+	[[ "$1" =~ (PASSWORD|SECRET|TOKEN|KEY|PEPPER|PASSPHRASE|PRIVATE|CREDENTIAL|API_KEY) ]]
 }
 
 {
-  printf '%s\n' 'version: 1'
-  printf 'baseline_commit: %s\n' "$baseline_commit"
-  printf '%s\n' 'generated: true'
-  printf '%s\n' 'value_policy: configuration names only; values are never recorded'
-  printf '%s\n' 'keys:'
-  while IFS= read -r key; do
-    [ -n "$key" ] || continue
-    owner="$(owner_for_key "$key")"
-    if is_sensitive "$key"; then
-      target=Secret
-      sensitive=true
-    else
-      target=ConfigMap
-      sensitive=false
-    fi
-    printf '  - name: %s\n' "$key"
-    printf '    owner: %s\n' "$owner"
-    printf '    sensitive: %s\n' "$sensitive"
-    printf '    kubernetes_target: %s\n' "$target"
-    printf '    required: UNKNOWN\n'
-    printf '    default: UNKNOWN\n'
-    printf '    reloadable: UNKNOWN\n'
-    printf '    source_refs: [.env.example, internal/platform/config, Compose/service wiring]\n'
-  done <"$GENERATED_DIR/configuration-key-names.txt"
+	printf '%s\n' 'version: 1'
+	printf 'baseline_commit: %s\n' "$baseline_commit"
+	printf '%s\n' 'generated: true'
+	printf '%s\n' 'value_policy: configuration names only; values are never recorded'
+	printf '%s\n' 'keys:'
+	while IFS= read -r key; do
+		[ -n "$key" ] || continue
+		owner="$(owner_for_key "$key")"
+		if is_sensitive "$key"; then
+			target=Secret
+			sensitive=true
+		else
+			target=ConfigMap
+			sensitive=false
+		fi
+		printf '  - name: %s\n' "$key"
+		printf '    owner: %s\n' "$owner"
+		printf '    sensitive: %s\n' "$sensitive"
+		printf '    kubernetes_target: %s\n' "$target"
+		printf '    required: UNKNOWN\n'
+		printf '    default: UNKNOWN\n'
+		printf '    reloadable: UNKNOWN\n'
+		printf '    source_refs: [.env.example, internal/platform/config, Compose/service wiring]\n'
+	done <"$GENERATED_DIR/configuration-key-names.txt"
 } >"$CONFIGURATION_FILE"
 
 cat >"$EVIDENCE_DIR/baseline.md" <<EOF

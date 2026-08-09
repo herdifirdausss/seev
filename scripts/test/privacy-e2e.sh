@@ -39,9 +39,12 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 WORKDIR="$(mktemp -d)"
 trap 'rm -rf "$WORKDIR"' EXIT
 
-log()  { printf '\033[1;34m[privacy-e2e]\033[0m %s\n' "$*"; }
-ok()   { printf '\033[1;32m[ pass]\033[0m %s\n' "$*"; }
-fail() { printf '\033[1;31m[ FAIL]\033[0m %s\n' "$*"; exit 1; }
+log() { printf '\033[1;34m[privacy-e2e]\033[0m %s\n' "$*"; }
+ok() { printf '\033[1;32m[ pass]\033[0m %s\n' "$*"; }
+fail() {
+	printf '\033[1;31m[ FAIL]\033[0m %s\n' "$*"
+	exit 1
+}
 
 CURL_AUTH_ARGS=()
 if [[ "$AUTH_URL" == https://* ]]; then
@@ -107,7 +110,7 @@ assurance_run() {
 		go run ./tools/gentoken "$(uuidgen | tr '[:upper:]' '[:lower:]')" admin)"
 	for _ in $(seq 1 60); do
 		runs_json="$(assurance_runs_json "$token")"
-	status="$(python3 -c 'import json,sys; d=json.loads(sys.argv[1]); r=(d.get("data") or {}).get("runs",[]); print(r[0].get("status","") if r else "")' "$runs_json")"
+		status="$(python3 -c 'import json,sys; d=json.loads(sys.argv[1]); r=(d.get("data") or {}).get("runs",[]); print(r[0].get("status","") if r else "")' "$runs_json")"
 		[ "$status" != "running" ] && break
 		sleep 2
 	done

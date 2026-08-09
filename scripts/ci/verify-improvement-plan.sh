@@ -4,9 +4,9 @@ set -euo pipefail
 
 root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 required=(
-	docs/engineering/capability-inventory.md
-	docs/engineering/golden-route.md
-	docs/engineering/service-justification.md
+	docs/reference/capability-inventory.md
+	docs/development/golden-route.md
+	docs/reference/services.md
 	docs/operations/runtime-acceptance.md
 	docs/operations/production-readiness-checklist.md
 	docs/operations/slo.md
@@ -44,7 +44,7 @@ for path in "${required[@]}"; do
 	fi
 done
 
-if (( missing != 0 )); then
+if ((missing != 0)); then
 	exit 1
 fi
 "$root_dir/scripts/ci/check-capability-inventory.sh"

@@ -97,18 +97,18 @@ fi
 MODE="${1:-}"
 TARGET="${2:-}"
 case "$MODE" in
-latest) ;;
-time | lsn)
-	if [ -z "$TARGET" ]; then
-		echo "restore-cluster.sh: mode '$MODE' requires a target value" >&2
+	latest) ;;
+	time | lsn)
+		if [ -z "$TARGET" ]; then
+			echo "restore-cluster.sh: mode '$MODE' requires a target value" >&2
+			usage
+			exit 2
+		fi
+		;;
+	*)
 		usage
 		exit 2
-	fi
-	;;
-*)
-	usage
-	exit 2
-	;;
+		;;
 esac
 
 if [ -z "$REPO_HOST_PATH" ]; then
@@ -149,17 +149,17 @@ pgbackrest_oneshot info
 
 RESTORE_ARGS=(--delta)
 case "$MODE" in
-latest)
-	# Deliberately no --type/--target-action here. pgBackRest's default
-	# restore type (no recovery target at all) makes PostgreSQL replay
-	# every available WAL segment and then auto-promote once the archive
-	# is exhausted — the correct native "latest" behavior. --target-action
-	# is only valid alongside an explicit --type in
-	# {immediate,lsn,name,time,xid} (found live: pgBackRest [031] rejects
-	# --target-action=promote combined with the implicit default type).
-	;;
-time) RESTORE_ARGS+=(--type=time --target="$TARGET" --target-action=promote) ;;
-lsn) RESTORE_ARGS+=(--type=lsn --target="$TARGET" --target-action=promote) ;;
+	latest)
+		# Deliberately no --type/--target-action here. pgBackRest's default
+		# restore type (no recovery target at all) makes PostgreSQL replay
+		# every available WAL segment and then auto-promote once the archive
+		# is exhausted — the correct native "latest" behavior. --target-action
+		# is only valid alongside an explicit --type in
+		# {immediate,lsn,name,time,xid} (found live: pgBackRest [031] rejects
+		# --target-action=promote combined with the implicit default type).
+		;;
+	time) RESTORE_ARGS+=(--type=time --target="$TARGET" --target-action=promote) ;;
+	lsn) RESTORE_ARGS+=(--type=lsn --target="$TARGET" --target-action=promote) ;;
 esac
 
 record_stage "restore_start"

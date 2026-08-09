@@ -112,8 +112,8 @@ smoke_ledger() {
 	[ "${code:0:1}" = "2" ] && ok "withdraw_cancel posted (code=$code)" || fail "withdraw_cancel got $code, expected 2xx"
 	local cash_after_cancel
 	cash_after_cancel="$(account_balance "$sender_cash")"
-	[ "$cash_after_cancel" = "$cash_before_cancel" ] && ok "cancelled withdrawal returned the full held amount (balance unchanged: $cash_after_cancel)" \
-		|| fail "cash balance changed across hold+cancel: before=$cash_before_cancel after=$cash_after_cancel"
+	[ "$cash_after_cancel" = "$cash_before_cancel" ] && ok "cancelled withdrawal returned the full held amount (balance unchanged: $cash_after_cancel)" ||
+		fail "cash balance changed across hold+cancel: before=$cash_before_cancel after=$cash_after_cancel"
 }
 
 # ─── Section: payin webhook ──────────────────────────────────────────────────
@@ -166,8 +166,8 @@ smoke_payin() {
 	local balance_after
 	balance_after="$(account_balance "$cash")"
 	local expected=$((balance_before + 75000))
-	[ "$balance_after" = "$expected" ] && ok "cash balance increased by exactly the webhook amount ($balance_before -> $balance_after)" \
-		|| fail "cash balance mismatch after webhook: before=$balance_before after=$balance_after expected=$expected"
+	[ "$balance_after" = "$expected" ] && ok "cash balance increased by exactly the webhook amount ($balance_before -> $balance_after)" ||
+		fail "cash balance mismatch after webhook: before=$balance_before after=$balance_after expected=$expected"
 
 	log "POST /webhooks/mockvendor with a bad signature — must be rejected, no side effect..."
 	code=$(curl_internal -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$VENDOR_APP_PORT/webhooks/mockvendor" \
@@ -266,18 +266,18 @@ build_server
 start_services
 
 case "${1:-all}" in
-ledger) smoke_ledger ;;
-payin) smoke_payin ;;
-payout) smoke_payout ;;
-all)
-	smoke_ledger
-	smoke_payin
-	smoke_payout
-	;;
-*)
-	echo "Usage: $0 [ledger|payin|payout|all]"
-	exit 2
-	;;
+	ledger) smoke_ledger ;;
+	payin) smoke_payin ;;
+	payout) smoke_payout ;;
+	all)
+		smoke_ledger
+		smoke_payin
+		smoke_payout
+		;;
+	*)
+		echo "Usage: $0 [ledger|payin|payout|all]"
+		exit 2
+		;;
 esac
 
 log "final ledger integrity check..."

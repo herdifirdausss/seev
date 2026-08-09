@@ -21,7 +21,7 @@ mkdir -p "$MANIFEST_DIR"
 
 PROJECT_FLAG=()
 if [ -n "${COMPOSE_PROJECT_NAME:-}" ]; then
-    PROJECT_FLAG=(--project-name "$COMPOSE_PROJECT_NAME")
+	PROJECT_FLAG=(--project-name "$COMPOSE_PROJECT_NAME")
 fi
 
 # Source the shared pgBackRest helper — passphrase is read inside the
@@ -39,12 +39,12 @@ INFO_JSON="$(pgbackrest_compose_exec info --output=json)"
 SERVICES="ledger auth payin payout fraud gateway vendor adminbff assurance"
 MIGRATIONS_JSON="{}"
 for service in $SERVICES; do
-    row="$(docker compose "${PROJECT_FLAG[@]}" exec -T postgres \
-        psql -U "${POSTGRES_MIGRATE_USER:-seev}" -d "seev_${service}" -tAc \
-        "SELECT version || '|' || dirty FROM schema_migrations_${service};")"
-    version="${row%%|*}"
-    dirty="${row##*|}"
-    MIGRATIONS_JSON="$(echo "$MIGRATIONS_JSON" | python3 -c "
+	row="$(docker compose "${PROJECT_FLAG[@]}" exec -T postgres \
+		psql -U "${POSTGRES_MIGRATE_USER:-seev}" -d "seev_${service}" -tAc \
+		"SELECT version || '|' || dirty FROM schema_migrations_${service};")"
+	version="${row%%|*}"
+	dirty="${row##*|}"
+	MIGRATIONS_JSON="$(echo "$MIGRATIONS_JSON" | python3 -c "
 import json, sys
 d = json.load(sys.stdin)
 d['${service}'] = {'version': int('${version}'), 'dirty': '${dirty}'.strip() == 't'}

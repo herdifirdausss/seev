@@ -46,7 +46,7 @@ EOF
 fi
 
 case "$PROJECT_NAME" in
-	seev-runtime-acceptance|seev-runtime-acceptance-*) ;;
+	seev-runtime-acceptance | seev-runtime-acceptance-*) ;;
 	*)
 		printf 'runtime-acceptance: refusing unsafe Compose project name: %s\n' "$PROJECT_NAME" >&2
 		exit 2
@@ -150,21 +150,21 @@ run_dr_drills() {
 	docker compose --project-name "$PROJECT_NAME" build postgres
 
 	AUTH_APP_PORT="${RUNTIME_DR_AUTH_APP_PORT:-28082}" \
-	AUTH_INTERNAL_PORT="${RUNTIME_DR_AUTH_INTERNAL_PORT:-28083}" \
-	DRILL_ALLOW_SHARED_DEV_STACK=1 \
-	GAMEDAY_PROJECT="${PROJECT_NAME}-gameday-latest" \
-	DRILL_PROJECT_NAME="${PROJECT_NAME}-drill-latest" \
-	GAMEDAY_REPO_PATH="$dr_dir/latest-repo" \
-	DRILL_REPORT_PATH="$dr_dir/latest.json" \
+		AUTH_INTERNAL_PORT="${RUNTIME_DR_AUTH_INTERNAL_PORT:-28083}" \
+		DRILL_ALLOW_SHARED_DEV_STACK=1 \
+		GAMEDAY_PROJECT="${PROJECT_NAME}-gameday-latest" \
+		DRILL_PROJECT_NAME="${PROJECT_NAME}-drill-latest" \
+		GAMEDAY_REPO_PATH="$dr_dir/latest-repo" \
+		DRILL_REPORT_PATH="$dr_dir/latest.json" \
 		"$ROOT_DIR/scripts/dr-drill.sh" latest
 
 	AUTH_APP_PORT="${RUNTIME_DR_AUTH_APP_PORT:-28082}" \
-	AUTH_INTERNAL_PORT="${RUNTIME_DR_AUTH_INTERNAL_PORT:-28083}" \
-	DRILL_ALLOW_SHARED_DEV_STACK=1 \
-	GAMEDAY_PROJECT="${PROJECT_NAME}-gameday-pitr" \
-	DRILL_PROJECT_NAME="${PROJECT_NAME}-drill-pitr" \
-	GAMEDAY_REPO_PATH="$dr_dir/pitr-repo" \
-	DRILL_REPORT_PATH="$dr_dir/pitr.json" \
+		AUTH_INTERNAL_PORT="${RUNTIME_DR_AUTH_INTERNAL_PORT:-28083}" \
+		DRILL_ALLOW_SHARED_DEV_STACK=1 \
+		GAMEDAY_PROJECT="${PROJECT_NAME}-gameday-pitr" \
+		DRILL_PROJECT_NAME="${PROJECT_NAME}-drill-pitr" \
+		GAMEDAY_REPO_PATH="$dr_dir/pitr-repo" \
+		DRILL_REPORT_PATH="$dr_dir/pitr.json" \
 		"$ROOT_DIR/scripts/dr-drill.sh" pitr
 }
 

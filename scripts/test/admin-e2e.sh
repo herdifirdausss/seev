@@ -48,8 +48,8 @@ code="$(curl_internal -sS -o "$WORK_DIR/replay.json" -w '%{http_code}' -b "$COOK
 after="$(psql_exec "$ADMINBFF_DB_NAME" -c "SELECT count(*) FROM audit_log;" | tr -d '[:space:]')"
 [ "$after" -gt "$before" ] && ok "BFF audit row recorded for mutation" || fail "audit row count did not increase ($before -> $after)"
 
-curl_internal -fsS -b "$COOKIE_JAR" "http://localhost:$ADMINBFF_PORT/api/v1/admin/catalog" | grep -q 'Audit log' \
-	&& ok "batch-2 operations panels render" || fail "batch-2 operations panel missing"
+curl_internal -fsS -b "$COOKIE_JAR" "http://localhost:$ADMINBFF_PORT/api/v1/admin/catalog" | grep -q 'Audit log' &&
+	ok "batch-2 operations panels render" || fail "batch-2 operations panel missing"
 
 log "notification console: template maker/checker, channel controls, and audit (Plan 59)"
 
@@ -61,8 +61,8 @@ draft_resp="$(curl_internal -fsS -b "$COOKIE_JAR" -X POST "http://localhost:$ADM
 	--data-urlencode "subject_template=admin-e2e subject" --data-urlencode "body_text_template=admin-e2e body" \
 	--data-urlencode "csrf_token=$csrf")"
 template_id="$(echo "$draft_resp" | json_field data.id)"
-[ -n "$template_id" ] && ok "notification template draft created through the CSRF-protected form" \
-	|| fail "notification template draft did not return an id: $draft_resp"
+[ -n "$template_id" ] && ok "notification template draft created through the CSRF-protected form" ||
+	fail "notification template draft did not return an id: $draft_resp"
 
 submit_code="$(curl_internal -sS -o "$WORK_DIR/notif-submit.json" -w '%{http_code}' -b "$COOKIE_JAR" -X POST \
 	"http://localhost:$ADMINBFF_PORT/api/v1/admin/notifications/templates/submit" \
@@ -78,8 +78,8 @@ same_actor_code="$(curl_internal -sS -o /dev/null -w '%{http_code}' -b "$COOKIE_
 	"http://localhost:$ADMINBFF_PORT/api/v1/admin/notifications/templates/approve" \
 	-H 'Content-Type: application/x-www-form-urlencoded' \
 	--data-urlencode "id=$template_id" --data-urlencode "csrf_token=$csrf")"
-[ "$same_actor_code" = "409" ] && ok "same-actor template approval is rejected end to end" \
-	|| fail "same-actor approval returned HTTP $same_actor_code, want 409"
+[ "$same_actor_code" = "409" ] && ok "same-actor template approval is rejected end to end" ||
+	fail "same-actor approval returned HTTP $same_actor_code, want 409"
 
 pause_code="$(curl_internal -sS -o /dev/null -w '%{http_code}' -b "$COOKIE_JAR" -X POST \
 	"http://localhost:$ADMINBFF_PORT/api/v1/admin/notifications/channels/pause" \
@@ -97,8 +97,8 @@ resume_code="$(curl_internal -sS -o /dev/null -w '%{http_code}' -b "$COOKIE_JAR"
 [ "$resume_code" = "204" ] && ok "email channel resume accepted" || fail "channel resume returned HTTP $resume_code"
 
 audit_after="$(psql_exec "$ADMINBFF_DB_NAME" -c "SELECT count(*) FROM audit_log WHERE target_service='gateway';" | tr -d '[:space:]')"
-[ "$audit_after" -gt "$audit_before" ] && ok "notification admin mutations were audited" \
-	|| fail "gateway audit row count did not increase ($audit_before -> $audit_after)"
+[ "$audit_after" -gt "$audit_before" ] && ok "notification admin mutations were audited" ||
+	fail "gateway audit row count did not increase ($audit_before -> $audit_after)"
 
 if [ "${FAILED:-0}" -ne 0 ]; then
 	exit 1

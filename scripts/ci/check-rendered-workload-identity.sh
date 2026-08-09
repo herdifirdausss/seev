@@ -11,13 +11,19 @@ fi
 
 manifest=$1
 provider=$2
-[[ -s "$manifest" ]] || { echo "identity-check: manifest is missing: $manifest" >&2; exit 1; }
+[[ -s "$manifest" ]] || {
+	echo "identity-check: manifest is missing: $manifest" >&2
+	exit 1
+}
 
 case "$provider" in
-aws) annotation='eks.amazonaws.com/role-arn:' ;;
-gcp) annotation='iam.gke.io/gcp-service-account:' ;;
-local) annotation='' ;;
-*) echo "identity-check: provider must be aws, gcp, or local" >&2; exit 2 ;;
+	aws) annotation='eks.amazonaws.com/role-arn:' ;;
+	gcp) annotation='iam.gke.io/gcp-service-account:' ;;
+	local) annotation='' ;;
+	*)
+		echo "identity-check: provider must be aws, gcp, or local" >&2
+		exit 2
+		;;
 esac
 
 if [[ "$provider" == local ]]; then

@@ -7,10 +7,10 @@ INVENTORY_DIR="$ROOT_DIR/deploy/inventory"
 EVIDENCE_DIR="$ROOT_DIR/docs/evidence/k0"
 
 for command in ruby git docker rg; do
-  command -v "$command" >/dev/null || {
-    echo "deployment-inventory-check: $command is required" >&2
-    exit 2
-  }
+	command -v "$command" >/dev/null || {
+		echo "deployment-inventory-check: $command is required" >&2
+		exit 2
+	}
 done
 
 ruby - "$ROOT_DIR" <<'RUBY'
@@ -149,8 +149,8 @@ puts "validated #{required.length} machine-readable inventories"
 RUBY
 
 if rg -n --glob '*.yaml' --glob '*.md' --glob '*.txt' '(BEGIN (RSA|EC|OPENSSH) PRIVATE KEY|PRIVATE KEY-----|AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{20,}|password:[[:space:]]+[^<[:space:]][^[:space:]]*)' "$ROOT_DIR/deploy/inventory" "$ROOT_DIR/docs/deployment" "$EVIDENCE_DIR"; then
-  echo "deployment-inventory-check: possible secret material found in K0 outputs" >&2
-  exit 1
+	echo "deployment-inventory-check: possible secret material found in K0 outputs" >&2
+	exit 1
 fi
 
 git -C "$ROOT_DIR" diff --check

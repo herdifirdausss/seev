@@ -107,17 +107,17 @@ render_overlay gcp -f deploy/helm/seev/values-gcp-dev.yaml
 render_overlay aws -f deploy/helm/seev/values-aws-dev.yaml
 render_overlay staging -f deploy/helm/seev/values-staging.yaml
 
-if ! grep -Fq 'serviceAccountName: seev-vendor' "$tmp_dir/gcp.yaml" || \
+if ! grep -Fq 'serviceAccountName: seev-vendor' "$tmp_dir/gcp.yaml" ||
 	! grep -Fq 'iam.gke.io/gcp-service-account:' "$tmp_dir/gcp.yaml"; then
 	printf 'check-platform-integration: GCP workload identity did not render onto seev-vendor\n' >&2
 	exit 1
 fi
-if ! grep -Fq 'serviceAccountName: seev-vendor' "$tmp_dir/aws.yaml" || \
+if ! grep -Fq 'serviceAccountName: seev-vendor' "$tmp_dir/aws.yaml" ||
 	! grep -Fq 'eks.amazonaws.com/role-arn:' "$tmp_dir/aws.yaml"; then
 	printf 'check-platform-integration: AWS workload identity did not render onto seev-vendor\n' >&2
 	exit 1
 fi
-if grep -Fq 'iam.gke.io/gcp-service-account:' "$tmp_dir/local.yaml" || \
+if grep -Fq 'iam.gke.io/gcp-service-account:' "$tmp_dir/local.yaml" ||
 	grep -Fq 'eks.amazonaws.com/role-arn:' "$tmp_dir/local.yaml"; then
 	printf 'check-platform-integration: local overlay unexpectedly renders a cloud identity annotation\n' >&2
 	exit 1

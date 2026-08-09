@@ -39,16 +39,16 @@ EOF
 CHECK_ONLY=0
 for arg in "$@"; do
 	case "$arg" in
-	--check) CHECK_ONLY=1 ;;
-	--help | -h)
-		usage
-		exit 0
-		;;
-	*)
-		echo "backup-checksums-enable: unknown argument: $arg" >&2
-		usage
-		exit 2
-		;;
+		--check) CHECK_ONLY=1 ;;
+		--help | -h)
+			usage
+			exit 0
+			;;
+		*)
+			echo "backup-checksums-enable: unknown argument: $arg" >&2
+			usage
+			exit 2
+			;;
 	esac
 done
 

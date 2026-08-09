@@ -41,8 +41,8 @@ POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-seev_app}"
 POSTGRES_DB="${POSTGRES_DB:-seev}"
 POSTGRES_CONTAINER="${POSTGRES_CONTAINER:-seev-postgres-1}"
 
-log()  { printf '\033[1;34m[rebuild]\033[0m %s\n' "$*"; }
-ok()   { printf '\033[1;32m[ pass]\033[0m %s\n' "$*"; }
+log() { printf '\033[1;34m[rebuild]\033[0m %s\n' "$*"; }
+ok() { printf '\033[1;32m[ pass]\033[0m %s\n' "$*"; }
 fail() { printf '\033[1;31m[ FAIL]\033[0m %s\n' "$*"; }
 
 run_psql() {

@@ -3,8 +3,14 @@ set -euo pipefail
 
 SCENARIO="${LOAD_SCENARIO:-}"
 RATE="${LOAD_RATE:-}"
-[[ -n "$SCENARIO" ]] || { echo "load-capacity: set LOAD_SCENARIO" >&2; exit 2; }
-[[ -n "$RATE" ]] || { echo "load-capacity: set LOAD_RATE in WU/s" >&2; exit 2; }
+[[ -n "$SCENARIO" ]] || {
+	echo "load-capacity: set LOAD_SCENARIO" >&2
+	exit 2
+}
+[[ -n "$RATE" ]] || {
+	echo "load-capacity: set LOAD_RATE in WU/s" >&2
+	exit 2
+}
 [[ "$SCENARIO" =~ ^(W[1-7]|smoke\.js|scenarios/[a-z0-9-]+\.js)$ ]] || {
 	echo "load-capacity: unsupported LOAD_SCENARIO: $SCENARIO" >&2
 	exit 2

@@ -25,9 +25,18 @@ risk_ids=(
 	R-009 R-010 R-011 R-012 R-013 R-014 R-015
 )
 
-_rg_or_grep_c() { local pat="$1" file="$2"; if command -v rg >/dev/null 2>&1; then rg -c "$pat" "$file" || true; else grep -cE "$pat" "$file" || true; fi; }
-_rg_or_grep()  { local pat="$1" file="$2"; if command -v rg >/dev/null 2>&1; then rg "$pat" "$file"; else grep -E "$pat" "$file"; fi; }
-_rg_or_grep_fq() { local pat="$1" file="$2"; if command -v rg >/dev/null 2>&1; then rg -Fq "$pat" "$file"; else grep -qF "$pat" "$file"; fi; }
+_rg_or_grep_c() {
+	local pat="$1" file="$2"
+	if command -v rg >/dev/null 2>&1; then rg -c "$pat" "$file" || true; else grep -cE "$pat" "$file" || true; fi
+}
+_rg_or_grep() {
+	local pat="$1" file="$2"
+	if command -v rg >/dev/null 2>&1; then rg "$pat" "$file"; else grep -E "$pat" "$file"; fi
+}
+_rg_or_grep_fq() {
+	local pat="$1" file="$2"
+	if command -v rg >/dev/null 2>&1; then rg -Fq "$pat" "$file"; else grep -qF "$pat" "$file"; fi
+}
 
 for risk_id in "${risk_ids[@]}"; do
 	row_count="$(_rg_or_grep_c "^\\| ${risk_id} \\|" "$risk_register")"

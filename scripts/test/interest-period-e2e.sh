@@ -67,19 +67,19 @@ product_json="$(ledger_internal POST /admin/savings/products \
 \"interest_payable_account_id\":\"$INTEREST_PAYABLE_IDR\",\
 \"eligible_account_types\":[\"cash\"]}" "$MAKER_TOKEN")"
 PRODUCT_ID="$(echo "$product_json" | json_field id)"
-[ -n "$PRODUCT_ID" ] && ok "savings product created ($PRODUCT_ID)" \
-	|| fail "savings product creation failed: $product_json"
+[ -n "$PRODUCT_ID" ] && ok "savings product created ($PRODUCT_ID)" ||
+	fail "savings product creation failed: $product_json"
 
 status_json="$(ledger_internal POST "/admin/savings/products/$PRODUCT_ID/status" \
 	'{"status":"active"}' "$CHECKER_TOKEN")"
-echo "$status_json" | grep -q '"status":"active"' && ok "product activated" \
-	|| fail "product activation failed: $status_json"
+echo "$status_json" | grep -q '"status":"active"' && ok "product activated" ||
+	fail "product activation failed: $status_json"
 
 rate_json="$(ledger_internal POST "/admin/savings/products/$PRODUCT_ID/rates" \
 	'{"annual_rate_bps":500,"effective_from":"2025-01-01"}' "$MAKER_TOKEN")"
 RATE_ID="$(echo "$rate_json" | json_field id)"
-[ -n "$RATE_ID" ] && ok "rate version created ($RATE_ID)" \
-	|| fail "rate creation failed: $rate_json"
+[ -n "$RATE_ID" ] && ok "rate version created ($RATE_ID)" ||
+	fail "rate creation failed: $rate_json"
 
 ledger_internal POST "/admin/savings/rates/$RATE_ID/submit" '{}' "$MAKER_TOKEN" >/dev/null
 ok "rate submitted by maker"
@@ -92,8 +92,8 @@ log "=== 2. Provision user, fund, enroll in savings ==="
 
 USER_ID="$(uuidgen | tr '[:upper:]' '[:lower:]')"
 CASH_ACCOUNT_ID="$(provision_user "$USER_ID" 1000000)"
-[ -n "$CASH_ACCOUNT_ID" ] && ok "user provisioned and funded (user=$USER_ID account=$CASH_ACCOUNT_ID)" \
-	|| fail "user provisioning failed"
+[ -n "$CASH_ACCOUNT_ID" ] && ok "user provisioned and funded (user=$USER_ID account=$CASH_ACCOUNT_ID)" ||
+	fail "user provisioning failed"
 
 # EffectiveFrom must match the accrual date so expected_item_count = 1 for the
 # January 2026 period (2026-02-01 boundary - 2026-01-31 effective_from = 1 day).
@@ -101,8 +101,8 @@ enrollment_json="$(ledger_internal POST /admin/savings/enrollments \
 	"{\"product_id\":\"$PRODUCT_ID\",\"account_id\":\"$CASH_ACCOUNT_ID\",\
 \"user_id\":\"$USER_ID\",\"effective_from\":\"2026-01-31\"}" "$MAKER_TOKEN")"
 ENROLLMENT_ID="$(echo "$enrollment_json" | json_field id)"
-[ -n "$ENROLLMENT_ID" ] && ok "enrollment created ($ENROLLMENT_ID)" \
-	|| fail "enrollment creation failed: $enrollment_json"
+[ -n "$ENROLLMENT_ID" ] && ok "enrollment created ($ENROLLMENT_ID)" ||
+	fail "enrollment creation failed: $enrollment_json"
 
 # Seed a balance snapshot for the synthetic accrual date. RunDaily reads the
 # snapshot, not live entries, so this is required for any past date.
@@ -132,16 +132,16 @@ while [ "$tries" -gt 0 ]; do
 	sleep 1
 	tries=$((tries - 1))
 done
-[ "$accrual_status" = "completed_posted" ] \
-	&& ok "accrual status is completed_posted (balance=1000000; rate=500bps; ~136 IDR recognized)" \
-	|| fail "accrual status was '$accrual_status', expected completed_posted (response: $accruals_json)"
+[ "$accrual_status" = "completed_posted" ] &&
+	ok "accrual status is completed_posted (balance=1000000; rate=500bps; ~136 IDR recognized)" ||
+	fail "accrual status was '$accrual_status', expected completed_posted (response: $accruals_json)"
 
 # ─── 4. Period lookup ─────────────────────────────────────────────────────────
 
 periods_json="$(ledger_internal GET "/savings/enrollments/$ENROLLMENT_ID/periods" "" "$USER_TOKEN")"
 PERIOD_ID="$(echo "$periods_json" | json_field id)"
-[ -n "$PERIOD_ID" ] && ok "interest period found ($PERIOD_ID)" \
-	|| fail "no period found: $periods_json"
+[ -n "$PERIOD_ID" ] && ok "interest period found ($PERIOD_ID)" ||
+	fail "no period found: $periods_json"
 
 # ─── 5. Preview and close ─────────────────────────────────────────────────────
 
@@ -149,14 +149,14 @@ log "=== 4. PreviewPeriodClose → must show 0 missing items ==="
 
 preview_json="$(ledger_internal GET "/admin/savings/periods/$PERIOD_ID/preview" "" "$ADMIN_TOKEN")"
 missing="$(echo "$preview_json" | grep -o '"missing_items":[0-9]*' | head -1 | cut -d: -f2)"
-[ "$missing" = "0" ] && ok "preview: 0 missing items — ready to close" \
-	|| fail "preview shows missing_items=$missing, period not ready: $preview_json"
+[ "$missing" = "0" ] && ok "preview: 0 missing items — ready to close" ||
+	fail "preview shows missing_items=$missing, period not ready: $preview_json"
 
 log "=== 5. ClosePeriod ==="
 
 close_json="$(ledger_internal POST "/admin/savings/periods/$PERIOD_ID/close" '{}' "$CHECKER_TOKEN")"
-echo "$close_json" | grep -q '"closed":true' && ok "ClosePeriod succeeded — period closed" \
-	|| fail "ClosePeriod failed: $close_json"
+echo "$close_json" | grep -q '"closed":true' && ok "ClosePeriod succeeded — period closed" ||
+	fail "ClosePeriod failed: $close_json"
 
 # ─── 6. Period immutability ───────────────────────────────────────────────────
 
@@ -164,24 +164,24 @@ log "=== 6. Verify period status + immutability guard ==="
 
 periods_json2="$(ledger_internal GET "/savings/enrollments/$ENROLLMENT_ID/periods" "" "$USER_TOKEN")"
 period_status="$(echo "$periods_json2" | grep -o '"status":"[^"]*"' | head -1 | sed 's/.*"status":"//;s/".*//')"
-[ "$period_status" = "closed" ] && ok "period status is 'closed' after ClosePeriod" \
-	|| fail "period status was '$period_status', expected closed"
+[ "$period_status" = "closed" ] && ok "period status is 'closed' after ClosePeriod" ||
+	fail "period status was '$period_status', expected closed"
 
 # Second close attempt must be rejected (ErrClosedPeriodImmutable → 422).
 second_close_code="$(curl_internal -sS -o /dev/null -w '%{http_code}' -X POST \
 	"https://localhost:$LEDGER_INTERNAL_PORT/api/v1/ledger/admin/savings/periods/$PERIOD_ID/close" \
 	-H "Authorization: Bearer $CHECKER_TOKEN" -H "Content-Type: application/json" -d '{}')"
-[ "$second_close_code" != "200" ] \
-	&& ok "second ClosePeriod rejected with code=$second_close_code — period is immutable" \
-	|| fail "second ClosePeriod returned 200; ErrClosedPeriodImmutable was not enforced"
+[ "$second_close_code" != "200" ] &&
+	ok "second ClosePeriod rejected with code=$second_close_code — period is immutable" ||
+	fail "second ClosePeriod returned 200; ErrClosedPeriodImmutable was not enforced"
 
 # DB-level immutability: fn_prevent_c5_closed_period_mutation trigger must
 # reject a raw UPDATE on the closed period row.
 trigger_result="$(psql_exec "$LEDGER_DB_NAME" \
 	-c "UPDATE interest_periods SET status='open' WHERE id='$PERIOD_ID';" 2>&1 || true)"
-echo "$trigger_result" | grep -qi "error\|prevent\|trigger\|immutable" \
-	&& ok "fn_prevent_c5_closed_period_mutation trigger blocked raw UPDATE on closed period" \
-	|| fail "DB trigger did not fire on raw UPDATE of closed period: $trigger_result"
+echo "$trigger_result" | grep -qi "error\|prevent\|trigger\|immutable" &&
+	ok "fn_prevent_c5_closed_period_mutation trigger blocked raw UPDATE on closed period" ||
+	fail "DB trigger did not fire on raw UPDATE of closed period: $trigger_result"
 
 # ─── 7. Ledger integrity ──────────────────────────────────────────────────────
 

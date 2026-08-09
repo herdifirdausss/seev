@@ -144,11 +144,11 @@ if [ -n "${SEEV_WORK_DIR:-}" ]; then
 	fi
 	if [ -n "${RUNNER_TEMP:-}" ]; then
 		case "$SEEV_WORK_DIR" in
-		"$RUNNER_TEMP"/*) ;;
-		*)
-			echo "lib.sh: SEEV_WORK_DIR '$SEEV_WORK_DIR' is not underneath \$RUNNER_TEMP ('$RUNNER_TEMP')" >&2
-			exit 1
-			;;
+			"$RUNNER_TEMP"/*) ;;
+			*)
+				echo "lib.sh: SEEV_WORK_DIR '$SEEV_WORK_DIR' is not underneath \$RUNNER_TEMP ('$RUNNER_TEMP')" >&2
+				exit 1
+				;;
 		esac
 	fi
 	mkdir -p "$SEEV_WORK_DIR"
@@ -730,7 +730,7 @@ wait_for_service_up() {
 	local tries=30
 	local check=curl
 	case "$url" in
-	https://*) check=curl_internal ;;
+		https://*) check=curl_internal ;;
 	esac
 	while [ "$tries" -gt 0 ]; do
 		if "$check" -s -o /dev/null "$url"; then
