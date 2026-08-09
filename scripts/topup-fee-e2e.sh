@@ -4,7 +4,7 @@
 # idempotent replay does NOT double-charge → consuming an already-used quote
 # is rejected (QUOTE_EXPIRED).
 #
-# Tests docs/roadmap/active/61-c5-advanced-financial-products-period-close.md §3
+# Tests docs/roadmap/archive/61-c5-advanced-financial-products-period-close.md §3
 # using Ledger's internal API directly (the same path Payin takes after the
 # vendor webhook arrives), so the C5 fee-consumption atomicity guarantee is
 # exercised without needing the full Gateway→Payin→mockvendor webhook chain.

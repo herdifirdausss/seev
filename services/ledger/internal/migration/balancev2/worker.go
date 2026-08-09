@@ -268,6 +268,7 @@ func (r *Runtime) reconcilePage(ctx context.Context, migration Migration, checkp
 		return true, stats, nil
 	}
 	for _, source := range rows {
+		stats.processed++
 		target, targetErr := targetForAccount(ctx, r.db, source.AccountID)
 		comparison := CompareRows(source, target)
 		if targetErr != nil {

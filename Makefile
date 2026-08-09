@@ -27,6 +27,7 @@ GOVULNCHECK_DIR := $(TOOLS_DIR)/govulncheck-$(GOVULNCHECK_VERSION)
 GOVULNCHECK := $(GOVULNCHECK_DIR)/govulncheck
 
 .PHONY: build build-all build-services build-service build-tools build-operations run dev test test/cover test-service integration-service clean lint modernize-check ci-lint print-golangci-lint-version print-govulncheck-version docs-check onboarding-check doctor architecture-check architecture-graph architecture-metrics ide-config improvement-check risk-gate-check supply-chain-check supply-chain-e2e supply-chain-evidence-check environment-contract-check vendor-sandbox-check tidy tools tools-lint tools-security security-vuln proto proto-lint proto-breaking contract-generate contract-lint contract-breaking contract-test contracts load-lint load-test load-seed load-snapshot load-restore load-smoke load-run load-capacity load-report-check load-clean vet docker-up docker-down smoke-container smoke-test business-e2e capability-e2e admin-e2e privacy-e2e merchant-e2e interest-period-e2e schedule-policy-e2e topup-fee-e2e migration-contract-check migration-state-test migration-balance-v2-e2e migration-verify notification-config-check notification-templates-check notification-fixtures notification-providers-up notification-providers-down notification-e2e notification-retention-test notification-verify dr-integration dr-e2e verify-static verify-full verify-chaos chaos-debug migrate-up migrate-up-all migrate-down grant-app-role observability-secret observability-down certs backup-secret backup-role-bootstrap backup-checksums-enable backup-stanza-init backup-full backup-diff backup-check backup-status backup-expire cryptox-secret retention-docs retention-check analytics-secret analytics-config-check analytics-up-core analytics-up-ui analytics-up-ops analytics-health analytics-source-setup analytics-connectors-validate analytics-connectors-apply analytics-connectors-status analytics-connectors-pause analytics-connectors-resume analytics-connectors-delete analytics-clickhouse-migrate analytics-dbt-deps analytics-dbt-build analytics-dbt-test analytics-reconcile analytics-metrics-exporter analytics-e2e analytics-chaos analytics-reset analytics-down k0-inventory k0-inventory-check k0-resource-sample k0-network-probe helm-lint platform-integration-check platform-e2e k8s-preflight k8s-bootstrap k8s-integration k8s-e2e k8s-smoke k8s-verify-callback k8s-verify-egress help
+.PHONY: capability-chaos platform-chaos runtime-acceptance runtime-acceptance-check k8s-chaos
 
 ## build: Compile the binary
 build:
@@ -388,6 +389,10 @@ k8s-e2e:
 k8s-smoke:
 	@./deploy/kubernetes/scripts/smoke.sh
 
+## k8s-chaos: Delete one Gateway pod and verify Kubernetes replacement/recovery
+k8s-chaos:
+	@./deploy/kubernetes/scripts/chaos.sh
+
 ## k8s-verify-callback: Check callback source-IP and route controls
 k8s-verify-callback:
 	@./deploy/kubernetes/scripts/verify-callback-allowlist.sh
@@ -552,6 +557,14 @@ business-e2e:
 capability-e2e:
 	./scripts/capability-e2e.sh
 
+## capability-chaos: Fault-injection coverage for capability boundaries
+capability-chaos:
+	./scripts/capability-chaos.sh application
+
+## platform-chaos: Detect a removed provider workload identity at the rendered boundary
+platform-chaos:
+	./scripts/capability-chaos.sh platform
+
 ## dr-integration: Disposable latest-backup restore rehearsal (requires the dev stack to be stopped)
 dr-integration:
 	@./scripts/dr-drill.sh latest
@@ -559,6 +572,15 @@ dr-integration:
 ## dr-e2e: Disposable latest and PITR restore journeys with post-restore application smoke
 dr-e2e:
 	@./scripts/dr-e2e.sh
+
+## runtime-acceptance: Run the complete disposable local runtime profile and verify all 17 capability rows
+runtime-acceptance:
+	@./scripts/runtime-acceptance.sh
+
+## runtime-acceptance-check: Re-verify a retained runtime manifest (RUNTIME_ACCEPTANCE_MANIFEST=/path/to/runtime-manifest.txt)
+runtime-acceptance-check:
+	@test -n "$(RUNTIME_ACCEPTANCE_MANIFEST)" || { echo "RUNTIME_ACCEPTANCE_MANIFEST is required" >&2; exit 2; }
+	@./scripts/ci/check-runtime-acceptance.sh "$(RUNTIME_ACCEPTANCE_MANIFEST)"
 
 ## admin-e2e: Admin BFF session, CSRF, mutation, and audit journey
 admin-e2e:
@@ -707,17 +729,20 @@ verify-full:
 ## verify-chaos: Operator-controlled recovery gate; intentionally separate from verify-full
 verify-chaos:
 	./scripts/chaos-test.sh all
+	./scripts/capability-chaos.sh application
+	./scripts/ci/platform-chaos.sh
 
 # Preserves /tmp/seev-chaos.*/*.log past the exit trap instead of deleting
 # them, so a failing scenario can be inspected after the fact. Usage:
 #   make chaos-debug SCENARIO=8
-## chaos-debug: Re-run one chaos scenario (SCENARIO=1..20, default all) with logs preserved after exit
+## chaos-debug: Re-run one core chaos scenario (SCENARIO=1..23, default all) with logs preserved after exit
 SCENARIO ?= all
 export SCENARIO
+
 chaos-debug:
 	@case "$${SCENARIO}" in \
-		all|1|2|3|4|5|6|7|8|9|10|11|12|13|14|15|16|17|18|19|20) ;; \
-		*) echo "chaos-debug: SCENARIO must be all or 1..20" >&2; exit 2 ;; \
+		all|1|2|3|4|5|6|7|8|9|10|11|12|13|14|15|16|17|18|19|20|21|22|23) ;; \
+		*) echo "chaos-debug: SCENARIO must be all or 1..23" >&2; exit 2 ;; \
 	esac; \
 	KEEP_WORK_DIR=1 ./scripts/chaos-test.sh "$${SCENARIO}"
 

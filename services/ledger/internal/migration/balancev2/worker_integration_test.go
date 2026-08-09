@@ -81,9 +81,19 @@ func TestBackfillOnce_VersionSafeUpsert(t *testing.T) {
 func TestBackfillOnce_CheckpointResume(t *testing.T) {
 	db := setupBalanceV2TestDB(t)
 	ctx := context.Background()
+
+	// Count migration-seeded accounts (from schema migrations 000002, 000012,
+	// etc.) before seeding test accounts so the batch size accounts for them.
+	// These accounts have UUIDs starting with 00000000-... and sort before any
+	// random-UUID test account, so a batchSize of 1 would consume them all first.
+	var migrationCount int64
+	require.NoError(t, db.QueryRowContext(ctx, `SELECT count(*) FROM account_balances`).Scan(&migrationCount))
+
 	cfg := newTestConfig()
 	cfg.Enabled = true
-	cfg.BackfillBatchSize = 1 // one account per page so we can control pages
+	// Process all migration accounts + exactly one test account per call so the
+	// second call processes only the remaining test account.
+	cfg.BackfillBatchSize = int(migrationCount) + 1
 
 	runtime := NewRuntime(db, cfg, slog.Default())
 	require.NoError(t, runtime.Initialize(ctx, "test"))
@@ -96,24 +106,24 @@ func TestBackfillOnce_CheckpointResume(t *testing.T) {
 	m = advanceTo(t, repo, m, migrationkit.Backfilling)
 	_ = m
 
-	// Seed two accounts.
+	// Seed two accounts with different currencies to avoid the uq_accounts_system
+	// partial unique index (owner_type=system, type, currency must be distinct).
 	id1 := seedAccountWithBalance(t, db, "cash", "IDR", 10_000)
-	id2 := seedAccountWithBalance(t, db, "cash", "IDR", 20_000)
+	id2 := seedAccountWithBalance(t, db, "cash", "USD", 20_000)
 
-	// First BackfillOnce processes one account (batchSize=1).
+	// First BackfillOnce processes all migration accounts + one test account.
 	require.NoError(t, runtime.BackfillOnce(ctx))
 
-	// At most one v2 row should exist after one page.
 	var count int64
 	require.NoError(t, db.QueryRowContext(ctx, `SELECT count(*) FROM account_balances_v2`).Scan(&count))
-	require.Equal(t, int64(1), count, "one page should process one account")
+	require.Equal(t, migrationCount+1, count, "first page must process migration accounts plus one test account")
 
-	// Second BackfillOnce processes the remaining account.
+	// Second BackfillOnce processes the remaining test account.
 	require.NoError(t, runtime.BackfillOnce(ctx))
 	require.NoError(t, db.QueryRowContext(ctx, `SELECT count(*) FROM account_balances_v2`).Scan(&count))
-	require.Equal(t, int64(2), count, "second page should process second account")
+	require.Equal(t, migrationCount+2, count, "second page must process the remaining test account")
 
-	// Both accounts must have v2 rows.
+	// Both test accounts must have v2 rows.
 	for _, id := range []uuid.UUID{id1, id2} {
 		var exists bool
 		require.NoError(t, db.QueryRowContext(ctx, `
@@ -166,6 +176,8 @@ func TestReconcileOnce_DetectsTargetMissing(t *testing.T) {
 	ctx := context.Background()
 	cfg := newTestConfig()
 	cfg.Enabled = true
+	// Large batch to process all migration-seeded accounts in one BackfillOnce call.
+	cfg.BackfillBatchSize = 1000
 
 	runtime := NewRuntime(db, cfg, slog.Default())
 	require.NoError(t, runtime.Initialize(ctx, "test"))
@@ -173,34 +185,40 @@ func TestReconcileOnce_DetectsTargetMissing(t *testing.T) {
 
 	m, err := repo.GetByName(ctx, MigrationName)
 	require.NoError(t, err)
-	// Advance to DualWriteShadow (reconciliation target state).
+	// Advance to Backfilling then use BackfillOnce to process migration accounts
+	// and auto-transition to DualWriteShadow. This ensures migration system accounts
+	// have v2 rows before ReconcileOnce runs, isolating the test account's mismatch.
 	m = advanceTo(t, repo, m, migrationkit.Validated)
 	m = advanceTo(t, repo, m, migrationkit.TargetReady)
 	m = advanceTo(t, repo, m, migrationkit.Backfilling)
-	// Mark checkpoint complete so we can transition.
-	_, err = db.ExecContext(ctx, `
-		INSERT INTO data_migration_checkpoints
-			(id, migration_id, worker_kind, partition_key, owner, status, last_processed_key, created_at, updated_at)
-		VALUES (gen_random_uuid(), $1, 'backfill', 'account_id', 'test', 'completed', '{}', now(), now())`,
-		m.ID)
-	require.NoError(t, err)
-	m = advanceTo(t, repo, m, migrationkit.DualWriteShadow)
 	_ = m
+	require.NoError(t, runtime.BackfillOnce(ctx)) // process all migration accounts
+	require.NoError(t, runtime.BackfillOnce(ctx)) // empty page → auto-transition to DualWriteShadow
 
-	// Seed one account with NO v2 row.
-	seedAccountWithBalance(t, db, "cash", "IDR", 7_500)
+	// Seed one account with balance=0 and NO v2 row.
+	// balance=0 ensures sourceLedgerTotal=0=source.Balance so no source_corruption
+	// mismatch masks the backfill_missing we're testing for.
+	seedAccount(t, db, "cash", "IDR")
 
 	// Run reconciliation.
 	require.NoError(t, runtime.ReconcileOnce(ctx))
 
-	// A critical target_missing mismatch must have been recorded.
+	// A critical backfill_missing mismatch must have been recorded.
 	m2, err := repo.GetByName(ctx, MigrationName)
 	require.NoError(t, err)
 	mismatches, err := repo.ListMismatches(ctx, m2.ID, "", 10, 0)
 	require.NoError(t, err)
 	require.NotEmpty(t, mismatches, "ReconcileOnce must record a mismatch for a missing v2 row")
-	require.Equal(t, ClassificationBackfillMissing, mismatches[0].Classification)
-	require.Equal(t, "critical", mismatches[0].Severity)
+	// ListMismatches sorts by last_seen_at DESC; backfill_missing may not be at
+	// index 0 (a shared_projection_bug for the target_ledger layer is written after).
+	var found bool
+	for _, mm := range mismatches {
+		if mm.Classification == ClassificationBackfillMissing {
+			require.Equal(t, "critical", mm.Severity)
+			found = true
+		}
+	}
+	require.True(t, found, "ReconcileOnce must record a backfill_missing mismatch for a missing v2 row")
 }
 
 // TestReconcileOnce_MatchIsNotRecorded proves that a perfectly-matched
@@ -210,6 +228,8 @@ func TestReconcileOnce_MatchIsNotRecorded(t *testing.T) {
 	ctx := context.Background()
 	cfg := newTestConfig()
 	cfg.Enabled = true
+	// Large batch to process all migration-seeded accounts in one BackfillOnce call.
+	cfg.BackfillBatchSize = 1000
 
 	runtime := NewRuntime(db, cfg, slog.Default())
 	require.NoError(t, runtime.Initialize(ctx, "test"))
@@ -220,17 +240,18 @@ func TestReconcileOnce_MatchIsNotRecorded(t *testing.T) {
 	m = advanceTo(t, repo, m, migrationkit.Validated)
 	m = advanceTo(t, repo, m, migrationkit.TargetReady)
 	m = advanceTo(t, repo, m, migrationkit.Backfilling)
-	_, err = db.ExecContext(ctx, `
-		INSERT INTO data_migration_checkpoints
-			(id, migration_id, worker_kind, partition_key, owner, status, last_processed_key, created_at, updated_at)
-		VALUES (gen_random_uuid(), $1, 'backfill', 'account_id', 'test', 'completed', '{}', now(), now())`,
-		m.ID)
-	require.NoError(t, err)
-	m = advanceTo(t, repo, m, migrationkit.DualWriteShadow)
 	_ = m
 
-	// Seed one account and backfill it so v1=v2.
-	accountID := seedAccountWithBalance(t, db, "cash", "IDR", 5_000)
+	// Pre-backfill all migration system accounts so their v2 rows exist before
+	// ReconcileOnce runs. Without this, migration accounts (which have no v2 rows
+	// yet) would each generate backfill_missing mismatches and the require.Empty
+	// assertion would fail even though the test account itself is perfectly matched.
+	require.NoError(t, runtime.BackfillOnce(ctx)) // process all migration accounts
+	require.NoError(t, runtime.BackfillOnce(ctx)) // empty page → auto-transition to DualWriteShadow
+
+	// Seed one account with balance=0 (sourceLedgerTotal=0=balance → ledger match)
+	// and insert a correctly-computed v2 row so source and target are perfectly aligned.
+	accountID := seedAccount(t, db, "cash", "IDR")
 	source := sourceRowFor(t, db, accountID)
 	target, err := Transform(source, nil)
 	require.NoError(t, err)
@@ -246,10 +267,17 @@ func TestReconcileOnce_MatchIsNotRecorded(t *testing.T) {
 	require.NoError(t, err)
 
 	require.NoError(t, runtime.ReconcileOnce(ctx))
+	var processed int64
+	require.NoError(t, db.QueryRowContext(ctx, `
+		SELECT processed_count FROM data_migration_runs
+		WHERE migration_id = $1 AND run_type = 'bucket'
+		ORDER BY created_at DESC LIMIT 1`, m.ID).Scan(&processed))
+	require.Greater(t, processed, int64(0),
+		"a completed reconciliation run must record the rows it processed")
 
 	m2, err := repo.GetByName(ctx, MigrationName)
 	require.NoError(t, err)
-	mismatches, err := repo.ListMismatches(ctx, m2.ID, "", 10, 0)
+	mismatches, err := repo.ListMismatches(ctx, m2.ID, "", 100, 0)
 	require.NoError(t, err)
 	require.Empty(t, mismatches, "a perfectly matched source/target pair must not produce a mismatch row")
 }

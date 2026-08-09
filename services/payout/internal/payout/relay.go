@@ -13,6 +13,13 @@ import (
 	"github.com/herdifirdausss/seev/services/payout/internal/payout/model"
 )
 
+// dispatchAttemptTimeout bounds the complete local recovery path for one
+// vendor command, including the ledger settle/cancel call after a vendor
+// response. A dependency outage must not strand the relay's single dispatch
+// loop behind one indefinitely reconnecting gRPC call; the durable command is
+// then failed and retried by the normal outbox backoff.
+const dispatchAttemptTimeout = 30 * time.Second
+
 // This file is the relay's domain logic (docs/roadmap/archive/45 Task T1/K2) — the
 // ONLY place provider.Submit is ever called from. It lives inside the
 // payout package (not services/payout/internal/worker) because dispatching a
@@ -38,7 +45,7 @@ func (m *Module) DispatchPendingCommands(ctx context.Context, limit int) (int, e
 		return 0, fmt.Errorf("payout-relay: claim pending commands: %w", err)
 	}
 	for _, cmd := range cmds {
-		m.dispatchOne(ctx, cmd)
+		m.dispatchOneWithTimeout(ctx, cmd)
 	}
 	return len(cmds), nil
 }
@@ -51,9 +58,15 @@ func (m *Module) DispatchFailedCommandsForRetry(ctx context.Context, limit int) 
 		return 0, fmt.Errorf("payout-relay: claim failed commands for retry: %w", err)
 	}
 	for _, cmd := range cmds {
-		m.dispatchOne(ctx, cmd)
+		m.dispatchOneWithTimeout(ctx, cmd)
 	}
 	return len(cmds), nil
+}
+
+func (m *Module) dispatchOneWithTimeout(ctx context.Context, cmd model.PayoutVendorCommand) {
+	attemptCtx, cancel := context.WithTimeout(ctx, dispatchAttemptTimeout)
+	defer cancel()
+	m.dispatchOne(attemptCtx, cmd)
 }
 
 // ReapStuckCommands returns lease-expired 'processing' commands to 'failed'
@@ -245,14 +258,31 @@ func (m *Module) handleRejected(ctx context.Context, cmd model.PayoutVendorComma
 }
 
 func (m *Module) failCommandLogged(ctx context.Context, commandID uuid.UUID, cause error) {
-	if err := m.commandRepo.FailCommand(ctx, commandID, cause.Error()); err != nil {
+	// A timed-out dispatch context cannot be used for the durable state update
+	// that records the retry. Use a short control context after the attempt
+	// deadline so a dependency outage still leaves the command retryable; the
+	// reaper remains the final fallback if this update itself cannot complete.
+	controlCtx, cancel := commandControlContext(ctx)
+	defer cancel()
+	m.logger.Error("payout-relay: dispatch attempt failed; command scheduled for retry",
+		slog.Any("error", cause), slog.String("command_id", commandID.String()))
+	if err := m.commandRepo.FailCommand(controlCtx, commandID, cause.Error()); err != nil {
 		m.logger.Error("payout-relay: fail command failed", slog.Any("error", err), slog.String("command_id", commandID.String()))
 	}
 }
 
 func (m *Module) completeCommandLogged(ctx context.Context, commandID uuid.UUID, reason string) {
-	if err := m.commandRepo.CompleteCommand(ctx, commandID); err != nil {
+	controlCtx, cancel := commandControlContext(ctx)
+	defer cancel()
+	if err := m.commandRepo.CompleteCommand(controlCtx, commandID); err != nil {
 		m.logger.Error("payout-relay: complete command failed", slog.Any("error", err),
 			slog.String("command_id", commandID.String()), slog.String("reason", reason))
 	}
+}
+
+func commandControlContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	if ctx.Err() == nil {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(context.Background(), 5*time.Second)
 }

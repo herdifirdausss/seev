@@ -138,7 +138,7 @@ func writeFreshnessMetrics(ctx context.Context, cfg config, b *strings.Builder) 
 	}
 	fmt.Fprintf(b, "# HELP seev_analytics_data_freshness_seconds Seconds since the newest ingested row for a source table\n")
 	fmt.Fprintf(b, "# TYPE seev_analytics_data_freshness_seconds gauge\n")
-	for _, line := range strings.Split(strings.TrimSpace(string(body)), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(string(body)), "\n") {
 		if line == "" {
 			continue
 		}
@@ -162,7 +162,7 @@ func writeDbtMetrics(ctx context.Context, cfg config, b *strings.Builder) {
 	}
 	fmt.Fprintf(b, "# HELP seev_analytics_dbt_run_total dbt invocations in the last 24h by result\n")
 	fmt.Fprintf(b, "# TYPE seev_analytics_dbt_run_total counter\n")
-	for _, line := range strings.Split(strings.TrimSpace(string(body)), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(string(body)), "\n") {
 		if line == "" {
 			continue
 		}

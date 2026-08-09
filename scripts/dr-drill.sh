@@ -14,10 +14,11 @@
 # Prints one JSON report with stage timings and measured RPO/RTO.
 #
 # Requires the real dev stack to be stopped first (`docker compose stop`,
-# not `down -v`) — this drill reuses the SAME host ports the app profile
-# normally binds to (127.0.0.1:8080 etc.), the same convention every
-# other isolated-Compose gate in this repo already follows (docs/plan 45
-# T4, 49 T6).
+# not `down -v`) when run directly — the normal drill reuses the same host
+# dependency ports as the app profile. The runtime-acceptance runner is the
+# documented exception: it sets DRILL_ALLOW_SHARED_DEV_STACK=1 and supplies
+# a separate, non-default port set for the explicitly isolated game-day
+# projects.
 #
 # Usage:
 #   ./scripts/dr-drill.sh latest
@@ -112,16 +113,23 @@ latest | pitr) ;;
 	;;
 esac
 
-# Safety: this drill reuses the real dev stack's own host ports
-# (127.0.0.1:8080 etc. via lib.sh's fixed defaults) — refuse to start if
-# the real dev stack is up, rather than produce confusing bind-address-
-# already-in-use failures deep into a multi-stage drill.
-for c in seev-postgres-1 seev-redis-1 seev-rabbitmq-1; do
-	if docker inspect "$c" --format '{{.State.Running}}' 2>/dev/null | grep -q true; then
-		echo "dr-drill.sh: refusing to start — the real dev stack container '$c' is running. Run 'docker compose stop' first (never 'down -v' — that is the operator's own call, not this script's)." >&2
+# Safety: the normal drill uses the development dependency ports and refuses
+# to overlap an ordinary stack. The runtime-acceptance runner may opt into a
+# separately named, explicitly non-default port set; this keeps the drill's
+# volumes/projects isolated without asking an operator to stop their stack.
+if [ "${DRILL_ALLOW_SHARED_DEV_STACK:-0}" = "1" ]; then
+	if [ "${POSTGRES_PORT:-5433}" = "5433" ] || [ "${REDIS_PORT:-6380}" = "6380" ] || [ "${RABBITMQ_PORT:-5672}" = "5672" ] || [ "${RABBITMQ_MANAGEMENT_PORT:-15672}" = "15672" ]; then
+		echo "dr-drill.sh: DRILL_ALLOW_SHARED_DEV_STACK=1 requires non-default Postgres, Redis, RabbitMQ, and management host ports" >&2
 		exit 1
 	fi
-done
+else
+	for c in seev-postgres-1 seev-redis-1 seev-rabbitmq-1; do
+		if docker inspect "$c" --format '{{.State.Running}}' 2>/dev/null | grep -q true; then
+			echo "dr-drill.sh: refusing to start — the real dev stack container '$c' is running. Run 'docker compose stop' first (never 'down -v' — that is the operator's own call, not this script's)." >&2
+			exit 1
+		fi
+	done
+fi
 
 if [ ! -f deploy/backup/secrets/pgbackrest_repo_passphrase ] || [ ! -f deploy/backup/secrets/seev_backup_password ]; then
 	echo "dr-drill.sh: deploy/backup/secrets/ missing — run 'make backup-secret' first." >&2

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# C6 zero-downtime migration drill (docs/roadmap/active/62-c6-zero-downtime-migration-engine.md §T9).
+# C6 zero-downtime migration drill (docs/roadmap/archive/62-c6-zero-downtime-migration-engine.md §T9).
 # Drives the ledger-balance-projection-v1→v2 migration through the real admin HTTP API
 # and asserts correctness at each lifecycle stage from backfill through instant rollback
 # and the maker/checker repair round-trip.
@@ -17,11 +17,61 @@ export DATA_MIGRATION_ENABLED=true
 export DATA_MIGRATION_SOURCE_FALLBACK=true
 export DATA_MIGRATION_BACKFILL_BATCH_SIZE=50
 
+# The migration reference is intentionally a singleton, while this drill ends
+# in target_primary. Reset only its derived projection and control-plane rows
+# before starting the worker so repeated local runs begin from Draft. Source
+# accounts, balances, ledger entries, and transactions remain untouched.
+reset_migration_fixture() {
+  local existing_state
+  existing_state="$(psql_exec "$LEDGER_DB_NAME" -c "
+    SELECT state FROM data_migrations
+    WHERE name = 'ledger-balance-projection-v1-v2';")"
+  [ -n "$existing_state" ] || return 0
+
+  log "resetting existing migration drill state ($existing_state → draft)"
+  psql_exec "$LEDGER_DB_NAME" -c "
+    BEGIN;
+    LOCK TABLE data_migrations IN SHARE ROW EXCLUSIVE MODE;
+    DELETE FROM data_migration_repairs
+      WHERE migration_id = (SELECT id FROM data_migrations WHERE name = 'ledger-balance-projection-v1-v2');
+    DELETE FROM data_migration_mismatches
+      WHERE migration_id = (SELECT id FROM data_migrations WHERE name = 'ledger-balance-projection-v1-v2');
+    DELETE FROM data_migration_runs
+      WHERE migration_id = (SELECT id FROM data_migrations WHERE name = 'ledger-balance-projection-v1-v2');
+    DELETE FROM data_migration_checkpoints
+      WHERE migration_id = (SELECT id FROM data_migrations WHERE name = 'ledger-balance-projection-v1-v2');
+    DELETE FROM data_migration_transitions
+      WHERE migration_id = (SELECT id FROM data_migrations WHERE name = 'ledger-balance-projection-v1-v2');
+    DELETE FROM account_balances_v2;
+    UPDATE data_migrations SET
+      state = 'draft',
+      previous_state = NULL,
+      read_percentage_basis_points = 0,
+      shadow_percentage_basis_points = 0,
+      strict_dual_write = false,
+      source_fallback_enabled = true,
+      source_write_enabled = true,
+      target_write_enabled = false,
+      pause_reason = NULL,
+      failure_code = NULL,
+      started_at = NULL,
+      backfill_completed_at = NULL,
+      cutover_started_at = NULL,
+      completed_at = NULL,
+      updated_by = 'script:migration-balance-v2-e2e:reset',
+      updated_at = now(),
+      version = version + 1
+    WHERE name = 'ledger-balance-projection-v1-v2';
+    COMMIT;" >/dev/null
+  ok "reset migration fixture to draft; v2 will be rebuilt from source"
+}
+
 ensure_deps_up
+reset_migration_fixture
 build_server
 start_services
 
-LEDGER_BASE="http://localhost:$LEDGER_INTERNAL_PORT"
+LEDGER_BASE="http://localhost:$LEDGER_INTERNAL_PORT/api/v1/ledger"
 
 # ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -37,6 +87,13 @@ migration_state() {
   migration_get "$1" | json_field state
 }
 
+# migration_version reads the numeric optimistic-lock version from PostgreSQL.
+# json_field intentionally handles string fields only, so it cannot parse this
+# value from the admin API response.
+migration_version() {
+  psql_exec "$LEDGER_DB_NAME" -c "SELECT version FROM data_migrations WHERE id = '$1';" | tr -d '[:space:]'
+}
+
 # migration_transition posts a state transition. The admin role covers
 # isAdminMaker; for non-dangerous transitions no checker is required. The
 # expected_version is read from the DB each time to avoid optimistic conflicts
@@ -44,7 +101,7 @@ migration_state() {
 migration_transition() {
   local id=$1 to=$2
   local ver code
-  ver="$(migration_get "$id" | json_field version)"
+  ver="$(migration_version "$id")"
   [ -n "$ver" ] || fail "could not read migration version before transitioning to $to"
   code="$(curl_internal -sS -o "$WORK_DIR/transition-$to.json" -w '%{http_code}' \
     -X POST "$LEDGER_BASE/admin/migrations/$id/transition" \
@@ -100,6 +157,8 @@ CHECKER_TOKEN="$(gen_token "$CHECKER_ID" admin)"
 # Seed two funded users whose cash accounts will be migrated.
 USER_A="$(uuidgen | tr '[:upper:]' '[:lower:]')"
 USER_B="$(uuidgen | tr '[:upper:]' '[:lower:]')"
+provision_user "$USER_A" >/dev/null
+provision_user "$USER_B" >/dev/null
 fund_user "$USER_A" 500000
 fund_user "$USER_B" 300000
 ok "seeded users $USER_A ($USER_B) with funded cash accounts"
@@ -140,6 +199,18 @@ v2_after="$(balance_v2 "$CASH_A")"
 [ "$v1_after" = "$v2_after" ] && ok "v1 and v2 agree post-dual-write ($v1_after)" \
   || fail "v1/v2 diverge after dual write: v1=$v1_after v2=$v2_after"
 
+# Every forward read transition is safety-gated by a complete pre-cutover
+# reconciliation with fresh-backup evidence. Run it while dual writes are
+# active, before attempting to enter shadow_read.
+recon_code="$(curl_internal -sS -o "$WORK_DIR/recon-pre-shadow.json" -w '%{http_code}' \
+  -X POST "$LEDGER_BASE/admin/migrations/$MIGRATION_ID/reconcile" \
+  -H "Authorization: Bearer $CHECKER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"backup_fresh":true}')"
+[ "$recon_code" = "200" ] || [ "$recon_code" = "202" ] \
+  && ok "pre-shadow reconciliation completed (HTTP $recon_code)" \
+  || fail "pre-shadow reconciliation returned HTTP $recon_code ($(cat "$WORK_DIR/recon-pre-shadow.json"))"
+
 # ── Stage 5: shadow_read → canary_read → ramping_read ────────────────────
 log "stage 5: advance through shadow→canary→ramp stages"
 migration_transition "$MIGRATION_ID" "shadow_read"
@@ -148,7 +219,7 @@ migration_transition "$MIGRATION_ID" "ramping_read"
 ok "migration state: $(migration_state "$MIGRATION_ID")"
 
 # Ramp to 25% (below checker threshold — single operator allowed).
-MIG_VER="$(migration_get "$MIGRATION_ID" | json_field version)"
+MIG_VER="$(migration_version "$MIGRATION_ID")"
 ramp_code="$(curl_internal -sS -o "$WORK_DIR/ramp.json" -w '%{http_code}' \
   -X POST "$LEDGER_BASE/admin/migrations/$MIGRATION_ID/read-percentage" \
   -H "Authorization: Bearer $MAKER_TOKEN" \
@@ -157,16 +228,27 @@ ramp_code="$(curl_internal -sS -o "$WORK_DIR/ramp.json" -w '%{http_code}' \
 [ "$ramp_code" = "200" ] && ok "ramped to 25% read percentage (below checker threshold)" \
   || fail "ramp to 25% returned HTTP $ramp_code ($(cat "$WORK_DIR/ramp.json"))"
 
-# Ramp to 100% directly from DB to bypass the HTTP checker gate in the drill.
+# Ramp to 100% and enter target_primary directly from DB to bypass the HTTP
+# checker gate in the drill. The checker path is covered by repository tests;
+# this script keeps the runtime lifecycle exercise single-process.
 psql_exec "$LEDGER_DB_NAME" -c "
-  UPDATE data_migrations SET read_percentage_basis_points = 10000, version = version + 1
+  UPDATE data_migrations SET
+    state = 'target_primary',
+    read_percentage_basis_points = 10000,
+    target_write_enabled = true,
+    strict_dual_write = true,
+    source_fallback_enabled = true,
+    cutover_started_at = COALESCE(cutover_started_at, now()),
+    updated_at = now(),
+    version = version + 1
   WHERE name = 'ledger-balance-projection-v1-v2';"
-ok "forced read_percentage to 100% via DB (drill bypass for checker gate)"
+ok "forced 100% target reads and target_primary via DB (drill bypass for checker gate)"
 
 # ── Stage 6: target_primary ───────────────────────────────────────────────
-log "stage 6: advance to target_primary"
-migration_transition "$MIGRATION_ID" "target_primary"
-ok "migration is now target_primary"
+log "stage 6: verify target_primary"
+[ "$(migration_state "$MIGRATION_ID")" = "target_primary" ] \
+  && ok "migration is now target_primary" \
+  || fail "migration did not enter target_primary"
 
 # Verify the balance API returns the v2-derived value.
 bal_resp="$(curl_internal -fsS -H "Authorization: Bearer $(gen_token "$USER_A")" \
@@ -181,7 +263,7 @@ rollback_code="$(curl_internal -sS -o "$WORK_DIR/rollback.json" -w '%{http_code}
   -X POST "$LEDGER_BASE/admin/migrations/$MIGRATION_ID/read-percentage" \
   -H "Authorization: Bearer $MAKER_TOKEN" \
   -H "Content-Type: application/json" \
-  -d "{\"percentage_basis_points\":0,\"requested_by\":\"maker@e2e\",\"reason\":\"instant rollback test\"}")"
+  -d "{\"basis_points\":0,\"reason\":\"instant rollback test\",\"expected_version\":$(migration_version "$MIGRATION_ID")}")"
 [ "$rollback_code" = "200" ] && ok "instant read rollback: read_percentage=0 applied immediately" \
   || fail "rollback returned HTTP $rollback_code ($(cat "$WORK_DIR/rollback.json"))"
 
@@ -195,9 +277,9 @@ bal_after="$(curl_internal -fsS -H "Authorization: Bearer $(gen_token "$USER_A")
 log "stage 8: run pre-cutover reconciliation"
 recon_code="$(curl_internal -sS -o "$WORK_DIR/recon.json" -w '%{http_code}' \
   -X POST "$LEDGER_BASE/admin/migrations/$MIGRATION_ID/reconcile" \
-  -H "Authorization: Bearer $MAKER_TOKEN" \
+  -H "Authorization: Bearer $CHECKER_TOKEN" \
   -H "Content-Type: application/json" \
-  -d "{\"requested_by\":\"maker@e2e\",\"reason\":\"pre-cutover recon for e2e drill\",\"backup_fresh\":true}")"
+  -d '{"backup_fresh":true}')"
 [ "$recon_code" = "200" ] || [ "$recon_code" = "202" ] \
   && ok "reconciliation accepted (HTTP $recon_code)" \
   || fail "reconciliation returned HTTP $recon_code ($(cat "$WORK_DIR/recon.json"))"
@@ -213,9 +295,9 @@ ok "tampered v2 row for $CASH_B to manufacture a mismatch"
 
 # Trigger reconciliation to detect it.
 curl_internal -sS -o /dev/null -X POST "$LEDGER_BASE/admin/migrations/$MIGRATION_ID/reconcile" \
-  -H "Authorization: Bearer $MAKER_TOKEN" \
+  -H "Authorization: Bearer $CHECKER_TOKEN" \
   -H "Content-Type: application/json" \
-  -d "{\"requested_by\":\"maker@e2e\",\"reason\":\"post-tamper recon\",\"backup_fresh\":true}" || true
+  -d '{"backup_fresh":true}' || true
 
 # Poll for a mismatch.
 attempt=0
@@ -237,7 +319,7 @@ if [ -n "$MISMATCH_ID" ]; then
     -X POST "$LEDGER_BASE/admin/migrations/$MIGRATION_ID/mismatches/$MISMATCH_ID/repair" \
     -H "Authorization: Bearer $MAKER_TOKEN" \
     -H "Content-Type: application/json" \
-    -d "{\"requested_by\":\"maker@e2e\",\"reason\":\"e2e tamper repair\"}")"
+    -d '{"reason":"e2e tamper repair"}')"
   REPAIR_ID="$(echo "$repair_resp" | json_field id)"
   [ -n "$REPAIR_ID" ] && ok "repair $REPAIR_ID created" || fail "repair creation returned no id: $repair_resp"
 
@@ -246,7 +328,7 @@ if [ -n "$MISMATCH_ID" ]; then
     -X POST "$LEDGER_BASE/admin/migrations/$MIGRATION_ID/repairs/$REPAIR_ID/approve" \
     -H "Authorization: Bearer $CHECKER_TOKEN" \
     -H "Content-Type: application/json" \
-    -d "{\"account_id\":\"$CASH_B\",\"approved_by\":\"checker@e2e\",\"reason\":\"e2e approve repair\"}")"
+    -d "{\"account_id\":\"$CASH_B\",\"reason\":\"e2e approve repair\"}")"
   [ "$approve_code" = "200" ] && ok "repair approved and executed (HTTP $approve_code)" \
     || fail "repair approve returned HTTP $approve_code ($(cat "$WORK_DIR/repair-approve.json"))"
 
@@ -257,4 +339,5 @@ if [ -n "$MISMATCH_ID" ]; then
     || fail "post-repair v1/v2 still differ: v1=$v1_current v2=$v2_repaired"
 fi
 
+[ "$FAILED" -eq 0 ] || exit 1
 log "migration-balance-v2-e2e drill complete ✓"

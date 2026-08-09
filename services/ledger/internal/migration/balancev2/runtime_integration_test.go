@@ -8,6 +8,7 @@ import (
 	"errors"
 	"log/slog"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
@@ -40,7 +41,7 @@ func advanceToDualWriteShadow(t *testing.T, repo *ControlRepository, db interfac
 	// Mark backfill complete.
 	_, err = db.ExecContext(context.Background(), `
 		INSERT INTO data_migration_checkpoints
-			(id, migration_id, worker_kind, partition_key, owner, status, last_processed_key, created_at, updated_at)
+			(id, migration_id, worker_kind, partition_key, lease_owner, status, last_source_key, created_at, updated_at)
 		VALUES (gen_random_uuid(), $1, 'backfill', 'account_id', 'test', 'completed', '{}', now(), now())`,
 		m.ID)
 	require.NoError(t, err)
@@ -71,14 +72,16 @@ func TestWriteForPosting_StrictMode_RollsBackOnTargetFailure(t *testing.T) {
 	m = advanceTo(t, repo, m, migrationkit.ShadowRead)
 	require.True(t, m.StrictDualWrite, "ShadowRead must enable strict dual write")
 
-	// Seed an account and insert a valid v1 balance row.
-	accountID := seedAccountWithBalance(t, db, "cash", "IDR", 10_000)
+	// Seed an account and record a real ledger transaction so the
+	// account_balances_v2_last_transaction_id_fkey constraint is satisfied.
+	accountID := seedAccount(t, db, "cash", "IDR")
+	txID := postLedgerEntry(t, db, accountID, 10_000, 10_000)
 
 	// Execute a transaction that calls WriteForPosting with a valid account.
 	// Because StrictDualWrite=true, any target write failure would propagate.
 	// Here we verify the happy path first: WriteForPosting must succeed.
 	err = db.WithTx(ctx, nil, func(tx *sql.Tx) error {
-		return runtime.WriteForPosting(ctx, tx, []uuid.UUID{accountID}, uuid.New())
+		return runtime.WriteForPosting(ctx, tx, []uuid.UUID{accountID}, txID)
 	})
 	require.NoError(t, err)
 
@@ -185,6 +188,7 @@ func TestReadBalance_FallsBackToSource_ZeroReadPercentage(t *testing.T) {
 	cfg := newTestConfig()
 	cfg.Enabled = true
 	cfg.SourceFallback = true
+	cfg.SourceFallbackConfigured = true // prevent withDefaults from enabling EmergencySourceRead
 	runtime := NewRuntime(db, cfg, slog.Default())
 	require.NoError(t, runtime.Initialize(ctx, "test"))
 	repo := runtime.Controls()
@@ -227,6 +231,8 @@ func TestReadBalance_ServesTargetBalance(t *testing.T) {
 	cfg := newTestConfig()
 	cfg.Enabled = true
 	cfg.SourceFallback = true
+	cfg.SourceFallbackConfigured = true // prevent withDefaults from enabling EmergencySourceRead
+	cfg.TargetReadTimeout = 5 * time.Second  // generous timeout under race detector + testcontainers
 	runtime := NewRuntime(db, cfg, slog.Default())
 	require.NoError(t, runtime.Initialize(ctx, "test"))
 	repo := runtime.Controls()
@@ -288,6 +294,7 @@ func TestReadBalance_FallsBackOnChecksumMismatch(t *testing.T) {
 	cfg := newTestConfig()
 	cfg.Enabled = true
 	cfg.SourceFallback = true
+	cfg.SourceFallbackConfigured = true // prevent withDefaults from enabling EmergencySourceRead
 	runtime := NewRuntime(db, cfg, slog.Default())
 	require.NoError(t, runtime.Initialize(ctx, "test"))
 	repo := runtime.Controls()

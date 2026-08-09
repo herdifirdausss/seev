@@ -3,7 +3,7 @@
 # once-schedule happy path → occurrence succeeded → ledger balanced;
 # daily-skip policy → 3 overdue occurrences skipped_missed + 1 executed today.
 #
-# Tests docs/roadmap/active/61-c5-advanced-financial-products-period-close.md §3
+# Tests docs/roadmap/archive/61-c5-advanced-financial-products-period-close.md §3
 # against a real assembled Ledger process using the durable schedule runner
 # (FinancialProductsEnabled=true), so the PlanSchedule → claim → ExecuteOccurrence
 # → txLookup path is exercised against a real Postgres schema.

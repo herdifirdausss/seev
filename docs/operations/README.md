@@ -90,7 +90,7 @@ and what CI actually runs.
 | Database | `docker-up`, `docker-down`, `migrate-up`, `migrate-up-all`, `migrate-down`, `grant-app-role` |
 | Static/security checks | `vet`, `lint`, `tools-lint`, `tools-security`, `modernize-check`, `security-vuln`, `ci-lint`, `tidy`, `docs-check`, `git diff --check` |
 | Verification bundles | `verify-static`, `verify-full`, `verify-chaos` |
-| Tests and journeys | `test`, `smoke-container`, `smoke-test`, `business-e2e`, `admin-e2e`, `privacy-e2e`, `chaos-debug` |
+| Tests and journeys | `test`, `smoke-container`, `smoke-test`, `business-e2e`, `capability-e2e`, `capability-chaos`, `platform-chaos`, `admin-e2e`, `privacy-e2e`, `chaos-debug`, `k8s-chaos` |
 | Contracts | `contracts`, `contract-generate`, `contract-lint`, `contract-breaking`, `contract-test` |
 | Protobuf | `proto`, `proto-lint`, `proto-breaking`, `tools` |
 | Load safety | `load-lint`, `load-test`, `load-seed`, `load-smoke`, `load-run`, `load-capacity`, `load-report-check`, `load-clean` |
@@ -107,7 +107,10 @@ smoke, in the order that
 actually catches the volume-reset-skipped false-regression class of bug
 documented in [Onboarding](../development/onboarding.md#gotchas-that-cost-people-real-time).
 Chaos is exposed separately as `verify-chaos` because it kills dependencies and
-is an operator-controlled recovery drill. The complete gate is deliberately
+is an operator-controlled recovery drill. It includes the core dependency
+matrix, capability-specific durable-state faults, and rendered IaC identity
+faults. Kubernetes pod replacement and DR volume destruction remain explicit
+operator commands. The complete gate is deliberately
 heavier than the everyday loop
 (`go build && go vet && make lint && make test`) — see
 [Project guide](../development/project-guide.md#build-and-verification) for exactly
@@ -151,7 +154,10 @@ re-sourcing mid-session silently breaks helpers like `gen_token`.
 | `business-e2e.sh` | The MVP can be run **end-to-end as a business**, not just as a technical system | Two real users register and log in with real JWTs (not `gentoken`); one tops up via a signed VendorService callback, transfers to the other for a fee, withdraws for a fee, both get notified, and an operator confirms the books balance AND the platform earned the expected revenue |
 | `admin-e2e.sh` | The operator console works end-to-end | Starts the BFF separately from the user-money gateway path, exercises the real admin session/CSRF/maker-checker/audit journey |
 | `privacy-e2e-host.sh` + `privacy-e2e.sh` | Export, retention holds, and closure work against a clean host-binary stack | The wrapper owns dependencies, migrations, binaries, certificates, and cleanup; the underlying journey verifies export metadata, hold blocking/release, and closure completion |
-| `chaos-test.sh {1..23\|all}` | The system survives real failure, dependency outage, privacy-lifecycle failure, merchant relay failure, and recovery — not just handles errors in tests | 23 scenarios (below); scenarios 1–14 are multi-service drills, 15–20 cover privacy lifecycle, and 21–23 cover merchant money movement and webhook relay |
+| `chaos-test.sh {1..23\|all}` | The system survives real failure, dependency outage, privacy-lifecycle failure, merchant relay failure, and recovery — not just handles errors in tests | 23 core scenarios (below); scenarios 1–14 are multi-service drills, 15–20 cover privacy lifecycle, and 21–23 cover merchant money movement and webhook relay |
+| `capability-chaos.sh application` | Scheduled, fee, disbursement, dispute, reconciliation, FX, command-policy, KYC, tenant, and payout durable state survives a killed service | Runs `capability-e2e.sh` with real Ledger/Auth kill-and-restart probes and fail-closed assertions at each capability boundary |
+| `ci/platform-chaos.sh` | A removed provider identity is rejected where the rendered workload consumes it | Renders the AWS overlay, removes the Vendor ServiceAccount annotation, and requires the rendered-manifest verifier to fail |
+| `deploy/kubernetes/scripts/chaos.sh` | A Kubernetes process failure self-heals without deleting data-plane resources | Deletes exactly one Gateway pod, waits for a new UID/readiness, then reruns the edge smoke journey |
 
 The local Compose default for `VENDOR_CALLBACK_CIDRS` includes the private
 Docker bridge range because a host-originated callback reaches the container
@@ -187,12 +193,10 @@ mandatory in both environments.
 | 22 | Merchant quota Redis outage | Quota enforcement follows its declared outage contract without bypassing tenant isolation or money safety |
 | 23 | Merchant webhook relay during RabbitMQ outage | A posted merchant transaction remains durably relayable and reaches the endpoint after broker recovery |
 
-Current acceptance note (2026-07-28): the latest `./scripts/chaos-test.sh 5`
-run settled the created, held, and ledger-crash requests; the deliberate
-`vendor_pending` request remained resumable, while the `submitted` kill point
-remained submitted. The payout relay now performs an immediate failed-command
-recovery pass on startup, and Scenario 5 must be rerun before this live gate is
-marked green.
+The capability-specific and platform drills are intentionally separate from
+the numbered core matrix so their assertions can follow each durable business
+boundary instead of hiding behind a generic service restart. Run them with
+`make capability-chaos`, `make platform-chaos`, and `make k8s-chaos`.
 
 ### Standalone drills and operator tools — not part of `verify-full`
 

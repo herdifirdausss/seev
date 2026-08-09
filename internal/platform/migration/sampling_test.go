@@ -9,10 +9,10 @@ import (
 )
 
 func TestCohortBucket_DeterministicAndBounded(t *testing.T) {
-	for i := 0; i < 200; i++ {
+	for range 200 {
 		key := uuid.NewString()
 		first := CohortBucket(key, "ledger-balance-projection-v1-v2")
-		for repeat := 0; repeat < 5; repeat++ {
+		for range 5 {
 			require.Equal(t, first, CohortBucket(key, "ledger-balance-projection-v1-v2"),
 				"same key must always hash to the same bucket (§5.8/§8.4 stickiness)")
 		}
@@ -26,7 +26,7 @@ func TestCohortBucket_DifferentMigrationNamesSeparateCohorts(t *testing.T) {
 	// share the exact same cohort mapping for the same key.
 	key := "account-" + uuid.NewString()
 	differ := 0
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		a := CohortBucket(key, fmt.Sprintf("migration-a-%d", i))
 		b := CohortBucket(key, fmt.Sprintf("migration-b-%d", i))
 		if a != b {
@@ -37,7 +37,7 @@ func TestCohortBucket_DifferentMigrationNamesSeparateCohorts(t *testing.T) {
 }
 
 func TestInCohort_ZeroAndFullPercentage(t *testing.T) {
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		key := uuid.NewString()
 		require.False(t, InCohort(key, "m", 0), "0%% must never select an account")
 		require.True(t, InCohort(key, "m", BasisPoints), "100%% must always select an account")
@@ -49,7 +49,7 @@ func TestInCohort_MonotonicRamp(t *testing.T) {
 	// reshuffle, if every account already in a lower percentage stays in
 	// every higher percentage — this is what makes cohorts "stable".
 	ramp := SuggestedRamp()
-	for i := 0; i < 500; i++ {
+	for range 500 {
 		key := "account-" + uuid.NewString()
 		wasIn := false
 		for _, pct := range ramp {

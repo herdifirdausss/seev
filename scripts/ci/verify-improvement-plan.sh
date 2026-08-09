@@ -45,7 +45,12 @@ for path in "${required[@]}"; do
 	fi
 done
 
-if rg -n 'TODO|TBD|UNKNOWN' "$root_dir/docs/engineering/improvement-plan-tracker.md"; then
+if command -v rg >/dev/null 2>&1; then
+	_tracker_grep() { rg -n 'TODO|TBD|UNKNOWN' "$1"; }
+else
+	_tracker_grep() { grep -nE 'TODO|TBD|UNKNOWN' "$1"; }
+fi
+if _tracker_grep "$root_dir/docs/engineering/improvement-plan-tracker.md"; then
 	printf '::error::tracker contains unresolved placeholder text\n' >&2
 	missing=1
 fi

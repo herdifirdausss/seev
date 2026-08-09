@@ -17,6 +17,12 @@ data:
     http_access deny all
     http_port 3128
     cache deny all
+    # Vendor egress is a filtering proxy, not a cache. Bound Squid's
+    # default in-memory cache so the pinned image stays within disposable
+    # single-node runtime limits during startup.
+    cache_mem 32 MB
+    maximum_object_size_in_memory 1 MB
+    memory_pools off
     access_log stdio:/tmp/access.log
     cache_log /tmp/cache.log
     pid_filename /tmp/squid.pid
@@ -68,9 +74,18 @@ spec:
       containers:
         - name: squid
           image: {{ .Values.egress.image | quote }}
+          # The pinned Ubuntu image entrypoint runs `squid -Nz` first. This
+          # filtering-only proxy has no cache stores, so start Squid directly
+          # and avoid a cache-directory initialization that never opens 3128.
+          command: ["/usr/sbin/squid"]
+          args: ["-f", "/etc/squid/squid.conf", "-NYC"]
           ports:
             - name: proxy
               containerPort: 3128
+          startupProbe:
+            tcpSocket: {port: proxy}
+            failureThreshold: 30
+            periodSeconds: 5
           readinessProbe:
             tcpSocket: {port: proxy}
             periodSeconds: 5

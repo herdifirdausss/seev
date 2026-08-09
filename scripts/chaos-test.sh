@@ -61,8 +61,11 @@ trap cleanup EXIT
 
 # Preserve the scenario summary and assertions alongside the service logs for
 # scheduled evidence collection. KEEP_WORK_DIR controls whether the directory
-# survives after the run; local default behavior remains disposable.
-exec > >(tee "$WORK_DIR/chaos-test.stdout.log") 2>&1
+# survives after the run; local default behavior remains disposable. Use a
+# regular file redirect here instead of Bash process substitution: the latter
+# is unavailable in some restricted runners (including macOS sandboxed shells)
+# and would prevent the chaos suite from starting at all.
+exec >"$WORK_DIR/chaos-test.stdout.log" 2>&1
 
 # ─── Scenario 1: kill -9 mid-posting ────────────────────────────────────────
 
@@ -548,7 +551,7 @@ scenario_5() {
 	# that backoff naturally elapses, well past this scenario's own wait.
 	psql_exec "$PAYOUT_DB_NAME" -c "UPDATE payout_vendor_commands SET next_attempt_at = now() WHERE payout_request_id IN (SELECT id FROM payout_requests WHERE user_id='$user_id' AND status IN ('created','held','submitted','vendor_pending'));" >/dev/null
 
-	log "waiting for all five requests to reach a terminal 'settled' state..."
+	log "waiting for the four synchronous requests to reach 'settled' (the fifth remains vendor_pending by design)..."
 	# A fixed sleep here undercounts real recovery time: internal/platform/transport/grpc's client to
 	# ledger uses grpc-go's default "lazy reconnect" backoff (intentional,
 	# see internal/platform/transport/grpc's own comment) rather than an eager reconnect, so after a
@@ -563,10 +566,17 @@ scenario_5() {
 	while [ "$poll_tries" -gt 0 ]; do
 		local settled_count
 		settled_count="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT count(*) FROM payout_requests WHERE id IN ('$id_created','$id_held','$id_submitted','$id_pending','$id_ledger') AND status = 'settled';")"
-		if [ "$settled_count" = "5" ]; then
+		if [ "$settled_count" = "4" ]; then
 			all_settled=1
 			break
 		fi
+		# The relay may still finish an in-flight attempt that began while the
+		# ledger was unavailable after the one reset above. If that attempt
+		# records a failed command during recovery, its normal exponential
+		# backoff would push this drill past the bounded convergence budget even
+		# though the dependency is healthy again. Re-arm only these five isolated
+		# requests while polling; production retry backoff is unchanged.
+		psql_exec "$PAYOUT_DB_NAME" -c "UPDATE payout_vendor_commands SET next_attempt_at = now() WHERE status = 'failed' AND payout_request_id IN ('$id_created','$id_held','$id_submitted','$id_pending','$id_ledger');" >/dev/null
 		sleep 5
 		poll_tries=$((poll_tries - 1))
 	done
@@ -1137,16 +1147,47 @@ scenario_9() {
 	# With Redis down, policy.Check's counter.Get() degrades to a FRESH
 	# memory counter (cur=0, unaware of Redis's real cur=1 recorded at
 	# baseline — internal/platform/cache/failover.go's FailoverCounter is deliberately not
-	# a continuation of Redis's state). 0+1=1, not >1, so policy ALLOWS this
-	# call on its own — it's fraud.Check (http.go:590, right after policy)
-	# that then fails CLOSED, since the velocity rule is registered and its
-	# store is unreachable. This one call therefore proves both: the counter
-	# was genuinely exercised from memory (metric transition below, not a
-	# silent no-op) AND the overall request still correctly fails closed —
-	# no money moves regardless of which layer says no.
-	local cash before_fc wd2_resp wd2_code
+	# a continuation of Redis's state). The two proofs below are intentionally
+	# separate because the production command boundary runs fraud screening
+	# before policy evaluation: the policy probe reaches the poster with an
+	# unfundable amount, while the following normal withdrawal proves fraud
+	# fails closed before any money moves.
+	local cash before_fc policy_resp policy_code wd2_resp wd2_code mode_code
 	cash="$(cash_account_id "$user_id")"
 	before_fc="$(account_balance "$cash")"
+	log "-- proving the ledger policy counter degrades independently of fraud screening --"
+	# The production command boundary deliberately runs fraud screening before
+	# policy evaluation.  A fraud-dependent request while Redis is down would
+	# therefore fail before the ledger counter is touched, which made the old
+	# one-call assertion observe only the fraud failure and miss the policy
+	# fallback.  Temporarily turn off only the velocity rule through its admin
+	# API (which invalidates the resolver cache), then send an intentionally
+	# unfundable withdrawal: policy.Get must run, but the poster must reject
+	# before moving money.
+	mode_code="$(curl_internal -s -o /dev/null -w '%{http_code}' -X PUT \
+		"http://localhost:$FRAUD_ADMIN_PORT/api/v1/admin/fraud/rules/velocity_anomaly/mode" \
+		-H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" -d '{"mode":"off"}')"
+	[ "$mode_code" = "200" ] && ok "temporarily disabled velocity rule to isolate the ledger policy fallback" \
+		|| fail "could not disable velocity rule for the policy fallback proof (code=$mode_code)"
+	policy_resp="$(curl -s -w '\n%{http_code}' -X POST "http://localhost:$APP_PORT/api/v1/ledger/transactions" \
+		-H "Authorization: Bearer $token" -H "Content-Type: application/json" \
+		-d '{"idempotency_key":"chaos9-policy-fallback","type":"withdraw_initiate","amount":"999999999"}')"
+	policy_code="$(echo "$policy_resp" | tail -1)"
+	[ "$policy_code" != "503" ] && ok "ledger policy fallback reached the poster while fraud screening was disabled (code=$policy_code)" \
+		|| fail "policy fallback proof was short-circuited with 503: $policy_resp"
+	assert_metric_value "https://localhost:$LEDGER_INTERNAL_PORT/metrics" cache_redis_backend_active 1 \
+		"ledger policy counter hot-swapped to backend=local with Redis down" 'primitive="policy_counter"' 'backend="local"'
+	local after_policy
+	after_policy="$(account_balance "$cash")"
+	[ "$after_policy" = "$before_fc" ] && ok "unfundable policy fallback probe moved no money ($before_fc unchanged)" \
+		|| fail "policy fallback probe moved money: $before_fc -> $after_policy"
+
+	log "-- restoring velocity block mode and proving fraud still fails closed --"
+	mode_code="$(curl_internal -s -o /dev/null -w '%{http_code}' -X PUT \
+		"http://localhost:$FRAUD_ADMIN_PORT/api/v1/admin/fraud/rules/velocity_anomaly/mode" \
+		-H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" -d '{"mode":"block"}')"
+	[ "$mode_code" = "200" ] && ok "restored velocity block mode for the fraud fail-closed proof" \
+		|| fail "could not restore velocity block mode (code=$mode_code)"
 	wd2_resp="$(curl -s -w '\n%{http_code}' -X POST "http://localhost:$APP_PORT/api/v1/ledger/transactions" \
 		-H "Authorization: Bearer $token" -H "Content-Type: application/json" \
 		-d "{\"idempotency_key\":\"chaos9-wd-2\",\"type\":\"withdraw_initiate\",\"amount\":\"10000\"}")"
@@ -1154,8 +1195,6 @@ scenario_9() {
 	[ "$wd2_code" = "503" ] && echo "$wd2_resp" | grep -q "DEPENDENCY_UNAVAILABLE" \
 		&& ok "withdraw_initiate fails closed with 503 DEPENDENCY_UNAVAILABLE while fraud's Redis dependency is down (policy itself allowed it — memory counter was consulted, not bypassed)" \
 		|| fail "withdraw_initiate with Redis down got: $wd2_resp — expected 503 DEPENDENCY_UNAVAILABLE"
-	assert_metric_value "https://localhost:$LEDGER_INTERNAL_PORT/metrics" cache_redis_backend_active 1 \
-		"ledger policy counter hot-swapped to backend=local with Redis down" 'primitive="policy_counter"' 'backend="local"'
 	grep -q "screening dependency unavailable, failing closed" "$LEDGER_LOG" \
 		&& ok "ledger logged the fail-closed screening decision" || fail "ledger log missing the fail-closed screening line"
 	local after_fc
@@ -1166,6 +1205,7 @@ scenario_9() {
 	log "restarting redis (no service process restart)..."
 	docker start "$REDIS_CONTAINER" >/dev/null
 	wait_for_container_healthy "$REDIS_CONTAINER"
+	wait_for_redis_reachable
 	log "waiting for the background probe loop's 2-consecutive-success recovery (docs/roadmap/archive/45 K4 hysteresis, ~10-15s)..."
 	sleep 20
 
@@ -1505,8 +1545,8 @@ scenario_12() {
 	raw_ciphertext="$(seal_payin_raw "$event_id" '{}')"
 	psql_exec "$PAYIN_DB_NAME" -c "
 		INSERT INTO payin_webhook_events
-		(id, vendor, vendor_event_id, external_ref, user_id, amount, currency, raw_ciphertext, raw_key_version, status, request_id, created_at, updated_at)
-		VALUES ('$event_id', 'mockvendor', '$external_ref', '$external_ref', gen_random_uuid(), 1234, 'IDR', decode('$raw_ciphertext','hex'), 1, 'posted', 'chaos12', now() - interval '2 minutes 1 second', now() - interval '2 minutes 1 second');" >/dev/null
+		(id, vendor, vendor_event_id, external_ref, user_id, amount, currency, raw_ciphertext, raw_key_version, fee_amount, total_debit, fee_application, fee_snapshot_version, status, request_id, created_at, updated_at)
+		VALUES ('$event_id', 'mockvendor', '$external_ref', '$external_ref', gen_random_uuid(), 1234, 'IDR', decode('$raw_ciphertext','hex'), 1, 0, 1234, 'added_on_top', 1, 'posted', 'chaos12', now() - interval '2 minutes 1 second', now() - interval '2 minutes 1 second');" >/dev/null
 
 	start_assurance_service
 	wait_for_assurance_finding "$event_id" PA01 open 45
@@ -1552,8 +1592,8 @@ scenario_13() {
 	raw_ciphertext="$(seal_payin_raw "$event_id" '{}')"
 	psql_exec "$PAYIN_DB_NAME" -c "
 		INSERT INTO payin_webhook_events
-		(id, vendor, vendor_event_id, external_ref, user_id, amount, currency, raw_ciphertext, raw_key_version, status, request_id, created_at, updated_at)
-		VALUES ('$event_id', 'mockvendor', '$external_ref', '$external_ref', gen_random_uuid(), 2345, 'IDR', decode('$raw_ciphertext','hex'), 1, 'posted', 'chaos13', now() - interval '2 minutes 1 second', now() - interval '2 minutes 1 second');" >/dev/null
+		(id, vendor, vendor_event_id, external_ref, user_id, amount, currency, raw_ciphertext, raw_key_version, fee_amount, total_debit, fee_application, fee_snapshot_version, status, request_id, created_at, updated_at)
+		VALUES ('$event_id', 'mockvendor', '$external_ref', '$external_ref', gen_random_uuid(), 2345, 'IDR', decode('$raw_ciphertext','hex'), 1, 0, 2345, 'added_on_top', 1, 'posted', 'chaos13', now() - interval '2 minutes 1 second', now() - interval '2 minutes 1 second');" >/dev/null
 	start_assurance_service
 	wait_for_assurance_finding "$event_id" PA01 open 45
 	before_cursor="$(psql_exec "$ASSURANCE_DB_NAME" -c "SELECT COALESCE(updated_at::text,'') || '|' || COALESCE(resource_id::text,'') FROM assurance_cursors WHERE source='payin';")"
@@ -1832,12 +1872,36 @@ scenario_21() {
 	build_server
 	start_gateway
 
+	local retry_headers retry_after attempt retry_code
 	while read -r idem code; do
 		if [ "${code:0:1}" != "2" ]; then
-			retry_code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$APP_PORT/api/v1/b2b/transfers" \
-				-H "Authorization: Bearer $key_a" -H "Idempotency-Key: $idem" -H "Content-Type: application/json" \
-				-d "$transfer_body" 2>/dev/null || echo "000")
-			log "retried $idem: original=$code retry=$retry_code"
+			attempt=1
+			retry_code="000"
+			while [ "$attempt" -le 20 ]; do
+				retry_headers="$WORK_DIR/chaos21_retry_headers"
+				if retry_code=$(curl -sS -D "$retry_headers" -o /dev/null -w '%{http_code}' -X POST "http://localhost:$APP_PORT/api/v1/b2b/transfers" \
+					-H "Authorization: Bearer $key_a" -H "Idempotency-Key: $idem" -H "Content-Type: application/json" \
+					-d "$transfer_body" 2>/dev/null); then
+					:
+				else
+					retry_code="000"
+				fi
+				log "retried $idem: original=$code attempt=$attempt retry=$retry_code"
+				if [ "${retry_code:0:1}" = "2" ]; then
+					break
+				fi
+				if [ "$retry_code" = "409" ]; then
+					retry_after="$(awk 'BEGIN { IGNORECASE=1 } /^Retry-After:/ { gsub("\\r", "", $2); print $2; exit }' "$retry_headers")"
+					case "$retry_after" in
+						''|*[!0-9]*) retry_after=2 ;;
+					esac
+					sleep "$retry_after"
+				else
+					break
+				fi
+				attempt=$((attempt + 1))
+			done
+			[ "${retry_code:0:1}" = "2" ] || fail "chaos21: retry for $idem did not converge (last status=$retry_code)"
 		fi
 	done <"$results_file"
 

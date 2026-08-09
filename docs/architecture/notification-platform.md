@@ -2,7 +2,7 @@
 
 > [Architecture reference](../reference/architecture.md) ·
 > [Notification reference](../reference/notifications.md) ·
-> [Plan 59](../roadmap/active/59-c3-multi-channel-notifications.md)
+> [Plan 59](../roadmap/archive/59-c3-multi-channel-notifications.md)
 
 ## Boundary
 

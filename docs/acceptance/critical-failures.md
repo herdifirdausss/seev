@@ -8,9 +8,10 @@ production evidence: a deployed production-shaped run remains an explicit
 `evidence_required` gate.
 
 The failure vocabulary is defined in the [golden-route failure
-matrix](../engineering/golden-route-failure-matrix.md). The executable suite
-also covers privacy-lifecycle and merchant relay failures in addition to the
-core money-movement path.
+matrix](../engineering/golden-route-failure-matrix.md). The executable suites
+also cover capability-specific durable-state faults, rendered workload
+identity faults, privacy-lifecycle failures, and merchant relay failures in
+addition to the core money-movement path.
 
 ## Executable coverage
 
@@ -18,14 +19,19 @@ core money-movement path.
 |---|---|---|
 | Unit, race, and service integration behavior | `go test -tags=integration -race -timeout 25m ./...` | Go JSON event stream and exit-code record in the CI integration artifact |
 | Dependency/process failure matrix | `KEEP_WORK_DIR=1 ./scripts/chaos-test.sh all` | Scenario result text, stdout, and service logs in the retained work directory |
+| Capability durable-state failure matrix | `KEEP_WORK_DIR=1 make capability-chaos` | Per-capability fail-closed probe, restart, recovery assertion, ledger integrity checks, and service logs |
+| IaC/workload identity fault injection | `make platform-chaos` | Valid rendered manifest, intentionally broken manifest, and verifier rejection |
+| Kubernetes pod replacement | `make k8s-chaos` | Deleted/replaced Gateway pod identity and recovered edge smoke; run against a disposable kind cluster |
 | Business route | `make business-e2e` | Full journey stdout and service logs when the work directory is retained |
 | Privacy route | `make privacy-e2e` | Managed-wrapper stdout and service logs when the work directory is retained |
 | Container round-trip | `make smoke-container` | Existing failure diagnostics artifact on a failed container smoke run |
 
-The scheduled full-stack workflow runs the business, privacy, and all 23 chaos
-scenarios on one runner so Docker and process state are preserved across the
-journey. It records the selected-suite outcomes in the manifest even when a
-suite is skipped or fails.
+The scheduled full-stack workflow runs the business, privacy, and all 23 core
+chaos scenarios on one runner so Docker and process state are preserved across
+the journey. The capability and platform chaos commands are available in the
+repository gate; Kubernetes pod replacement and DR volume destruction remain
+explicit operator-run jobs. The workflow records selected-suite outcomes in
+the manifest even when a suite is skipped or fails.
 
 ## CI artifact contract
 
@@ -54,6 +60,8 @@ Run the repository-side checks from a clean disposable environment:
 ```sh
 go test -tags=integration -race -timeout 25m ./...
 KEEP_WORK_DIR=1 ./scripts/chaos-test.sh all
+KEEP_WORK_DIR=1 make capability-chaos
+make platform-chaos
 KEEP_WORK_DIR=1 make business-e2e
 KEEP_WORK_DIR=1 make privacy-e2e
 ```

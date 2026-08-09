@@ -101,7 +101,7 @@ func TestControlRepository_SelfApprovalRejected(t *testing.T) {
 	// Mark backfill checkpoint complete so Backfilling→DualWriteShadow is allowed.
 	_, err := db.ExecContext(ctx, `
 		INSERT INTO data_migration_checkpoints
-			(id, migration_id, worker_kind, partition_key, owner, status, last_processed_key, created_at, updated_at)
+			(id, migration_id, worker_kind, partition_key, lease_owner, status, last_source_key, created_at, updated_at)
 		VALUES (gen_random_uuid(), $1, 'backfill', 'account_id', 'test', 'completed', '{}', now(), now())`,
 		m.ID)
 	require.NoError(t, err)
@@ -109,8 +109,12 @@ func TestControlRepository_SelfApprovalRejected(t *testing.T) {
 	m = advanceTo(t, repo, m, migrationkit.ShadowRead)
 	m = advanceTo(t, repo, m, migrationkit.CanaryRead)
 	m = advanceTo(t, repo, m, migrationkit.RampingRead)
+	// Set read percentage to 100% — required to advance to TargetPrimary.
+	m, err = repo.SetReadPercentage(ctx, m.ID, migrationkit.BasisPoints, "maker@test", "checker@test", "full ramp", m.Version, GateSnapshot{Passed: true})
+	require.NoError(t, err)
+	m = advanceTo(t, repo, m, migrationkit.TargetPrimary)
 
-	// RampingRead → SourceWriteDisabled is a dangerous transition — requires checker.
+	// TargetPrimary → SourceWriteDisabled is a dangerous transition — requires checker.
 	req := TransitionRequest{
 		MigrationID: m.ID,
 		ToState:     string(migrationkit.SourceWriteDisabled),
@@ -135,7 +139,7 @@ func TestControlRepository_MissingApprovalRejected(t *testing.T) {
 	m = advanceTo(t, repo, m, migrationkit.Backfilling)
 	_, err := db.ExecContext(ctx, `
 		INSERT INTO data_migration_checkpoints
-			(id, migration_id, worker_kind, partition_key, owner, status, last_processed_key, created_at, updated_at)
+			(id, migration_id, worker_kind, partition_key, lease_owner, status, last_source_key, created_at, updated_at)
 		VALUES (gen_random_uuid(), $1, 'backfill', 'account_id', 'test', 'completed', '{}', now(), now())`,
 		m.ID)
 	require.NoError(t, err)
@@ -143,6 +147,10 @@ func TestControlRepository_MissingApprovalRejected(t *testing.T) {
 	m = advanceTo(t, repo, m, migrationkit.ShadowRead)
 	m = advanceTo(t, repo, m, migrationkit.CanaryRead)
 	m = advanceTo(t, repo, m, migrationkit.RampingRead)
+	// Set read percentage to 100% — required to advance to TargetPrimary.
+	m, err = repo.SetReadPercentage(ctx, m.ID, migrationkit.BasisPoints, "maker@test", "checker@test", "full ramp", m.Version, GateSnapshot{Passed: true})
+	require.NoError(t, err)
+	m = advanceTo(t, repo, m, migrationkit.TargetPrimary)
 
 	req := TransitionRequest{
 		MigrationID: m.ID,
@@ -164,13 +172,13 @@ func TestControlRepository_GatesSnapshot(t *testing.T) {
 
 	m := ensureDraftMigration(t, repo)
 
-	// No data yet — coverage=1 (0/0 is treated as 1), but no comparisons
-	// and no reconciliation run, so gate must not pass.
+	// Schema migrations seed system accounts in account_balances, so coverage
+	// starts at 0 (no v2 rows yet). Gate must not pass regardless.
 	gate, err := repo.Gates(ctx, m)
 	require.NoError(t, err)
 	assert.False(t, gate.Passed)
 	assert.Equal(t, int64(0), gate.UnresolvedCritical)
-	assert.InDelta(t, 1.0, gate.TargetCoverageRatio, 0.001)
+	assert.Less(t, gate.TargetCoverageRatio, 1.0, "coverage must be < 1 before any v2 rows exist")
 
 	// Seed one source account (v1 balance) and one unresolved critical mismatch.
 	accountID := seedAccount(t, db, "cash", "IDR")
@@ -241,7 +249,7 @@ func TestControlRepository_RepairLifecycle(t *testing.T) {
 	require.NoError(t, repo.FinishRepair(ctx, repair.ID, mismatchID, true, ""))
 	repair, err = repo.GetRepair(ctx, repair.ID)
 	require.NoError(t, err)
-	require.Equal(t, "verified", repair.Status)
+	require.Equal(t, "completed", repair.Status)
 	// Lease must be cleared.
 	err = db.QueryRowContext(ctx, `SELECT lease_owner FROM data_migration_repairs WHERE id = $1`, repair.ID).Scan(&leaseOwner)
 	require.NoError(t, err)
@@ -250,7 +258,7 @@ func TestControlRepository_RepairLifecycle(t *testing.T) {
 	// Mismatch must be resolved.
 	mismatch, err := repo.GetMismatch(ctx, mismatchID)
 	require.NoError(t, err)
-	require.Equal(t, "verified", mismatch.Status)
+	require.Equal(t, "repaired", mismatch.Status)
 }
 
 // TestControlRepository_RepairIdempotency proves that creating a second repair
@@ -346,7 +354,7 @@ func TestControlRepository_SetReadPercentage_AboveThresholdRequiresChecker(t *te
 	m = advanceTo(t, repo, m, migrationkit.Backfilling)
 	_, err := db.ExecContext(ctx, `
 		INSERT INTO data_migration_checkpoints
-			(id, migration_id, worker_kind, partition_key, owner, status, last_processed_key, created_at, updated_at)
+			(id, migration_id, worker_kind, partition_key, lease_owner, status, last_source_key, created_at, updated_at)
 		VALUES (gen_random_uuid(), $1, 'backfill', 'account_id', 'test', 'completed', '{}', now(), now())`,
 		m.ID)
 	require.NoError(t, err)

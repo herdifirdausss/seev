@@ -3305,113 +3305,113 @@ C6 is complete only when all required items pass.
 
 ### Architecture
 
-- [ ] No MigrationService exists.
-- [ ] Migration belongs to Ledger owner.
-- [ ] Shared mechanics contain no Ledger transform.
-- [ ] Source and target authority are explicit.
-- [ ] Immutable Ledger remains truth.
-- [ ] No arbitrary SQL interface exists.
-- [ ] Cross-database exactly-once is not claimed.
+- [x] No MigrationService exists.
+- [x] Migration belongs to Ledger owner.
+- [x] Shared mechanics contain no Ledger transform.
+- [x] Source and target authority are explicit.
+- [x] Immutable Ledger remains truth.
+- [x] No arbitrary SQL interface exists.
+- [x] Cross-database exactly-once is not claimed.
 
 ### Control plane
 
-- [ ] Durable state machine exists.
-- [ ] Invalid transitions fail.
-- [ ] One active migration per resource.
-- [ ] Checkpoints and leases recover.
-- [ ] Dangerous transitions require checker.
-- [ ] Emergency source-read override works.
-- [ ] Audit is complete.
+- [x] Durable state machine exists.
+- [x] Invalid transitions fail.
+- [x] One active migration per resource.
+- [x] Checkpoints and leases recover.
+- [x] Dangerous transitions require checker.
+- [x] Emergency source-read override works.
+- [x] Audit is complete.
 
 ### Target and transform
 
-- [ ] v2 schema is additive.
-- [ ] Transform is deterministic.
-- [ ] Exact money/currency preserved.
-- [ ] Source version is monotonic.
-- [ ] Checksum works.
-- [ ] Target grants are least privilege.
+- [x] v2 schema is additive.
+- [x] Transform is deterministic.
+- [x] Exact money/currency preserved.
+- [x] Source version is monotonic.
+- [x] Checksum works.
+- [x] Target grants are least privilege.
 
 ### Backfill
 
-- [ ] Keyset batches work.
-- [ ] Restart resumes.
-- [ ] Version race is safe.
-- [ ] No newer target is overwritten.
-- [ ] Row failures are visible.
-- [ ] Tail scan and coverage pass.
-- [ ] Performance gate passes.
+- [x] Keyset batches work.
+- [x] Restart resumes.
+- [x] Version race is safe.
+- [x] No newer target is overwritten.
+- [x] Row failures are visible.
+- [x] Tail scan and coverage pass.
+- [ ] Performance gate passes. _(deferred — load baseline deferred; see §43)_
 
 ### Dual write
 
-- [ ] Every mutation path is covered.
-- [ ] New-account creation is covered.
-- [ ] Strict target failure rolls back posting.
-- [ ] Entries/source/target/outbox are atomic.
-- [ ] Posting latency gate passes.
-- [ ] Best-effort mode cannot serve target reads.
+- [x] Every mutation path is covered.
+- [x] New-account creation is covered.
+- [x] Strict target failure rolls back posting.
+- [x] Entries/source/target/outbox are atomic.
+- [ ] Posting latency gate passes. _(deferred — load baseline deferred; see §43)_
+- [x] Best-effort mode cannot serve target reads.
 
 ### Shadow read
 
-- [ ] Stable sampling works.
-- [ ] Source response is unchanged.
-- [ ] Target failure is isolated.
-- [ ] Async queue is bounded.
-- [ ] Exact mismatches are recorded.
-- [ ] Sensitive evidence is minimized.
-- [ ] Coverage gate passes.
+- [x] Stable sampling works.
+- [x] Source response is unchanged.
+- [x] Target failure is isolated.
+- [x] Async queue is bounded.
+- [x] Exact mismatches are recorded.
+- [x] Sensitive evidence is minimized.
+- [x] Coverage gate passes.
 
 ### Reconciliation and repair
 
-- [ ] Source-target comparison exists.
-- [ ] Target-Ledger comparison exists.
-- [ ] Source-Ledger comparison exists.
-- [ ] Shared corruption is detectable.
-- [ ] Critical mismatches block cutover.
-- [ ] Repair is idempotent.
-- [ ] Repair never changes immutable Ledger entries.
-- [ ] Repaired items are verified.
+- [x] Source-target comparison exists.
+- [x] Target-Ledger comparison exists.
+- [x] Source-Ledger comparison exists.
+- [x] Shared corruption is detectable.
+- [x] Critical mismatches block cutover.
+- [x] Repair is idempotent.
+- [x] Repair never changes immutable Ledger entries.
+- [x] Repaired items are verified.
 
 ### Cutover
 
-- [ ] Target canary has source fallback.
-- [ ] Automatic abort works.
-- [ ] Every ramp stage has evidence.
-- [ ] 100% target reads pass.
-- [ ] Fallback and latency gates pass.
-- [ ] Instant read rollback works while dual writes remain.
-- [ ] Source writes remain through the baseline observation window.
+- [x] Target canary has source fallback.
+- [x] Automatic abort works.
+- [x] Every ramp stage has evidence.
+- [x] 100% target reads pass.
+- [x] Fallback and latency gates pass.
+- [x] Instant read rollback works while dual writes remain.
+- [x] Source writes remain through the baseline observation window.
 
 ### Optional write cutover
 
-- [ ] Old binary is blocked.
-- [ ] Target-only writes are proven.
-- [ ] Source resync is exercised.
-- [ ] Rollback limitation is explicit.
-- [ ] Decision to stop or continue is documented.
+- [ ] Old binary is blocked. _(deferred — see §43)_
+- [ ] Target-only writes are proven. _(deferred — see §43)_
+- [ ] Source resync is exercised. _(deferred — source resynchronization deferred; see §43)_
+- [ ] Rollback limitation is explicit. _(deferred — see §43)_
+- [ ] Decision to stop or continue is documented. _(deferred — see §43)_
 
 ### Backup and operations
 
-- [ ] Backup includes source/target/control state.
-- [ ] PITR restore returns to safe source-primary.
-- [ ] Metrics and dashboards exist.
-- [ ] Alerts have runbooks.
-- [ ] Cardinality is bounded.
-- [ ] Existing business journeys remain green.
+- [ ] Backup includes source/target/control state. _(deferred — PITR restore deferred; see §43)_
+- [ ] PITR restore returns to safe source-primary. _(deferred — PITR restore deferred; see §43)_
+- [x] Metrics and dashboards exist.
+- [x] Alerts have runbooks.
+- [x] Cardinality is bounded.
+- [x] Existing business journeys remain green.
 
 ### Evidence
 
-- [ ] Backfill race chaos passes.
-- [ ] Strict dual-write chaos passes.
-- [ ] Target outage fallback passes.
-- [ ] Wrong-value automatic abort passes.
-- [ ] DB/service restart passes.
-- [ ] Restore drill passes.
-- [ ] Load baseline is recorded.
-- [ ] Final clean-tree gate passes.
-- [ ] Residual risks are explicit.
-- [ ] Roadmap/current-service docs reflect reality.
-- [ ] Plan is archived only after evidence links are complete.
+- [x] Backfill race chaos passes.
+- [x] Strict dual-write chaos passes.
+- [x] Target outage fallback passes.
+- [x] Wrong-value automatic abort passes.
+- [x] DB/service restart passes.
+- [ ] Restore drill passes. _(deferred — PITR restore deferred; see §43)_
+- [ ] Load baseline is recorded. _(deferred; see §43)_
+- [x] Final clean-tree gate passes.
+- [x] Residual risks are explicit.
+- [x] Roadmap/current-service docs reflect reality.
+- [x] Plan is archived only after evidence links are complete.
 
 ---
 

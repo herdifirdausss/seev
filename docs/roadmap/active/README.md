@@ -10,9 +10,6 @@
 |---|---|
 | [35](35-phase6j-kubernetes.md) | Optional local Kubernetes learning |
 | [56 · F0](56-f0-frontend-platform-foundation.md) | Frontend platform foundation |
-| [61 · C5](61-c5-advanced-financial-products-period-close.md) | Advanced financial products and period close |
-| [62 · C6](62-c6-zero-downtime-migration-engine.md) | Zero-downtime migration engine |
-| [64 · K0](64-k0-deployment-inventory-baseline.md) | Deployment inventory and Kubernetes readiness baseline |
 | [65 · A11](65-a11-database-audit-and-hardening.md) | Database audit and hardening |
 
 Read the [roadmap strategy](../42-long-term-roadmap.md) and each plan's trigger

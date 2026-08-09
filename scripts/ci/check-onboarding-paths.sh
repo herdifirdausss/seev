@@ -18,7 +18,13 @@ require_file() {
 require_text() {
 	local file="$1"
 	local pattern="$2"
-	if ! rg --quiet --fixed-strings "$pattern" "$file"; then
+	local found=0
+	if command -v rg >/dev/null 2>&1; then
+		rg --quiet --fixed-strings "$pattern" "$file" && found=1 || true
+	else
+		grep -qF "$pattern" "$file" && found=1 || true
+	fi
+	if [[ $found -eq 0 ]]; then
 		printf 'onboarding-check: %s does not contain %q\n' "$file" "$pattern" >&2
 		failures=$((failures + 1))
 	fi

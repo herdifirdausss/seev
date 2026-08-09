@@ -3,7 +3,7 @@
 # create product → approve rate → enroll → RunDaily → ClosePeriod →
 # period immutable (second close rejected, DB trigger blocks raw UPDATE).
 #
-# Tests docs/roadmap/active/61-c5-advanced-financial-products-period-close.md §3
+# Tests docs/roadmap/archive/61-c5-advanced-financial-products-period-close.md §3
 # against a real assembled Ledger process with all migrations applied, so schema
 # correctness (including the fn_prevent_c5_closed_period_mutation trigger) is
 # exercised alongside the Go service layer.

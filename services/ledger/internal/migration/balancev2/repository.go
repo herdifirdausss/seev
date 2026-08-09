@@ -97,6 +97,7 @@ func targetForAccount(ctx context.Context, q queryer, accountID uuid.UUID) (*Tar
 	err := q.QueryRowContext(ctx, `
 		SELECT v.account_id, v.account_type, v.currency, a.status,
 		       a.currency, a.type,
+		       ab.allow_negative,
 		       v.allow_negative, v.available_amount, v.reserved_amount,
 		       v.pending_amount, v.restricted_amount, v.source_version,
 		       v.last_transaction_id::text, v.projection_checksum,

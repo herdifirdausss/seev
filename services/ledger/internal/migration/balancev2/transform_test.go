@@ -101,7 +101,7 @@ func TestChecksum_DeterministicSameInput(t *testing.T) {
 	target, err := Transform(source, nil)
 	require.NoError(t, err)
 	first := Checksum(target)
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		require.Equal(t, first, Checksum(target), "checksum must be a pure function of the target row (§6.4)")
 	}
 }

@@ -71,6 +71,7 @@ jobs:
             echo "CAPABILITY_WORK_DIR=$RUNNER_TEMP/seev-capability-e2e"
             echo "PRIVACY_WORK_DIR=$RUNNER_TEMP/seev-privacy-e2e"
             echo "CHAOS_WORK_DIR=$RUNNER_TEMP/seev-chaos"
+            echo "CAPABILITY_CHAOS_WORK_DIR=$RUNNER_TEMP/seev-capability-chaos"
             echo "EVIDENCE_WORK_DIR=$RUNNER_TEMP/seev-scheduled-full-stack-evidence"
           } >> "$GITHUB_ENV"
 
@@ -145,6 +146,18 @@ jobs:
           SEEV_WORK_DIR: ${{ env.CHAOS_WORK_DIR }}
         run: ./scripts/chaos-test.sh all
 
+      - name: Reset volume before capability chaos
+        if: always() && (env.SUITE == 'chaos' || env.SUITE == 'all')
+        run: docker compose down -v --remove-orphans
+
+      - name: Capability and platform chaos
+        id: capability_chaos
+        if: env.SUITE == 'chaos' || env.SUITE == 'all'
+        continue-on-error: true
+        env:
+          SEEV_WORK_DIR: ${{ env.CAPABILITY_CHAOS_WORK_DIR }}
+        run: ./scripts/capability-chaos.sh all
+
       # K7: summary built from step OUTCOME (a first-class GitHub Actions
       # concept — success/failure/skipped per step), never by parsing ANSI
       # color codes out of the scripts' own colored PASS/FAIL log lines.
@@ -160,6 +173,7 @@ jobs:
             echo "| capability-e2e | ${{ steps.capability.outcome || '_skipped_' }} |"
             echo "| privacy-e2e | ${{ steps.privacy.outcome || '_skipped_' }} |"
             echo "| chaos-all | ${{ steps.chaos.outcome || '_skipped_' }} |"
+            echo "| capability-and-platform-chaos | ${{ steps.capability_chaos.outcome || '_skipped_' }} |"
           } >> "$GITHUB_STEP_SUMMARY"
 
       # Build a safe, run-specific package before the work directories are
@@ -175,6 +189,7 @@ jobs:
           SEEV_EVIDENCE_OUTCOME_CAPABILITY: ${{ steps.capability.outcome || 'skipped' }}
           SEEV_EVIDENCE_OUTCOME_PRIVACY: ${{ steps.privacy.outcome || 'skipped' }}
           SEEV_EVIDENCE_OUTCOME_CHAOS: ${{ steps.chaos.outcome || 'skipped' }}
+          SEEV_EVIDENCE_OUTCOME_CAPABILITY_CHAOS: ${{ steps.capability_chaos.outcome || 'skipped' }}
           SEEV_EVIDENCE_RETENTION_DAYS: "30"
         run: |
           ./scripts/ci/package-critical-failure-evidence.sh \
@@ -182,7 +197,8 @@ jobs:
             business "$BUSINESS_WORK_DIR" \
             capability "$CAPABILITY_WORK_DIR" \
             privacy "$PRIVACY_WORK_DIR" \
-            chaos "$CHAOS_WORK_DIR"
+            chaos "$CHAOS_WORK_DIR" \
+            capability-chaos "$CAPABILITY_CHAOS_WORK_DIR"
 
       - name: Final cleanup
         if: always()
@@ -202,7 +218,7 @@ jobs:
           if-no-files-found: warn
 
       - name: Fail the job if a selected suite failed
-        if: steps.business.outcome == 'failure' || steps.capability.outcome == 'failure' || steps.privacy.outcome == 'failure' || steps.chaos.outcome == 'failure'
+        if: steps.business.outcome == 'failure' || steps.capability.outcome == 'failure' || steps.privacy.outcome == 'failure' || steps.chaos.outcome == 'failure' || steps.capability_chaos.outcome == 'failure'
         run: |
           echo "::error::one or more selected suites failed — see summary and scheduled evidence artifact"
           exit 1

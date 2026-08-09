@@ -6,7 +6,10 @@ metadata:
   name: {{ $namespace }}
   labels:
     app.kubernetes.io/part-of: seev
-    pod-security.kubernetes.io/enforce: {{ if eq $namespace $root.Values.global.appNamespace }}restricted{{ else }}baseline{{ end }}
+    # The edge namespace is managed by the Traefik platform overlay as well
+    # as by this chart; keep both owners on the same restricted policy so
+    # Helm server-side apply does not conflict with the platform bootstrap.
+    pod-security.kubernetes.io/enforce: {{ if or (eq $namespace $root.Values.global.appNamespace) (eq $namespace $root.Values.global.edgeNamespace) }}restricted{{ else }}baseline{{ end }}
     pod-security.kubernetes.io/audit: restricted
     pod-security.kubernetes.io/warn: restricted
 ---

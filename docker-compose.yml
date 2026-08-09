@@ -188,7 +188,7 @@ services:
     ports:
       # Host uses 6380 to avoid colliding with a locally installed Redis.
       # Containers keep reaching this service as redis:6379.
-      - "127.0.0.1:6380:6379"
+      - "127.0.0.1:${REDIS_PORT:-6380}:6379"
     volumes:
       - seev_redis_data:/data
     healthcheck:
@@ -202,9 +202,14 @@ services:
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME:-seev}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-seev}
+      # Skip the .erlang.cookie file-permission dance on fresh volumes; supplying
+      # the cookie via env var bypasses the eacces read error that Docker's
+      # volume initialisation triggers on macOS (UID mismatch on the pre-baked
+      # file copied from the image layer into the new named volume).
+      RABBITMQ_ERLANG_COOKIE: ${RABBITMQ_ERLANG_COOKIE:-seev-dev-cookie}
     ports:
-      - "127.0.0.1:5672:5672"   # AMQP
-      - "127.0.0.1:15672:15672" # management UI
+      - "127.0.0.1:${RABBITMQ_PORT:-5672}:5672"   # AMQP
+      - "127.0.0.1:${RABBITMQ_MANAGEMENT_PORT:-15672}:15672" # management UI
     volumes:
       - seev_rabbitmq_data:/var/lib/rabbitmq
     healthcheck:

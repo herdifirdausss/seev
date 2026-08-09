@@ -1,6 +1,6 @@
 # C3 Current Notification Inventory
 
-> Entry-gate artifact for [Plan 59](../roadmap/active/59-c3-multi-channel-notifications.md).
+> Entry-gate artifact for [Plan 59](../roadmap/archive/59-c3-multi-channel-notifications.md).
 
 | Existing surface | Owner | C3 treatment |
 |---|---|---|

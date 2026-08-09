@@ -16,11 +16,12 @@ import (
 )
 
 var (
-	ErrMigrationNotFound  = errors.New("balancev2: migration not found")
-	ErrOptimisticConflict = errors.New("balancev2: migration changed since it was read")
-	ErrGateBlocked        = errors.New("balancev2: migration gate is not satisfied")
-	ErrApprovalRequired   = errors.New("balancev2: checker approval is required")
-	ErrNoActiveMigration  = errors.New("balancev2: no active migration")
+	ErrMigrationNotFound   = errors.New("balancev2: migration not found")
+	ErrOptimisticConflict  = errors.New("balancev2: migration changed since it was read")
+	ErrGateBlocked         = errors.New("balancev2: migration gate is not satisfied")
+	ErrApprovalRequired    = errors.New("balancev2: checker approval is required")
+	ErrNoActiveMigration   = errors.New("balancev2: no active migration")
+	ErrRepairAlreadyExists = errors.New("balancev2: active repair already exists for this mismatch")
 )
 
 // repairLeaseDuration bounds how long a single approve-and-execute repair
@@ -676,7 +677,7 @@ func (r *ControlRepository) CreateRun(ctx context.Context, migrationID uuid.UUID
 			evidence, created_at
 		)
 		VALUES ($1, $2, $3, 'running', now(), NULLIF($4, ''),
-			jsonb_build_object('started_by', $5), now())
+			jsonb_build_object('started_by', $5::text), now())
 		RETURNING `+runColumns,
 		uuid.New(), migrationID, runType, sourceCutoff, actor)
 	var run Run
@@ -937,7 +938,7 @@ func (r *ControlRepository) CreateRepair(ctx context.Context, mismatchID uuid.UU
 			return fmt.Errorf("balancev2: create repair: %w", scanErr)
 		}
 		if !created {
-			return nil
+			return ErrRepairAlreadyExists
 		}
 		_, err := tx.ExecContext(ctx, `
 			UPDATE data_migration_mismatches

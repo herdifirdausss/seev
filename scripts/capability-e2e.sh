@@ -4,7 +4,9 @@
 # host-binary bootstrap as business-e2e.sh, but exercises the less frequently
 # used Ledger control planes through their real HTTP surfaces:
 # scheduled execution, fee maker-checker, disbursement maker-checker, dispute
-# lifecycle, reconciliation correction, and multi-currency FX.
+# lifecycle, reconciliation correction, and multi-currency FX. When
+# CAPABILITY_E2E_CHAOS=1, each durable boundary also gets a real process-kill,
+# fail-closed probe, and restart before the normal assertion continues.
 #
 # Requires Docker, the Go toolchain, and the checked-out repository.  It does
 # not claim Kubernetes/cloud/vendor/DR acceptance; those remain separate live
@@ -26,6 +28,7 @@ INTERNAL_PORT="${INTERNAL_PORT:-18201}"
 export C5_FINANCIAL_PRODUCTS_ENABLED="${C5_FINANCIAL_PRODUCTS_ENABLED:-true}"
 export DEFAULT_CURRENCY="${DEFAULT_CURRENCY:-IDR}"
 export POLICY_CACHE_TTL="${POLICY_CACHE_TTL:-2s}"
+export CAPABILITY_E2E_CHAOS="${CAPABILITY_E2E_CHAOS:-0}"
 
 # shellcheck source=scripts/lib.sh
 # shellcheck disable=SC1091
@@ -91,6 +94,96 @@ expect_client_failure() {
 	return 1
 }
 
+chaos_ledger_outage() {
+	[ "$CAPABILITY_E2E_CHAOS" = "1" ] || return 0
+
+	local label=$1 method=$2 path=$3 token=$4 body='{}'
+	local code
+	if [ "$#" -ge 5 ]; then
+		body="$5"
+	fi
+	log "CHAOS: killing ledger-service before $label"
+	kill_ledger_hard
+	code="$(curl_internal -sS --max-time 10 -o /dev/null -w '%{http_code}' -X "$method" \
+		"http://localhost:$LEDGER_INTERNAL_PORT$path" \
+		-H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d "$body" 2>/dev/null || echo 000)"
+	case "$code" in
+		2*) fail "$label unexpectedly succeeded while ledger-service was killed (HTTP $code)" ;;
+		*) ok "$label failed closed while ledger-service was killed (HTTP $code)" ;;
+	esac
+	start_ledger_service
+}
+
+chaos_public_ledger_outage() {
+	[ "$CAPABILITY_E2E_CHAOS" = "1" ] || return 0
+
+	local label=$1 method=$2 path=$3 token=$4 body='{}'
+	local code
+	if [ "$#" -ge 5 ]; then
+		body="$5"
+	fi
+	log "CHAOS: killing ledger-service before public $label"
+	kill_ledger_hard
+	code="$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' -X "$method" \
+		"http://localhost:$APP_PORT$path" \
+		-H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d "$body" 2>/dev/null || echo 000)"
+	case "$code" in
+		2*) fail "$label unexpectedly succeeded while ledger-service was killed (HTTP $code)" ;;
+		*) ok "$label failed closed while ledger-service was killed (HTTP $code)" ;;
+	esac
+	start_ledger_service
+}
+
+auth_kyc_chaos_flow() {
+	[ "$CAPABILITY_E2E_CHAOS" = "1" ] || return 0
+
+	log "=== auth/KYC and tenant execution state: owner outage -> fail closed -> recovery ==="
+	local email password registration access refresh login_code kyc_response user_id
+	email="capability-chaos-$RUN_ID@example.com"
+	password='CapabilityChaos!2026'
+	registration="$(curl -sS -X POST "http://localhost:$AUTH_APP_PORT/api/v1/auth/register" \
+		-H 'Content-Type: application/json' \
+		-d "{\"email\":\"$email\",\"password\":\"$password\",\"full_name\":\"Capability Chaos\"}")"
+	access="$(printf '%s' "$registration" | json_field access_token)"
+	refresh="$(printf '%s' "$registration" | json_field refresh_token)"
+	user_id="$(printf '%s' "$registration" | json_field id)"
+	if [ -n "$access" ] && [ -n "$refresh" ] && [ -n "$user_id" ]; then
+		ok "registered a real auth subject for the KYC outage drill"
+	else
+		fail "auth/KYC chaos registration failed: $registration"
+		return 1
+	fi
+
+	kill_auth_hard
+	login_code="$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' -X POST \
+		"http://localhost:$AUTH_APP_PORT/api/v1/auth/login" -H 'Content-Type: application/json' \
+		-d "{\"email\":\"$email\",\"password\":\"$password\"}" 2>/dev/null || echo 000)"
+	case "$login_code" in
+		2*) fail "auth login unexpectedly succeeded while auth-service was killed (HTTP $login_code)" ;;
+		*) ok "auth login failed closed while auth-service was killed (HTTP $login_code)" ;;
+	esac
+	start_auth_service
+
+	kyc_response="$(kyc_approve_l1 "$AUTH_APP_PORT" "$access" "$refresh")"
+	access="$(printf '%s' "$kyc_response" | json_field access_token)"
+	if [ -n "$access" ]; then
+		ok "KYC approval and token refresh converged after auth-service recovery"
+	else
+		fail "KYC recovery did not return a refreshed access token: $kyc_response"
+		return 1
+	fi
+
+	# The execution projection is deliberately changed after auth recovery. A
+	# stale/disabled tenant must be rejected at execution time and restored only
+	# by an explicit state transition; this is independent of the JWT claim.
+	psql_exec "$LEDGER_DB_NAME" -c "UPDATE money_movement_execution_subjects SET tenant_status='disabled', updated_at=now() WHERE user_id='$USER_A';" >/dev/null
+	public_request "tenant-disabled-after-auth-recovery" -X POST "http://localhost:$APP_PORT/api/v1/ledger/transactions" \
+		-H "Authorization: Bearer $TOKEN_A" -H 'Content-Type: application/json' \
+		-d "{\"idempotency_key\":\"capability-chaos-tenant-disabled-$RUN_ID\",\"type\":\"transfer_p2p\",\"amount\":\"1\",\"currency\":\"IDR\",\"target_user_id\":\"$USER_B\"}"
+	expect_client_failure "disabled tenant was rejected at execution time" || return 1
+	psql_exec "$LEDGER_DB_NAME" -c "UPDATE money_movement_execution_subjects SET tenant_status='active', updated_at=now() WHERE user_id='$USER_A';" >/dev/null
+}
+
 require_id() {
 	local label=$1 value=$2
 	if [ -n "$value" ]; then
@@ -134,6 +227,7 @@ schedule_flow() {
 	expect_success "scheduled transfer created" || return 1
 	schedule_id="$(printf '%s' "$LAST_BODY" | json_field id)"
 	require_id "schedule" "$schedule_id" || return 1
+	chaos_ledger_outage "schedule dispatcher" POST "/api/v1/ledger/admin/schedules/run?date=$run_date" "$CHECKER_TOKEN" '{}'
 
 	internal_request "schedule-run" -X POST "http://localhost:$LEDGER_INTERNAL_PORT/api/v1/ledger/admin/schedules/run?date=$run_date" \
 		-H "Authorization: Bearer $CHECKER_TOKEN" -H "Content-Type: application/json" \
@@ -175,6 +269,7 @@ fee_approval_flow() {
 	internal_request "fee-submit" -X POST "http://localhost:$LEDGER_INTERNAL_PORT/api/v1/ledger/admin/ledger/fee-rules/$version_id/submit" \
 		-H "Authorization: Bearer $MAKER_TOKEN" -H "Content-Type: application/json" -d '{}'
 	expect_success "fee rule submitted by maker" || return 1
+	chaos_ledger_outage "fee approval" POST "/api/v1/ledger/admin/ledger/fee-rules/$version_id/approve" "$CHECKER_TOKEN" '{"reason":"chaos recovery probe"}'
 
 	internal_request "fee-approve" -X POST "http://localhost:$LEDGER_INTERNAL_PORT/api/v1/ledger/admin/ledger/fee-rules/$version_id/approve" \
 		-H "Authorization: Bearer $CHECKER_TOKEN" -H "Content-Type: application/json" \
@@ -200,6 +295,7 @@ disbursement_flow() {
 	expect_success "disbursement manifest imported" || return 1
 	batch_id="$(printf '%s' "$LAST_BODY" | json_field id)"
 	require_id "disbursement batch" "$batch_id" || return 1
+	chaos_ledger_outage "disbursement processing" POST "/api/v1/ledger/admin/disbursements/$batch_id/run" "$MAKER_TOKEN" '{}'
 
 	internal_request "disbursement-run-before-approval" -X POST "http://localhost:$LEDGER_INTERNAL_PORT/api/v1/ledger/admin/disbursements/$batch_id/run" \
 		-H "Authorization: Bearer $MAKER_TOKEN" -H "Content-Type: application/json" -d '{}'
@@ -234,6 +330,7 @@ recon_flow() {
 	expect_success "reconciliation batch imported and matched" || return 1
 	batch_id="$(printf '%s' "$LAST_BODY" | json_field id)"
 	require_id "reconciliation batch" "$batch_id" || return 1
+	chaos_ledger_outage "reconciliation report" GET "/api/v1/ledger/admin/recon/batches/$batch_id" "$MAKER_TOKEN"
 
 	internal_request "recon-report" -X GET "http://localhost:$LEDGER_INTERNAL_PORT/api/v1/ledger/admin/recon/batches/$batch_id" \
 		-H "Authorization: Bearer $MAKER_TOKEN"
@@ -274,6 +371,8 @@ dispute_flow() {
 	expect_success "chargeback dispute opened" || return 1
 	dispute_id="$(printf '%s' "$LAST_BODY" | json_field id)"
 	require_id "dispute" "$dispute_id" || return 1
+	chaos_ledger_outage "dispute evidence" POST "/api/v1/ledger/admin/disputes/$dispute_id/evidence" "$MAKER_TOKEN" \
+		"{\"evidence_ref\":\"object://capability-chaos/$RUN_ID/evidence\"}"
 
 	internal_request "dispute-evidence" -X POST "http://localhost:$LEDGER_INTERNAL_PORT/api/v1/ledger/admin/disputes/$dispute_id/evidence" \
 		-H "Authorization: Bearer $MAKER_TOKEN" -H "Content-Type: application/json" \
@@ -333,6 +432,8 @@ fx_flow() {
 		fail "FX quote omitted expected amounts: $LAST_BODY"
 		return 1
 	}
+	chaos_public_ledger_outage "FX conversion" POST "/api/v1/ledger/fx/conversions" "$TOKEN_A" \
+		"{\"quote_id\":\"$quote_id\",\"expected_source_amount\":\"$source_amount\",\"expected_target_amount\":\"$target_amount\",\"idempotency_key\":\"capability-fx-conversion-$RUN_ID\"}"
 
 	public_request "fx-conversion" -X POST "http://localhost:$APP_PORT/api/v1/ledger/fx/conversions" \
 		-H "Authorization: Bearer $TOKEN_A" -H "Content-Type: application/json" \
@@ -431,6 +532,8 @@ payout_unknown_state_flow() {
 command_policy_flow() {
 	log "=== command policy boundary: allow, deny, public API -> scheduler -> approved admin execution ==="
 	local public_decisions scheduler_decisions disbursement_decisions denied_decisions malformed_decisions
+	chaos_ledger_outage "command-policy request" POST "/api/v1/ledger/transactions" "$TOKEN_A" \
+		"{\"idempotency_key\":\"capability-policy-outage-$RUN_ID\",\"type\":\"transfer_p2p\",\"amount\":\"1\",\"target_user_id\":\"$USER_B\"}"
 
 	# Exercise the execution-time subject gate through the public route. The
 	# executor must record a denied decision before it rejects the command, and
@@ -467,6 +570,7 @@ command_policy_flow() {
 }
 
 setup
+auth_kyc_chaos_flow
 schedule_flow
 fee_approval_flow
 disbursement_flow

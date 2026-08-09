@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# End-to-end merchant/B2B journey (docs/roadmap/active/57-c1-merchant-b2b-api.md
+# End-to-end merchant/B2B journey (docs/roadmap/archive/57-c1-merchant-b2b-api.md
 # T10): sandbox onboarding -> account/transaction reads -> a real payin
 # settling through mockvendor's signed webhook -> a merchant-to-merchant
 # transfer -> idempotency replay (no double-debit) -> cross-tenant

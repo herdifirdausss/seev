@@ -4112,41 +4112,41 @@ C4 is complete only when all required items below pass.
 
 ### Scope and architecture
 
-- [ ] IDR and USD are the only activated currencies.
-- [ ] No FX service exists.
-- [ ] No implicit conversion path exists.
-- [ ] Ledger owns quotes, conversions, and positions.
-- [ ] All normal transactions are single-currency.
-- [ ] Both FX legs commit atomically.
-- [ ] No real bank/rate-provider claim exists.
+- [x] IDR and USD are the only activated currencies.
+- [x] No FX service exists.
+- [x] No implicit conversion path exists.
+- [x] Ledger owns quotes, conversions, and positions.
+- [x] All normal transactions are single-currency.
+- [x] Both FX legs commit atomically.
+- [x] No real bank/rate-provider claim exists.
 
 ### Exact money
 
-- [ ] All amounts are integer minor units.
-- [ ] IDR and USD exponent behavior is correct.
-- [ ] No float is used in financial math.
-- [ ] Conversion arithmetic is exact.
-- [ ] Rounding is deterministic and documented.
-- [ ] Overflow and zero-target cases fail safely.
-- [ ] Public APIs use decimal strings for minor units.
+- [x] All amounts are integer minor units.
+- [x] IDR and USD exponent behavior is correct.
+- [x] No float is used in financial math.
+- [x] Conversion arithmetic is exact.
+- [x] Rounding is deterministic and documented.
+- [x] Overflow and zero-target cases fail safely.
+- [x] Public APIs use decimal strings for minor units.
 
 ### Currency accounts
 
-- [ ] USD account family can be provisioned idempotently.
-- [ ] Provisioning mints no money.
-- [ ] Balance API lists currencies separately.
-- [ ] Existing IDR balance route remains compatible.
-- [ ] Disabled currency blocks new account enable.
-- [ ] Concurrent provisioning is safe.
+- [x] USD account family can be provisioned idempotently.
+- [x] Provisioning mints no money.
+- [x] Balance API lists currencies separately.
+- [x] Existing IDR balance route remains compatible.
+- [x] Disabled currency blocks new account enable.
+- [x] Concurrent provisioning is safe.
 
 ### Ledger invariants
 
-- [ ] Every entry account matches transaction currency.
-- [ ] Wrong-currency system account is impossible.
-- [ ] Database defense exists.
-- [ ] Verifier groups by currency.
-- [ ] Statements/CSV are currency-explicit.
-- [ ] Existing IDR posting remains green.
+- [x] Every entry account matches transaction currency.
+- [x] Wrong-currency system account is impossible.
+- [x] Database defense exists.
+- [x] Verifier groups by currency.
+- [x] Statements/CSV are currency-explicit.
+- [x] Existing IDR posting remains green.
 
 ### USD transfer
 

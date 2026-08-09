@@ -115,8 +115,11 @@ egress:
   allowedDomains:
     - ".example.invalid"
   resources:
-    requests: {cpu: 25m, memory: 64Mi}
-    limits: {cpu: 250m, memory: 256Mi}
+    # Squid's startup footprint exceeds 256Mi with the pinned 6.6 image.
+    # Keep the request small for disposable clusters, but give the proxy
+    # enough headroom to initialize and remain available under probe load.
+    requests: {cpu: 25m, memory: 128Mi}
+    limits: {cpu: 250m, memory: 512Mi}
 
 observability:
   serviceMonitor:

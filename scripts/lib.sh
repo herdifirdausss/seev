@@ -249,6 +249,23 @@ wait_for_container_healthy() {
 	return 1
 }
 
+# A container's healthcheck can become healthy before Docker's host-port
+# forwarding is accepting connections again after a stop/start cycle.  The
+# local runtime acceptance profile starts fail-fast services immediately after
+# dependency recovery, so confirm the actual host-side Redis contract too.
+wait_for_redis_reachable() {
+	local tries=60
+	while [ "$tries" -gt 0 ]; do
+		if redis-cli -h localhost -p "$REDIS_HOST_PORT" ping >/dev/null 2>&1; then
+			return 0
+		fi
+		sleep 0.5
+		tries=$((tries - 1))
+	done
+	fail "redis did not become reachable on localhost:$REDIS_HOST_PORT in time"
+	return 1
+}
+
 # Docker keeps a container's last healthy status briefly while an asynchronous
 # `docker restart` is still waiting to stop it. A caller that only waits for
 # `healthy` can therefore start the next service against a database that is
@@ -282,6 +299,7 @@ ensure_deps_up() {
 	resolve_compose_containers
 	wait_for_container_healthy "$POSTGRES_CONTAINER"
 	wait_for_container_healthy "$REDIS_CONTAINER"
+	wait_for_redis_reachable
 	wait_for_container_healthy "$RABBITMQ_CONTAINER"
 	ensure_service_dbs
 	detect_db_port
@@ -616,6 +634,9 @@ start_payin_service() {
 		export POSTGRES_PASSWORD=payin_app
 		export POSTGRES_DB=$PAYIN_DB_NAME
 		export POSTGRES_SSL_MODE=disable
+		export REDIS_ENABLED="${REDIS_ENABLED:-true}"
+		export REDIS_ADDR=localhost:$REDIS_HOST_PORT
+		export REDIS_DB=0
 		export LEDGER_GRPC_ADDR=localhost:$LEDGER_GRPC_PORT
 		export FRAUD_GRPC_ADDR=localhost:$FRAUD_GRPC_PORT
 		export VENDOR_GRPC_ADDR=localhost:$VENDOR_GRPC_PORT
@@ -1088,6 +1109,16 @@ kill_fraud_hard() {
 		log "kill -9 fraud-service pid $pid"
 		kill -9 "$pid" 2>/dev/null || true
 		rm -f "$FRAUD_PID_FILE"
+	fi
+}
+
+kill_auth_hard() {
+	if [ -f "$AUTH_PID_FILE" ]; then
+		local pid
+		pid="$(cat "$AUTH_PID_FILE")"
+		log "kill -9 auth-service pid $pid"
+		kill -9 "$pid" 2>/dev/null || true
+		rm -f "$AUTH_PID_FILE"
 	fi
 }
 

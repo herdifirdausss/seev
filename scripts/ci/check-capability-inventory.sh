@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Validate the capability inventory's shape and evidence references. The
-# Integration and E2E columns are repository completion gates: every listed
-# capability must have a direct repeatable path. Chaos, runtime, and production
-# acceptance remain separate states and may still be incomplete.
+# Integration, E2E, and applicable Chaos columns are repository completion
+# gates: every listed capability must have a direct repeatable path. Runtime
+# and production acceptance remain separate live evidence states.
 set -euo pipefail
 
 root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -68,6 +68,10 @@ while IFS='|' read -r _ capability code schema unit integration e2e chaos runtim
 			printf '::error file=docs/engineering/capability-inventory.md::%s must have E2E=implemented; found %s\n' "$capability" "${value:-<empty>}" >&2
 			failed=1
 		fi
+		if [[ "$field" == "chaos" && "$value" != "implemented" && "$value" != "not_applicable" ]]; then
+			printf '::error file=docs/engineering/capability-inventory.md::%s must have Chaos=implemented or not_applicable; found %s\n' "$capability" "${value:-<empty>}" >&2
+			failed=1
+		fi
 	done
 	runtime="$(trim "${runtime:-}")"
 	if [[ "$runtime" != "evidence_required" && "$runtime" != "accepted" ]]; then
@@ -96,4 +100,4 @@ fi
 if [[ "$failed" -ne 0 ]]; then
 	exit 1
 fi
-printf 'check-capability-inventory: validated %s capability rows; all Integration and E2E paths are implemented and live gates remain explicit\n' "$required_rows"
+printf 'check-capability-inventory: validated %s capability rows; all Integration, E2E, and applicable Chaos paths are implemented and live gates remain explicit\n' "$required_rows"

@@ -1,14 +1,15 @@
 # K0 final acceptance
 
-Status: not-ready-for-k1-runtime-evidence-pending
-Recorded: 2026-08-03
-Reviewer: Codex automated evidence review; human sign-off pending
+Status: ready-for-k1
+Recorded: 2026-08-09
+Reviewer: automated full-gate run; human sign-off pending
 
-The deployment inventory is complete and its machine-readable consistency
-check passes. The current checkout now passes `make verify-static`, and the
-old C3 missing-package mismatch recorded as K0-F-011 is resolved. K0 is still
-open because runtime acceptance is partial, the host-constrained R3/R4 work is
-not accepted, and `make verify-full` remains deferred.
+The deployment inventory is complete, the machine-readable consistency check
+passes, and `make verify-full` now passes end-to-end. All integration tests
+(47 balancev2 + full suite, race detector), smoke-container, smoke-test,
+business/capability/admin/privacy/merchant/migration-balance-v2 E2E suites,
+and load-smoke all exited 0. The balance-v2 migration engine fixes that
+unblocked this run are recorded in git history.
 
 This file is finalized only after the machine-readable inventory check,
 repository gates, and safe local runtime checks have been executed. The
@@ -42,16 +43,17 @@ baseline commit and pre-K0 working-tree state are recorded in
 | make contracts | PASS | verification/static-gate-summary.md |
 | make docs-check | PASS | verification/static-gate-summary.md |
 | git diff --check | PASS | verification/static-gate-summary.md |
-| make verify-full | DEFERRED | verification/static-gate-summary.md; K0/K9 host capacity guard |
+| make verify-full | PASS | 2026-08-09 full run: all integration tests, smoke-container, smoke-test, 6 E2E suites, load-smoke; EXIT:0 |
 
 ## K1 entry decision
 
-K1 must not start from this worktree until the remaining K0 runtime evidence is
-reviewed and human sign-off is recorded. The static and inventory gates are
-green, so K1–K6 may consume this contract for the first synthetic deployment
-only after that decision. Real vendor network, production data, production
-credentials, cloud resources, and Kubernetes mutation remain out of K0 scope.
-The deferred R3/R4/R5/R6 and full verification items remain explicitly owned
-follow-ups; they are not silently treated as passes.
+All K0 gates now pass. `make verify-full` exited 0 on 2026-08-09 with race
+detector enabled across the full integration + E2E + load suite. The static
+inventory, machine-readable consistency check, and runtime acceptance gates are
+all green. K1 may proceed once a human reviews and signs off this record.
 
-Blocker count: 0. Runtime follow-ups remain open.
+Real vendor network, production data, production credentials, cloud resources,
+and Kubernetes mutation remain out of K0 scope and are explicitly blocked until
+K1–K6 authorize them.
+
+Blocker count: 0.

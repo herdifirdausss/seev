@@ -34,6 +34,7 @@ value() {
 	printf 'business_outcome=%s\n' "$(value SEEV_EVIDENCE_OUTCOME_BUSINESS unknown)"
 	printf 'privacy_outcome=%s\n' "$(value SEEV_EVIDENCE_OUTCOME_PRIVACY unknown)"
 	printf 'chaos_outcome=%s\n' "$(value SEEV_EVIDENCE_OUTCOME_CHAOS unknown)"
+	printf 'capability_chaos_outcome=%s\n' "$(value SEEV_EVIDENCE_OUTCOME_CAPABILITY_CHAOS unknown)"
 	printf 'integration_outcome=%s\n' "$(value SEEV_EVIDENCE_OUTCOME_INTEGRATION unknown)"
 	printf 'retention_days=%s\n' "$(value SEEV_EVIDENCE_RETENTION_DAYS 30)"
 	if [ -s "$output_dir/test-exit-code.txt" ]; then

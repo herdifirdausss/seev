@@ -140,9 +140,13 @@ func postLedgerEntry(t *testing.T, db *database.DBSQL, accountID uuid.UUID, amou
 		txID, uuid.New(), amount, accountID)
 	require.NoError(t, err)
 
+	// Two entries in one statement: debit and credit for the same account so the
+	// DEFERRABLE balance trigger sees them both balanced at commit time.
 	_, err = db.ExecContext(ctx, `
 		INSERT INTO ledger_entries (id, transaction_id, account_id, direction, amount, balance_after)
-		VALUES (gen_random_uuid(), $1, $2, 'credit', $3, $4)`,
+		VALUES
+			(gen_random_uuid(), $1, $2, 'debit',  $3, 0),
+			(gen_random_uuid(), $1, $2, 'credit', $3, $4)`,
 		txID, accountID, amount, balanceAfter)
 	require.NoError(t, err)
 

@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # C4 multi-currency business journey acceptance test
-# (docs/roadmap/active/60-c4-end-to-end-multi-currency.md Section 36.5 /
-# Task T13) — the runtime acceptance evidence the plan's own status line
-# says is still pending: two real users enable USD, get funded via a
+# (docs/roadmap/archive/60-c4-end-to-end-multi-currency.md Section 36.5 /
+# Task T13) — two real users enable USD, get funded via a
 # governed maker/checker adjustment, transfer USD to each other, and
 # convert both directions (IDR->USD and USD->IDR) through the public FX
 # quote/conversion API, with IDR balances proven untouched throughout and

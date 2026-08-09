@@ -4436,109 +4436,109 @@ C3 is complete only when all required items below pass.
 
 ### Architecture
 
-- [ ] Gateway remains notification owner.
-- [ ] No new business service is introduced.
-- [ ] No money path depends on notification delivery.
-- [ ] Domain events contain facts, not user-facing prose.
-- [ ] Provider calls occur outside database transactions.
-- [ ] RabbitMQ and provider at-least-once semantics are documented.
+- [x] Gateway remains notification owner.
+- [x] No new business service is introduced.
+- [x] No money path depends on notification delivery.
+- [x] Domain events contain facts, not user-facing prose.
+- [x] Provider calls occur outside database transactions.
+- [x] RabbitMQ and provider at-least-once semantics are documented.
 
 ### Compatibility
 
-- [ ] Existing notification list/read endpoints remain compatible.
-- [ ] Existing in-app notifications are still queryable.
-- [ ] Legacy backfill is complete or explicitly classified.
-- [ ] Current business journey remains green.
-- [ ] New event and Auth contracts pass A9 gates.
+- [x] Existing notification list/read endpoints remain compatible.
+- [x] Existing in-app notifications are still queryable.
+- [x] Legacy backfill is complete or explicitly classified.
+- [x] Current business journey remains green.
+- [x] New event and Auth contracts pass A9 gates.
 
 ### Templates
 
-- [ ] Initial kinds have active in-app templates.
-- [ ] Email/push templates exist for enabled kinds.
-- [ ] Template versions are immutable.
-- [ ] Maker/checker is enforced.
-- [ ] Locale fallback is tested.
-- [ ] HTML/header/deep-link safety passes.
-- [ ] Retry reuses original rendered snapshot.
+- [x] Initial kinds have active in-app templates.
+- [x] Email/push templates exist for enabled kinds.
+- [x] Template versions are immutable.
+- [x] Maker/checker is enforced.
+- [x] Locale fallback is tested.
+- [x] HTML/header/deep-link safety passes.
+- [x] Retry reuses original rendered snapshot.
 
 ### Ingestion and in-app
 
-- [ ] Event inbox deduplicates.
-- [ ] Transfer fan-out is correct.
-- [ ] Duplicate RabbitMQ delivery creates no duplicate logical notification.
-- [ ] Commit-before-ACK crash is safe.
-- [ ] New rows do not store raw event bodies.
-- [ ] Mandatory in-app cannot be disabled.
+- [x] Event inbox deduplicates.
+- [x] Transfer fan-out is correct.
+- [x] Duplicate RabbitMQ delivery creates no duplicate logical notification.
+- [x] Commit-before-ACK crash is safe.
+- [x] New rows do not store raw event bodies.
+- [x] Mandatory in-app cannot be disabled.
 
 ### Preferences and identity
 
-- [ ] Settings and preferences are user-scoped.
-- [ ] Quiet hours/timezone work.
-- [ ] Dispatch-time opt-out guard works.
-- [ ] Gateway does not read Auth DB.
-- [ ] Only verified email is used.
-- [ ] Auth outage does not affect in-app.
-- [ ] Recipient is encrypted at rest.
+- [x] Settings and preferences are user-scoped.
+- [x] Quiet hours/timezone work.
+- [x] Dispatch-time opt-out guard works.
+- [x] Gateway does not read Auth DB.
+- [x] Only verified email is used.
+- [x] Auth outage does not affect in-app.
+- [x] Recipient is encrypted at rest.
 
 ### Push devices
 
-- [ ] Tokens are encrypted at rest.
-- [ ] API never returns token plaintext.
-- [ ] Cross-user token conflict is rejected.
-- [ ] Invalid token disables endpoint.
-- [ ] Push preview is privacy-safe.
-- [ ] Revoked device receives no future plan.
+- [x] Tokens are encrypted at rest.
+- [x] API never returns token plaintext.
+- [x] Cross-user token conflict is rejected.
+- [x] Invalid token disables endpoint.
+- [x] Push preview is privacy-safe.
+- [x] Revoked device receives no future plan.
 
 ### Delivery reliability
 
-- [ ] Email and push workers lease safely.
-- [ ] Per-channel retry works.
-- [ ] Dead and blocked states work.
-- [ ] Replay is audited.
-- [ ] Channel pause/resume works.
-- [ ] Worker restart recovers.
-- [ ] Provider outage is isolated.
-- [ ] External duplicate risk is documented.
+- [x] Email and push workers lease safely.
+- [x] Per-channel retry works.
+- [x] Dead and blocked states work.
+- [x] Replay is audited.
+- [x] Channel pause/resume works.
+- [x] Worker restart recovers.
+- [x] Provider outage is isolated.
+- [x] External duplicate risk is documented.
 
 ### Digest
 
-- [ ] Daily email digest is implemented.
-- [ ] Critical messages are never digested.
-- [ ] One window creates one digest.
-- [ ] Empty digest is skipped.
-- [ ] Timezone and scheduler recovery pass.
-- [ ] Digest delivery uses normal email reliability path.
+- [x] Daily email digest is implemented.
+- [x] Critical messages are never digested.
+- [x] One window creates one digest.
+- [x] Empty digest is skipped.
+- [x] Timezone and scheduler recovery pass.
+- [x] Digest delivery uses normal email reliability path.
 
 ### Security and privacy
 
-- [ ] Threat model is updated.
-- [ ] No arbitrary-send API exists.
-- [ ] No paid/provider production secret is required.
-- [ ] Logs/metrics/audit contain no recipient or token plaintext.
-- [ ] Recipient/token erasure is proven.
-- [ ] User export/privacy behavior is updated.
-- [ ] Admin CSRF and maker/checker tests pass.
-- [ ] Secret scan passes.
+- [x] Threat model is updated.
+- [x] No arbitrary-send API exists.
+- [x] No paid/provider production secret is required.
+- [x] Logs/metrics/audit contain no recipient or token plaintext.
+- [x] Recipient/token erasure is proven.
+- [x] User export/privacy behavior is updated.
+- [x] Admin CSRF and maker/checker tests pass.
+- [x] Secret scan passes.
 
 ### Operations
 
-- [ ] Ingestion, contact, delivery, digest, dead, and backlog metrics exist.
-- [ ] Dashboard is updated.
-- [ ] Alerts have runbooks.
-- [ ] Metric cardinality is bounded.
-- [ ] Channel health is distinct from financial health.
-- [ ] Backlog drain and retention jobs are bounded.
+- [x] Ingestion, contact, delivery, digest, dead, and backlog metrics exist.
+- [x] Dashboard is updated.
+- [x] Alerts have runbooks.
+- [x] Metric cardinality is bounded.
+- [x] Channel health is distinct from financial health.
+- [x] Backlog drain and retention jobs are bounded.
 
 ### Evidence
 
-- [ ] Email E2E through Mailpit passes.
-- [ ] Push E2E through mock provider passes.
-- [ ] Chaos matrix is exercised.
-- [ ] Load baseline is recorded.
-- [ ] Final clean-tree gate passes.
-- [ ] Residual risks are documented.
-- [ ] Roadmap/index/current-service docs reflect reality.
-- [ ] Plan is archived only after evidence links are complete.
+- [x] Email E2E through Mailpit passes.
+- [x] Push E2E through mock provider passes.
+- [ ] Chaos matrix is exercised. _(deferred — outside C3 local-stack scope, per §18)_
+- [ ] Load baseline is recorded. _(deferred — outside C3 local-stack scope, per §18)_
+- [x] Final clean-tree gate passes.
+- [x] Residual risks are documented.
+- [x] Roadmap/index/current-service docs reflect reality.
+- [x] Plan is archived only after evidence links are complete.
 
 ---
 
