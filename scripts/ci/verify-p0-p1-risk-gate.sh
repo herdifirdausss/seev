@@ -51,6 +51,7 @@ for risk_id in "${risk_ids[@]}"; do
 		exit 1
 	fi
 
+	# shellcheck disable=SC2034  # used via ${!field_name} indirect reference below
 	IFS='|' read -r _ _ _ severity owner mitigation trigger response _ <<<"$row"
 	for field_name in severity owner mitigation trigger response; do
 		field_value="${!field_name}"

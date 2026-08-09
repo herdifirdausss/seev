@@ -16,6 +16,7 @@ fail() {
 	FAILED=1
 }
 
+# shellcheck disable=SC2034  # read by callers after sourcing this library
 FAILED=0
 
 # ─── Dependency checks ───────────────────────────────────────────────────────
@@ -130,7 +131,6 @@ sha256_file() {
 utc_timestamp_ms() {
 	if command -v date >/dev/null 2>&1; then
 		# GNU date supports %3N (milliseconds); macOS date does not.
-		local ts
 		if date -u +%s%3N >/dev/null 2>&1 && [ "$(date -u +%s%3N | wc -c)" -gt 5 ]; then
 			date -u +%s%3N
 		else

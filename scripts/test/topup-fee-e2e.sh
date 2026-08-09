@@ -157,7 +157,6 @@ replay_code="$(curl_internal -sS -o "$WORK_DIR/topup_replay.json" -w '%{http_cod
 	-H "Authorization: Bearer $USER_TOKEN" -H "Content-Type: application/json" \
 	-d "{\"idempotency_key\":\"topup-fee-1-$RUN_ID\",\"type\":\"money_in\",\
 \"amount\":\"100000\",\"quote_id\":\"$QUOTE_ID\",\"metadata\":{\"gateway\":\"bca\"}}")"
-replay_body="$(cat "$WORK_DIR/topup_replay.json")"
 fee_after_replay="$(psql_exec "$LEDGER_DB_NAME" -c "
 	SELECT COALESCE(b.balance,0) FROM accounts a
 	JOIN account_balances b ON b.account_id=a.id

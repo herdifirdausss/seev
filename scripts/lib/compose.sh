@@ -6,14 +6,17 @@ resolve_compose_containers() {
 	local resolved
 	if [ "${POSTGRES_CONTAINER_EXPLICIT:-0}" -eq 0 ]; then
 		resolved="$(docker compose ps -q postgres 2>/dev/null || true)"
+		# shellcheck disable=SC2034  # output variable for callers
 		[ -n "$resolved" ] && POSTGRES_CONTAINER="$resolved"
 	fi
 	if [ "${REDIS_CONTAINER_EXPLICIT:-0}" -eq 0 ]; then
 		resolved="$(docker compose ps -q redis 2>/dev/null || true)"
+		# shellcheck disable=SC2034  # output variable for callers
 		[ -n "$resolved" ] && REDIS_CONTAINER="$resolved"
 	fi
 	if [ "${RABBITMQ_CONTAINER_EXPLICIT:-0}" -eq 0 ]; then
 		resolved="$(docker compose ps -q rabbitmq 2>/dev/null || true)"
+		# shellcheck disable=SC2034  # output variable for callers
 		[ -n "$resolved" ] && RABBITMQ_CONTAINER="$resolved"
 	fi
 }

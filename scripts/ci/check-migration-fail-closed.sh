@@ -43,7 +43,7 @@ docker run -d --name "$CONTAINER" \
 
 # Wait for postgres to be ready.
 READY=0
-for i in $(seq 1 30); do
+for _ in $(seq 1 30); do
 	if docker exec "$CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -c "SELECT 1" >/dev/null 2>&1; then
 		READY=1
 		break

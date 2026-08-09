@@ -83,7 +83,6 @@ ok "user A provisioned and funded 500,000 IDR (user=$USER_A)"
 ok "user B provisioned (user=$USER_B)"
 
 TOKEN_A="$(gen_token "$USER_A")"
-TOKEN_B="$(gen_token "$USER_B")"
 
 BALANCE_A_BEFORE="$(account_balance "$(cash_account_id "$USER_A")")"
 BALANCE_B_BEFORE="$(account_balance "$(cash_account_id "$USER_B")")"
@@ -161,7 +160,6 @@ total_count="$(psql_exec "$LEDGER_DB_NAME" \
 	fail "expected 4 occurrence rows, got $total_count"
 
 BALANCE_A_SKIP="$(account_balance "$(cash_account_id "$USER_A")")"
-BALANCE_B_SKIP="$(account_balance "$(cash_account_id "$USER_B")")"
 [ "$((BALANCE_A_AFTER - BALANCE_A_SKIP))" = "1000" ] &&
 	ok "user A debited 1000 for daily occurrence (only the one that ran)" ||
 	fail "user A daily-skip delta unexpected: before=$BALANCE_A_AFTER after=$BALANCE_A_SKIP"

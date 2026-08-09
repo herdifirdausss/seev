@@ -3,7 +3,6 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
-INVENTORY_DIR="$ROOT_DIR/deploy/inventory"
 EVIDENCE_DIR="$ROOT_DIR/docs/evidence/k0"
 
 for command in ruby git docker rg; do
