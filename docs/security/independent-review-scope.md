@@ -1,10 +1,9 @@
 # Independent security review scope
 
 This document is the acceptance contract for the independent security review
-required by section 12.6 of the
-[world-class engineering improvement plan](../improvement/seev-world-class-engineering-improvement-plan-en.md).
+required by section 12.6 of the world-class engineering review (2026-08-09).
 The execution packet is maintained in
-[`docs/acceptance/independent-security-review.md`](../acceptance/independent-security-review.md).
+[`independent-security-review.md`](independent-security-review.md).
 
 ## Independence and evidence boundary
 

@@ -107,7 +107,7 @@ active raw callback path; the deprecated v1 wire method is unimplemented. The
 normal path is exercised by host, container, and business journeys. Manual
 crash-recovery acceptance is a separate operational gate; its current result
 is recorded in the [operations status](../operations/README.md#standalone-drills-and-operator-tools--not-part-of-verify-full).
-Historical boundary decisions remain in [archived Plan 54](../roadmap/archive/54-vendor-service-boundary.md).
+Historical boundary decisions remain in [ADR 0002](../reference/decisions/0002-vendorservice-callback-boundary.md).
 
 ## Scene 4: the accounting book makes the money real
 
@@ -219,7 +219,7 @@ different promises. If an app calls all three “success,” Mia cannot know
 whether she can spend the money or safely try again.
 
 The top-up and withdrawal rows describe the safer notification target in
-[archived plan 54](../roadmap/archive/54-vendor-service-boundary.md). Today, Ledger can announce its
+[ADR 0002](../reference/decisions/0002-vendorservice-callback-boundary.md). Today, Ledger can announce its
 completed money record before the workflow owner has saved its own final
 state. Current code must therefore not be presented as already meeting that
 target.
@@ -336,7 +336,7 @@ unimplemented. The active path does not accept a vendor payload's user id when
 no intent matches. Normal delivery is covered by the host, container, and
 business journeys; manual crash-recovery acceptance remains a separate
 operational gate documented in the [operations status](../operations/README.md#standalone-drills-and-operator-tools--not-part-of-verify-full).
-The historical boundary record is [archived Plan 54](../roadmap/archive/54-vendor-service-boundary.md).
+The historical boundary record is [ADR 0002](../reference/decisions/0002-vendorservice-callback-boundary.md).
 
 ## Tell the story back in five answers
 

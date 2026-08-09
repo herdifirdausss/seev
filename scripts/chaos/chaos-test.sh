@@ -1,0 +1,2258 @@
+#!/usr/bin/env bash
+# Chaos test suite for the seev ledger (docs/roadmap/archive/12 Task T7).
+#
+# Empirical proof — not a design claim — that no money is lost when the
+# server process or a dependency dies mid-flight. Each scenario asserts
+# against fn_verify_ledger_balance()/v_account_balance_audit via psql, not
+# just "it looked fine" observation.
+#
+# Requires: Docker running, this repo checked out, go toolchain available.
+# Does NOT require the app to already be running — this script builds and
+# manages its own server process(es) and docker-compose dependencies.
+#
+# Usage:
+#   ./scripts/chaos-test.sh 1        # kill -9 mid-posting
+#   ./scripts/chaos-test.sh 2        # broker (RabbitMQ) down
+#   ./scripts/chaos-test.sh 3        # Postgres restart mid-traffic
+#   ./scripts/chaos-test.sh 4        # Redis down
+#   ./scripts/chaos-test.sh 5        # payout crash-mid-flight (docs/roadmap/archive/23 Task T6)
+#   ./scripts/chaos-test.sh 6        # payin down -> webhook 503 -> redelivery heals
+#   ./scripts/chaos-test.sh 7        # fraud down fail-open + block-mode E2E
+#   ./scripts/chaos-test.sh 8        # vendor failover: force-fail -> failover/pin -> recovery (docs/roadmap/archive/40 Task T6)
+#   ./scripts/chaos-test.sh 9        # Redis outage: selective hot-swap + fraud fail-closed (docs/roadmap/archive/45 Task T4)
+#   ./scripts/chaos-test.sh 10       # distributed breaker across two payout replicas (docs/roadmap/archive/45 Task T4)
+#   ./scripts/chaos-test.sh 11       # payout crash after command enqueue / after network timeout (docs/roadmap/archive/45 Task T4)
+#   ./scripts/chaos-test.sh 12       # assurance restart catches backlog and resolves recovery (docs/roadmap/archive/48)
+#   ./scripts/chaos-test.sh 13       # ledger outage preserves assurance cursor/finding (docs/roadmap/archive/48)
+#   ./scripts/chaos-test.sh 14       # owner outage durable intake pause + maker/checker resume (docs/roadmap/archive/48)
+#   ./scripts/chaos-test.sh 15       # retention database failure is isolated/fail-closed (plan 51)
+#   ./scripts/chaos-test.sh 16       # object-store outage preserves metadata and retries (plan 51)
+#   ./scripts/chaos-test.sh 17       # unknown/wrong privacy key fails closed (plan 51)
+#   ./scripts/chaos-test.sh 18       # privacy worker restart resumes durable saga state (plan 51)
+#   ./scripts/chaos-test.sh 19       # owner timeout leaves closure resumable (plan 51)
+#   ./scripts/chaos-test.sh 20       # retention/closure race respects closure horizon (plan 51)
+#   ./scripts/chaos-test.sh 21       # merchant B2B transfer kill -9 mid-posting (plan 57 T10)
+#   ./scripts/chaos-test.sh 22       # merchant quota Redis outage (plan 57 T10b)
+#   ./scripts/chaos-test.sh 23       # merchant webhook relay survives a RabbitMQ outage (plan 57 T10b)
+#   ./scripts/chaos-test.sh all      # run all twenty-three in sequence
+#
+# Each scenario is independent and re-runs migrations against a throwaway
+# schema state (it does NOT reset the docker volumes — accounts/balances
+# accumulate across runs in the same way any real system would; assertions
+# are always relative, never "balance must equal exactly X" in absolute
+# terms unless the scenario provisions fresh accounts).
+#
+# Shared bootstrap (docker-compose up, migrations, server build/start/kill,
+# token generation, ledger integrity assertions) lives in scripts/lib.sh —
+# scripts/smoke-test.sh uses the exact same helpers, so a fix to how the
+# stack is bootstrapped only needs to happen once.
+
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+cd "$ROOT_DIR"
+
+LIB_LOG_TAG="chaos"
+LIB_WORK_DIR_PREFIX="chaos"
+# shellcheck source=scripts/lib.sh
+source "$ROOT_DIR/scripts/lib.sh"
+
+trap cleanup EXIT
+
+# Preserve the scenario summary and assertions alongside the service logs for
+# scheduled evidence collection. KEEP_WORK_DIR controls whether the directory
+# survives after the run; local default behavior remains disposable. Use a
+# regular file redirect here instead of Bash process substitution: the latter
+# is unavailable in some restricted runners (including macOS sandboxed shells)
+# and would prevent the chaos suite from starting at all.
+exec >"$WORK_DIR/chaos-test.stdout.log" 2>&1
+
+# ─── Scenario 1: kill -9 mid-posting ────────────────────────────────────────
+
+scenario_1() {
+	log "=== Scenario 1: kill -9 mid-posting ==="
+	ensure_deps_up
+	build_server
+	start_server
+
+	local user_id="c1a05000-0000-0000-0000-000000000001"
+	local recipient_id="c1a05000-0000-0000-0000-0000000000f1"
+	provision_user "$user_id" >/dev/null
+	provision_user "$recipient_id" >/dev/null
+	fund_user "$user_id"
+	local token
+	token="$(gen_token "$user_id")"
+
+	log "firing 40 concurrent transfer_p2p requests, killing the server -9 partway through..."
+	local results_file="$WORK_DIR/results.txt"
+	: >"$results_file"
+
+	for i in $(seq 1 40); do
+		(
+			code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$APP_PORT/api/v1/ledger/transactions" \
+				-H "Authorization: Bearer $token" -H "Content-Type: application/json" \
+				-d "{\"idempotency_key\":\"chaos1-$i\",\"type\":\"transfer_p2p\",\"amount\":\"1\",\"target_user_id\":\"$recipient_id\"}" 2>/dev/null || echo "000")
+			echo "chaos1-$i $code" >>"$results_file"
+		) &
+		if [ "$i" -eq 20 ]; then
+			sleep 0.05
+			kill_server_hard
+		fi
+	done
+	wait
+
+	log "restarting gateway and retrying any requests that didn't get a clean response..."
+	# Only gateway was killed above (kill_server_hard is gateway-only) — the
+	# other seven processes never stopped. Calling start_server/start_services
+	# here would try to rebind their still-held ports, fail immediately, and
+	# silently overwrite their PID files with the new (already-dead) pids —
+	# every later stop/kill in this run would then target that dead pid while
+	# the real scenario-1-era process keeps running forever, invisible to the
+	# rest of the suite. Real bug found reproducing docs/roadmap/archive/34 T2 scenario
+	# 5/6/7 failures that only appeared inside `all`: the resume-job/webhook/
+	# fraud-hook checks in later scenarios were unknowingly talking to this
+	# orphaned scenario-1 ledger/payin/fraud-service the entire time.
+	build_server # rebuild not strictly needed but keeps binary path consistent
+	start_gateway
+
+	# Retry every request that did NOT get a 2xx the first time — same
+	# idempotency key, so a request that DID post server-side before the
+	# kill is a safe no-op retry (this IS the point of idempotency).
+	while read -r key code; do
+		if [ "${code:0:1}" != "2" ]; then
+			retry_code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$APP_PORT/api/v1/ledger/transactions" \
+				-H "Authorization: Bearer $token" -H "Content-Type: application/json" \
+				-d "{\"idempotency_key\":\"$key\",\"type\":\"transfer_p2p\",\"amount\":\"1\",\"target_user_id\":\"$recipient_id\"}" 2>/dev/null || echo "000")
+			log "retried $key: original=$code retry=$retry_code"
+		fi
+	done <"$results_file"
+
+	sleep 1
+	assert_ledger_balanced
+	assert_no_inconsistent_projections
+	assert_no_stuck_pending_transactions
+
+	stop_server_gracefully
+}
+
+# ─── Scenario 2: broker (RabbitMQ) down ─────────────────────────────────────
+
+scenario_2() {
+	recovery_event() {
+		printf '{"scenario":"broker-outage-recovery","at":"%s","event":"%s"}\n' \
+			"$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1"
+	}
+
+	log "=== Scenario 2: broker down, posting must still succeed ==="
+	ensure_deps_up
+	build_server
+	start_server
+
+	local user_id="c2a05000-0000-0000-0000-000000000002"
+	local recipient_id="c2a05000-0000-0000-0000-0000000000f2"
+	provision_user "$user_id" >/dev/null
+	provision_user "$recipient_id" >/dev/null
+	fund_user "$user_id"
+	local token
+	token="$(gen_token "$user_id")"
+
+	log "stopping rabbitmq..."
+	recovery_event "broker_stopping"
+	docker stop "$RABBITMQ_CONTAINER" >/dev/null
+
+	log "posting 10 transactions while broker is down (must all succeed — outbox decouples posting from publish)..."
+	local all_2xx=1
+	for i in $(seq 1 10); do
+		code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$APP_PORT/api/v1/ledger/transactions" \
+			-H "Authorization: Bearer $token" -H "Content-Type: application/json" \
+			-d "{\"idempotency_key\":\"chaos2-$i\",\"type\":\"transfer_p2p\",\"amount\":\"1\",\"target_user_id\":\"$recipient_id\"}" 2>/dev/null || echo "000")
+		if [ "${code:0:1}" != "2" ]; then
+			all_2xx=0
+			log "  request $i got $code (expected 2xx)"
+		fi
+	done
+	if [ "$all_2xx" = "1" ]; then
+		ok "all 10 postings succeeded with the broker down"
+		recovery_event "ten_postings_committed_while_broker_down"
+	else
+		fail "some postings failed while the broker was down — outbox pattern not decoupling correctly"
+	fi
+
+	log "restarting rabbitmq and waiting for the relay to drain the outbox..."
+	docker start "$RABBITMQ_CONTAINER" >/dev/null
+	wait_for_container_healthy "$RABBITMQ_CONTAINER"
+	recovery_event "broker_healthy_again"
+
+	# RabbitMQ recovery can race the ledger relay's reconnect/backoff and the
+	# service restart churn in the preceding setup.  Wait four minutes for the
+	# durable outbox, rather than treating one still-retrying row as a product
+	# failure.
+	local tries=48 pending_or_failed
+	while [ "$tries" -gt 0 ]; do
+		pending_or_failed="$(psql_exec "$LEDGER_DB_NAME" -c "SELECT count(*) FROM outbox_events WHERE status IN ('pending','failed','processing');" | tr -d '[:space:]')"
+		[ "$pending_or_failed" = "0" ] && break
+		sleep 5
+		tries=$((tries - 1))
+	done
+
+	local dead
+	dead="$(psql_exec "$LEDGER_DB_NAME" -c "SELECT count(*) FROM outbox_events WHERE status = 'dead';" | tr -d '[:space:]')"
+	if [ "$pending_or_failed" = "0" ] && [ "$dead" = "0" ]; then
+		ok "all outbox events reached 'published' after the broker recovered (none dead)"
+		recovery_event "outbox_drained_no_dead_events"
+	else
+		fail "outbox did not fully drain: pending/failed=$pending_or_failed dead=$dead"
+		psql_exec "$LEDGER_DB_NAME" -c "SELECT id, event_type, status, retry_count FROM outbox_events WHERE status != 'published';"
+	fi
+
+	# The drained events include 10 transfer_p2p postings — once the relay
+	# has caught up, gateway's notify consumer must eventually see them too
+	# (docs/roadmap/archive/34 Task T2: "restart -> relay drain -> notifikasi sampai").
+	# This is the same outbox->RabbitMQ->consumer path as the happy-path
+	# business-e2e journey, just proven under a broker outage instead of a
+	# clean run.
+	await_notification "$token" "Transfer sent" || true
+
+	assert_ledger_balanced
+	assert_no_inconsistent_projections
+	stop_server_gracefully
+}
+
+# ─── Scenario 3: Postgres restart mid-traffic ───────────────────────────────
+
+scenario_3() {
+	log "=== Scenario 3: Postgres restart mid-traffic ==="
+	ensure_deps_up
+	build_server
+	start_server
+
+	local user_id="c3a05000-0000-0000-0000-000000000003"
+	local recipient_id="c3a05000-0000-0000-0000-0000000000f3"
+	provision_user "$user_id" >/dev/null
+	provision_user "$recipient_id" >/dev/null
+	fund_user "$user_id"
+	local token
+	token="$(gen_token "$user_id")"
+
+	log "firing traffic and restarting postgres mid-flight (bounded by POSTGRES_STATEMENT_TIMEOUT/POSTGRES_LOCK_TIMEOUT — requests must fail with a clear error, not hang)..."
+	local during_restart_log="$WORK_DIR/during_restart.txt"
+	: >"$during_restart_log"
+	for i in $(seq 1 20); do
+		(
+			start=$(date +%s)
+			code=$(curl -s --max-time 20 -o /dev/null -w '%{http_code}' -X POST "http://localhost:$APP_PORT/api/v1/ledger/transactions" \
+				-H "Authorization: Bearer $token" -H "Content-Type: application/json" \
+				-d "{\"idempotency_key\":\"chaos3-$i\",\"type\":\"transfer_p2p\",\"amount\":\"1\",\"target_user_id\":\"$recipient_id\"}" 2>/dev/null || echo "000")
+			elapsed=$(( $(date +%s) - start ))
+			echo "chaos3-$i code=$code elapsed=${elapsed}s" >>"$during_restart_log"
+		) &
+		if [ "$i" -eq 10 ]; then
+			sleep 0.1
+			docker restart "$POSTGRES_CONTAINER" >/dev/null &
+			# The healthcheck can remain `healthy` for a short interval after
+			# an asynchronous restart is issued. Observe the transition before
+			# starting the next scenario (otherwise all-mode can race Postgres
+			# shutdown and make the following service fail to boot).
+			wait_for_container_restart "$POSTGRES_CONTAINER"
+		fi
+	done
+	wait
+
+	log "requests during restart:"
+	cat "$during_restart_log"
+	local hung
+	hung=$(awk -F'elapsed=' '{gsub("s","",$2); if ($2+0 >= 20) print}' "$during_restart_log" | wc -l | tr -d '[:space:]')
+	if [ "$hung" = "0" ]; then
+		ok "no request hung past its client timeout during the Postgres restart"
+	else
+		fail "$hung request(s) took the full 20s timeout — may indicate a hang rather than a bounded failure"
+	fi
+
+	wait_for_container_healthy "$POSTGRES_CONTAINER"
+	log "posting after Postgres has recovered..."
+	code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$APP_PORT/api/v1/ledger/transactions" \
+		-H "Authorization: Bearer $token" -H "Content-Type: application/json" \
+		-d "{\"idempotency_key\":\"chaos3-post-recovery\",\"type\":\"transfer_p2p\",\"amount\":\"1\",\"target_user_id\":\"$recipient_id\"}" 2>/dev/null || echo "000")
+	if [ "${code:0:1}" = "2" ]; then
+		ok "posting succeeds again after Postgres recovered (code=$code)"
+	else
+		fail "posting after recovery got $code, expected 2xx"
+	fi
+
+	assert_ledger_balanced
+	assert_no_inconsistent_projections
+	assert_no_stuck_pending_transactions
+	stop_server_gracefully
+}
+
+# ─── Scenario 4: Redis down ──────────────────────────────────────────────────
+
+scenario_4() {
+	log "=== Scenario 4: Redis down, then restarted with REDIS_ENABLED=false ==="
+	log "NOTE (docs/roadmap/archive/12 Task T7, superseded in part by docs/roadmap/archive/45 Task T3):"
+	log "this scenario only proves the OPERATOR-DRIVEN mitigation path — restarting"
+	log "with REDIS_ENABLED=false to force the in-memory lock/limiter fallback."
+	log "The rate limiter and policy counter no longer NEED that restart: since"
+	log "docs/roadmap/archive/45 T3, cache.FailoverLimiter/FailoverCounter hot-swap to memory"
+	log "on Redis's first real-operation failure and recover automatically once"
+	log "Redis is healthy again, WITHOUT any restart — see scenario 9, which is the"
+	log "scenario that actually proves the hot-swap. Scheduler lock is unchanged by"
+	log "T3 (still skip-tick, by design — docs/roadmap/archive/45 K4 explicitly keeps memory"
+	log "fallback OUT of multi-replica scheduler locking)."
+	ensure_deps_up
+	build_server
+	start_server
+
+	local user_id="c4a05000-0000-0000-0000-000000000004"
+	local recipient_id="c4a05000-0000-0000-0000-0000000000f4"
+	provision_user "$user_id" >/dev/null
+	provision_user "$recipient_id" >/dev/null
+	fund_user "$user_id"
+	local token
+	token="$(gen_token "$user_id")"
+
+	log "stopping redis..."
+	docker stop "$REDIS_CONTAINER" >/dev/null
+
+	log "posting while redis is down — rate limiter must fail OPEN (traffic still served)..."
+	local code
+	code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$APP_PORT/api/v1/ledger/transactions" \
+		-H "Authorization: Bearer $token" -H "Content-Type: application/json" \
+		-d "{\"idempotency_key\":\"chaos4-1\",\"type\":\"transfer_p2p\",\"amount\":\"1\",\"target_user_id\":\"$recipient_id\"}" 2>/dev/null || echo "000")
+	if [ "${code:0:1}" = "2" ]; then
+		ok "traffic still served with Redis down (fail-open, code=$code)"
+	else
+		fail "traffic rejected while Redis was down, got $code — rate limiter must fail open"
+	fi
+
+	log "restarting the server process with REDIS_ENABLED=false (the operator's actual mitigation for a known outage — picks up the in-memory lock/limiter fallback fresh; REDIS_ENABLED=true, the default, is a required-dependency fail-fast per docs/roadmap/archive/12 T1 and would refuse to start against an unreachable Redis)..."
+	stop_server_gracefully
+	# fraud-service is excluded here: it CAN start with Redis down (since
+	# docs/roadmap/archive/45 Task T3, services/fraud/cmd/fraud/main.go uses
+	# cache.NewClientWithoutPing instead of an eager-ping constructor,
+	# specifically so fraud-service boots and runs fail-closed rather than
+	# refusing to start — see scenario 9), but this scenario simply doesn't
+	# need it up: ledger's screening hook fails open when fraud-service is
+	# unreachable at all (proven by scenario 7), so the remaining traffic
+	# check below doesn't depend on fraud-service either way.
+	REDIS_ENABLED=false start_ledger_service
+	REDIS_ENABLED=false start_auth_service
+	REDIS_ENABLED=false start_payin_service
+	REDIS_ENABLED=false start_payout_service
+	REDIS_ENABLED=false start_gateway
+
+	code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$APP_PORT/api/v1/ledger/transactions" \
+		-H "Authorization: Bearer $token" -H "Content-Type: application/json" \
+		-d "{\"idempotency_key\":\"chaos4-2\",\"type\":\"transfer_p2p\",\"amount\":\"1\",\"target_user_id\":\"$recipient_id\"}" 2>/dev/null || echo "000")
+	if [ "${code:0:1}" = "2" ]; then
+		ok "server still serves traffic after restart with Redis still down (code=$code)"
+	else
+		fail "server failed to serve traffic after restart with Redis down, got $code"
+	fi
+
+	docker start "$REDIS_CONTAINER" >/dev/null
+	wait_for_container_healthy "$REDIS_CONTAINER"
+
+	assert_ledger_balanced
+	assert_no_inconsistent_projections
+	stop_server_gracefully
+}
+
+# ─── Scenario 5: payout crash mid-flight (docs/roadmap/archive/23 Task T6) ─────────────
+#
+# Four kill points, one per non-terminal payout_requests status:
+#   - 'created' / 'held': reached by seeding the row directly via SQL rather
+#     than catching a live process at that exact microsecond (the window
+#     between repo.Insert committing and hold()'s first ledger.Post, or
+#     between hold() returning and EnqueueInitialSubmit, is sub-millisecond
+#     — not something `kill -9` fired from a separate bash process after a
+#     `sleep` can hit deterministically). This tests the SAME resume code
+#     path (ResumeStuck -> hold()/enqueueSubmit()) a request found in that
+#     status would hit regardless of how it got there, which is what
+#     correctness actually depends on — the row's origin (crash vs. direct
+#     seed) is invisible to the recovery logic.
+#   - 'submitted': reached via a REAL POST /api/v1/payout with
+#     mock_mode=timeout — hold() succeeds, EnqueueInitialSubmit succeeds
+#     (status='submitted', a 'pending' command durably enqueued), then the
+#     relay's own async dispatch (docs/roadmap/archive/45 Task T1 — provider.Submit is
+#     never called anywhere else) genuinely errors (infra failure), leaving
+#     the command 'failed'/backing-off exactly the way a real vendor timeout
+#     would. wait_for_vendor_call/wait_for_vendor_command_status prove the
+#     relay actually attempted and failed before the seeded destination is
+#     rewritten to drop mock_mode — simulating the transient vendor outage
+#     having cleared by the time the relay retries, the same way scenario
+#     2/3 restart rabbitmq/postgres to simulate recovery of a real
+#     dependency. The command's own next_attempt_at is also reset so the
+#     relay's retry-poll (every 30s) doesn't have to wait out its natural
+#     exponential backoff on top of the service restart.
+#   - 'vendor_pending': reached via a REAL POST with mock_mode=async — the
+#     vendor's own in-memory Pending cache entry only exists because a real
+#     Submit call populated it (via the relay's async dispatch, awaited by
+#     wait_for_payout_status); there is deliberately no HTTP-reachable way
+#     to force mockvendor to resolve a Pending payout from outside the
+#     process (CompletePending is a Go-only test method — see
+#     services/payout/internal/payout/payout_integration_test.go's
+#     TestPayout_Create_Async_ResumeJobSettles for that side of the proof),
+#     so THIS kill point proves resume polls it correctly (Query is called,
+#     no money moves twice, nothing is silently dropped) rather than forcing
+#     a terminal state — vendor_pending is legitimately allowed to still be
+#     pending after one resume pass.
+#
+# In every case updated_at is backdated via SQL immediately after reaching
+# the target status so the very next resume-job cron tick (<=60s after
+# restart) already treats the row as stale enough to act on, instead of
+# waiting out the job's own 1-minute staleness threshold on top of that.
+
+backdate_payout() {
+	psql_exec "$PAYOUT_DB_NAME" -c "UPDATE payout_requests SET updated_at = now() - interval '2 minutes' WHERE id = '$1';" >/dev/null
+}
+
+seal_payout_destination() {
+	CRYPTOX_KEY_V1="$CRYPTOX_KEY_V1" "$CRYPTOX_FIXTURE_BIN" \
+		payout payout_requests destination "$1" "$2"
+}
+
+seal_payin_raw() {
+	CRYPTOX_KEY_V1="$CRYPTOX_KEY_V1" "$CRYPTOX_FIXTURE_BIN" \
+		payin payin_webhook_events raw "$1" "$2"
+}
+
+scenario_5() {
+	log "=== Scenario 5: payout crash-mid-flight (docs/roadmap/archive/30 Task T6) ==="
+	ensure_deps_up
+	build_server
+	start_services
+
+	local user_id
+	user_id="$(psql_exec "$LEDGER_DB_NAME" -c "SELECT gen_random_uuid();")"
+	provision_user "$user_id" >/dev/null
+	provision_hold_account "$user_id"
+	fund_user "$user_id"
+	local token
+	token="$(gen_token "$user_id")"
+	local cash_account
+	cash_account="$(cash_account_id "$user_id")"
+	local balance_before
+	balance_before="$(account_balance "$cash_account")"
+
+	# ── Kill point 1: 'created' — seeded, no ledger activity yet ──────────────
+	log "--- kill point 1/4: created ---"
+	local id_created destination_created
+	id_created="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT gen_random_uuid();")"
+	destination_created="$(seal_payout_destination "$id_created" '{"bank_code":"014","account_no":"1"}')"
+	psql_exec "$PAYOUT_DB_NAME" -c "
+		INSERT INTO payout_requests (id, user_id, amount, currency, vendor, destination_ciphertext, destination_key_version, status, created_by, created_at, updated_at)
+		VALUES ('$id_created', '$user_id', 10000, 'IDR', 'mockvendor', decode('$destination_created','hex'), 1, 'created', 'chaos_test', now(), now());" >/dev/null
+	backdate_payout "$id_created"
+	kill_payout_hard
+	start_payout_service
+
+	# ── Kill point 2: 'held' — real hold_tx_id via a genuine withdraw_initiate ──
+	log "--- kill point 2/4: held ---"
+	local held_key="chaos5-held-$RANDOM"
+	curl_internal -s -o /dev/null -X POST "http://localhost:$LEDGER_INTERNAL_PORT/api/v1/ledger/transactions" \
+		-H "Authorization: Bearer $token" -H "Content-Type: application/json" \
+		-d "{\"idempotency_key\":\"$held_key\",\"type\":\"withdraw_initiate\",\"amount\":\"10000\"}"
+	local held_tx_id
+	held_tx_id="$(psql_exec "$LEDGER_DB_NAME" -c "SELECT id FROM ledger_transactions WHERE idempotency_key = '$held_key';")"
+	local id_held destination_held
+	id_held="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT gen_random_uuid();")"
+	destination_held="$(seal_payout_destination "$id_held" '{"bank_code":"014","account_no":"1"}')"
+	psql_exec "$PAYOUT_DB_NAME" -c "
+		INSERT INTO payout_requests (id, user_id, amount, currency, vendor, destination_ciphertext, destination_key_version, status, hold_tx_id, created_by, created_at, updated_at)
+		VALUES ('$id_held', '$user_id', 10000, 'IDR', 'mockvendor', decode('$destination_held','hex'), 1, 'held', '$held_tx_id', 'chaos_test', now(), now());" >/dev/null
+	backdate_payout "$id_held"
+	kill_payout_hard
+	start_payout_service
+
+	# ── Kill point 3: 'submitted' — real infra failure (mock_mode=timeout) ────
+	log "--- kill point 3/4: submitted ---"
+	local id_submitted
+	id_submitted="$(curl -s -X POST "http://localhost:$APP_PORT/api/v1/payout" \
+		-H "Authorization: Bearer $token" -H "Content-Type: application/json" \
+		-d '{"amount":"10000","destination":{"bank_code":"014","account_no":"1","mock_mode":"timeout"}}' \
+		| sed -n 's/.*"id":"\([^"]*\)".*/\1/p')"
+	if [ -z "$id_submitted" ]; then
+		fail "kill point 3: create request did not return an id"
+	fi
+	wait_for_payout_status "$id_submitted" "submitted" 10
+	# docs/roadmap/archive/45 Task T1: dispatch is async now (the relay's own ~1s poll
+	# interval) — 'submitted' lands the instant Create enqueues, before the
+	# relay has necessarily even attempted the vendor call yet. Wait for the
+	# durable evidence that the vendor was ACTUALLY called and genuinely
+	# timed out (an 'uncertain' payout_vendor_calls row) before rewriting
+	# the mock destination, or this would race the relay's own first
+	# dispatch attempt and could rewrite mock_mode away before it ever saw
+	# the timeout at all.
+	wait_for_vendor_call "$id_submitted" "uncertain" 15
+	wait_for_vendor_command_status "$id_submitted" "failed" 10
+	# Simulate the vendor outage clearing before resume retries — same role
+	# as scenario 2/3 restarting rabbitmq/postgres.
+	local destination_submitted
+	destination_submitted="$(seal_payout_destination "$id_submitted" '{"bank_code":"014","account_no":"1"}')"
+	psql_exec "$PAYOUT_DB_NAME" -c "UPDATE payout_requests SET destination_ciphertext=decode('$destination_submitted','hex'), destination_key_version=1 WHERE id = '$id_submitted';" >/dev/null
+	backdate_payout "$id_submitted"
+	psql_exec "$PAYOUT_DB_NAME" -c "UPDATE payout_vendor_commands SET next_attempt_at = now() WHERE payout_request_id = '$id_submitted';" >/dev/null
+	kill_payout_hard
+	start_payout_service
+
+	# ── Kill point 4: 'vendor_pending' — real async Submit, never completed ───
+	log "--- kill point 4/4: vendor_pending ---"
+	local id_pending
+	id_pending="$(curl -s -X POST "http://localhost:$APP_PORT/api/v1/payout" \
+		-H "Authorization: Bearer $token" -H "Content-Type: application/json" \
+		-d '{"amount":"10000","destination":{"bank_code":"014","account_no":"1","mock_mode":"async"}}' \
+		| sed -n 's/.*"id":"\([^"]*\)".*/\1/p')"
+	if [ -z "$id_pending" ]; then
+		fail "kill point 4: create request did not return an id"
+	fi
+	wait_for_payout_status "$id_pending" "vendor_pending" 10
+	backdate_payout "$id_pending"
+	kill_payout_hard
+	start_payout_service
+	# Simulate the external vendor having completed while payout-service was
+	# down: forced back to 'submitted' with no live command (the original
+	# command already completed toward vendor_pending, so it's neither live
+	# nor dead) — docs/roadmap/archive/45 Task T1's resume job inserts a fresh command
+	# for this genuine gap (HasDeadCommand is false — the most recent
+	# command 'completed', it didn't dead-letter), and the relay's own next
+	# dispatch pass reaches a terminal state idempotently.
+	local destination_pending
+	destination_pending="$(seal_payout_destination "$id_pending" '{"bank_code":"014","account_no":"1"}')"
+	psql_exec "$PAYOUT_DB_NAME" -c "UPDATE payout_requests SET status='submitted', destination_ciphertext=decode('$destination_pending','hex'), destination_key_version=1, updated_at=now()-interval '2 minutes' WHERE id='$id_pending';" >/dev/null
+
+	# ── Ledger crash between a completed hold and settle ───────────────────
+	log "--- ledger kill point: after hold, before settle ---"
+	local ledger_key="chaos5-ledger-$RANDOM" ledger_hold_tx id_ledger
+	curl_internal -s -o /dev/null -X POST "http://localhost:$LEDGER_INTERNAL_PORT/api/v1/ledger/transactions" -H "Authorization: Bearer $token" -H "Content-Type: application/json" -d "{\"idempotency_key\":\"$ledger_key\",\"type\":\"withdraw_initiate\",\"amount\":\"10000\"}"
+	ledger_hold_tx="$(psql_exec "$LEDGER_DB_NAME" -c "SELECT id FROM ledger_transactions WHERE idempotency_key='$ledger_key';")"
+	id_ledger="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT gen_random_uuid();")"
+	local destination_ledger
+	destination_ledger="$(seal_payout_destination "$id_ledger" '{"bank_code":"014","account_no":"1"}')"
+	psql_exec "$PAYOUT_DB_NAME" -c "INSERT INTO payout_requests (id,user_id,amount,currency,vendor,destination_ciphertext,destination_key_version,status,hold_tx_id,created_by,created_at,updated_at) VALUES ('$id_ledger','$user_id',10000,'IDR','mockvendor',decode('$destination_ledger','hex'),1,'held','$ledger_hold_tx','chaos_test',now(),now()-interval '2 minutes');" >/dev/null
+	kill_ledger_hard
+	log "waiting for payout resume to attempt settle while ledger is unavailable..."
+	# The payout resume scheduler is minute-granular and a -9 kill can leave its
+	# distributed lock leased for one scheduler timeout.  Two full ticks make
+	# this proof deterministic without changing the production cadence.
+	sleep 125
+	local during_ledger_down
+	during_ledger_down="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT status FROM payout_requests WHERE id='$id_ledger';")"
+	[ "$during_ledger_down" = "submitted" ] && ok "payout remained resumable while ledger was down" || fail "ledger-down payout status was '$during_ledger_down', expected submitted"
+	start_ledger_service
+	# Every resumable row may have recorded a fresh error timestamp while ledger
+	# was unavailable. Make all rows from this isolated run eligible immediately.
+	psql_exec "$PAYOUT_DB_NAME" -c "UPDATE payout_requests SET updated_at=now()-interval '2 minutes' WHERE user_id='$user_id' AND status IN ('created','held','submitted','vendor_pending');" >/dev/null
+	# docs/roadmap/archive/45 Task T1: any command that failed while ledger was down
+	# (e.g. kill point 2/3's dispatch reaching the vendor successfully but
+	# then failing to settle) is now backing off on its own exponential
+	# schedule (up to ~15m at higher retry counts) — reset it too, or the
+	# relay's retry-poll (every 30s) won't consider it eligible again until
+	# that backoff naturally elapses, well past this scenario's own wait.
+	psql_exec "$PAYOUT_DB_NAME" -c "UPDATE payout_vendor_commands SET next_attempt_at = now() WHERE payout_request_id IN (SELECT id FROM payout_requests WHERE user_id='$user_id' AND status IN ('created','held','submitted','vendor_pending'));" >/dev/null
+
+	log "waiting for the four synchronous requests to reach 'settled' (the fifth remains vendor_pending by design)..."
+	# A fixed sleep here undercounts real recovery time: internal/platform/transport/grpc's client to
+	# ledger uses grpc-go's default "lazy reconnect" backoff (intentional,
+	# see internal/platform/transport/grpc's own comment) rather than an eager reconnect, so after a
+	# >2-minute ledger outage the client can take on the order of 200s to
+	# even notice ledger is reachable again — independent of how many resume
+	# ticks fire in the meantime, since each one fails fast against the same
+	# still-backing-off connection. Poll for the real terminal condition
+	# instead of guessing a fixed budget; five cron ticks (five minutes) is
+	# comfortably past the measured worst case observed live while
+	# diagnosing this.
+	local poll_tries=60 all_settled=0
+	while [ "$poll_tries" -gt 0 ]; do
+		local settled_count
+		settled_count="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT count(*) FROM payout_requests WHERE id IN ('$id_created','$id_held','$id_submitted','$id_pending','$id_ledger') AND status = 'settled';")"
+		if [ "$settled_count" = "4" ]; then
+			all_settled=1
+			break
+		fi
+		# The relay may still finish an in-flight attempt that began while the
+		# ledger was unavailable after the one reset above. If that attempt
+		# records a failed command during recovery, its normal exponential
+		# backoff would push this drill past the bounded convergence budget even
+		# though the dependency is healthy again. Re-arm only these five isolated
+		# requests while polling; production retry backoff is unchanged.
+		psql_exec "$PAYOUT_DB_NAME" -c "UPDATE payout_vendor_commands SET next_attempt_at = now() WHERE status = 'failed' AND payout_request_id IN ('$id_created','$id_held','$id_submitted','$id_pending','$id_ledger');" >/dev/null
+		sleep 5
+		poll_tries=$((poll_tries - 1))
+	done
+	[ "$all_settled" = "1" ] || log "not all five requests reached 'settled' within the poll budget — asserting individually below for a precise per-request failure"
+
+	log "asserting terminal states for created/held/submitted, and correct polling for vendor_pending..."
+	local final_created final_held final_submitted final_pending
+	final_created="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT status FROM payout_requests WHERE id = '$id_created';")"
+	final_held="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT status FROM payout_requests WHERE id = '$id_held';")"
+	final_submitted="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT status FROM payout_requests WHERE id = '$id_submitted';")"
+	final_pending="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT status FROM payout_requests WHERE id = '$id_pending';")"
+
+	[ "$final_created" = "settled" ] && ok "kill point 1 (created) resolved to 'settled'" || fail "kill point 1 (created) ended at '$final_created', expected 'settled'"
+	[ "$final_held" = "settled" ] && ok "kill point 2 (held) resolved to 'settled'" || fail "kill point 2 (held) ended at '$final_held', expected 'settled'"
+	[ "$final_submitted" = "settled" ] && ok "kill point 3 (submitted) resolved to 'settled' after simulated vendor recovery" || fail "kill point 3 (submitted) ended at '$final_submitted', expected 'settled'"
+	[ "$final_pending" = "vendor_pending" ] && ok "kill point 4 (vendor_pending) remained resumable after restart" || fail "kill point 4 ended at '$final_pending', expected vendor_pending"
+	local pending_query_count
+	pending_query_count="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT count(*) FROM payout_vendor_calls WHERE payout_request_id='$id_pending' AND req_summary LIKE 'query vendor=%';")"
+	[ "$pending_query_count" -gt 0 ] && ok "kill point 4 resume polled the vendor without re-submitting" || fail "kill point 4 recorded no vendor query after restart"
+	local final_ledger
+	final_ledger="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT status FROM payout_requests WHERE id='$id_ledger';")"
+	[ "$final_ledger" = "settled" ] && ok "ledger crash point recovered to settled" || fail "ledger crash point ended at '$final_ledger', expected settled"
+
+	local no_stuck
+	no_stuck="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT count(*) FROM payout_requests WHERE user_id = '$user_id' AND status IN ('created','held','submitted');")"
+	if [ "$no_stuck" = "0" ]; then
+		ok "no payout request left stuck in created/held/submitted after resume"
+	else
+		fail "$no_stuck payout request(s) still stuck in a non-terminal, non-vendor_pending status"
+	fi
+
+	# All four payout-service kill points and the ledger-service kill point
+	# settle exactly once, so cash must be down by exactly 50000.
+	local balance_after
+	balance_after="$(account_balance "$cash_account")"
+	local expected_after=$((balance_before - 50000))
+	if [ "$balance_after" = "$expected_after" ]; then
+		ok "cash balance moved by exactly the expected amount (before=$balance_before after=$balance_after)"
+	else
+		fail "cash balance mismatch: before=$balance_before after=$balance_after expected=$expected_after — money lost or duplicated"
+	fi
+
+	assert_ledger_balanced
+	assert_no_inconsistent_projections
+	stop_services
+}
+
+# ─── Scenario 6: payin-service unavailable during webhook ──────────────────
+
+scenario_6() {
+	log "=== Scenario 6: payin-service down -> 503 -> redelivery heals ==="
+	ensure_deps_up
+	build_server
+	start_services
+
+	local user_id="c6a05000-0000-0000-0000-000000000006"
+	provision_user "$user_id" >/dev/null
+	local cash before after body sig code topup_resp topup_reference
+	cash="$(cash_account_id "$user_id")"
+	before="$(account_balance "$cash")"
+	topup_resp="$(curl -s -X POST "http://localhost:$APP_PORT/api/v1/topup" \
+		-H "Authorization: Bearer $(gen_token "$user_id")" -H "Content-Type: application/json" \
+		-d '{"amount":"6000"}')"
+	topup_reference="$(echo "$topup_resp" | json_field reference)"
+	[ -n "$topup_reference" ] || fail "chaos6 topup intent creation failed: $topup_resp"
+	body="{\"event_id\":\"chaos6-$RANDOM\",\"external_ref\":\"$topup_reference\",\"user_id\":\"$user_id\",\"amount\":\"6000\",\"currency\":\"IDR\",\"occurred_at\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"type\":\"payment.settled\"}"
+	sig="$(printf '%s' "$body" | openssl dgst -sha256 -hmac "$VENDOR_MOCKVENDOR_SECRET" -r | awk '{print $1}')"
+
+	kill_payin_hard
+	code=$(curl_internal -s --max-time 10 -o /dev/null -w '%{http_code}' -X POST "http://localhost:$VENDOR_APP_PORT/webhooks/mockvendor" -H "X-Mock-Signature: $sig" -H "Content-Type: application/json" -d "$body" || echo "000")
+	[ "$code" = "503" ] && ok "vendor-service returned 503 while payin-service was down" || fail "vendor-service returned $code while payin-service was down, expected 503"
+
+	start_payin_service
+	# A real vendor's webhook redelivery is not a single immediate retry — it
+	# keeps redelivering on a non-2xx response over the following minutes.
+	# Model that here instead of one fixed-timing attempt: gateway's own gRPC
+	# client channel to payin-service can still be reconnecting for a moment
+	# right after start_payin_service returns (wait_for_service_up only proves
+	# payin-service's OWN HTTP health endpoint is up, not that gateway's
+	# already-dialed client has finished re-establishing that connection), so
+	# the very first redelivery attempt can race that and legitimately see a
+	# transient 503 even though the service is genuinely back.
+	local redelivery_tries=10
+	code="000"
+	while [ "$redelivery_tries" -gt 0 ]; do
+		code=$(curl_internal -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$VENDOR_APP_PORT/webhooks/mockvendor" -H "X-Mock-Signature: $sig" -H "Content-Type: application/json" -d "$body")
+		[ "$code" = "200" ] && break
+		sleep 1
+		redelivery_tries=$((redelivery_tries - 1))
+	done
+	[ "$code" = "200" ] && ok "vendor redelivery accepted after payin-service restart" || fail "redelivery returned $code, expected 200"
+	after="$(account_balance "$cash")"
+	[ "$after" = "$((before + 6000))" ] && ok "redelivery credited exactly once ($before -> $after)" || fail "redelivery balance mismatch: before=$before after=$after"
+	assert_ledger_balanced
+	assert_no_inconsistent_projections
+	stop_services
+}
+
+# ─── Scenario 7: fraud-service fail-open and block-mode E2E ─────────
+
+scenario_7() {
+	log "=== Scenario 7: fraud-service down fails open; block mode rejects pre-write — across all three flows (docs/roadmap/archive/37 Task T6) ==="
+	export SCREENING_MODE=block
+	export SCREENING_AMOUNT_THRESHOLD=100
+	export SCREENING_VELOCITY_MAX_PER_HOUR=0
+	ensure_deps_up
+	# Per-rule overrides are durable and take precedence over the environment
+	# fallback. Set the threshold rule explicitly so a reused fraud DB cannot
+	# leave this scenario silently in the migration's default `off` mode.
+	psql_exec "$FRAUD_DB_NAME" -c "UPDATE screening_rule_modes SET mode = 'block', updated_by = 'chaos7' WHERE rule = 'amount_threshold';" >/dev/null
+	build_server
+	start_services
+
+	local user_id recipient_id token cash before after_fail_open after_block code admin_token event_count
+	user_id="$(psql_exec "$LEDGER_DB_NAME" -c "SELECT gen_random_uuid();")"
+	recipient_id="$(psql_exec "$LEDGER_DB_NAME" -c "SELECT gen_random_uuid();")"
+	provision_user "$user_id" >/dev/null
+	provision_user "$recipient_id" >/dev/null
+	provision_hold_account "$user_id"
+	token="$(gen_token "$user_id")"
+	cash="$(cash_account_id "$user_id")"
+
+	# ─── Fraud-service DOWN: all three flows must fail OPEN ─────────────
+	kill_fraud_hard
+	fund_user "$user_id"
+	before="$(account_balance "$cash")"
+
+	log "-- P2P transfer while fraud-service is down --"
+	code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$APP_PORT/api/v1/ledger/transactions" \
+		-H "Authorization: Bearer $token" -H "Content-Type: application/json" \
+		-d "{\"idempotency_key\":\"fraud-down-p2p-$RANDOM\",\"type\":\"transfer_p2p\",\"amount\":\"50\",\"target_user_id\":\"$recipient_id\"}")
+	after_fail_open="$(account_balance "$cash")"
+	[ "$code" = "201" ] && [ "$after_fail_open" = "$((before - 50))" ] \
+		&& ok "P2P transfer posted while fraud-service was down (fail-open)" \
+		|| fail "fraud-down P2P transfer code=$code balance=$before->$after_fail_open"
+	grep -q 'screening check error, failing open' "$LEDGER_LOG" \
+		&& ok "ledger logged the fail-open screening error at ERROR path" \
+		|| fail "ledger log did not contain the fail-open screening error"
+
+	log "-- Topup webhook while fraud-service is down --"
+	local topup_body topup_sig topup_before topup_after topup_resp topup_reference
+	topup_before="$after_fail_open"
+	topup_resp="$(curl -s -X POST "http://localhost:$APP_PORT/api/v1/topup" \
+		-H "Authorization: Bearer $token" -H "Content-Type: application/json" -d '{"amount":"6000"}')"
+	topup_reference="$(echo "$topup_resp" | json_field reference)"
+	[ -n "$topup_reference" ] || fail "chaos7 fail-open topup intent creation failed: $topup_resp"
+	topup_body="{\"event_id\":\"chaos7-down-$RANDOM\",\"external_ref\":\"$topup_reference\",\"user_id\":\"$user_id\",\"amount\":\"6000\",\"currency\":\"IDR\",\"occurred_at\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"type\":\"payment.settled\"}"
+	topup_sig="$(printf '%s' "$topup_body" | openssl dgst -sha256 -hmac "$VENDOR_MOCKVENDOR_SECRET" -r | awk '{print $1}')"
+	code=$(curl_internal -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$VENDOR_APP_PORT/webhooks/mockvendor" \
+		-H "X-Mock-Signature: $topup_sig" -H "Content-Type: application/json" -d "$topup_body")
+	topup_after="$(account_balance "$cash")"
+	[ "$code" = "200" ] && [ "$topup_after" = "$((topup_before + 6000))" ] \
+		&& ok "topup webhook posted while fraud-service was down (fail-open)" \
+		|| fail "fraud-down topup webhook code=$code balance=$topup_before->$topup_after"
+	grep -q 'payin: screening check error, failing open' "$PAYIN_LOG" \
+		&& ok "payin logged the fail-open screening error at ERROR path" \
+		|| fail "payin log did not contain the fail-open screening error"
+
+	log "-- Payout create while fraud-service is down --"
+	local payout_resp payout_id
+	payout_resp="$(curl -s -X POST "http://localhost:$APP_PORT/api/v1/payout" \
+		-H "Authorization: Bearer $token" -H "Content-Type: application/json" \
+		-d '{"amount":"50","destination":{"bank_code":"014","account_no":"1"}}')"
+	payout_id="$(echo "$payout_resp" | sed -n 's/.*"id":"\([^"]*\)".*/\1/p')"
+	[ -n "$payout_id" ] || fail "fraud-down payout create unexpected response: $payout_resp"
+	wait_for_payout_status "$payout_id" "settled" 10
+	ok "payout created while fraud-service was down and settled via the relay (fail-open, $payout_id)"
+	grep -q 'payout: screening check error, failing open' "$PAYOUT_LOG" \
+		&& ok "payout logged the fail-open screening error at ERROR path" \
+		|| fail "payout log did not contain the fail-open screening error"
+
+	# ─── Fraud-service back up, in BLOCK mode: all three must reject BEFORE any write ───
+	start_fraud_service
+	# ledger/payin/payout each hold a long-lived grpc.ClientConn to
+	# fraud-service (internal/platform/transport/grpc.Dial's lazy-reconnect, intentional per its own
+	# comment) established back when THEY started — it does NOT get
+	# re-dialed just because fraud-service restarts. When fraud-service was
+	# killed above, each of those connections entered grpc-go's own
+	# transient-failure/backoff cycle; the very NEXT request against a
+	# connection still mid-backoff can get a genuine (if short-lived)
+	# "connection refused" even though the new fraud-service process is
+	# already listening — reproduced empirically running this scenario
+	# standalone, twice, both times on the P2P block-mode call specifically
+	# (the first fraud-dependent call issued after the restart). This is
+	# expected grpc-go client behavior, not a fraud-service or ledger bug —
+	# give the default backoff (~1s, jittered) room to complete before
+	# issuing the block-mode assertions below.
+	sleep 3
+	local velocity_key velocity_tries=30
+	velocity_key=""
+	while [ "$velocity_tries" -gt 0 ]; do
+		velocity_key="$(redis-cli -h localhost -p "$REDIS_HOST_PORT" -n 1 --scan --pattern "fraud:velocity:$user_id:*" | head -1)"
+		[ -n "$velocity_key" ] && break
+		sleep 0.2
+		velocity_tries=$((velocity_tries - 1))
+	done
+	if [ -n "$velocity_key" ]; then
+		ok "posted events populated velocity counter in Redis DB 1"
+	else
+		fail "posted events did not populate fraud velocity counter"
+		tail -40 "$FRAUD_LOG" || true
+	fi
+
+	log "-- P2P transfer in block mode (amount >= threshold) --"
+	local before_block
+	before_block="$(account_balance "$cash")"
+	code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$APP_PORT/api/v1/ledger/transactions" \
+		-H "Authorization: Bearer $token" -H "Content-Type: application/json" \
+		-d "{\"idempotency_key\":\"fraud-block-p2p-$RANDOM\",\"type\":\"transfer_p2p\",\"amount\":\"100\",\"target_user_id\":\"$recipient_id\"}")
+	after_block="$(account_balance "$cash")"
+	[ "$code" = "422" ] && [ "$after_block" = "$before_block" ] \
+		&& ok "block-mode P2P transfer rejected without moving money" \
+		|| fail "block-mode P2P transfer code=$code balance=$topup_after->$after_block"
+	event_count="$(psql_exec "$FRAUD_DB_NAME" -c "SELECT count(*) FROM screening_events WHERE user_id='$user_id' AND verdict='blocked' AND currency='IDR';")"
+	[ "$event_count" -ge "1" ] && ok "blocked P2P screening event persisted in seev_fraud" \
+		|| fail "expected at least one blocked fraud event for P2P, found $event_count"
+
+	log "-- Topup webhook in block mode (amount >= threshold) --"
+	local block_topup_id block_topup_body block_topup_sig block_topup_status block_topup_resp block_topup_reference
+	block_topup_resp="$(curl -s -X POST "http://localhost:$APP_PORT/api/v1/topup" \
+		-H "Authorization: Bearer $token" -H "Content-Type: application/json" -d '{"amount":"6000"}')"
+	block_topup_reference="$(echo "$block_topup_resp" | json_field reference)"
+	[ -n "$block_topup_reference" ] || fail "chaos7 block-mode topup intent creation failed: $block_topup_resp"
+	block_topup_body="{\"event_id\":\"chaos7-block-$RANDOM\",\"external_ref\":\"$block_topup_reference\",\"user_id\":\"$user_id\",\"amount\":\"6000\",\"currency\":\"IDR\",\"occurred_at\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"type\":\"payment.settled\"}"
+	block_topup_id="$(echo "$block_topup_body" | sed -n 's/.*"event_id":"\([^"]*\)".*/\1/p')"
+	block_topup_sig="$(printf '%s' "$block_topup_body" | openssl dgst -sha256 -hmac "$VENDOR_MOCKVENDOR_SECRET" -r | awk '{print $1}')"
+	code=$(curl_internal -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$VENDOR_APP_PORT/webhooks/mockvendor" \
+		-H "X-Mock-Signature: $block_topup_sig" -H "Content-Type: application/json" -d "$block_topup_body")
+	local after_block_topup
+	after_block_topup="$(account_balance "$cash")"
+	[ "$code" = "200" ] && [ "$after_block_topup" = "$after_block" ] \
+		&& ok "block-mode topup webhook acked 200 without moving money (non-retriable business decision)" \
+		|| fail "block-mode topup webhook code=$code balance=$after_block->$after_block_topup"
+	block_topup_status="$(psql_exec "$PAYIN_DB_NAME" -c "SELECT status FROM payin_webhook_events WHERE vendor_event_id='$block_topup_id';")"
+	[ "$block_topup_status" = "blocked" ] && ok "blocked topup event persisted with status='blocked' in seev_payin" \
+		|| fail "expected payin_webhook_events.status='blocked', got '$block_topup_status'"
+
+	log "-- Payout create in block mode (amount >= threshold) --"
+	local payout_count_before payout_count_after block_payout_resp block_payout_code
+	payout_count_before="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT count(*) FROM payout_requests WHERE user_id='$user_id';")"
+	block_payout_resp="$(curl -s -w '\nHTTP_CODE:%{http_code}' -X POST "http://localhost:$APP_PORT/api/v1/payout" \
+		-H "Authorization: Bearer $token" -H "Content-Type: application/json" \
+		-d '{"amount":"6000","destination":{"bank_code":"014","account_no":"1"}}')"
+	block_payout_code="$(echo "$block_payout_resp" | grep -o 'HTTP_CODE:[0-9]*' | cut -d: -f2)"
+	payout_count_after="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT count(*) FROM payout_requests WHERE user_id='$user_id';")"
+	[ "$block_payout_code" = "422" ] && echo "$block_payout_resp" | grep -q "SCREENING_BLOCKED" \
+		&& ok "block-mode payout create rejected with 422 SCREENING_BLOCKED" \
+		|| fail "block-mode payout create code=$block_payout_code, expected 422 SCREENING_BLOCKED: $block_payout_resp"
+	[ "$payout_count_after" = "$payout_count_before" ] && ok "no new payout_requests row was created for the blocked attempt" \
+		|| fail "payout_requests row count changed on a blocked attempt: $payout_count_before -> $payout_count_after"
+
+	admin_token="$(gen_token "$(psql_exec "$LEDGER_DB_NAME" -c "SELECT gen_random_uuid();")" admin)"
+	code=$(curl_internal -s -o /dev/null -w '%{http_code}' "http://localhost:$FRAUD_ADMIN_PORT/api/v1/admin/fraud/events?user_id=$user_id" -H "Authorization: Bearer $admin_token")
+	[ "$code" = "200" ] && ok "fraud admin events endpoint serves the moved audit row" || fail "fraud admin events returned $code"
+	assert_ledger_balanced
+	assert_no_inconsistent_projections
+	stop_services
+	# Do not leak the scenario's operator mode into subsequent runs.
+	psql_exec "$FRAUD_DB_NAME" -c "UPDATE screening_rule_modes SET mode = 'off', updated_by = 'chaos7-cleanup' WHERE rule = 'amount_threshold';" >/dev/null
+	unset SCREENING_MODE SCREENING_AMOUNT_THRESHOLD SCREENING_VELOCITY_MAX_PER_HOUR
+}
+
+# ─── Scenario 8: vendor failover (docs/roadmap/archive/40 Task T6) ─────────────────────
+#
+# Proves the anti-double-payout failover contract end to end against real
+# running services, not just orchestrate.go's own unit/integration tests:
+# a vendor-level fault (force-fail, not a process kill) must (a) route the
+# NEXT new payout to the surviving vendor, (b) NEVER fail over an
+# already-in-flight payout whose Submit attempt landed 'uncertain' — it
+# stays pinned to the original vendor forever, and only the relay's own
+# retry (docs/roadmap/archive/45 Task T1 — ClaimFailedCommandsForRetry, not the resume
+# job, which no longer calls the vendor at all) against that SAME vendor can
+# ever settle it, and (c) never produce two settles for any payout
+# regardless of how many vendors were involved.
+#
+# BREAKER_FAILURE_THRESHOLD=1 makes the breaker trip on the very first
+# force-fail-induced Submit failure — deterministic and fast, instead of
+# waiting out the default threshold of 5.
+#
+# mockvendor2 is seeded at priority 1001 (mockvendor's own seed migration,
+# 000002_routing.up.sql, is priority 1000) — deliberately a HIGHER priority
+# number than mockvendor's, since ResolveCandidates orders ASC (smallest
+# number = tried first, docs/roadmap/archive/40 Task T2); this makes mockvendor2 a true
+# FALLBACK behind mockvendor, not a replacement for it. This differs from
+# the doc's own shorthand "priority 2" (which would have made mockvendor2
+# tried FIRST, backwards from the scenario's intent) for that reason.
+scenario_8() {
+	timeline_event() {
+		printf '{"scenario":"payout-unknown-state-recovery","at":"%s","event":"%s","payout_id":"%s"}\n' \
+			"$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "$2"
+	}
+
+	log "=== Scenario 8: vendor failover — force-fail mockvendor, new payout routes to mockvendor2, in-flight payout stays pinned, resume settles it once recovered ==="
+	export BREAKER_FAILURE_THRESHOLD=1
+	ensure_deps_up
+	build_server
+	start_services
+
+	local admin_token
+	admin_token="$(gen_token "$(uuidgen | tr '[:upper:]' '[:lower:]')" admin)"
+
+	log "-- seeding mockvendor2 (gateway + routing rule, priority 1001, global fallback) --"
+	curl_internal -s -o /dev/null -X PUT "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendor-gateways/mockvendor2" \
+		-H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" -d '{"gateway":"gopay"}'
+	psql_exec "$PAYOUT_DB_NAME" -c "DELETE FROM payout_routing_rules WHERE priority = 1001;" >/dev/null
+	local route_json route_id
+	route_json="$(curl_internal -s -X POST "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/routing-rules" \
+		-H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" \
+		-d '{"flow":"payout","priority":1001,"enabled":true,"vendor":"mockvendor2"}')"
+	route_id="$(echo "$route_json" | json_field id)"
+	[ -n "$route_id" ] && ok "admin seeded mockvendor2 routing rule ($route_id)" || fail "mockvendor2 routing rule creation failed: $route_json"
+
+	local user_id token
+	user_id="$(psql_exec "$LEDGER_DB_NAME" -c "SELECT gen_random_uuid();")"
+	provision_user "$user_id" >/dev/null
+	provision_hold_account "$user_id"
+	fund_user "$user_id" 500000
+	token="$(gen_token "$user_id")"
+	local cash
+	cash="$(cash_account_id "$user_id")"
+
+	log "-- force-failing mockvendor --"
+	curl_internal -s -o /dev/null -X POST "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendors/mockvendor/force-fail" \
+		-H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" -d '{"fail":true}'
+
+	log "-- creating payout #1 while mockvendor is force-failed (still the top-priority candidate) --"
+	local resp1 id1 vendor1
+	resp1="$(curl -s -X POST "http://localhost:$APP_PORT/api/v1/payout" \
+		-H "Authorization: Bearer $token" -H "Content-Type: application/json" \
+		-d '{"amount":"10000","destination":{"bank_code":"014","account_no":"1"}}')"
+	id1="$(echo "$resp1" | json_field id)"
+	[ -n "$id1" ] && ok "payout #1 created ($id1)" || fail "payout #1 create did not return an id: $resp1"
+	timeline_event "payout_created_and_funds_held" "$id1"
+
+	# docs/roadmap/archive/45 Task T1: dispatch is async now (the relay's own ~1s poll
+	# interval) — Create returns the instant hold+enqueue lands, before the
+	# relay has necessarily attempted the vendor call yet. Wait for the
+	# durable evidence (the recorded 'uncertain' outcome) before reading
+	# status/vendor/breaker state that only exists after that dispatch.
+	wait_for_vendor_call "$id1" "uncertain" 15
+	timeline_event "vendor_submission_persisted_then_timed_out" "$id1"
+
+	vendor1="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT vendor FROM payout_requests WHERE id = '$id1';")"
+	local status1
+	status1="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT status FROM payout_requests WHERE id = '$id1';")"
+	[ "$vendor1" = "mockvendor" ] && [ "$status1" = "submitted" ] \
+		&& ok "payout #1 pinned to mockvendor, status='submitted' (uncertain, force-fail is a transport error)" \
+		|| fail "payout #1 unexpected vendor='$vendor1' status='$status1', expected vendor=mockvendor status=submitted"
+
+	local outcome1
+	outcome1="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT outcome FROM payout_vendor_calls WHERE payout_request_id = '$id1' ORDER BY created_at DESC LIMIT 1;")"
+	[ "$outcome1" = "uncertain" ] && ok "payout #1's vendor call recorded outcome='uncertain'" \
+		|| fail "payout #1's latest vendor call outcome was '$outcome1', expected 'uncertain'"
+	timeline_event "outcome_uncertain_vendor_pinned" "$id1"
+
+	log "-- asserting admin health reports mockvendor open --"
+	local health_resp
+	health_resp="$(curl_internal -s "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendors/health" -H "Authorization: Bearer $admin_token")"
+	echo "$health_resp" | grep -q '"vendor":"mockvendor","state":"open"' \
+		&& ok "admin vendor health reports mockvendor as open" \
+		|| fail "admin vendor health did not report mockvendor open: $health_resp"
+
+	log "-- creating payout #2: routing must skip mockvendor (open) straight to mockvendor2 --"
+	local resp2 id2 vendor2 status2
+	resp2="$(curl -s -X POST "http://localhost:$APP_PORT/api/v1/payout" \
+		-H "Authorization: Bearer $token" -H "Content-Type: application/json" \
+		-d '{"amount":"10000","destination":{"bank_code":"014","account_no":"2"}}')"
+	id2="$(echo "$resp2" | json_field id)"
+	[ -n "$id2" ] && ok "payout #2 created ($id2)" || fail "payout #2 create did not return an id: $resp2"
+
+	wait_for_payout_status "$id2" "settled" 10
+	vendor2="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT vendor FROM payout_requests WHERE id = '$id2';")"
+	status2="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT status FROM payout_requests WHERE id = '$id2';")"
+	[ "$vendor2" = "mockvendor2" ] && [ "$status2" = "settled" ] \
+		&& ok "payout #2 routed straight to mockvendor2 and settled" \
+		|| fail "payout #2 unexpected vendor='$vendor2' status='$status2', expected vendor=mockvendor2 status=settled"
+
+	log "-- recovering mockvendor; the relay's own retry must settle payout #1 against the SAME vendor --"
+	curl_internal -s -o /dev/null -X POST "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendors/mockvendor/force-fail" \
+		-H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" -d '{"fail":false}'
+	backdate_payout "$id1"
+	# docs/roadmap/archive/45 Task T1: payout #1's retry is now the relay's own
+	# ClaimFailedCommandsForRetry poll (every 30s), not the resume job's
+	# submit-retry — resume no longer calls the vendor at all. The command's
+	# exponential backoff (FailCommand) can otherwise take up to ~90s
+	# (30s * 2^1 * up to 1.5x jitter) before it's naturally eligible again;
+	# resetting next_attempt_at makes it immediately eligible on the relay's
+	# very next 30s tick instead of racing that jitter.
+	psql_exec "$PAYOUT_DB_NAME" -c "UPDATE payout_vendor_commands SET next_attempt_at = now() WHERE payout_request_id = '$id1';" >/dev/null
+
+	log "waiting for the relay's retry-poll tick (every 30s) to retry payout #1..."
+	sleep 65
+
+	local final_status1 final_vendor1
+	final_status1="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT status FROM payout_requests WHERE id = '$id1';")"
+	final_vendor1="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT vendor FROM payout_requests WHERE id = '$id1';")"
+	[ "$final_status1" = "settled" ] && ok "payout #1 settled after mockvendor recovered (resume job retried the SAME vendor)" \
+		|| fail "payout #1 final status was '$final_status1', expected 'settled'"
+	[ "$final_vendor1" = "mockvendor" ] && ok "payout #1's vendor column never changed — stayed pinned to mockvendor throughout" \
+		|| fail "payout #1's vendor column changed to '$final_vendor1' — it must NEVER fail over once uncertain"
+	timeline_event "same_vendor_retry_settled" "$id1"
+
+	log "-- asserting no payout ever received two settles --"
+	local settle_count1 settle_count2
+	settle_count1="$(psql_exec "$LEDGER_DB_NAME" -c "SELECT count(*) FROM ledger_transactions WHERE idempotency_key = 'payout:$id1:settle';")"
+	settle_count2="$(psql_exec "$LEDGER_DB_NAME" -c "SELECT count(*) FROM ledger_transactions WHERE idempotency_key = 'payout:$id2:settle';")"
+	[ "$settle_count1" = "1" ] && ok "payout #1 has exactly one settle transaction" \
+		|| fail "payout #1 has $settle_count1 settle transactions, expected exactly 1"
+	[ "$settle_count2" = "1" ] && ok "payout #2 has exactly one settle transaction" \
+		|| fail "payout #2 has $settle_count2 settle transactions, expected exactly 1"
+
+	local after
+	after="$(account_balance "$cash")"
+	[ "$after" = "480000" ] && ok "cash balance reflects exactly two settles, no more (500000 funded - 2x10000)" \
+		|| fail "unexpected cash balance $after, expected 480000"
+
+	assert_ledger_balanced
+	timeline_event "single_settlement_and_ledger_balanced" "$id1"
+	assert_no_inconsistent_projections
+	stop_services
+	unset BREAKER_FAILURE_THRESHOLD
+}
+
+# ─── Scenario 9: Redis outage — selective hot-swap + fraud fail-closed ─────
+#
+# docs/roadmap/archive/45 Task T4, bullet 1. Proves the docs/roadmap/archive/45 Task T3 design
+# (K4) against REAL running processes, not just internal/platform/cache's own unit tests:
+# the ledger rate limiter and policy velocity counter hot-swap from Redis to
+# an in-process memory fallback the INSTANT a real operation fails — no
+# restart, unlike scenario 4's operator-driven REDIS_ENABLED=false mitigation
+# — and recover back to Redis automatically once it's healthy again (also no
+# restart). fraud-service's velocity store gets NO such fallback by design:
+# it fails CLOSED (503 DEPENDENCY_UNAVAILABLE) while Redis is down instead of
+# silently degrading to an approximate/no-op check.
+#
+# Three independent, deliberately DECOUPLED proofs (using different
+# transaction types/ports so one check's fraud/rate-limit/policy config
+# never contaminates another's assertions):
+#   - rate limiter: burst topup-intent creates (POST /api/v1/topup never
+#     screens fraud — that happens at webhook settlement in payin, a
+#     different service entirely) against the gateway's public router.
+#   - policy counter: a low max_daily_count seeded on withdraw_initiate (NOT
+#     transfer_p2p, which is the one type ledger screens for fraud pre-tx —
+#     picking withdraw_initiate means this proof never touches fraud at all)
+#     via ledger-service's own internal port.
+#   - fraud fail-closed: transfer_p2p in block mode with a real velocity
+#     rule registered (requires a Redis-backed store lookup), which is the
+#     ONE flow in this scenario that's supposed to depend on Redis being
+#     reachable at all.
+scenario_9() {
+	log "=== Scenario 9: Redis outage — selective hot-swap (rate limiter/policy counter) + fraud fail-closed, recovery without restart (docs/roadmap/archive/45 Task T3/T4) ==="
+	export SCREENING_MODE=block
+	export SCREENING_AMOUNT_THRESHOLD=100000000
+	export SCREENING_VELOCITY_MAX_PER_HOUR=1000
+	export POLICY_CACHE_TTL=2s
+	# docs/roadmap/archive/49 TM-11: this scenario's own burst-of-11 test below
+	# specifically needs the limiter to trip WITHIN 11 requests (a mix of
+	# some 2xx, some 429) to prove enforcement — lib.sh's default harness-
+	# wide override (500/min, sized so OTHER scenarios' legitimate traffic
+	# never trips it) would let all 11 through. Scope this back down to
+	# just this scenario's own server processes.
+	export RATE_LIMIT_REQUESTS=10
+	export RATE_LIMIT_PER=1m
+	export RATE_LIMIT_BURST=10
+	ensure_deps_up
+	# Durable per-rule modes override SCREENING_MODE. Explicitly enable the
+	# velocity rule for this Redis-dependency proof; otherwise the migration's
+	# default `off` would make a Redis outage invisible to the request path.
+	psql_exec "$FRAUD_DB_NAME" -c "UPDATE screening_rule_modes SET mode = 'block', updated_by = 'chaos9' WHERE rule = 'velocity_anomaly';" >/dev/null
+	build_server
+	start_services
+
+	local admin_token user_id recipient_id token code
+	admin_token="$(gen_token "$(uuidgen | tr '[:upper:]' '[:lower:]')" admin)"
+	user_id="$(psql_exec "$LEDGER_DB_NAME" -c "SELECT gen_random_uuid();")"
+	recipient_id="$(psql_exec "$LEDGER_DB_NAME" -c "SELECT gen_random_uuid();")"
+	provision_user "$user_id" >/dev/null
+	provision_user "$recipient_id" >/dev/null
+	provision_hold_account "$user_id"
+	fund_user "$user_id" 5000000
+	token="$(gen_token "$user_id")"
+
+	log "-- baseline (Redis up): all three primitives report backend=redis --"
+	code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$APP_PORT/api/v1/topup" \
+		-H "Authorization: Bearer $token" -H "Content-Type: application/json" -d '{"amount":"10000"}')
+	[ "${code:0:1}" = "2" ] && ok "baseline topup intent create succeeded (code=$code)" || fail "baseline topup intent create got $code"
+	assert_metric_value "https://localhost:$INTERNAL_PORT/metrics" cache_redis_backend_active 1 \
+		"gateway rate limiter backend=redis before outage" 'primitive="rate_limiter"' 'backend="redis"'
+
+	log "-- seeding max_daily_count=1 on withdraw_initiate (policy_limits_max_daily_count_check requires > 0 — 0 is rejected at the DB layer, confirmed empirically) --"
+	curl_internal -s -o /dev/null -X PUT "http://localhost:$LEDGER_INTERNAL_PORT/api/v1/admin/policy/limits" \
+		-H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" \
+		-d "{\"user_id\":\"$user_id\",\"transaction_type\":\"withdraw_initiate\",\"max_daily_count\":1,\"enabled\":true}"
+	sleep 3
+	# withdraw_initiate is in publicUserTypes (services/ledger/internal/transport/
+	# http.go), so it's ALSO fraud-screened on the public router — every
+	# publicUserTypes call is (http.go's fraud check has no per-type
+	# discriminator beyond "public router", despite the flow name it passes
+	# to fraudcheck.Client being the literal string "p2p_transfer" for every
+	# type). policy.Check runs BEFORE fraud.Check (http.go:571 vs :590) and
+	# short-circuits on its own rejection — so THIS baseline call both
+	# consumes the one allowed use (Record() only fires after Post()
+	# succeeds, i.e. after fraud ALSO allows) and proves the counter's
+	# backend=redis while Redis is still reachable.
+	code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$APP_PORT/api/v1/ledger/transactions" \
+		-H "Authorization: Bearer $token" -H "Content-Type: application/json" \
+		-d "{\"idempotency_key\":\"chaos9-wd-baseline\",\"type\":\"withdraw_initiate\",\"amount\":\"10000\"}")
+	[ "${code:0:1}" = "2" ] && ok "baseline withdraw_initiate under the 1-use cap succeeded (code=$code)" || fail "baseline withdraw_initiate got $code, expected 2xx"
+	assert_metric_value "https://localhost:$LEDGER_INTERNAL_PORT/metrics" cache_redis_backend_active 1 \
+		"ledger policy counter backend=redis before outage" 'primitive="policy_counter"' 'backend="redis"'
+
+	log "-- baseline (Redis up): fraud velocity screening on transfer_p2p succeeds --"
+	code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$APP_PORT/api/v1/ledger/transactions" \
+		-H "Authorization: Bearer $token" -H "Content-Type: application/json" \
+		-d "{\"idempotency_key\":\"chaos9-p2p-baseline\",\"type\":\"transfer_p2p\",\"amount\":\"1\",\"target_user_id\":\"$recipient_id\"}")
+	[ "${code:0:1}" = "2" ] && ok "baseline P2P transfer (fraud screening reachable) succeeded (code=$code)" || fail "baseline P2P transfer got $code"
+	assert_metric_value "https://localhost:$FRAUD_ADMIN_PORT/metrics" cache_redis_backend_active 1 \
+		"fraud velocity store backend=redis before outage" 'primitive="fraud_velocity"' 'backend="redis"'
+
+	log "stopping redis..."
+	docker stop "$REDIS_CONTAINER" >/dev/null
+	# docker stop returning is not, by itself, proof the port is already
+	# unreachable from THIS host's TCP stack — reproduced once (isolated
+	# Compose project gate run) as a spurious 2xx on the very first
+	# fraud-dependent call below, consistent with a request racing a socket
+	# that hadn't fully torn down yet. Poll until a real client actually
+	# fails to reach it before proceeding, rather than trusting a fixed delay.
+	local redis_down_tries=25
+	while [ "$redis_down_tries" -gt 0 ] && redis-cli -h localhost -p "$REDIS_HOST_PORT" ping >/dev/null 2>&1; do
+		sleep 0.2
+		redis_down_tries=$((redis_down_tries - 1))
+	done
+	redis-cli -h localhost -p "$REDIS_HOST_PORT" ping >/dev/null 2>&1 \
+		&& fail "redis still answered PING after docker stop — the outage below would race a live Redis" \
+		|| ok "redis confirmed unreachable before proceeding"
+
+	log "-- Redis down: rate limiter must keep enforcing from memory (burst of 11 topup-intent creates) --"
+	# RateLimitByIPAndPath keys on the client IP with the ephemeral source
+	# port stripped (docs/roadmap/archive/49 TM-11 — internal/platform/security/middleware/rate_limit.go)
+	# now, so 11 separate curl invocations would already land on the same
+	# bucket regardless. Still chaining them with --next inside ONE curl
+	# invocation over a single persistent HTTP/1.1 connection (same source
+	# port throughout, verified against a real net/http keep-alive server
+	# while writing this scenario) — the strongest, most direct proof this
+	# scenario can give: byte-identical to one real client reusing a
+	# connection, independent of which dimension the key happens to use.
+	local i rl_success=0 rl_429=0 rl_args=() rl_output
+	for i in $(seq 1 11); do
+		rl_args+=(-s -o /dev/null -w '%{http_code}\n' -X POST \
+			-H "Authorization: Bearer $token" -H "Content-Type: application/json" -d '{"amount":"10000"}' \
+			"http://localhost:$APP_PORT/api/v1/topup")
+		[ "$i" -lt 11 ] && rl_args+=(--next)
+	done
+	rl_output="$(curl "${rl_args[@]}")"
+	while IFS= read -r code; do
+		if [ "$code" = "429" ]; then rl_429=$((rl_429 + 1)); else rl_success=$((rl_success + 1)); fi
+	done <<<"$rl_output"
+	[ "$rl_success" -ge "1" ] && ok "rate limiter still serves traffic from memory with Redis down ($rl_success/11 succeeded)" \
+		|| fail "expected at least one successful topup create among 11 with Redis down, got 0"
+	[ "$rl_429" -ge "1" ] && ok "rate limiter still actively enforces from memory with Redis down ($rl_429/11 got 429)" \
+		|| fail "expected at least one 429 among 11 rapid topup creates with Redis down — limiter may have silently bypassed"
+	assert_metric_value "https://localhost:$INTERNAL_PORT/metrics" cache_redis_backend_active 1 \
+		"gateway rate limiter hot-swapped to backend=local with Redis down" 'primitive="rate_limiter"' 'backend="local"'
+	grep -q 'cache: redis backend degraded' "$GATEWAY_LOG" \
+		&& ok "gateway logged the rate-limiter degrade transition" || fail "gateway log missing the rate-limiter degrade line"
+
+	log "-- Redis down: policy counter's Get() is still consulted from memory, AND fraud fails CLOSED — both provable from ONE call --"
+	# With Redis down, policy.Check's counter.Get() degrades to a FRESH
+	# memory counter (cur=0, unaware of Redis's real cur=1 recorded at
+	# baseline — internal/platform/cache/failover.go's FailoverCounter is deliberately not
+	# a continuation of Redis's state). The two proofs below are intentionally
+	# separate because the production command boundary runs fraud screening
+	# before policy evaluation: the policy probe reaches the poster with an
+	# unfundable amount, while the following normal withdrawal proves fraud
+	# fails closed before any money moves.
+	local cash before_fc policy_resp policy_code wd2_resp wd2_code mode_code
+	cash="$(cash_account_id "$user_id")"
+	before_fc="$(account_balance "$cash")"
+	log "-- proving the ledger policy counter degrades independently of fraud screening --"
+	# The production command boundary deliberately runs fraud screening before
+	# policy evaluation.  A fraud-dependent request while Redis is down would
+	# therefore fail before the ledger counter is touched, which made the old
+	# one-call assertion observe only the fraud failure and miss the policy
+	# fallback.  Temporarily turn off only the velocity rule through its admin
+	# API (which invalidates the resolver cache), then send an intentionally
+	# unfundable withdrawal: policy.Get must run, but the poster must reject
+	# before moving money.
+	mode_code="$(curl_internal -s -o /dev/null -w '%{http_code}' -X PUT \
+		"http://localhost:$FRAUD_ADMIN_PORT/api/v1/admin/fraud/rules/velocity_anomaly/mode" \
+		-H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" -d '{"mode":"off"}')"
+	[ "$mode_code" = "200" ] && ok "temporarily disabled velocity rule to isolate the ledger policy fallback" \
+		|| fail "could not disable velocity rule for the policy fallback proof (code=$mode_code)"
+	policy_resp="$(curl -s -w '\n%{http_code}' -X POST "http://localhost:$APP_PORT/api/v1/ledger/transactions" \
+		-H "Authorization: Bearer $token" -H "Content-Type: application/json" \
+		-d '{"idempotency_key":"chaos9-policy-fallback","type":"withdraw_initiate","amount":"999999999"}')"
+	policy_code="$(echo "$policy_resp" | tail -1)"
+	[ "$policy_code" != "503" ] && ok "ledger policy fallback reached the poster while fraud screening was disabled (code=$policy_code)" \
+		|| fail "policy fallback proof was short-circuited with 503: $policy_resp"
+	assert_metric_value "https://localhost:$LEDGER_INTERNAL_PORT/metrics" cache_redis_backend_active 1 \
+		"ledger policy counter hot-swapped to backend=local with Redis down" 'primitive="policy_counter"' 'backend="local"'
+	local after_policy
+	after_policy="$(account_balance "$cash")"
+	[ "$after_policy" = "$before_fc" ] && ok "unfundable policy fallback probe moved no money ($before_fc unchanged)" \
+		|| fail "policy fallback probe moved money: $before_fc -> $after_policy"
+
+	log "-- restoring velocity block mode and proving fraud still fails closed --"
+	mode_code="$(curl_internal -s -o /dev/null -w '%{http_code}' -X PUT \
+		"http://localhost:$FRAUD_ADMIN_PORT/api/v1/admin/fraud/rules/velocity_anomaly/mode" \
+		-H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" -d '{"mode":"block"}')"
+	[ "$mode_code" = "200" ] && ok "restored velocity block mode for the fraud fail-closed proof" \
+		|| fail "could not restore velocity block mode (code=$mode_code)"
+	wd2_resp="$(curl -s -w '\n%{http_code}' -X POST "http://localhost:$APP_PORT/api/v1/ledger/transactions" \
+		-H "Authorization: Bearer $token" -H "Content-Type: application/json" \
+		-d "{\"idempotency_key\":\"chaos9-wd-2\",\"type\":\"withdraw_initiate\",\"amount\":\"10000\"}")"
+	wd2_code="$(echo "$wd2_resp" | tail -1)"
+	[ "$wd2_code" = "503" ] && echo "$wd2_resp" | grep -q "DEPENDENCY_UNAVAILABLE" \
+		&& ok "withdraw_initiate fails closed with 503 DEPENDENCY_UNAVAILABLE while fraud's Redis dependency is down (policy itself allowed it — memory counter was consulted, not bypassed)" \
+		|| fail "withdraw_initiate with Redis down got: $wd2_resp — expected 503 DEPENDENCY_UNAVAILABLE"
+	grep -q "screening dependency unavailable, failing closed" "$LEDGER_LOG" \
+		&& ok "ledger logged the fail-closed screening decision" || fail "ledger log missing the fail-closed screening line"
+	local after_fc
+	after_fc="$(account_balance "$cash")"
+	[ "$after_fc" = "$before_fc" ] && ok "fail-closed rejection moved no money ($before_fc unchanged)" \
+		|| fail "balance moved on a fail-closed rejection: $before_fc -> $after_fc"
+
+	log "restarting redis (no service process restart)..."
+	docker start "$REDIS_CONTAINER" >/dev/null
+	wait_for_container_healthy "$REDIS_CONTAINER"
+	wait_for_redis_reachable
+	log "waiting for the background probe loop's 2-consecutive-success recovery (docs/roadmap/archive/45 K4 hysteresis, ~10-15s)..."
+	sleep 20
+
+	log "-- Redis back: all three primitives recover to backend=redis WITHOUT any process restart --"
+	assert_metric_value "https://localhost:$INTERNAL_PORT/metrics" cache_redis_backend_active 1 \
+		"gateway rate limiter recovered to backend=redis without restart" 'primitive="rate_limiter"' 'backend="redis"'
+	assert_metric_value "https://localhost:$LEDGER_INTERNAL_PORT/metrics" cache_redis_backend_active 1 \
+		"ledger policy counter recovered to backend=redis without restart" 'primitive="policy_counter"' 'backend="redis"'
+	assert_metric_value "https://localhost:$FRAUD_ADMIN_PORT/metrics" cache_redis_backend_active 1 \
+		"fraud velocity store recovered to backend=redis without restart" 'primitive="fraud_velocity"' 'backend="redis"'
+
+	log "-- Redis back: the policy counter resumes enforcement from Redis's TRUE count (1, from baseline) — the outage's phantom memory count of 0 is correctly discarded, never merged back --"
+	local wd3_resp wd3_code
+	wd3_resp="$(curl -s -w '\n%{http_code}' -X POST "http://localhost:$APP_PORT/api/v1/ledger/transactions" \
+		-H "Authorization: Bearer $token" -H "Content-Type: application/json" \
+		-d "{\"idempotency_key\":\"chaos9-wd-3\",\"type\":\"withdraw_initiate\",\"amount\":\"10000\"}")"
+	wd3_code="$(echo "$wd3_resp" | tail -1)"
+	[ "$wd3_code" = "422" ] && echo "$wd3_resp" | grep -q "policy limit exceeded (max_daily_count)" \
+		&& ok "post-recovery withdraw_initiate correctly rejected against Redis's real count, not the outage's phantom memory count" \
+		|| fail "post-recovery withdraw_initiate got: $wd3_resp — expected 422 policy limit exceeded (max_daily_count)"
+
+	code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$APP_PORT/api/v1/ledger/transactions" \
+		-H "Authorization: Bearer $token" -H "Content-Type: application/json" \
+		-d "{\"idempotency_key\":\"chaos9-p2p-recovered\",\"type\":\"transfer_p2p\",\"amount\":\"1\",\"target_user_id\":\"$recipient_id\"}")
+	[ "${code:0:1}" = "2" ] && ok "P2P transfer succeeds again once Redis recovered — no restart needed (code=$code)" \
+		|| fail "post-recovery P2P transfer got $code, expected 2xx"
+
+	assert_ledger_balanced
+	assert_no_inconsistent_projections
+	stop_services
+	psql_exec "$FRAUD_DB_NAME" -c "UPDATE screening_rule_modes SET mode = 'off', updated_by = 'chaos9-cleanup' WHERE rule = 'velocity_anomaly';" >/dev/null
+	unset SCREENING_MODE SCREENING_AMOUNT_THRESHOLD SCREENING_VELOCITY_MAX_PER_HOUR POLICY_CACHE_TTL
+}
+
+# ─── Scenario 10: distributed breaker across two payout replicas ──────────
+#
+# docs/roadmap/archive/45 Task T4, bullet 2. Two REAL payout-service processes (not two
+# separately-provisioned stacks) sharing one Postgres DB and one Redis
+# instance, with BREAKER_DISTRIBUTED=true (docs/roadmap/archive/45 Task T2).
+#
+# mockvendor's force-fail flag is a PER-PROCESS in-memory switch on that
+# process's own vendorgw.Registry — it is NOT shared between replicas the
+# way the breaker's OWN state is. Force-failing only replica A's mockvendor
+# and then creating a payout is a genuine RACE: both replicas' relays poll
+# the SAME payout_vendor_commands table (FOR UPDATE SKIP LOCKED, by design,
+# docs/roadmap/archive/45 K1/K2), so replica B can claim and dispatch the command
+# FIRST against ITS OWN, still-healthy mockvendor and settle it before
+# replica A ever gets a chance — reproduced empirically while writing this
+# scenario (payout settled in ~100ms via whichever replica won the claim,
+# never recording an 'uncertain' outcome at all). Force-failing BOTH
+# replicas' mockvendor instances removes the race AND is the more faithful
+# simulation anyway: a real vendor outage is symmetric across every
+# replica, not scoped to whichever one an admin happened to poke. The
+# actual thing being proven — that replica B's OWN admin health endpoint
+# reports the vendor open via shared Redis state — holds regardless of
+# which replica's relay instance is the one that actually dispatched the
+# failing call. Then Redis itself is stopped: both replicas must degrade to
+# their own embedded local HealthTracker fallback and keep answering
+# requests, never crash.
+scenario_10() {
+	log "=== Scenario 10: distributed breaker across two payout replicas (docs/roadmap/archive/45 Task T2/T4) ==="
+	export BREAKER_DISTRIBUTED=true
+	export BREAKER_FAILURE_THRESHOLD=1
+	ensure_deps_up
+	build_server
+	# Unlike a per-process HealthTracker (dies with the process, so every
+	# OTHER scenario/run starts clean), a DistributedBreaker's state lives in
+	# Redis and is NOT reset by ensure_deps_up (docker volumes persist
+	# across runs by this whole suite's own design, see header). A prior
+	# scenario 10 run (this scenario is the only one that ever sets
+	# BREAKER_DISTRIBUTED=true) can leave mockvendor 'open' in Redis from
+	# its own force-fail, still visible minutes later on the very next run —
+	# confirmed via `redis-cli keys 'breaker:payout:*'` after a standalone
+	# run of this scenario. Clear it before priming so this scenario's own
+	# force-fail is what trips the breaker, not stale state from a previous
+	# run of itself.
+	redis-cli -h localhost -p "$REDIS_HOST_PORT" -n 0 del breaker:payout:state:mockvendor breaker:payout:probe:mockvendor >/dev/null
+	start_services
+	start_payout_service_replica
+
+	local admin_token user_id token
+	admin_token="$(gen_token "$(uuidgen | tr '[:upper:]' '[:lower:]')" admin)"
+	user_id="$(psql_exec "$LEDGER_DB_NAME" -c "SELECT gen_random_uuid();")"
+	provision_user "$user_id" >/dev/null
+	provision_hold_account "$user_id"
+	fund_user "$user_id" 500000
+	token="$(gen_token "$user_id")"
+
+	log "-- priming each replica's breaker with one Snapshot call (the backend gauge has no value until a real call resolves) --"
+	curl_internal -s -o /dev/null "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendors/health" -H "Authorization: Bearer $admin_token"
+	curl_internal -s -o /dev/null "http://localhost:$PAYOUT2_ADMIN_PORT/admin/payout/vendors/health" -H "Authorization: Bearer $admin_token"
+	assert_metric_value "https://localhost:$PAYOUT_ADMIN_PORT/metrics" vendorgw_breaker_backend 1 \
+		"replica A (primary) breaker backend=redis before any vendor call" 'namespace="payout"' 'backend="redis"'
+	assert_metric_value "https://localhost:$PAYOUT2_ADMIN_PORT/metrics" vendorgw_breaker_backend 1 \
+		"replica B breaker backend=redis before any vendor call" 'namespace="payout"' 'backend="redis"'
+
+	log "-- force-failing mockvendor on BOTH replicas (avoids the claim-race described above) and tripping the breaker --"
+	curl_internal -s -o /dev/null -X POST "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendors/mockvendor/force-fail" \
+		-H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" -d '{"fail":true}'
+	curl_internal -s -o /dev/null -X POST "http://localhost:$PAYOUT2_ADMIN_PORT/admin/payout/vendors/mockvendor/force-fail" \
+		-H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" -d '{"fail":true}'
+
+	local resp id
+	resp="$(curl -s -X POST "http://localhost:$APP_PORT/api/v1/payout" \
+		-H "Authorization: Bearer $token" -H "Content-Type: application/json" \
+		-d '{"amount":"10000","destination":{"bank_code":"014","account_no":"1"}}')"
+	id="$(echo "$resp" | json_field id)"
+	[ -n "$id" ] && ok "payout created via replica A ($id)" || fail "payout create via replica A did not return an id: $resp"
+	wait_for_vendor_call "$id" "uncertain" 15
+
+	local health_a health_b
+	health_a="$(curl_internal -s "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendors/health" -H "Authorization: Bearer $admin_token")"
+	echo "$health_a" | grep -q '"vendor":"mockvendor","state":"open"' \
+		&& ok "replica A reports mockvendor open" \
+		|| fail "replica A did not report mockvendor open: $health_a"
+
+	health_b="$(curl_internal -s "http://localhost:$PAYOUT2_ADMIN_PORT/admin/payout/vendors/health" -H "Authorization: Bearer $admin_token")"
+	echo "$health_b" | grep -q '"vendor":"mockvendor","state":"open"' \
+		&& ok "replica B reports mockvendor open via the SAME shared Redis breaker state as replica A — state converged across replicas" \
+		|| fail "replica B did not report mockvendor open — distributed breaker state did not converge: $health_b"
+
+	curl_internal -s -o /dev/null -X POST "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendors/mockvendor/force-fail" \
+		-H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" -d '{"fail":false}'
+	curl_internal -s -o /dev/null -X POST "http://localhost:$PAYOUT2_ADMIN_PORT/admin/payout/vendors/mockvendor/force-fail" \
+		-H "Authorization: Bearer $admin_token" -H "Content-Type: application/json" -d '{"fail":false}'
+
+	log "stopping redis: both replicas must degrade to their own local fallback without crashing..."
+	docker stop "$REDIS_CONTAINER" >/dev/null
+	local redis_down_tries=25
+	while [ "$redis_down_tries" -gt 0 ] && redis-cli -h localhost -p "$REDIS_HOST_PORT" ping >/dev/null 2>&1; do
+		sleep 0.2
+		redis_down_tries=$((redis_down_tries - 1))
+	done
+
+	local code_a code_b
+	code_a=$(curl_internal -s -o /dev/null -w '%{http_code}' "http://localhost:$PAYOUT_ADMIN_PORT/admin/payout/vendors/health" -H "Authorization: Bearer $admin_token")
+	code_b=$(curl_internal -s -o /dev/null -w '%{http_code}' "http://localhost:$PAYOUT2_ADMIN_PORT/admin/payout/vendors/health" -H "Authorization: Bearer $admin_token")
+	[ "$code_a" = "200" ] && ok "replica A still answers admin health with Redis down (code=$code_a, no crash)" \
+		|| fail "replica A admin health returned $code_a with Redis down — expected 200"
+	[ "$code_b" = "200" ] && ok "replica B still answers admin health with Redis down (code=$code_b, no crash)" \
+		|| fail "replica B admin health returned $code_b with Redis down — expected 200"
+	assert_metric_value "https://localhost:$PAYOUT_ADMIN_PORT/metrics" vendorgw_breaker_backend 1 \
+		"replica A breaker degraded to backend=local with Redis down" 'namespace="payout"' 'backend="local"'
+	assert_metric_value "https://localhost:$PAYOUT2_ADMIN_PORT/metrics" vendorgw_breaker_backend 1 \
+		"replica B breaker degraded to backend=local with Redis down" 'namespace="payout"' 'backend="local"'
+	kill -0 "$(cat "$PAYOUT_PID_FILE")" 2>/dev/null && ok "replica A process still alive with Redis down" || fail "replica A process died with Redis down"
+	kill -0 "$(cat "$PAYOUT2_PID_FILE")" 2>/dev/null && ok "replica B process still alive with Redis down" || fail "replica B process died with Redis down"
+
+	docker start "$REDIS_CONTAINER" >/dev/null
+	wait_for_container_healthy "$REDIS_CONTAINER"
+
+	assert_ledger_balanced
+	assert_no_inconsistent_projections
+	stop_payout_replica
+	stop_services
+	unset BREAKER_DISTRIBUTED BREAKER_FAILURE_THRESHOLD
+}
+
+# ─── Scenario 11: payout crash after command enqueue / after network
+# timeout ─────────────────────────────────────────────────────────────────
+#
+# docs/roadmap/archive/45 Task T4, bullet 3, as two distinct sub-cases matching the
+# doc's own wording exactly (each already-broader in scenario 5's own
+# kill-matrix, but here isolated and asserted more sharply):
+#
+#   A. Crash AFTER the initial command is durably enqueued, BEFORE the relay
+#      ever attempts to dispatch it. Seeded directly via SQL in the same
+#      state EnqueueInitialSubmit's own transaction would have left behind
+#      (status='submitted', a single 'pending' payout_vendor_commands row) —
+#      same justification as scenario 5's kill points 1/2: the recovery
+#      code path (the relay's own poll-and-claim loop) cannot distinguish a
+#      seeded row from a real crash at that exact point.
+#   B. Crash AFTER a real network timeout has already landed (a genuine
+#      'uncertain' vendor call + a 'failed'/backing-off command, both
+#      confirmed durable before the kill). Proves: (1) the relay's retry is
+#      at-least-once — the SAME durable command row eventually reaches
+#      'completed', no duplicate command is created for a request that
+#      never failed over; (2) exactly one ledger settle effect; (3) the
+#      vendor column never changes — pinned per docs/roadmap/archive/40 the instant the
+#      first call landed 'uncertain', regardless of the crash in between.
+scenario_11() {
+	log "=== Scenario 11: payout crash after command enqueue / after network timeout (docs/roadmap/archive/45 Task T1/T4) ==="
+	ensure_deps_up
+	build_server
+	start_services
+
+	local user_id token cash balance_before
+	user_id="$(psql_exec "$LEDGER_DB_NAME" -c "SELECT gen_random_uuid();")"
+	provision_user "$user_id" >/dev/null
+	provision_hold_account "$user_id"
+	fund_user "$user_id"
+	token="$(gen_token "$user_id")"
+	cash="$(cash_account_id "$user_id")"
+	balance_before="$(account_balance "$cash")"
+
+	log "--- sub-case A: crash after command enqueue, before dispatch ---"
+	local held_key_a="chaos11-held-$RANDOM" held_tx_id_a id_a destination_a
+	curl_internal -s -o /dev/null -X POST "http://localhost:$LEDGER_INTERNAL_PORT/api/v1/ledger/transactions" \
+		-H "Authorization: Bearer $token" -H "Content-Type: application/json" \
+		-d "{\"idempotency_key\":\"$held_key_a\",\"type\":\"withdraw_initiate\",\"amount\":\"10000\"}"
+	held_tx_id_a="$(psql_exec "$LEDGER_DB_NAME" -c "SELECT id FROM ledger_transactions WHERE idempotency_key = '$held_key_a';")"
+	log "crashing payout-service, THEN seeding the row it would have durably committed a split second earlier..."
+	kill_payout_hard
+	id_a="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT gen_random_uuid();")"
+	destination_a="$(seal_payout_destination "$id_a" '{"bank_code":"014","account_no":"1"}')"
+	psql_exec "$PAYOUT_DB_NAME" -c "
+		INSERT INTO payout_requests (id, user_id, amount, currency, vendor, destination_ciphertext, destination_key_version, status, hold_tx_id, created_by, created_at, updated_at)
+		VALUES ('$id_a', '$user_id', 10000, 'IDR', 'mockvendor', decode('$destination_a','hex'), 1, 'submitted', '$held_tx_id_a', 'chaos_test', now(), now());" >/dev/null
+	psql_exec "$PAYOUT_DB_NAME" -c "
+		INSERT INTO payout_vendor_commands (id, payout_request_id, command_key, vendor, attempt, status, retry_count, max_retries, next_attempt_at, created_at, updated_at)
+		VALUES (gen_random_uuid(), '$id_a', 'payout:$id_a:submit:1', 'mockvendor', 1, 'pending', 0, 8, now(), now(), now());" >/dev/null
+	log "payout $id_a seeded with status='submitted' + one 'pending' command while the process is down — same recovery code path as a real crash landing at that exact point (scenario 5's own kill points 1/2 use the identical justification)"
+	log "restarting payout-service — the relay's own poll loop (1s) must claim and dispatch the pre-seeded command..."
+	start_payout_service
+
+	wait_for_payout_status "$id_a" "settled" 15
+	local vendor_a command_count_a settle_count_a
+	vendor_a="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT vendor FROM payout_requests WHERE id = '$id_a';")"
+	command_count_a="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT count(*) FROM payout_vendor_commands WHERE payout_request_id = '$id_a';")"
+	settle_count_a="$(psql_exec "$LEDGER_DB_NAME" -c "SELECT count(*) FROM ledger_transactions WHERE idempotency_key = 'payout:$id_a:settle';")"
+	[ "$vendor_a" = "mockvendor" ] && ok "sub-case A: settled against the enqueued vendor (mockvendor)" || fail "sub-case A: unexpected vendor '$vendor_a'"
+	[ "$command_count_a" = "1" ] && ok "sub-case A: exactly one command row — the pre-seeded row was dispatched, not duplicated" \
+		|| fail "sub-case A: expected exactly 1 payout_vendor_commands row, found $command_count_a"
+	[ "$settle_count_a" = "1" ] && ok "sub-case A: exactly one ledger settle transaction" \
+		|| fail "sub-case A: expected exactly 1 settle transaction, found $settle_count_a"
+
+	log "--- sub-case B: crash after a real network timeout has already landed ---"
+	local id_b
+	id_b="$(curl -s -X POST "http://localhost:$APP_PORT/api/v1/payout" \
+		-H "Authorization: Bearer $token" -H "Content-Type: application/json" \
+		-d '{"amount":"10000","destination":{"bank_code":"014","account_no":"1","mock_mode":"timeout"}}' \
+		| sed -n 's/.*"id":"\([^"]*\)".*/\1/p')"
+	[ -n "$id_b" ] || fail "sub-case B: create request did not return an id"
+	wait_for_payout_status "$id_b" "submitted" 10
+	wait_for_vendor_call "$id_b" "uncertain" 15
+	wait_for_vendor_command_status "$id_b" "failed" 10
+	local command_count_before_crash
+	command_count_before_crash="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT count(*) FROM payout_vendor_commands WHERE payout_request_id = '$id_b';")"
+
+	log "crashing payout-service exactly now — the network timeout has already landed and been recorded durably"
+	kill_payout_hard
+
+	log "simulating the vendor outage clearing (same role as scenario 2/3 restarting rabbitmq/postgres) and restarting..."
+	local destination_b
+	destination_b="$(seal_payout_destination "$id_b" '{"bank_code":"014","account_no":"1"}')"
+	psql_exec "$PAYOUT_DB_NAME" -c "UPDATE payout_requests SET destination_ciphertext=decode('$destination_b','hex'), destination_key_version=1 WHERE id = '$id_b';" >/dev/null
+	psql_exec "$PAYOUT_DB_NAME" -c "UPDATE payout_vendor_commands SET next_attempt_at = now() WHERE payout_request_id = '$id_b';" >/dev/null
+	start_payout_service
+
+	wait_for_payout_status "$id_b" "settled" 40
+	local vendor_b command_count_after settle_count_b
+	vendor_b="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT vendor FROM payout_requests WHERE id = '$id_b';")"
+	command_count_after="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT count(*) FROM payout_vendor_commands WHERE payout_request_id = '$id_b';")"
+	settle_count_b="$(psql_exec "$LEDGER_DB_NAME" -c "SELECT count(*) FROM ledger_transactions WHERE idempotency_key = 'payout:$id_b:settle';")"
+	[ "$vendor_b" = "mockvendor" ] && ok "sub-case B: vendor column never changed across the crash+retry — stayed pinned to mockvendor" \
+		|| fail "sub-case B: vendor column changed to '$vendor_b' — must never move once 'uncertain'"
+	[ "$command_count_after" = "$command_count_before_crash" ] && ok "sub-case B: no duplicate command row was created by the crash+restart ($command_count_after total)" \
+		|| fail "sub-case B: command row count changed across the crash ($command_count_before_crash -> $command_count_after) — retry duplicated the durable command"
+	[ "$settle_count_b" = "1" ] && ok "sub-case B: exactly one ledger settle transaction despite the crash + at-least-once retry" \
+		|| fail "sub-case B: expected exactly 1 settle transaction, found $settle_count_b"
+
+	local balance_after expected_after
+	balance_after="$(account_balance "$cash")"
+	expected_after=$((balance_before - 20000))
+	[ "$balance_after" = "$expected_after" ] && ok "cash balance moved by exactly the expected amount (before=$balance_before after=$balance_after)" \
+		|| fail "cash balance mismatch: before=$balance_before after=$balance_after expected=$expected_after — money lost or duplicated"
+
+	assert_ledger_balanced
+	assert_no_inconsistent_projections
+	stop_services
+}
+
+# ─── Scenario 12: assurance restart/backlog recovery (Plan 48) ─────────────
+
+wait_for_assurance_finding() {
+	local resource_id=$1 rule_code=$2 want=$3 tries=${4:-45} status=""
+	while [ "$tries" -gt 0 ]; do
+		status="$(psql_exec "$ASSURANCE_DB_NAME" -c "SELECT status FROM assurance_findings WHERE resource_id = '$resource_id' AND rule_code = '$rule_code' ORDER BY last_seen_at DESC LIMIT 1;")"
+		[ "$status" = "$want" ] && return 0
+		sleep 1
+		tries=$((tries - 1))
+	done
+	fail "assurance finding resource=$resource_id rule=$rule_code did not reach '$want' (last='$status')"
+	return 1
+}
+
+wait_for_assurance_idle() {
+	local tries=${1:-45} status=""
+	while [ "$tries" -gt 0 ]; do
+		status="$(psql_exec "$ASSURANCE_DB_NAME" -c "SELECT status FROM assurance_runs ORDER BY started_at DESC, id DESC LIMIT 1;")"
+		[ "$status" != "running" ] && [ -n "$status" ] && return 0
+		sleep 1
+		tries=$((tries - 1))
+	done
+	fail "assurance did not finish its active run in time (last='$status')"
+	return 1
+}
+
+trigger_assurance_run() {
+	local token=$1
+	curl_internal -fsS -o /dev/null -X POST "http://localhost:$ASSURANCE_PORT/admin/assurance/runs" \
+		-H "Authorization: Bearer $token" -H "Content-Type: application/json" -d '{}'
+}
+
+wait_for_assurance_run_after() {
+	local before=$1 want=$2 tries=${3:-45} count status=""
+	while [ "$tries" -gt 0 ]; do
+		count="$(psql_exec "$ASSURANCE_DB_NAME" -c "SELECT count(*) FROM assurance_runs;")"
+		if [ "$count" -gt "$before" ]; then
+			status="$(psql_exec "$ASSURANCE_DB_NAME" -c "SELECT status FROM assurance_runs ORDER BY started_at DESC, id DESC LIMIT 1;")"
+			[ "$status" = "$want" ] && return 0
+			[ "$status" = "failed" ] && [ "$want" != "failed" ] && return 1
+		fi
+		sleep 1
+		tries=$((tries - 1))
+	done
+	fail "assurance run after count=$before did not reach '$want' (count=$count status='$status')"
+	return 1
+}
+
+scenario_12() {
+	log "=== Scenario 12: assurance restart catches backlog and resolves recovered finding (docs/roadmap/archive/48) ==="
+	ensure_deps_up
+	build_server
+	# Start domain owners first so the assurance process can be stopped and
+	# restarted around a durable inconsistency without taking the owners down.
+	start_ledger_service
+	start_fraud_service
+	start_auth_service
+	start_payin_service
+	start_payout_service
+	start_gateway
+
+	local event_id external_ref admin_token raw_ciphertext
+	event_id="$(psql_exec "$PAYIN_DB_NAME" -c "SELECT gen_random_uuid();")"
+	external_ref="chaos12-$event_id"
+	raw_ciphertext="$(seal_payin_raw "$event_id" '{}')"
+	psql_exec "$PAYIN_DB_NAME" -c "
+		INSERT INTO payin_webhook_events
+		(id, vendor, vendor_event_id, external_ref, user_id, amount, currency, raw_ciphertext, raw_key_version, fee_amount, total_debit, fee_application, fee_snapshot_version, status, request_id, created_at, updated_at)
+		VALUES ('$event_id', 'mockvendor', '$external_ref', '$external_ref', gen_random_uuid(), 1234, 'IDR', decode('$raw_ciphertext','hex'), 1, 0, 1234, 'added_on_top', 1, 'posted', 'chaos12', now() - interval '2 minutes 1 second', now() - interval '2 minutes 1 second');" >/dev/null
+
+	start_assurance_service
+	wait_for_assurance_finding "$event_id" PA01 open 45
+	ok "assurance detected a disposable PA01 mismatch before the outage"
+
+	# The service is down while the owner row is repaired. The restart must
+	# resume from the persisted cursor and inspect this newly eligible update.
+	kill_assurance_hard
+	psql_exec "$PAYIN_DB_NAME" -c "UPDATE payin_webhook_events SET status='failed', updated_at=now() - interval '2 minutes 1 second' WHERE id='$event_id';" >/dev/null
+	admin_token="$(gen_token "$(psql_exec "$AUTH_DB_NAME" -c 'SELECT gen_random_uuid();')" admin)"
+	start_assurance_service
+	wait_for_assurance_idle 45
+	local before_runs
+	before_runs="$(psql_exec "$ASSURANCE_DB_NAME" -c "SELECT count(*) FROM assurance_runs;")"
+	trigger_assurance_run "$admin_token"
+	wait_for_assurance_run_after "$before_runs" succeeded 45
+	wait_for_assurance_finding "$event_id" PA01 resolved 45
+	ok "assurance restart recovered backlog and resolved the finding without deleting it"
+
+	local occurrence_count
+	occurrence_count="$(psql_exec "$ASSURANCE_DB_NAME" -c "SELECT occurrence_count FROM assurance_findings WHERE resource_id='$event_id' AND rule_code='PA01';")"
+	[ "$occurrence_count" -ge 1 ] && ok "finding history remained durable (occurrences=$occurrence_count)" \
+		|| fail "finding history was lost after recovery (occurrences=$occurrence_count)"
+	stop_services
+}
+
+# ─── Scenario 13: ledger outage preserves assurance cursor/finding (Plan 48)
+
+scenario_13() {
+	log "=== Scenario 13: ledger unavailable preserves assurance cursor and avoids false resolve (docs/roadmap/archive/48) ==="
+	ensure_deps_up
+	build_server
+	start_ledger_service
+	start_fraud_service
+	start_auth_service
+	start_payin_service
+	start_payout_service
+	start_gateway
+
+	local event_id external_ref admin_token before_cursor after_cursor before_runs raw_ciphertext
+	event_id="$(psql_exec "$PAYIN_DB_NAME" -c "SELECT gen_random_uuid();")"
+	external_ref="chaos13-$event_id"
+	raw_ciphertext="$(seal_payin_raw "$event_id" '{}')"
+	psql_exec "$PAYIN_DB_NAME" -c "
+		INSERT INTO payin_webhook_events
+		(id, vendor, vendor_event_id, external_ref, user_id, amount, currency, raw_ciphertext, raw_key_version, fee_amount, total_debit, fee_application, fee_snapshot_version, status, request_id, created_at, updated_at)
+		VALUES ('$event_id', 'mockvendor', '$external_ref', '$external_ref', gen_random_uuid(), 2345, 'IDR', decode('$raw_ciphertext','hex'), 1, 0, 2345, 'added_on_top', 1, 'posted', 'chaos13', now() - interval '2 minutes 1 second', now() - interval '2 minutes 1 second');" >/dev/null
+	start_assurance_service
+	wait_for_assurance_finding "$event_id" PA01 open 45
+	before_cursor="$(psql_exec "$ASSURANCE_DB_NAME" -c "SELECT COALESCE(updated_at::text,'') || '|' || COALESCE(resource_id::text,'') FROM assurance_cursors WHERE source='payin';")"
+
+	# Repair the owner row while the proof dependency is unavailable. The
+	# failed run must not observe the repair as evidence or move the cursor.
+	kill_ledger_hard
+	psql_exec "$PAYIN_DB_NAME" -c "UPDATE payin_webhook_events SET status='failed', updated_at=now() - interval '2 minutes 1 second' WHERE id='$event_id';" >/dev/null
+	admin_token="$(gen_token "$(psql_exec "$AUTH_DB_NAME" -c 'SELECT gen_random_uuid();')" admin)"
+	wait_for_assurance_idle 45
+	before_runs="$(psql_exec "$ASSURANCE_DB_NAME" -c "SELECT count(*) FROM assurance_runs;")"
+	trigger_assurance_run "$admin_token"
+	wait_for_assurance_run_after "$before_runs" failed 45
+	after_cursor="$(psql_exec "$ASSURANCE_DB_NAME" -c "SELECT COALESCE(updated_at::text,'') || '|' || COALESCE(resource_id::text,'') FROM assurance_cursors WHERE source='payin';")"
+	[ "$after_cursor" = "$before_cursor" ] && ok "ledger outage preserved the payin cursor" \
+		|| fail "ledger outage advanced the payin cursor: before='$before_cursor' after='$after_cursor'"
+	wait_for_assurance_finding "$event_id" PA01 open 10
+	ok "ledger outage did not falsely resolve the open PA01 finding"
+
+	start_ledger_service
+	wait_for_assurance_idle 45
+	before_runs="$(psql_exec "$ASSURANCE_DB_NAME" -c "SELECT count(*) FROM assurance_runs;")"
+	trigger_assurance_run "$admin_token"
+	wait_for_assurance_run_after "$before_runs" succeeded 45
+	wait_for_assurance_finding "$event_id" PA01 resolved 45
+	ok "ledger recovery replayed the page and resolved PA01"
+	stop_services
+}
+
+# ─── Scenario 14: durable pause, owner recovery, maker/checker resume ─────
+
+scenario_14() {
+	log "=== Scenario 14: owner outage during intake pause, durable retry, and two-person resume (docs/roadmap/archive/48) ==="
+	ensure_deps_up
+	build_server
+	start_services
+
+	local maker_id checker_id user_id maker_token checker_token user_token
+	maker_id="$(psql_exec "$AUTH_DB_NAME" -c "SELECT gen_random_uuid();")"
+	checker_id="$(psql_exec "$AUTH_DB_NAME" -c "SELECT gen_random_uuid();")"
+	user_id="$(psql_exec "$LEDGER_DB_NAME" -c "SELECT gen_random_uuid();")"
+	provision_user "$user_id" >/dev/null
+	maker_token="$(gen_token "$maker_id" admin_maker)"
+	checker_token="$(gen_token "$checker_id" admin_checker)"
+	user_token="$(gen_token "$user_id")"
+
+	local payin_revision payout_revision command_id code response
+	payin_revision="$(psql_exec "$PAYIN_DB_NAME" -c "SELECT revision FROM payin_intake_control WHERE id=1;")"
+	command_id="$(psql_exec "$ASSURANCE_DB_NAME" -c "SELECT gen_random_uuid();")"
+	kill_payin_hard
+	code="$(curl_internal -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$ASSURANCE_PORT/admin/assurance/intake/payin/pause" \
+		-H "Authorization: Bearer $maker_token" -H 'Content-Type: application/json' \
+		-d "{\"command_id\":\"$command_id\",\"expected_revision\":$payin_revision,\"reason\":\"chaos14 owner outage\"}")"
+	[ "$code" = "503" ] && ok "pause remained durable while payin owner was unavailable" \
+		|| fail "pause with payin owner unavailable returned HTTP $code (want 503)"
+	start_payin_service
+	response="$(curl_internal -sS -X POST "http://localhost:$ASSURANCE_PORT/admin/assurance/intake/payin/pause" \
+		-H "Authorization: Bearer $maker_token" -H 'Content-Type: application/json' \
+		-d "{\"command_id\":\"$command_id\",\"expected_revision\":$payin_revision,\"reason\":\"chaos14 retry\"}" || true)"
+	# The owner HTTP health endpoint can be ready a fraction before its lazy
+	# gRPC dial has re-established. Retry the same UUID command (idempotent) so
+	# this chaos proof tests durable recovery rather than a startup race.
+	local pause_attempts=20
+	while ! echo "$response" | grep -q '"paused":true' && [ "$pause_attempts" -gt 0 ]; do
+		sleep 1
+		response="$(curl_internal -sS -X POST "http://localhost:$ASSURANCE_PORT/admin/assurance/intake/payin/pause" \
+			-H "Authorization: Bearer $maker_token" -H 'Content-Type: application/json' \
+			-d "{\"command_id\":\"$command_id\",\"expected_revision\":$payin_revision,\"reason\":\"chaos14 retry\"}" || true)"
+		pause_attempts=$((pause_attempts - 1))
+	done
+	if echo "$response" | grep -q '"paused":true'; then
+		ok "retrying the same pause command applied exactly once after owner recovery"
+	else
+		fail "payin pause retry did not return paused=true: $response"
+	fi
+	local paused_revision
+	paused_revision="$(psql_exec "$PAYIN_DB_NAME" -c "SELECT revision FROM payin_intake_control WHERE id=1 AND paused=true;")"
+	[ "$paused_revision" = "$((payin_revision + 1))" ] && ok "payin pause revision advanced once" \
+		|| fail "payin pause revision mismatch: before=$payin_revision after=$paused_revision"
+
+	code="$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$APP_PORT/api/v1/topup" \
+		-H "Authorization: Bearer $user_token" -H 'Content-Type: application/json' -d '{"amount":"100"}')"
+	[ "$code" = "422" ] && ok "new topup intent rejected while payin intake is paused" \
+		|| fail "topup while paused returned HTTP $code (want 422)"
+
+	local resume_id resume_revision
+	resume_revision="$paused_revision"
+	resume_id="$(psql_exec "$ASSURANCE_DB_NAME" -c "SELECT gen_random_uuid();")"
+	curl_internal -fsS -o /dev/null -X POST "http://localhost:$ASSURANCE_PORT/admin/assurance/intake/payin/resume-requests" \
+		-H "Authorization: Bearer $maker_token" -H 'Content-Type: application/json' \
+		-d "{\"command_id\":\"$resume_id\",\"expected_revision\":$resume_revision,\"reason\":\"chaos14 resume\"}"
+	code="$(curl_internal -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$ASSURANCE_PORT/admin/assurance/intake/payin/resume-requests/$resume_id/approve" \
+		-H "Authorization: Bearer $maker_token" -H 'Content-Type: application/json')"
+	[ "$code" = "403" ] && ok "same principal cannot approve its own resume request" \
+		|| fail "same-principal resume approval returned HTTP $code (want 403)"
+	response="$(curl_internal -fsS -X POST "http://localhost:$ASSURANCE_PORT/admin/assurance/intake/payin/resume-requests/$resume_id/approve" \
+		-H "Authorization: Bearer $checker_token" -H 'Content-Type: application/json')"
+	local payin_paused_after
+	payin_paused_after="$(psql_exec "$PAYIN_DB_NAME" -c "SELECT paused FROM payin_intake_control WHERE id=1;")"
+	if echo "$response" | grep -q '"applied":true' && [ "$payin_paused_after" = "f" ]; then
+		ok "second principal approved payin resume"
+	else
+		fail "checker resume approval did not persist paused=false: response=$response owner_paused=$payin_paused_after"
+	fi
+	local resumed_revision
+	resumed_revision="$(psql_exec "$PAYIN_DB_NAME" -c "SELECT revision FROM payin_intake_control WHERE id=1;")"
+	[ "$resumed_revision" = "$((resume_revision + 1))" ] && ok "payin resume changed owner revision exactly once" \
+		|| fail "payin resume revision mismatch: before=$resume_revision after=$resumed_revision"
+
+	# Repeat the same role/revision proof on payout while its owner is healthy;
+	# this also proves the pause guard is present on both create paths.
+	payout_revision="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT revision FROM payout_intake_control WHERE id=1;")"
+	command_id="$(psql_exec "$ASSURANCE_DB_NAME" -c "SELECT gen_random_uuid();")"
+	response="$(curl_internal -fsS -X POST "http://localhost:$ASSURANCE_PORT/admin/assurance/intake/payout/pause" \
+		-H "Authorization: Bearer $maker_token" -H 'Content-Type: application/json' \
+		-d "{\"command_id\":\"$command_id\",\"expected_revision\":$payout_revision,\"reason\":\"chaos14 payout pause\"}")"
+	if echo "$response" | grep -q '"paused":true'; then
+		ok "payout intake pause applied"
+	else
+		fail "payout pause did not return paused=true: $response"
+	fi
+	code="$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$APP_PORT/api/v1/payout" \
+		-H "Authorization: Bearer $user_token" -H 'Content-Type: application/json' \
+		-d '{"amount":"100","destination":{"bank_code":"014","account_no":"1"}}')"
+	[ "$code" = "422" ] && ok "new payout rejected while payout intake is paused" \
+		|| fail "payout while paused returned HTTP $code (want 422)"
+	resume_revision="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT revision FROM payout_intake_control WHERE id=1;")"
+	resume_id="$(psql_exec "$ASSURANCE_DB_NAME" -c "SELECT gen_random_uuid();")"
+	curl_internal -fsS -o /dev/null -X POST "http://localhost:$ASSURANCE_PORT/admin/assurance/intake/payout/resume-requests" \
+		-H "Authorization: Bearer $maker_token" -H 'Content-Type: application/json' \
+		-d "{\"command_id\":\"$resume_id\",\"expected_revision\":$resume_revision,\"reason\":\"chaos14 payout resume\"}"
+	curl_internal -fsS -o /dev/null -X POST "http://localhost:$ASSURANCE_PORT/admin/assurance/intake/payout/resume-requests/$resume_id/approve" \
+		-H "Authorization: Bearer $checker_token" -H 'Content-Type: application/json'
+	local payout_resumed_revision
+	payout_resumed_revision="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT revision FROM payout_intake_control WHERE id=1;")"
+	[ "$payout_resumed_revision" = "$((resume_revision + 1))" ] && ok "payout resume changed owner revision exactly once" \
+		|| fail "payout resume revision mismatch: before=$resume_revision after=$payout_resumed_revision"
+	stop_services
+}
+
+# ─── Scenarios 15–20: A8 lifecycle/privacy failure matrix ─────────────────
+
+scenario_15() {
+	log "=== Scenario 15: retention database failure remains isolated and fail-closed ==="
+	if GOCACHE=/tmp/seev-go-cache go test ./internal/platform/lifecycle/retention/worker -run '^TestRunOnce_OneClassFailureDoesNotStopOthers$' -count=1; then
+		ok "database/query failure was audited as an error without authorizing deletion"
+	else
+		fail "retention database failure drill failed"
+	fi
+}
+
+scenario_16() {
+	log "=== Scenario 16: object-store outage preserves metadata and retries ==="
+	if GOCACHE=/tmp/seev-go-cache go test -tags=integration ./services/auth -run '^TestObjectOutbox_StoreOutage_PreservesMetadataAndRetries$' -count=1; then
+		ok "object outage left metadata truthful and retry converged"
+	else
+		fail "object-store outage drill failed"
+	fi
+}
+
+scenario_17() {
+	log "=== Scenario 17: privacy key-version mismatch fails closed ==="
+	if GOCACHE=/tmp/seev-go-cache go test ./internal/platform/security/crypto -run '^(TestRing_WrongKey|TestRing_OpenUnknownKeyVersion_FailsClosed)$' -count=1; then
+		ok "wrong and unavailable key versions failed closed"
+	else
+		fail "key-version mismatch drill failed"
+	fi
+}
+
+scenario_18() {
+	log "=== Scenario 18: privacy worker restart resumes durable saga state ==="
+	if GOCACHE=/tmp/seev-go-cache go test -tags=integration ./services/auth -run '^TestClosure_HappyPath_FullLifecycle$' -count=1; then
+		ok "one-step durable checkpoints converged after repeated worker invocations"
+	else
+		fail "privacy-worker restart drill failed"
+	fi
+}
+
+scenario_19() {
+	log "=== Scenario 19: owner timeout leaves closure disabled and resumable ==="
+	if GOCACHE=/tmp/seev-go-cache go test -tags=integration ./services/auth -run '^TestClosure_InjectedOwnerFailure_LeavesDisabledAndResumesForward$' -count=1; then
+		ok "owner timeout resumed from the last durable checkpoint"
+	else
+		fail "owner-timeout drill failed"
+	fi
+}
+
+scenario_20() {
+	log "=== Scenario 20: retention/closure race respects the closure horizon ==="
+	if GOCACHE=/tmp/seev-go-cache go test -tags=integration ./services/auth -run '^TestClosure_RacingRetentionFailsClosedUntilClosureHorizon$' -count=1; then
+		ok "concurrent retention could not purge pre-horizon closure data"
+	else
+		fail "retention/closure race drill failed"
+	fi
+}
+
+# ─── Scenario 21: merchant B2B transfer kill -9 mid-posting (Plan 57 T10) ──
+#
+# Same proof as scenario 1 (a genuine process crash, not a client-side
+# retry, cannot double-post or lose money) but through the NEW merchant
+# B2B surface (services/gateway/internal/merchant/api) instead of the user-facing ledger
+# API — T10's own required chaos matrix (§24) calls for merchant-specific
+# evidence, and this is the one case scripts/merchant-e2e.sh's replay test
+# does not cover: that test proves a client retrying with the same
+# Idempotency-Key is safe, not that the gateway process dying mid-request
+# is safe. execTransfer's guarantees (ordered locks, atomic commit) are
+# shared machinery with user transfers, but the merchant idempotency layer
+# (services/gateway/internal/merchant/api/idempotency.go) sits in front of it and had never
+# been chaos-tested itself.
+
+chaos21_admin_post() {
+	curl_internal -sS -X POST "http://localhost:$INTERNAL_PORT/api/v1/admin/gateway$1" \
+		-H "Authorization: Bearer $CHAOS21_ADMIN_TOKEN" -H "Content-Type: application/json" -d "$2"
+}
+
+scenario_21() {
+	log "=== Scenario 21: merchant B2B transfer kill -9 mid-posting ==="
+	ensure_deps_up
+	build_server
+	start_server
+
+	local nonce="chaos21-$RANDOM"
+	CHAOS21_ADMIN_TOKEN="$(gen_token "$nonce-operator" admin)"
+
+	local tenant_a tenant_b account_a account_b key_a
+	tenant_a="$(chaos21_admin_post "/tenants" "{\"external_code\":\"$nonce-a\",\"name\":\"Chaos21 A\",\"environment\":\"sandbox\",\"default_currency\":\"IDR\"}" | json_field id)"
+	tenant_b="$(chaos21_admin_post "/tenants" "{\"external_code\":\"$nonce-b\",\"name\":\"Chaos21 B\",\"environment\":\"sandbox\",\"default_currency\":\"IDR\"}" | json_field id)"
+	[ -n "$tenant_a" ] && [ -n "$tenant_b" ] || fail "chaos21: tenant provisioning failed (a=$tenant_a b=$tenant_b)"
+
+	account_a="$(chaos21_admin_post "/tenants/$tenant_a/account" '{"currency":"IDR"}' | json_field account_id)"
+	account_b="$(chaos21_admin_post "/tenants/$tenant_b/account" '{"currency":"IDR"}' | json_field account_id)"
+	[ -n "$account_a" ] && [ -n "$account_b" ] || fail "chaos21: account provisioning failed (a=$account_a b=$account_b)"
+
+	key_a="$(chaos21_admin_post "/tenants/$tenant_a/keys" '{"environment":"sandbox","scopes":["merchant:read","accounts:read","transactions:read","transfers:write","payins:write","payins:read"]}' | json_field plaintext)"
+	[ -n "$key_a" ] || fail "chaos21: tenant A key creation failed"
+
+	# Fund tenant A the same way merchant-e2e.sh does: a real merchant payin
+	# settled through mockvendor's signed webhook — a genuine double-entry
+	# transaction, not a raw balance seed (a raw UPDATE would desync
+	# v_account_balance_audit and falsely trip assert_no_inconsistent_projections
+	# below).
+	local payin_json payin_id reference webhook_body sig webhook_code
+	payin_json="$(curl -sS -X POST "http://localhost:$APP_PORT/api/v1/b2b/payins" \
+		-H "Authorization: Bearer $key_a" -H "Idempotency-Key: $nonce-payin" -H "Content-Type: application/json" \
+		-d '{"amount":"1000000","currency":"IDR"}')"
+	payin_id="$(echo "$payin_json" | json_field id)"
+	[ -n "$payin_id" ] || fail "chaos21: merchant payin creation failed: $payin_json"
+	reference="$(psql_exec "$PAYIN_DB_NAME" -tA -c "SELECT reference FROM payin_topup_intents WHERE id = '$payin_id';" | tr -d '[:space:]')"
+	[ -n "$reference" ] || fail "chaos21: could not resolve payin reference for id=$payin_id"
+	webhook_body="{\"event_id\":\"$nonce-payin\",\"external_ref\":\"$reference\",\"user_id\":\"$(uuidgen | tr '[:upper:]' '[:lower:]')\",\"amount\":\"1000000\",\"currency\":\"IDR\",\"occurred_at\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"type\":\"payment.settled\"}"
+	sig="$(printf '%s' "$webhook_body" | openssl dgst -sha256 -hmac "$VENDOR_MOCKVENDOR_SECRET" -r | awk '{print $1}')"
+	webhook_code="$(curl_internal -sS -o /dev/null -w '%{http_code}' -X POST "http://localhost:$VENDOR_APP_PORT/webhooks/mockvendor" \
+		-H "X-Mock-Signature: $sig" -H "Content-Type: application/json" -d "$webhook_body")"
+	[ "${webhook_code:0:1}" = "2" ] || fail "chaos21: mockvendor settlement webhook got $webhook_code, expected 2xx"
+
+	log "firing 40 concurrent merchant transfer requests, killing the server -9 partway through..."
+	local results_file="$WORK_DIR/chaos21_results.txt"
+	: >"$results_file"
+	local transfer_body="{\"destination_account_id\":\"$account_b\",\"amount\":\"1\",\"currency\":\"IDR\"}"
+
+	for i in $(seq 1 40); do
+		(
+			code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:$APP_PORT/api/v1/b2b/transfers" \
+				-H "Authorization: Bearer $key_a" -H "Idempotency-Key: $nonce-$i" -H "Content-Type: application/json" \
+				-d "$transfer_body" 2>/dev/null || echo "000")
+			echo "$nonce-$i $code" >>"$results_file"
+		) &
+		if [ "$i" -eq 20 ]; then
+			sleep 0.05
+			kill_server_hard
+		fi
+	done
+	wait
+
+	log "restarting gateway and retrying any requests that didn't get a clean response..."
+	build_server
+	start_gateway
+
+	local retry_headers retry_after attempt retry_code
+	while read -r idem code; do
+		if [ "${code:0:1}" != "2" ]; then
+			attempt=1
+			retry_code="000"
+			while [ "$attempt" -le 20 ]; do
+				retry_headers="$WORK_DIR/chaos21_retry_headers"
+				if retry_code=$(curl -sS -D "$retry_headers" -o /dev/null -w '%{http_code}' -X POST "http://localhost:$APP_PORT/api/v1/b2b/transfers" \
+					-H "Authorization: Bearer $key_a" -H "Idempotency-Key: $idem" -H "Content-Type: application/json" \
+					-d "$transfer_body" 2>/dev/null); then
+					:
+				else
+					retry_code="000"
+				fi
+				log "retried $idem: original=$code attempt=$attempt retry=$retry_code"
+				if [ "${retry_code:0:1}" = "2" ]; then
+					break
+				fi
+				if [ "$retry_code" = "409" ]; then
+					retry_after="$(awk 'BEGIN { IGNORECASE=1 } /^Retry-After:/ { gsub("\\r", "", $2); print $2; exit }' "$retry_headers")"
+					case "$retry_after" in
+						''|*[!0-9]*) retry_after=2 ;;
+					esac
+					sleep "$retry_after"
+				else
+					break
+				fi
+				attempt=$((attempt + 1))
+			done
+			[ "${retry_code:0:1}" = "2" ] || fail "chaos21: retry for $idem did not converge (last status=$retry_code)"
+		fi
+	done <"$results_file"
+
+	sleep 1
+	local balance_a balance_b
+	balance_a="$(curl -sS "http://localhost:$APP_PORT/api/v1/b2b/accounts/$account_a/balance" -H "Authorization: Bearer $key_a" | json_field balance)"
+	balance_b="$(psql_exec "$LEDGER_DB_NAME" -c "SELECT balance FROM account_balances WHERE account_id = '$account_b';")"
+	[ "$balance_a" = "999960" ] && ok "tenant A debited exactly 40 total across all 40 transfers (no double-debit, none lost)" \
+		|| fail "tenant A balance after chaos was '$balance_a', expected 999960"
+	[ "$balance_b" = "40" ] && ok "tenant B credited exactly 40 total (every transfer landed exactly once)" \
+		|| fail "tenant B balance after chaos was '$balance_b', expected 40"
+
+	assert_ledger_balanced
+	assert_no_inconsistent_projections
+	assert_no_stuck_pending_transactions
+
+	stop_server_gracefully
+}
+
+# ─── Scenario 22: merchant quota Redis outage (Plan 57 T10b) ───────────────
+#
+# T10b's own audit found the merchant quota package's Redis-outage posture
+# (services/gateway/internal/merchant/quota.Enforcer.Check: write fails closed with 503
+# QUOTA_UNAVAILABLE, read degrades to a bounded allow — ErrQuotaBackendUnavailable's
+# own doc comment) was only ever proven against a fake/unreachable client
+# in unit tests, never through the real assembled Gateway with a real
+# Redis container stopped — the same gap scenario 9 already closed for the
+# ledger's own rate limiter/policy counter/fraud velocity primitives.
+
+chaos22_admin_post() {
+	curl_internal -sS -X POST "http://localhost:$INTERNAL_PORT/api/v1/admin/gateway$1" \
+		-H "Authorization: Bearer $CHAOS22_ADMIN_TOKEN" -H "Content-Type: application/json" -d "$2"
+}
+
+scenario_22() {
+	log "=== Scenario 22: merchant quota Redis outage — writes fail closed, reads degrade-allow, recovery without restart ==="
+	ensure_deps_up
+	build_server
+	start_services
+
+	local nonce="chaos22-$RANDOM"
+	CHAOS22_ADMIN_TOKEN="$(gen_token "$nonce-operator" admin)"
+
+	local tenant_id account_id tenant_b account_b key
+	tenant_id="$(chaos22_admin_post "/tenants" "{\"external_code\":\"$nonce\",\"name\":\"Chaos22 Merchant\",\"environment\":\"sandbox\",\"default_currency\":\"IDR\"}" | json_field id)"
+	[ -n "$tenant_id" ] || fail "chaos22: tenant provisioning failed"
+	account_id="$(chaos22_admin_post "/tenants/$tenant_id/account" '{"currency":"IDR"}' | json_field account_id)"
+	[ -n "$account_id" ] || fail "chaos22: account provisioning failed"
+	key="$(chaos22_admin_post "/tenants/$tenant_id/keys" '{"environment":"sandbox","scopes":["merchant:read","accounts:read","transactions:read","transfers:write","payins:write","payins:read"]}' | json_field plaintext)"
+	[ -n "$key" ] || fail "chaos22: key creation failed"
+
+	# A distinct destination tenant/account is required — the ledger
+	# rejects a self-transfer (SELF_TRANSFER) with its own 503 mapped
+	# through OWNER_SERVICE_UNAVAILABLE, which would collide with this
+	# scenario's own "!= 503 means quota allowed it" check below.
+	tenant_b="$(chaos22_admin_post "/tenants" "{\"external_code\":\"$nonce-b\",\"name\":\"Chaos22 Merchant B\",\"environment\":\"sandbox\",\"default_currency\":\"IDR\"}" | json_field id)"
+	[ -n "$tenant_b" ] || fail "chaos22: tenant B provisioning failed"
+	account_b="$(chaos22_admin_post "/tenants/$tenant_b/account" '{"currency":"IDR"}' | json_field account_id)"
+	[ -n "$account_b" ] || fail "chaos22: account B provisioning failed"
+
+	# Fund tenant A the same way scenario 21/merchant-e2e.sh do — a real
+	# merchant payin settled through mockvendor's signed webhook — so the
+	# baseline/recovery transfers below have real money to move (an
+	# unfunded transfer would fail with an unrelated insufficient-funds
+	# error, just as misleading for this scenario's own assertions as the
+	# self-transfer bug this comment block replaced).
+	local payin_json payin_id reference webhook_body sig webhook_code
+	payin_json="$(curl -sS -X POST "http://localhost:$APP_PORT/api/v1/b2b/payins" \
+		-H "Authorization: Bearer $key" -H "Idempotency-Key: $nonce-fund" -H "Content-Type: application/json" \
+		-d '{"amount":"100000","currency":"IDR"}')"
+	payin_id="$(echo "$payin_json" | json_field id)"
+	[ -n "$payin_id" ] || fail "chaos22: funding payin creation failed: $payin_json"
+	reference="$(psql_exec "$PAYIN_DB_NAME" -tA -c "SELECT reference FROM payin_topup_intents WHERE id = '$payin_id';" | tr -d '[:space:]')"
+	[ -n "$reference" ] || fail "chaos22: could not resolve funding payin reference"
+	webhook_body="{\"event_id\":\"$nonce-fund\",\"external_ref\":\"$reference\",\"user_id\":\"$(uuidgen | tr '[:upper:]' '[:lower:]')\",\"amount\":\"100000\",\"currency\":\"IDR\",\"occurred_at\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"type\":\"payment.settled\"}"
+	sig="$(printf '%s' "$webhook_body" | openssl dgst -sha256 -hmac "$VENDOR_MOCKVENDOR_SECRET" -r | awk '{print $1}')"
+	webhook_code="$(curl_internal -sS -o /dev/null -w '%{http_code}' -X POST "http://localhost:$VENDOR_APP_PORT/webhooks/mockvendor" \
+		-H "X-Mock-Signature: $sig" -H "Content-Type: application/json" -d "$webhook_body")"
+	[ "${webhook_code:0:1}" = "2" ] || fail "chaos22: funding settlement webhook got $webhook_code, expected 2xx"
+	ok "tenant A funded for the write assertions below"
+
+	# Same lesson as scenario 9's own comment on the opposite direction:
+	# a container reporting "healthy" is not, by itself, proof THIS
+	# process's redis client pool has a working connection yet — confirm
+	# reachability with a real client before trusting a baseline "success"
+	# result means anything.
+	local redis_up_tries=25
+	while [ "$redis_up_tries" -gt 0 ] && ! redis-cli -h localhost -p "$REDIS_HOST_PORT" ping >/dev/null 2>&1; do
+		sleep 0.2
+		redis_up_tries=$((redis_up_tries - 1))
+	done
+	redis-cli -h localhost -p "$REDIS_HOST_PORT" ping >/dev/null 2>&1 \
+		&& ok "redis confirmed reachable before the baseline checks" \
+		|| fail "redis never became reachable before the baseline checks"
+
+	log "-- baseline (Redis up): read and write both succeed --"
+	local baseline_read_code baseline_write_code
+	baseline_read_code="$(curl -sS -o /dev/null -w '%{http_code}' "http://localhost:$APP_PORT/api/v1/b2b/merchant" -H "Authorization: Bearer $key")"
+	[ "$baseline_read_code" = "200" ] && ok "baseline merchant read succeeded (code=$baseline_read_code)" \
+		|| fail "baseline merchant read got $baseline_read_code, expected 200"
+	baseline_write_code="$(curl -sS -o /dev/null -w '%{http_code}' -X POST "http://localhost:$APP_PORT/api/v1/b2b/transfers" \
+		-H "Authorization: Bearer $key" -H "Idempotency-Key: $nonce-baseline" -H "Content-Type: application/json" \
+		-d "{\"destination_account_id\":\"$account_b\",\"amount\":\"1\",\"currency\":\"IDR\"}")"
+	# Same-account transfer is a validation error from the ledger, not a
+	# quota rejection — RequireQuota runs BEFORE the handler ever calls the
+	# ledger, so any non-503 response here proves quota allowed the
+	# request through, regardless of what the handler itself decides next.
+	[ "$baseline_write_code" != "503" ] && ok "baseline write reached the handler, quota allowed it (code=$baseline_write_code)" \
+		|| fail "baseline write got 503 with Redis still up"
+
+	log "stopping redis..."
+	docker stop "$REDIS_CONTAINER" >/dev/null
+	local redis_down_tries=25
+	while [ "$redis_down_tries" -gt 0 ] && redis-cli -h localhost -p "$REDIS_HOST_PORT" ping >/dev/null 2>&1; do
+		sleep 0.2
+		redis_down_tries=$((redis_down_tries - 1))
+	done
+	redis-cli -h localhost -p "$REDIS_HOST_PORT" ping >/dev/null 2>&1 \
+		&& fail "redis still answered PING after docker stop — the outage below would race a live Redis" \
+		|| ok "redis confirmed unreachable before proceeding"
+
+	log "-- Redis down: write must fail closed with 503 QUOTA_UNAVAILABLE --"
+	local outage_write_code outage_write_body
+	outage_write_body="$(curl -sS -X POST "http://localhost:$APP_PORT/api/v1/b2b/transfers" \
+		-H "Authorization: Bearer $key" -H "Idempotency-Key: $nonce-outage" -H "Content-Type: application/json" \
+		-d "{\"destination_account_id\":\"$account_b\",\"amount\":\"1\",\"currency\":\"IDR\"}")"
+	outage_write_code="$(curl -sS -o /dev/null -w '%{http_code}' -X POST "http://localhost:$APP_PORT/api/v1/b2b/transfers" \
+		-H "Authorization: Bearer $key" -H "Idempotency-Key: $nonce-outage2" -H "Content-Type: application/json" \
+		-d "{\"destination_account_id\":\"$account_b\",\"amount\":\"1\",\"currency\":\"IDR\"}")"
+	[ "$outage_write_code" = "503" ] && ok "write correctly failed closed with 503 during the Redis outage" \
+		|| fail "write during outage got $outage_write_code, expected 503"
+	echo "$outage_write_body" | grep -q "QUOTA_UNAVAILABLE" && ok "outage response carries the QUOTA_UNAVAILABLE code" \
+		|| fail "outage response did not carry QUOTA_UNAVAILABLE: $outage_write_body"
+
+	log "-- Redis down: read must still succeed (bounded degraded allow) --"
+	local outage_read_code
+	outage_read_code="$(curl -sS -o /dev/null -w '%{http_code}' "http://localhost:$APP_PORT/api/v1/b2b/merchant" -H "Authorization: Bearer $key")"
+	[ "$outage_read_code" = "200" ] && ok "read succeeded during the Redis outage (degraded allow)" \
+		|| fail "read during outage got $outage_read_code, expected 200"
+
+	log "restarting redis..."
+	docker start "$REDIS_CONTAINER" >/dev/null
+	wait_for_container_healthy "$REDIS_CONTAINER"
+	redis_up_tries=25
+	while [ "$redis_up_tries" -gt 0 ] && ! redis-cli -h localhost -p "$REDIS_HOST_PORT" ping >/dev/null 2>&1; do
+		sleep 0.2
+		redis_up_tries=$((redis_up_tries - 1))
+	done
+	redis-cli -h localhost -p "$REDIS_HOST_PORT" ping >/dev/null 2>&1 \
+		&& ok "redis confirmed reachable after restart" \
+		|| fail "redis never became reachable after restart"
+
+	# The enforcer makes a fresh EVAL call per request with no persistent
+	# circuit-breaker state (unlike scenario 9's ledger-side primitives,
+	# which have their own probe-loop hysteresis) — recovery should be
+	# immediate, but retry a few times before failing to absorb any
+	# leftover connection-pool churn from the just-restarted container.
+	local recovered_write_code
+	for _ in $(seq 1 10); do
+		recovered_write_code="$(curl -sS -o /dev/null -w '%{http_code}' -X POST "http://localhost:$APP_PORT/api/v1/b2b/transfers" \
+			-H "Authorization: Bearer $key" -H "Idempotency-Key: $nonce-recovered" -H "Content-Type: application/json" \
+			-d "{\"destination_account_id\":\"$account_b\",\"amount\":\"1\",\"currency\":\"IDR\"}")"
+		[ "$recovered_write_code" != "503" ] && break
+		sleep 1
+	done
+	[ "$recovered_write_code" != "503" ] && ok "write recovered after Redis came back, no gateway restart needed (code=$recovered_write_code)" \
+		|| fail "write still got 503 after Redis recovered"
+
+	stop_server_gracefully
+}
+
+# ─── Scenario 23: merchant webhook relay survives a RabbitMQ outage ────────
+# (Plan 57 T10b)
+#
+# Ledger's own outbox->RabbitMQ resilience is already proven generically
+# by scenario 2 (checking outbox_events drains after recovery), but that
+# never confirms the SEPARATE merchant webhook Consumer (its own queue
+# binding on the same exchange, services/gateway/internal/merchant/webhook/consumer.go)
+# also survives the outage and catches up — a distinct consumer with its
+# own dedup/fan-out logic that scenario 2 never exercises.
+
+chaos23_admin_post() {
+	curl_internal -sS -X POST "http://localhost:$INTERNAL_PORT/api/v1/admin/gateway$1" \
+		-H "Authorization: Bearer $CHAOS23_ADMIN_TOKEN" -H "Content-Type: application/json" -d "$2"
+}
+
+scenario_23() {
+	log "=== Scenario 23: merchant webhook relay survives a RabbitMQ outage — event delivered once the broker (and consumer) recover ==="
+	ensure_deps_up
+	build_server
+	start_services
+
+	local nonce="chaos23-$RANDOM"
+	CHAOS23_ADMIN_TOKEN="$(gen_token "$nonce-operator" admin)"
+
+	local tenant_id account_id key
+	tenant_id="$(chaos23_admin_post "/tenants" "{\"external_code\":\"$nonce\",\"name\":\"Chaos23 Merchant\",\"environment\":\"sandbox\",\"default_currency\":\"IDR\"}" | json_field id)"
+	[ -n "$tenant_id" ] || fail "chaos23: tenant provisioning failed"
+	account_id="$(chaos23_admin_post "/tenants/$tenant_id/account" '{"currency":"IDR"}' | json_field account_id)"
+	[ -n "$account_id" ] || fail "chaos23: account provisioning failed"
+	key="$(chaos23_admin_post "/tenants/$tenant_id/keys" '{"environment":"sandbox","scopes":["merchant:read","accounts:read","transactions:read","payins:write","payins:read"]}' | json_field plaintext)"
+	[ -n "$key" ] || fail "chaos23: key creation failed"
+
+	local endpoint_hits_file="$WORK_DIR/chaos23_hits.txt"
+	: >"$endpoint_hits_file"
+	local receiver_pid receiver_port=18199
+	python3 - "$receiver_port" "$endpoint_hits_file" <<'PYEOF' &
+import http.server, sys
+port = int(sys.argv[1])
+hits_file = sys.argv[2]
+class H(http.server.BaseHTTPRequestHandler):
+    def do_POST(self):
+        length = int(self.headers.get('Content-Length', 0))
+        self.rfile.read(length)
+        with open(hits_file, 'a') as f:
+            f.write('hit\n')
+        self.send_response(200)
+        self.end_headers()
+    def log_message(self, *args):
+        pass
+http.server.HTTPServer(('127.0.0.1', port), H).serve_forever()
+PYEOF
+	receiver_pid=$!
+	sleep 1
+
+	# Webhook endpoint management is an operator (admin) operation, not a
+	# merchant-facing API-key route (services/gateway/internal/merchant/adminhttp.go) — the
+	# tenant's own self-service surface has no "/webhook-endpoints" route.
+	local endpoint_create_code
+	# transaction.posted.v1 is the ONE external event type this consumer
+	# fans out (services/gateway/internal/merchant/webhook/envelope.go) — a settled merchant
+	# payin credits the tenant's ledger account, which is what actually
+	# emits this event, not a dedicated "payin.updated" type.
+	endpoint_create_code="$(curl_internal -sS -o /dev/null -w '%{http_code}' -X POST "http://localhost:$INTERNAL_PORT/api/v1/admin/gateway/tenants/$tenant_id/webhooks" \
+		-H "Authorization: Bearer $CHAOS23_ADMIN_TOKEN" -H "Content-Type: application/json" \
+		-d "{\"url\":\"http://127.0.0.1:$receiver_port/hook\",\"environment\":\"sandbox\",\"subscribed_events\":[\"transaction.posted.v1\"]}")"
+	[ "$endpoint_create_code" = "201" ] || fail "chaos23: webhook endpoint creation got $endpoint_create_code, expected 201"
+
+	log "stopping rabbitmq..."
+	docker stop "$RABBITMQ_CONTAINER" >/dev/null
+
+	log "creating and settling a merchant payin while the broker is down (posting must not depend on RabbitMQ being up — outbox decouples it)..."
+	local payin_json payin_id reference webhook_body sig webhook_code
+	payin_json="$(curl -sS -X POST "http://localhost:$APP_PORT/api/v1/b2b/payins" \
+		-H "Authorization: Bearer $key" -H "Idempotency-Key: $nonce-payin" -H "Content-Type: application/json" \
+		-d '{"amount":"50000","currency":"IDR"}')"
+	payin_id="$(echo "$payin_json" | json_field id)"
+	[ -n "$payin_id" ] || fail "chaos23: merchant payin creation failed while broker was down: $payin_json"
+	ok "merchant payin created while the broker was down (outbox decouples posting from publish)"
+
+	reference="$(psql_exec "$PAYIN_DB_NAME" -tA -c "SELECT reference FROM payin_topup_intents WHERE id = '$payin_id';" | tr -d '[:space:]')"
+	[ -n "$reference" ] || fail "chaos23: could not resolve payin reference"
+	webhook_body="{\"event_id\":\"$nonce-payin\",\"external_ref\":\"$reference\",\"user_id\":\"$(uuidgen | tr '[:upper:]' '[:lower:]')\",\"amount\":\"50000\",\"currency\":\"IDR\",\"occurred_at\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"type\":\"payment.settled\"}"
+	sig="$(printf '%s' "$webhook_body" | openssl dgst -sha256 -hmac "$VENDOR_MOCKVENDOR_SECRET" -r | awk '{print $1}')"
+	webhook_code="$(curl_internal -sS -o /dev/null -w '%{http_code}' -X POST "http://localhost:$VENDOR_APP_PORT/webhooks/mockvendor" \
+		-H "X-Mock-Signature: $sig" -H "Content-Type: application/json" -d "$webhook_body")"
+	[ "${webhook_code:0:1}" = "2" ] || fail "chaos23: mockvendor settlement webhook got $webhook_code, expected 2xx (broker being down must not block payin settlement)"
+	ok "merchant payin settled while the broker was still down"
+
+	local balance_during_outage
+	balance_during_outage="$(curl -sS "http://localhost:$APP_PORT/api/v1/b2b/accounts/$account_id/balance" -H "Authorization: Bearer $key" | json_field balance)"
+	[ "$balance_during_outage" = "50000" ] && ok "merchant balance credited correctly even with the broker down (money-posting never depends on RabbitMQ)" \
+		|| fail "merchant balance after settlement was '$balance_during_outage', expected 50000"
+
+	local hits_during_outage
+	hits_during_outage="$(wc -l <"$endpoint_hits_file" | tr -d '[:space:]')"
+	[ "$hits_during_outage" = "0" ] && ok "webhook receiver correctly saw zero hits while the broker was down (nothing to consume yet)" \
+		|| fail "webhook receiver already saw $hits_during_outage hit(s) before the broker even recovered — should be impossible"
+
+	log "restarting rabbitmq and waiting for the merchant webhook consumer to catch up..."
+	docker start "$RABBITMQ_CONTAINER" >/dev/null
+	wait_for_container_healthy "$RABBITMQ_CONTAINER"
+
+	local tries=48 hits=0
+	while [ "$tries" -gt 0 ]; do
+		hits="$(wc -l <"$endpoint_hits_file" | tr -d '[:space:]')"
+		[ "$hits" -ge 1 ] && break
+		sleep 5
+		tries=$((tries - 1))
+	done
+	[ "$hits" -ge 1 ] && ok "merchant webhook consumer caught up after the broker recovered and the relay delivered the event (hits=$hits)" \
+		|| fail "no webhook hit arrived within the wait window after the broker recovered"
+
+	kill "$receiver_pid" 2>/dev/null || true
+	wait "$receiver_pid" 2>/dev/null || true
+
+	stop_server_gracefully
+}
+
+# ─── Main ────────────────────────────────────────────────────────────────────
+
+case "${1:-}" in
+1) scenario_1 ;;
+2) scenario_2 ;;
+3) scenario_3 ;;
+4) scenario_4 ;;
+5) scenario_5 ;;
+6) scenario_6 ;;
+7) scenario_7 ;;
+8) scenario_8 ;;
+9) scenario_9 ;;
+10) scenario_10 ;;
+11) scenario_11 ;;
+12) scenario_12 ;;
+13) scenario_13 ;;
+14) scenario_14 ;;
+15) scenario_15 ;;
+16) scenario_16 ;;
+17) scenario_17 ;;
+18) scenario_18 ;;
+19) scenario_19 ;;
+20) scenario_20 ;;
+21) scenario_21 ;;
+22) scenario_22 ;;
+23) scenario_23 ;;
+all)
+	scenario_1
+	scenario_2
+	scenario_3
+	scenario_4
+	scenario_5
+	scenario_6
+	scenario_7
+	scenario_8
+	scenario_9
+	scenario_10
+	scenario_11
+	scenario_12
+	scenario_13
+	scenario_14
+	scenario_15
+	scenario_16
+	scenario_17
+	scenario_18
+	scenario_19
+	scenario_20
+	scenario_21
+	scenario_22
+	scenario_23
+	;;
+*)
+	echo "Usage: $0 {1|2|3|4|5|6|7|8|9|10|11|12|13|14|15|16|17|18|19|20|21|22|23|all}"
+	exit 2
+	;;
+esac
+
+echo
+if [ "$FAILED" = "0" ]; then
+	printf '\033[1;32m=== ALL CHAOS ASSERTIONS PASSED ===\033[0m\n'
+	exit 0
+else
+	printf '\033[1;31m=== ONE OR MORE CHAOS ASSERTIONS FAILED ===\033[0m\n'
+	exit 1
+fi

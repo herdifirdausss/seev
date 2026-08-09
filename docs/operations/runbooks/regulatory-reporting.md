@@ -62,5 +62,5 @@ There is no job or scheduler that pushes these reports anywhere — they are pul
 
 ## Related
 
-- [docs/roadmap/archive/20-phase3d-aml-reporting.md](../../roadmap/archive/20-phase3d-aml-reporting.md) Task T2 — full design and decisions (K-S S7).
-- [docs/roadmap/archive/16-phase2f-governance-recon-rls.md](../../roadmap/archive/16-phase2f-governance-recon-rls.md) Task T3 — the `app_service`/`app_readonly` role split this runbook builds on.
+- [docs/roadmap/archive/20-phase3d-aml-reporting.md](../../roadmap/history.md) Task T2 — full design and decisions (K-S S7).
+- [docs/roadmap/archive/16-phase2f-governance-recon-rls.md](../../roadmap/history.md) Task T3 — the `app_service`/`app_readonly` role split this runbook builds on.

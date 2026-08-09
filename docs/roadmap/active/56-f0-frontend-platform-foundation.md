@@ -1,12 +1,46 @@
+---
+status: active
+plan_id: "56"
+owner: frontend
+last_reviewed: 2026-08-09
+generated: false
+---
+
 # 56 — F0 Frontend Platform Foundation
 
 > [Documentation home](../../README.md) · [Roadmap](../README.md) ·
 > [Active plans](README.md)
 
+> **Status:** Active — ready for execution; implementation not started
+> **Owner:** frontend
+> **Last reviewed:** 2026-08-09
+> **Depends on:** Plan 52 · A9 (API contracts), current architecture stable
+> **Current milestone:** T0 — Technology selection and repository scaffolding
+> **Next action:** Select React framework and set up the monorepo workspace under `apps/`
+> **Blocking issue:** none — activation trigger satisfied 2026-07-28
+> **Runtime acceptance:** pending
+
+## Open Work
+
+- [ ] T0 — Technology selection (framework, TypeScript config, shared package layout)
+- [ ] T1 — Public consumer app scaffold (Next.js or Remix, health check, CI integration)
+- [ ] T2 — Internal operator UI scaffold (Admin BFF client, auth session, maker/checker pages)
+- [ ] T3 — Shared component library (design tokens, money formatting, status badges)
+- [ ] T4 — End-to-end acceptance (login, balance, transfer, payout, reconciliation journeys visible)
+
+## Exit Criteria
+
+- Both browser applications build and pass type-check in CI.
+- Each application has at least one end-to-end test covering its core journey.
+- No business logic lives in the browser layer; all mutations go through documented service APIs.
+- The architecture document is updated to reflect the browser product.
+
+---
+
 > Related context:
 > [42-long-term-roadmap.md](../42-long-term-roadmap.md),
 > [55-frontend-long-term-roadmap.md](../55-frontend-long-term-roadmap.md),
-> [archived plan 52](../archive/52-a9-api-contracts-schema-evolution.md),
+> [archived plan 52](../history.md),
 > [current architecture](../../reference/architecture.md), and
 > [service reference](../../reference/services.md).
 >

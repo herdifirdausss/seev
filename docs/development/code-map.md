@@ -75,6 +75,25 @@ make docs-check
 make architecture-metrics
 ```
 
+## Cross-service boundaries
+
+| Boundary | Ownership rule |
+|---|---|
+| `internal/platform/` | Domain-neutral runtime infrastructure reused by services |
+| `internal/testkit/` | Test-only repository-wide integration fixtures |
+| `contracts/` | Versioned HTTP, protobuf, event, and cross-service client contracts |
+| `gen/go/` | Generated Go contract bindings; never hand-edit |
+| `tools/` | Developer, CI, generation, load, and validation utilities |
+| `operations/` | Support agents and recovery workflows |
+| `tests/` | Repository-wide architecture, contract, E2E, chaos, and load tests |
+
+Platform code cannot import services or testkit. Services cannot import other
+services' `internal/` packages; they use public facades, generated clients, or
+contracts instead.
+
+When changing ownership or paths, run `make architecture-check`. The executable
+service registry is in [`tests/architecture/registry.go`](../../tests/architecture/registry.go).
+
 For repository-wide rules, read the [Project guide](project-guide.md). For
 service ownership and runtime dependencies, read the relevant service README
 and the [service reference](../reference/services.md).

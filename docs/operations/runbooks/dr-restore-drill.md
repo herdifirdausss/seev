@@ -305,4 +305,4 @@ Fill in a new row every time this drill runs for real — not from planning docu
 
 - [scripts/rebuild-projection.sh](../../../scripts/rebuild-projection.sh) / [scripts/sql/rebuild_projection.sql](../../../scripts/sql/rebuild_projection.sql) — the rebuild this runbook invokes; same SQL file the Go integration test (`TestSchemaContract_RebuildProjection`) proves against corrupted data.
 - [ledger-integrity-alert.md](ledger-integrity-alert.md) — what to do if the verifier finds a real discrepancy, during a drill or otherwise.
-- [docs/roadmap/archive/17-phase3a-policy-recovery.md](../../roadmap/archive/17-phase3a-policy-recovery.md) Task T2 — design decisions (UPDATE not TRUNCATE, why `allow_negative` must survive).
+- [docs/roadmap/archive/17-phase3a-policy-recovery.md](../../roadmap/history.md) Task T2 — design decisions (UPDATE not TRUNCATE, why `allow_negative` must survive).

@@ -67,7 +67,7 @@ POST /admin/recon/items/{id}/resolve
 POST /admin/adjustments/{adjustment_id}/approve
 ```
 
-before the suspense account balance actually changes — see [docs/roadmap/archive/16-phase2f-governance-recon-rls.md](../../roadmap/archive/16-phase2f-governance-recon-rls.md) Task T1 for the full maker-checker contract (self-approval rejected, retry-safe, DB-level backstop). If you resolve an item and no one approves it, the discrepancy simply stays open — nothing rots or auto-executes.
+before the suspense account balance actually changes — see [docs/roadmap/archive/16-phase2f-governance-recon-rls.md](../../roadmap/history.md) Task T1 for the full maker-checker contract (self-approval rejected, retry-safe, DB-level backstop). If you resolve an item and no one approves it, the discrepancy simply stays open — nothing rots or auto-executes.
 
 ## Step 4 — Confirm
 
@@ -81,5 +81,5 @@ After approval, re-`GET` the batch — the resolved item's `resolved_by_adjustme
 
 ## Related
 
-- [docs/roadmap/archive/16-phase2f-governance-recon-rls.md](../../roadmap/archive/16-phase2f-governance-recon-rls.md) Task T2 — full design and decisions (K5).
+- [docs/roadmap/archive/16-phase2f-governance-recon-rls.md](../../roadmap/history.md) Task T2 — full design and decisions (K5).
 - [ledger-integrity-alert.md](ledger-integrity-alert.md) — what to do if `fn_verify_ledger_balance()` ever finds an unbalanced transaction, including ones from this flow.

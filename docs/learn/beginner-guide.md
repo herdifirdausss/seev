@@ -286,7 +286,7 @@ user owns the money. That relationship belongs to Seev's money-in domain.
 > operational gate documented in the [operations status](../operations/README.md#standalone-drills-and-operator-tools--not-part-of-verify-full).
 >
 > Historical boundary decisions and their original acceptance wording remain
-> in [archived Plan 54](../roadmap/archive/54-vendor-service-boundary.md).
+> in [ADR 0002](../reference/decisions/0002-vendorservice-callback-boundary.md).
 
 ## Story 3: sending money to another user
 

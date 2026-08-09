@@ -22,7 +22,7 @@ This report records one short, disposable local run for each requested workload.
 It is useful for finding broken load paths and for making conservative roadmap
 decisions, but it is not the canonical B0 MSSL. B0 still requires a staircase,
 three clean confirmation runs, spike/recovery, soak, drain, and full ledger
-integrity verification. See the [B0 protocol](../../roadmap/archive/53-b0-load-capacity-gate.md)
+integrity verification. See the [B0 protocol](../../roadmap/history.md)
 and [capacity model](../capacity-model.md).
 
 ## A. Environment

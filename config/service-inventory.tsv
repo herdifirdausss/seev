@@ -1,0 +1,23 @@
+# Canonical service registry — machine-readable single source of truth (P0.2).
+# Columns:
+#   service          short name (matches schema_migrations_<service> table)
+#   migration_dir    path under services/ where migrations/*.up.sql live
+#   database         PostgreSQL database name (seev_<service>)
+#   app_role         restricted login role for the service process
+#   backup_required  include in backup-manifest and restore-cluster inventory
+#   load_enabled     participate in the load-test database set
+#   deployable       represents a deployed application service
+#
+# Tab-separated. Lines starting with # are comments.
+# CI: scripts/ci/check-service-inventory.sh validates consistency.
+#
+# service	migration_dir	database	app_role	backup_required	load_enabled	deployable
+ledger	ledger	seev_ledger	ledger_app	true	true	true
+auth	auth	seev_auth	auth_app	true	true	true
+payin	payin	seev_payin	payin_app	true	true	true
+payout	payout	seev_payout	payout_app	true	true	true
+fraud	fraud	seev_fraud	fraud_app	true	true	true
+gateway	gateway	seev_gateway	gateway_app	true	true	true
+vendor	vendor-service	seev_vendor	vendor_app	true	true	true
+adminbff	adminbff	seev_adminbff	adminbff_app	true	false	true
+assurance	assurance	seev_assurance	assurance_app	true	false	true

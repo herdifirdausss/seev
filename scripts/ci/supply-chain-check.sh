@@ -21,6 +21,18 @@ require_text() {
   fi
 }
 
+# require_uncommented is like require_text but ignores lines that are pure
+# comments (# …). Use this for YAML workflow checks so that commenting out
+# a step does not produce a false-passing result.
+require_uncommented() {
+  local file="$1"
+  local text="$2"
+  local message="$3"
+  if ! grep -v '^\s*#' "$file" | grep -qF -- "$text"; then
+    error "$message"
+  fi
+}
+
 # Every image build in this repository has an immutable base-image reference.
 # Tags stay beside the digest so Dependabot and reviewers can identify the
 # intended version without making the build depend on a mutable tag.
@@ -79,14 +91,14 @@ require_text "$root_dir/analytics/connect/Dockerfile" 'USER kafka' \
 # third-party image used by the core stack is immutable as well.
 compose_file="$root_dir/docker-compose.yml"
 for image in busybox redis rabbitmq axllent/mailpit; do
-  if rg -n -- "^[[:space:]]*image:[[:space:]]+${image}[^@[:space:]]*:[^@[:space:]]+([[:space:]]|$)" "$compose_file"; then
+  if grep -En "^[[:space:]]*image:[[:space:]]+${image}[^@[:space:]]*:[^@[:space:]]+([[:space:]]|$)" "$compose_file"; then
     error "third-party Compose image is not digest-pinned: $image"
   fi
 done
 
 helm_values="$root_dir/deploy/helm/seev/values.yaml"
 for image in postgres redis rabbitmq ubuntu/squid; do
-  if rg -n -- "^[[:space:]]*image:[[:space:]]+${image}[^@[:space:]]*:[^@[:space:]]+([[:space:]]|$)" "$helm_values"; then
+  if grep -En "^[[:space:]]*image:[[:space:]]+${image}[^@[:space:]]*:[^@[:space:]]+([[:space:]]|$)" "$helm_values"; then
     error "Helm infrastructure image is not digest-pinned: $image"
   fi
 done
@@ -96,47 +108,47 @@ release_workflow="$root_dir/.github/workflows/release-provenance.yml"
 helm_apps="$root_dir/deploy/helm/seev/templates/apps.yaml"
 helm_migrations="$root_dir/deploy/helm/seev/templates/migration-job.yaml"
 
-require_text "$ci_workflow" 'go mod verify' \
-  "CI must verify Go module checksums"
-require_text "$ci_workflow" 'aquasecurity/setup-trivy@' \
-  "CI must install the pinned Trivy scanner"
-require_text "$ci_workflow" 'trivy image' \
-  "CI must scan built container images"
-require_text "$ci_workflow" '--exit-code 1' \
-  "CI container findings must fail the gate"
-require_text "$ci_workflow" 'format cyclonedx' \
-  "CI must generate a CycloneDX SBOM"
-require_text "$ci_workflow" 'retention-days: 30' \
-  "CI must retain container scan evidence"
+require_uncommented "$ci_workflow" 'go mod verify' \
+  "CI must verify Go module checksums (non-commented)"
+require_uncommented "$ci_workflow" 'aquasecurity/setup-trivy@' \
+  "CI must install the pinned Trivy scanner (non-commented)"
+require_uncommented "$ci_workflow" 'trivy image' \
+  "CI must scan built container images (non-commented)"
+require_uncommented "$ci_workflow" '--exit-code 1' \
+  "CI container findings must fail the gate (non-commented)"
+require_uncommented "$ci_workflow" 'format cyclonedx' \
+  "CI must generate a CycloneDX SBOM (non-commented)"
+require_uncommented "$ci_workflow" 'retention-days: 30' \
+  "CI must retain container scan evidence (non-commented)"
 
-require_text "$release_workflow" '--attest=type=provenance' \
-  "release workflow must request provenance attestation"
-require_text "$release_workflow" '--attest=type=sbom' \
-  "release workflow must request SBOM attestation"
-require_text "$release_workflow" 'generator=docker/buildkit-syft-scanner:stable-1@sha256:79e7b013cbec16bbb436f312819a49a4a57752b2270c1a9332ae1a10fcc82a68' \
-  "release SBOM generator must be digest-pinned"
-require_text "$release_workflow" '--metadata-file' \
-  "release workflow must retain Buildx image metadata"
-require_text "$release_workflow" 'trivy image' \
-  "release workflow must scan the release image"
-require_text "$release_workflow" '--exit-code 1' \
-  "release container findings must fail the gate"
-require_text "$release_workflow" 'format cyclonedx' \
-  "release workflow must retain a release SBOM"
-require_text "$release_workflow" 'retention-days: 90' \
-  "release workflow must retain release evidence"
-require_text "$release_workflow" 'cosign sign' \
-  "protected publish must sign the immutable image digest"
-require_text "$release_workflow" 'cosign verify' \
-  "protected publish must verify the image signature"
-require_text "$release_workflow" 'certificate-oidc-issuer https://token.actions.githubusercontent.com' \
-  "protected publish must verify the GitHub OIDC issuer"
-require_text "$release_workflow" 'imagetools inspect --raw' \
-  "protected publish must verify attestation descriptors"
-require_text "$release_workflow" 'name: protected-release' \
-  "protected publish must use the protected-release GitHub Environment"
-require_text "$release_workflow" 'id-token: write' \
-  "protected publish must request OIDC identity tokens"
+require_uncommented "$release_workflow" '--attest=type=provenance' \
+  "release workflow must request provenance attestation (non-commented)"
+require_uncommented "$release_workflow" '--attest=type=sbom' \
+  "release workflow must request SBOM attestation (non-commented)"
+require_uncommented "$release_workflow" 'generator=docker/buildkit-syft-scanner:stable-1@sha256:79e7b013cbec16bbb436f312819a49a4a57752b2270c1a9332ae1a10fcc82a68' \
+  "release SBOM generator must be digest-pinned (non-commented)"
+require_uncommented "$release_workflow" '--metadata-file' \
+  "release workflow must retain Buildx image metadata (non-commented)"
+require_uncommented "$release_workflow" 'trivy image' \
+  "release workflow must scan the release image (non-commented)"
+require_uncommented "$release_workflow" '--exit-code 1' \
+  "release container findings must fail the gate (non-commented)"
+require_uncommented "$release_workflow" 'format cyclonedx' \
+  "release workflow must retain a release SBOM (non-commented)"
+require_uncommented "$release_workflow" 'retention-days: 90' \
+  "release workflow must retain release evidence (non-commented)"
+require_uncommented "$release_workflow" 'cosign sign' \
+  "protected publish must sign the immutable image digest (non-commented)"
+require_uncommented "$release_workflow" 'cosign verify' \
+  "protected publish must verify the image signature (non-commented)"
+require_uncommented "$release_workflow" 'certificate-oidc-issuer https://token.actions.githubusercontent.com' \
+  "protected publish must verify the GitHub OIDC issuer (non-commented)"
+require_uncommented "$release_workflow" 'imagetools inspect --raw' \
+  "protected publish must verify attestation descriptors (non-commented)"
+require_uncommented "$release_workflow" 'name: protected-release' \
+  "protected publish must use the protected-release GitHub Environment (non-commented)"
+require_uncommented "$release_workflow" 'id-token: write' \
+  "protected publish must request OIDC identity tokens (non-commented)"
 
 # Production app and migration Pods retain the runtime hardening contract.
 for marker in \

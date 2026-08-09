@@ -17,7 +17,7 @@ The vendor workload receives:
   `vendor-service`;
 - callback hostname, exact callback CIDRs, signature algorithm/key version,
   timeout, retry, and idempotency rules recorded in
-  [`vendor-network-matrix.md`](vendor-network-matrix.md);
+  [`deploy/inventory/vendor-network.yaml`](../../deploy/inventory/vendor-network.yaml);
 - a test ledger/account namespace that cannot settle real funds.
 
 The real provider values are intentionally absent from Git. A release is not

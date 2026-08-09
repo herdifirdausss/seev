@@ -1627,11 +1627,8 @@ Advanced C1–C6 features remain disabled unless required for a deployment test.
 ### Deliverables
 
 ```text
-docs/deployment/service-port-matrix.md
-docs/deployment/dependency-matrix.md
-docs/deployment/public-route-matrix.md
-docs/deployment/vendor-network-matrix.md
-docs/evidence/k0-deployment-inventory.md
+docs/deployment/runtime-contract.md   (consolidated from former matrix files)
+deploy/inventory/                      (machine-readable source of truth)
 ```
 
 ### Acceptance

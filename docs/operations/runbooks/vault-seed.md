@@ -73,4 +73,4 @@ Dev-mode Vault talks plain HTTP on the same Compose network every other service 
 
 - [scripts/vault-seed.sh](../../../scripts/vault-seed.sh) — the script this runbook operates.
 - [internal/platform/config/config.go](../../../internal/platform/config/config.go) `vaultGetenv`/`fetchVaultKV` — the consuming seam.
-- [docs/roadmap/archive/49-a6-internal-security.md](../../roadmap/archive/49-a6-internal-security.md) K7 — the dev-mode-vs-production-Vault decision and its stated trade-offs.
+- [docs/roadmap/archive/49-a6-internal-security.md](../../roadmap/history.md) K7 — the dev-mode-vs-production-Vault decision and its stated trade-offs.

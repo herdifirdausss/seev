@@ -1,3 +1,12 @@
+---
+status: current
+audience: [contributor, reviewer]
+owner: architecture
+last_reviewed: 2026-08-09
+canonical_for: current-system-architecture
+generated: false
+---
+
 # Architecture
 
 > [Documentation home](../README.md) · [Reference](README.md)
@@ -7,7 +16,7 @@
 > container, and business journeys exercise that boundary. The manual chaos
 > recovery gate is not yet green; the latest Scenario 5 residual and rerun
 > requirement are recorded in the [operations status](../operations/README.md#standalone-drills-and-operator-tools--not-part-of-verify-full).
-> The historical boundary decisions are preserved in [archived Plan 54](../roadmap/archive/54-vendor-service-boundary.md).
+> The historical boundary decisions are preserved in [ADR 0002](decisions/0002-vendorservice-callback-boundary.md).
 
 This document explains **why Seev exists, what problem it solves, and how
 it's built to solve it** — for both a business reader and a technical
@@ -16,10 +25,8 @@ is the guided code tour; this document is the "why does it look like this"
 layer that sits above both.
 
 For the contributor-facing source tree and ownership rules, see the
-[repository ownership map](../architecture/repository-ownership.md) and the
-[service-centric layout ADR](../architecture/adr-service-centric-repository-layout.md).
-The current package-size and dependency snapshot is in the
-[repository structure metrics](../architecture/repository-structure-metrics.md).
+[service-centric layout ADR](decisions/0001-service-centric-repository-layout.md)
+and the [development code map](../development/code-map.md).
 
 If terms such as ledger, idempotency, or payout are unfamiliar, start with
 [Seev, explained from start to finish](../learn/beginner-guide.md) or keep the
@@ -95,7 +102,7 @@ architecture":
 > or compliance requires organizational/data isolation. Until then, a
 > split adds network hops, deployment surfaces, and distributed tracing
 > requirements without a demonstrated benefit.
-> — [docs/roadmap/archive/21](../roadmap/archive/21-service-topology-review.md)
+> — [Plan 21 outcome](../roadmap/history.md)
 
 The guiding principle stated in that same document is the whole
 philosophy in one line:

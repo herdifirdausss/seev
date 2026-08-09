@@ -4,9 +4,9 @@
 
 > **Generated from [config/data-retention.yaml](../../config/data-retention.yaml) — do not hand-edit this file.** Regenerate with `make retention-docs` after changing the policy. `tools/retentioncheck` fails CI if this file and the policy ever disagree.
 
-Policy version: **1**. See [docs/roadmap/archive/51-a8-data-lifecycle-privacy.md](../roadmap/archive/51-a8-data-lifecycle-privacy.md) for the locked design decisions (K1–K13) this matrix implements.
+Policy version: **1**. See [roadmap history](../roadmap/history.md) for the Plan 51 outcome. The versioned policy file is the canonical source for the rules rendered here.
 
-These are conservative engineering defaults for this learning repository, not an approved jurisdiction/product policy — see that document's §3 "Out of scope."
+These are conservative engineering defaults for this learning repository, not an approved jurisdiction or product policy.
 
 ## Permanent tables
 

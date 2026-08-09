@@ -77,6 +77,6 @@ When escalating, hand over:
 
 ## Related
 
-- [docs/roadmap/archive/09-hardening-review.md](../../roadmap/archive/09-hardening-review.md) §B3 — why this alert hook exists.
-- [docs/roadmap/archive/12-phase2c-resilience-ops.md](../../roadmap/archive/12-phase2c-resilience-ops.md) Task T4 — implementation details (webhook payload shape, `ALERT_WEBHOOK_URL` config).
-- [docs/roadmap/archive/01-target-architecture.md](../../roadmap/archive/01-target-architecture.md) — append-only ledger rationale, locked design decisions.
+- [docs/roadmap/archive/09-hardening-review.md](../../roadmap/history.md) §B3 — why this alert hook exists.
+- [docs/roadmap/archive/12-phase2c-resilience-ops.md](../../roadmap/history.md) Task T4 — implementation details (webhook payload shape, `ALERT_WEBHOOK_URL` config).
+- [docs/roadmap/archive/01-target-architecture.md](../../roadmap/history.md) — append-only ledger rationale, locked design decisions.

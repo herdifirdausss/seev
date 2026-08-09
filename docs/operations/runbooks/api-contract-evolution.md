@@ -16,7 +16,7 @@ reports drift, or when a deprecated operation is approaching its sunset.
    generated output from a semantic change.
 3. If the change is the deliberate Gateway → VendorService callback cutover,
    verify it matches `contracts/compatibility/approved-breaking.yaml` and the archived
-   [Plan 54](../../roadmap/archive/54-vendor-service-boundary.md). Do not add
+   [Plan 54](../../reference/decisions/0002-vendorservice-callback-boundary.md). Do not add
    unrelated operations or fields to that exception.
 4. For any other breaking change, add a new major operation/schema, keep the old route
    or routing key live, and update the consumer acknowledgement in the catalog.

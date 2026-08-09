@@ -8,7 +8,6 @@
 
 | Plan | Scope |
 |---|---|
-| [35](35-phase6j-kubernetes.md) | Optional local Kubernetes learning |
 | [56 · F0](56-f0-frontend-platform-foundation.md) | Frontend platform foundation |
 | [65 · A11](65-a11-database-audit-and-hardening.md) | Database audit and hardening |
 

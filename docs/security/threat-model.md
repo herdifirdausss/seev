@@ -7,14 +7,14 @@
 > trusted at each boundary, and what can go wrong. It is not proof that a
 > deployment is secure.
 
-Last reviewed: 2026-08-04, after the VendorService boundary wiring and
-completion of [plan 49](../roadmap/archive/49-a6-internal-security.md).
+Last reviewed: 2026-08-04, after the VendorService boundary wiring and the
+internal-security outcome recorded in [roadmap history](../roadmap/history.md).
 
 This living document describes the current security boundaries of the local
 reference system. It is not a production certification or a claim that the
-default Compose configuration is safe for real customer data. Plan 49 retains
-the detailed implementation and test history behind the controls summarized
-here.
+default Compose configuration is safe for real customer data. Git history
+retains the detailed implementation and test history behind the controls
+summarized here.
 
 ## 1. Scope
 
@@ -129,7 +129,7 @@ runtime role cannot delete `auth_credentials` directly. Public and queued
 money movement also requires a configured audit sink and a current execution
 subject projection; missing authorization state fails closed before posting.
 The repository-level evidence is indexed in
-[`docs/acceptance/security.md`](../acceptance/security.md); this document does
+[`docs/security/controls.md`](controls.md); this document does
 not claim independent production certification.
 
 ## 5. Service topology
@@ -203,22 +203,22 @@ Status meanings:
 | TM-12 | Request logging restored handlers from a 16 KiB truncated copy. | Medium-High | Resolved | The logger restores the complete body up to the 10 MiB repository safety cap and separately truncates only the log copy. |
 | TM-13 | Server TLS configuration held a frozen CA pool after certificate rotation. | High | Resolved | Each handshake reads the current CA pool. Rotation tests prove new certificates recover without restart and old certificates remain rejected. |
 | TM-14 | A black-holed Redis velocity request could consume the caller deadline and be misclassified as fail-open. | High | Resolved | Fraud's Redis attempt has a 150 ms sub-deadline, preserving time to return `DEPENDENCY_UNAVAILABLE` and fail closed before money movement. |
-| TM-15 | Plan 57 (C1): a compromised merchant API key grants tenant-scoped financial write access with no positive-cache revocation delay. | High | Resolved | T3's `RequireMerchantAuth` resolves the key from Postgres on every request (no cache); revocation is an `UPDATE ... status = 'revoked'` visible to the very next request. Digest comparison is constant-time (`hmac.Equal`). [merchant-api-key-compromise.md](../operations/runbooks/merchant-api-key-compromise.md) covers the operator procedure. |
+| TM-15 | Plan 57 (C1): a compromised merchant API key grants tenant-scoped financial write access with no positive-cache revocation delay. | High | Resolved | T3's `RequireMerchantAuth` resolves the key from Postgres on every request (no cache); revocation is an `UPDATE ... status = 'revoked'` visible to the very next request. Digest comparison is constant-time (`hmac.Equal`). [merchant-api-key-compromise.md](../operations/runbooks/merchants.md#api-key-compromise) covers the operator procedure. |
 | TM-16 | Plan 57 (C1): outbound webhook endpoint URLs are merchant-supplied and could target internal/link-local/metadata IP ranges (SSRF). | High | Resolved | `services/gateway/internal/merchant/webhook/ssrf.go`'s `resolveAndDial` re-resolves DNS and rejects non-public addresses on EVERY live-mode dispatch attempt, not only at endpoint creation — a hostname safe at creation but later rebound to a private address is still caught. Redirects are never followed. Sandbox endpoints intentionally skip this check (local test receivers, docs/reference/c1-b2b-design.md §4). |
 | TM-17 | Plan 57 (C1): a repository method that omits `tenant_id` from its query would leak or mutate another tenant's resource. | High | Resolved | Every merchant-owned repository method takes `tenant_id` explicitly and scopes its SQL with `WHERE tenant_id = $N AND id = $M`; live-Postgres tests prove cross-tenant reads/writes fail as not-found for API keys, idempotency records, webhook endpoints, and Ledger's own `GetMerchantTransaction`/`GetMerchantAccount`. |
 | TM-18 | Plan 57 (C1): webhook endpoint secrets, if stored in plaintext, would let a database read disclose every merchant's signing key. | High | Resolved | `services/gateway/internal/merchant/webhook.Service` encrypts endpoint secrets at rest via `internal/platform/security/crypto`'s existing envelope (same pattern as A8 T2's field encryption) — only the plaintext is ever shown, exactly once, at creation/rotation time. |
-| TM-19 | Plan 57 (C1): an unbounded or misconfigured merchant quota policy could let one tenant exhaust shared Redis/DB capacity affecting other tenants or the user-facing product. | Medium | Resolved | `services/gateway/internal/merchant/quota.Enforcer` enforces atomic per-tenant, per-class token buckets (Redis Lua script) with a conservative secure default when unconfigured; a write-class check fails closed (503) on quota-backend outage rather than falling back to an unlimited/memory path — see [merchant-quota-backend-outage.md](../operations/runbooks/merchant-quota-backend-outage.md). |
+| TM-19 | Plan 57 (C1): an unbounded or misconfigured merchant quota policy could let one tenant exhaust shared Redis/DB capacity affecting other tenants or the user-facing product. | Medium | Resolved | `services/gateway/internal/merchant/quota.Enforcer` enforces atomic per-tenant, per-class token buckets (Redis Lua script) with a conservative secure default when unconfigured; a write-class check fails closed (503) on quota-backend outage rather than falling back to an unlimited/memory path — see [merchant-quota-backend-outage.md](../operations/runbooks/merchants.md#quota-backend-outage). |
 | TM-20 | Plan 59 (C3): raw event bodies, email addresses, or push tokens could leak through notification storage, logs, exports, or metrics. | High | Resolved in code; acceptance pending | New plans store bounded typed context and `{}` legacy payloads; recipients/tokens are encrypted or fingerprinted; export and metrics omit plaintext. Verify with the C3 privacy and secret-scan gates. |
 | TM-21 | Plan 59 (C3): a provider call could block or alter a financial path. | Critical | Resolved in code; acceptance pending | Gateway commits the notification plan before independent email/push workers call providers; the financial journey has no notification dependency. Verify with provider-outage and business-journey gates. |
 | TM-22 | Plan 59 (C3): replay after an ambiguous provider result could duplicate an external message. | Medium | Accepted, documented | Stable email Message-ID, push idempotency key, immutable snapshots, leases, and explicit replay reason reduce the risk but cannot prove provider exactly-once. See the duplicate-delivery runbook. |
 | TM-23 | Plan 62 (C6): a stale backfill batch could overwrite a v2 row that a concurrent live posting had already advanced to a newer `source_version`, causing the target to regress to an older balance. | Critical | Resolved | The backfill upsert uses `WHERE account_balances_v2.source_version < EXCLUDED.source_version`; a batch that carries an older version silently no-ops for that row. Covered by `TestBackfillOnce_VersionSafeUpsert` (integration, `-race`). |
-| TM-24 | Plan 62 (C6): strict dual-write mode failure blocks postings; a target database outage in this mode causes a posting availability incident. | Critical | Accepted, documented | This is deliberate: strict mode ensures v1 and v2 never diverge. Operators switch to shadow mode via `POST /admin/migrations/{id}/dual-write` (single API call, no redeploy) to restore availability. See [migration-strict-dual-write-failure.md](../operations/runbooks/migration-strict-dual-write-failure.md). |
+| TM-24 | Plan 62 (C6): strict dual-write mode failure blocks postings; a target database outage in this mode causes a posting availability incident. | Critical | Accepted, documented | This is deliberate: strict mode ensures v1 and v2 never diverge. Operators switch to shadow mode via `POST /admin/migrations/{id}/dual-write` (single API call, no redeploy) to restore availability. See [migration-strict-dual-write-failure.md](../operations/runbooks/migrations.md#strict-dual-write-failure). |
 | TM-25 | Plan 62 (C6): a repair that re-derives the target from a corrupted source would overwrite a correct target row with wrong data. | Critical | Resolved | `ReconcileOnce` cross-checks the source against `ledger_entries` before marking a mismatch repair-eligible; mismatches classified as `shared_corruption` or `source_corruption` are ineligible for auto-repair and surface to the operator explicitly. Maker/checker approval is still required for all repairs. |
 | TM-26 | Plan 62 (C6): the repair API, if it accepted free-form SQL or arbitrary expressions, could be used to manipulate balances without going through the posting ledger. | High | Resolved | `repair_type` is a closed enum (`rebalance`); the repair executes only a pre-defined re-transform derived from the canonical source row, never free-form input. Maker/checker approval is required for every repair execution. |
 
 The detailed reproduction steps, design decisions, and final isolated gate for
-TM-01 through TM-14 are recorded in
-[plan 49](../roadmap/archive/49-a6-internal-security.md). Operational procedures live in
+TM-01 through TM-14 are preserved in Git and summarized in
+[roadmap history](../roadmap/history.md). Operational procedures live in
 the [runbook index](../operations/runbooks/README.md).
 
 ## 7. Review requirements

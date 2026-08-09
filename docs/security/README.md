@@ -8,14 +8,16 @@
 
 - [Threat model](threat-model.md) describes assets, trust boundaries, threats,
   controls, and accepted local-development risks.
-- [Database and authorization acceptance](../acceptance/security.md) indexes
+- [Domain threat models](threat-models/README.md) cover platform-specific
+  threats for the data platform and other specialized sub-systems.
+- [Security controls](controls.md) index
   the repository-side controls and repeatable security-contract checks.
-- [Software-supply-chain acceptance](../acceptance/supply-chain.md) indexes
+- [Software-supply-chain controls](supply-chain.md) index
   dependency/action/image pins, scan/SBOM/provenance gates, and the protected
   release evidence boundary.
 - [Independent security review scope](independent-review-scope.md) defines the
   assessor scope, evidence contract, finding format, and exit criteria; the
-  [acceptance packet](../acceptance/independent-security-review.md) is the
+  [review record](independent-security-review.md) is the
   retained-evidence index.
 - [Security policy](../../SECURITY.md) explains how to report a vulnerability
   privately. Do not disclose an unpatched vulnerability in a public issue.

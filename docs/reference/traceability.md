@@ -90,7 +90,7 @@ VendorService callbacks; the deprecated Payin v1 raw method is unimplemented.
 Host, container, and business journeys exercise this path. Manual crash
 recovery remains a separate operational gate; its current result is recorded in
 the [operations status](../operations/README.md#standalone-drills-and-operator-tools--not-part-of-verify-full).
-The historical boundary decisions are preserved in [archived Plan 54](../roadmap/archive/54-vendor-service-boundary.md).
+The historical boundary decisions are preserved in [ADR 0002](decisions/0002-vendorservice-callback-boundary.md).
 
 ## Fee quote and user-to-user transfer
 

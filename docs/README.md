@@ -1,3 +1,12 @@
+---
+status: current
+audience: [contributor, reviewer, newcomer]
+owner: documentation
+last_reviewed: 2026-08-09
+canonical_for: documentation-home
+generated: false
+---
+
 # Seev Documentation
 
 > **Status: Current index.** This is the only documentation page a new reader
@@ -44,9 +53,10 @@ Each directory has one purpose and its own index.
 | [`operations/`](operations/README.md) | Runtime tooling, verification, observability, and runbooks | Future architecture claims |
 | [`performance/`](performance/README.md) | Disposable B0 load protocol, baseline, and redacted evidence | Production-capacity claims |
 | [`portfolio/`](portfolio/README.md) | Curated engineering evidence for a five-minute technical review | A replacement for reference or operations documentation |
-| [`security/`](security/README.md) | Threat model and trust boundaries | Private vulnerability reports |
-| [`roadmap/`](roadmap/README.md) | Strategy, active plans, and archived decisions | Current runtime truth |
+| [`security/`](security/README.md) | Threat model, trust boundaries, and supply-chain security | Private vulnerability reports |
+| [`roadmap/`](roadmap/README.md) | Strategy, active plans, and concise completion history | Current runtime truth |
 | [`data/`](data/README.md) | The generated data retention/classification matrix | Hand-written policy — edit `config/data-retention.yaml` instead |
+| [`deployment/`](deployment/README.md) | Runtime contract: services, ports, routes, secrets, storage, health, and dependency topology | Hand-written narrative architecture |
 
 The root of the repository intentionally keeps only public-project entry files:
 `README.md`, `LICENSE`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, and
@@ -63,9 +73,9 @@ The root of the repository intentionally keeps only public-project entry files:
 | Engineering end to end | [Fastest engineering end-to-end route](#fastest-engineering-end-to-end-route) |
 | Specialist detail | Open one relevant reference, runbook, or plan |
 
-Reading every historical plan is not an onboarding requirement. The archive
-exists so a reviewer can recover old reasoning when a specific question needs
-it.
+Reading plan history is not an onboarding requirement. The concise history
+records outcomes; Git history preserves removed implementation detail when a
+specific investigation needs it.
 
 ## Fastest product end-to-end route
 
@@ -105,13 +115,13 @@ so this top-level chooser stays short.
 
 - **Current** must agree with executable code and tests.
 - **Target** is a reviewed design that is not fully implemented.
-- **Historical** preserves an earlier decision or system shape.
+- **Historical** summarizes an earlier decision or system shape.
 
 If documents disagree, current code, tests, Compose, and the Makefile outrank a
-historical plan. The [roadmap index](roadmap/README.md) is authoritative for
+historical record. The [roadmap index](roadmap/README.md) is authoritative for
 plan status.
 
-## Complete document list
+## Core document index
 
 - Learning: [read-aloud story](learn/read-aloud-story.md),
   [five-minute tour](learn/five-minute-tour.md),

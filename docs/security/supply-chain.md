@@ -13,8 +13,8 @@ the `RuntimeDefault` seccomp profile.
 
 The protected `protected-release` GitHub Environment additionally signs and
 verifies the published digest through its configured OIDC/sigstore policy
-before promotion. The complete acceptance checklist is in
-[`docs/acceptance/supply-chain.md`](../acceptance/supply-chain.md).
+before promotion. The executable checks below are the canonical repository
+acceptance checklist.
 
 The workflow is an implementation of the control, not proof that a release
 has already been published. The release record must retain:

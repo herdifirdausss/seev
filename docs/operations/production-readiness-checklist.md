@@ -29,9 +29,9 @@ exists” is not an acceptable substitute for runtime evidence.
 - [ ] Public/internal route separation and authorization are verified — `<evidence>`
 - [ ] Tenant isolation tests pass — `<evidence>`
 - [ ] Secrets use workload identity/secret manager and never appear in logs — `<evidence>`
-- [x] Repository dependency/action/image pinning, Go/Trivy scans, SBOM/provenance requests, and non-root/read-only runtime controls pass — [`docs/acceptance/supply-chain.md`](../acceptance/supply-chain.md)
+- [x] Repository dependency/action/image pinning, Go/Trivy scans, SBOM/provenance requests, and non-root/read-only runtime controls pass — [`docs/security/supply-chain.md`](../security/supply-chain.md)
 - [ ] Protected-registry signature, live attestation verification, and admission/runtime proof are attached — `<evidence>`
-- [x] Independent security review scope, evidence fields, and exit criteria are prepared — [`docs/acceptance/independent-security-review.md`](../acceptance/independent-security-review.md)
+- [x] Independent security review scope, evidence fields, and exit criteria are prepared — [`docs/security/independent-security-review.md`](../security/independent-security-review.md)
 - [ ] Independent assessor report, reproduction artifacts, remediation/risk decisions, and retest statement are attached — `<evidence>`
 
 ## Operations
@@ -46,7 +46,7 @@ exists” is not an acceptable substitute for runtime evidence.
 
 - [ ] Load test covers peak rate, concurrency, queue backlog, and dependency degradation — `<evidence>`
 - [ ] Capacity assumptions and autoscaling limits are documented — `<evidence>`
-- [ ] No unresolved P0/P1 correctness or security risk remains; complete the [`P0/P1 risk gate`](../acceptance/p0-p1-risk-gate.md) with current evidence and approval — `<evidence>`
+- [ ] No unresolved P0/P1 correctness or security risk remains; complete the [`P0/P1 risk gate`](../security/p0-p1-risk-gate.md) with current evidence and approval — `<evidence>`
 - [ ] Product owner, engineering owner, operations owner, and security owner approve — `<evidence>`
 
 ## Decision
@@ -60,3 +60,14 @@ exists” is not an acceptable substitute for runtime evidence.
 | Capacity | `GO / NO-GO` |  |  |
 
 Any `NO-GO`, missing owner, or missing evidence blocks production acceptance.
+
+## Release blockers
+
+The following conditions are hard blockers regardless of checklist state:
+
+- any open P0 correctness or security risk;
+- any missing owner for a money-moving path;
+- any missing backup/restore or migration rollback evidence;
+- any unsigned/unprovenanced release artifact;
+- any vendor unknown-state path without a reconciler;
+- any external evidence row still marked `evidence_required`.

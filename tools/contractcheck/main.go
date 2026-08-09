@@ -22,7 +22,7 @@ type approvedBreaking struct {
 	PredecessorOperationID string `yaml:"predecessor_operation_id"`
 	SuccessorOperationID   string `yaml:"successor_operation_id"`
 	Reason                 string `yaml:"reason"`
-	Plan                   string `yaml:"plan"`
+	Decision               string `yaml:"decision"`
 }
 
 type approvedBreakingFile struct {
@@ -78,7 +78,7 @@ func readApprovedBreakings(path string) ([]approvedBreaking, error) {
 		change := &file.Changes[i]
 		change.Method = strings.ToUpper(strings.TrimSpace(change.Method))
 		key := change.Method + " " + change.Path
-		if change.Method == "" || change.Path == "" || change.PredecessorOperationID == "" || change.SuccessorOperationID == "" || change.Reason == "" || change.Plan == "" || seen[key] {
+		if change.Method == "" || change.Path == "" || change.PredecessorOperationID == "" || change.SuccessorOperationID == "" || change.Reason == "" || change.Decision == "" || seen[key] {
 			return nil, fmt.Errorf("invalid or duplicate approved cutover %q", key)
 		}
 		seen[key] = true

@@ -17,7 +17,7 @@ the zero-use window has elapsed, and the replacement guide is published.
 The only reviewed current exception is the Gateway → VendorService webhook
 ownership cutover, which is recorded in
 [`contracts/compatibility/approved-breaking.yaml`](../../contracts/compatibility/approved-breaking.yaml)
-and linked to [archived Plan 54](../roadmap/archive/54-vendor-service-boundary.md);
+and linked to [ADR 0002](decisions/0002-vendorservice-callback-boundary.md);
 it does not authorize unrelated breaking changes.
 
 ## Local gates

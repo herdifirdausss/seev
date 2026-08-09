@@ -21,12 +21,11 @@ func RenderMarkdown(p *Policy) string {
 		" after changing the policy. `tools/retentioncheck` fails CI if this file" +
 		" and the policy ever disagree.\n\n")
 	fmt.Fprintf(&b, "Policy version: **%d**. See "+
-		"[docs/roadmap/archive/51-a8-data-lifecycle-privacy.md](../roadmap/archive/51-a8-data-lifecycle-privacy.md)"+
-		" for the locked design decisions (K1–K13) this matrix implements.\n\n", p.PolicyVersion)
+		"[roadmap history](../roadmap/history.md) for the Plan 51 outcome. "+
+		"The versioned policy file is the canonical source for the rules rendered here.\n\n", p.PolicyVersion)
 
 	b.WriteString("These are conservative engineering defaults for this learning " +
-		"repository, not an approved jurisdiction/product policy — see that " +
-		"document's §3 \"Out of scope.\"\n\n")
+		"repository, not an approved jurisdiction or product policy.\n\n")
 
 	b.WriteString("## Permanent tables\n\n")
 	b.WriteString("No entry may fully delete a row from these tables — only " +

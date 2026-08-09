@@ -16,7 +16,7 @@ func TestSlugMatchesGitHubStyleHeadingsUsedByRepository(t *testing.T) {
 		"`ledger.adjustment.decided.v1`":                                    "ledgeradjustmentdecidedv1",
 		"Current system and future ideas":                                   "current-system-and-future-ideas",
 		"How to read a service section":                                     "how-to-read-a-service-section",
-		"Shared Infrastructure Deep Dive (`internal/platform/`)":                          "shared-infrastructure-deep-dive-internalplatform",
+		"Shared Infrastructure Deep Dive (`internal/platform/`)":            "shared-infrastructure-deep-dive-internalplatform",
 		"Financial invariants (non-negotiable, enforced in code and tests)": "financial-invariants-non-negotiable-enforced-in-code-and-tests",
 	}
 
@@ -95,7 +95,8 @@ func TestRequiredDocumentationFailuresReportsMissingMarkers(t *testing.T) {
 		"SERVICES.md",
 		"docs/learn/beginner-guide.md",
 		"docs/README.md",
-		"docs/roadmap/archive/54-vendor-service-boundary.md",
+		"docs/reference/decisions/0002-vendorservice-callback-boundary.md",
+		"docs/roadmap/history.md",
 		"docs/roadmap/README.md",
 	}
 	for _, name := range files {

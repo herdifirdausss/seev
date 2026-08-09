@@ -257,7 +257,7 @@ func TestExceptionalHTTPRepresentationsAreExplicit(t *testing.T) {
 	}
 }
 
-func TestApprovedBreakingChangesAreExplicitAndPlanLinked(t *testing.T) {
+func TestApprovedBreakingChangesAreExplicitAndDecisionLinked(t *testing.T) {
 	body, err := os.ReadFile("approved-breaking.yaml")
 	if err != nil {
 		t.Fatal(err)
@@ -270,7 +270,7 @@ func TestApprovedBreakingChangesAreExplicitAndPlanLinked(t *testing.T) {
 			Predecessor string `yaml:"predecessor_operation_id"`
 			Successor   string `yaml:"successor_operation_id"`
 			Reason      string `yaml:"reason"`
-			Plan        string `yaml:"plan"`
+			Decision    string `yaml:"decision"`
 		} `yaml:"changes"`
 	}
 	if err := yaml.Unmarshal(body, &file); err != nil {
@@ -280,10 +280,10 @@ func TestApprovedBreakingChangesAreExplicitAndPlanLinked(t *testing.T) {
 		t.Fatalf("expected one schema-version 1 approved cutover, got %#v", file)
 	}
 	change := file.Changes[0]
-	if change.Method != "POST" || change.Path != "/webhooks/{vendor}" || change.Predecessor == change.Successor || change.Reason == "" || change.Plan == "" {
+	if change.Method != "POST" || change.Path != "/webhooks/{vendor}" || change.Predecessor == change.Successor || change.Reason == "" || change.Decision == "" {
 		t.Fatalf("incomplete approved cutover: %#v", change)
 	}
-	if _, err := os.Stat(filepath.Join("..", "..", filepath.FromSlash(change.Plan))); err != nil {
-		t.Fatalf("approved cutover points to missing plan %s: %v", change.Plan, err)
+	if _, err := os.Stat(filepath.Join("..", "..", filepath.FromSlash(change.Decision))); err != nil {
+		t.Fatalf("approved cutover points to missing decision %s: %v", change.Decision, err)
 	}
 }

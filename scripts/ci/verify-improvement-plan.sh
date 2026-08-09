@@ -1,27 +1,26 @@
 #!/usr/bin/env bash
-# Repository-local closure gate for the world-class engineering plan.
+# Repository-local gate for the current engineering and release evidence set.
 set -euo pipefail
 
 root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 required=(
-	docs/engineering/improvement-plan-tracker.md
 	docs/engineering/capability-inventory.md
-	docs/engineering/risk-register.md
 	docs/engineering/golden-route.md
-	docs/engineering/golden-route-failure-matrix.md
-	docs/engineering/production-readiness-scorecard.md
-	docs/acceptance/p0-p1-risk-gate.md
-	docs/engineering/p3-decision-register.md
-	docs/acceptance/critical-failures.md
+	docs/engineering/service-justification.md
+	docs/operations/runtime-acceptance.md
 	docs/operations/production-readiness-checklist.md
 	docs/operations/slo.md
 	docs/operations/backup-restore-evidence.md
 	docs/deployment/environment-contract.md
 	docs/deployment/vendor-sandbox.md
+	docs/security/controls.md
+	docs/security/risk-register.md
+	docs/security/p0-p1-risk-gate.md
 	docs/security/supply-chain.md
-	docs/acceptance/supply-chain.md
 	docs/security/independent-review-scope.md
-	docs/acceptance/independent-security-review.md
+	docs/security/independent-security-review.md
+	docs/roadmap/active/README.md
+	docs/roadmap/history.md
 	.github/roadmap/metadata.yml
 	scripts/ci/check-environment-contract.sh
 	scripts/ci/check-vendor-sandbox-config.sh
@@ -45,18 +44,8 @@ for path in "${required[@]}"; do
 	fi
 done
 
-if command -v rg >/dev/null 2>&1; then
-	_tracker_grep() { rg -n 'TODO|TBD|UNKNOWN' "$1"; }
-else
-	_tracker_grep() { grep -nE 'TODO|TBD|UNKNOWN' "$1"; }
-fi
-if _tracker_grep "$root_dir/docs/engineering/improvement-plan-tracker.md"; then
-	printf '::error::tracker contains unresolved placeholder text\n' >&2
-	missing=1
-fi
-
 if (( missing != 0 )); then
 	exit 1
 fi
 "$root_dir/scripts/ci/check-capability-inventory.sh"
-printf 'verify-improvement-plan: repository implementation and evidence index are present\n'
+printf 'verify-improvement-plan: current engineering, runtime, security, roadmap, and release evidence indexes are present\n'

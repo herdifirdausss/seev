@@ -1,14 +1,22 @@
 #!/usr/bin/env bash
-# Shared bootstrap/assertion library for this repo's Bash test scripts
-# (scripts/chaos-test.sh, scripts/smoke-test.sh). Sourced, never executed
-# directly — every function here builds/starts a real server against a
-# real docker-compose Postgres/Redis/RabbitMQ stack, so both scripts get
-# identical, single-source-of-truth setup instead of drifting copies.
+# Compatibility aggregator — sources the focused library files in scripts/lib/
+# and retains any implementation not yet extracted (P1.5 incremental migration).
+#
+# Callers source this file unchanged. The split libraries can also be sourced
+# individually by scripts that need only a subset of functionality.
 #
 # A caller sources this AFTER setting ROOT_DIR (cd there first) and BEFORE
 # using any function below. Callers are expected to `trap cleanup EXIT`
-# themselves right after sourcing, so each script controls its own
-# lifecycle (the library doesn't install the trap for you).
+# themselves right after sourcing.
+
+# ─── Source focused libraries (P1.5) ─────────────────────────────────────────
+# shellcheck source=scripts/lib/backup.sh
+# (backup.sh is sourced by individual scripts that need pgBackRest helpers,
+#  not here — it requires caller-provided IMAGE/REPO_HOST_PATH variables.)
+
+# The library files below are sourced after the config block below so that
+# the config defaults are available to any library that reads them at source
+# time. Actual source directives are at the end of the config/workdir block.
 
 # ─── Config (overridable by the caller before sourcing) ────────────────────
 
@@ -192,105 +200,40 @@ PAYOUT2_PID_FILE="$WORK_DIR/payout-service-2.pid"
 # actually mapped.
 DB_HOST_PORT=""
 
-log()  { printf '\033[1;34m[%s]\033[0m %s\n' "${LIB_LOG_TAG:-lib}" "$*"; }
-ok()   { printf '\033[1;32m[ pass]\033[0m %s\n' "$*"; }
-fail() { printf '\033[1;31m[ FAIL]\033[0m %s\n' "$*"; FAILED=1; }
-
-FAILED=0
+# ─── Source focused libraries (P1.5) ─────────────────────────────────────────
+# shellcheck source=scripts/lib/core.sh
+source "${ROOT_DIR}/scripts/lib/core.sh"
+# shellcheck source=scripts/lib/compose.sh
+source "${ROOT_DIR}/scripts/lib/compose.sh"
+# shellcheck source=scripts/lib/postgres.sh
+source "${ROOT_DIR}/scripts/lib/postgres.sh"
+# shellcheck source=scripts/lib/migrations.sh
+source "${ROOT_DIR}/scripts/lib/migrations.sh"
+# shellcheck source=scripts/lib/http.sh
+source "${ROOT_DIR}/scripts/lib/http.sh"
+# shellcheck source=scripts/lib/fixtures.sh
+source "${ROOT_DIR}/scripts/lib/fixtures.sh"
+# shellcheck source=scripts/lib/assertions.sh
+source "${ROOT_DIR}/scripts/lib/assertions.sh"
+# services.sh and certs.sh remain stubs; implementations stay in lib.sh below.
 
 log "work dir: $WORK_DIR (binaries + *.log; KEEP_WORK_DIR=1 preserves it past exit for postmortem)"
 
 # ─── Docker / Postgres bootstrap ────────────────────────────────────────────
+# NOTE: resolve_compose_containers, wait_for_container_healthy,
+# wait_for_container_restart are now in scripts/lib/compose.sh (sourced above).
+# psql_exec, detect_db_port, wait_for_redis_reachable, ensure_service_dbs,
+# ensure_app_role are now in scripts/lib/postgres.sh (sourced above).
+# _apply_service_migrations, apply_migrations are in scripts/lib/migrations.sh.
+# json_field, json_get, json_get_required, curl_internal are in lib/http.sh.
+# Fixture/async helpers are in scripts/lib/fixtures.sh.
+# Assertion helpers are in scripts/lib/assertions.sh.
 
-resolve_compose_containers() {
-	local resolved
-	if [ "$POSTGRES_CONTAINER_EXPLICIT" -eq 0 ]; then
-		resolved="$(docker compose ps -q postgres 2>/dev/null || true)"
-		[ -n "$resolved" ] && POSTGRES_CONTAINER="$resolved"
-	fi
-	if [ "$REDIS_CONTAINER_EXPLICIT" -eq 0 ]; then
-		resolved="$(docker compose ps -q redis 2>/dev/null || true)"
-		[ -n "$resolved" ] && REDIS_CONTAINER="$resolved"
-	fi
-	if [ "$RABBITMQ_CONTAINER_EXPLICIT" -eq 0 ]; then
-		resolved="$(docker compose ps -q rabbitmq 2>/dev/null || true)"
-		[ -n "$resolved" ] && RABBITMQ_CONTAINER="$resolved"
-	fi
-}
-
-detect_db_port() {
-	DB_HOST_PORT="$(docker port "$POSTGRES_CONTAINER" 5432/tcp 2>/dev/null | head -1 | cut -d: -f2)"
-	if [ -z "$DB_HOST_PORT" ]; then
-		fail "could not detect host port for $POSTGRES_CONTAINER — is docker-compose up?"
-		exit 1
-	fi
-	log "detected Postgres host port: $DB_HOST_PORT"
-}
-
-psql_exec() {
-	local database="$DB_NAME"
-	if [ "$#" -gt 0 ] && [[ "$1" != -* ]]; then
-		database=$1
-		shift
-	fi
-	docker exec -i "$POSTGRES_CONTAINER" psql -U "$DB_USER" -d "$database" -v ON_ERROR_STOP=1 -t -A "$@"
-}
-
-wait_for_container_healthy() {
-	local container=$1 tries=30
-	while [ "$tries" -gt 0 ]; do
-		local status
-		status="$(docker inspect "$container" --format '{{.State.Health.Status}}' 2>/dev/null || echo "missing")"
-		[ "$status" = "healthy" ] && return 0
-		sleep 2
-		tries=$((tries - 1))
-	done
-	fail "$container did not become healthy in time"
-	return 1
-}
-
-# A container's healthcheck can become healthy before Docker's host-port
-# forwarding is accepting connections again after a stop/start cycle.  The
-# local runtime acceptance profile starts fail-fast services immediately after
-# dependency recovery, so confirm the actual host-side Redis contract too.
-wait_for_redis_reachable() {
-	local tries=60
-	while [ "$tries" -gt 0 ]; do
-		if redis-cli -h localhost -p "$REDIS_HOST_PORT" ping >/dev/null 2>&1; then
-			return 0
-		fi
-		sleep 0.5
-		tries=$((tries - 1))
-	done
-	fail "redis did not become reachable on localhost:$REDIS_HOST_PORT in time"
-	return 1
-}
-
-# Docker keeps a container's last healthy status briefly while an asynchronous
-# `docker restart` is still waiting to stop it. A caller that only waits for
-# `healthy` can therefore start the next service against a database that is
-# already on its way down. Require an observable unhealthy/restarting state
-# before waiting for the real post-restart healthy state.
-wait_for_container_restart() {
-	local container=$1 tries=60 transitioned=0
-	while [ "$tries" -gt 0 ]; do
-		local status
-		status="$(docker inspect "$container" --format '{{.State.Health.Status}}' 2>/dev/null || echo "missing")"
-		if [ "$status" != "healthy" ]; then
-			transitioned=1
-			break
-		fi
-		sleep 0.2
-		tries=$((tries - 1))
-	done
-	if [ "$transitioned" -ne 1 ]; then
-		fail "$container restart did not leave the healthy state"
-		return 1
-	fi
-	wait_for_container_healthy "$container"
-}
+# detect_db_port, psql_exec, wait_for_container_healthy, wait_for_redis_reachable,
+# wait_for_container_restart → now in scripts/lib/postgres.sh and compose.sh (sourced above).
 
 ensure_deps_up() {
+	assert_test_harness_environment
 	log "ensuring postgres/redis/rabbitmq are up..."
 	docker compose up -d postgres redis rabbitmq >/dev/null 2>&1
 	# Resolve the containers from the active Compose project. The full gate uses
@@ -306,107 +249,8 @@ ensure_deps_up() {
 	apply_migrations
 }
 
-# ensure_service_dbs mirrors scripts/postgres-init/02-service-dbs.sh for
-# existing Docker volumes, where entrypoint init scripts no longer run.
-ensure_service_dbs() {
-	local service database role exists
-	for service in ledger auth payin payout fraud gateway adminbff assurance vendor; do
-		database="seev_${service}"
-		role="${service}_app"
-		exists="$(docker exec -i "$POSTGRES_CONTAINER" psql -U "$DB_USER" -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname = '$database'")"
-		if [ "$exists" != "1" ]; then
-			docker exec -i "$POSTGRES_CONTAINER" createdb -U "$DB_USER" "$database"
-		fi
-		docker exec -i "$POSTGRES_CONTAINER" psql -U "$DB_USER" -d postgres -v ON_ERROR_STOP=1 <<-SQL >/dev/null
-			DO \$\$
-			BEGIN
-			    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '$role') THEN
-			        EXECUTE format('CREATE ROLE %I LOGIN PASSWORD %L', '$role', '$role');
-			    END IF;
-			END
-			\$\$;
-		SQL
-	done
-}
-
-apply_migrations() {
-	log "applying migrations (idempotent — CREATE TABLE IF... guards not present, so this is a no-op error we suppress if already applied)..."
-	# Ledger must run first because migration 000009 creates the shared
-	# app_service/app_readonly roles referenced by the other service SQL.
-	for f in services/ledger/migrations/*.up.sql; do
-		docker exec -i "$POSTGRES_CONTAINER" psql -U "$DB_USER" -d "$LEDGER_DB_NAME" -v ON_ERROR_STOP=0 <"$f" >/dev/null 2>&1 || true
-	done
-	for f in services/auth/migrations/*.up.sql; do
-		docker exec -i "$POSTGRES_CONTAINER" psql -U "$DB_USER" -d "$AUTH_DB_NAME" -v ON_ERROR_STOP=0 <"$f" >/dev/null 2>&1 || true
-	done
-	for f in services/payin/migrations/*.up.sql; do
-		docker exec -i "$POSTGRES_CONTAINER" psql -U "$DB_USER" -d "$PAYIN_DB_NAME" -v ON_ERROR_STOP=0 <"$f" >/dev/null 2>&1 || true
-	done
-	for f in services/payout/migrations/*.up.sql; do
-		docker exec -i "$POSTGRES_CONTAINER" psql -U "$DB_USER" -d "$PAYOUT_DB_NAME" -v ON_ERROR_STOP=0 <"$f" >/dev/null 2>&1 || true
-	done
-	for f in services/fraud/migrations/*.up.sql; do
-		docker exec -i "$POSTGRES_CONTAINER" psql -U "$DB_USER" -d "$FRAUD_DB_NAME" -v ON_ERROR_STOP=0 <"$f" >/dev/null 2>&1 || true
-	done
-	for f in services/gateway/migrations/*.up.sql; do
-		docker exec -i "$POSTGRES_CONTAINER" psql -U "$DB_USER" -d "$GATEWAY_DB_NAME" -v ON_ERROR_STOP=0 <"$f" >/dev/null 2>&1 || true
-	done
-	for f in services/adminbff/migrations/*.up.sql; do
-		docker exec -i "$POSTGRES_CONTAINER" psql -U "$DB_USER" -d "$ADMINBFF_DB_NAME" -v ON_ERROR_STOP=0 <"$f" >/dev/null 2>&1 || true
-	done
-	for f in services/assurance/migrations/*.up.sql; do
-		docker exec -i "$POSTGRES_CONTAINER" psql -U "$DB_USER" -d "$ASSURANCE_DB_NAME" -v ON_ERROR_STOP=0 <"$f" >/dev/null 2>&1 || true
-	done
-	for f in services/vendor-service/migrations/*.up.sql; do
-		docker exec -i "$POSTGRES_CONTAINER" psql -U "$DB_USER" -d "$VENDOR_DB_NAME" -v ON_ERROR_STOP=0 <"$f" >/dev/null 2>&1 || true
-	done
-	local service_dir
-	for service_dir in services/*/migrations; do
-		[ -d "$service_dir" ] || continue
-		[ "$service_dir" = "services/ledger/migrations" ] && continue
-		[ "$service_dir" = "services/auth/migrations" ] && continue
-		[ "$service_dir" = "services/payin/migrations" ] && continue
-		[ "$service_dir" = "services/payout/migrations" ] && continue
-		[ "$service_dir" = "services/fraud/migrations" ] && continue
-		[ "$service_dir" = "services/gateway/migrations" ] && continue
-		[ "$service_dir" = "services/adminbff/migrations" ] && continue
-		[ "$service_dir" = "services/assurance/migrations" ] && continue
-		[ "$service_dir" = "services/vendor-service/migrations" ] && continue
-		for f in "$service_dir"/*.up.sql; do
-			[ -f "$f" ] || continue
-			docker exec -i "$POSTGRES_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=0 <"$f" >/dev/null 2>&1 || true
-		done
-	done
-	ensure_app_role "$DB_NAME" seev_app seev_app
-	ensure_app_role "$LEDGER_DB_NAME" ledger_app ledger_app
-	ensure_app_role "$AUTH_DB_NAME" auth_app auth_app
-	ensure_app_role "$PAYIN_DB_NAME" payin_app payin_app
-	ensure_app_role "$PAYOUT_DB_NAME" payout_app payout_app
-	ensure_app_role "$FRAUD_DB_NAME" fraud_app fraud_app
-	ensure_app_role "$GATEWAY_DB_NAME" gateway_app gateway_app
-	ensure_app_role "$ADMINBFF_DB_NAME" adminbff_app adminbff_app
-	ensure_app_role "$ASSURANCE_DB_NAME" assurance_app assurance_app
-	ensure_app_role "$VENDOR_DB_NAME" vendor_app vendor_app
-}
-
-# ensure_app_role provisions the restricted login role the server actually
-# connects as (docs/roadmap/archive/16 Task T3) — the docker-compose postgres-init
-# script only runs on a container's FIRST boot, which a script reusing an
-# existing volume can't assume, so this is the idempotent belt-and-suspenders
-# version run every time.
-ensure_app_role() {
-	local database=$1 role=$2 password=$3
-	docker exec -i "$POSTGRES_CONTAINER" psql -U "$DB_USER" -d "$database" -v ON_ERROR_STOP=1 <<-SQL >/dev/null
-		DO \$\$
-		BEGIN
-		    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '$role') THEN
-		        CREATE ROLE $role LOGIN PASSWORD '$password';
-		    END IF;
-		END
-		\$\$;
-		GRANT app_service TO $role;
-	SQL
-}
+# ensure_service_dbs, ensure_app_role → scripts/lib/postgres.sh (sourced above)
+# _apply_service_migrations, apply_migrations → scripts/lib/migrations.sh (sourced above)
 
 # ─── Server lifecycle ───────────────────────────────────────────────────────
 
@@ -879,35 +723,7 @@ start_adminbff_service() {
 	wait_for_service_up admin-bff-service "https://localhost:$ADMINBFF_PORT/health" "$ADMINBFF_PID_FILE" "$ADMINBFF_LOG"
 }
 
-# docs/roadmap/archive/49 K6: every internal/admin listener now requires mTLS, so any
-# curl targeting one must present the dev-operator client identity — the
-# same identity a real operator's manual curl/browser session would use.
-# A drop-in wrapper rather than touching every call site's URL string:
-# rewrites http:// to https:// anywhere in the arguments before delegating
-# to real curl, so callers only need their `curl` renamed to
-# `curl_internal`, nothing else. Public endpoints (gateway/auth's edge)
-# must never be routed through this — they stay on plain curl.
-#
-# -k/--insecure is required, not optional: this repo's certs carry ONLY a
-# URI SAN (spiffe://seev/<service>, docs/roadmap/archive/49 K3/K4), never a DNS SAN —
-# internal/platform/security/tls's Go clients handle that via a custom VerifyConnection hook
-# (InsecureSkipVerify + manual chain verification + URI SAN check), but
-# curl exposes no equivalent "verify the chain, skip hostname matching"
-# knob — only all-or-nothing. --cacert/--cert/--key above still present a
-# real client identity and the SERVER still enforces its allowlist; this
-# harness simply doesn't verify the server's identity back, which is an
-# acceptable, deliberately scoped gap for local dev/test tooling — never
-# how two Go services actually talk to each other in this repo.
-curl_internal() {
-	local args=() arg
-	for arg in "$@"; do
-		case "$arg" in
-		http://*) args+=("https://${arg#http://}") ;;
-		*) args+=("$arg") ;;
-		esac
-	done
-	curl -k --cacert "$CERT_DIR/ca.pem" --cert "$CERT_DIR/dev-operator.pem" --key "$CERT_DIR/dev-operator-key.pem" "${args[@]}"
-}
+# curl_internal → scripts/lib/http.sh (sourced above)
 
 wait_for_service_up() {
 	local name=$1 url=$2 pid_file=$3 log_file=$4
@@ -1156,295 +972,11 @@ provision_user() {
 	psql_exec "$LEDGER_DB_NAME" -c "SELECT id FROM accounts WHERE owner_id = '$user_id' AND type = 'cash' LIMIT 1;"
 }
 
-# provision_hold_account additionally provisions the 'hold' account
-# withdraw_initiate/withdraw_settle/withdraw_cancel (and payout, which posts
-# those under the hood) require — provision_user alone (cash only) is not
-# enough for any withdraw_* flow.
-provision_hold_account() {
-	local user_id=$1
-	psql_exec "$LEDGER_DB_NAME" -c "
-		INSERT INTO accounts (id, owner_id, owner_type, type, currency, status, created_by)
-		VALUES (gen_random_uuid(), '$user_id', 'user', 'hold', 'IDR', 'active', 'script_test')
-		ON CONFLICT DO NOTHING;" >/dev/null
-	psql_exec "$LEDGER_DB_NAME" -c "
-		INSERT INTO account_balances (account_id)
-		SELECT id FROM accounts WHERE owner_id = '$user_id' AND type = 'hold'
-		ON CONFLICT DO NOTHING;" >/dev/null
-}
-
-# fund_user credits a fresh user's cash account via a real money_in
-# transaction on the INTERNAL router (settlement[bca] -> user.cash), so the
-# funding itself stays part of the double-entry ledger and doesn't trip
-# v_account_balance_audit the way a raw `UPDATE account_balances` would.
-# money_in credits whoever's JWT `sub` claim is on the request, NOT any
-# target_user_id in the body (services/ledger/internal/processors/money_in.go) — so
-# this mints a token for user_id itself, not the caller/service identity.
-# Repeated runs against a reused development volume top up only the delta to
-# the requested target. The delta uses its own idempotency key, so the helper
-# remains safe if a process is interrupted after the ledger post.
-fund_user() {
-	local user_id=$1
-	local amount=${2:-1000000}
-	local cash current delta
-	cash="$(cash_account_id "$user_id")"
-	current="$(account_balance "$cash")"
-	if ! [[ "$current" =~ ^[0-9]+$ ]]; then
-		current=0
-	fi
-	delta=$((amount - current))
-	if [ "$delta" -le 0 ]; then
-		return 0
-	fi
-	local fund_token
-	fund_token="$(gen_token "$user_id")"
-	curl_internal -s -o /dev/null -X POST "http://localhost:$LEDGER_INTERNAL_PORT/api/v1/ledger/transactions" \
-		-H "Authorization: Bearer $fund_token" -H "Content-Type: application/json" \
-		-d "{\"idempotency_key\":\"fund-$user_id-$delta\",\"type\":\"money_in\",\"amount\":\"$delta\",\"metadata\":{\"gateway\":\"bca\"}}"
-}
-
-cash_account_id() {
-	psql_exec "$LEDGER_DB_NAME" -c "SELECT id FROM accounts WHERE owner_id = '$1' AND type = 'cash' LIMIT 1;"
-}
-
-account_balance() {
-	psql_exec "$LEDGER_DB_NAME" -c "SELECT balance FROM account_balances WHERE account_id = '$1';"
-}
-
-# ─── HTTP response helpers ───────────────────────────────────────────────────
-
-# json_field extracts "key":"value" (string fields only) from a JSON blob
-# read on stdin — good enough for this repo's flat response shapes, avoids
-# a jq dependency. Shared by every script that curls the JSON API. Tolerates
-# optional whitespace after the colon (found live, Plan 57 T10's
-# merchant-e2e.sh): an idempotent-replayed response is stored/re-read
-# through a Postgres JSONB column, which reformats with a space after every
-# colon ({"id": "x"}) — cosmetically different from the ORIGINAL compact
-# json.Marshal bytes ({"id":"x"}) a fresh (non-replayed) response has, even
-# though both are the identical JSON value.
-json_field() {
-	sed -n "s/.*\"$1\": *\"\([^\"]*\)\".*/\1/p"
-}
-
-# wait_for_payout_status polls payout_requests.status until it matches want
-# or tries (default 40, 2s apart = 80s) are exhausted (docs/roadmap/archive/45 Task T1,
-# K1's own admitted API-behavior change): POST /api/v1/payout now returns
-# right after hold+enqueue — the vendor result (settled/vendor_pending/
-# cancelled/failed) is always driven asynchronously by the relay's own
-# ~1s poll interval, even in what used to be called "instant-settle" mode.
-# Every script that used to read the terminal status straight off the
-# create response body must poll this instead. Shared by chaos-test.sh and
-# business-e2e.sh — do not duplicate this loop in either script.
-wait_for_payout_status() {
-	local id=$1 want=$2 tries=${3:-40}
-	local status=""
-	while [ "$tries" -gt 0 ]; do
-		status="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT status FROM payout_requests WHERE id = '$id';")"
-		[ "$status" = "$want" ] && return 0
-		sleep 2
-		tries=$((tries - 1))
-	done
-	fail "payout $id did not reach status '$want' in time (last seen: '$status')"
-	return 1
-}
-
-# wait_for_vendor_call polls payout_vendor_calls until at least one row with
-# the given outcome ('accepted'|'rejected'|'uncertain') has been recorded
-# for id, or tries (default 40, 1s apart) are exhausted. docs/roadmap/archive/45 Task
-# T1: dispatch is now async (the relay's own ~1s poll interval), so a test
-# that needs to prove "the vendor was genuinely called and returned X"
-# before taking its next step (e.g. rewriting a mock destination to let a
-# retry succeed) must wait for this evidence instead of assuming the vendor
-# call already happened synchronously inside an earlier curl.
-wait_for_vendor_call() {
-	local id=$1 outcome=$2 tries=${3:-40}
-	local count="0"
-	while [ "$tries" -gt 0 ]; do
-		count="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT count(*) FROM payout_vendor_calls WHERE payout_request_id = '$id' AND outcome = '$outcome';")"
-		[ "$count" != "0" ] && return 0
-		sleep 1
-		tries=$((tries - 1))
-	done
-	fail "payout $id never recorded a vendor call with outcome '$outcome' (last count: $count)"
-	return 1
-}
-
-# wait_for_vendor_command_status polls the LIVE (pending/processing/failed)
-# payout_vendor_commands row for a request until its status matches want, or
-# tries (default 40, 1s apart) are exhausted. docs/roadmap/archive/45 Task T1: used
-# when a test needs to know a command has fully finished a dispatch attempt
-# (i.e. FailCommand/CompleteCommand has actually committed) before mutating
-# state the relay itself also touches — waiting on payout_vendor_calls alone
-# (wait_for_vendor_call) only proves the audit write landed, which commits
-# slightly BEFORE the command's own status transition in the same dispatch.
-wait_for_vendor_command_status() {
-	local id=$1 want=$2 tries=${3:-40}
-	local status=""
-	while [ "$tries" -gt 0 ]; do
-		status="$(psql_exec "$PAYOUT_DB_NAME" -c "SELECT status FROM payout_vendor_commands WHERE payout_request_id = '$id' AND status IN ('pending','processing','failed') LIMIT 1;")"
-		[ "$status" = "$want" ] && return 0
-		sleep 1
-		tries=$((tries - 1))
-	done
-	fail "payout $id's live vendor command did not reach status '$want' in time (last seen: '$status')"
-	return 1
-}
-
-# ─── KYC dance helpers (docs/roadmap/archive/39 Task T6, gotcha #9 master) ─────────────
-#
-# Every script that transacts as a REAL registered user (not a gen_token
-# fixture — see gen_token's own doc comment for why gentoken users don't
-# need this) must clear the KYC gate before it can post to a gated route
-# (POST /topup, POST /payout, POST /api/v1/ledger/transactions*), or every
-# one of them now 403s KYC_REQUIRED. This is the ONE place that dance lives.
-
-# kyc_approve_l1 submits an L1 KYC request against a REAL auth-service user
-# (auth_port's public listener) — the mock provider auto-approves L1 when no
-# mock_mode is given — then refreshes to obtain a NEW token pair carrying
-# the updated kyc_level claim (the claim only refreshes on login/refresh,
-# docs/roadmap/archive/39 Task T4, so the caller's OLD access token stays stuck at
-# whatever level it was minted with). Echoes the RAW refresh response JSON
-# to stdout — refresh tokens rotate (single-use), so the caller MUST
-# extract and keep the NEW refresh_token too (json_field refresh_token), or
-# a second dance later (e.g. kyc_submit_l2_and_admin_approve) will fail
-# replaying an already-revoked token.
-kyc_approve_l1() {
-	local auth_port=$1 access_token=$2 refresh_token=$3
-	curl -s -o /dev/null -X POST "http://localhost:$auth_port/api/v1/users/me/kyc" \
-		-H "Authorization: Bearer $access_token" -H "Content-Type: application/json" \
-		-d '{"level_requested":1}'
-	curl -s -X POST "http://localhost:$auth_port/api/v1/auth/refresh" \
-		-H "Content-Type: application/json" -d "{\"refresh_token\":\"$refresh_token\"}"
-}
-
-# kyc_submit_l2_and_admin_approve submits L2 (the mock provider ALWAYS
-# refers L2 to manual review, regardless of mock_mode — docs/roadmap/archive/39's own
-# locked decision), approves it with an admin token against auth's INTERNAL
-# listener (auth_internal_port), then refreshes. Echoes the RAW refresh
-# response JSON to stdout — same rotating-refresh-token caveat as
-# kyc_approve_l1 above.
-kyc_submit_l2_and_admin_approve() {
-	local auth_port=$1 auth_internal_port=$2 admin_token=$3 access_token=$4 refresh_token=$5
-	local submit_resp submission_id
-	submit_resp="$(curl -s -X POST "http://localhost:$auth_port/api/v1/users/me/kyc" \
-		-H "Authorization: Bearer $access_token" -H "Content-Type: application/json" \
-		-d '{"level_requested":2}')"
-	submission_id="$(echo "$submit_resp" | json_field id)"
-	curl_internal -s -o /dev/null -X POST "http://localhost:$auth_internal_port/api/v1/admin/kyc/submissions/$submission_id/approve" \
-		-H "Authorization: Bearer $admin_token" -H "Content-Type: application/json"
-	curl -s -X POST "http://localhost:$auth_port/api/v1/auth/refresh" \
-		-H "Content-Type: application/json" -d "{\"refresh_token\":\"$refresh_token\"}"
-}
-
-# await_notification polls GET /api/v1/notifications (on the gateway,
-# $APP_PORT) for token until a notification with the given title substring
-# appears, or fails after ~10s — the outbox relay -> RabbitMQ ->
-# services/gateway/internal/notification consumer path is asynchronous, so this can't be a single
-# immediate curl+grep like most other assertions in these scripts.
-await_notification() {
-	local token=$1 title=$2 tries=20
-	while [ "$tries" -gt 0 ]; do
-		local resp
-		resp="$(curl -s "http://localhost:$APP_PORT/api/v1/notifications" -H "Authorization: Bearer $token")"
-		if echo "$resp" | grep -q "\"title\":\"$title\""; then
-			ok "notification \"$title\" delivered"
-			return 0
-		fi
-		sleep 0.5
-		tries=$((tries - 1))
-	done
-	fail "notification \"$title\" never appeared within timeout"
-	return 1
-}
-
-# await_log_line polls a log file for pattern until it appears, or fails
-# after ~10s — same rationale as await_notification: any consumer fed via
-# the outbox relay -> RabbitMQ hop (e.g. fraud-service's velocity consumer)
-# processes asynchronously, so a single immediate grep can flake on a slow
-# CI box even though the message eventually arrives.
-await_log_line() {
-	local logfile=$1 pattern=$2 description=$3 tries=20
-	while [ "$tries" -gt 0 ]; do
-		grep -q "$pattern" "$logfile" 2>/dev/null && { ok "$description"; return 0; }
-		sleep 0.5
-		tries=$((tries - 1))
-	done
-	fail "$description — pattern '$pattern' never appeared in $logfile within timeout"
-	return 1
-}
-
-# ─── Prometheus metric assertions ───────────────────────────────────────────
-
-# assert_metric_value curls a /metrics endpoint and asserts a Prometheus
-# gauge/counter's CURRENT value for a line matching every given "label=value"
-# substring (docs/roadmap/archive/45 Task T4 — cache_redis_backend_active,
-# vendorgw_breaker_backend). Label order in the exposition text is never
-# assumed (client_golang doesn't guarantee it), so each label is checked as
-# an independent substring on the already-narrowed-down line rather than a
-# single fixed-order regex. Reports ok/fail itself (same convention as
-# assert_ledger_balanced below) so callers just call it inline.
-assert_metric_value() {
-	local url=$1 metric=$2 expected=$3 desc=$4
-	shift 4
-	local matches="" label value
-	local fetch=curl
-	case "$url" in
-	https://*) fetch=curl_internal ;;
-	esac
-	matches="$("$fetch" -s "$url" | grep "^${metric}{")"
-	for label in "$@"; do
-		matches="$(printf '%s\n' "$matches" | grep -F -- "$label")"
-	done
-	value="$(printf '%s\n' "$matches" | head -1 | awk '{print $2}')"
-	if [ "$value" = "$expected" ]; then
-		ok "$desc"
-	else
-		fail "$desc — got '$value', expected '$expected' (metric=$metric labels=[$*] url=$url)"
-	fi
-}
-
-# ─── Ledger integrity assertions ────────────────────────────────────────────
-
-# assert_ledger_balanced fails if fn_verify_ledger_balance() finds ANY
-# unbalanced transaction across all of history — the single most important
-# assertion in every script that uses this library.
-assert_ledger_balanced() {
-	local rows
-	rows="$(psql_exec "$LEDGER_DB_NAME" -c "SELECT count(*) FROM fn_verify_ledger_balance('-infinity','infinity');" | tr -d '[:space:]')"
-	if [ "$rows" = "0" ]; then
-		ok "fn_verify_ledger_balance() found 0 unbalanced transactions"
-	else
-		fail "fn_verify_ledger_balance() found $rows unbalanced transaction(s) — MONEY LOST OR CREATED"
-		psql_exec "$LEDGER_DB_NAME" -c "SELECT * FROM fn_verify_ledger_balance('-infinity','infinity');"
-	fi
-}
-
-# assert_no_inconsistent_projections fails if any account's stored balance
-# disagrees with the balance computed from its ledger_entries.
-assert_no_inconsistent_projections() {
-	local rows
-	rows="$(psql_exec "$LEDGER_DB_NAME" -c "SELECT count(*) FROM v_account_balance_audit WHERE is_consistent = false;" | tr -d '[:space:]')"
-	if [ "$rows" = "0" ]; then
-		ok "v_account_balance_audit: all accounts consistent"
-	else
-		fail "v_account_balance_audit found $rows inconsistent account(s)"
-		psql_exec "$LEDGER_DB_NAME" -c "SELECT * FROM v_account_balance_audit WHERE is_consistent = false;"
-	fi
-}
-
-# assert_no_stuck_pending_transactions fails if any ledger_transactions row
-# is still 'pending' — execTransfer always marks posted/failed in the same
-# DB transaction as building the entries, so a lingering 'pending' row means
-# a partial write escaped that guarantee.
-assert_no_stuck_pending_transactions() {
-	local rows
-	rows="$(psql_exec "$LEDGER_DB_NAME" -c "SELECT count(*) FROM ledger_transactions WHERE status = 'pending';" | tr -d '[:space:]')"
-	if [ "$rows" = "0" ]; then
-		ok "no ledger_transactions stuck in 'pending' (no partial writes)"
-	else
-		fail "$rows ledger_transactions stuck in 'pending' — partial write detected"
-		psql_exec "$LEDGER_DB_NAME" -c "SELECT id, type, status, created_at FROM ledger_transactions WHERE status = 'pending';"
-	fi
-}
+# provision_hold_account / fund_user / cash_account_id / account_balance → scripts/lib/fixtures.sh (sourced above)
+# json_field / json_get / json_get_required / assert_http_status → scripts/lib/http.sh (sourced above)
+# wait_for_payout_status / wait_for_vendor_call / wait_for_vendor_command_status → scripts/lib/fixtures.sh (sourced above)
+# kyc_approve_l1 / kyc_submit_l2_and_admin_approve / await_notification / await_log_line → scripts/lib/fixtures.sh (sourced above)
+# assert_metric_value / assert_ledger_balanced / assert_no_inconsistent_projections / assert_no_stuck_pending_transactions → scripts/lib/assertions.sh (sourced above)
 
 # cleanup always stops every service (never leak a process past the
 # script's own exit), but only deletes WORK_DIR (binaries + *.log) when

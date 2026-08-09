@@ -13,6 +13,9 @@ Use these documents when you are ready to inspect or change code.
 4. [Documentation style](documentation-style.md) defines audience layers,
    status labels, terminology, and review rules.
 
+5. [Golden route](golden-route.md) describes state machines, route assertions,
+   and failure modes for the complete money lifecycle.
+
 Read [CONTRIBUTING.md](../../CONTRIBUTING.md) before opening a pull request.
 Use the [reference index](../reference/README.md) for service details and the
 [roadmap](../roadmap/README.md) only when a change depends on a planned design.

@@ -3,13 +3,13 @@
 set -euo pipefail
 
 root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-risk_register="$root_dir/docs/engineering/risk-register.md"
-scorecard="$root_dir/docs/engineering/production-readiness-scorecard.md"
-packet="$root_dir/docs/acceptance/p0-p1-risk-gate.md"
+risk_register="$root_dir/docs/security/risk-register.md"
+checklist="$root_dir/docs/operations/production-readiness-checklist.md"
+packet="$root_dir/docs/security/p0-p1-risk-gate.md"
 
 required_files=(
 	"$risk_register"
-	"$scorecard"
+	"$checklist"
 	"$packet"
 )
 
@@ -53,17 +53,17 @@ for risk_id in "${risk_ids[@]}"; do
 	done
 done
 
-scorecard_patterns=(
-	'Security | no open P0/P1 security risk'
-	'## Release blockers'
-	'any open P0 correctness/security risk'
-	'external evidence row still marked `evidence_required`'
-	'release owner records the final decision, timestamp, commit, environment,'
-	'approvers, and links to the evidence bundle.'
+checklist_patterns=(
+	'## Security'
+	'## Capacity and release'
+	'No unresolved P0/P1 correctness or security risk remains'
+	'Product owner, engineering owner, operations owner, and security owner approve'
+	'## Decision'
+	'`GO / NO-GO`'
 )
-for pattern in "${scorecard_patterns[@]}"; do
-	if ! _rg_or_grep_fq "$pattern" "$scorecard"; then
-		printf '::error::risk-gate: scorecard is missing required gate text: %s\n' "$pattern" >&2
+for pattern in "${checklist_patterns[@]}"; do
+	if ! _rg_or_grep_fq "$pattern" "$checklist"; then
+		printf '::error::risk-gate: production-readiness checklist is missing required gate text: %s\n' "$pattern" >&2
 		exit 1
 	fi
 done
@@ -82,4 +82,4 @@ for pattern in "${packet_patterns[@]}"; do
 	fi
 done
 
-printf 'risk-gate-check: P0/P1 inventory, scorecard, and release-approval contract passed; live evidence remains release-scoped\n'
+printf 'risk-gate-check: P0/P1 inventory, production-readiness checklist, and release-approval contract passed; live evidence remains release-scoped\n'

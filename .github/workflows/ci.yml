@@ -23,6 +23,8 @@ env:
   # after re-verifying the new release + license per constraint #8.
   ACTIONLINT_VERSION: "1.7.12"
   SHELLCHECK_VERSION: "0.11.0"
+  # shfmt: BSD-3-Clause. Version bumps require re-verifying checksum below.
+  SHFMT_VERSION: "3.10.0"
 
 jobs:
   # ─── changes: docs-only classifier (docs/roadmap/archive/44 K3) ───────────────────────
@@ -142,11 +144,15 @@ jobs:
         run: go mod verify
 
       # Downloaded as a pinned release tarball, never `curl | sh` (K2).
-      - name: Install actionlint (pinned)
+      # SHA-256 verified against the release's checksums.txt before extraction
+      # (P2.5 — checksum-verify downloaded CI tool archives).
+      - name: Install actionlint (pinned, checksum-verified)
         run: |
           set -euo pipefail
           cd /tmp
           curl -sSLO "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          curl -sSLO "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_checksums.txt"
+          grep "actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz" "actionlint_${ACTIONLINT_VERSION}_checksums.txt" | sha256sum -c -
           tar xzf "actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz" actionlint
           install -m 0755 actionlint /usr/local/bin/actionlint
           actionlint -version
@@ -154,20 +160,50 @@ jobs:
       # ShellCheck 0.9.0 ships on the runner image already; pin the exact
       # release verified at T0 instead, so this check's behavior doesn't
       # silently drift with whatever the runner image happens to bundle.
-      - name: Install ShellCheck (pinned)
+      - name: Install ShellCheck (pinned, checksum-verified)
         run: |
           set -euo pipefail
           cd /tmp
-          curl -sSLO "https://github.com/koalaman/shellcheck/releases/download/v${SHELLCHECK_VERSION}/shellcheck-v${SHELLCHECK_VERSION}.linux.x86_64.tar.xz"
-          tar xJf "shellcheck-v${SHELLCHECK_VERSION}.linux.x86_64.tar.xz"
+          tarball="shellcheck-v${SHELLCHECK_VERSION}.linux.x86_64.tar.xz"
+          curl -sSLO "https://github.com/koalaman/shellcheck/releases/download/v${SHELLCHECK_VERSION}/${tarball}"
+          curl -sSLO "https://github.com/koalaman/shellcheck/releases/download/v${SHELLCHECK_VERSION}/sha256sum.txt"
+          grep "$tarball" sha256sum.txt | sha256sum -c -
+          tar xJf "$tarball"
           install -m 0755 "shellcheck-v${SHELLCHECK_VERSION}/shellcheck" /usr/local/bin/shellcheck
           shellcheck --version
+
+      # shfmt: format gate (P2.4). BSD-3-Clause.
+      # -d exits non-zero and shows a diff if any file is not formatted.
+      # -i 0 = tab indentation (matching this repo's shell style).
+      # -ci = indent switch-case bodies (consistent with existing style).
+      - name: Install shfmt (pinned, checksum-verified)
+        run: |
+          set -euo pipefail
+          cd /tmp
+          binary="shfmt_v${SHFMT_VERSION}_linux_amd64"
+          curl -sSLO "https://github.com/mvdan/sh/releases/download/v${SHFMT_VERSION}/${binary}"
+          curl -sSLO "https://github.com/mvdan/sh/releases/download/v${SHFMT_VERSION}/${binary}.sha256"
+          sha256sum -c "${binary}.sha256"
+          install -m 0755 "$binary" /usr/local/bin/shfmt
+          shfmt --version
 
       - name: actionlint
         run: actionlint -shellcheck "$(command -v shellcheck)"
 
-      - name: ShellCheck (scripts/**/*.sh, severity=error)
-        run: find scripts -name '*.sh' -print0 | xargs -0 shellcheck --severity=error
+      - name: ShellCheck (scripts/**/*.sh, severity=warning)
+        run: find scripts -name '*.sh' -print0 | xargs -0 shellcheck --severity=warning
+
+      - name: shfmt format gate (scripts/**/*.sh)
+        run: find scripts -name '*.sh' -print0 | xargs -0 shfmt -d -i 0 -ci
+
+      - name: Migration fail-closed regression test (P0.1)
+        run: bash scripts/ci/check-migration-fail-closed.sh
+
+      - name: Service inventory consistency (P0.2)
+        run: bash scripts/ci/check-service-inventory.sh
+
+      - name: Shell safety guard tests (P2.10)
+        run: bash scripts/ci/check-shell-safety-guards.sh
 
       - name: External action SHA-pin policy
         run: ./scripts/ci/check-action-pins.sh

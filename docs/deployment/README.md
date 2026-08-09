@@ -13,25 +13,20 @@ Before a cloud deployment, generate local certificates and runtime secrets with
 the existing Make targets, create Kubernetes Secrets from those files, and
 replace every learning-only value in `deploy/helm/seev/values-*.yaml`.
 
-Related evidence:
+Canonical deployment documents:
 
-- [K0 inventory evidence](../evidence/k0-deployment-inventory.md)
-- [K0 final acceptance](../evidence/k0/final-acceptance.md)
-- [K0 baseline](../evidence/k0/baseline.md)
-- [service and port matrix](service-port-matrix.md)
-- [dependency matrix](dependency-matrix.md)
-- [public route matrix](public-route-matrix.md)
-- [vendor network matrix](vendor-network-matrix.md)
+- [runtime contract](runtime-contract.md)
+- [environment contract](environment-contract.md)
+- [K1–K6 input contract](k1-input-contract.md)
+- [vendor sandbox contract](vendor-sandbox.md)
+- [machine-readable deployment inventory](../../deploy/inventory/)
 
 ## Plan 64 K0 deliverables
 
-The complete K0 set is split by concern:
-
-- [service runtime inventory](service-runtime-inventory.md), [port/protocol matrix](port-protocol-matrix.md), and [health/lifecycle matrix](health-lifecycle-matrix.md);
-- [public routes](public-route-matrix.md), [internal calls](internal-call-matrix.md), and [mTLS identities](mtls-identity-matrix.md);
-- [data ownership](data-ownership-matrix.md), [messaging](messaging-matrix.md), [storage volumes](storage-volume-matrix.md), and [background jobs](background-job-matrix.md);
-- [configuration](configuration-matrix.md), [secret/key handling](secret-key-matrix.md), and [vendor network](vendor-network-matrix.md);
-- [image runtime](image-runtime-matrix.md), [resource baseline](resource-baseline.md), [feature scope](feature-scope.md), [risk register](deployment-risk-register.md), and the [K1–K6 input contract](k1-input-contract.md).
+The generated [runtime contract](runtime-contract.md) consolidates the K0
+service, port, dependency, route, storage, configuration, secret, health,
+resource, and vendor-egress views. The [K1–K6 input contract](k1-input-contract.md)
+maps downstream tracks to their machine-readable inputs.
 
 Machine-readable contracts live in [deploy/inventory](../../deploy/inventory/).
 Reproduce the redacted inventory and validator with:

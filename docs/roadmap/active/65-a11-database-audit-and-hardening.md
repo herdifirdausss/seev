@@ -1,7 +1,41 @@
+---
+status: active
+plan_id: "65"
+owner: database
+last_reviewed: 2026-08-09
+generated: false
+---
+
 # Plan 65 · A11 — Database Audit and Hardening
 
+> **Status:** In progress — Rounds 1–2 fixed and verified; Round 3 documented, not yet fixed
+> **Owner:** database
+> **Last reviewed:** 2026-08-09
+> **Depends on:** Plan 53 · B0 (load baseline), Plan 49 · A6 (internal security)
+> **Current milestone:** Round 3 — implement and verify all open findings
+> **Next action:** Fix maker-checker gap in admin BFF disbursement endpoint (`isAdmin(r)` replacement); implement `disputes` service and maker-checker gate; close `ledger_entries` RLS gap
+> **Blocking issue:** none — Round 3 findings documented and ready to implement
+> **Runtime acceptance:** partial — Rounds 1–2 schema contracts pass; Round 3 contracts not yet written
+
+## Open Work (Round 3)
+
+- [ ] Replace `isAdmin(r)` with proper maker-checker in admin BFF disbursement flow
+- [ ] Implement `disputes` service (open-dispute queue, SLA enforcement, evidence submission)
+- [ ] Add maker-checker gate to `disbursement_batches` at the database level
+- [ ] Fix `ledger_entries` RLS to prevent write access for the app role
+- [ ] Close `vendor_retention_audit` retention gap identified in Round 2
+- [ ] Reconcile `freeze_confiscate` maker-checker with `disbursement_batches` pattern
+- [ ] Write Round 3 schema contract tests
+
+## Exit Criteria
+
+- All Round 3 findings fixed and verified by corresponding schema contract tests.
+- `go test -tags=integration ./...` passes clean against Round 3 migrations.
+- No open findings remain in the Round 3 section of this plan.
+
+---
+
 **Created:** 2026-08-01
-**Status:** In progress — Round 1 and Round 2 findings fixed and verified; Round 3 findings documented, not yet fixed
 **Track:** A11 — End-to-end database integrity, security, and business-completeness audit
 **Primary objective:** Find and close real gaps in schema safety, security posture, and business-process completeness across the whole database, through repeated, evidence-backed audit passes
 **Repository:** `herdifirdausss/seev`

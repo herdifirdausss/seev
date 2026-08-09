@@ -85,7 +85,7 @@ modern. It is useful only when its benefit justifies its cost.
 > owner-domain callbacks. Host, container, and business journeys exercise this
 > boundary; the manual chaos recovery gate remains pending as recorded in the
 > [operations status](../operations/README.md#standalone-drills-and-operator-tools--not-part-of-verify-full).
-> The historical boundary decisions are preserved in [archived Plan 54](../roadmap/archive/54-vendor-service-boundary.md).
+> The historical boundary decisions are preserved in [ADR 0002](decisions/0002-vendorservice-callback-boundary.md).
 
 ## Why authenticate a callback and still validate its business data?
 

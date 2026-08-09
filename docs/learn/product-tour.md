@@ -213,7 +213,7 @@ unimplemented, and VendorService requires strict owner-domain correlation and
 does not accept vendor-supplied user ownership. The normal path is covered by
 the host, container, and business journeys; manual crash-recovery acceptance is
 tracked separately in the [operations status](../operations/README.md#standalone-drills-and-operator-tools--not-part-of-verify-full).
-The historical boundary decisions are preserved in [archived Plan 54](../roadmap/archive/54-vendor-service-boundary.md).
+The historical boundary decisions are preserved in [ADR 0002](../reference/decisions/0002-vendorservice-callback-boundary.md).
 
 ### Source of truth
 

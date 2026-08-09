@@ -144,8 +144,9 @@ HTTP or gRPC contracts; services must not query another service's database.
 
 ## Repository layout
 
-The [repository ownership map](docs/architecture/repository-ownership.md)
-explains where domain, repository, transport, worker, adapter, contract, and
+The [current architecture guide](docs/reference/architecture.md) and
+[service-centric layout ADR](docs/reference/decisions/0001-service-centric-repository-layout.md)
+explain where domain, repository, transport, worker, adapter, contract, and
 platform changes belong.
 
 ~~~text

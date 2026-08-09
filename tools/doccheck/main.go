@@ -46,6 +46,11 @@ func main() {
 	var failures []string
 	failures = append(failures, requiredDocumentationFailures(root)...)
 	failures = append(failures, documentationLayoutFailures(root)...)
+	failures = append(failures, roadmapLocationFailures(root)...)
+	failures = append(failures, docsDirectoryCoverageFailures(root)...)
+	failures = append(failures, activePlanMetadataFailures(root)...)
+	failures = append(failures, activePlanStatusFailures(root)...)
+	failures = append(failures, roadmapArchiveAbsenceFailures(root)...)
 	failures = append(failures, visualAssetFailures(root)...)
 	failures = append(failures, interactiveAssetFailures(root)...)
 	failures = append(failures, portfolioEngineeringProofFailures(root)...)
@@ -73,6 +78,208 @@ func main() {
 	}
 
 	fmt.Printf("doccheck: checked %d Markdown files; required guides, language, visual and interactive assets, local links, and anchors are valid\n", len(files))
+}
+
+// activePlanStatusFailures verifies that no file in docs/roadmap/active/ has
+// status: done or status: superseded in its YAML frontmatter. Completed or
+// superseded plans must be removed from active/ — git history is the archive.
+func activePlanStatusFailures(root string) []string {
+	activeDir := filepath.Join(root, "docs", "roadmap", "active")
+	entries, err := os.ReadDir(activeDir)
+	if err != nil {
+		return []string{fmt.Sprintf("docs/roadmap/active/: cannot read directory for status check: %v", err)}
+	}
+
+	var failures []string
+	for _, entry := range entries {
+		if entry.IsDir() || entry.Name() == "README.md" {
+			continue
+		}
+		if !strings.EqualFold(filepath.Ext(entry.Name()), ".md") {
+			continue
+		}
+		path := filepath.Join(activeDir, entry.Name())
+		contents, readErr := os.ReadFile(path)
+		if readErr != nil {
+			failures = append(failures, fmt.Sprintf("docs/roadmap/active/%s: cannot read for status check: %v", entry.Name(), readErr))
+			continue
+		}
+		text := string(contents)
+		if !strings.HasPrefix(text, "---") {
+			continue
+		}
+		fmEnd := strings.Index(text[3:], "---")
+		if fmEnd < 0 {
+			continue
+		}
+		frontmatter := text[3 : 3+fmEnd]
+		for _, line := range strings.Split(frontmatter, "\n") {
+			trimmed := strings.TrimSpace(line)
+			if trimmed == "status: done" || trimmed == "status: superseded" {
+				failures = append(failures, fmt.Sprintf(
+					"docs/roadmap/active/%s: plan has %s status and must be removed from active/; git history is the archive", entry.Name(), trimmed))
+				break
+			}
+		}
+	}
+	return failures
+}
+
+// roadmapArchiveAbsenceFailures verifies that docs/roadmap/archive/ does not
+// exist. Completed plans are recorded in history.md and removed from the tree;
+// a permanent archive directory contradicts the "git history is the archive" rule.
+func roadmapArchiveAbsenceFailures(root string) []string {
+	archiveDir := filepath.Join(root, "docs", "roadmap", "archive")
+	if _, err := os.Stat(archiveDir); err == nil {
+		return []string{"docs/roadmap/archive/: permanent roadmap archive directory must not exist; record outcomes in history.md and remove full plans from the tree"}
+	}
+	return nil
+}
+
+// activePlanMetadataFailures verifies that every file in docs/roadmap/active/
+// (except README.md) contains a plan_id field in its YAML frontmatter.
+func activePlanMetadataFailures(root string) []string {
+	activeDir := filepath.Join(root, "docs", "roadmap", "active")
+	entries, err := os.ReadDir(activeDir)
+	if err != nil {
+		return []string{fmt.Sprintf("docs/roadmap/active/: cannot read directory for metadata check: %v", err)}
+	}
+
+	var failures []string
+	for _, entry := range entries {
+		if entry.IsDir() || entry.Name() == "README.md" {
+			continue
+		}
+		if !strings.EqualFold(filepath.Ext(entry.Name()), ".md") {
+			continue
+		}
+		path := filepath.Join(activeDir, entry.Name())
+		contents, readErr := os.ReadFile(path)
+		if readErr != nil {
+			failures = append(failures, fmt.Sprintf("docs/roadmap/active/%s: cannot read for metadata check: %v", entry.Name(), readErr))
+			continue
+		}
+		text := string(contents)
+		// Check for YAML frontmatter with plan_id field.
+		if !strings.HasPrefix(text, "---") {
+			failures = append(failures, fmt.Sprintf("docs/roadmap/active/%s: active plan must have YAML frontmatter with plan_id", entry.Name()))
+			continue
+		}
+		fmEnd := strings.Index(text[3:], "---")
+		if fmEnd < 0 || !strings.Contains(text[3:3+fmEnd], "plan_id:") {
+			failures = append(failures, fmt.Sprintf("docs/roadmap/active/%s: active plan frontmatter must include plan_id", entry.Name()))
+		}
+	}
+	return failures
+}
+
+// roadmapLocationFailures verifies that:
+// 1. No link in the "## Active plans" section of roadmap/README.md points to archive/.
+// 2. Every docs/roadmap/active/ file (except README.md) is listed in active/README.md.
+// 3. Every docs/roadmap/active/ subdirectory has a README.md.
+func roadmapLocationFailures(root string) []string {
+	var failures []string
+
+	roadmapIndex := filepath.Join(root, "docs", "roadmap", "README.md")
+	contents, err := os.ReadFile(roadmapIndex)
+	if err != nil {
+		return []string{fmt.Sprintf("docs/roadmap/README.md: cannot read roadmap index: %v", err)}
+	}
+
+	// Extract the "## Active plans" section (between that heading and the next ##).
+	text := string(contents)
+	activeSectionStart := strings.Index(text, "## Active plans")
+	if activeSectionStart < 0 {
+		failures = append(failures, "docs/roadmap/README.md: missing '## Active plans' section")
+	} else {
+		sectionText := text[activeSectionStart:]
+		// Find the next ## heading to bound the active section.
+		nextSection := strings.Index(sectionText[2:], "\n## ")
+		if nextSection >= 0 {
+			sectionText = sectionText[:nextSection+2]
+		}
+		// Check that no link in the active section points to archive/.
+		for _, match := range linkPattern.FindAllStringSubmatch(sectionText, -1) {
+			dest := cleanDestination(match[1])
+			lower := strings.ToLower(dest)
+			if strings.Contains(lower, "archive/") && strings.HasSuffix(lower, ".md") {
+				failures = append(failures, fmt.Sprintf(
+					"docs-check: broken link\nsource: docs/roadmap/README.md\ntarget: %s\nreason: archived plan listed in Active plans section; move it to the Archive section", dest))
+			}
+		}
+	}
+
+	// Verify every file in active/ (except README.md) is listed in active/README.md.
+	activeDir := filepath.Join(root, "docs", "roadmap", "active")
+	activeIndex := filepath.Join(activeDir, "README.md")
+	activeIndexContents, indexErr := os.ReadFile(activeIndex)
+	if indexErr != nil {
+		failures = append(failures, "docs/roadmap/active/README.md: cannot read active plan index")
+	} else {
+		entries, dirErr := os.ReadDir(activeDir)
+		if dirErr != nil {
+			failures = append(failures, fmt.Sprintf("docs/roadmap/active/: cannot read directory: %v", dirErr))
+		} else {
+			for _, entry := range entries {
+				if entry.IsDir() || entry.Name() == "README.md" {
+					continue
+				}
+				if !strings.Contains(string(activeIndexContents), entry.Name()) {
+					failures = append(failures, fmt.Sprintf(
+						"docs/roadmap/active/%s: plan file exists but is not listed in active/README.md", entry.Name()))
+				}
+			}
+		}
+	}
+
+	return failures
+}
+
+// docsDirectoryCoverageFailures verifies that every first-level subdirectory
+// under docs/ either appears in the docs/README.md library map or is on the
+// explicit exempt list (non-prose asset directories).
+func docsDirectoryCoverageFailures(root string) []string {
+	// These directories contain assets, generated files, or sub-indexes that
+	// are intentionally not first-class library categories.
+	exempt := map[string]bool{
+		"portfolio": true, // listed in library map but assets/ subdirectory is exempt
+	}
+
+	docsRoot := filepath.Join(root, "docs")
+	docsIndex := filepath.Join(docsRoot, "README.md")
+	indexContents, err := os.ReadFile(docsIndex)
+	if err != nil {
+		return []string{"docs/README.md: cannot read documentation home for directory coverage check"}
+	}
+	indexText := string(indexContents)
+
+	entries, err := os.ReadDir(docsRoot)
+	if err != nil {
+		return []string{fmt.Sprintf("docs/: cannot read directory for coverage check: %v", err)}
+	}
+
+	var failures []string
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if exempt[name] {
+			continue
+		}
+		// Check that the directory name appears in the library map section of docs/README.md.
+		if !strings.Contains(indexText, name+"/") {
+			failures = append(failures, fmt.Sprintf(
+				"docs/%s/: first-level documentation directory is not in the docs/README.md library map; add it or merge it into a canonical category", name))
+		}
+		// Every first-level directory must have a README.md.
+		readmePath := filepath.Join(docsRoot, name, "README.md")
+		if _, statErr := os.Stat(readmePath); os.IsNotExist(statErr) {
+			failures = append(failures, fmt.Sprintf(
+				"docs/%s/README.md: every documentation directory must have an index; create one", name))
+		}
+	}
+	return failures
 }
 
 func documentationLayoutFailures(root string) []string {
@@ -111,8 +318,11 @@ func documentationLayoutFailures(root string) []string {
 	if err != nil {
 		return append(failures, fmt.Sprintf("docs: cannot verify documentation layout: %v", err))
 	}
+	// catalog.md is a generated root-level inventory; it is exempt from the
+	// uncategorized-document check.
+	allowedRootDocs := map[string]bool{"README.md": true, "catalog.md": true}
 	for _, entry := range entries {
-		if !entry.IsDir() && strings.EqualFold(filepath.Ext(entry.Name()), ".md") && entry.Name() != "README.md" {
+		if !entry.IsDir() && strings.EqualFold(filepath.Ext(entry.Name()), ".md") && !allowedRootDocs[entry.Name()] {
 			failures = append(failures, fmt.Sprintf("docs/%s: uncategorized document; move it under learn, reference, development, operations, security, or roadmap", entry.Name()))
 		}
 	}
@@ -181,11 +391,11 @@ func requiredDocumentationFailures(root string) []string {
 		},
 		"docs/reference/architecture.md": {
 			"Status: Current",
-			"roadmap/archive/54-vendor-service-boundary.md",
+			"0002-vendorservice-callback-boundary.md",
 		},
 		"docs/reference/services.md": {
 			"Status: Current",
-			"roadmap/archive/54-vendor-service-boundary.md",
+			"0002-vendorservice-callback-boundary.md",
 		},
 		"docs/learn/README.md": {
 			"Realistic time by age",
@@ -212,10 +422,6 @@ func requiredDocumentationFailures(root string) []string {
 		"docs/roadmap/active/README.md": {
 			"Status: Active work index",
 			"56-f0-frontend-platform-foundation.md",
-		},
-		"docs/roadmap/archive/README.md": {
-			"Status: Historical index",
-			"49-a6-internal-security.md",
 		},
 		"docs/development/documentation-style.md": {
 			"Use English (US) spelling",
@@ -307,13 +513,13 @@ func requiredDocumentationFailures(root string) []string {
 		"docs/learn/beginner-guide.md": {
 			"Status: Current",
 			"Current callback contract",
-			"roadmap/archive/54-vendor-service-boundary.md",
+			"0002-vendorservice-callback-boundary.md",
 			"24,500 entering Noah",
 			"18,000 goes to the settlement path",
 		},
 		"docs/learn/visual-story.md": {
 			"Status: Current concept guide",
-			"roadmap/archive/54-vendor-service-boundary.md",
+			"0002-vendorservice-callback-boundary.md",
 			"Tell the story back in five answers",
 			"What Mia may safely be told",
 			"Mia has 55,000 available",
@@ -321,7 +527,7 @@ func requiredDocumentationFailures(root string) []string {
 		"docs/learn/product-tour.md": {
 			"Status: Current",
 			"One map of every journey",
-			"roadmap/archive/54-vendor-service-boundary.md",
+			"0002-vendorservice-callback-boundary.md",
 			"scripts/business-e2e.sh",
 			"| Mia transfers 25,000 with a 500 fee | 75,000 | 24,500 | 500 |",
 			"| Mia withdraws 20,000 with a 2,000 fee | 55,000 | 24,500 | 2,500 |",
@@ -329,12 +535,12 @@ func requiredDocumentationFailures(root string) []string {
 		},
 		"docs/reference/rationale.md": {
 			"Status: Current rationale",
-			"roadmap/archive/54-vendor-service-boundary.md",
+			"0002-vendorservice-callback-boundary.md",
 			"Check your understanding",
 		},
 		"docs/reference/traceability.md": {
 			"Status: Current",
-			"roadmap/archive/54-vendor-service-boundary.md",
+			"0002-vendorservice-callback-boundary.md",
 			"scripts/business-e2e.sh",
 			"services/ledger/internal/ledger/handle/service.go",
 		},
@@ -365,11 +571,15 @@ func requiredDocumentationFailures(root string) []string {
 			"digital proof, not a handwritten signature",
 			"Repository",
 		},
-		"docs/roadmap/archive/54-vendor-service-boundary.md": {
-			"Status: Core done",
+		"docs/reference/decisions/0002-vendorservice-callback-boundary.md": {
+			"Status: Accepted",
 		},
 		"docs/roadmap/README.md": {
-			"54-vendor-service-boundary.md",
+			"history.md",
+		},
+		"docs/roadmap/history.md": {
+			"54 | VendorService boundary",
+			"reference/decisions/0002-vendorservice-callback-boundary.md",
 		},
 	}
 	maximumWords := map[string]int{

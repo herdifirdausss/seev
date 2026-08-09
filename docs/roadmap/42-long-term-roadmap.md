@@ -6,13 +6,13 @@ Created: 2026-07-16. Last reviewed against the live topology: 2026-08-03.
 
 > Reference only. Do not execute this document directly. New execution plans (43 and later) should be created only when a track's activation trigger is satisfied.
 
-This roadmap replaces the completed P0–P3 roadmap in [plan 02](archive/02-feature-roadmap.md) and assumes plans 36–41 as the MVP baseline.
+This roadmap replaces the completed P0–P3 roadmap in [plan 02](history.md) and assumes plans 36–41 as the MVP baseline.
 
 ## How to use this roadmap
 
 The repository is learning-first but business-framed: every track teaches a real engineering discipline while remaining relevant to a fintech system.
 
-Each track must define its business goal, learning value, activation trigger, dependencies, work outline, and anti-scope. Measured tracks follow the S4/S5 rule from [plan 13](archive/13-p1-backlog-review.md): do not write speculative implementation plans before metrics prove the need.
+Each track must define its business goal, learning value, activation trigger, dependencies, work outline, and anti-scope. Measured tracks follow the S4/S5 rule from [plan 13](history.md): do not write speculative implementation plans before metrics prove the need.
 
 When a trigger is met:
 
@@ -26,27 +26,27 @@ When a trigger is met:
 
 | ID | Track | Horizon | Activation trigger | Status |
 |---|---|---|---|---|
-| A1 | Observability: dashboards, SLOs, alerts, logs, traces | H1 | Cross-service debugging takes more than 30 minutes | Complete via [43](archive/43-a1-observability.md) |
-| A2 | Delivery pipeline and local Kubernetes | H1 | CI can be improved anytime; Kubernetes when useful to learn | CI complete via [44](archive/44-a2-ci-pipeline.md); kind remains optional via [35](active/35-phase6j-kubernetes.md); cloud scope begins with [64](active/64-k0-deployment-inventory-baseline.md) under [63](63-kubernetes-cloud-deployment-roadmap-v2.md) |
-| A3 | External dependency resilience | H1 | Plan 40 complete and real integration is desired | Core complete via [45](archive/45-2-a3-core-execution-reviewed.md) |
-| A4 | Advanced compliance | H1 | Plan 39 complete and compliance engineering is desired | Complete via [46](archive/46-a4-compliance.md) |
-| A5 | Admin console | H1 | Manual operations become painful or BFF learning is desired | Complete via [47](archive/47-a5-admin-console.md) |
-| A6 | Internal security and service identity | H1 | After MVP; mandatory before B2B | Complete via [49](archive/49-a6-internal-security.md) |
-| A7 | Backup, PITR, and disaster recovery | H1 | Any time after MVP | Complete via [50](archive/50-a7-backup-pitr-disaster-recovery.md) |
-| A8 | Data lifecycle and privacy | H1 | After MVP; quote cleanup can start earlier | Complete via [51](archive/51-a8-data-lifecycle-privacy.md) |
-| A9 | API contracts and schema evolution | H1 | First silent consumer-breaking payload change; mandatory before B2B | Core done via [52](archive/52-a9-api-contracts-schema-evolution.md); manual chaos gate pending |
-| A10 | Product assurance and emergency intake control | H1 | Prove consistency across payin, payout, and ledger | Complete via [48](archive/48-a10-product-assurance.md) |
+| A1 | Observability: dashboards, SLOs, alerts, logs, traces | H1 | Cross-service debugging takes more than 30 minutes | Complete via [43](history.md) |
+| A2 | Delivery pipeline and local Kubernetes | H1 | CI can be improved anytime; Kubernetes when useful to learn | CI complete via [44](history.md); kind optional (superseded by K0/plan 64); inventory gate complete via [64](history.md) under [63](63-kubernetes-cloud-deployment-roadmap-v2.md) |
+| A3 | External dependency resilience | H1 | Plan 40 complete and real integration is desired | Core complete via [45](history.md) |
+| A4 | Advanced compliance | H1 | Plan 39 complete and compliance engineering is desired | Complete via [46](history.md) |
+| A5 | Admin console | H1 | Manual operations become painful or BFF learning is desired | Complete via [47](history.md) |
+| A6 | Internal security and service identity | H1 | After MVP; mandatory before B2B | Complete via [49](history.md) |
+| A7 | Backup, PITR, and disaster recovery | H1 | Any time after MVP | Complete via [50](history.md) |
+| A8 | Data lifecycle and privacy | H1 | After MVP; quote cleanup can start earlier | Complete via [51](history.md) |
+| A9 | API contracts and schema evolution | H1 | First silent consumer-breaking payload change; mandatory before B2B | Core done via [52](history.md); manual chaos gate pending |
+| A10 | Product assurance and emergency intake control | H1 | Prove consistency across payin, payout, and ledger | Complete via [48](history.md) |
 | A11 | Database audit and hardening | H1 | Ongoing — repeated end-to-end schema/security/business-completeness passes | In progress via [65](active/65-a11-database-audit-and-hardening.md); Rounds 1–2 fixed, Round 3 documented and open |
-| B0 | Load harness and capacity model | H2 gate | Before any measured scale work | Core done via [53](archive/53-b0-load-capacity-gate.md); canonical measurements and decisions recorded in [2026-07-31 baseline](../performance/reports/2026-07-31-baseline.md) |
+| B0 | Load harness and capacity model | H2 gate | Before any measured scale work | Core done via [53](history.md); canonical measurements and decisions recorded in [2026-07-31 baseline](../performance/reports/2026-07-31-baseline.md) |
 | B1 | Hot-account sub-sharding | H2 | B0 proves lock contention in delta application | **REJECT** — real evidence, [2026-07-31 baseline §20](../performance/reports/2026-07-31-baseline.md#20-b1--hot-account-sub-sharding): lock-wait never exceeded 2.24% against a 20% threshold; the split-account variant was measurably worse, not better |
 | B2 | Ledger-entry partitioning and archival | H2 | Approximately 50 million ledger entries or equivalent forecast | **REJECT** — real evidence, [2026-07-31 baseline §21](../performance/reports/2026-07-31-baseline.md#21-b2--partitioning): a real D0→D1→D2 growth-curve study found linear ~484 bytes/entry and sub-ms indexed queries through 5M entries, extrapolating to an unremarkable ~19.4GB at the 40M-row gate |
 | B3 | Fee and routing resolution cache | H2 | B0 proves per-call resolution is a hotspot | **REJECT** — real evidence, [2026-07-31 baseline §22](../performance/reports/2026-07-31-baseline.md#22-b3--routing-cache): a live cached-vs-uncached A/B against the real fee resolver hit 99.5% cache hit rate with zero throughput gain and worse p95/p99 — the resolver was never the bottleneck |
-| C1 | Merchant/B2B API | H3 | A6 and A9 complete | Complete — [plan 57](archive/57-c1-merchant-b2b-api.md) archived |
-| C2 | Data platform and revenue analytics | H3 | Analytics queries affect OLTP or CDC learning is desired | Core done — [plan 58](archive/58-c2-data-platform-revenue-analytics.md) archived; Grafana dashboard, some drills/alerts, and a load baseline remain open follow-ups |
-| C3 | Multi-channel notifications | H3 | User-facing delivery pipeline learning is desired | ✅ Complete — [plan 59](archive/59-c3-multi-channel-notifications.md) archived 2026-08-05 |
-| C4 | End-to-end multi-currency activation | H3 | FX learning is desired; currency primitives are ready | Accepted 2026-08-05 — [plan 60](archive/60-c4-end-to-end-multi-currency.md) archived |
-| C5 | Advanced financial products | H3 | Accrual and fee quotes are complete; period-close learning is desired | Accepted 2026-08-05 — core correctness evidence recorded; chaos/load/operations gates deferred; [plan 61](archive/61-c5-advanced-financial-products-period-close.md) archived |
-| C6 | Zero-downtime migration engine | H3 | A large live migration or migration practice is needed | Core done via [plan 62](archive/62-c6-zero-downtime-migration-engine.md); unit/integration tests + E2E drill + evidence written (2026-08-05); chaos/load/PITR gates remain open follow-ups; plan archived |
+| C1 | Merchant/B2B API | H3 | A6 and A9 complete | Complete — [plan 57](history.md) archived |
+| C2 | Data platform and revenue analytics | H3 | Analytics queries affect OLTP or CDC learning is desired | Core done — [plan 58](history.md) archived; Grafana dashboard, some drills/alerts, and a load baseline remain open follow-ups |
+| C3 | Multi-channel notifications | H3 | User-facing delivery pipeline learning is desired | ✅ Complete — [plan 59](history.md) archived 2026-08-05 |
+| C4 | End-to-end multi-currency activation | H3 | FX learning is desired; currency primitives are ready | Accepted 2026-08-05 — [plan 60](history.md) archived |
+| C5 | Advanced financial products | H3 | Accrual and fee quotes are complete; period-close learning is desired | Accepted 2026-08-05 — core correctness evidence recorded; chaos/load/operations gates deferred; [plan 61](history.md) archived |
+| C6 | Zero-downtime migration engine | H3 | A large live migration or migration practice is needed | Core done via [plan 62](history.md); unit/integration tests + E2E drill + evidence written (2026-08-05); chaos/load/PITR gates remain open follow-ups; plan archived |
 
 ## Horizon 1 — Operational foundations
 
@@ -62,9 +62,9 @@ manually dispatchable workflow runs the business journey and all chaos
 scenarios. Locally, `make verify-full` covers the repeatable non-chaos gate and
 `make verify-chaos` is the operator-controlled recovery gate. Documentation-only
 changes use a fast path. Local kind work remains the optional plan 35. The
-cloud-learning scope is separately reviewed in [plan 63](63-kubernetes-cloud-deployment-roadmap-v2.md),
-with [plan 64 · K0](active/64-k0-deployment-inventory-baseline.md) as its
-inventory-only first gate. Do not expand this into cloud CD, GitOps, or
+cloud-learning scope is separately reviewed in [plan 63](63-kubernetes-cloud-deployment-roadmap-v2.md);
+[plan 64 · K0](history.md) completed the
+inventory-only first gate on 2026-08-09. Do not expand this into cloud CD, GitOps, or
 multi-cluster operations before those plans' gates pass.
 
 ### A3 — External resilience
@@ -85,15 +85,15 @@ Threat-model the real topology, add service identity and mTLS, rotate certificat
 
 ### A7 — Backup and PITR
 
-Automate backups, point-in-time restore, integrity verification, cross-database reconciliation, RPO/RTO measurement, and scheduled game-day drills. Do not expand to streaming replicas or multi-region failover. Complete via [plan 50](archive/50-a7-backup-pitr-disaster-recovery.md).
+Automate backups, point-in-time restore, integrity verification, cross-database reconciliation, RPO/RTO measurement, and scheduled game-day drills. Do not expand to streaming replicas or multi-region failover. Complete via [plan 50](history.md).
 
 ### A8 — Data lifecycle and privacy
 
-Define retention by table, purge expired fee quotes and privacy-sensitive idempotency data, protect sensitive auth/KYC fields, provide user exports, and pseudonymize user references without modifying immutable ledger entries. Formal legal GDPR certification is out of scope. Execution is recorded in [plan 51](archive/51-a8-data-lifecycle-privacy.md).
+Define retention by table, purge expired fee quotes and privacy-sensitive idempotency data, protect sensitive auth/KYC fields, provide user exports, and pseudonymize user references without modifying immutable ledger entries. Formal legal GDPR certification is out of scope. Execution is recorded in [plan 51](history.md).
 
 ### A9 — Contracts and schema evolution
 
-Add HTTP contract tests, OpenAPI linting, event v1/v2 expand-contract rules, tolerant readers, deprecation policy, and sunset headers. gRPC already has Buf checks; do not create a separate schema registry unless evidence requires it. Execution is recorded in [archived plan 52](archive/52-a9-api-contracts-schema-evolution.md).
+Add HTTP contract tests, OpenAPI linting, event v1/v2 expand-contract rules, tolerant readers, deprecation policy, and sunset headers. gRPC already has Buf checks; do not create a separate schema registry unless evidence requires it. Execution is recorded in [archived plan 52](history.md).
 
 ### A10 — Product assurance
 
@@ -103,7 +103,7 @@ Continuously compare payin and payout lifecycle state with ledger evidence witho
 
 ### B0 — Load and capacity gate
 
-Build k6 scenarios for P2P posting, webhook bursts, payout batches, and mixed MVP journeys. Measure throughput, latency, outbox lag, database pool saturation, and lock waits. Produce numerical thresholds that either activate or reject B1–B3. Execution is recorded in [archived plan 53](archive/53-b0-load-capacity-gate.md).
+Build k6 scenarios for P2P posting, webhook bursts, payout batches, and mixed MVP journeys. Measure throughput, latency, outbox lag, database pool saturation, and lock waits. Produce numerical thresholds that either activate or reject B1–B3. Execution is recorded in [archived plan 53](history.md).
 
 ### B1 — Hot-account sub-sharding — **REJECT**
 

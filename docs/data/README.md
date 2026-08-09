@@ -2,10 +2,9 @@
 
 > [Documentation home](../README.md) · [Data](README.md)
 
-> **Status: Current.** Generated evidence and policy for Track A8 (data
-> lifecycle and privacy) — see
-> [docs/roadmap/archive/51-a8-data-lifecycle-privacy.md](../roadmap/archive/51-a8-data-lifecycle-privacy.md)
-> for the locked design decisions this directory implements.
+> **Status: Current.** Generated evidence and policy for data lifecycle and
+> privacy. The [roadmap history](../roadmap/history.md) records the Plan 51
+> outcome; `config/data-retention.yaml` is the current policy source of truth.
 
 | Page | Use it for |
 |---|---|
