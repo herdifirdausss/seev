@@ -95,10 +95,12 @@ case "$SSL_MODE" in
 		exit 2
 		;;
 esac
-command -v migrate >/dev/null 2>&1 || {
-	echo "migrate: golang-migrate is required in PATH" >&2
-	exit 2
-}
+if [ "$DRY_RUN" -eq 0 ]; then
+	command -v migrate >/dev/null 2>&1 || {
+		echo "migrate: golang-migrate is required in PATH" >&2
+		exit 2
+	}
+fi
 
 # Keep the password in the child environment, not in the DSN/argv or Make's
 # echoed recipe. lib/pq reads PGPASSWORD when the URL has no password field.
