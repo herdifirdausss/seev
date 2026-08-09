@@ -198,7 +198,7 @@ services:
       retries: 10
 
   rabbitmq:
-    image: rabbitmq:4.3.4-management-alpine@sha256:09b39ca8a3e884e91cab8842cd41264de21aab0625e1f1d016a9a3135ba590ef # digest verified 2026-08-04
+    image: rabbitmq:4.3.4-management-alpine@sha256:44bf7eb50fe1765885659e49ccfdc775f8e531964d979321aee380a071f49f94 # digest verified 2026-08-04
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME:-seev}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-seev}
