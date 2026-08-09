@@ -185,8 +185,8 @@ jobs:
           cd /tmp
           binary="shfmt_v${SHFMT_VERSION}_linux_amd64"
           curl -sSLO "https://github.com/mvdan/sh/releases/download/v${SHFMT_VERSION}/${binary}"
-          curl -sSLO "https://github.com/mvdan/sh/releases/download/v${SHFMT_VERSION}/${binary}.sha256"
-          sha256sum -c "${binary}.sha256"
+          curl -sSLO "https://github.com/mvdan/sh/releases/download/v${SHFMT_VERSION}/sha256sums.txt"
+          grep "${binary}$" sha256sums.txt | sha256sum -c -
           install -m 0755 "$binary" /usr/local/bin/shfmt
           shfmt --version
 
