@@ -23,6 +23,10 @@ env:
   # after re-verifying the new release + license per constraint #8.
   ACTIONLINT_VERSION: "1.7.12"
   SHELLCHECK_VERSION: "0.11.0"
+  # ShellCheck does not publish a sha256sum.txt; hash sourced from GitHub release API
+  # `digest` field for shellcheck-v0.11.0.linux.x86_64.tar.xz. Update when bumping
+  # SHELLCHECK_VERSION.
+  SHELLCHECK_SHA256: "8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198"
   # shfmt: BSD-3-Clause. Version bumps require re-verifying checksum below.
   SHFMT_VERSION: "3.10.0"
 
@@ -166,8 +170,7 @@ jobs:
           cd /tmp
           tarball="shellcheck-v${SHELLCHECK_VERSION}.linux.x86_64.tar.xz"
           curl -sSLO "https://github.com/koalaman/shellcheck/releases/download/v${SHELLCHECK_VERSION}/${tarball}"
-          curl -sSLO "https://github.com/koalaman/shellcheck/releases/download/v${SHELLCHECK_VERSION}/sha256sum.txt"
-          grep "$tarball" sha256sum.txt | sha256sum -c -
+          echo "${SHELLCHECK_SHA256}  ${tarball}" | sha256sum -c -
           tar xJf "$tarball"
           install -m 0755 "shellcheck-v${SHELLCHECK_VERSION}/shellcheck" /usr/local/bin/shellcheck
           shellcheck --version
