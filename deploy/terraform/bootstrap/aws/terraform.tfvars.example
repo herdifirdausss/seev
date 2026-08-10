@@ -1,0 +1,11 @@
+# Copy to terraform.tfvars (gitignored) and fill in before running.
+# Do NOT commit the filled-in values — this file is the template only.
+
+aws_region        = "ap-southeast-1"
+project           = "seev"
+environment       = "dev"
+state_bucket_name = "seev-tfstate-ACCOUNT_ID-REGION"
+lock_table_name   = "seev-tflock"
+github_org        = "herdifirdausss"
+github_repo       = "seev"
+create_oidc_provider = true

@@ -11,7 +11,7 @@ NAMESPACE="${NAMESPACE:-seev-edge}"
 expected_trusted_proxy_cidrs="${EXPECTED_TRUSTED_PROXY_CIDRS:-}"
 actual_trusted_proxy_cidrs="$($KUBECTL_BIN get deployment vendor-service -n seev-app -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="VENDOR_CALLBACK_TRUSTED_PROXY_CIDRS")].value}')"
 if [[ "$actual_trusted_proxy_cidrs" != "$expected_trusted_proxy_cidrs" ]]; then
-  echo "unexpected callback trusted-proxy CIDRs: got '$actual_trusted_proxy_cidrs', expected '$expected_trusted_proxy_cidrs'" >&2
-  exit 1
+	echo "unexpected callback trusted-proxy CIDRs: got '$actual_trusted_proxy_cidrs', expected '$expected_trusted_proxy_cidrs'" >&2
+	exit 1
 fi
 echo "callback edge checks passed: explicit CIDR allowlist, POST-only mTLS route, Local source preservation, trusted proxy CIDRs explicit"

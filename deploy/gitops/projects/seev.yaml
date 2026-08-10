@@ -1,0 +1,75 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: seev
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: seev
+  annotations:
+    seev.io/deploy-note: |
+      DEPLOY-003: Dedicated AppProject restricts source repos, destinations, and
+      cluster-scoped resource kinds. Cloud/staging Applications must use this
+      project rather than "default" so permissions are auditable and narrow.
+spec:
+  description: Seev payment platform — application workloads
+
+  sourceRepos:
+    - https://github.com/herdifirdausss/seev.git
+
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: seev-app
+    - server: https://kubernetes.default.svc
+      namespace: seev-data
+    - server: https://kubernetes.default.svc
+      namespace: seev-egress
+    - server: https://kubernetes.default.svc
+      namespace: seev-edge
+
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
+
+  namespaceResourceWhitelist:
+    - group: "apps"
+      kind: Deployment
+    - group: "apps"
+      kind: StatefulSet
+    - group: ""
+      kind: Service
+    - group: ""
+      kind: ServiceAccount
+    - group: ""
+      kind: ConfigMap
+    - group: "networking.k8s.io"
+      kind: NetworkPolicy
+    - group: "policy"
+      kind: PodDisruptionBudget
+    - group: "autoscaling"
+      kind: HorizontalPodAutoscaler
+    - group: "batch"
+      kind: Job
+    - group: "gateway.networking.k8s.io"
+      kind: Gateway
+    - group: "gateway.networking.k8s.io"
+      kind: HTTPRoute
+    - group: "external-secrets.io"
+      kind: ExternalSecret
+
+  namespaceResourceBlacklist:
+    - group: ""
+      kind: ResourceQuota
+    - group: ""
+      kind: LimitRange
+
+  roles:
+    - name: read-only
+      description: Read-only access to Seev application resources
+      policies:
+        - p, proj:seev:read-only, applications, get, seev/*, allow
+      groups: []
+
+  syncWindows: []
+
+  orphanedResources:
+    warn: true

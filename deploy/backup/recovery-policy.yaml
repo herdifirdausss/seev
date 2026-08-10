@@ -1,0 +1,47 @@
+# Machine-readable recovery policy for Seev.
+# Authoritative source for backup requirements across all environments.
+# CI checks enforce that Terraform settings satisfy these targets.
+# See deploy/backup/README.md for the enforcement and evidence model.
+schema_version: "1"
+
+rpo:
+  target_seconds: 3600          # 1 hour
+  local_mechanism: pgBackRest WAL archive interval
+  cloud_mechanism: Cloud SQL / RDS PITR granularity
+
+rto:
+  target_seconds: 14400         # 4 hours
+  enforcement: DR drill evidence required before staging sign-off
+
+retention:
+  point_in_time_days: 7         # minimum; Terraform must set >= this value
+  snapshots_days: 30            # minimum for final/manual snapshots
+
+terraform_assertions:
+  aws_platform:
+    backup_retention_period:
+      min: 7
+      field: aws_db_instance.seev.backup_retention_period
+    skip_final_snapshot:
+      required_value: false
+      field: aws_db_instance.seev.skip_final_snapshot
+    deletion_protection:
+      required_value: true
+      field: aws_db_instance.seev.deletion_protection
+    multi_az:
+      required_value: true
+      field: aws_db_instance.seev.multi_az
+
+  gcp_platform:
+    backup_enabled:
+      required_value: true
+      field: google_sql_database_instance.seev.settings.backup_configuration.enabled
+    point_in_time_recovery_enabled:
+      required_value: true
+      field: google_sql_database_instance.seev.settings.backup_configuration.point_in_time_recovery_enabled
+    transaction_log_retention_days:
+      min: 7
+      field: google_sql_database_instance.seev.settings.backup_configuration.transaction_log_retention_days
+    deletion_protection:
+      required_value: true
+      field: google_sql_database_instance.seev.deletion_protection

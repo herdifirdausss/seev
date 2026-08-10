@@ -9,22 +9,29 @@ metadata:
   labels:
     {{- include "seev.labels" $root | nindent 4 }}
     seev.io/service: {{ $name }}
+    seev.io/environment: {{ $root.Values.global.deploymentEnvironment | quote }}
 spec:
   replicas: {{ $spec.replicas }}
   selector:
     matchLabels:
       app.kubernetes.io/part-of: seev
       seev.io/service: {{ $name }}
+  strategy:
+    {{- toYaml $root.Values.rollout.strategy | nindent 4 }}
+  minReadySeconds: {{ $root.Values.rollout.minReadySeconds }}
+  progressDeadlineSeconds: {{ $root.Values.rollout.progressDeadlineSeconds }}
   template:
     metadata:
       labels:
         app.kubernetes.io/part-of: seev
         seev.io/service: {{ $name }}
+        {{ if $spec.network.datastores.postgres }}
         seev.io/db-access: "true"
-        {{ if or (eq $name "gateway") (eq $name "auth") (eq $name "ledger") (eq $name "payin") (eq $name "payout") (eq $name "fraud") }}
+        {{ end }}
+        {{ if $spec.network.datastores.redis }}
         seev.io/redis-access: "true"
         {{ end }}
-        {{ if or (eq $name "gateway") (eq $name "ledger") (eq $name "fraud") }}
+        {{ if $spec.network.datastores.rabbitmq }}
         seev.io/rabbitmq-access: "true"
         {{ end }}
       annotations:
@@ -63,13 +70,15 @@ spec:
                   sleep 2
                 done
               }
+              {{- if $spec.network.datastores.postgres }}
               wait_for postgres "$POSTGRES_HOST" "$POSTGRES_PORT"
-              {{- if or (eq $name "gateway") (eq $name "auth") (eq $name "ledger") (eq $name "payin") (eq $name "payout") (eq $name "fraud") }}
+              {{- end }}
+              {{- if $spec.network.datastores.redis }}
               if [ "$REDIS_ENABLED" = "true" ]; then
                 wait_for redis "${REDIS_ADDR%:*}" "${REDIS_ADDR##*:}"
               fi
               {{- end }}
-              {{- if or (eq $name "gateway") (eq $name "ledger") (eq $name "fraud") }}
+              {{- if $spec.network.datastores.rabbitmq }}
               wait_for rabbitmq "$RABBITMQ_HOST" "$RABBITMQ_PORT"
               {{- end }}
           env:
@@ -221,6 +230,10 @@ spec:
               readOnly: true
             - name: tmp
               mountPath: /tmp
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep {{ $root.Values.rollout.preStopSleepSeconds | default 0 }}"]
           startupProbe:
             exec:
               command: ["/app/service", "-healthcheck"]

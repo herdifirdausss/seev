@@ -5,8 +5,15 @@ metadata:
   namespace: argocd
   labels:
     app.kubernetes.io/part-of: seev
+    seev.io/environment: local
+  annotations:
+    seev.io/deploy-note: |
+      DEPLOY-003: Local learning environment uses the seev AppProject with
+      self-heal enabled. targetRevision=main is acceptable here because this
+      environment is disposable (kind cluster only). Cloud/staging Applications
+      must pin to an immutable commit SHA or release tag.
 spec:
-  project: default
+  project: seev
   source:
     repoURL: https://github.com/herdifirdausss/seev.git
     targetRevision: main

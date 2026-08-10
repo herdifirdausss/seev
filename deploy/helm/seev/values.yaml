@@ -1,4 +1,5 @@
 global:
+  deploymentEnvironment: local
   imagePullSecrets: []
   image:
     repository: ghcr.io/herdifirdausss/seev
@@ -54,13 +55,37 @@ networkPolicy:
     - 10.0.0.0/8
   edgeKubernetesAPIPorts:
     - 443
+  # Used only when data.enabled=false. Provider overlays must resolve these
+  # to the private CIDRs of their managed datastores; an empty list fails the
+  # staging readiness gate.
+  managedDataCIDRs:
+    postgres: []
+    redis: []
+    rabbitmq: []
 
 autoscaling:
   enabled: false
+  # Global defaults — override per service under autoscaling.perService
   minReplicas: 1
   maxReplicas: 2
   targetCPUUtilizationPercentage: 70
   services: [gateway, auth]
+  # Per-service bounds (DEPLOY-009). Set after load-test evidence establishes
+  # which metric becomes saturated first per service. CPU is the initial signal.
+  # Run 'make load-hpa-evidence' after a steady-state load run to collect saturation
+  # data. Custom/external metrics are added ONLY if evidence shows CPU is insufficient.
+  # See deploy/load/hpa-evidence.schema.json for the evidence format.
+  perService: {}
+  # Example:
+  # perService:
+  #   gateway:
+  #     minReplicas: 2
+  #     maxReplicas: 8
+  #     targetCPUUtilizationPercentage: 65
+  #   auth:
+  #     minReplicas: 2
+  #     maxReplicas: 6
+  #     targetCPUUtilizationPercentage: 70
 
 secrets:
   create: false
@@ -145,6 +170,22 @@ traefik:
     average: 10
     burst: 20
 
+rollout:
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  minReadySeconds: 10
+  progressDeadlineSeconds: 300
+  # preStop sleep lets iptables/kube-proxy propagation complete before SIGTERM
+  # so no new requests arrive after the process stops accepting connections.
+  # Verified safe: terminationGracePeriodSeconds: 35 = 5s preStop + 30s shutdown.
+  preStopSleepSeconds: 5
+
+pdb:
+  minAvailable: 1
+
 services:
   gateway:
     enabled: true
@@ -167,6 +208,10 @@ services:
     resources:
       requests: {cpu: 100m, memory: 128Mi}
       limits: {cpu: 500m, memory: 512Mi}
+    network:
+      ingressFrom: [auth, admin-bff]
+      egressToServices: [ledger, payin, payout, fraud]
+      datastores: {postgres: true, redis: true, rabbitmq: true}
   auth:
     enabled: true
     image: auth-service
@@ -186,6 +231,10 @@ services:
     resources:
       requests: {cpu: 100m, memory: 128Mi}
       limits: {cpu: 500m, memory: 512Mi}
+    network:
+      ingressFrom: [admin-bff]
+      egressToServices: [ledger, payin, payout, fraud, gateway]
+      datastores: {postgres: true, redis: true, rabbitmq: false}
   ledger:
     enabled: true
     image: ledger-service
@@ -204,6 +253,10 @@ services:
     resources:
       requests: {cpu: 200m, memory: 256Mi}
       limits: {cpu: 1000m, memory: 768Mi}
+    network:
+      ingressFrom: [gateway, auth, payin, payout, fraud, admin-bff, assurance]
+      egressToServices: []
+      datastores: {postgres: true, redis: true, rabbitmq: true}
   payin:
     enabled: true
     image: payin-service
@@ -222,6 +275,10 @@ services:
     resources:
       requests: {cpu: 100m, memory: 128Mi}
       limits: {cpu: 500m, memory: 512Mi}
+    network:
+      ingressFrom: [gateway, auth, vendor, admin-bff, assurance]
+      egressToServices: [ledger, fraud, vendor]
+      datastores: {postgres: true, redis: true, rabbitmq: false}
   payout:
     enabled: true
     image: payout-service
@@ -240,6 +297,10 @@ services:
     resources:
       requests: {cpu: 100m, memory: 128Mi}
       limits: {cpu: 500m, memory: 512Mi}
+    network:
+      ingressFrom: [gateway, auth, vendor, admin-bff, assurance]
+      egressToServices: [ledger, fraud, vendor]
+      datastores: {postgres: true, redis: true, rabbitmq: false}
   fraud:
     enabled: true
     image: fraud-service
@@ -255,6 +316,10 @@ services:
     resources:
       requests: {cpu: 100m, memory: 128Mi}
       limits: {cpu: 500m, memory: 512Mi}
+    network:
+      ingressFrom: [gateway, auth, payin, payout, admin-bff]
+      egressToServices: [ledger]
+      datastores: {postgres: true, redis: true, rabbitmq: true}
   vendor:
     enabled: true
     image: vendor-service
@@ -280,6 +345,10 @@ services:
     resources:
       requests: {cpu: 100m, memory: 128Mi}
       limits: {cpu: 500m, memory: 512Mi}
+    network:
+      ingressFrom: [payin, payout]
+      egressToServices: [payin, payout]
+      datastores: {postgres: true, redis: false, rabbitmq: false}
   admin-bff:
     enabled: true
     image: admin-bff-service
@@ -300,6 +369,10 @@ services:
     resources:
       requests: {cpu: 50m, memory: 96Mi}
       limits: {cpu: 300m, memory: 256Mi}
+    network:
+      ingressFrom: []
+      egressToServices: [auth, ledger, payin, payout, fraud, gateway]
+      datastores: {postgres: true, redis: false, rabbitmq: false}
   assurance:
     enabled: true
     image: assurance-service
@@ -315,3 +388,7 @@ services:
     resources:
       requests: {cpu: 50m, memory: 96Mi}
       limits: {cpu: 300m, memory: 256Mi}
+    network:
+      ingressFrom: []
+      egressToServices: [ledger, payin, payout]
+      datastores: {postgres: true, redis: false, rabbitmq: false}

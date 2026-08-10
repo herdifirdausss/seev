@@ -57,6 +57,19 @@ calls:
     first_deployment: true
     downstream_owner: K3 and K5
     sources: [services/gateway/cmd/gateway/main.go, gen/go/payout/v1]
+  - name: gateway-to-fraud-grpc
+    caller: gateway
+    target: fraud
+    protocol: grpc
+    port: 9094
+    identity: spiffe://seev.local/ns/seev/sa/gateway
+    timeout: 5s
+    retry: bounded
+    failure_posture: fail closed for risk decision
+    readiness_class: critical
+    first_deployment: true
+    downstream_owner: K3 and K5
+    sources: [services/gateway/cmd/gateway/main.go, contracts/clients/fraud]
 
   - name: auth-to-ledger-grpc
     caller: auth
@@ -216,6 +229,20 @@ calls:
     first_deployment: true
     downstream_owner: K3 and K5
     sources: [services/payout/cmd/payout/main.go, services/payout]
+
+  - name: fraud-to-ledger
+    caller: fraud
+    target: ledger
+    protocol: grpc
+    port: 9091
+    identity: spiffe://seev.local/ns/seev/sa/fraud
+    timeout: 5s
+    retry: bounded-idempotent-only
+    failure_posture: preserve durable risk evidence and retry
+    readiness_class: critical
+    first_deployment: true
+    downstream_owner: K3 and K5
+    sources: [services/fraud/cmd/fraud/main.go, contracts/clients/ledger]
 
   - name: vendor-to-payin
     caller: vendor
@@ -377,7 +404,7 @@ calls:
     downstream_owner: K2 and K5
     sources: [internal/platform/config, scripts/postgres-init, migrations]
   - name: services-to-redis
-    caller: nine application services
+    caller: gateway, auth, ledger, payin, payout, fraud
     target: redis
     protocol: redis
     port: 6379

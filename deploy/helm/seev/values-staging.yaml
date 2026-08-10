@@ -2,6 +2,7 @@
 # the cloud platform and secret manager before applying. This overlay does not
 # enable the in-cluster development data StatefulSets.
 global:
+  deploymentEnvironment: staging
   appEnv: staging
   image:
     repository: ghcr.io/herdifirdausss/seev
@@ -24,6 +25,12 @@ global:
 
 data:
   enabled: false
+
+networkPolicy:
+  managedDataCIDRs:
+    postgres: [REPLACE_WITH_MANAGED_POSTGRES_PRIVATE_CIDR]
+    redis: [REPLACE_WITH_MANAGED_REDIS_PRIVATE_CIDR]
+    rabbitmq: [REPLACE_WITH_MANAGED_BROKER_PRIVATE_CIDR]
 
 migrations:
   enabled: true

@@ -25,6 +25,26 @@ import (
 	"github.com/herdifirdausss/seev/internal/platform/security/tls"
 )
 
+// serviceDNSNames maps certgen service names to the DNS SANs required for
+// Prometheus server-identity verification (DEPLOY-004). Each service gets its
+// Compose hostname (e.g. "gateway-service") and its Kubernetes FQDN so
+// Prometheus can verify the server without insecure_skip_verify.
+//
+// backup-agent and prometheus use their Compose/Kubernetes names directly
+// (not the "${name}-service" pattern).
+var serviceDNSNames = map[string][]string{
+	"gateway":      {"gateway-service", "gateway-service.seev-app.svc.cluster.local"},
+	"auth":         {"auth-service", "auth-service.seev-app.svc.cluster.local"},
+	"ledger":       {"ledger-service", "ledger-service.seev-app.svc.cluster.local"},
+	"payin":        {"payin-service", "payin-service.seev-app.svc.cluster.local"},
+	"payout":       {"payout-service", "payout-service.seev-app.svc.cluster.local"},
+	"fraud":        {"fraud-service", "fraud-service.seev-app.svc.cluster.local"},
+	"vendor":       {"vendor-service", "vendor-service.seev-app.svc.cluster.local"},
+	"admin-bff":    {"admin-bff-service", "admin-bff-service.seev-app.svc.cluster.local"},
+	"assurance":    {"assurance-service", "assurance-service.seev-app.svc.cluster.local"},
+	"backup-agent": {"backup-agent", "backup-agent.seev-app.svc.cluster.local"},
+}
+
 // caTTL/leafTTL match docs/roadmap/archive/49 K3 exactly: short leaf lifetime so
 // rotation is a routine, well-exercised operation rather than a rare
 // break-glass procedure.
@@ -251,6 +271,7 @@ func issueLeaf(out, service, identity string, ca *x509.Certificate, caKey *ecdsa
 		BasicConstraintsValid: true,
 		IsCA:                  false,
 		URIs:                  []*url.URL{uri},
+		DNSNames:              serviceDNSNames[service],
 	}
 	der, err := x509.CreateCertificate(rand.Reader, template, ca, &key.PublicKey, caKey)
 	if err != nil {

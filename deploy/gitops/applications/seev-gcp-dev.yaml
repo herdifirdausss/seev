@@ -6,11 +6,17 @@ metadata:
   labels:
     app.kubernetes.io/part-of: seev
     seev.io/provider: gcp
+    seev.io/environment: dev
+  annotations:
+    seev.io/deploy-note: |
+      DEPLOY-003: Uses dedicated seev AppProject (not "default") and pins
+      targetRevision to a specific commit SHA or release tag for cloud
+      deployments. Update targetRevision on each controlled promotion.
 spec:
-  project: default
+  project: seev
   source:
     repoURL: https://github.com/herdifirdausss/seev.git
-    targetRevision: main
+    targetRevision: 547e1a2caf9e45a09989e1c71771837d097f3bfc
     path: deploy/helm/seev
     helm:
       valueFiles:
@@ -22,3 +28,10 @@ spec:
   syncPolicy:
     syncOptions:
       - CreateNamespace=true
+      - Prune=false
+    retry:
+      limit: 3
+      backoff:
+        duration: 30s
+        maxDuration: 5m
+        factor: 2

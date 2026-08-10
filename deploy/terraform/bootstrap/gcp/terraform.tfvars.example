@@ -1,0 +1,10 @@
+# Copy to terraform.tfvars (gitignored) and fill in before running.
+# Do NOT commit the filled-in values — this file is the template only.
+
+gcp_project       = "seev-PROJECT_ID"
+gcp_region        = "asia-southeast1"
+project           = "seev"
+environment       = "dev"
+state_bucket_name = "seev-tfstate-PROJECT_ID"
+github_org        = "herdifirdausss"
+github_repo       = "seev"

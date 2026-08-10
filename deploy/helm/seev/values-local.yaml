@@ -1,4 +1,5 @@
 global:
+  deploymentEnvironment: local
   appEnv: development
   postgres:
     sslMode: disable

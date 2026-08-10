@@ -6,7 +6,7 @@ metadata:
   name: {{ $name }}-service
   namespace: {{ $.Values.global.appNamespace }}
 spec:
-  minAvailable: 1
+  minAvailable: {{ $.Values.pdb.minAvailable }}
   selector:
     matchLabels:
       app.kubernetes.io/part-of: seev

@@ -33,21 +33,6 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: app-allow-internal-services
-  namespace: {{ $app }}
-spec:
-  podSelector: {}
-  policyTypes: [Ingress, Egress]
-  ingress:
-    - from:
-        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: {{ $app }}}}
-  egress:
-    - to:
-        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: {{ $app }}}}
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
   name: edge-to-public-services
   namespace: {{ $app }}
 spec:
@@ -133,18 +118,6 @@ spec:
       from:
         - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: seev-observability}}
           podSelector: {matchLabels: {app.kubernetes.io/name: prometheus}}
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: app-allow-data
-  namespace: {{ $app }}
-spec:
-  podSelector: {}
-  policyTypes: [Egress]
-  egress:
-    - to:
-        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: {{ $data }}}}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -238,3 +211,130 @@ spec:
         - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: {{ $egress }}}}
           podSelector: {matchLabels: {seev.io/egress: squid}}
       ports: [{protocol: TCP, port: 3128}]
+---
+{{- /*
+  Per-service least-privilege policies (DEPLOY-001).
+  Each enabled service with a network section gets:
+    {name}-ingress-internal  — ingress from declared ingressFrom services
+    {name}-egress-services   — egress to declared egressToServices
+    {name}-data-egress       — egress to specific datastores in the data namespace
+  All namespace-wide blanket allow policies have been removed. Every allowed
+  network edge must be explicitly declared in the service's network section.
+*/}}
+{{- range $name, $spec := .Values.services }}
+{{- if and $spec.enabled $spec.network }}
+{{- $net := $spec.network }}
+{{- if $net.ingressFrom }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $name }}-ingress-internal
+  namespace: {{ $app }}
+spec:
+  podSelector:
+    matchLabels:
+      seev.io/service: {{ $name }}
+  policyTypes: [Ingress]
+  ingress:
+  {{- range $caller := $net.ingressFrom }}
+    - from:
+        - podSelector:
+            matchLabels:
+              seev.io/service: {{ $caller }}
+  {{- end }}
+---
+{{- end }}
+{{- if $net.egressToServices }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $name }}-egress-services
+  namespace: {{ $app }}
+spec:
+  podSelector:
+    matchLabels:
+      seev.io/service: {{ $name }}
+  policyTypes: [Egress]
+  egress:
+  {{- range $target := $net.egressToServices }}
+  {{- $targetSpec := index $.Values.services $target }}
+  {{- if $targetSpec }}
+    - to:
+        - podSelector:
+            matchLabels:
+              seev.io/service: {{ $target }}
+      ports:
+      {{- range $port := $targetSpec.ports }}
+        - {protocol: TCP, port: {{ $port.targetPort }}}
+      {{- end }}
+  {{- end }}
+  {{- end }}
+---
+{{- end }}
+{{- if or $net.datastores.postgres $net.datastores.redis $net.datastores.rabbitmq }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $name }}-data-egress
+  namespace: {{ $app }}
+spec:
+  podSelector:
+    matchLabels:
+      seev.io/service: {{ $name }}
+  policyTypes: [Egress]
+  egress:
+  {{- if $net.datastores.postgres }}
+    - to:
+      {{- if $.Values.data.enabled }}
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $data }}
+          podSelector:
+            matchLabels:
+              seev.io/data: postgres
+      {{- else }}
+      {{- range $cidr := $.Values.networkPolicy.managedDataCIDRs.postgres }}
+        - ipBlock: {cidr: {{ $cidr | quote }}}
+      {{- end }}
+      {{- end }}
+      ports:
+        - {protocol: TCP, port: {{ $.Values.global.postgres.port }}}
+  {{- end }}
+  {{- if $net.datastores.redis }}
+    - to:
+      {{- if $.Values.data.enabled }}
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $data }}
+          podSelector:
+            matchLabels:
+              seev.io/data: redis
+      {{- else }}
+      {{- range $cidr := $.Values.networkPolicy.managedDataCIDRs.redis }}
+        - ipBlock: {cidr: {{ $cidr | quote }}}
+      {{- end }}
+      {{- end }}
+      ports:
+        - {protocol: TCP, port: 6379}
+  {{- end }}
+  {{- if $net.datastores.rabbitmq }}
+    - to:
+      {{- if $.Values.data.enabled }}
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $data }}
+          podSelector:
+            matchLabels:
+              seev.io/data: rabbitmq
+      {{- else }}
+      {{- range $cidr := $.Values.networkPolicy.managedDataCIDRs.rabbitmq }}
+        - ipBlock: {cidr: {{ $cidr | quote }}}
+      {{- end }}
+      {{- end }}
+      ports:
+        - {protocol: TCP, port: {{ $.Values.global.rabbitmq.port }}}
+  {{- end }}
+---
+{{- end }}
+{{- end }}
+{{- end }}

@@ -14,10 +14,10 @@ set -eu
 
 PASSPHRASE_FILE="${PGBACKREST_REPO_PASSPHRASE_FILE:-/run/secrets/pgbackrest_repo_passphrase}"
 if [ -f "$PASSPHRASE_FILE" ]; then
-    export PGBACKREST_REPO1_CIPHER_PASS
-    PGBACKREST_REPO1_CIPHER_PASS="$(cat "$PASSPHRASE_FILE")"
+	export PGBACKREST_REPO1_CIPHER_PASS
+	PGBACKREST_REPO1_CIPHER_PASS="$(cat "$PASSPHRASE_FILE")"
 else
-    echo "entrypoint.sh: $PASSPHRASE_FILE not found — run 'make backup-secret' first. Starting WITHOUT pgBackRest encryption configured; archive_command will fail until the secret exists." >&2
+	echo "entrypoint.sh: $PASSPHRASE_FILE not found — run 'make backup-secret' first. Starting WITHOUT pgBackRest encryption configured; archive_command will fail until the secret exists." >&2
 fi
 
 exec docker-entrypoint.sh "$@"

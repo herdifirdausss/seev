@@ -1,22 +1,13 @@
-# docs/roadmap/archive/43 Task T1 — scrapes /metrics on each service's internal/admin
-# listener only, never the public listener (docs/roadmap/archive/10 Task T6 boundary).
-# docs/roadmap/archive/49 K6: every one of those listeners now requires mTLS —
+# Scrapes /metrics on each service's internal/admin listener only, never the
+# public listener (docs/roadmap/archive/10 Task T6 boundary).
+# docs/roadmap/archive/49 K6: every one of those listeners requires mTLS —
 # Prometheus presents the "prometheus" client identity and trusts only the
-# shared CA, mirroring what a real dev-operator curl session needs.
+# shared CA.
 #
-# insecure_skip_verify: true is required in every tls_config below — found
-# live in docs/roadmap/archive/50 T2 execution, not a pre-existing pattern to copy
-# without it: this repo's leaf certs carry a SPIFFE URI SAN only, never a
-# DNS SAN (internal/platform/security/tls/config.go's own comments), so Prometheus's stock Go TLS
-# client can never satisfy standard hostname verification against any of
-# these listeners no matter how correct ca_file/cert_file/key_file are.
-# Confirmed live: every job below reported health "down" with
-# "x509: certificate is not valid for any names, but wanted to match
-# <hostname>" until this was added. Client identity is still fully
-# enforced — this only skips Prometheus's own verification of the SERVER;
-# the server side (internal/platform/security/tls.ServerConfig) still requires and verifies
-# Prometheus's own client certificate against the CA and the
-# IdentityPrometheus allowlist, exactly as it does for every other caller.
+# server_name is set per job to match the DNS SAN in each leaf certificate
+# (DEPLOY-004). The certgen tool now issues DNS SANs alongside SPIFFE URI SANs
+# so Prometheus can perform full server identity verification without
+# insecure_skip_verify.
 global:
   scrape_interval: 15s
   evaluation_interval: 15s
@@ -37,7 +28,7 @@ scrape_configs:
       ca_file: /certs/ca.pem
       cert_file: /certs/prometheus.pem
       key_file: /certs/prometheus-key.pem
-      insecure_skip_verify: true
+      server_name: gateway-service
     metrics_path: /metrics
     static_configs:
       - targets: ["gateway-service:8081"]
@@ -48,7 +39,7 @@ scrape_configs:
       ca_file: /certs/ca.pem
       cert_file: /certs/prometheus.pem
       key_file: /certs/prometheus-key.pem
-      insecure_skip_verify: true
+      server_name: auth-service
     metrics_path: /metrics
     static_configs:
       - targets: ["auth-service:8083"]
@@ -59,7 +50,7 @@ scrape_configs:
       ca_file: /certs/ca.pem
       cert_file: /certs/prometheus.pem
       key_file: /certs/prometheus-key.pem
-      insecure_skip_verify: true
+      server_name: ledger-service
     metrics_path: /metrics
     static_configs:
       - targets: ["ledger-service:8091"]
@@ -70,7 +61,7 @@ scrape_configs:
       ca_file: /certs/ca.pem
       cert_file: /certs/prometheus.pem
       key_file: /certs/prometheus-key.pem
-      insecure_skip_verify: true
+      server_name: payin-service
     metrics_path: /metrics
     static_configs:
       - targets: ["payin-service:8092"]
@@ -81,7 +72,7 @@ scrape_configs:
       ca_file: /certs/ca.pem
       cert_file: /certs/prometheus.pem
       key_file: /certs/prometheus-key.pem
-      insecure_skip_verify: true
+      server_name: payout-service
     metrics_path: /metrics
     static_configs:
       - targets: ["payout-service:8093"]
@@ -92,22 +83,18 @@ scrape_configs:
       ca_file: /certs/ca.pem
       cert_file: /certs/prometheus.pem
       key_file: /certs/prometheus-key.pem
-      insecure_skip_verify: true
+      server_name: fraud-service
     metrics_path: /metrics
     static_configs:
       - targets: ["fraud-service:8094"]
 
-  # admin-bff-service and assurance-service had no scrape job at all before
-  # docs/roadmap/archive/49 (TM-04/TM-09 in docs/security/threat-model.md) — added
-  # here rather than left as a metrics blind spot now that both listeners
-  # are being flipped to mTLS in this same task anyway.
   - job_name: admin-bff-service
     scheme: https
     tls_config:
       ca_file: /certs/ca.pem
       cert_file: /certs/prometheus.pem
       key_file: /certs/prometheus-key.pem
-      insecure_skip_verify: true
+      server_name: admin-bff-service
     metrics_path: /metrics
     static_configs:
       - targets: ["admin-bff-service:8095"]
@@ -118,36 +105,41 @@ scrape_configs:
       ca_file: /certs/ca.pem
       cert_file: /certs/prometheus.pem
       key_file: /certs/prometheus-key.pem
-      insecure_skip_verify: true
+      server_name: assurance-service
     metrics_path: /metrics
     static_configs:
       - targets: ["assurance-service:8096"]
 
+  - job_name: vendor-service
+    scheme: https
+    tls_config:
+      ca_file: /certs/ca.pem
+      cert_file: /certs/prometheus.pem
+      key_file: /certs/prometheus-key.pem
+      server_name: vendor-service
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["vendor-service:8098"]
+
   # docs/roadmap/archive/50 T2 (K13) — backup-agent runs only under the opt-in
-  # "backup" Compose profile, so this target is unreachable (and simply
-  # shows as "down" in Prometheus, not an error) unless that profile is
-  # started; scraped the same mTLS way as every other internal listener
-  # (see insecure_skip_verify rationale at the top of this file).
+  # "backup" Compose profile, so this target shows "down" unless that profile
+  # is started. The server_name matches the DNS SAN in the backup-agent cert.
   - job_name: backup-agent
     scheme: https
     tls_config:
       ca_file: /certs/ca.pem
       cert_file: /certs/prometheus.pem
       key_file: /certs/prometheus-key.pem
-      insecure_skip_verify: true
+      server_name: backup-agent
     metrics_path: /metrics
     static_configs:
       - targets: ["backup-agent:8097"]
 
   # Plan 58 (C2) section 24 — the analytics stack runs on its own Compose
-  # project/network (analytics/compose/docker-compose.analytics.yml, opt-in
-  # "analytics-core"/"analytics-ops" profiles) with no mTLS: ClickHouse and
-  # Redpanda are third-party images that don't speak this repo's SPIFFE-based
-  # client-cert pattern, and ports are already loopback-only per plan
-  # section 12.2/23.2. Reached via host.docker.internal + the published
-  # host ports, the same pattern the connect service already uses to reach
-  # the source Postgres. These targets legitimately show "down" whenever
-  # the opt-in analytics profile is not running — that is not an incident.
+  # project/network (analytics/compose/docker-compose.analytics.yml) with no
+  # mTLS: ClickHouse and Redpanda are third-party images. Reached via
+  # host.docker.internal + published host ports. These targets legitimately
+  # show "down" whenever the opt-in analytics profile is not running.
   - job_name: analytics-clickhouse
     metrics_path: /metrics
     static_configs:
@@ -158,14 +150,6 @@ scrape_configs:
     static_configs:
       - targets: ["host.docker.internal:9644"]
 
-  # Serves seev_analytics_reconciliation_*/data_freshness_seconds/
-  # dbt_run_total/connector_up (analytics/reconciliation/cmd/metrics-exporter),
-  # started locally via `make analytics-metrics-exporter`. Kafka Connect
-  # itself is not scraped here — this Debezium image build has no JMX
-  # exporter bundled, and the plan's own dashboard spec already treats
-  # connector status as external operational evidence
-  # (analytics/metabase/dashboards/data-platform-health.yaml); the exporter
-  # covers that gap by polling Connect's REST API directly instead.
   - job_name: analytics-metrics-exporter
     metrics_path: /metrics
     static_configs:

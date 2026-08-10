@@ -24,7 +24,10 @@ EOF
 fi
 
 for command in "$KUBECTL_BIN" curl; do
-	command -v "$command" >/dev/null || { echo "k8s-chaos: $command is required" >&2; exit 2; }
+	command -v "$command" >/dev/null || {
+		echo "k8s-chaos: $command is required" >&2
+		exit 2
+	}
 done
 
 "$KUBECTL_BIN" get namespace "$APP_NAMESPACE" >/dev/null
@@ -32,7 +35,10 @@ done
 
 victim="$("$KUBECTL_BIN" get pods -n "$APP_NAMESPACE" -l seev.io/service=gateway \
 	-o jsonpath='{.items[0].metadata.name}')"
-[[ -n "$victim" ]] || { echo 'k8s-chaos: no Gateway pod found' >&2; exit 1; }
+[[ -n "$victim" ]] || {
+	echo 'k8s-chaos: no Gateway pod found' >&2
+	exit 1
+}
 victim_uid="$("$KUBECTL_BIN" get pod "$victim" -n "$APP_NAMESPACE" -o jsonpath='{.metadata.uid}')"
 echo "k8s-chaos: deleting only gateway pod $victim (uid=$victim_uid)"
 "$KUBECTL_BIN" delete pod "$victim" -n "$APP_NAMESPACE" --wait=false
@@ -55,7 +61,10 @@ for _ in $(seq 1 60); do
 	sleep 2
 done
 
-[[ -n "$replacement" ]] || { echo 'k8s-chaos: replacement Gateway pod was not created' >&2; exit 1; }
+[[ -n "$replacement" ]] || {
+	echo 'k8s-chaos: replacement Gateway pod was not created' >&2
+	exit 1
+}
 replacement_uid="$("$KUBECTL_BIN" get pod "$replacement" -n "$APP_NAMESPACE" -o jsonpath='{.metadata.uid}')"
 [[ "$replacement_uid" != "$victim_uid" ]] || {
 	echo 'k8s-chaos: Gateway pod was not replaced after deletion' >&2

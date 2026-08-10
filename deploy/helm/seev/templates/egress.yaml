@@ -53,8 +53,11 @@ metadata:
   labels:
     {{- include "seev.labels" . | nindent 4 }}
     seev.io/egress: squid
+    seev.io/environment: {{ .Values.global.deploymentEnvironment | quote }}
 spec:
   replicas: {{ .Values.egress.replicas }}
+  strategy:
+    type: RollingUpdate
   selector:
     matchLabels:
       app.kubernetes.io/part-of: seev
@@ -67,13 +70,20 @@ spec:
     spec:
       automountServiceAccountToken: false
       securityContext:
-        runAsUser: 0
-        runAsGroup: 0
+        runAsNonRoot: true
+        runAsUser: 13
+        runAsGroup: 13
+        fsGroup: 13
         seccompProfile:
           type: RuntimeDefault
       containers:
         - name: squid
           image: {{ .Values.egress.image | quote }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
           # The pinned Ubuntu image entrypoint runs `squid -Nz` first. This
           # filtering-only proxy has no cache stores, so start Squid directly
           # and avoid a cache-directory initialization that never opens 3128.

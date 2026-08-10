@@ -1,0 +1,48 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: seev-staging
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: seev
+    seev.io/provider: cloud
+    seev.io/environment: staging
+  annotations:
+    seev.io/deploy-note: |
+      DEPLOY-003: Staging promotion requires:
+        1. Run `make deploy-readiness ENV=staging VALUES=<resolved-values>` — must PASS.
+        2. Pin targetRevision to the commit SHA being promoted (never "main").
+        3. Resolve all REPLACE_WITH_* values in values-staging.yaml from the secret manager.
+        4. Apply with kubectl or Argo CD CLI — automated sync is intentionally disabled.
+      The readiness gate (`scripts/ci/check-deploy-readiness.sh`) enforces immutable
+      image digests, managed datastores, TLS verify-full, and certified CIDRs before
+      this Application may be synced.
+spec:
+  project: seev
+  source:
+    repoURL: https://github.com/herdifirdausss/seev.git
+    # Pin to the commit SHA being promoted. Never set to "main".
+    # Update this field as part of each controlled promotion workflow.
+    targetRevision: 1e3cb17483f289a3d110068f1d492685d9e47431
+    path: deploy/helm/seev
+    helm:
+      valueFiles:
+        - values.yaml
+        - values-staging.yaml
+        # The operator must supply a resolved, secretless values overlay that
+        # passes `make deploy-readiness ENV=staging`. Do not commit secret values.
+        # Example: values-staging-<sha>.yaml generated from Terraform outputs.
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: seev-app
+  syncPolicy:
+    # Automated sync is intentionally DISABLED for staging.
+    # Promotion requires a deliberate operator action with readiness evidence.
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 2
+      backoff:
+        duration: 60s
+        maxDuration: 10m
+        factor: 2

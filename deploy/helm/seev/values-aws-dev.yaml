@@ -1,4 +1,5 @@
 global:
+  deploymentEnvironment: aws-dev
   appEnv: staging
   postgres:
     # The first cloud proof uses the sandbox in-cluster PostgreSQL StatefulSet.

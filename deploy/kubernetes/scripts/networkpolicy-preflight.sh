@@ -7,7 +7,7 @@ SERVER="policy-server"
 CLIENT="policy-client"
 
 cleanup() {
-  "$KUBECTL_BIN" delete namespace "$NAMESPACE" --ignore-not-found --wait=false >/dev/null 2>&1 || true
+	"$KUBECTL_BIN" delete namespace "$NAMESPACE" --ignore-not-found --wait=false >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
@@ -19,8 +19,8 @@ trap cleanup EXIT
 "$KUBECTL_BIN" wait -n "$NAMESPACE" --for=condition=Ready pod/"$SERVER" pod/"$CLIENT" --timeout=180s
 
 if ! "$KUBECTL_BIN" exec -n "$NAMESPACE" "$CLIENT" -- wget -q -T 3 -O- "http://$SERVER" >/dev/null; then
-  echo "NetworkPolicy preflight setup failed: baseline connection did not work" >&2
-  exit 1
+	echo "NetworkPolicy preflight setup failed: baseline connection did not work" >&2
+	exit 1
 fi
 
 cat <<'POLICY' | "$KUBECTL_BIN" apply -f -
@@ -39,7 +39,7 @@ POLICY
 
 sleep 5
 if "$KUBECTL_BIN" exec -n "$NAMESPACE" "$CLIENT" -- wget -q -T 3 -O- "http://$SERVER" >/dev/null; then
-  echo "NetworkPolicy enforcement preflight failed: denied connection succeeded" >&2
-  exit 1
+	echo "NetworkPolicy enforcement preflight failed: denied connection succeeded" >&2
+	exit 1
 fi
 echo "NetworkPolicy enforcement proven by a denied connection"

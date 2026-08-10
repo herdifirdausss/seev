@@ -14,9 +14,18 @@ LAST_CODE=""
 LAST_BODY=""
 trap 'if [ -n "$PF_PID" ]; then kill "$PF_PID" >/dev/null 2>&1 || true; wait "$PF_PID" >/dev/null 2>&1 || true; fi; rm -rf "$TMP_DIR"' EXIT
 
-command -v "$KUBECTL_BIN" >/dev/null 2>&1 || { printf 'k8s-e2e: kubectl is required\n' >&2; exit 2; }
-command -v curl >/dev/null 2>&1 || { printf 'k8s-e2e: curl is required\n' >&2; exit 2; }
-command -v openssl >/dev/null 2>&1 || { printf 'k8s-e2e: openssl is required\n' >&2; exit 2; }
+command -v "$KUBECTL_BIN" >/dev/null 2>&1 || {
+	printf 'k8s-e2e: kubectl is required\n' >&2
+	exit 2
+}
+command -v curl >/dev/null 2>&1 || {
+	printf 'k8s-e2e: curl is required\n' >&2
+	exit 2
+}
+command -v openssl >/dev/null 2>&1 || {
+	printf 'k8s-e2e: openssl is required\n' >&2
+	exit 2
+}
 
 json_field() {
 	sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p"
@@ -38,7 +47,10 @@ expect_success() {
 	local label=$1
 	case "$LAST_CODE" in
 		2*) printf 'k8s-e2e: %s passed (HTTP %s)\n' "$label" "$LAST_CODE" ;;
-		*) printf 'k8s-e2e: %s failed (HTTP %s): %s\n' "$label" "$LAST_CODE" "$LAST_BODY" >&2; exit 1 ;;
+		*)
+			printf 'k8s-e2e: %s failed (HTTP %s): %s\n' "$label" "$LAST_CODE" "$LAST_BODY" >&2
+			exit 1
+			;;
 	esac
 }
 
@@ -56,20 +68,32 @@ PASSWORD="K8sE2E!2026"
 api_request POST /api/v1/auth/register "{\"email\":\"$EMAIL\",\"password\":\"$PASSWORD\",\"full_name\":\"Kubernetes E2E\"}" ""
 expect_success "user registration through Gateway"
 USER_ID="$(printf '%s' "$LAST_BODY" | json_field id)"
-[ -n "$USER_ID" ] || { printf 'k8s-e2e: registration did not return a user id\n' >&2; exit 1; }
+[ -n "$USER_ID" ] || {
+	printf 'k8s-e2e: registration did not return a user id\n' >&2
+	exit 1
+}
 
 RECIPIENT_EMAIL="k8s-e2e-recipient-$(date +%s)-$$@example.com"
 api_request POST /api/v1/auth/register "{\"email\":\"$RECIPIENT_EMAIL\",\"password\":\"$PASSWORD\",\"full_name\":\"Kubernetes E2E Recipient\"}" ""
 expect_success "recipient registration through Gateway"
 RECIPIENT_ID="$(printf '%s' "$LAST_BODY" | json_field id)"
-[ -n "$RECIPIENT_ID" ] || { printf 'k8s-e2e: recipient registration did not return a user id\n' >&2; exit 1; }
+[ -n "$RECIPIENT_ID" ] || {
+	printf 'k8s-e2e: recipient registration did not return a user id\n' >&2
+	exit 1
+}
 
 api_request POST /api/v1/auth/login "{\"email\":\"$EMAIL\",\"password\":\"$PASSWORD\"}" ""
 expect_success "user login through Gateway"
 ACCESS_TOKEN="$(printf '%s' "$LAST_BODY" | json_field access_token)"
 REFRESH_TOKEN="$(printf '%s' "$LAST_BODY" | json_field refresh_token)"
-[ -n "$ACCESS_TOKEN" ] || { printf 'k8s-e2e: login did not return an access token\n' >&2; exit 1; }
-[ -n "$REFRESH_TOKEN" ] || { printf 'k8s-e2e: login did not return a refresh token\n' >&2; exit 1; }
+[ -n "$ACCESS_TOKEN" ] || {
+	printf 'k8s-e2e: login did not return an access token\n' >&2
+	exit 1
+}
+[ -n "$REFRESH_TOKEN" ] || {
+	printf 'k8s-e2e: login did not return a refresh token\n' >&2
+	exit 1
+}
 
 api_request POST /api/v1/users/me/kyc '{"level_requested":1}' "$ACCESS_TOKEN"
 expect_success "KYC request through Gateway"
@@ -80,13 +104,19 @@ if [ "$LAST_CODE" != "200" ]; then
 	expect_success "login after KYC approval"
 fi
 ACCESS_TOKEN="$(printf '%s' "$LAST_BODY" | json_field access_token)"
-[ -n "$ACCESS_TOKEN" ] || { printf 'k8s-e2e: refreshed/login response did not return an access token\n' >&2; exit 1; }
+[ -n "$ACCESS_TOKEN" ] || {
+	printf 'k8s-e2e: refreshed/login response did not return an access token\n' >&2
+	exit 1
+}
 
 api_request POST /api/v1/topup '{"amount":"500000"}' "$ACCESS_TOKEN"
 expect_success "top-up intent through Gateway"
 INTENT_ID="$(printf '%s' "$LAST_BODY" | json_field id)"
 REFERENCE="$(printf '%s' "$LAST_BODY" | json_field reference)"
-[ -n "$INTENT_ID" ] && [ -n "$REFERENCE" ] || { printf 'k8s-e2e: top-up response omitted id/reference\n' >&2; exit 1; }
+[ -n "$INTENT_ID" ] && [ -n "$REFERENCE" ] || {
+	printf 'k8s-e2e: top-up response omitted id/reference\n' >&2
+	exit 1
+}
 
 MOCKVENDOR_SECRET="$("$KUBECTL_BIN" get secret seev-runtime-secrets -n seev-app -o jsonpath='{.data.vendor-mockvendor-secret}' | base64 --decode)"
 BODY="{\"event_id\":\"k8s-e2e-$(date +%s)-$$\",\"external_ref\":\"$REFERENCE\",\"user_id\":\"$USER_ID\",\"amount\":\"500000\",\"currency\":\"IDR\",\"occurred_at\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"type\":\"payment.settled\"}"
@@ -97,7 +127,10 @@ CALLBACK_CODE="$(curl --noproxy '*' -ksS -o /dev/null -w '%{http_code}' \
 	-H "X-Mock-Signature: $SIGNATURE" -H 'Content-Type: application/json' -d "$BODY")"
 case "$CALLBACK_CODE" in
 	2*) printf 'k8s-e2e: signed callback accepted (HTTP %s)\n' "$CALLBACK_CODE" ;;
-	*) printf 'k8s-e2e: signed callback failed (HTTP %s)\n' "$CALLBACK_CODE" >&2; exit 1 ;;
+	*)
+		printf 'k8s-e2e: signed callback failed (HTTP %s)\n' "$CALLBACK_CODE" >&2
+		exit 1
+		;;
 esac
 
 for _ in $(seq 1 30); do

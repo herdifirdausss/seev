@@ -1,6 +1,13 @@
 {{- if .Values.autoscaling.enabled }}
 {{- range $name := .Values.autoscaling.services }}
 {{- if (index $.Values.services $name).enabled }}
+{{- $globalMin := $.Values.autoscaling.minReplicas }}
+{{- $globalMax := $.Values.autoscaling.maxReplicas }}
+{{- $globalCPU := $.Values.autoscaling.targetCPUUtilizationPercentage }}
+{{- $perSvc := index (default dict $.Values.autoscaling.perService) $name | default dict }}
+{{- $minReplicas := default $globalMin $perSvc.minReplicas }}
+{{- $maxReplicas := default $globalMax $perSvc.maxReplicas }}
+{{- $targetCPU := default $globalCPU $perSvc.targetCPUUtilizationPercentage }}
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
@@ -13,8 +20,8 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: {{ $name }}-service
-  minReplicas: {{ $.Values.autoscaling.minReplicas }}
-  maxReplicas: {{ $.Values.autoscaling.maxReplicas }}
+  minReplicas: {{ $minReplicas }}
+  maxReplicas: {{ $maxReplicas }}
   behavior:
     scaleUp:
       stabilizationWindowSeconds: 60
@@ -26,7 +33,7 @@ spec:
         name: cpu
         target:
           type: Utilization
-          averageUtilization: {{ $.Values.autoscaling.targetCPUUtilizationPercentage }}
+          averageUtilization: {{ $targetCPU }}
 ---
 {{- end }}
 {{- end }}
