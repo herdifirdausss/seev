@@ -42,6 +42,7 @@ jobs:
       contents: read
     outputs:
       runtime: ${{ steps.classify.outputs.runtime }}
+      web: ${{ steps.classify.outputs.web }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -77,6 +78,14 @@ jobs:
             echo "runtime=true" >> "$GITHUB_OUTPUT"
           else
             echo "runtime=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          # Web: true when any file under web/ changes, so the frontend job
+          # is skipped on pure Go/infra changes that cannot affect the browser build.
+          if echo "$CHANGED" | grep -qE '^web/'; then
+            echo "web=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "web=false" >> "$GITHUB_OUTPUT"
           fi
 
   docs-check:
@@ -375,6 +384,69 @@ jobs:
           retention-days: 30
           if-no-files-found: warn
 
+  # ─── frontend: Next.js workspace quality gate (Plan 56 T9) ─────────────────
+  # Runs when any file under web/ changes. Skipped on pure Go/infra/docs
+  # changes. Uses nvm (pre-installed on ubuntu-24.04) and corepack to pin
+  # exact versions — no marketplace actions needed, no new supply-chain deps.
+  frontend:
+    name: frontend
+    needs: [changes]
+    if: needs.changes.outputs.web == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Install Node.js 22.17.1 and pnpm 11.21.0
+        run: |
+          set -euo pipefail
+          # nvm is pre-installed on ubuntu-24.04 GitHub-hosted runners.
+          # Exact versions mirror web/.node-version and web/package.json#packageManager.
+          . "$HOME/.nvm/nvm.sh"
+          nvm install 22.17.1
+          nvm use 22.17.1
+          nvm alias default 22.17.1
+          # Make the selected node the default for subsequent steps.
+          nvm which default | xargs dirname >> "$GITHUB_PATH"
+          node --version
+          # corepack ships with Node 16.9+ — use it to activate the pinned pnpm.
+          corepack enable
+          corepack prepare pnpm@11.21.0 --activate
+          pnpm --version
+
+      - name: Cache pnpm store
+        run: |
+          # Derive a stable cache key from the lockfile without using actions/cache.
+          # pnpm's --prefer-offline flag re-uses the store across steps in the same job.
+          echo "PNPM_STORE=$(pnpm store path 2>/dev/null || echo '')" >> "$GITHUB_ENV"
+
+      - name: Install frontend dependencies
+        run: make web-install
+
+      - name: Format check
+        run: make web-format-check
+
+      - name: Lint
+        run: make web-lint
+
+      - name: Type check
+        run: make web-typecheck
+
+      - name: Unit tests
+        run: make web-test
+
+      - name: Production build
+        run: make web-build
+
+      - name: Boundary check
+        run: make web-boundary-check
+
   # ─── smoke-container: full-container round-trip (docs/roadmap/archive/44 K4/K5) ───────
   # Nine images built ONCE via a single Bake invocation (reads the build
   # config straight out of docker-compose.yml — no separate Bake file, K5),
@@ -545,7 +617,7 @@ jobs:
   # ─── ci-gate: the ONE required check (docs/roadmap/archive/44 K3) ─────────────────────
   ci-gate:
     name: ci-gate
-    needs: [changes, docs-check, lint-and-test, integration, smoke-container]
+    needs: [changes, docs-check, lint-and-test, integration, smoke-container, frontend]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -554,11 +626,12 @@ jobs:
       - name: Evaluate gate
         run: |
           set -euo pipefail
-          echo "changes: ${{ needs.changes.result }} (runtime=${{ needs.changes.outputs.runtime }})"
-          echo "docs-check: ${{ needs.docs-check.result }}"
+          echo "changes:       ${{ needs.changes.result }} (runtime=${{ needs.changes.outputs.runtime }} web=${{ needs.changes.outputs.web }})"
+          echo "docs-check:    ${{ needs.docs-check.result }}"
           echo "lint-and-test: ${{ needs.lint-and-test.result }}"
-          echo "integration: ${{ needs.integration.result }}"
+          echo "integration:   ${{ needs.integration.result }}"
           echo "smoke-container: ${{ needs.smoke-container.result }}"
+          echo "frontend:      ${{ needs.frontend.result }}"
 
           if [ "${{ needs.changes.result }}" != "success" ]; then
             echo "::error::changes job did not succeed"
@@ -571,22 +644,42 @@ jobs:
           fi
 
           if [ "${{ needs.changes.outputs.runtime }}" = "false" ]; then
-            # docs-only: the three heavy jobs must have been skipped, not
-            # failed/cancelled/silently absent.
+            # docs-only (and possibly web-only): the three runtime-heavy jobs must
+            # have been skipped. frontend may be skipped (docs-only) or succeeded
+            # (web files changed alongside docs).
             for r in "${{ needs.lint-and-test.result }}" "${{ needs.integration.result }}" "${{ needs.smoke-container.result }}"; do
               if [ "$r" != "skipped" ]; then
                 echo "::error::docs-only PR but a heavy job result was '$r', expected 'skipped'"
                 exit 1
               fi
             done
-            echo "docs-only change: three heavy jobs correctly skipped — gate green"
+            fe="${{ needs.frontend.result }}"
+            if [ "$fe" != "skipped" ] && [ "$fe" != "success" ]; then
+              echo "::error::frontend result was '$fe', expected 'success' or 'skipped'"
+              exit 1
+            fi
+            echo "docs-only change: runtime jobs correctly skipped — gate green"
             exit 0
           fi
 
+          # runtime changed: all four heavy jobs must succeed.
           for r in "${{ needs.lint-and-test.result }}" "${{ needs.integration.result }}" "${{ needs.smoke-container.result }}"; do
             if [ "$r" != "success" ]; then
               echo "::error::a heavy job result was '$r', expected 'success'"
               exit 1
             fi
           done
+
+          # frontend: must succeed when web files changed, skipped otherwise.
+          fe="${{ needs.frontend.result }}"
+          web="${{ needs.changes.outputs.web }}"
+          if [ "$web" = "true" ] && [ "$fe" != "success" ]; then
+            echo "::error::web files changed but frontend result was '$fe', expected 'success'"
+            exit 1
+          fi
+          if [ "$web" != "true" ] && [ "$fe" != "skipped" ]; then
+            echo "::error::no web files changed but frontend result was '$fe', expected 'skipped'"
+            exit 1
+          fi
+
           echo "all gates green"

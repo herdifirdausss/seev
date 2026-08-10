@@ -24,11 +24,18 @@ require_text() {
 # require_uncommented is like require_text but ignores lines that are pure
 # comments (# …). Use this for YAML workflow checks so that commenting out
 # a step does not produce a false-passing result.
+#
+# Avoids piping grep -v into grep -qF: with set -o pipefail, when grep -qF
+# finds the match and exits early, the upstream grep -v gets SIGPIPE (exit
+# 141) and pipefail reports the pipeline as failed even on a true match.
+# Materializing into a local variable breaks the pipeline and eliminates the race.
 require_uncommented() {
 	local file="$1"
 	local text="$2"
 	local message="$3"
-	if ! grep -v '^\s*#' "$file" | grep -qF -- "$text"; then
+	local noncomment
+	noncomment=$(grep -v '^\s*#' "$file")
+	if ! printf '%s\n' "$noncomment" | grep -qF -- "$text"; then
 		error "$message"
 	fi
 }
