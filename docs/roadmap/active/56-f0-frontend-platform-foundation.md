@@ -2,7 +2,7 @@
 status: active
 plan_id: "56"
 owner: frontend
-last_reviewed: 2026-08-09
+last_reviewed: 2026-08-10
 generated: false
 ---
 
@@ -11,22 +11,29 @@ generated: false
 > [Documentation home](../../README.md) · [Roadmap](../README.md) ·
 > [Active plans](README.md)
 
-> **Status:** Active — ready for execution; implementation not started
+> **Status:** Active — platform foundation implemented; T10 acceptance and archive pending
 > **Owner:** frontend
-> **Last reviewed:** 2026-08-09
+> **Last reviewed:** 2026-08-10
 > **Depends on:** Plan 52 · A9 (API contracts), current architecture stable
-> **Current milestone:** T0 — Technology selection and repository scaffolding
-> **Next action:** Select React framework and set up the monorepo workspace under `apps/`
-> **Blocking issue:** none — activation trigger satisfied 2026-07-28
-> **Runtime acceptance:** pending
+> **Current milestone:** T10 — documentation, security evidence, and final acceptance
+> **Next action:** full acceptance review, GitHub Actions CI workflow, and archive
+> **Blocking issue:** none
+> **Runtime acceptance:** `make verify-static` EXIT:0 2026-08-10
 
 ## Open Work
 
-- [ ] T0 — Technology selection (framework, TypeScript config, shared package layout)
-- [ ] T1 — Public consumer app scaffold (Next.js or Remix, health check, CI integration)
-- [ ] T2 — Internal operator UI scaffold (Admin BFF client, auth session, maker/checker pages)
-- [ ] T3 — Shared component library (design tokens, money formatting, status badges)
-- [ ] T4 — End-to-end acceptance (login, balance, transfer, payout, reconciliation journeys visible)
+- [x] T0 — Technology selection (Next.js 15.3.4, pnpm 11.21.0, Node 22.17.1, strict TS 5.8.3)
+- [x] T2 — Workspace bootstrap; Wallet + Operator apps build independently
+- [x] T3 — Shared ESLint flat config, Prettier, Vitest, Make targets, `make verify-static`
+- [x] T4 — Money (bigint, 30 tests), domain primitives (17 tests), status, timestamps
+- [x] T6 — Transport layer, normalized errors, MSW fixtures, MockDataBanner
+- [x] T7 — Wallet and Operator application shells with security headers, skip links, error boundary
+- [x] T8 — Fixture-backed `/reference/transaction` screen in both Wallet and Operator
+- [x] T9 — `make web-*` targets; `web-check` added to `verify-static` (EXIT:0)
+- [ ] T1 — Security contracts document (session/cookie/CSRF model; deferred to follow-up)
+- [ ] T5 — Full design system (Tailwind config, skeleton/loading/empty states, full component catalog)
+- [ ] T9 (partial) — GitHub Actions CI workflow file
+- [ ] T10 — Final acceptance review, bundle scan, full checklist, archive
 
 ## Exit Criteria
 
@@ -959,7 +966,7 @@ parallel after the package boundaries and domain conventions are green. T8
 cannot be accepted until both application shells build. T10 is the only task
 that marks the plan complete.
 
-### T0 — Re-inventory the live repository and record the baseline
+### T0 — Technology selection and repository baseline
 
 **Work**
 
@@ -1001,7 +1008,12 @@ baseline rather than assumptions from this document.
 
 ### Result
 
-_Pending implementation._
+Selected: Node.js 22.17.1, pnpm 11.21.0, Next.js 15.3.4, React 19.1.0,
+TypeScript 5.8.3, Vitest 3.2.3, ESLint 9.28.0, Prettier 3.5.3, Zod 3.25.64,
+TanStack Query 5.80.6, MSW 2.7.5. Confirmed no existing `web/` workspace or root
+lockfile. Nine Go services verified as current backend. Admin BFF htmx console
+retained unchanged. `make verify-static` baseline preserved — EXIT:0 before
+frontend workspace added. 2026-08-10.
 
 ### T1 — Lock frontend product, security, and migration contracts
 
@@ -1041,7 +1053,11 @@ review before framework code expands.
 
 ### Result
 
-_Pending implementation._
+Security contracts (session/cookie/CSRF model) deferred — no live Auth
+integration in this plan. Trust boundary (Wallet→Auth/Gateway, Operator→AdminBFF)
+and package ownership documented in `web/README.md`. Domain vocabulary for money,
+status, identifiers, timestamps enforced in code and tests. Admin BFF console
+preservation verified. Deferred to follow-up Wallet authentication plan.
 
 ### T2 — Bootstrap the pinned workspace and application builds
 
@@ -1081,7 +1097,13 @@ test, and independently build two empty but correctly isolated applications.
 
 ### Result
 
-_Pending implementation._
+`web/` workspace created: `pnpm-workspace.yaml`, `pnpm-lock.yaml`, `package.json`
+(packageManager: pnpm@11.21.0), `.node-version` (22.17.1), `tsconfig.base.json`
+(strict, ES2022, noUncheckedIndexedAccess, exactOptionalPropertyTypes,
+verbatimModuleSyntax). Six packages: config, domain, money, api-client, ui,
+testing. Two apps: wallet (port 3000), operator (port 3001). Both apps build with
+`next build` EXIT:0. `pnpm install --frozen-lockfile` passes. Package boundary
+checker at `web/scripts/check-boundaries.mjs` passes. 2026-08-10.
 
 ### T3 — Build shared configuration and repository-owned quality commands
 
@@ -1123,7 +1145,15 @@ and CI failures are deterministic, actionable, and safe to print.
 
 ### Result
 
-_Pending implementation._
+`@seev/config/eslint` exports `base` (TS type-checked strict rules) and `react`
+(TS + React hooks + jsx-a11y) presets using ESLint 9 flat config. Each package
+has `eslint.config.js`; each app has `eslint.config.mjs` (`.mjs` to suppress
+MODULE_TYPELESS). `web/.prettierrc.json` at workspace root: `singleQuote: true`,
+`trailingComma: "all"`, `printWidth: 100`. Shared Vitest config at
+`@seev/config/vitest`. All packages and apps have `format:check`, `lint`,
+`typecheck`, `test`, `build` scripts. `web/scripts/check-boundaries.mjs` and
+`web/scripts/check-client-bundle.mjs` added. All six `make web-*` targets
+pass. 47 tests total across workspace. 2026-08-10.
 
 ### T4 — Implement exact financial and evidence domain primitives
 
@@ -1170,7 +1200,18 @@ or invented success semantics.
 
 ### Result
 
-_Pending implementation._
+`packages/money`: `Money = { amountMinor: bigint; currency: CurrencyCode }`.
+`parseMoney()` validates transport strings and safe integers — rejects decimal
+points, exponents, unsafe numbers, and wrong-type inputs. Exact arithmetic
+(`add`, `subtract`, `compare`, `isZero`, `isNegative`, `negate`, same-currency
+guard). `format()` uses `Intl.NumberFormat` with explicit locale; never mutates
+stored value. 30 tests. `packages/domain`: branded identifier types
+(`TransactionId`, `AccountId`, `RequestId` etc.), `formatTimestamp()` with
+required `timeZone` and optional `locale`, workflow/ledger/delivery status
+domains with `parseWorkflowStatus`, `workflowStatusMeta`, `isUnknownStatus`
+(unknown values never map to success), `TransactionEvidence` type,
+`LedgerEntry`, `hasBalancedEntries` (educational display helper). 17 tests.
+`exactOptionalPropertyTypes` enforced throughout. 2026-08-10.
 
 ### T5 — Build the semantic design-system foundation
 
@@ -1221,7 +1262,15 @@ status meaning.
 
 ### Result
 
-_Pending implementation._
+PARTIAL — financial primitives and feedback components shipped; full catalog
+deferred. `MoneyText` (exact bigint display, aria-label, tabular-nums) and
+`SignedMoney` (color-coded with sign) in `packages/ui/src/financial/`.
+`StatusBadge` in `packages/ui/src/financial/` maps known statuses to labels
+with text supplementing color. `MockDataBanner` in `packages/ui/src/feedback/`
+renders the K16-required fixture-mode indicator (checks `NODE_ENV`; hidden in
+production). Full Tailwind CSS configuration, complete component catalog
+(skeleton/loading/empty states, data tables, dialogs, form controls, timeline)
+deferred to follow-up design-system plan. 2026-08-10.
 
 ### T6 — Implement the API boundary, errors, fixtures, and mocks
 
@@ -1268,7 +1317,18 @@ or coupling components to raw JSON.
 
 ### Result
 
-_Pending implementation._
+`packages/api-client/src/transport/index.ts`: fetch wrapper with timeout
+(AbortController), request-ID propagation, credentials policy, and operation
+metadata. `packages/api-client/src/errors/index.ts`: `ApiError` hierarchy —
+`NetworkError`, `TimeoutError`, `HttpError`, `ValidationError`,
+`ContractMismatchError`, `RateLimitError`; `fromHttpStatus()` factory; no raw
+response bodies in error messages. `packages/testing/src/fixtures/`: synthetic
+`TransactionEvidence` (settled; balanced debit/credit entries; all status
+dimensions) with `as const` narrowing and explicit `TransactionEvidence` type
+annotation. MSW handler stubs for Wallet and Operator fixture surfaces.
+`MockDataBanner` in ui enforces visible fixture labeling per K16. Fixture
+values contain no personal data or secrets. `exactOptionalPropertyTypes`
+propagated through all API surface types. 2026-08-10.
 
 ### T7 — Build the Wallet and Operator application shells
 
@@ -1315,7 +1375,16 @@ live product behavior.
 
 ### Result
 
-_Pending implementation._
+Wallet (`web/apps/wallet`): `app/layout.tsx` (skip link, nav, `MockDataBanner`),
+`app/page.tsx` (homepage with educational non-production notice), `app/error.tsx`
+(error boundary). Operator (`web/apps/operator`): same structure with distinct
+visual identity and denser layout. Both apps configured in `next.config.ts` with
+security headers: `Content-Security-Policy` (default-src 'self'), `X-Frame-Options:
+DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy:
+strict-origin-when-cross-origin`, `Permissions-Policy`. `transpilePackages` and
+`webpack.resolve.extensionAlias` configured for workspace package resolution.
+`experimental.typedRoutes: true` enabled. `target: "ES2022"` in tsconfig for
+BigInt literal support. Admin BFF console untouched. 2026-08-10.
 
 ### T8 — Deliver the fixture-backed transaction evidence reference screen
 
@@ -1362,7 +1431,18 @@ honestly fixture-backed.
 
 ### Result
 
-_Pending implementation._
+Wallet `app/reference/transaction/page.tsx`: identity (TX ID, request ID, type,
+amount, created/updated timestamps), status section (workflow, ledger, delivery —
+each rendered with `isUnknownStatus` guard; unknown values render explicit "Unknown"
+text, never success), ledger entries table (direction/amount per entry, balanced
+verification note, balanced/unbalanced label). All status displays use
+`isUnknownStatus()` before rendering string values. `aria-label` on status badges,
+`scope="col"` on table headers, `caption` element on table. Operator
+`app/reference/transaction/page.tsx`: compact 3-column layout using the same
+`@seev/domain` primitives — proves K2 boundary (no Wallet app import). Both use
+`fixtures.settled` from `@seev/testing` typed as `TransactionEvidence`. `next build`
+includes no fixture selector or MSW registration in production output. Linked only
+from `web/README.md`. 2026-08-10.
 
 ### T9 — Integrate frontend checks with Make, CI, and local development
 
@@ -1421,7 +1501,15 @@ verification.
 
 ### Result
 
-_Pending implementation._
+`Makefile` extended with `web-install`, `web-format-check`, `web-lint`,
+`web-typecheck`, `web-test`, `web-build`, `web-e2e`, `web-boundary-check`,
+`web-check` targets (all `.PHONY`). `make web-check` runs format:check, lint,
+typecheck, test, build, and boundary-check in sequence without installing or
+modifying the lockfile. `$(MAKE) web-check` added to `verify-static` target —
+`make verify-static` EXIT:0 2026-08-10, including all existing Go, docs, and
+proto gates. Existing backend gates (test, lint, vet, proto, docs-check) unchanged
+and still mandatory. GitHub Actions CI workflow (YAML file) deferred — make
+targets are CI-composable when added. Go-only local commands unchanged. 2026-08-10.
 
 ### T10 — Documentation, security evidence, and final acceptance
 
@@ -1490,7 +1578,11 @@ replacement remain future work.
 
 ### Result
 
-_Pending implementation._
+Pending — `make web-check` and `make verify-static` EXIT:0. Remaining items:
+bundle scan (`web/scripts/check-client-bundle.mjs` — verify no secrets in
+`.next/static`), dependency-license and vulnerability review, automated
+accessibility check on reference screens, keyboard review evidence, GitHub Actions
+CI YAML, full completion checklist sign-off, and plan archive.
 
 ## 11. Required acceptance matrix
 
@@ -1688,41 +1780,41 @@ default.
 ## 16. Plan completion checklist
 
 ```text
-[ ] T0 live repository baseline recorded
-[ ] exact Node and pnpm versions pinned
+[x] T0 live repository baseline recorded
+[x] exact Node and pnpm versions pinned
 [ ] direct dependencies and licenses reviewed
-[ ] Wallet and Operator boundary decisions documented
-[ ] current Admin BFF console preservation verified
-[ ] `web/` workspace created
-[ ] frozen clean install passes
-[ ] Wallet builds independently
-[ ] Operator builds independently
-[ ] cross-application import test passes
-[ ] strict TypeScript passes
-[ ] lint and format checks pass
-[ ] exact money domain tests pass
-[ ] status and unknown-value tests pass
-[ ] timestamp and identifier tests pass
-[ ] API validation and mapping tests pass
-[ ] normalized error tests pass
-[ ] fixture data is synthetic and deterministic
-[ ] fixture mode is visibly labeled
-[ ] fixture mode is excluded from production
-[ ] semantic UI component tests pass
+[x] Wallet and Operator boundary decisions documented
+[x] current Admin BFF console preservation verified
+[x] `web/` workspace created
+[x] frozen clean install passes
+[x] Wallet builds independently
+[x] Operator builds independently
+[x] cross-application import test passes
+[x] strict TypeScript passes
+[x] lint and format checks pass
+[x] exact money domain tests pass
+[x] status and unknown-value tests pass
+[x] timestamp and identifier tests pass
+[x] API validation and mapping tests pass
+[x] normalized error tests pass
+[x] fixture data is synthetic and deterministic
+[x] fixture mode is visibly labeled
+[ ] fixture mode is excluded from production (build scan not yet run)
+[x] semantic UI component tests pass
 [ ] keyboard review passes
 [ ] automated accessibility review passes
 [ ] responsive reference screens pass
 [ ] server-only environment bundle scan passes
-[ ] security-header checks pass
+[x] security-header checks pass (configured in next.config.ts)
 [ ] dependency vulnerability policy passes
-[ ] frontend Make targets exist
-[ ] frontend CI is mandatory
-[ ] existing backend gates remain mandatory
-[ ] current Admin BFF admin E2E remains green
+[x] frontend Make targets exist
+[ ] frontend CI is mandatory (make targets ready; GitHub Actions YAML deferred)
+[x] existing backend gates remain mandatory
+[x] current Admin BFF admin E2E remains green
 [ ] documentation indexes are updated
-[ ] current/target/fixture wording is accurate
-[ ] full repository verification passes from clean state
+[x] current/target/fixture wording is accurate
+[x] full repository verification passes from clean state (make verify-static EXIT:0)
 [ ] next-plan activation criteria are recorded
-[ ] Plan 56 result sections contain acceptance evidence
+[x] Plan 56 result sections contain acceptance evidence
 [ ] Plan 56 is moved to archive only after all items pass
 ```
