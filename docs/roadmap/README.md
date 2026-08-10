@@ -15,7 +15,6 @@ trigger, prerequisites, and owner decision are satisfied.
 | # | Plan | Purpose | Status |
 |---|---|---|---|
 | 56 · F0 | [Frontend platform foundation](active/56-f0-frontend-platform-foundation.md) | Establish the browser product and shared frontend rules | Active — ready for execution; implementation not started |
-| 65 · A11 | [Database audit and hardening](active/65-a11-database-audit-and-hardening.md) | Repeated schema-safety, security, and business-completeness audit passes | In progress — Round 3 critical findings implemented; governance decisions and integration acceptance remain |
 
 The same list is available in the [active-plan folder](active/README.md).
 

@@ -9,7 +9,6 @@
 | Plan | Scope |
 |---|---|
 | [56 · F0](56-f0-frontend-platform-foundation.md) | Frontend platform foundation |
-| [65 · A11](65-a11-database-audit-and-hardening.md) | Database audit and hardening |
 
 Read the [roadmap strategy](../42-long-term-roadmap.md) and each plan's trigger
 before treating it as executable work.

@@ -48,6 +48,7 @@ detailed implementation history lives in Git. Active plans are in
 | 61 · C5 | Advanced financial products and period close | Savings products, accrual, and period-close complete | 2026-08-05 | `reference/services.md` |
 | 62 · C6 | Zero-downtime migration engine | Migration platform and account_balances_v2 complete | 2026-08-09 | `reference/decisions/0004-zero-downtime-migration-platform.md`, `security/threat-model.md` (TM-23–TM-26) |
 | 64 · K0 | Deployment inventory baseline | Kubernetes readiness baseline and deployment inventory complete | 2026-08-09 | `deployment/README.md` |
+| 65 · A11 | Database audit and hardening | Three-round schema-safety, security, and business-completeness audit complete; bounded entry posting (SECURITY DEFINER), KYC maker/checker, DELETE-grant revocations, dispute/disbursement guards, and HTTP transport split all implemented and verified by `make integration` (EXIT:0) | 2026-08-10 | `services/ledger/migrations/`, `services/auth/migrations/` |
 
 Plans 35 (optional local Kubernetes) and 55 (frontend long-term roadmap) are strategy/reference documents, not task lists.
 Plan 63 (Kubernetes cloud deployment roadmap) is the active cloud deployment strategy.

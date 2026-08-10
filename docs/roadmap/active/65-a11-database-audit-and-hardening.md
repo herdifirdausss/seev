@@ -8,17 +8,14 @@ generated: false
 
 # Plan 65 · A11 — Database Audit and Hardening
 
-> **Status:** In progress — Round 3 critical findings and governance decisions are closed; full integration acceptance remains open
+> **Status:** Complete — all Round 3 findings resolved; `make integration` passes clean (EXIT:0) 2026-08-10
 > **Owner:** database
 > **Last reviewed:** 2026-08-10
 > **Depends on:** Plan 53 · B0 (load baseline), Plan 49 · A6 (internal security)
-> **Current milestone:** Round 3 — complete integration acceptance and resolve remaining read-access governance
-> **Next action:** Complete the bounded full integration suite
+> **Current milestone:** Complete
+> **Next action:** Archived — see [history](../history.md)
 > **Blocking issue:** none
-> **Runtime acceptance:** partial — the complete race-enabled Ledger
-> integration suite, focused `000049` posting-boundary contracts, and focused
-> `000022` KYC maker/checker contracts pass; the repository-wide integration
-> suite remains pending
+> **Runtime acceptance:** complete — `make integration` ran EXIT:0 on 2026-08-10 with zero FAIL lines across all packages
 
 ## Open Work (Round 3)
 
