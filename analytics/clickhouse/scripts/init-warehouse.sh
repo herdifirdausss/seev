@@ -2,22 +2,25 @@
 set -eu
 
 clickhouse_client() {
-  clickhouse-client --host clickhouse --multiquery "$@"
+	clickhouse-client --host clickhouse --multiquery "$@"
 }
 
 for migration in /migrations/*.sql; do
-  echo "applying $(basename "$migration")"
-  clickhouse_client < "$migration"
+	echo "applying $(basename "$migration")"
+	clickhouse_client <"$migration"
 done
 
 read_secret() {
-  file=$1
-  [ -s "$file" ] || { echo "required analytics secret is missing: $file" >&2; exit 2; }
-  tr -d '\r\n' < "$file"
+	file=$1
+	[ -s "$file" ] || {
+		echo "required analytics secret is missing: $file" >&2
+		exit 2
+	}
+	tr -d '\r\n' <"$file"
 }
 
 sql_quote() {
-  printf "%s" "$1" | sed "s/'/''/g"
+	printf "%s" "$1" | sed "s/'/''/g"
 }
 
 bi_password=$(read_secret "${CLICKHOUSE_BI_PASSWORD_FILE:?CLICKHOUSE_BI_PASSWORD_FILE is required}")

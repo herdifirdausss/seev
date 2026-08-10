@@ -2,4 +2,4 @@
 set -eu
 
 exec docker compose -f analytics/compose/docker-compose.analytics.yml \
-  --profile analytics-core run --rm warehouse-init
+	--profile analytics-core run --rm warehouse-init

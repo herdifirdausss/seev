@@ -10,14 +10,14 @@ set -eu
 : "${ANALYTICS_PAYOUT_PASSWORD:?ANALYTICS_PAYOUT_PASSWORD is required}"
 
 run_psql() {
-  database=$1
-  role=$2
-  password=$3
-  shift 3
-  PGPASSWORD="$POSTGRES_MIGRATE_PASSWORD" psql \
-    --host "$POSTGRES_HOST" --port "$POSTGRES_PORT" \
-    --username "$POSTGRES_MIGRATE_USER" --dbname "$database" \
-    --set ON_ERROR_STOP=1 --set role_name="$role" --set role_password="$password" "$@"
+	database=$1
+	role=$2
+	password=$3
+	shift 3
+	PGPASSWORD="$POSTGRES_MIGRATE_PASSWORD" psql \
+		--host "$POSTGRES_HOST" --port "$POSTGRES_PORT" \
+		--username "$POSTGRES_MIGRATE_USER" --dbname "$database" \
+		--set ON_ERROR_STOP=1 --set role_name="$role" --set role_password="$password" "$@"
 }
 
 run_psql seev_ledger seev_analytics_ledger "$ANALYTICS_LEDGER_PASSWORD" <<'SQL'
