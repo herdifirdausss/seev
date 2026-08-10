@@ -34,11 +34,12 @@ profile.cov
 go.work
 go.work.sum
 
-# TypeScript incremental cache (belt-and-suspenders; web/.gitignore is primary)
+# TypeScript incremental cache
 *.tsbuildinfo
 
 # Operating-system metadata
 .DS_Store
+Thumbs.db
 
 # env file
 .env
@@ -98,3 +99,27 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# ─── Frontend workspace (web/) ───────────────────────────────────────────────
+
+# Node dependencies — never committed at any depth
+**/node_modules/
+
+# Next.js build output
+web/**/.next/
+web/**/out/
+
+# pnpm content-addressable store (created by pnpm install)
+web/.pnpm-store/
+
+# Package build output — note: contracts/http/dist IS tracked, so be specific
+web/**/dist/
+
+# Test artifacts
+web/**/coverage/
+**/playwright-report/
+**/test-results/
+
+# Per-machine environment overrides (only .env at root is already covered above)
+web/**/.env.local
+web/**/.env.*.local
