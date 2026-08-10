@@ -1,6 +1,7 @@
 package architecture
 
 import (
+	"bufio"
 	"go/parser"
 	"go/token"
 	"os"
@@ -9,6 +10,86 @@ import (
 	"strings"
 	"testing"
 )
+
+func TestLedgerRepositoryProductionLOCStaysBounded(t *testing.T) {
+	root, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	root = filepath.Clean(filepath.Join(root, "..", ".."))
+	repositoryRoot := filepath.Join(root, "services", "ledger", "internal", "repository")
+
+	const maximumLOC = 8000
+	total := 0
+	err = filepath.WalkDir(repositoryRoot, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		name := entry.Name()
+		if entry.IsDir() || filepath.Ext(name) != ".go" || strings.HasSuffix(name, "_test.go") || strings.HasSuffix(name, "_mock.go") {
+			return nil
+		}
+		file, openErr := os.Open(path)
+		if openErr != nil {
+			return openErr
+		}
+		scanner := bufio.NewScanner(file)
+		for scanner.Scan() {
+			total++
+		}
+		scanErr := scanner.Err()
+		closeErr := file.Close()
+		if scanErr != nil {
+			return scanErr
+		}
+		return closeErr
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if total >= maximumLOC {
+		t.Fatalf("ledger repository production LOC = %d, must stay below %d (generated mocks and tests excluded)", total, maximumLOC)
+	}
+	t.Logf("ledger repository production LOC = %d (limit < %d)", total, maximumLOC)
+}
+
+func TestLedgerHTTPFilesStayReviewable(t *testing.T) {
+	root, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	root = filepath.Clean(filepath.Join(root, "..", ".."))
+	transportRoot := filepath.Join(root, "services", "ledger", "internal", "transport")
+	limits := map[string]int{
+		"http.go":                         500,
+		"http_admin.go":                   900,
+		"http_fees_disputes.go":           900,
+		"http_reports.go":                 900,
+		"http_schedules_disbursements.go": 900,
+		"http_transactions.go":            900,
+	}
+	for name, limit := range limits {
+		file, openErr := os.Open(filepath.Join(transportRoot, name))
+		if openErr != nil {
+			t.Fatal(openErr)
+		}
+		lines := 0
+		scanner := bufio.NewScanner(file)
+		for scanner.Scan() {
+			lines++
+		}
+		closeErr := file.Close()
+		if scanner.Err() != nil {
+			t.Fatal(scanner.Err())
+		}
+		if closeErr != nil {
+			t.Fatal(closeErr)
+		}
+		if lines >= limit {
+			t.Errorf("%s LOC = %d, must stay below %d", name, lines, limit)
+		}
+	}
+}
 
 func TestCanonicalServiceTree(t *testing.T) {
 	root, err := os.Getwd()
