@@ -2,6 +2,7 @@ package payin
 
 import (
 	"context"
+	stderrors "errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -84,7 +85,7 @@ func (m *Module) createTopupIntent(ctx context.Context, userID uuid.UUID, amount
 		return TopupIntent{}, fmt.Errorf("%w: user id is required", ErrInvalidAmount)
 	}
 	if err := currencyreg.ValidatePositiveMinorAmount(amount); err != nil {
-		return TopupIntent{}, fmt.Errorf("%w: %v", ErrInvalidAmount, err)
+		return TopupIntent{}, fmt.Errorf("%w: %w", ErrInvalidAmount, err)
 	}
 	if !amount.BigInt().IsInt64() {
 		return TopupIntent{}, fmt.Errorf("%w: amount must fit Ledger int64", ErrInvalidAmount)
@@ -329,7 +330,7 @@ func (m *Module) resolveTopupFinancials(ctx context.Context, ownerID uuid.UUID, 
 func (m *Module) GetTopupIntent(ctx context.Context, id uuid.UUID) (TopupIntent, error) {
 	intent, err := m.repo.GetTopupIntent(ctx, id)
 	if err != nil {
-		if err == repository.ErrNotFound {
+		if stderrors.Is(err, repository.ErrNotFound) {
 			return TopupIntent{}, ErrTopupIntentNotFound
 		}
 		return TopupIntent{}, err

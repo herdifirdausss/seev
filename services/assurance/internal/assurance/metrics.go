@@ -25,53 +25,53 @@ func init() {
 func (m *Module) refreshMetrics(ctx context.Context) error {
 	findingsBySeverity.Reset()
 	moneyAtRisk.Reset()
-	rows, err := m.db.QueryContext(ctx, `SELECT severity, rule_code, COUNT(*) FROM assurance_findings WHERE status IN ('open','acknowledged') GROUP BY severity, rule_code`)
-	if err != nil {
-		return err
-	}
-	for rows.Next() {
-		var severity, rule string
-		var count int64
-		if err := rows.Scan(&severity, &rule, &count); err != nil {
-			rows.Close()
+	if err := func() error {
+		rows, err := m.db.QueryContext(ctx, `SELECT severity, rule_code, COUNT(*) FROM assurance_findings WHERE status IN ('open','acknowledged') GROUP BY severity, rule_code`)
+		if err != nil {
 			return err
 		}
-		findingsBySeverity.WithLabelValues(severity, rule).Set(float64(count))
-	}
-	if err := rows.Err(); err != nil {
-		rows.Close()
+		defer rows.Close()
+		for rows.Next() {
+			var severity, rule string
+			var count int64
+			if err := rows.Scan(&severity, &rule, &count); err != nil {
+				return err
+			}
+			findingsBySeverity.WithLabelValues(severity, rule).Set(float64(count))
+		}
+		return rows.Err()
+	}(); err != nil {
 		return err
 	}
-	rows.Close()
 
-	rows, err = m.db.QueryContext(ctx, `SELECT currency, COALESCE(SUM(amount_minor),0) FROM assurance_findings WHERE status IN ('open','acknowledged') GROUP BY currency`)
-	if err != nil {
-		return err
-	}
-	for rows.Next() {
-		var currency string
-		var amount int64
-		if err := rows.Scan(&currency, &amount); err != nil {
-			rows.Close()
+	if err := func() error {
+		rows, err := m.db.QueryContext(ctx, `SELECT currency, COALESCE(SUM(amount_minor),0) FROM assurance_findings WHERE status IN ('open','acknowledged') GROUP BY currency`)
+		if err != nil {
 			return err
 		}
-		moneyAtRisk.WithLabelValues(currency).Set(float64(amount))
-	}
-	if err := rows.Err(); err != nil {
-		rows.Close()
+		defer rows.Close()
+		for rows.Next() {
+			var currency string
+			var amount int64
+			if err := rows.Scan(&currency, &amount); err != nil {
+				return err
+			}
+			moneyAtRisk.WithLabelValues(currency).Set(float64(amount))
+		}
+		return rows.Err()
+	}(); err != nil {
 		return err
 	}
-	rows.Close()
 
-	rows, err = m.db.QueryContext(ctx, `SELECT source, EXTRACT(EPOCH FROM (now() - updated_at_service)) FROM assurance_cursors`)
+	rows, err := m.db.QueryContext(ctx, `SELECT source, EXTRACT(EPOCH FROM (now() - updated_at_service)) FROM assurance_cursors`)
 	if err != nil {
 		return err
 	}
+	defer rows.Close()
 	for rows.Next() {
 		var source string
 		var lag float64
 		if err := rows.Scan(&source, &lag); err != nil {
-			rows.Close()
 			return err
 		}
 		cursorLag.WithLabelValues(source).Set(lag)

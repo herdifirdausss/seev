@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -171,7 +172,7 @@ func run(parent context.Context) error {
 	select {
 	case <-ctx.Done():
 	case serveErr := <-errCh:
-		if serveErr != nil && serveErr != grpc.ErrServerStopped {
+		if serveErr != nil && !errors.Is(serveErr, grpc.ErrServerStopped) {
 			cancel()
 			return serveErr
 		}

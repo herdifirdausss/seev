@@ -73,7 +73,7 @@ func (c *ServiceClient) DoRaw(ctx context.Context, token, method, path string, b
 	}
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
-		return 0, nil, nil, fmt.Errorf("%w: %s: %v", ErrUnavailable, c.Name, err)
+		return 0, nil, nil, fmt.Errorf("%w: %s: %w", ErrUnavailable, c.Name, err)
 	}
 	defer resp.Body.Close()
 	data, readErr := io.ReadAll(io.LimitReader(resp.Body, 4<<20))

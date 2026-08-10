@@ -125,7 +125,7 @@ func pathUUID(w http.ResponseWriter, r *http.Request, param string) (uuid.UUID, 
 }
 
 func mapNotFound(w http.ResponseWriter, err error) {
-	if err == repository.ErrNotFound {
+	if errors.Is(err, repository.ErrNotFound) {
 		response.NotFound(w, "not found")
 		return
 	}
@@ -350,14 +350,14 @@ func (m *Module) adminDecideLifecycle(decision string) http.HandlerFunc {
 }
 
 func writeLifecycleError(w http.ResponseWriter, err error) {
-	switch err {
-	case lifecycle.ErrInvalidAction:
+	switch {
+	case errors.Is(err, lifecycle.ErrInvalidAction):
 		response.BadRequest(w, err.Error())
-	case lifecycle.ErrNotFound, repository.ErrNotFound:
+	case errors.Is(err, lifecycle.ErrNotFound), errors.Is(err, repository.ErrNotFound):
 		response.NotFound(w, "not found")
-	case lifecycle.ErrSelfApproval:
+	case errors.Is(err, lifecycle.ErrSelfApproval):
 		response.Forbidden(w, err.Error())
-	case lifecycle.ErrAlreadyDecided:
+	case errors.Is(err, lifecycle.ErrAlreadyDecided):
 		response.Conflict(w, err.Error())
 	default:
 		response.InternalServerError(w, err)

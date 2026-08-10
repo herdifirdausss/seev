@@ -3,6 +3,7 @@ package adminbff
 import (
 	"encoding/json"
 	"io"
+	"mime"
 	"net/http"
 	"strings"
 
@@ -75,11 +76,6 @@ func (m *Module) proxy(target string, downstream *client.ServiceClient, publicPr
 		}
 		path := rewriteProxyPath(r.URL.Path, r.URL.RawQuery, publicPrefix, downstreamPrefix)
 		status, headers, responseBody, callErr := downstream.DoRaw(r.Context(), token, r.Method, path, body, contentType)
-		if ct := headers.Get("Content-Type"); ct != "" {
-			w.Header().Set("Content-Type", ct)
-		} else {
-			w.Header().Set("Content-Type", "application/json")
-		}
 		if callErr != nil && status == 0 {
 			m.AuditMutation(r.Context(), r, target, http.StatusServiceUnavailable, map[string]any{"error": "unavailable"})
 			writeJSONError(w, http.StatusServiceUnavailable, "DOWNSTREAM_UNAVAILABLE", "admin service temporarily unavailable")
@@ -89,9 +85,38 @@ func (m *Module) proxy(target string, downstream *client.ServiceClient, publicPr
 			status = http.StatusBadGateway
 		}
 		m.AuditMutation(r.Context(), r, target, status, map[string]any{"downstream_status": status})
-		w.WriteHeader(status)
-		_, _ = w.Write(responseBody)
+		writeDownstreamResponse(w, status, headers, responseBody)
 	})
+}
+
+// writeDownstreamResponse prevents an upstream error page from becoming an
+// executable Admin BFF response. API JSON may render inline; downloadable
+// formats are forced to attachments, and active browser content is rejected.
+func writeDownstreamResponse(w http.ResponseWriter, status int, headers http.Header, body []byte) {
+	contentType := headers.Get("Content-Type")
+	if contentType == "" {
+		contentType = "application/json"
+	}
+	mediaType, _, err := mime.ParseMediaType(contentType)
+	if err != nil {
+		writeJSONError(w, http.StatusBadGateway, "INVALID_DOWNSTREAM_RESPONSE", "admin service returned an invalid content type")
+		return
+	}
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	switch {
+	case mediaType == "application/json", strings.HasSuffix(mediaType, "+json"):
+		w.Header().Set("Content-Type", contentType)
+	case mediaType == "text/plain":
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	case mediaType == "text/csv", mediaType == "application/zip", mediaType == "application/octet-stream":
+		w.Header().Set("Content-Type", contentType)
+		w.Header().Set("Content-Disposition", "attachment")
+	default:
+		writeJSONError(w, http.StatusBadGateway, "INVALID_DOWNSTREAM_RESPONSE", "admin service returned an unsafe content type")
+		return
+	}
+	w.WriteHeader(status)
+	_, _ = w.Write(body) //nolint:gosec // content type is allowlisted and nosniff is mandatory above.
 }
 
 func (m *Module) reconUploadProxy() http.Handler {
@@ -100,7 +125,8 @@ func (m *Module) reconUploadProxy() http.Handler {
 			http.NotFound(w, r)
 			return
 		}
-		body, err := io.ReadAll(io.LimitReader(r.Body, 10<<20))
+		r.Body = http.MaxBytesReader(w, r.Body, 10<<20)
+		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			response.BadRequest(w, "invalid upload")
 			return

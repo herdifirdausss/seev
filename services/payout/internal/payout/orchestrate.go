@@ -49,7 +49,7 @@ func (m *Module) CreateWithCurrency(ctx context.Context, userID uuid.UUID, amoun
 
 func (m *Module) create(ctx context.Context, userID uuid.UUID, amount decimal.Decimal, destination []byte, createdBy, quoteID, requestedCurrency string) (uuid.UUID, error) {
 	if err := currencyreg.ValidatePositiveMinorAmount(amount); err != nil {
-		return uuid.Nil, fmt.Errorf("%w: %v", ErrInvalidAmount, err)
+		return uuid.Nil, fmt.Errorf("%w: %w", ErrInvalidAmount, err)
 	}
 	if err := m.ensureIntakeOpen(ctx); err != nil {
 		return uuid.Nil, err

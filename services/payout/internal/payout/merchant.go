@@ -50,7 +50,7 @@ func (m *Module) CreateMerchant(ctx context.Context, tenantID uuid.UUID, environ
 		return uuid.Nil, fmt.Errorf("payout: downstreamKey is required")
 	}
 	if err := currencyreg.ValidatePositiveMinorAmount(amount); err != nil {
-		return uuid.Nil, fmt.Errorf("%w: %v", ErrInvalidAmount, err)
+		return uuid.Nil, fmt.Errorf("%w: %w", ErrInvalidAmount, err)
 	}
 	if err := m.ensureIntakeOpen(ctx); err != nil {
 		return uuid.Nil, err

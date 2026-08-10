@@ -2,6 +2,7 @@ package fraud
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -27,7 +28,7 @@ func NewRedisVelocityStore(client *redis.Client) *RedisVelocityStore {
 
 func (s *RedisVelocityStore) Get(ctx context.Context, key string) (int64, error) {
 	value, err := s.client.Get(ctx, key).Int64()
-	if err == redis.Nil {
+	if errors.Is(err, redis.Nil) {
 		return 0, nil
 	}
 	return value, err

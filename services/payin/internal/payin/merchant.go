@@ -53,7 +53,7 @@ func (m *Module) CreateMerchantTopupIntent(ctx context.Context, tenantID uuid.UU
 		return TopupIntent{}, fmt.Errorf("payin: downstreamKey is required")
 	}
 	if err := currencyreg.ValidatePositiveMinorAmount(amount); err != nil {
-		return TopupIntent{}, fmt.Errorf("%w: %v", ErrInvalidAmount, err)
+		return TopupIntent{}, fmt.Errorf("%w: %w", ErrInvalidAmount, err)
 	}
 	if err := m.ensureIntakeOpen(ctx); err != nil {
 		return TopupIntent{}, err

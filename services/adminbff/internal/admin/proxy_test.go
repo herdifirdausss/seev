@@ -1,6 +1,7 @@
 package adminbff
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -28,6 +29,7 @@ func TestProxyFormBodySurvivesCSRFParse(t *testing.T) {
 	var capturedBody []byte
 	downstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		capturedBody, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"success":true}`))
 	}))
@@ -86,6 +88,7 @@ func TestProxyJSONBodyPassedThrough(t *testing.T) {
 	var capturedBody []byte
 	downstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		capturedBody, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"success":true}`))
 	}))
@@ -125,6 +128,36 @@ func TestProxyJSONBodyPassedThrough(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.JSONEq(t, jsonPayload, string(capturedBody), "JSON body must be forwarded unchanged")
+}
+
+func TestProxyRejectsDownstreamHTML(t *testing.T) {
+	rec := httptest.NewRecorder()
+	writeDownstreamResponse(rec, http.StatusBadGateway, http.Header{"Content-Type": []string{"text/html"}}, []byte(`<script>window.location='https://attacker.example'</script>`))
+
+	require.Equal(t, http.StatusBadGateway, rec.Code)
+	require.Equal(t, "application/json; charset=utf-8", rec.Header().Get("Content-Type"))
+	require.NotContains(t, rec.Body.String(), "<script>")
+}
+
+func TestWriteDownstreamResponseForcesDownloads(t *testing.T) {
+	rec := httptest.NewRecorder()
+	writeDownstreamResponse(rec, http.StatusOK, http.Header{"Content-Type": []string{"text/csv; charset=utf-8"}}, []byte("id,amount\n1,10\n"))
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, "nosniff", rec.Header().Get("X-Content-Type-Options"))
+	require.Equal(t, "attachment", rec.Header().Get("Content-Disposition"))
+}
+
+func TestReconUploadProxyRejectsOversizedBodyBeforeDownstream(t *testing.T) {
+	m := &Module{cfg: config.AdminBFFConfig{JWTSecret: "test-regression-secret-32charlong!", JWTIssuer: "test", DownstreamTokenTTL: time.Minute}}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/recon/batches", strings.NewReader(strings.Repeat("x", (10<<20)+1)))
+	session := &Session{UserID: uuid.New(), Email: "maker@example.test", Role: "admin_maker"}
+	req = req.WithContext(context.WithValue(req.Context(), adminSessionKey, session))
+	rec := httptest.NewRecorder()
+
+	m.reconUploadProxy().ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Contains(t, rec.Body.String(), "invalid upload")
 }
 
 // TestRewriteProxyPath_LedgerAdminCatchAll proves the routing-bug fix (a

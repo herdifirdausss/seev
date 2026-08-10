@@ -17,9 +17,9 @@ import (
 
 	payinv1 "github.com/herdifirdausss/seev/gen/go/payin/v1"
 	payoutv1 "github.com/herdifirdausss/seev/gen/go/payout/v1"
-	"github.com/herdifirdausss/seev/internal/platform/transport/httpcontract"
 	"github.com/herdifirdausss/seev/internal/platform/security/middleware"
 	"github.com/herdifirdausss/seev/internal/platform/transport/http/response"
+	"github.com/herdifirdausss/seev/internal/platform/transport/httpcontract"
 )
 
 type payinControlReader interface {
@@ -110,6 +110,10 @@ func (m *Module) summaryHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		items = append(items, value)
 	}
+	if err := rows.Err(); err != nil {
+		writeError(w, "assurance unavailable", http.StatusInternalServerError)
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"findings": items, "generated_at": time.Now().UTC()})
 }
 
@@ -157,6 +161,10 @@ func (m *Module) findingsHandler(w http.ResponseWriter, r *http.Request) {
 		_ = json.Unmarshal(evidence, &evidenceValue)
 		findings = append(findings, map[string]any{"id": id, "fingerprint": fingerprint, "severity": severity, "rule_code": rule, "resource_id": resource, "amount_minor": amount, "currency": currency, "evidence": evidenceValue, "first_seen_at": firstSeen, "last_seen_at": lastSeen, "occurrence_count": occurrences, "status": statusValue})
 	}
+	if err := rows.Err(); err != nil {
+		writeError(w, "assurance unavailable", http.StatusInternalServerError)
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"findings": findings})
 }
 
@@ -191,6 +199,10 @@ func (m *Module) runsHandler(w http.ResponseWriter, r *http.Request) {
 			run["finished_at"] = finished.Time
 		}
 		runs = append(runs, run)
+	}
+	if err := rows.Err(); err != nil {
+		writeError(w, "assurance unavailable", http.StatusInternalServerError)
+		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"runs": runs})
 }

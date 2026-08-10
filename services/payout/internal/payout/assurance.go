@@ -127,21 +127,19 @@ func (m *Module) populateAssuranceChildren(ctx context.Context, id uuid.UUID, re
 	if err != nil {
 		return fmt.Errorf("payout assurance calls: %w", err)
 	}
+	defer calls.Close()
 	for calls.Next() {
 		var call payoutv1.VendorCallSummary
 		var created time.Time
 		if err := calls.Scan(&call.Attempt, &call.Vendor, &call.Outcome, &created); err != nil {
-			calls.Close()
 			return fmt.Errorf("scan payout assurance call: %w", err)
 		}
 		call.CreatedAt = timestamppb.New(created)
 		record.VendorCalls = append(record.VendorCalls, &call)
 	}
 	if err := calls.Err(); err != nil {
-		calls.Close()
 		return fmt.Errorf("iterate payout assurance calls: %w", err)
 	}
-	calls.Close()
 	commands, err := m.db.QueryContext(ctx, `SELECT id, vendor, attempt, status, updated_at FROM payout_vendor_commands WHERE payout_request_id = $1 ORDER BY attempt, id`, id)
 	if err != nil {
 		return fmt.Errorf("payout assurance commands: %w", err)

@@ -359,21 +359,19 @@ func (r *webhookRepository) BacklogStats(ctx context.Context) (map[string]int, *
 	if err != nil {
 		return nil, nil, fmt.Errorf("merchant: webhook delivery status counts: %w", err)
 	}
+	defer rows.Close()
 	counts := map[string]int{}
 	for rows.Next() {
 		var status string
 		var count int
 		if err := rows.Scan(&status, &count); err != nil {
-			rows.Close()
 			return nil, nil, fmt.Errorf("merchant: scan webhook delivery status count: %w", err)
 		}
 		counts[status] = count
 	}
 	if err := rows.Err(); err != nil {
-		rows.Close()
 		return nil, nil, err
 	}
-	rows.Close()
 
 	var oldestPendingAt sql.NullTime
 	err = r.db.QueryRowContext(ctx, `

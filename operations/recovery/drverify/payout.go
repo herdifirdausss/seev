@@ -51,24 +51,28 @@ func fetchPayoutRows(ctx context.Context, tx *sql.Tx, pageSize int) ([]payoutRow
 		if err != nil {
 			return nil, fmt.Errorf("payout verification query: %w", err)
 		}
-		page := 0
-		for rows.Next() {
-			var r payoutRow
-			if err := rows.Scan(&r.id, &r.createdAt, &r.status, &r.userID, &r.amountMinor, &r.currency, &r.vendor,
-				&r.holdTxID, &r.settleTxID, &r.requestIDPresent, &r.feeQuoteID, &r.feeAmountMinor, &r.feeGateway,
-				&r.effectiveUpdatedAt); err != nil {
-				rows.Close()
-				return nil, fmt.Errorf("scan payout row: %w", err)
+		page, scanErr := func() (int, error) {
+			defer rows.Close()
+			page := 0
+			for rows.Next() {
+				var r payoutRow
+				if err := rows.Scan(&r.id, &r.createdAt, &r.status, &r.userID, &r.amountMinor, &r.currency, &r.vendor,
+					&r.holdTxID, &r.settleTxID, &r.requestIDPresent, &r.feeQuoteID, &r.feeAmountMinor, &r.feeGateway,
+					&r.effectiveUpdatedAt); err != nil {
+					return 0, fmt.Errorf("scan payout row: %w", err)
+				}
+				all = append(all, r)
+				cursorTime, cursorID = r.effectiveUpdatedAt, r.id
+				page++
 			}
-			all = append(all, r)
-			cursorTime, cursorID = r.effectiveUpdatedAt, r.id
-			page++
+			if err := rows.Err(); err != nil {
+				return 0, err
+			}
+			return page, nil
+		}()
+		if scanErr != nil {
+			return nil, scanErr
 		}
-		if err := rows.Err(); err != nil {
-			rows.Close()
-			return nil, err
-		}
-		rows.Close()
 		if page < pageSize {
 			break
 		}

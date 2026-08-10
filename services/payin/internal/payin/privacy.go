@@ -62,18 +62,18 @@ func (m *Module) PrivacyCommitClosure(ctx context.Context, subjectID, surrogateI
 		if err != nil {
 			return "", 0, fmt.Errorf("payin closure commit result: %w", err)
 		}
-		for rows.Next() {
-			var id uuid.UUID
-			if err := rows.Scan(&id); err != nil {
-				rows.Close()
-				return "", 0, fmt.Errorf("payin closure commit scan: %w", err)
+		if err := func() error {
+			defer rows.Close()
+			for rows.Next() {
+				var id uuid.UUID
+				if err := rows.Scan(&id); err != nil {
+					return fmt.Errorf("payin closure commit scan: %w", err)
+				}
+				h.Write([]byte(id.String()))
+				affectedCount++
 			}
-			h.Write([]byte(id.String()))
-			affectedCount++
-		}
-		err = rows.Err()
-		rows.Close()
-		if err != nil {
+			return rows.Err()
+		}(); err != nil {
 			return "", 0, fmt.Errorf("payin closure commit iterate: %w", err)
 		}
 	}

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/herdifirdausss/seev/internal/platform/transport/http/response"
@@ -33,7 +34,7 @@ func GetMerchantHandler(tenants repository.TenantRepository) http.HandlerFunc {
 		}
 		tenant, err := tenants.GetByID(r.Context(), principal.TenantID)
 		if err != nil {
-			if err == repository.ErrNotFound {
+			if errors.Is(err, repository.ErrNotFound) {
 				response.ErrorStatus(w, http.StatusNotFound, "RESOURCE_NOT_FOUND", "tenant not found")
 				return
 			}

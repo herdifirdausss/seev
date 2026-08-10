@@ -40,12 +40,25 @@ func setupVendorBoundaryTestDB(t *testing.T) *database.DBSQL {
 	require.NoError(t, err)
 	dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable", dbUser, dbPassword, host, port.Port(), dbName)
 
-	require.NoError(t, testutil.ApplyServiceMigrations(migrationsSourceURL(t), dsn))
-
-	cfg := config.PostgresConfig{Host: host, Port: port.Port(), User: dbUser, Password: dbPassword, DB: dbName, SSLMode: "disable", MaxOpenConns: 10}
+	cfg := config.PostgresConfig{
+		Host: host, Port: port.Port(), User: dbUser, Password: dbPassword,
+		DB: dbName, SSLMode: "disable", MaxOpenConns: 1, MaxIdleConns: 1,
+	}
 	db, err := database.New(ctx, cfg.Pkg())
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
+
+	// Production bootstrap owns these shared roles. Define them explicitly in
+	// this isolated database so Vendor's migrations and negative grant
+	// contracts exercise the production role topology without applying every
+	// unrelated service's schema.
+	_, err = db.ExecContext(ctx, `
+		CREATE ROLE app_service;
+		CREATE ROLE app_readonly;
+		CREATE ROLE vendor_app;
+	`)
+	require.NoError(t, err)
+	require.NoError(t, testutil.ApplyMigration(migrationsSourceURL(t), "vendor", dsn))
 	return db
 }
 
@@ -65,6 +78,29 @@ func TestBoundaryTables_RLSEnabledAndForced(t *testing.T) {
 		).Scan(&enabled, &forced))
 		require.True(t, enabled, "%s must have RLS enabled", table)
 		require.True(t, forced, "%s must have RLS forced", table)
+	}
+}
+
+func TestBoundaryTables_AppReadonlyCannotReadSensitiveVendorRows(t *testing.T) {
+	db := setupVendorBoundaryTestDB(t)
+	ctx := context.Background()
+
+	// app_readonly is intentionally a cross-service reporting role. Vendor's
+	// raw callback boundary has no reporting use case, so even encrypted bytes
+	// remain visible only to vendor_app. The single-open, single-idle pool keeps
+	// SET/RESET ROLE on the same isolated test connection.
+	_, err := db.ExecContext(ctx, `SET ROLE app_readonly`)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_, resetErr := db.ExecContext(context.Background(), `RESET ROLE`)
+		require.NoError(t, resetErr)
+	})
+
+	for _, table := range []string{"vendor_callback_inbox", "vendor_outbound_attempts"} {
+		var count int
+		err = db.QueryRowContext(ctx, `SELECT count(*) FROM `+table).Scan(&count)
+		require.Error(t, err, "app_readonly must not read %s", table)
+		require.Contains(t, err.Error(), "permission denied")
 	}
 }
 

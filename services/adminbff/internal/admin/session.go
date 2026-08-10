@@ -11,8 +11,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/herdifirdausss/seev/internal/platform/security/crypto"
 	"github.com/herdifirdausss/seev/internal/platform/database"
+	"github.com/herdifirdausss/seev/internal/platform/security/crypto"
 )
 
 var ErrSessionNotFound = errors.New("adminbff: session not found")
@@ -152,19 +152,17 @@ func (r *sessionRepo) BackfillOnce(ctx context.Context, batchSize int) (int, err
 		if queryErr != nil {
 			return fmt.Errorf("select backfill batch: %w", queryErr)
 		}
+		defer result.Close()
 		for result.Next() {
 			var pr pendingRow
 			if scanErr := result.Scan(&pr.id, &pr.email); scanErr != nil {
-				result.Close()
 				return fmt.Errorf("scan backfill row: %w", scanErr)
 			}
 			rows = append(rows, pr)
 		}
 		if rowsErr := result.Err(); rowsErr != nil {
-			result.Close()
 			return fmt.Errorf("iterate backfill batch: %w", rowsErr)
 		}
-		result.Close()
 
 		v := r.ring.CurrentVersion()
 		for _, pr := range rows {

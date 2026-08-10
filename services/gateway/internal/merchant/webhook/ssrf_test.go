@@ -100,7 +100,10 @@ func TestSafeClient_LiveModeRejectsLoopback(t *testing.T) {
 	liveClient := safeClient("live")
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, server.URL, nil)
 	require.NoError(t, err)
-	_, err = liveClient.Do(req)
+	liveResponse, err := liveClient.Do(req)
+	if liveResponse != nil {
+		require.NoError(t, liveResponse.Body.Close())
+	}
 	require.Error(t, err, "live-mode dispatch to a loopback address must be refused (SSRF defense)")
 	assert.Contains(t, err.Error(), "SSRF defense")
 
