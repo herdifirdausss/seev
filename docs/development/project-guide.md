@@ -112,7 +112,7 @@ committed so ordinary builds do not require Buf.
 Integration tests require Docker:
 
 ~~~bash
-go test -tags=integration -race ./...
+make integration
 ~~~
 
 The complete repeatable verification target resets Docker volumes before

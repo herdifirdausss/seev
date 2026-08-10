@@ -86,7 +86,7 @@ git diff --check
 ```
 
 ```bash
-go test -tags=integration -race ./...
+make integration
 ```
 
 Reach for the heavier gate only when it applies — money movement,

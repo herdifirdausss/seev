@@ -132,7 +132,7 @@ verification client. Owns `seev_auth`:
 | HTTP (public) | `POST /api/v1/auth/register`, `POST /api/v1/auth/login`, `POST /api/v1/auth/refresh` | rate-limited, unauthenticated by design |
 | HTTP (public) | `GET/PUT /api/v1/users/me` | JWT |
 | HTTP (public) | `POST /api/v1/users/me/kyc`, `GET /api/v1/users/me/kyc`, `POST /api/v1/users/me/kyc/documents` | JWT |
-| HTTP (internal admin) | `GET /api/v1/admin/kyc/submissions`, `POST .../approve`, `POST .../reject`, `POST /api/v1/admin/kyc/users/{id}/downgrade`, `GET /api/v1/admin/kyc/documents/{id}` | admin/maker/checker role |
+| HTTP (internal admin) | `GET /api/v1/admin/kyc/submissions`, maker `POST .../approve` / `POST .../reject`, checker `GET/POST /api/v1/admin/kyc/decision-requests...`, `POST /api/v1/admin/kyc/users/{id}/downgrade`, `GET /api/v1/admin/kyc/documents/{id}` | distinct admin maker/checker identities for manual terminal decisions |
 | HTTP (internal service) | `GET /internal/v1/users/{id}/notification-contact` | Gateway-only internal token; returns active user email and verified-contact state, never credentials |
 | Background | KYC apply-retry job | claims durable intents when a KYC approval's ledger-side tier apply failed transiently; re-runs the full limits-first flow (`services/auth/internal/worker/retry.go`) |
 | Background | Sanctions re-screen job | periodically re-submits already-approved KYC subjects to the sanctions checker (`services/auth/internal/worker/rescreen.go`) |

@@ -226,7 +226,7 @@ Action becoming a supply-chain hole.
 | `changes` | Classifies the diff as docs-only vs. runtime (anything outside `docs/**`/`*.md` counts as runtime) | Always |
 | `docs-check` | Uses the repository's standard-library Go checker to validate the required learning-path markers plus every local Markdown file link and heading anchor | Always |
 | `lint-and-test` | Go build/vet/module verification, `actionlint` + `ShellCheck`, SHA-pin policy, `golangci-lint`, Go 1.26 modernizer check, `govulncheck`, race/coverage tests, load-tag safety tests, HTTP/protobuf contract gates, and the disposable B0 load-harness safety gate | Only if `runtime == true` |
-| `integration` | `go test -json -tags=integration -race -timeout 25m ./...` against testcontainers-provisioned Postgres; uploads a 30-day JSONL/status/manifest artifact on every attempted run | Only if `runtime == true` |
+| `integration` | `go test -json -tags=integration -race -timeout 25m -p 2 ./...` against testcontainers-provisioned Postgres; bounds concurrent package execution to avoid saturating Docker and uploads a 30-day JSONL/status/manifest artifact on every attempted run | Only if `runtime == true` |
 | `smoke-container` | Builds all 9 service images via a single Bake invocation, verifies each image's revision label actually matches the commit (never a stale cache hit), runs `smoke-container.sh` against them | Only if `runtime == true` |
 | `ci-gate` | The one required check — requires `docs-check`, then asserts the three heavy jobs are `skipped` for a docs-only change or `success` for a runtime change; never silently green from an absent job | Always |
 

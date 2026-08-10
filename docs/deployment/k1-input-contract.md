@@ -5,9 +5,10 @@ machine-readable inventories and evidence hashes instead of rediscovering
 baseline facts.
 
 Entry is conditional on a passing static gate and reviewed runtime boundary.
-The current static and inventory gates pass; K1 remains held until the runtime
-acceptance evidence and human sign-off in the
-[runtime acceptance summary](../operations/runtime-acceptance.md) are complete.
+The repository records passing disposable local Kubernetes journeys and the
+current static/inventory gates. Cloud/staging apply evidence, resolved
+environment values, and human promotion sign-off remain pending; local
+acceptance must not be presented as cloud readiness.
 
 | Track | Required input | K0 source |
 |---|---|---|

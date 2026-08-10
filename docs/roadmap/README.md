@@ -15,7 +15,7 @@ trigger, prerequisites, and owner decision are satisfied.
 | # | Plan | Purpose | Status |
 |---|---|---|---|
 | 56 · F0 | [Frontend platform foundation](active/56-f0-frontend-platform-foundation.md) | Establish the browser product and shared frontend rules | Active — ready for execution; implementation not started |
-| 65 · A11 | [Database audit and hardening](active/65-a11-database-audit-and-hardening.md) | Repeated schema-safety, security, and business-completeness audit passes | In progress — Rounds 1–2 fixed; Round 3 findings documented, not yet fixed |
+| 65 · A11 | [Database audit and hardening](active/65-a11-database-audit-and-hardening.md) | Repeated schema-safety, security, and business-completeness audit passes | In progress — Round 3 critical findings implemented; governance decisions and integration acceptance remain |
 
 The same list is available in the [active-plan folder](active/README.md).
 
@@ -28,7 +28,8 @@ not a promise that every track will be implemented.
 [Plan 63](63-kubernetes-cloud-deployment-roadmap-v2.md) is the revised
 cloud-deployment learning roadmap. Its first completed gate was
 [plan 64 · K0](history.md) (complete 2026-08-09);
-neither plan claims that Kubernetes or cloud deployment exists today.
+local disposable Kubernetes acceptance evidence exists; cloud/staging apply
+evidence remains pending and is not implied by the local result.
 
 ## Completed history
 

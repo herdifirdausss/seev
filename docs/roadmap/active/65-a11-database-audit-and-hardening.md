@@ -2,36 +2,44 @@
 status: active
 plan_id: "65"
 owner: database
-last_reviewed: 2026-08-09
+last_reviewed: 2026-08-10
 generated: false
 ---
 
 # Plan 65 · A11 — Database Audit and Hardening
 
-> **Status:** In progress — Rounds 1–2 fixed and verified; Round 3 documented, not yet fixed
+> **Status:** In progress — Round 3 critical findings and governance decisions are closed; full integration acceptance remains open
 > **Owner:** database
-> **Last reviewed:** 2026-08-09
+> **Last reviewed:** 2026-08-10
 > **Depends on:** Plan 53 · B0 (load baseline), Plan 49 · A6 (internal security)
-> **Current milestone:** Round 3 — implement and verify all open findings
-> **Next action:** Fix maker-checker gap in admin BFF disbursement endpoint (`isAdmin(r)` replacement); implement `disputes` service and maker-checker gate; close `ledger_entries` RLS gap
-> **Blocking issue:** none — Round 3 findings documented and ready to implement
-> **Runtime acceptance:** partial — Rounds 1–2 schema contracts pass; Round 3 contracts not yet written
+> **Current milestone:** Round 3 — complete integration acceptance and resolve remaining read-access governance
+> **Next action:** Complete the bounded full integration suite
+> **Blocking issue:** none
+> **Runtime acceptance:** partial — the complete race-enabled Ledger
+> integration suite, focused `000049` posting-boundary contracts, and focused
+> `000022` KYC maker/checker contracts pass; the repository-wide integration
+> suite remains pending
 
 ## Open Work (Round 3)
 
-- [ ] Replace `isAdmin(r)` with proper maker-checker in admin BFF disbursement flow
-- [ ] Implement `disputes` service (open-dispute queue, SLA enforcement, evidence submission)
-- [ ] Add maker-checker gate to `disbursement_batches` at the database level
-- [ ] Fix `ledger_entries` RLS to prevent write access for the app role
-- [ ] Close `vendor_retention_audit` retention gap identified in Round 2
-- [ ] Reconcile `freeze_confiscate` maker-checker with `disbursement_batches` pattern
-- [ ] Write Round 3 schema contract tests
+- [x] Fee-rule maker/checker and DB non-negative constraint (`000044`)
+- [x] Disbursement processing DB approval gate (`000045`)
+- [x] Dispute API, amount/deadline guards, terminal immutability, and expiry worker (`000046`–`000047`)
+- [x] Scheduled execution routed through the shared command/KYC subject boundary
+- [x] Revoke unused merchant and routing-table `DELETE` grants
+- [x] Add the KYC level/deadline consistency constraint
+- [x] Remove direct app-role writes to `ledger_entries` and add the bounded, single-batch bulk-posting function (`000049`)
+- [x] Retain container-backed migration contracts for direct-SQL rejection, balanced posting, duplicate-batch rejection, and atomic rollback
+- [x] Keep encrypted vendor boundary payloads inaccessible to broad `app_readonly`; prove denial with a role-level integration contract
+- [x] Keep emergency freeze initiation single-admin, but require maker/checker before releasing frozen funds
+- [x] Require distinct maker/checker identities for manual KYC approval/rejection and retain retry-safe authorization evidence (`auth/000022`)
+- [x] Preserve domain-specific approval columns and record their canonical semantic mapping for future cross-domain consumers
 
 ## Exit Criteria
 
-- All Round 3 findings fixed and verified by corresponding schema contract tests.
-- `go test -tags=integration ./...` passes clean against Round 3 migrations.
-- No open findings remain in the Round 3 section of this plan.
+- Every non-deferred Round 3 finding is fixed and verified by a corresponding schema contract test.
+- `make integration` passes clean against Round 3 migrations.
+- Every remaining finding is either closed or explicitly deferred with owner and rationale.
 
 ---
 
@@ -144,104 +152,73 @@ not fixed that session).
   CHECKs), `services/assurance/migrations/000009_runs_purge_cursor_guard_and_index.up.sql`
   (the `NOT EXISTS` guard).
 
-**Explicitly not fixed that round** (recorded here so it isn't silently
-dropped): unused DELETE grants on `merchant_api_key_scopes`,
+**Explicitly not fixed in Round 2, now closed in Round 3:** unused DELETE grants on `merchant_api_key_scopes`,
 `merchant_webhook_attempts`, `merchant_webhook_events`,
 `payin_vendor_gateways`/`payin_routing_rules`,
 `payout_vendor_gateways`/`payout_routing_rules` — no Go code issues a
-`DELETE` against any of them. **Confirmed still open in Round 3 (§4.2).**
+`DELETE` against any of them. Migrations `gateway/000013`, `payin/000018`, and
+`payout/000017` revoke those table privileges.
 
-## 4. Round 3 — findings, not yet fixed
+## 4. Round 3 — current disposition
 
-Four parallel investigations, aware of everything in §2–3, found the
-following new gaps. None have been fixed yet — this section is the
-"document first" record the user asked for; §5 tracks what's explicitly
-deferred vs. genuinely open for a future session.
+The original Round 3 snapshot is superseded by the implementation now in the
+tree. Fee configuration uses versioned maker/checker approval (`000044`),
+disbursement processing has a database approval gate (`000045`), disputes are
+wired to admin HTTP APIs and an expiry worker with amount/deadline/terminal
+guards (`000046`–`000047`), and durable schedules execute through the shared
+command subject/KYC boundary. The app role now posts entries only through
+`fn_post_ledger_entries_bulk` (`000049`); direct table writes are revoked, each
+transaction is limited to one race-safe posting batch, and the immutable and
+deferred-balance triggers remain active.
 
-### 4.1 High priority — business and DB-level consistency
+Manual KYC approval and rejection now use durable `kyc_decision_requests`
+(`auth/000022`). A maker proposes the customer outcome, a different checker
+authorizes or rejects that proposal, and `app_service` cannot move the KYC
+submission terminal without the matching authorization. Automated provider
+and sanctions decisions use distinct named machine actors, and an authorized
+approval remains active across ledger timeout/retry without allowing a
+conflicting second decision.
 
-- **Fee-rule changes are single-admin.** `POST/PUT /admin/ledger/fee-rules`
-  (`services/ledger/internal/transport/http.go:283,316`) is gated only by
-  `isAdmin(r)` — no maker-checker, even though Round 2 established that
-  exact pattern (a second identity required) for adjustments, reversals,
-  chargebacks, and bulk disbursement. A bad or malicious fee-rule change has
-  ongoing, compounding revenue impact, arguably larger than any single
-  adjustment.
-- **`fee_rules.flat_minor_units` has no non-negativity CHECK**
-  (`services/ledger/migrations/000019_fee_rules.up.sql:9`) — its sibling column,
-  `percent_basis_pts`, has one two lines below. The HTTP layer validates
-  this, but there is no DB-level backstop; a negative flat fee would make
-  `FeeCalculator` credit users instead of charging them.
-- **`disbursement_batches`' maker-checker gate is app-code-only.** Round 2's
-  own doc comment in `services/ledger/internal/ledger/disbursement/disbursement.go:124`
-  claims it is "enforced by a DB CHECK constraint as the backstop," but
-  `services/ledger/migrations/000038` only added a `chk_disbursement_batches_approver_not_creator`
-  check — nothing enforces that `status IN ('processing', ...)` implies
-  `approved_by IS NOT NULL`. A direct SQL fix or a future non-`ApproveBatch`
-  code path could flip a batch to processing with no approval on record.
-- **Chargeback dispute case management has zero API exposure.** The full
-  service (`services/ledger/internal/ledger/dispute/dispute.go`) is never wired into
-  any router — `grep` for `dispute` across `services/ledger/internal/transport/http.go`
-  and `services/adminbff/internal/` returns nothing. Nobody can open a case, submit
-  evidence, or see the open-dispute queue except via raw SQL. There is also
-  no worker analogous to the KYC-expiry job (§2) that auto-transitions a
-  case past its `evidence_due_at` deadline to a loss — a real card-network
-  SLA-compliance gap sitting on top of otherwise-complete Round 1 work.
-- **Scheduled/recurring transactions bypass the policy engine entirely.**
-  `services/ledger/internal/ledger/schedule/schedule.go`'s `Poster` interface calls
-  `svc.Post` directly, never through the `PolicyChecker` the public HTTP
-  router applies before posting. A recurring transfer created while a user
-  was KYC level 2 keeps firing at level-2 limits indefinitely after
-  `kyc_verified_until` lapses and the expiry worker (§2) downgrades them —
-  the KYC-expiry feature doesn't reach this path at all.
+The decision evidence follows the same closure-gated, hold-aware 365-day
+lifecycle as its KYC submission. The submission purge cascades to
+`kyc_decision_requests`; retaining the mandatory child permanently would also
+retain the sensitive parent indefinitely and violate the account-closure
+contract. An integration contract proves both records survive before the
+horizon and are removed together after it.
 
-### 4.2 Medium priority
+Freeze governance is now risk-based rather than treating both reversible
+actions identically. `freeze_initiate` remains directly available to one admin
+so suspected fraud or AML exposure can be contained without checker delay.
+`freeze_release` removes that protective control and is therefore blocked from
+direct posting; a maker must create a pending adjustment and a distinct
+checker must approve it before funds return to the spendable balance.
 
-- **Unused DELETE grants still not revoked** — confirmed still present,
-  carried over unfixed from Round 2 (§3).
-- **`auth_users.kyc_level`/`kyc_verified_until` consistency has no DB
-  CHECK** — entirely app-maintained (approval sets it, downgrade clears it);
-  no constraint like `CHECK (kyc_level > 0 OR kyc_verified_until IS NULL)`
-  backs the invariant the migration's own comment states.
-- **`chargeback_disputes.amount` isn't bounded against the original
-  transaction's amount** — only `CHECK (amount > 0)` exists; nothing catches
-  a dispute opened for more than the underlying charge.
-- **`vendor_callback_inbox`/`vendor_outbound_attempts` still have no
-  `app_readonly` policy**, unlike every other table in the schema including
-  this same migration directory's own `vendor_retention_holds`/
-  `vendor_retention_audit`. The Round 2 migration's comment rationalizes
-  this as intentional (vendor never gets a cross-service grant), but it
-  means compliance/ops tooling that can read every other table has a blind
-  spot on the two tables holding raw vendor payloads.
-- **`freeze_initiate`/`freeze_release` remain single-admin**, inconsistent
-  with `freeze_confiscate`'s Round 2 elevation to maker-checker — the
-  original design comment even explains why confiscation was elevated
-  without saying why lock/unlock wasn't.
-- **Eight tables use four different column names for "who approved this"**
-  (`approved_by`/`resolved_by`/`decided_by`, plus `disbursement_batches`
-  reusing generic `created_by`), and three names for "why"
-  (`reason`/`decision_reason`/`resolution_reason`) — a real, if cosmetic,
-  obstacle to any cross-cutting "who decided X" admin query. Bulk
-  disbursement's maker-checker migration also didn't reuse the
-  `requested_by`/`decided_at` shape two sibling migrations from the same era
-  (`merchant_tenant_lifecycle_requests`, `auth_operator_offboarding_requests`)
-  explicitly cite as their template.
+The encrypted vendor boundary tables deliberately remain inaccessible to
+`app_readonly`. Encryption reduces disclosure impact but does not turn raw
+bank/card/customer callback material into reporting data; ordinary operations
+use sanitized columns and retention audit tables instead. A PostgreSQL role
+contract proves the cross-service reporting role cannot select either
+`vendor_callback_inbox` or `vendor_outbound_attempts`.
 
-### 4.3 Low priority
+Approval column names also remain domain-specific. Renaming persisted columns
+would create migration and compatibility risk without changing authorization;
+the names encode real differences in each workflow. Any future cross-domain
+audit projection must map them to the canonical `maker`, `checker`,
+`request_reason`, and `decision_reason` fields below rather than querying for
+one physical naming convention.
 
-- `policy_tier_limits`' limit columns lack the `CHECK (> 0)` its sibling
-  `policy_limits` table has — low risk today since the table has no live
-  write path, only the seeding migration's own INSERT.
-- Chargeback vs. KYC audit-trail tables use different actor-column names
-  (see §4.2) and `chargeback_dispute_status_changes`' pagination index omits
-  the `id DESC` tiebreaker `kyc_level_changes`' equivalent index has.
-- `merchant_idempotency_records.idempotency_key` is stored in plaintext, not
-  through the digest pattern `services/ledger/migrations/000028_idempotency_digest.up.sql`
-  established — lower risk since the whole row hard-deletes 24h after
-  expiry, but a pattern inconsistency worth a follow-up if that changes.
-- KYC tier approval (`Module.ApproveKYC`/`RejectKYC`,
-  `services/auth/internal/auth/kyc.go:204-220`) is still single-approver — confirmed still
-  open, unaddressed by Round 2's maker-checker work.
+| Domain record | Maker | Checker | Request reason | Decision reason |
+|---|---|---|---|---|
+| Pending adjustment | `requested_by` | `approved_by` | `reason` | Not stored separately |
+| Fee-rule proposal | `created_by` | `approved_by` or `rejected_by` | Rule payload | `decision_reason` |
+| Disbursement batch | `created_by` | `approved_by` | Batch payload | `decision_reason` |
+| KYC decision request | `requested_by` | `decided_by` | `request_reason` | `review_reason` |
+
+The remaining findings are low-risk normalization work rather than missing
+critical money-safety paths:
+
+- low-risk normalization work remains for tier-limit checks, dispute-history
+  pagination, and merchant idempotency-key digests.
 
 ## 5. Still explicitly deferred (not new findings, carried forward for context)
 
@@ -275,9 +252,20 @@ provenance in its header comment) plus the integration tests added alongside
 each Round 1/2 fix (`services/ledger/internal/ledger/schema_contract_test.go`,
 `services/vendor-service/internal/callback_integration_test.go`,
 `services/auth/internal/auth/kyc_integration_test.go`, and others named in each fix's own
-commit). `go build ./...`, `go vet ./...`, and
-`go test -tags=integration ./...` all pass clean as of the last Round 3
-documentation pass.
+commit). On 2026-08-10, the focused `000049` app-role contracts were rerun
+against disposable PostgreSQL 16.14 containers and proved direct INSERT
+rejection, balanced posting, duplicate-batch rejection, and atomic rollback.
+An unbounded full tagged-suite run exposed Docker saturation and hit Go's
+default 10-minute package timeout; the repository now bounds package
+parallelism through `make integration`. A clean run of that canonical gate is
+still required for the exit criterion. The bounded service gate
+`make integration-service SERVICE=ledger` passed with the race detector on
+2026-08-10; the schema-contract package completed in 534 seconds instead of
+being killed by the former default timeout.
+Focused Auth integration against disposable PostgreSQL 16.14 also passed on
+2026-08-10 for automatic decisions, distinct manual maker/checker approval,
+self-approval rejection, rejected-proposal recovery, idempotent replay, and
+the raw-SQL app-role authorization backstop introduced by `000022`.
 
 ## 7. Definition of done
 

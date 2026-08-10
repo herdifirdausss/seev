@@ -36,6 +36,7 @@ make k0-inventory
 make k0-inventory-check
 ~~~
 
-K0 is documentation, inventory, evidence, and validation only. It does not
-create cloud resources or mutate Kubernetes. Local runtime checks must use
-synthetic data and isolated disposable Compose projects.
+K0 itself is the inventory contract. Its local acceptance paths have since
+been exercised on disposable Compose/kind environments with synthetic data,
+as indexed by the capability inventory. No cloud/staging apply or provider
+certification evidence is claimed; those promotion gates remain pending.

@@ -122,8 +122,7 @@ flag, not a new pattern to copy:
 - **Tests**: `<file>_test.go` beside the code for unit tests (mocked deps,
   no Docker needed); `<file>_integration_test.go` behind the `integration`
   build tag for tests that need a real Postgres/Redis via testcontainers.
-  Run unit tests with `go test ./...`, integration with
-  `go test -tags=integration ./...`.
+  Run unit tests with `go test ./...`, integration with `make integration`.
 - **Mocks**: always generated, never hand-written — `//go:generate mockgen
   -source=<file>.go -destination=<file>_mock.go -package=repository` sits
   directly above the interface it mocks. Regenerate with `go generate
@@ -274,7 +273,7 @@ The notes below explain their repository-specific consequences:
 3. Read the [project guide](project-guide.md) top to bottom once — it's short,
    and every rule in it exists because someone got burned skipping it.
 4. Walk the "trace one request" section above with the actual files open.
-5. Run `go test ./...` and `go test -tags=integration ./...` once, cold,
+5. Run `go test ./...` and `make integration` once, cold,
    so you know what green looks like before you change anything.
 6. Pick a small, contained first task (a `_test.go` gap, a lint warning, a
    docs/operations/runbooks correction) before touching `execTransfer` or anything in

@@ -81,6 +81,7 @@ No entry may fully delete a row from these tables — only `retain_permanent`, `
 | `auth.credentials` | auth.auth_credentials | secret | — | — | pseudonymize_on_closure | — | subject |
 | `auth.kyc_apply_retries.dead` | auth.kyc_apply_retries | personal | updated_at | 365d | delete | 500 | subject |
 | `auth.kyc_apply_retries.succeeded` | auth.kyc_apply_retries | personal | updated_at | 90d | delete | 500 | subject |
+| `auth.kyc_decision_requests` | auth.kyc_decision_requests | sensitive | auth_users closure time (join through kyc_decision_requests.submission_id) | 365d | delete | 500 | subject |
 | `auth.kyc_document_object` | kyc document bytes (object store) | sensitive | paired auth.kyc_documents row's own terminal_timestamp | 365d | delete | 100 | subject |
 | `auth.kyc_documents` | auth.kyc_documents | sensitive | auth_users closure time (join on kyc_documents.user_id = auth_users.id) | 365d | delete | 500 | subject |
 | `auth.kyc_level_changes` | auth.kyc_level_changes | personal | — | — | pseudonymize_on_closure | — | subject |
@@ -99,6 +100,8 @@ No entry may fully delete a row from these tables — only `retain_permanent`, `
 **`auth.kyc_apply_retries.dead`** — docs/roadmap/archive/51 §4.2 'Dead KYC apply retry'. Requires status='dead' and an audit summary to already exist (§4.3).
 
 **`auth.kyc_apply_retries.succeeded`** — docs/roadmap/archive/51 §4.2 'Successful KYC apply retry'. Requires status='succeeded'.
+
+**`auth.kyc_decision_requests`** — Durable maker/checker authorization evidence follows the same closure-gated 365-day lifecycle as its KYC submission. The submission purge is already hold-aware and deletes this child through its ON DELETE CASCADE foreign key, after documents and apply retries have been resolved. Keeping the child permanently would retain the sensitive parent forever through a mandatory foreign key and contradict the documented account-closure contract.
 
 **`auth.kyc_document_object`** — Object key is "kyc/<document_uuid>" (services/auth/internal/auth/documents.go, docs/roadmap/archive/51 T2.3) — opaque, carries no user reference; the document/user relationship lives only in the encrypted auth.kyc_documents row. Deletion must use K6's delete-intent-then-delete-then-mark outbox pattern, paired 1:1 with that metadata row. The Compose auth service wires the local file-backed object store; host binaries require OBJECT_STORE_DIR, and the feature fails closed when it is absent.
 

@@ -154,12 +154,14 @@ live tree before changing code or documentation.
 
 ### 2.3 Current contract state
 
-- HTTP contracts are currently implicit in handlers and prose; no canonical
-  OpenAPI baseline has been implemented yet.
-- Active plan 52 defines the target OpenAPI, route inventory, uniform error,
-  compatibility, deprecation, event schema, and conformance gates.
-- The frontend cannot safely treat guessed response shapes as stable public
-  contracts.
+- A generated canonical OpenAPI baseline is available under
+  `contracts/http/dist/`, with generation, lint, compatibility, and conformance
+  gates maintained by plan 52.
+- Frontend F0 remains paused until the reliability roadmap's correctness
+  coverage and static-hardening phases pass; the presence of an OpenAPI
+  baseline alone is not sufficient to start implementation.
+- Frontend code must consume the generated contract rather than guessed
+  response shapes.
 - Protobuf already has generation, lint, and breaking checks, but browsers do
   not consume protobuf directly in this plan.
 
