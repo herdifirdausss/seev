@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"io"
 	"path/filepath"
 	"testing"
@@ -71,7 +72,7 @@ func dial(addr string, cfg *tls.Config) error {
 	// the handshake). A Read is what actually observes the alert.
 	buf := make([]byte, 1)
 	_, err = conn.Read(buf)
-	if err != nil && err != io.EOF {
+	if err != nil && !errors.Is(err, io.EOF) {
 		return err
 	}
 	return nil

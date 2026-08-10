@@ -3,6 +3,7 @@ package database
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -51,7 +52,8 @@ func New(ctx context.Context, cfg Config) (*DBSQL, error) {
 	db := &DBSQL{db: sqlDB, cfg: cfg}
 	if owner := poolOwner(cfg.DB); owner != "" {
 		if err := RegisterPoolMetrics(prometheus.DefaultRegisterer, owner, db); err != nil {
-			if _, duplicate := err.(prometheus.AlreadyRegisteredError); !duplicate {
+			var duplicate prometheus.AlreadyRegisteredError
+			if !errors.As(err, &duplicate) {
 				slog.Warn("postgres: pool metrics unavailable", "owner", owner, "error", err)
 			}
 		}

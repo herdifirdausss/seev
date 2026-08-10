@@ -56,6 +56,7 @@ func TestDB_QueryContext(t *testing.T) {
 	result, err := db.QueryContext(context.Background(), "SELECT 1")
 	require.NoError(t, err)
 	defer result.Close()
+	assert.NoError(t, result.Err())
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -64,7 +65,11 @@ func TestDB_QueryContext_Error(t *testing.T) {
 
 	mock.ExpectQuery("SELECT").WillReturnError(errors.New("query error"))
 
-	_, err := db.QueryContext(context.Background(), "SELECT 1")
+	result, err := db.QueryContext(context.Background(), "SELECT 1")
+	if result != nil {
+		defer result.Close()
+		assert.NoError(t, result.Err())
+	}
 	assert.Error(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
@@ -285,6 +290,10 @@ func TestMockDatabase_AllMethods_DefaultNil(t *testing.T) {
 	rows, err := m.QueryContext(ctx, "SELECT 1")
 	assert.Nil(t, rows)
 	assert.NoError(t, err)
+	if rows != nil {
+		defer rows.Close()
+		assert.NoError(t, rows.Err())
+	}
 
 	row := m.QueryRowContext(ctx, "SELECT 1")
 	assert.Nil(t, row)
@@ -321,7 +330,11 @@ func TestMockDatabase_AllMethods_WithFunctions(t *testing.T) {
 		StatsFn:           func() sql.DBStats { return wantStats },
 	}
 
-	_, err := m.QueryContext(ctx, "")
+	rows, err := m.QueryContext(ctx, "")
+	if rows != nil {
+		defer rows.Close()
+		assert.NoError(t, rows.Err())
+	}
 	assert.ErrorIs(t, err, wantErr)
 
 	assert.Nil(t, m.QueryRowContext(ctx, ""))

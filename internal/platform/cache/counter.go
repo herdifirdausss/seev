@@ -2,6 +2,7 @@ package cache
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"time"
 
@@ -50,7 +51,7 @@ func (c *RedisCounter) IncrBy(ctx context.Context, key string, delta int64, ttl 
 
 func (c *RedisCounter) Get(ctx context.Context, key string) (int64, error) {
 	v, err := c.rdb.Get(ctx, key).Int64()
-	if err == redis.Nil {
+	if errors.Is(err, redis.Nil) {
 		return 0, nil
 	}
 	if err != nil {

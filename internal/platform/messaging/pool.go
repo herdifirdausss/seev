@@ -22,14 +22,23 @@ package messaging
 //	   Excess channels are closed immediately on release.
 
 import (
+	"context"
 	"sync"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
+// publishChannel is the smallest AMQP channel surface used by the hot publish
+// path. Keeping this seam narrow lets confirm, timeout, failure, and pool
+// concurrency behavior be tested without a live broker.
+type publishChannel interface {
+	Close() error
+	PublishWithContext(context.Context, string, string, bool, bool, amqp.Publishing) error
+}
+
 // confirmedChannel bundles a channel in confirm mode with its notification pipe.
 type confirmedChannel struct {
-	ch       *amqp.Channel
+	ch       publishChannel
 	confirms chan amqp.Confirmation // buffered(1): one confirm per publish
 }
 

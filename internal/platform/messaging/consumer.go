@@ -68,7 +68,7 @@ func (r *RabbitMQ) Consume(
 	handler HandlerFunc,
 ) error {
 	if err := opts.validate(); err != nil {
-		return fmt.Errorf("%w: %v", ErrInvalidConsumeOptions, err)
+		return fmt.Errorf("%w: %w", ErrInvalidConsumeOptions, err)
 	}
 	opts.applyDefaults()
 

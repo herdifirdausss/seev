@@ -257,7 +257,7 @@ func (w *Worker) markFailed(ctx context.Context, row Row, cause error) error {
 		UPDATE %s SET status = 'pending', attempts = attempts + 1, last_error = $2, updated_at = now()
 		WHERE id = $1`, w.outboxTable) //nolint:gosec // w.outboxTable validated in NewWorker.
 	if _, err := w.db.ExecContext(ctx, query, row.ID, cause.Error()); err != nil {
-		return fmt.Errorf("%w (and mark-failed itself errored: %s)", cause, err)
+		return fmt.Errorf("%w (and mark-failed itself errored: %w)", cause, err)
 	}
 	failuresTotal.WithLabelValues(w.owner, row.RefTable).Inc()
 	return cause

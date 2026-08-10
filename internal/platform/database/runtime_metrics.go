@@ -1,6 +1,7 @@
 package database
 
 import (
+	"errors"
 	"log/slog"
 	"runtime/metrics"
 	"sync"
@@ -71,7 +72,8 @@ func newRuntimeCollector() *runtimeCollector {
 func registerRuntimeMetrics() {
 	runtimeMetricsOnce.Do(func() {
 		if err := prometheus.Register(newRuntimeCollector()); err != nil {
-			if _, duplicate := err.(prometheus.AlreadyRegisteredError); !duplicate {
+			var duplicate prometheus.AlreadyRegisteredError
+			if !errors.As(err, &duplicate) {
 				slog.Warn("runtime metrics unavailable", "error", err)
 			}
 		}

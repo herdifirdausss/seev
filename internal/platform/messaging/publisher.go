@@ -190,7 +190,7 @@ func (r *RabbitMQ) PublishTo(ctx context.Context, opts PublishOptions, payload a
 		return &PublishError{
 			Exchange: opts.Exchange, RoutingKey: opts.RoutingKey,
 			MessageID: opts.MessageID,
-			Cause:     fmt.Errorf("%w: %v", ErrPublishTimeout, publishCtx.Err()),
+			Cause:     fmt.Errorf("%w: %w", ErrPublishTimeout, publishCtx.Err()),
 		}
 	}
 

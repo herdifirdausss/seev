@@ -61,7 +61,7 @@ func ParseMinor(code, raw string) (Money, error) {
 	}
 	value, err := strconv.ParseInt(raw, 10, 64)
 	if err != nil {
-		return Money{}, fmt.Errorf("%w: %v", ErrInvalidAmount, err)
+		return Money{}, fmt.Errorf("%w: %w", ErrInvalidAmount, err)
 	}
 	return NewMoney(code, value)
 }
