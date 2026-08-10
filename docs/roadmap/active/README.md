@@ -6,9 +6,7 @@
 > while their remaining acceptance tasks are still open; use each plan's
 > implementation log and checklist for the exact state.
 
-| Plan | Scope |
-|---|---|
-| [56 · F0](56-f0-frontend-platform-foundation.md) | Frontend platform foundation |
+No plans are currently active.
 
 Read the [roadmap strategy](../42-long-term-roadmap.md) and each plan's trigger
 before treating it as executable work.

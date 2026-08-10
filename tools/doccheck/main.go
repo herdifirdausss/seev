@@ -422,7 +422,6 @@ func requiredDocumentationFailures(root string) []string {
 		},
 		"docs/roadmap/active/README.md": {
 			"Status: Active work index",
-			"56-f0-frontend-platform-foundation.md",
 		},
 		"docs/development/documentation-style.md": {
 			"Use English (US) spelling",

@@ -93,7 +93,6 @@
 | [docs/roadmap/55-frontend-long-term-roadmap.md](../docs/roadmap/55-frontend-long-term-roadmap.md) | 55 — Frontend Long-Term Roadmap | — | — | — | — | — | — |
 | [docs/roadmap/63-kubernetes-cloud-deployment-roadmap-v2.md](../docs/roadmap/63-kubernetes-cloud-deployment-roadmap-v2.md) | Plan 63 — Kubernetes Cloud Deployment Learning Roadmap | — | — | — | — | — | — |
 | [docs/roadmap/README.md](../docs/roadmap/README.md) | Roadmap and Decision History | — | — | — | — | — | — |
-| [docs/roadmap/active/56-f0-frontend-platform-foundation.md](../docs/roadmap/active/56-f0-frontend-platform-foundation.md) | 56 — F0 Frontend Platform Foundation | active | frontend | 2026-08-09 | — | 56 | false |
 | [docs/roadmap/active/README.md](../docs/roadmap/active/README.md) | Active Plans | active | — | — | — | — | — |
 | [docs/roadmap/history.md](../docs/roadmap/history.md) | Roadmap History | — | — | — | — | — | — |
 | [docs/security/README.md](../docs/security/README.md) | Security Documentation | — | — | — | — | — | — |

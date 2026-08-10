@@ -50,5 +50,7 @@ detailed implementation history lives in Git. Active plans are in
 | 64 · K0 | Deployment inventory baseline | Kubernetes readiness baseline and deployment inventory complete | 2026-08-09 | `deployment/README.md` |
 | 65 · A11 | Database audit and hardening | Three-round schema-safety, security, and business-completeness audit complete; bounded entry posting (SECURITY DEFINER), KYC maker/checker, DELETE-grant revocations, dispute/disbursement guards, and HTTP transport split all implemented and verified by `make integration` (EXIT:0) | 2026-08-10 | `services/ledger/migrations/`, `services/auth/migrations/` |
 
+| 56 · F0 | Frontend platform foundation | Next.js 15 / pnpm workspace with Wallet and Operator app shells, exact money/domain/ui/api-client primitives, fixture-backed reference screens, `make web-check` gate, frontend CI job, bundle scan, security headers (including Permissions-Policy), and all T10 acceptance items verified (a11y, keyboard, responsive, dependency audit, docs) — `make verify-static` EXIT:0 | 2026-08-10 | `web/README.md`, `docs/roadmap/55-frontend-long-term-roadmap.md` |
+
 Plans 35 (optional local Kubernetes) and 55 (frontend long-term roadmap) are strategy/reference documents, not task lists.
 Plan 63 (Kubernetes cloud deployment roadmap) is the active cloud deployment strategy.

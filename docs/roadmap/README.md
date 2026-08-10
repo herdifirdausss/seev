@@ -8,13 +8,8 @@
 
 ## Active plans
 
-These plans are active execution records. Some contain implemented foundations
-with acceptance work still open; begin or extend one only when its stated
-trigger, prerequisites, and owner decision are satisfied.
-
-| # | Plan | Purpose | Status |
-|---|---|---|---|
-| 56 · F0 | [Frontend platform foundation](active/56-f0-frontend-platform-foundation.md) | Establish the browser product and shared frontend rules | In progress — T0–T9 complete (2026-08-10); T10 final acceptance and archive pending |
+No plans are currently active. Begin a new plan only when its stated trigger,
+prerequisites, and owner decision are satisfied.
 
 The same list is available in the [active-plan folder](active/README.md).
 
@@ -63,4 +58,4 @@ The engineering requirements in the
 [project guide](../development/project-guide.md) apply to every plan.
 
 The frontend-specific strategy is recorded separately in [plan 55](55-frontend-long-term-roadmap.md);
-its first executable foundation is active as [plan 56](active/56-f0-frontend-platform-foundation.md).
+its first executable foundation was [plan 56 · F0](history.md), completed 2026-08-10.

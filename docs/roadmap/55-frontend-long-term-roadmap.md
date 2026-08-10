@@ -23,7 +23,7 @@ The roadmap intentionally separates two levels of planning:
    migrations, tests, rollout, rollback, Definition of Done, and result evidence.
 
 The first execution document activated from this roadmap is
-[Plan 56 — F0 Frontend Platform Foundation](active/56-f0-frontend-platform-foundation.md).
+[Plan 56 — F0 Frontend Platform Foundation](history.md).
 Later phase numbers are assigned only when those phases are activated, so this
 roadmap does not reserve a speculative sequence of repository plan numbers.
 
@@ -333,7 +333,7 @@ not by this reference document.
 
 | Phase | Name | Primary outcome | Activation trigger | Current status |
 |---|---|---|---|---|
-| F0 | Product and platform foundation | Typed, secure, testable frontend workspace and product rules | Conscious decision to build a browser experience | Planned via [56](active/56-f0-frontend-platform-foundation.md) |
+| F0 | Product and platform foundation | Typed, secure, testable frontend workspace and product rules | Conscious decision to build a browser experience | Planned via [56](history.md) |
 | F1 | Wallet read model and transaction explorer | Users can inspect accounts, balances, transactions, and accounting evidence | F0 complete and required live read contracts stable | Future |
 | F2 | Interactive wallet journeys | Users can perform fee quote, transfer, top-up, and payout journeys safely | F1 complete and mutation/idempotency contracts stable | Future |
 | F3 | Operations read-only investigation | Operators can investigate payout, payin, assurance, reconciliation, and delivery state | F0 complete and Admin BFF read contracts are sufficient | Future |
@@ -469,7 +469,7 @@ experience for Seev.
 
 ### Execution plan
 
-[Plan 56 — F0 Frontend Platform Foundation](active/56-f0-frontend-platform-foundation.md)
+[Plan 56 — F0 Frontend Platform Foundation](history.md)
 contains the locked implementation details.
 
 ---
@@ -1526,7 +1526,7 @@ instruction.
 The roadmap itself is now defined. The only frontend phase currently activated
 is F0 through:
 
-- [Plan 56 — F0 Frontend Platform Foundation](active/56-f0-frontend-platform-foundation.md)
+- [Plan 56 — F0 Frontend Platform Foundation](history.md)
 
 F1 and later must remain `Future` until their triggers are explicitly evaluated.
 Completing F0 should produce the evidence needed to decide whether F1 is ready
