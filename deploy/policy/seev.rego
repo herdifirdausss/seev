@@ -1,5 +1,7 @@
 package seev
 
+import future.keywords.contains
+import future.keywords.if
 import future.keywords.in
 
 # DEPLOY-006: Seev-specific deployment policy-as-code.

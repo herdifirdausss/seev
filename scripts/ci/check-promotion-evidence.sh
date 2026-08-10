@@ -58,7 +58,7 @@ else
 		fi
 	else
 		fail "runtime-acceptance manifest failed validation — see check-runtime-acceptance.sh output"
-		"$root_dir/scripts/ci/check-runtime-acceptance.sh" "$RUNTIME_ACCEPTANCE_MANIFEST" 2>&1 | \
+		"$root_dir/scripts/ci/check-runtime-acceptance.sh" "$RUNTIME_ACCEPTANCE_MANIFEST" 2>&1 |
 			tail -5 >&2 || true
 	fi
 fi

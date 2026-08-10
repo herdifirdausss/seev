@@ -14,7 +14,7 @@ set -euo pipefail
 
 PROM_ADDR="${PROM_ADDR:-http://localhost:9090}"
 EVIDENCE_OUT="${EVIDENCE_OUT:-deploy/load/hpa-evidence.yaml}"
-WINDOW="${WINDOW:-5m}"   # Prometheus range over which to average
+WINDOW="${WINDOW:-5m}" # Prometheus range over which to average
 
 root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
@@ -30,7 +30,7 @@ command -v python3 >/dev/null 2>&1 || {
 prom_query() {
 	local q="$1"
 	curl -sf --data-urlencode "query=$q" \
-		"${PROM_ADDR}/api/v1/query" 2>/dev/null | \
+		"${PROM_ADDR}/api/v1/query" 2>/dev/null |
 		python3 -c "
 import sys, json
 data = json.load(sys.stdin)
@@ -76,7 +76,8 @@ for svc in "${SERVICES[@]}"; do
 	p95_ms="$(prom_query "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{service=\"${svc}-service\"}[${WINDOW}])) by (le)) * 1000" || echo NaN)"
 
 	# Saturating metric: highest fraction column
-	saturating="$(python3 - "$cpu_frac" "$mem_frac" <<'PYEOF'
+	saturating="$(
+		python3 - "$cpu_frac" "$mem_frac" <<'PYEOF'
 import sys
 vals = {"cpu": sys.argv[1], "memory": sys.argv[2]}
 best = None
@@ -91,7 +92,7 @@ for k, v in vals.items():
         pass
 print(best if best else "unknown")
 PYEOF
-)"
+	)"
 
 	cat >>"$root_dir/$EVIDENCE_OUT" <<SVC
   ${svc}:

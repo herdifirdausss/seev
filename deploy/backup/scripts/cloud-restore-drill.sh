@@ -59,18 +59,42 @@ EOF
 
 while [[ $# -gt 0 ]]; do
 	case "$1" in
-		--provider) PROVIDER="$2"; shift 2 ;;
-		--env)      ENVIRONMENT="$2"; shift 2 ;;
-		--mode)     MODE="$2"; shift 2 ;;
-		--dry-run)  DRY_RUN=1; shift ;;
+		--provider)
+			PROVIDER="$2"
+			shift 2
+			;;
+		--env)
+			ENVIRONMENT="$2"
+			shift 2
+			;;
+		--mode)
+			MODE="$2"
+			shift 2
+			;;
+		--dry-run)
+			DRY_RUN=1
+			shift
+			;;
 		*) usage ;;
 	esac
 done
 
-[[ -n "$PROVIDER" ]] || { printf 'cloud-restore-drill: --provider is required\n' >&2; usage; }
-[[ -n "$ENVIRONMENT" ]] || { printf 'cloud-restore-drill: --env is required\n' >&2; usage; }
-[[ "$PROVIDER" =~ ^(aws|gcp)$ ]] || { printf 'cloud-restore-drill: --provider must be aws or gcp\n' >&2; usage; }
-[[ "$MODE" =~ ^(latest|pitr)$ ]] || { printf 'cloud-restore-drill: --mode must be latest or pitr\n' >&2; usage; }
+[[ -n "$PROVIDER" ]] || {
+	printf 'cloud-restore-drill: --provider is required\n' >&2
+	usage
+}
+[[ -n "$ENVIRONMENT" ]] || {
+	printf 'cloud-restore-drill: --env is required\n' >&2
+	usage
+}
+[[ "$PROVIDER" =~ ^(aws|gcp)$ ]] || {
+	printf 'cloud-restore-drill: --provider must be aws or gcp\n' >&2
+	usage
+}
+[[ "$MODE" =~ ^(latest|pitr)$ ]] || {
+	printf 'cloud-restore-drill: --mode must be latest or pitr\n' >&2
+	usage
+}
 
 SOURCE_INSTANCE="seev-${ENVIRONMENT}"
 RECOVERY_SUFFIX="$(date +%Y%m%d-%H%M%S)-$$"
@@ -109,7 +133,7 @@ create_recovery_instance() {
 		local restore_time
 		if [[ "$MODE" == "pitr" ]]; then
 			# Restore to 1 hour ago (simulates RPO drill)
-			restore_time="$(date -u -v-1H +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || \
+			restore_time="$(date -u -v-1H +%Y-%m-%dT%H:%M:%SZ 2>/dev/null ||
 				date -u -d '-1 hour' +%Y-%m-%dT%H:%M:%SZ)"
 			printf 'cloud-restore-drill: AWS PITR restore to %s\n' "$restore_time"
 			aws rds restore-db-instance-to-point-in-time \
@@ -203,7 +227,7 @@ start_proxy() {
 		cloud-sql-proxy "${GCP_PROJECT}:${AWS_REGION}:${RECOVERY_INSTANCE}" \
 			--port="$DB_PROXY_PORT" >"$WORK_DIR/proxy.log" 2>&1 &
 		PROXY_PID=$!
-		sleep 5  # allow proxy to start
+		sleep 5 # allow proxy to start
 		DB_HOST="127.0.0.1"
 	elif [[ "$PROVIDER" == "aws" ]]; then
 		# AWS: use SSM port-forwarding to the recovery instance endpoint
@@ -249,7 +273,7 @@ if [[ "$DRY_RUN" -eq 1 ]]; then
 	RECOVERED_AT="$(iso_now)"
 	DISASTER_AT_EPOCH="$(epoch_of "$DISASTER_AT")"
 	RECOVERED_AT_EPOCH="$(epoch_of "$RECOVERED_AT")"
-	RPO_SECONDS=60    # synthetic: represents "within last backup interval"
+	RPO_SECONDS=60 # synthetic: represents "within last backup interval"
 	RTO_SECONDS=$((RECOVERED_AT_EPOCH - DISASTER_AT_EPOCH))
 	STAGE_LOG=(
 		"dry_run_start=${DISASTER_AT}"
@@ -311,8 +335,8 @@ else
 	RTO_SECONDS=$((RECOVERED_AT_EPOCH - DISASTER_AT_EPOCH))
 fi
 
-RPO_BUDGET=3600   # from recovery-policy.yaml
-RTO_BUDGET=14400  # from recovery-policy.yaml
+RPO_BUDGET=3600  # from recovery-policy.yaml
+RTO_BUDGET=14400 # from recovery-policy.yaml
 
 PASSED="true"
 if [[ "$RPO_SECONDS" -gt "$RPO_BUDGET" ]]; then

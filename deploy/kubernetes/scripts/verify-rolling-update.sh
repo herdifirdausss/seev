@@ -13,10 +13,10 @@ set -euo pipefail
 KUBECTL_BIN="${KUBECTL_BIN:-kubectl}"
 NAMESPACE="${NAMESPACE:-seev-app}"
 GATEWAY_PORT="${GATEWAY_PORT:-8443}"
-TARGET_SVC="${TARGET_SVC:-auth}"              # service to roll (stateless, externally reachable)
-ROLLOUT_TIMEOUT="${ROLLOUT_TIMEOUT:-300}"     # must match progressDeadlineSeconds
+TARGET_SVC="${TARGET_SVC:-auth}"          # service to roll (stateless, externally reachable)
+ROLLOUT_TIMEOUT="${ROLLOUT_TIMEOUT:-300}" # must match progressDeadlineSeconds
 CONCURRENT_REQUESTS="${CONCURRENT_REQUESTS:-4}"
-REQUEST_INTERVAL="${REQUEST_INTERVAL:-0.5}"   # seconds between probe bursts
+REQUEST_INTERVAL="${REQUEST_INTERVAL:-0.5}" # seconds between probe bursts
 TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/seev-rolling.XXXXXX")"
 PF_PID=""
 UNEXPECTED_5XX=0
