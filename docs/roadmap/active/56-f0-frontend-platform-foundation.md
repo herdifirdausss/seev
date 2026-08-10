@@ -29,10 +29,9 @@ generated: false
 - [x] T6 — Transport layer, normalized errors, MSW fixtures, MockDataBanner
 - [x] T7 — Wallet and Operator application shells with security headers, skip links, error boundary
 - [x] T8 — Fixture-backed `/reference/transaction` screen in both Wallet and Operator
-- [x] T9 — `make web-*` targets; `web-check` added to `verify-static` (EXIT:0)
+- [x] T9 — `make web-*` targets; `web-check` in `verify-static`; `frontend` CI job (EXIT:0)
 - [ ] T1 — Security contracts document (session/cookie/CSRF model; deferred to follow-up)
 - [ ] T5 — Full design system (Tailwind config, skeleton/loading/empty states, full component catalog)
-- [ ] T9 (partial) — GitHub Actions CI workflow file
 - [ ] T10 — Final acceptance review, bundle scan, full checklist, archive
 
 ## Exit Criteria
@@ -1503,13 +1502,25 @@ verification.
 
 `Makefile` extended with `web-install`, `web-format-check`, `web-lint`,
 `web-typecheck`, `web-test`, `web-build`, `web-e2e`, `web-boundary-check`,
-`web-check` targets (all `.PHONY`). `make web-check` runs format:check, lint,
-typecheck, test, build, and boundary-check in sequence without installing or
-modifying the lockfile. `$(MAKE) web-check` added to `verify-static` target —
-`make verify-static` EXIT:0 2026-08-10, including all existing Go, docs, and
-proto gates. Existing backend gates (test, lint, vet, proto, docs-check) unchanged
-and still mandatory. GitHub Actions CI workflow (YAML file) deferred — make
-targets are CI-composable when added. Go-only local commands unchanged. 2026-08-10.
+`web-check`, `web-dev`, `web-dev-wallet`, `web-dev-operator` targets (all
+`.PHONY`). `make web-check` runs format:check, lint, typecheck, test, build, and
+boundary-check in sequence without installing or modifying the lockfile.
+`$(MAKE) web-check` added to `verify-static` target — `make verify-static`
+EXIT:0 2026-08-10, including all existing Go, docs, and proto gates. Existing
+backend gates unchanged and still mandatory. Go-only local commands unchanged.
+
+GitHub Actions CI: `frontend` job added to `.github/workflows/ci.yml` — runs
+`make web-check` on ubuntu-24.04 using nvm + corepack (pre-installed; no new
+marketplace action dependencies required), activating Node 22.17.1 and pnpm
+11.21.0. Job runs only when files under `web/` change (`needs.changes.outputs.web
+== 'true'`); skipped on pure Go/infra/docs-only changes. `ci-gate` updated to
+require `frontend` success when web=true, or skipped when web=false. Fixed a
+SIGPIPE race condition in `scripts/ci/supply-chain-check.sh::require_uncommented`
+that surfaced at ci.yml's current line count. `make verify-static` EXIT:0
+2026-08-10. Also added Docker Compose `frontend` profile (opt-in `wallet` and
+`operator` services), `web/Dockerfile` (multi-stage, `ARG APP=wallet|operator`),
+`.env.example` for both apps, and `web/README.md` documenting fixture / live /
+container running modes. 2026-08-10.
 
 ### T10 — Documentation, security evidence, and final acceptance
 
@@ -1808,7 +1819,7 @@ default.
 [x] security-header checks pass (configured in next.config.ts)
 [ ] dependency vulnerability policy passes
 [x] frontend Make targets exist
-[ ] frontend CI is mandatory (make targets ready; GitHub Actions YAML deferred)
+[x] frontend CI is mandatory (frontend job in ci.yml; skips on non-web changes)
 [x] existing backend gates remain mandatory
 [x] current Admin BFF admin E2E remains green
 [ ] documentation indexes are updated
