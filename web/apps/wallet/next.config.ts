@@ -11,9 +11,7 @@ const nextConfig: NextConfig = {
   },
   // Wallet only calls Auth and Gateway public surfaces (K5).
   // No backend service URLs belong in browser bundles.
-  experimental: {
-    typedRoutes: true,
-  },
+  typedRoutes: true,
   headers: async () => [
     {
       source: '/(.*)',

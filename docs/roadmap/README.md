@@ -14,7 +14,7 @@ trigger, prerequisites, and owner decision are satisfied.
 
 | # | Plan | Purpose | Status |
 |---|---|---|---|
-| 56 · F0 | [Frontend platform foundation](active/56-f0-frontend-platform-foundation.md) | Establish the browser product and shared frontend rules | Active — ready for execution; implementation not started |
+| 56 · F0 | [Frontend platform foundation](active/56-f0-frontend-platform-foundation.md) | Establish the browser product and shared frontend rules | In progress — T0–T9 complete (2026-08-10); T10 final acceptance and archive pending |
 
 The same list is available in the [active-plan folder](active/README.md).
 

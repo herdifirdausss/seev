@@ -22,6 +22,6 @@
   "devDependencies": {
     "@seev/config": "workspace:*",
     "typescript": "5.8.3",
-    "vitest": "3.2.3"
+    "vitest": "3.2.7"
   }
 }
