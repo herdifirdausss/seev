@@ -215,7 +215,7 @@ source "${ROOT_DIR}/scripts/lib/http.sh"
 source "${ROOT_DIR}/scripts/lib/fixtures.sh"
 # shellcheck source=scripts/lib/assertions.sh
 source "${ROOT_DIR}/scripts/lib/assertions.sh"
-# services.sh and certs.sh remain stubs; implementations stay in lib.sh below.
+# scripts/lib/services.sh and scripts/lib/certs.sh are empty stubs — not sourced here.
 
 log "work dir: $WORK_DIR (binaries + *.log; KEEP_WORK_DIR=1 preserves it past exit for postmortem)"
 

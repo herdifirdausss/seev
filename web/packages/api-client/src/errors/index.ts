@@ -79,6 +79,7 @@ export function fromHttpStatus(
       ...options,
       retryAfterMs: 60_000,
     });
+  if (status === 408) return makeApiError('TIMEOUT', msg, options);
   if (status === 503) return makeApiError('DEPENDENCY_UNAVAILABLE', msg, options);
   if (status >= 500) return makeApiError('UNKNOWN_SERVER_ERROR', msg, options);
   return makeApiError('UNKNOWN_SERVER_ERROR', msg, options);

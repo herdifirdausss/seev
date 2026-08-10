@@ -204,6 +204,69 @@ grows — start at tier 0, move up only when a file actually earns it:
   provision,recon,schedule,handle}`. Don't jump here just because a service
   is growing; promote a Tier 1 file only once it would itself need splitting.
 
+## Frontend (web/)
+
+The `web/` directory is a pnpm workspace (pnpm ≥ 11, Node ≥ 22) with two
+deployable apps — `apps/wallet` (port 3000) and `apps/operator` (port 3001) —
+and four shared packages under `packages/`:
+
+| Package | Purpose |
+|---|---|
+| `@seev/domain` | Shared workflow status types and identifier helpers |
+| `@seev/money` | Exact-integer monetary arithmetic (bigint, IDR/USD) |
+| `@seev/ui` | React primitive and feedback components |
+| `@seev/api-client` | Typed HTTP transport with normalized error taxonomy |
+
+### Conventions
+
+- **Exact money only.** Never use `number` for monetary values; use
+  `@seev/money` bigint primitives throughout, matching the backend's
+  minor-unit integers.
+- **No float arithmetic on money.** Formatting for display is the only
+  operation that produces a string; comparisons and sums use the bigint API.
+- **Fixture mode is explicit.** Mock data must render `<MockDataBanner>` from
+  `@seev/ui/feedback`. The component throws in production builds — there is
+  no silent fixture leakage.
+- **Package boundaries.** Apps may import from `@seev/*` packages. Packages
+  must not import from apps or from each other in ways that create cycles.
+  `@seev/api-client` may import `@seev/domain` and `@seev/money`; `@seev/ui`
+  may import `@seev/domain` and `@seev/money`.
+- **Type-safe routes.** Both apps enable `typedRoutes: true` in
+  `next.config.ts`. Use `Route<T>` from `next` instead of bare strings for
+  `href` props.
+
+### Verification
+
+```bash
+make web-check          # format:check, lint, typecheck, test, build, boundary-check, bundle-scan
+make web-bundle-scan    # scan .next/static/ for forbidden server-only patterns
+make web-e2e            # Playwright end-to-end (requires a running app)
+```
+
+The `make web-check` target is the pre-commit gate for frontend changes. It
+runs without modifying the lockfile (`--frozen-lockfile`). The full static gate
+`make verify-static` includes `web-check`.
+
+### Testing
+
+- Unit tests live beside source (`*.test.ts` / `*.test.tsx`) or in a `tests/`
+  directory at the package root.
+- React component tests use `@testing-library/react` with a jsdom environment;
+  configure `environment: 'jsdom'` in the package's `vitest.config.ts`.
+- Pure-logic tests use the node environment (the default from
+  `@seev/config/vitest`).
+- `vitest run --passWithNoTests` is the test command for packages. New packages
+  must add at least one test covering their primary invariant before shipping.
+
+### Adding a package
+
+1. Create `web/packages/<name>/` with `package.json` (name `@seev/<name>`,
+   `"type": "module"`), `tsconfig.json` (extending `@seev/config/typescript`),
+   and an `src/index.ts` entry.
+2. Add `"@seev/<name>": "workspace:*"` to dependents that need it.
+3. Run `pnpm install --frozen-lockfile` to register the new workspace member.
+4. Verify with `make web-check` before merging.
+
 ## Runtime references
 
 - .env.example is the source of local host-process configuration examples.
