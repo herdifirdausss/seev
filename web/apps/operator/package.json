@@ -1,0 +1,37 @@
+{
+  "name": "@seev/operator",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --port 3001",
+    "build": "next build",
+    "start": "next start --port 3001",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "format:check": "prettier --check app",
+    "test": "vitest run --passWithNoTests",
+    "e2e": "playwright test"
+  },
+  "dependencies": {
+    "@seev/api-client": "workspace:*",
+    "@seev/domain": "workspace:*",
+    "@seev/money": "workspace:*",
+    "@seev/ui": "workspace:*",
+    "@tanstack/react-query": "5.80.6",
+    "next": "15.3.4",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "zod": "3.25.64"
+  },
+  "devDependencies": {
+    "@seev/config": "workspace:*",
+    "@seev/testing": "workspace:*",
+    "@playwright/test": "1.52.0",
+    "@types/node": "22.15.29",
+    "@types/react": "19.1.6",
+    "@types/react-dom": "19.1.5",
+    "@vitejs/plugin-react": "4.5.2",
+    "typescript": "5.8.3",
+    "vitest": "3.2.3"
+  }
+}

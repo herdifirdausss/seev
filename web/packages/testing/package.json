@@ -1,0 +1,19 @@
+{
+  "name": "@seev/testing",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./fixtures/index.ts",
+    "./msw": "./msw/index.ts"
+  },
+  "dependencies": {
+    "@seev/domain": "workspace:*",
+    "@seev/money": "workspace:*",
+    "msw": "2.7.5"
+  },
+  "devDependencies": {
+    "@seev/config": "workspace:*",
+    "typescript": "5.8.3"
+  }
+}

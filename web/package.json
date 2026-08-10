@@ -1,0 +1,24 @@
+{
+  "name": "seev-web",
+  "private": true,
+  "packageManager": "pnpm@11.21.0",
+  "engines": {
+    "node": ">=22.17.1",
+    "pnpm": ">=11.21.0"
+  },
+  "scripts": {
+    "install:frozen": "pnpm install --frozen-lockfile",
+    "format:check": "pnpm -r run format:check",
+    "lint": "pnpm -r run lint",
+    "typecheck": "pnpm -r run typecheck",
+    "test": "pnpm -r run test",
+    "build": "pnpm -r run build",
+    "e2e": "pnpm -r --filter './apps/*' run e2e",
+    "check": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test && pnpm run build"
+  },
+  "devDependencies": {
+    "eslint": "9.28.0",
+    "prettier": "3.5.3",
+    "typescript": "5.8.3"
+  }
+}

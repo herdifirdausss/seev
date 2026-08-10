@@ -1,0 +1,36 @@
+{
+  "name": "@seev/ui",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./primitives": "./src/primitives/index.ts",
+    "./financial": "./src/financial/index.ts",
+    "./feedback": "./src/feedback/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src",
+    "format:check": "prettier --check src",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@seev/domain": "workspace:*",
+    "@seev/money": "workspace:*",
+    "react": "19.1.0",
+    "@types/react": "19.1.6"
+  },
+  "devDependencies": {
+    "@seev/config": "workspace:*",
+    "@testing-library/react": "16.3.0",
+    "@testing-library/user-event": "14.6.1",
+    "@vitejs/plugin-react": "4.5.2",
+    "jsdom": "26.1.0",
+    "typescript": "5.8.3",
+    "vitest": "3.2.3"
+  },
+  "peerDependencies": {
+    "react": ">=19.0.0"
+  }
+}

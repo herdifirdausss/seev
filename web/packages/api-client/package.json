@@ -1,0 +1,27 @@
+{
+  "name": "@seev/api-client",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./errors": "./src/errors/index.ts",
+    "./transport": "./src/transport/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src",
+    "format:check": "prettier --check src",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@seev/domain": "workspace:*",
+    "@seev/money": "workspace:*",
+    "zod": "3.25.64"
+  },
+  "devDependencies": {
+    "@seev/config": "workspace:*",
+    "typescript": "5.8.3",
+    "vitest": "3.2.3"
+  }
+}

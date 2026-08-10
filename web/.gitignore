@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+
+# Next.js build output
+.next/
+out/
+
+# pnpm store
+.pnpm-store/
+
+# TypeScript incremental cache
+*.tsbuildinfo
+
+# Environment (never commit secrets)
+.env
+.env.local
+.env.*.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/settings.json

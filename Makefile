@@ -28,7 +28,7 @@ GOLANGCI_LINT := $(GOLANGCI_LINT_DIR)/golangci-lint
 GOVULNCHECK_DIR := $(TOOLS_DIR)/govulncheck-$(GOVULNCHECK_VERSION)
 GOVULNCHECK := $(GOVULNCHECK_DIR)/govulncheck
 
-.PHONY: build build-all build-services build-service build-tools build-operations run dev test test/cover test-service integration integration-service clean lint modernize-check ci-lint print-golangci-lint-version print-govulncheck-version docs-check docs-catalog onboarding-check doctor architecture-check architecture-graph architecture-metrics ide-config improvement-check risk-gate-check supply-chain-check supply-chain-e2e supply-chain-evidence-check environment-contract-check vendor-sandbox-check tidy tools tools-lint tools-security security-vuln proto proto-lint proto-breaking contract-generate contract-lint contract-breaking contract-test contracts load-lint load-test load-seed load-snapshot load-restore load-smoke load-run load-capacity load-report-check load-hpa-evidence load-clean vet docker-up docker-down smoke-container smoke-test business-e2e capability-e2e admin-e2e privacy-e2e merchant-e2e interest-period-e2e schedule-policy-e2e topup-fee-e2e migration-contract-check migration-state-test migration-balance-v2-e2e migration-verify notification-config-check notification-templates-check notification-fixtures notification-providers-up notification-providers-down notification-e2e notification-retention-test notification-verify dr-integration dr-e2e dr-cloud-restore-drill verify-static verify-full verify-chaos chaos-debug migrate-up migrate-up-all migrate-down grant-app-role observability-secret observability-down certs backup-secret backup-role-bootstrap backup-checksums-enable backup-stanza-init backup-full backup-diff backup-check backup-status backup-expire cryptox-secret retention-docs retention-check analytics-secret analytics-config-check analytics-up-core analytics-up-ui analytics-up-ops analytics-health analytics-source-setup analytics-connectors-validate analytics-connectors-apply analytics-connectors-status analytics-connectors-pause analytics-connectors-resume analytics-connectors-delete analytics-clickhouse-migrate analytics-dbt-deps analytics-dbt-build analytics-dbt-test analytics-reconcile analytics-metrics-exporter analytics-e2e analytics-chaos analytics-reset analytics-down k0-inventory k0-inventory-check k0-resource-sample k0-network-probe helm-lint deploy-readiness network-contract-check rendered-manifests-check deployment-drift-check tls-contract-check platform-integration-check platform-e2e k8s-preflight k8s-bootstrap k8s-integration k8s-e2e k8s-smoke k8s-network-boundaries k8s-rolling-update k8s-hpa-scale k8s-verify-callback k8s-verify-egress help
+.PHONY: build build-all build-services build-service build-tools build-operations run dev test test/cover test-service integration integration-service clean lint modernize-check ci-lint print-golangci-lint-version print-govulncheck-version docs-check docs-catalog onboarding-check doctor architecture-check architecture-graph architecture-metrics ide-config improvement-check risk-gate-check supply-chain-check supply-chain-e2e supply-chain-evidence-check environment-contract-check vendor-sandbox-check tidy tools tools-lint tools-security security-vuln proto proto-lint proto-breaking contract-generate contract-lint contract-breaking contract-test contracts load-lint load-test load-seed load-snapshot load-restore load-smoke load-run load-capacity load-report-check load-hpa-evidence load-clean vet docker-up docker-down smoke-container smoke-test business-e2e capability-e2e admin-e2e privacy-e2e merchant-e2e interest-period-e2e schedule-policy-e2e topup-fee-e2e migration-contract-check migration-state-test migration-balance-v2-e2e migration-verify notification-config-check notification-templates-check notification-fixtures notification-providers-up notification-providers-down notification-e2e notification-retention-test notification-verify dr-integration dr-e2e dr-cloud-restore-drill verify-static verify-full verify-chaos chaos-debug migrate-up migrate-up-all migrate-down grant-app-role observability-secret observability-down certs backup-secret backup-role-bootstrap backup-checksums-enable backup-stanza-init backup-full backup-diff backup-check backup-status backup-expire cryptox-secret retention-docs retention-check analytics-secret analytics-config-check analytics-up-core analytics-up-ui analytics-up-ops analytics-health analytics-source-setup analytics-connectors-validate analytics-connectors-apply analytics-connectors-status analytics-connectors-pause analytics-connectors-resume analytics-connectors-delete analytics-clickhouse-migrate analytics-dbt-deps analytics-dbt-build analytics-dbt-test analytics-reconcile analytics-metrics-exporter analytics-e2e analytics-chaos analytics-reset analytics-down k0-inventory k0-inventory-check k0-resource-sample k0-network-probe helm-lint deploy-readiness network-contract-check rendered-manifests-check deployment-drift-check tls-contract-check platform-integration-check platform-e2e k8s-preflight k8s-bootstrap k8s-integration k8s-e2e k8s-smoke k8s-network-boundaries k8s-rolling-update k8s-hpa-scale k8s-verify-callback k8s-verify-egress web-install web-format-check web-lint web-typecheck web-test web-build web-e2e web-boundary-check web-check help
 .PHONY: capability-chaos platform-chaos runtime-acceptance runtime-acceptance-check promotion-evidence-check k8s-chaos deploy-readiness business-coverage
 .PHONY: quality-report clean-cache
 
@@ -762,6 +762,7 @@ verify-static:
 	$(MAKE) contracts
 	$(MAKE) analytics-config-check
 	$(MAKE) load-test
+	$(MAKE) web-check
 	git diff --check
 
 # This is what docs/development/project-guide.md's "Build and verification"
@@ -1031,6 +1032,45 @@ backup-status:
 ## backup-expire: Expire backups/WAL outside the retention policy (K4; run only after a successful backup + check)
 backup-expire:
 	@./scripts/pgbackrest.sh expire
+
+# ── Frontend (Plan 56 · F0) ─────────────────────────────────────────────────
+# All frontend targets run inside web/ with --frozen-lockfile. Go-only workflows
+# skip these targets. Add web-check to verify-static to keep the gate mandatory.
+
+## web-install: Install frontend dependencies (frozen lockfile; no auto-upgrade)
+web-install:
+	pnpm --dir web install --frozen-lockfile
+
+## web-format-check: Check frontend formatting (does not mutate files)
+web-format-check: web-install
+	pnpm --dir web run format:check
+
+## web-lint: Lint all frontend packages
+web-lint: web-install
+	pnpm --dir web run lint
+
+## web-typecheck: Type-check all frontend packages
+web-typecheck: web-install
+	pnpm --dir web run typecheck
+
+## web-test: Run frontend unit and component tests
+web-test: web-install
+	pnpm --dir web run test
+
+## web-build: Build both Wallet and Operator production bundles
+web-build: web-install
+	pnpm --dir web run build
+
+## web-e2e: Run Playwright end-to-end tests for both applications
+web-e2e: web-install
+	pnpm --dir web run e2e
+
+## web-boundary-check: Verify package dependency rules are not violated
+web-boundary-check:
+	node web/scripts/check-boundaries.mjs
+
+## web-check: Run all non-browser frontend gates without modifying the lockfile
+web-check: web-format-check web-lint web-typecheck web-test web-build web-boundary-check
 
 ## help: Print this help message
 help:

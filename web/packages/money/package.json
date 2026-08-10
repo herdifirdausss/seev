@@ -1,0 +1,20 @@
+{
+  "name": "@seev/money",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src",
+    "format:check": "prettier --check src tests",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@seev/config": "workspace:*",
+    "typescript": "5.8.3",
+    "vitest": "3.2.3"
+  }
+}
