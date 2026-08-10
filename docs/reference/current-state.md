@@ -41,7 +41,7 @@ work.
 | C6 | The `account_balances_v2` migration control plane, backfill, dual-write/shadow-read, target-primary cutover, repair, and rollback machinery are implemented and verified. Core invariants covered by unit + integration tests; E2E drill scripted (`scripts/migration-balance-v2-e2e.sh`). Chaos/load/PITR gates deferred (tracked follow-ups in plan 62 §42). |
 | K0 | Deployment inventory artifacts are committed. Static verification is now green; local runtime acceptance remains partial and the K1 handoff is not yet authorized. |
 | F0 | Frontend platform work remains planned and has not started. |
-| A11 | Round 3 audit findings remain open; see [plan 65](../roadmap/active/65-a11-database-audit-and-hardening.md). |
+| A11 | Three-round database audit complete. Bounded entry posting (SECURITY DEFINER), KYC maker/checker, DELETE-grant revocations, dispute/disbursement guards, and HTTP transport split all verified by `make integration` (EXIT:0, 2026-08-10). See [history](../roadmap/history.md). |
 
 ## Implemented extensions
 

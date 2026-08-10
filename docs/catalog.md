@@ -11,6 +11,7 @@
 | [docs/data/README.md](../docs/data/README.md) | Data | — | — | — | — | — | — |
 | [docs/data/retention.md](../docs/data/retention.md) | Data Retention Matrix | — | — | — | — | — | — |
 | [docs/deployment/README.md](../docs/deployment/README.md) | Seev deployment contract | — | — | — | — | — | — |
+| [docs/deployment/adding-a-service.md](../docs/deployment/adding-a-service.md) | How to Add a Service | — | — | — | — | — | — |
 | [docs/deployment/environment-contract.md](../docs/deployment/environment-contract.md) | Environment contract | — | — | — | — | — | — |
 | [docs/deployment/k1-input-contract.md](../docs/deployment/k1-input-contract.md) | K1–K6 input contract | — | — | — | — | — | — |
 | [docs/deployment/runtime-contract.md](../docs/deployment/runtime-contract.md) | Runtime Contract | — | — | — | — | — | — |
@@ -93,7 +94,6 @@
 | [docs/roadmap/63-kubernetes-cloud-deployment-roadmap-v2.md](../docs/roadmap/63-kubernetes-cloud-deployment-roadmap-v2.md) | Plan 63 — Kubernetes Cloud Deployment Learning Roadmap | — | — | — | — | — | — |
 | [docs/roadmap/README.md](../docs/roadmap/README.md) | Roadmap and Decision History | — | — | — | — | — | — |
 | [docs/roadmap/active/56-f0-frontend-platform-foundation.md](../docs/roadmap/active/56-f0-frontend-platform-foundation.md) | 56 — F0 Frontend Platform Foundation | active | frontend | 2026-08-09 | — | 56 | false |
-| [docs/roadmap/active/65-a11-database-audit-and-hardening.md](../docs/roadmap/active/65-a11-database-audit-and-hardening.md) | Plan 65 · A11 — Database Audit and Hardening | active | database | 2026-08-09 | — | 65 | false |
 | [docs/roadmap/active/README.md](../docs/roadmap/active/README.md) | Active Plans | active | — | — | — | — | — |
 | [docs/roadmap/history.md](../docs/roadmap/history.md) | Roadmap History | — | — | — | — | — | — |
 | [docs/security/README.md](../docs/security/README.md) | Security Documentation | — | — | — | — | — | — |
