@@ -10,6 +10,7 @@ const nextConfig: NextConfig = {
     return config;
   },
   // Operator only reaches Admin BFF (K5). No Wallet session variables here.
+  typedRoutes: true,
   headers: async () => [
     {
       source: '/(.*)',
@@ -18,6 +19,10 @@ const nextConfig: NextConfig = {
         { key: 'X-Content-Type-Options', value: 'nosniff' },
         { key: 'Referrer-Policy', value: 'no-referrer' },
         { key: 'Cache-Control', value: 'no-store, no-cache, must-revalidate' },
+        {
+          key: 'Permissions-Policy',
+          value: 'camera=(), microphone=(), geolocation=(), payment=()',
+        },
         {
           key: 'Content-Security-Policy',
           value: [

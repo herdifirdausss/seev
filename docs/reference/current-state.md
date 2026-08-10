@@ -11,7 +11,7 @@ generated: false
 
 > [Documentation home](../README.md) · [Reference](README.md)
 >
-> **Status: Current. Reviewed: 2026-08-03 against the current `main` tip and the
+> **Status: Current. Reviewed: 2026-08-10 against the current `main` tip and the
 > working tree.** This is an implementation inventory. “Implemented” means the
 > code, migrations, and local contracts are present; it does not mean runtime
 > acceptance or production readiness is complete.
