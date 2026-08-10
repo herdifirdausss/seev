@@ -22,7 +22,7 @@
 <!-- Which gate did you run locally? -->
 
 - [ ] `go build ./... && go vet ./... && make lint && make test`
-- [ ] `go test -tags=integration -race ./...`
+- [ ] `make integration`
 - [ ] `make verify-full` (only if this touches money movement, persistence,
       messaging, or service startup — see the
       [project guide](../docs/development/project-guide.md))

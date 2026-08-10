@@ -11,6 +11,19 @@ if ! command -v terraform >/dev/null 2>&1; then
 	exit 2
 fi
 
+# DEPLOY-007: Prevent accidental commit of Terraform state, plan, or credential files.
+# terraform.tfvars.example is allowed; the unexemplified terraform.tfvars is not.
+committed_sensitive="$(git -C "$root_dir" ls-files -- \
+	'*.tfstate' '*.tfstate.backup' '*.tfplan' 'terraform.tfvars' \
+	':!:*.tfvars.example' 2>/dev/null || true)"
+if [[ -n "$committed_sensitive" ]]; then
+	printf 'check-iac: FAIL: sensitive Terraform files are tracked by git:\n' >&2
+	printf '%s\n' "$committed_sensitive" >&2
+	printf 'check-iac: Remove these files, add them to .gitignore, and amend the commit.\n' >&2
+	exit 1
+fi
+printf 'check-iac: no sensitive Terraform files committed\n'
+
 terraform fmt -check -recursive "$root_dir/deploy/terraform"
 
 for module in \

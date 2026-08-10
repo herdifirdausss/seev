@@ -7,9 +7,16 @@ on:
       - "deploy/kubernetes/**"
       - "deploy/terraform/**"
       - "deploy/gitops/**"
+      - "deploy/policy/**"
+      - "deploy/inventory/**"
+      - "deploy/observability/prometheus/**"
+      - "deploy/backup/**"
+      - "deploy/certs/.gitkeep"
       - "docs/deployment/**"
       - "internal/platform/resilience/egressproxy/**"
       - "tools/migrate/**"
+      - "tools/certgen/**"
+      - "scripts/ci/check-*.sh"
       - ".github/workflows/kubernetes-validate.yml"
   push:
     branches: [main]
@@ -18,9 +25,14 @@ on:
       - "deploy/kubernetes/**"
       - "deploy/terraform/**"
       - "deploy/gitops/**"
+      - "deploy/policy/**"
+      - "deploy/inventory/**"
+      - "deploy/observability/prometheus/**"
+      - "deploy/backup/**"
       - "docs/deployment/**"
       - "internal/platform/resilience/egressproxy/**"
       - "tools/migrate/**"
+      - "tools/certgen/**"
 
 permissions:
   contents: read
@@ -28,7 +40,7 @@ permissions:
 jobs:
   validate:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -54,7 +66,7 @@ jobs:
       - name: Test migration and proxy seams
         run: go test ./tools/migrate ./internal/platform/resilience/egressproxy ./internal/platform/config ./services/vendor-service/internal
 
-      - name: Terraform format and validation
+      - name: Terraform format and validation (DEPLOY-007)
         run: ./scripts/ci/check-iac.sh
 
       - name: Helm lint through pinned container
@@ -66,8 +78,51 @@ jobs:
           docker run --rm -v "$PWD:/work" -w /work "$HELM_IMAGE" lint deploy/helm/seev -f deploy/helm/seev/values-aws-dev.yaml
           docker run --rm -v "$PWD:/work" -w /work "$HELM_IMAGE" lint deploy/helm/seev -f deploy/helm/seev/values-staging.yaml
 
+      - name: Install helm, kubeconform, conftest (DEPLOY-006)
+        run: |
+          # helm — same minor version as the Helm lint Docker image above
+          HELM_VERSION=v3.17.3
+          curl -fsSL "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz" \
+            | tar xz -C /usr/local/bin --strip-components=1 linux-amd64/helm
+          # kubeconform — Kubernetes schema validator
+          KUBECONFORM_VERSION=v0.6.7
+          curl -fsSL "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz" \
+            | tar xz -C /usr/local/bin kubeconform
+          # conftest — OPA/Rego policy runner
+          CONFTEST_VERSION=0.56.0
+          curl -fsSL "https://github.com/open-policy-agent/conftest/releases/download/v${CONFTEST_VERSION}/conftest_${CONFTEST_VERSION}_Linux_x86_64.tar.gz" \
+            | tar xz -C /usr/local/bin conftest
+
+      - name: Rendered manifest policy validation (DEPLOY-006)
+        run: ./scripts/ci/check-rendered-manifests.sh
+
+      - name: Network contract validation (DEPLOY-001)
+        run: ./scripts/ci/check-network-contract.sh
+
+      - name: Staging template remains fail-closed (DEPLOY-002)
+        run: |
+          if ENV=staging ./scripts/ci/check-deploy-readiness.sh; then
+            echo "unresolved staging template unexpectedly passed readiness" >&2
+            exit 1
+          fi
+
+      - name: Resolved staging promotion readiness fixture (DEPLOY-002)
+        env:
+          ENV: staging
+          VALUES: deploy/helm/seev/values-staging.yaml deploy/helm/seev/testdata/values-staging-resolved.yaml
+        run: ./scripts/ci/check-deploy-readiness.sh
+
+      - name: Generate ephemeral mTLS certificates (DEPLOY-004)
+        run: make certs
+
+      - name: TLS certificate contract (DEPLOY-004)
+        run: ./scripts/ci/check-tls-contract.sh
+
       - name: Deployment integration contract
         run: ./scripts/ci/check-platform-integration.sh
+
+      - name: Cross-layer drift check (DEPLOY-010)
+        run: ./scripts/ci/check-deployment-drift.sh
 
       - name: Deployment platform E2E contract
         run: ./scripts/platform-e2e.sh
@@ -76,7 +131,13 @@ jobs:
         run: |
           command -v shellcheck >/dev/null
           find deploy/kubernetes/scripts -name '*.sh' -print0 | xargs -0 shellcheck --severity=error
+          shellcheck --severity=error scripts/ci/check-onboarding-paths.sh
           shellcheck --severity=error scripts/ci/check-iac.sh
           shellcheck --severity=error scripts/ci/check-platform-integration.sh
           shellcheck --severity=error scripts/platform-e2e.sh
           shellcheck --severity=error deploy/kubernetes/scripts/e2e.sh
+          shellcheck --severity=error scripts/ci/check-deploy-readiness.sh
+          shellcheck --severity=error scripts/ci/check-network-contract.sh
+          shellcheck --severity=error scripts/ci/check-deployment-drift.sh
+          shellcheck --severity=error scripts/ci/check-rendered-manifests.sh
+          shellcheck --severity=error scripts/ci/check-tls-contract.sh

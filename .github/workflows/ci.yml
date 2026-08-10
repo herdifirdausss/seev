@@ -193,11 +193,11 @@ jobs:
       - name: actionlint
         run: actionlint -shellcheck "$(command -v shellcheck)"
 
-      - name: ShellCheck (scripts/**/*.sh, severity=warning)
-        run: find scripts -name '*.sh' -print0 | xargs -0 shellcheck --severity=warning
+      - name: ShellCheck (all tracked shell scripts, severity=warning)
+        run: git ls-files -z -- '*.sh' | xargs -0 -r shellcheck --severity=warning
 
-      - name: shfmt format gate (scripts/**/*.sh)
-        run: find scripts -name '*.sh' -print0 | xargs -0 shfmt -d -i 0 -ci
+      - name: shfmt format gate (all tracked shell scripts)
+        run: git ls-files -z -- '*.sh' | xargs -0 -r shfmt -d -i 0 -ci
 
       - name: Migration fail-closed regression test (P0.1)
         run: bash scripts/ci/check-migration-fail-closed.sh
@@ -245,10 +245,13 @@ jobs:
         run: govulncheck ./...
 
       - name: Test
-        run: go test -race -cover ./...
+        run: go test -race ./...
 
-      - name: Load-tag safety tests
-        run: go test -tags=loadtest ./...
+      - name: Filtered business coverage non-regression
+        run: make business-coverage
+
+      - name: Load harness safety checks
+        run: make load-lint
 
       # A9: generate/lint/test the checked-in HTTP contract artifacts in PR CI.
       # Once the base branch contains the bundle baseline, compare against the
@@ -341,7 +344,7 @@ jobs:
         run: |
           set -uo pipefail
           set +e
-          go test -json -tags=integration -race -timeout 25m ./... \
+          go test -json -tags=integration -race -timeout 25m -p 2 ./... \
             | tee "$RUNNER_TEMP/seev-integration-evidence/go-test.jsonl"
           statuses=("${PIPESTATUS[@]}")
           test_status="${statuses[0]}"

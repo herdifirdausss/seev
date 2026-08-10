@@ -1,5 +1,7 @@
 version: 1
-source_of_truth: docs/improvement/seev-world-class-engineering-improvement-plan-en.md
+source_of_truth:
+  - docs/reference/capability-inventory.md
+  - docs/roadmap/active/README.md
 repository_objects:
   labels:
     - name: improvement:p0-correctness

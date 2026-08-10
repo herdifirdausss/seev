@@ -46,6 +46,8 @@ required_stages=(
 	platform-chaos
 	supply-chain
 	kubernetes-e2e
+	kubernetes-rollout
+	kubernetes-hpa-scale
 	kubernetes-chaos
 	disaster-recovery
 )

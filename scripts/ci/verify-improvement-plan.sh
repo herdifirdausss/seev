@@ -48,4 +48,34 @@ if ((missing != 0)); then
 	exit 1
 fi
 "$root_dir/scripts/ci/check-capability-inventory.sh"
+
+# The metadata index must point only at live repository truth. Historical
+# improvement-plan prose was intentionally removed from main and must never be
+# resurrected as an authoritative source by a stale path.
+for source in docs/reference/capability-inventory.md docs/roadmap/active/README.md; do
+	if ! grep -qE "^[[:space:]]*-[[:space:]]+$source$" "$root_dir/.github/roadmap/metadata.yml"; then
+		printf '::error file=.github/roadmap/metadata.yml::missing live source_of_truth entry: %s\n' "$source" >&2
+		exit 1
+	fi
+done
+if grep -q 'docs/improvement/' "$root_dir/.github/roadmap/metadata.yml"; then
+	printf '::error file=.github/roadmap/metadata.yml::source_of_truth points to removed improvement prose\n' >&2
+	exit 1
+fi
+
+for plan in "$root_dir"/docs/roadmap/active/*.md; do
+	[[ "$(basename "$plan")" == "README.md" ]] && continue
+	name="$(basename "$plan")"
+	status="$(awk -F': *' '$1 == "status" { print $2; exit }' "$plan")"
+	if [[ "$status" != "active" ]]; then
+		printf '::error file=docs/roadmap/active/%s::active-plan file has status=%s\n' "$name" "${status:-<empty>}" >&2
+		exit 1
+	fi
+	for index in docs/roadmap/active/README.md docs/roadmap/README.md; do
+		if ! grep -q "$name" "$root_dir/$index"; then
+			printf '::error file=%s::active plan is missing from index: %s\n' "$index" "$name" >&2
+			exit 1
+		fi
+	done
+done
 printf 'verify-improvement-plan: current engineering, runtime, security, roadmap, and release evidence indexes are present\n'

@@ -123,4 +123,46 @@ if grep -Fq 'iam.gke.io/gcp-service-account:' "$tmp_dir/local.yaml" ||
 	exit 1
 fi
 
-printf 'check-platform-integration: Terraform, Helm overlays, and AWS/GCP workload identity contracts passed\n'
+# DEPLOY-008: Verify Terraform backup settings satisfy the declared recovery policy.
+# Checks the platform modules (which manage production-shaped resources).
+aws_tf="${root_dir}/deploy/terraform/aws/platform/main.tf"
+gcp_tf="${root_dir}/deploy/terraform/gcp/platform/main.tf"
+
+backup_failures=0
+check_tf_setting() {
+	local file="$1" pattern="$2" desc="$3"
+	if grep -qP "$pattern" "$file" 2>/dev/null || grep -qE "$pattern" "$file" 2>/dev/null; then
+		printf 'check-platform-integration: PASS: %s\n' "$desc"
+	else
+		printf 'check-platform-integration: FAIL: %s not found in %s\n' "$desc" "${file#"$root_dir"/}" >&2
+		backup_failures=$((backup_failures + 1))
+	fi
+}
+
+if [[ -f "$aws_tf" ]]; then
+	check_tf_setting "$aws_tf" 'backup_retention_period\s*=\s*([7-9]|[1-9][0-9])' \
+		"AWS RDS backup_retention_period >= 7 days"
+	check_tf_setting "$aws_tf" 'skip_final_snapshot\s*=\s*false' \
+		"AWS RDS skip_final_snapshot = false"
+	check_tf_setting "$aws_tf" 'deletion_protection\s*=\s*true' \
+		"AWS RDS deletion_protection = true"
+	check_tf_setting "$aws_tf" 'multi_az\s*=\s*true' \
+		"AWS RDS multi_az = true"
+fi
+
+if [[ -f "$gcp_tf" ]]; then
+	check_tf_setting "$gcp_tf" 'point_in_time_recovery_enabled\s*=\s*true' \
+		"GCP Cloud SQL point_in_time_recovery_enabled = true"
+	check_tf_setting "$gcp_tf" 'transaction_log_retention_days\s*=\s*([7-9]|[1-9][0-9])' \
+		"GCP Cloud SQL transaction_log_retention_days >= 7"
+	check_tf_setting "$gcp_tf" 'deletion_protection\s*=\s*true' \
+		"GCP Cloud SQL deletion_protection = true"
+fi
+
+if [[ "$backup_failures" -gt 0 ]]; then
+	printf 'check-platform-integration: %d backup policy assertion(s) failed — see deploy/backup/recovery-policy.yaml\n' \
+		"$backup_failures" >&2
+	exit 1
+fi
+
+printf 'check-platform-integration: Terraform, Helm overlays, AWS/GCP workload identity, and backup policy contracts passed\n'

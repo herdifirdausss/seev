@@ -15,6 +15,8 @@ PROTOC_GEN_GO_GRPC_VERSION := v1.6.2
 PROTO_MERGE_BASE_REF       ?= main
 GOLANGCI_LINT_VERSION      ?= v2.12.2
 GOVULNCHECK_VERSION        ?= v1.6.0
+INTEGRATION_TIMEOUT        ?= 25m
+INTEGRATION_PARALLELISM    ?= 2
 
 TOOLS_DIR := $(abspath $(BUILD_DIR)/tools)
 PROTO_TOOLS_DIR := $(TOOLS_DIR)/proto-$(BUF_VERSION)-$(PROTOC_GEN_GO_VERSION)-$(PROTOC_GEN_GO_GRPC_VERSION)
@@ -26,8 +28,9 @@ GOLANGCI_LINT := $(GOLANGCI_LINT_DIR)/golangci-lint
 GOVULNCHECK_DIR := $(TOOLS_DIR)/govulncheck-$(GOVULNCHECK_VERSION)
 GOVULNCHECK := $(GOVULNCHECK_DIR)/govulncheck
 
-.PHONY: build build-all build-services build-service build-tools build-operations run dev test test/cover test-service integration-service clean lint modernize-check ci-lint print-golangci-lint-version print-govulncheck-version docs-check docs-catalog onboarding-check doctor architecture-check architecture-graph architecture-metrics ide-config improvement-check risk-gate-check supply-chain-check supply-chain-e2e supply-chain-evidence-check environment-contract-check vendor-sandbox-check tidy tools tools-lint tools-security security-vuln proto proto-lint proto-breaking contract-generate contract-lint contract-breaking contract-test contracts load-lint load-test load-seed load-snapshot load-restore load-smoke load-run load-capacity load-report-check load-clean vet docker-up docker-down smoke-container smoke-test business-e2e capability-e2e admin-e2e privacy-e2e merchant-e2e interest-period-e2e schedule-policy-e2e topup-fee-e2e migration-contract-check migration-state-test migration-balance-v2-e2e migration-verify notification-config-check notification-templates-check notification-fixtures notification-providers-up notification-providers-down notification-e2e notification-retention-test notification-verify dr-integration dr-e2e verify-static verify-full verify-chaos chaos-debug migrate-up migrate-up-all migrate-down grant-app-role observability-secret observability-down certs backup-secret backup-role-bootstrap backup-checksums-enable backup-stanza-init backup-full backup-diff backup-check backup-status backup-expire cryptox-secret retention-docs retention-check analytics-secret analytics-config-check analytics-up-core analytics-up-ui analytics-up-ops analytics-health analytics-source-setup analytics-connectors-validate analytics-connectors-apply analytics-connectors-status analytics-connectors-pause analytics-connectors-resume analytics-connectors-delete analytics-clickhouse-migrate analytics-dbt-deps analytics-dbt-build analytics-dbt-test analytics-reconcile analytics-metrics-exporter analytics-e2e analytics-chaos analytics-reset analytics-down k0-inventory k0-inventory-check k0-resource-sample k0-network-probe helm-lint platform-integration-check platform-e2e k8s-preflight k8s-bootstrap k8s-integration k8s-e2e k8s-smoke k8s-verify-callback k8s-verify-egress help
-.PHONY: capability-chaos platform-chaos runtime-acceptance runtime-acceptance-check k8s-chaos
+.PHONY: build build-all build-services build-service build-tools build-operations run dev test test/cover test-service integration integration-service clean lint modernize-check ci-lint print-golangci-lint-version print-govulncheck-version docs-check docs-catalog onboarding-check doctor architecture-check architecture-graph architecture-metrics ide-config improvement-check risk-gate-check supply-chain-check supply-chain-e2e supply-chain-evidence-check environment-contract-check vendor-sandbox-check tidy tools tools-lint tools-security security-vuln proto proto-lint proto-breaking contract-generate contract-lint contract-breaking contract-test contracts load-lint load-test load-seed load-snapshot load-restore load-smoke load-run load-capacity load-report-check load-hpa-evidence load-clean vet docker-up docker-down smoke-container smoke-test business-e2e capability-e2e admin-e2e privacy-e2e merchant-e2e interest-period-e2e schedule-policy-e2e topup-fee-e2e migration-contract-check migration-state-test migration-balance-v2-e2e migration-verify notification-config-check notification-templates-check notification-fixtures notification-providers-up notification-providers-down notification-e2e notification-retention-test notification-verify dr-integration dr-e2e dr-cloud-restore-drill verify-static verify-full verify-chaos chaos-debug migrate-up migrate-up-all migrate-down grant-app-role observability-secret observability-down certs backup-secret backup-role-bootstrap backup-checksums-enable backup-stanza-init backup-full backup-diff backup-check backup-status backup-expire cryptox-secret retention-docs retention-check analytics-secret analytics-config-check analytics-up-core analytics-up-ui analytics-up-ops analytics-health analytics-source-setup analytics-connectors-validate analytics-connectors-apply analytics-connectors-status analytics-connectors-pause analytics-connectors-resume analytics-connectors-delete analytics-clickhouse-migrate analytics-dbt-deps analytics-dbt-build analytics-dbt-test analytics-reconcile analytics-metrics-exporter analytics-e2e analytics-chaos analytics-reset analytics-down k0-inventory k0-inventory-check k0-resource-sample k0-network-probe helm-lint deploy-readiness network-contract-check rendered-manifests-check deployment-drift-check tls-contract-check platform-integration-check platform-e2e k8s-preflight k8s-bootstrap k8s-integration k8s-e2e k8s-smoke k8s-network-boundaries k8s-rolling-update k8s-hpa-scale k8s-verify-callback k8s-verify-egress help
+.PHONY: capability-chaos platform-chaos runtime-acceptance runtime-acceptance-check promotion-evidence-check k8s-chaos deploy-readiness business-coverage
+.PHONY: quality-report clean-cache
 
 ## build: Compile the binary
 build:
@@ -97,6 +100,10 @@ test-service:
 	esac; \
 	go test "$$path/..."
 
+## integration: Run the complete race-enabled integration suite with bounded Docker pressure
+integration:
+	go test -tags=integration -race -timeout $(INTEGRATION_TIMEOUT) -p $(INTEGRATION_PARALLELISM) ./...
+
 ## integration-service: Run one service's integration-tagged tests (SERVICE=auth)
 integration-service:
 	@case "$(SERVICE)" in \
@@ -105,7 +112,7 @@ integration-service:
 		vendor) path=./services/vendor-service;; \
 		*) echo "integration-service: unsupported SERVICE=$(SERVICE)" >&2; exit 2;; \
 	esac; \
-	go test -tags=integration "$$path/..."
+	go test -tags=integration -race -timeout $(INTEGRATION_TIMEOUT) -p $(INTEGRATION_PARALLELISM) "$$path/..."
 
 ## run: Run the compiled binary
 run: build
@@ -125,6 +132,14 @@ test/cover:
 	go test -race -coverprofile=coverage.out ./...
 	go tool cover -html=coverage.out
 
+## business-coverage: Enforce filtered business-code coverage non-regression
+business-coverage:
+	@./scripts/ci/check-business-coverage.sh
+
+## quality-report: Run structural, coverage, lint, and vulnerability gates and write bin/quality-report/summary.json
+quality-report:
+	@./scripts/ci/quality-report.sh
+
 ## clean: Remove only repository-local build and test artifacts
 clean:
 	@case "$(BUILD_DIR)" in \
@@ -133,6 +148,10 @@ clean:
 	esac
 	rm -f -- coverage.out
 	rm -rf -- .smoke-container-artifacts
+
+## clean-cache: Remove guarded Go/build/Terraform caches and idle Docker artifacts; volumes and active containers are untouched
+clean-cache:
+	@./scripts/clean-cache.sh
 
 ## lint: Install and run the repository-pinned golangci-lint
 lint: tools-lint modernize-check
@@ -149,7 +168,7 @@ ci-lint:
 	@command -v actionlint >/dev/null 2>&1 || { echo "actionlint is required" >&2; exit 2; }
 	@command -v shellcheck >/dev/null 2>&1 || { echo "shellcheck is required" >&2; exit 2; }
 	actionlint -shellcheck "$$(command -v shellcheck)"
-	find scripts -name '*.sh' -print0 | xargs -0 shellcheck --severity=error
+	git ls-files -z -- '*.sh' | xargs -0 -r shellcheck --severity=error
 	./scripts/ci/check-action-pins.sh
 
 ## print-golangci-lint-version: Print the pinned golangci-lint version (single source of truth for CI)
@@ -361,6 +380,27 @@ helm-lint:
 	helm lint deploy/helm/seev -f deploy/helm/seev/values-local.yaml
 	helm lint deploy/helm/seev -f deploy/helm/seev/values-gcp-dev.yaml
 	helm lint deploy/helm/seev -f deploy/helm/seev/values-aws-dev.yaml
+	helm lint deploy/helm/seev -f deploy/helm/seev/values-staging.yaml
+
+## deploy-readiness: Verify ENV overlay satisfies the staging promotion readiness contract (DEPLOY-002)
+deploy-readiness:
+	@ENV="$(or $(ENV),staging)" VALUES="$(VALUES)" ./scripts/ci/check-deploy-readiness.sh
+
+## network-contract-check: Verify per-service network access is fully declared (DEPLOY-001)
+network-contract-check:
+	@./scripts/ci/check-network-contract.sh
+
+## rendered-manifests-check: Render all Helm overlays and validate schema + Seev policies (DEPLOY-006)
+rendered-manifests-check:
+	@./scripts/ci/check-rendered-manifests.sh
+
+## deployment-drift-check: Detect divergence between inventory, Helm, and observability (DEPLOY-010)
+deployment-drift-check:
+	@./scripts/ci/check-deployment-drift.sh
+
+## tls-contract-check: Verify generated service certificate identities and Prometheus TLS settings (DEPLOY-004)
+tls-contract-check:
+	@./scripts/ci/check-tls-contract.sh
 
 ## platform-integration-check: Terraform, Helm, and provider workload-identity contract
 platform-integration-check:
@@ -382,16 +422,32 @@ k8s-bootstrap:
 k8s-integration:
 	@$(MAKE) --no-print-directory k8s-bootstrap
 	@$(MAKE) --no-print-directory k8s-smoke
+	@$(MAKE) --no-print-directory k8s-network-boundaries
 
 ## k8s-e2e: Bootstrap local Kubernetes, run edge smoke, and execute the business journey
 k8s-e2e:
 	@$(MAKE) --no-print-directory k8s-bootstrap
 	@$(MAKE) --no-print-directory k8s-smoke
+	@$(MAKE) --no-print-directory k8s-network-boundaries
 	@./deploy/kubernetes/scripts/e2e.sh
+	@$(MAKE) --no-print-directory k8s-rolling-update
+	@$(MAKE) --no-print-directory k8s-hpa-scale
 
 ## k8s-smoke: Run the local Kubernetes readiness and edge smoke test
 k8s-smoke:
 	@./deploy/kubernetes/scripts/smoke.sh
+
+## k8s-network-boundaries: Prove positive and negative service/datastore/proxy policy journeys
+k8s-network-boundaries:
+	@./deploy/kubernetes/scripts/verify-network-boundaries.sh
+
+## k8s-hpa-scale: Apply a temporary HPA to auth-service and verify zero 5xx during scale-up/scale-down (DEPLOY-009)
+k8s-hpa-scale:
+	@./deploy/kubernetes/scripts/verify-hpa-scale.sh
+
+## k8s-rolling-update: Trigger a rolling update on auth-service and assert zero 5xx during rollout
+k8s-rolling-update:
+	@./deploy/kubernetes/scripts/verify-rolling-update.sh
 
 ## k8s-chaos: Delete one Gateway pod and verify Kubernetes replacement/recovery
 k8s-chaos:
@@ -529,6 +585,10 @@ export LOAD_RUNS LOAD_REPORT_OUT
 load-report-check:
 	@./scripts/load-report-check.sh
 
+## load-hpa-evidence: Collect per-service saturation metrics from a running load test (PROM_ADDR=http://localhost:9090)
+load-hpa-evidence:
+	@./scripts/load/collect-hpa-evidence.sh
+
 ## load-clean: Remove only the exact disposable Compose project and its run artifact path
 load-clean:
 	SEEV_LOAD_ACK=disposable-only ./scripts/load-test.sh clean
@@ -577,6 +637,12 @@ dr-integration:
 dr-e2e:
 	@./scripts/dr-e2e.sh
 
+## dr-cloud-restore-drill: Provider-native restore into isolated recovery instance (DEPLOY-008); requires --provider and --env
+## Example: make dr-cloud-restore-drill PROVIDER=aws ENV=staging
+## Dry-run (no cloud credentials needed): make dr-cloud-restore-drill PROVIDER=aws ENV=staging DRY_RUN=--dry-run
+dr-cloud-restore-drill:
+	@./deploy/backup/scripts/cloud-restore-drill.sh --provider $(PROVIDER) --env $(ENV) $(MODE:%=--mode %) $(DRY_RUN)
+
 ## runtime-acceptance: Run the complete disposable local runtime profile and verify all 17 capability rows
 runtime-acceptance:
 	@./scripts/runtime-acceptance.sh
@@ -585,6 +651,11 @@ runtime-acceptance:
 runtime-acceptance-check:
 	@test -n "$(RUNTIME_ACCEPTANCE_MANIFEST)" || { echo "RUNTIME_ACCEPTANCE_MANIFEST is required" >&2; exit 2; }
 	@./scripts/ci/check-runtime-acceptance.sh "$(RUNTIME_ACCEPTANCE_MANIFEST)"
+
+## promotion-evidence-check: Validate all required evidence is attached before staging promotion (DEPLOY — Definition of Done)
+promotion-evidence-check:
+	@test -n "$(RUNTIME_ACCEPTANCE_MANIFEST)" || { echo "RUNTIME_ACCEPTANCE_MANIFEST is required" >&2; exit 2; }
+	@./scripts/ci/check-promotion-evidence.sh
 
 ## admin-e2e: Admin BFF session, CSRF, mutation, and audit journey
 admin-e2e:
@@ -691,7 +762,6 @@ verify-static:
 	$(MAKE) contracts
 	$(MAKE) analytics-config-check
 	$(MAKE) load-test
-	go test -tags=loadtest $$(go list ./... | grep -v '/\.worktrees/')
 	git diff --check
 
 # This is what docs/development/project-guide.md's "Build and verification"
@@ -717,7 +787,7 @@ verify-full:
 	$(MAKE) --no-print-directory proto-lint; \
 	$(MAKE) --no-print-directory proto-breaking; \
 	$(MAKE) --no-print-directory test; \
-	go test -tags=integration -race -timeout 25m ./...; \
+	$(MAKE) --no-print-directory integration; \
 	$(MAKE) --no-print-directory smoke-container; \
 	$(MAKE) --no-print-directory smoke-test; \
 	$(MAKE) --no-print-directory business-e2e; \

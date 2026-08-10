@@ -199,6 +199,8 @@ run_stage supply-chain "source and protected-release evidence verifier" "make su
 prepare_k8s_cluster
 export KIND_CONFIG
 run_stage kubernetes-e2e "disposable kind edge and business journey" "make k8s-e2e" make k8s-e2e
+run_stage kubernetes-rollout "rolling update with zero 5xx under concurrent traffic" "make k8s-rolling-update" make k8s-rolling-update
+run_stage kubernetes-hpa-scale "HPA scale-up and scale-down with zero 5xx (DEPLOY-009)" "make k8s-hpa-scale" make k8s-hpa-scale
 run_stage kubernetes-chaos "Gateway pod replacement and recovered edge" "make k8s-chaos" make k8s-chaos
 
 # DR owns its own Compose projects and destroys only their named volumes.
