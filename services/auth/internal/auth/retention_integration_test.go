@@ -204,10 +204,9 @@ func insertKYCApplyRetry(t *testing.T, db *database.DBSQL, userID uuid.UUID, sta
 	require.NoError(t, repository.NewKYCRepository(db, cryptoxTestRing).CreateKYCSubmission(context.Background(), model.KYCSubmission{
 		ID: submissionID, UserID: userID, LevelRequested: 1, Provider: "test", Payload: map[string]any{},
 	}))
-	_, err := db.ExecContext(context.Background(), `UPDATE kyc_submissions SET status = 'approved' WHERE id = $1`, submissionID)
-	require.NoError(t, err)
+	approveKYCSubmissionFixture(t, db, submissionID)
 	retryID := uuid.New()
-	_, err = db.ExecContext(context.Background(), `
+	_, err := db.ExecContext(context.Background(), `
 		INSERT INTO kyc_apply_retries (id, submission_id, user_id, level, status, updated_at)
 		VALUES ($1, $2, $3, 1, $4, $5)`, retryID, submissionID, userID, status, updatedAt)
 	require.NoError(t, err)

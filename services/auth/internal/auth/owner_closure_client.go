@@ -131,7 +131,7 @@ func (c *httpOwnerClosureClient) ExportPage(ctx context.Context, subjectID uuid.
 
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return nil, "", fmt.Errorf("%w: %v", ErrClosureOwnerUnavailable, err)
+		return nil, "", fmt.Errorf("%w: %w", ErrClosureOwnerUnavailable, err)
 	}
 	defer resp.Body.Close()
 	data, err := io.ReadAll(io.LimitReader(resp.Body, 32<<20))
@@ -162,7 +162,7 @@ func (c *httpOwnerClosureClient) doJSON(ctx context.Context, path string, reqBod
 
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return fmt.Errorf("%w: %v", ErrClosureOwnerUnavailable, err)
+		return fmt.Errorf("%w: %w", ErrClosureOwnerUnavailable, err)
 	}
 	defer resp.Body.Close()
 	data, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))

@@ -15,11 +15,17 @@ type (
 	AdminPrivacyRequest        = service.AdminPrivacyRequest
 	FileDocumentStore          = service.FileDocumentStore
 	KYCApplyQueuedError        = service.KYCApplyQueuedError
+	KYCDecisionRequest         = service.KYCDecisionRequest
 	KYCStatus                  = service.KYCStatus
 	OperatorOffboardingRequest = service.OperatorOffboardingRequest
 	PrivacyRequest             = service.PrivacyRequest
 	TokenPair                  = service.TokenPair
 	User                       = service.User
+)
+
+const (
+	KYCDecisionApprove = service.KYCDecisionApprove
+	KYCDecisionReject  = service.KYCDecisionReject
 )
 
 var (

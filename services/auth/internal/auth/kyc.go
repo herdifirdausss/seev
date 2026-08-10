@@ -93,8 +93,16 @@ func (m *Module) SubmitKYC(ctx context.Context, userID uuid.UUID, levelRequested
 				return submission, fmt.Errorf("auth: sanctions screening: %w", screenErr)
 			}
 			if verdict.Block {
-				if rejectErr := m.kyc.RejectKYCSubmission(ctx, submission.ID, "sanctions", verdict.Reason); rejectErr != nil {
+				request, requestErr := m.authorizeAutomatedKYCDecision(ctx, submission.ID,
+					KYCDecisionReject, verdict.Reason, "sanctions-screening", "system-sanctions-policy")
+				if requestErr != nil {
+					return submission, requestErr
+				}
+				if rejectErr := m.kyc.RejectKYCSubmission(ctx, submission.ID, request.ID, request.DecidedBy, request.RequestReason); rejectErr != nil {
 					return submission, rejectErr
+				}
+				if _, markErr := m.markKYCDecisionApplied(ctx, request); markErr != nil {
+					return submission, markErr
 				}
 				submission.Status = "rejected"
 				return submission, nil
@@ -103,18 +111,35 @@ func (m *Module) SubmitKYC(ctx context.Context, userID uuid.UUID, levelRequested
 	}
 	decision, err := m.kycProvider.Verify(ctx, kycvendor.Submission{UserID: userID, LevelRequested: levelRequested, Payload: payload})
 	if err != nil {
-		return submission, fmt.Errorf("%w: %v", ErrKYCProvider, err)
+		return submission, fmt.Errorf("%w: %w", ErrKYCProvider, err)
 	}
 	submission.ProviderRef, submission.DecisionReason = decision.Ref, decision.Reason
 	switch decision.Verdict {
 	case kycvendor.VerdictApprove:
-		if err := m.approveSubmission(ctx, submission, "system"); err != nil {
+		request, requestErr := m.authorizeAutomatedKYCDecision(ctx, submission.ID,
+			KYCDecisionApprove, decision.Reason, "provider:"+m.kycProvider.Name(), "system-kyc-policy")
+		if requestErr != nil {
+			return submission, requestErr
+		}
+		submission.DecisionReason = request.RequestReason
+		if err := m.approveSubmission(ctx, submission, request.DecidedBy, request.ID); err != nil {
 			return submission, err
+		}
+		if _, markErr := m.markKYCDecisionApplied(ctx, request); markErr != nil {
+			return submission, markErr
 		}
 		submission.Status = "approved"
 	case kycvendor.VerdictReject:
-		if err := m.kyc.RejectKYCSubmission(ctx, submission.ID, "provider", decision.Reason); err != nil {
+		request, requestErr := m.authorizeAutomatedKYCDecision(ctx, submission.ID,
+			KYCDecisionReject, decision.Reason, "provider:"+m.kycProvider.Name(), "system-kyc-policy")
+		if requestErr != nil {
+			return submission, requestErr
+		}
+		if err := m.kyc.RejectKYCSubmission(ctx, submission.ID, request.ID, request.DecidedBy, request.RequestReason); err != nil {
 			return submission, err
+		}
+		if _, markErr := m.markKYCDecisionApplied(ctx, request); markErr != nil {
+			return submission, markErr
 		}
 		submission.Status = "rejected"
 	case kycvendor.VerdictRefer:
@@ -143,17 +168,18 @@ func (m *Module) ListKYCSubmissions(ctx context.Context, status string) ([]model
 	return m.kyc.ListKYCSubmissions(ctx, status)
 }
 
-func (m *Module) approveSubmission(ctx context.Context, submission model.KYCSubmission, decidedBy string) error {
+func (m *Module) approveSubmission(ctx context.Context, submission model.KYCSubmission, decidedBy string, decisionRequestID uuid.UUID) error {
 	ttl := m.cfg.KYCValidityTTL
 	if ttl == 0 {
 		ttl = defaultKYCValidityTTL
 	}
 	validUntil := time.Now().Add(ttl)
-	err := m.kyc.ApproveKYCSubmission(ctx, submission.ID, decidedBy, submission.ProviderRef, submission.DecisionReason, validUntil, m.provisioner.ApplyKycTier)
+	err := m.kyc.ApproveKYCSubmission(ctx, submission.ID, decisionRequestID, decidedBy, submission.ProviderRef, submission.DecisionReason, validUntil, m.provisioner.ApplyKycTier)
 	if err == nil {
 		if syncer, ok := m.provisioner.(ExecutionSubjectProvisioner); ok {
 			if syncErr := syncer.SetExecutionSubjectState(ctx, submission.UserID, model.StatusActive, submission.LevelRequested, &validUntil); syncErr != nil {
-				return fmt.Errorf("auth: synchronize approved KYC execution subject: %w", syncErr)
+				cause := fmt.Errorf("auth: synchronize approved KYC execution subject: %w", syncErr)
+				return m.queueApprovedKYCRetry(ctx, submission, decisionRequestID, decidedBy, cause)
 			}
 		}
 		return nil
@@ -167,16 +193,41 @@ func (m *Module) approveSubmission(ctx context.Context, submission model.KYCSubm
 	// transaction and cannot advance auth_users.
 	// Derive the intent id from the submission so concurrent approval callers
 	// converge on one durable row and return the same retry id.
+	return m.queueApprovedKYCRetry(ctx, submission, decisionRequestID, decidedBy, err)
+}
+
+func (m *Module) queueApprovedKYCRetry(ctx context.Context, submission model.KYCSubmission, decisionRequestID uuid.UUID, decidedBy string, cause error) error {
 	retry := model.KYCApplyRetry{
-		ID:            uuid.NewSHA1(uuid.Nil, []byte("kyc-apply:"+submission.ID.String())),
-		SubmissionID:  submission.ID,
-		UserID:        submission.UserID,
-		Level:         submission.LevelRequested,
-		Status:        "pending",
-		NextAttemptAt: time.Now(),
-		LastError:     truncateRetryError(err),
+		ID:                uuid.NewSHA1(uuid.Nil, []byte("kyc-apply:"+submission.ID.String())),
+		SubmissionID:      submission.ID,
+		DecisionRequestID: decisionRequestID,
+		UserID:            submission.UserID,
+		Level:             submission.LevelRequested,
+		DecidedBy:         decidedBy,
+		DecisionReason:    submission.DecisionReason,
+		Status:            "pending",
+		NextAttemptAt:     time.Now(),
+		LastError:         truncateRetryError(cause),
 	}
-	return m.queueKYCApplyRetry(ctx, retry, err)
+	return m.queueKYCApplyRetry(ctx, retry, cause)
+}
+
+func (m *Module) syncApprovedKYCExecutionSubject(ctx context.Context, submission model.KYCSubmission) error {
+	syncer, ok := m.provisioner.(ExecutionSubjectProvisioner)
+	if !ok {
+		return nil
+	}
+	user, err := m.users.GetUserByID(ctx, submission.UserID)
+	if err != nil {
+		return fmt.Errorf("auth: read approved KYC subject state: %w", err)
+	}
+	if user.KYCLevel != submission.LevelRequested || user.KYCVerifiedUntil == nil {
+		return repository.ErrKYCTierConflict
+	}
+	if err := syncer.SetExecutionSubjectState(ctx, submission.UserID, model.StatusActive, submission.LevelRequested, user.KYCVerifiedUntil); err != nil {
+		return fmt.Errorf("auth: synchronize approved KYC execution subject: %w", err)
+	}
+	return nil
 }
 
 // DowngradeKYC applies stricter ledger limits before lowering the auth claim.
@@ -218,21 +269,16 @@ func (m *Module) DowngradeKYC(ctx context.Context, userID uuid.UUID, level int, 
 }
 
 func (m *Module) ApproveKYC(ctx context.Context, submissionID uuid.UUID, decidedBy string) error {
-	s, err := m.kyc.GetKYCSubmission(ctx, submissionID)
-	if err != nil {
-		return err
-	}
-	if s.Status != "pending" {
-		return repository.ErrKYCSubmissionNotPending
-	}
-	return m.approveSubmission(ctx, s, decidedBy)
+	_, err := m.RequestKYCDecision(ctx, submissionID, decidedBy, KYCDecisionApprove, "manual KYC approval request")
+	return err
 }
 
 func (m *Module) RejectKYC(ctx context.Context, submissionID uuid.UUID, decidedBy, reason string) error {
 	if reason == "" {
 		return ErrValidation
 	}
-	return m.kyc.RejectKYCSubmission(ctx, submissionID, decidedBy, reason)
+	_, err := m.RequestKYCDecision(ctx, submissionID, decidedBy, KYCDecisionReject, reason)
+	return err
 }
 
 func truncateRetryError(err error) string {

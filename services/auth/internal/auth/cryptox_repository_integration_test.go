@@ -182,8 +182,7 @@ func TestKYCRepository_ListRescreenSubjects_WorksAgainstEncryptedPayload(t *test
 		Payload: map[string]any{"full_name": "Noah", "birth_date": "1985-05-05"},
 	}
 	require.NoError(t, repo.CreateKYCSubmission(ctx, approvedSub))
-	_, err := db.ExecContext(ctx, `UPDATE kyc_submissions SET status = 'approved', decided_at = now() WHERE id = $1`, approvedSub.ID)
-	require.NoError(t, err)
+	approveKYCSubmissionFixture(t, db, approvedSub.ID)
 
 	pendingUser := uuid.New()
 	insertTestUser(t, db, pendingUser)

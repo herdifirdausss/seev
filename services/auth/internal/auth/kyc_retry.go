@@ -26,15 +26,15 @@ func (m *Module) queueKYCApplyRetry(ctx context.Context, retry model.KYCApplyRet
 	queueCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
 	defer cancel()
 	if enqueueErr := m.kyc.EnqueueKYCApplyRetry(queueCtx, retry); enqueueErr != nil {
-		return fmt.Errorf("auth: persist kyc apply retry: %w (original: %v)", enqueueErr, cause)
+		return fmt.Errorf("auth: persist kyc apply retry: %w (original: %w)", enqueueErr, cause)
 	}
 	kycApplyRetriesQueuedTotal.Inc()
 	return &KYCApplyQueuedError{RetryID: retry.ID, Cause: cause}
 }
 
 // RetryKYCApply re-runs the full limits-first approval flow for a claimed
-// intent. A non-pending submission is already converged (for example an
-// admin approved it manually), so it is treated as a successful no-op.
+// intent. A terminal submission only converges the retry when it was approved
+// by the same durable decision request; a competing outcome remains an error.
 func (m *Module) RetryKYCApply(ctx context.Context, retry model.KYCApplyRetry) error {
 	if retry.Direction == "downgrade" {
 		user, err := m.users.GetUserByID(ctx, retry.UserID)
@@ -50,20 +50,61 @@ func (m *Module) RetryKYCApply(ctx context.Context, retry model.KYCApplyRetry) e
 	if err != nil {
 		return err
 	}
+	var decisionRequest *KYCDecisionRequest
+	if retry.DecisionRequestID != uuid.Nil {
+		request, requestErr := m.kyc.GetKYCDecisionRequest(ctx, retry.DecisionRequestID)
+		if requestErr != nil {
+			return requestErr
+		}
+		if request.Status != "authorized" || request.RequestedDecision != KYCDecisionApprove {
+			return repository.ErrKYCDecisionAlreadyDecided
+		}
+		decisionRequest = &request
+	}
 	if submission.Status != "pending" {
+		if decisionRequest != nil {
+			if submission.Status != "approved" || submission.DecisionRequestID != decisionRequest.ID {
+				return repository.ErrKYCSubmissionNotPending
+			}
+			if syncErr := m.syncApprovedKYCExecutionSubject(ctx, submission); syncErr != nil {
+				return syncErr
+			}
+			if markErr := m.kyc.MarkKYCDecisionRequestApplied(ctx, retry.DecisionRequestID); markErr != nil && !errors.Is(markErr, repository.ErrKYCDecisionAlreadyDecided) {
+				return markErr
+			}
+		}
 		return nil
 	}
-	err = m.approveSubmission(ctx, submission, "system-retry")
+	decidedBy := "system-retry"
+	if decisionRequest != nil {
+		decidedBy = decisionRequest.DecidedBy
+		submission.DecisionReason = decisionRequest.RequestReason
+	}
+	err = m.approveSubmission(ctx, submission, decidedBy, retry.DecisionRequestID)
 	if errors.Is(err, repository.ErrKYCSubmissionNotPending) {
-		// A manual admin approval may have won the row lock after the initial
-		// read. Re-read once and converge the intent to succeeded instead of
-		// needlessly burning another retry.
+		// Another worker may have won the row lock after the initial read.
+		// Re-read once, but only converge the exact authorized outcome.
 		latest, readErr := m.kyc.GetKYCSubmission(ctx, retry.SubmissionID)
-		if readErr == nil && latest.Status != "pending" {
+		if readErr != nil {
+			return readErr
+		}
+		if latest.Status == "approved" && (decisionRequest == nil || latest.DecisionRequestID == decisionRequest.ID) {
+			if syncErr := m.syncApprovedKYCExecutionSubject(ctx, latest); syncErr != nil {
+				return syncErr
+			}
+			if decisionRequest != nil {
+				return m.kyc.MarkKYCDecisionRequestApplied(ctx, decisionRequest.ID)
+			}
 			return nil
 		}
 	}
-	return err
+	if err != nil {
+		return err
+	}
+	if retry.DecisionRequestID != uuid.Nil {
+		return m.kyc.MarkKYCDecisionRequestApplied(ctx, retry.DecisionRequestID)
+	}
+	return nil
 }
 
 // NewKYCApplyRetryJob wires the auth-owned relay. Keeping construction here

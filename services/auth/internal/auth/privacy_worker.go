@@ -175,7 +175,7 @@ func (m *Module) AssembleOnePendingExport(ctx context.Context) error {
 			UPDATE privacy_requests SET status = 'failed', error_message = $1, updated_at = now() WHERE id = $2`,
 			truncateErrorMessage(buildErr.Error()), id)
 		if updErr != nil {
-			return fmt.Errorf("mark export failed after build error %v: %w", buildErr, updErr)
+			return fmt.Errorf("mark export failed after build error %w: %w", buildErr, updErr)
 		}
 		observePrivacyRequestDuration("export", "failed", requestedAt)
 		return nil
@@ -364,33 +364,37 @@ func (m *Module) collectAuthOwnerRows(ctx context.Context, userID uuid.UUID, cut
 		if err != nil {
 			return nil, err
 		}
-		pageCount := 0
-		for subRows.Next() {
-			var id uuid.UUID
-			var levelRequested int
-			var status, provider, reason string
-			var createdAt time.Time
-			var decidedAt sql.NullTime
-			if err := subRows.Scan(&id, &levelRequested, &status, &provider, &reason, &createdAt, &decidedAt); err != nil {
-				subRows.Close()
-				return nil, err
+		pageCount, scanErr := func() (int, error) {
+			defer subRows.Close()
+			pageCount := 0
+			for subRows.Next() {
+				var id uuid.UUID
+				var levelRequested int
+				var status, provider, reason string
+				var createdAt time.Time
+				var decidedAt sql.NullTime
+				if err := subRows.Scan(&id, &levelRequested, &status, &provider, &reason, &createdAt, &decidedAt); err != nil {
+					return 0, err
+				}
+				row := exportKYCSubmissionRow{
+					Type: "kyc_submission", ID: id.String(), LevelRequested: levelRequested,
+					Status: status, Provider: provider, DecisionReason: reason, CreatedAt: createdAt,
+				}
+				if decidedAt.Valid {
+					t := decidedAt.Time
+					row.DecidedAt = &t
+				}
+				rows = append(rows, row)
+				pageCount++
 			}
-			row := exportKYCSubmissionRow{
-				Type: "kyc_submission", ID: id.String(), LevelRequested: levelRequested,
-				Status: status, Provider: provider, DecisionReason: reason, CreatedAt: createdAt,
+			if err := subRows.Err(); err != nil {
+				return 0, err
 			}
-			if decidedAt.Valid {
-				t := decidedAt.Time
-				row.DecidedAt = &t
-			}
-			rows = append(rows, row)
-			pageCount++
+			return pageCount, nil
+		}()
+		if scanErr != nil {
+			return nil, scanErr
 		}
-		if err := subRows.Err(); err != nil {
-			subRows.Close()
-			return nil, err
-		}
-		subRows.Close()
 		if pageCount < 100 {
 			break
 		}

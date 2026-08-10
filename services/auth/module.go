@@ -24,6 +24,10 @@ var (
 	ErrKYCPending                        = authinternal.ErrKYCPending
 	ErrKYCProvider                       = authinternal.ErrKYCProvider
 	ErrKYCApplyQueued                    = authinternal.ErrKYCApplyQueued
+	ErrKYCDecisionRequestNotFound        = authinternal.ErrKYCDecisionRequestNotFound
+	ErrKYCDecisionRequestPending         = authinternal.ErrKYCDecisionRequestPending
+	ErrKYCDecisionSelfApproval           = authinternal.ErrKYCDecisionSelfApproval
+	ErrKYCDecisionAlreadyDecided         = authinternal.ErrKYCDecisionAlreadyDecided
 	ErrDocumentStorageUnavailable        = authinternal.ErrDocumentStorageUnavailable
 	ErrDocumentInvalid                   = authinternal.ErrDocumentInvalid
 	ErrClosureUnavailable                = authinternal.ErrClosureUnavailable
@@ -49,6 +53,7 @@ type (
 	ExecutionSubjectProvisioner = authinternal.ExecutionSubjectProvisioner
 	FileDocumentStore           = authinternal.FileDocumentStore
 	KYCApplyQueuedError         = authinternal.KYCApplyQueuedError
+	KYCDecisionRequest          = authinternal.KYCDecisionRequest
 	KYCStatus                   = authinternal.KYCStatus
 	Module                      struct{ *authinternal.Module }
 	OperatorOffboardingRequest  = authinternal.OperatorOffboardingRequest
@@ -57,6 +62,11 @@ type (
 	Provisioner                 = authinternal.Provisioner
 	TokenPair                   = authinternal.TokenPair
 	User                        = authinternal.User
+)
+
+const (
+	KYCDecisionApprove = authinternal.KYCDecisionApprove
+	KYCDecisionReject  = authinternal.KYCDecisionReject
 )
 
 func NewModule(db database.DatabaseSQL, provisioner Provisioner, cfg Config, logger *slog.Logger, ring *cryptox.Ring, lookup *cryptox.LookupKey, providers ...kycvendor.Provider) *Module {
@@ -103,6 +113,15 @@ func (m *Module) AdminDowngradeKYCHandler() http.HandlerFunc {
 }
 func (m *Module) AdminRejectKYCHandler() http.HandlerFunc {
 	return authhandler.New(m.Module).AdminRejectKYCHandler()
+}
+func (m *Module) AdminApproveKYCDecisionHandler() http.HandlerFunc {
+	return authhandler.New(m.Module).AdminApproveKYCDecisionHandler()
+}
+func (m *Module) AdminRejectKYCDecisionHandler() http.HandlerFunc {
+	return authhandler.New(m.Module).AdminRejectKYCDecisionHandler()
+}
+func (m *Module) AdminListKYCDecisionRequestsHandler() http.HandlerFunc {
+	return authhandler.New(m.Module).AdminListKYCDecisionRequestsHandler()
 }
 func (m *Module) CreateClosureHandler() http.HandlerFunc {
 	return authhandler.New(m.Module).CreateClosureHandler()

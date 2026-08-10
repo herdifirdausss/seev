@@ -68,12 +68,11 @@ func insertKYCDocumentForOutboxTest(t *testing.T, db *database.DBSQL, userID uui
 	require.NoError(t, repository.NewKYCRepository(db, cryptoxTestRing).CreateKYCSubmission(ctx, model.KYCSubmission{
 		ID: submissionID, UserID: userID, LevelRequested: 1, Provider: "test", Payload: map[string]any{},
 	}))
-	_, err := db.ExecContext(ctx, `UPDATE kyc_submissions SET status = 'approved' WHERE id = $1`, submissionID)
-	require.NoError(t, err)
+	approveKYCSubmissionFixture(t, db, submissionID)
 
 	docID = uuid.New()
 	objectKey = "kyc/" + userID.String() + "/" + docID.String()
-	_, err = db.ExecContext(ctx, `
+	_, err := db.ExecContext(ctx, `
 		INSERT INTO kyc_documents (id, submission_id, user_id, object_key, sha256, size_bytes, content_type)
 		VALUES ($1, $2, $3, $4, $5, 100, 'application/pdf')`,
 		docID, submissionID, userID, objectKey, "0000000000000000000000000000000000000000000000000000000000000000"[:64])

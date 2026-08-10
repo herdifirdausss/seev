@@ -25,14 +25,21 @@ type KYCRepository interface {
 	GetLatestKYCSubmission(ctx context.Context, userID uuid.UUID) (model.KYCSubmission, error)
 	GetKYCSubmission(ctx context.Context, id uuid.UUID) (model.KYCSubmission, error)
 	ListKYCSubmissions(ctx context.Context, status string) ([]model.KYCSubmission, error)
+	CreateKYCDecisionRequest(ctx context.Context, request model.KYCDecisionRequest) error
+	GetKYCDecisionRequest(ctx context.Context, id uuid.UUID) (model.KYCDecisionRequest, error)
+	GetPendingKYCDecisionRequest(ctx context.Context, submissionID uuid.UUID) (model.KYCDecisionRequest, error)
+	ListKYCDecisionRequests(ctx context.Context, status string, limit int) ([]model.KYCDecisionRequest, error)
+	AuthorizeKYCDecisionRequest(ctx context.Context, id uuid.UUID, decidedBy string) (model.KYCDecisionRequest, error)
+	RejectKYCDecisionRequest(ctx context.Context, id uuid.UUID, decidedBy, reason string) (model.KYCDecisionRequest, error)
+	MarkKYCDecisionRequestApplied(ctx context.Context, id uuid.UUID) error
 	ListKYCRescreenSubjects(ctx context.Context, limit int) ([]model.KYCRescreenSubject, error)
 	// ApproveKYCSubmission runs applyTier while the pending row is locked and
 	// commits the auth level/submission decision only after it succeeds.
 	// validUntil becomes auth_users.kyc_verified_until — the deadline the
 	// periodic expiry worker (services/auth/internal/worker/expiry.go) downgrades
 	// against.
-	ApproveKYCSubmission(ctx context.Context, id uuid.UUID, decidedBy, providerRef, reason string, validUntil time.Time, applyTier func(context.Context, uuid.UUID, int) error) error
-	RejectKYCSubmission(ctx context.Context, id uuid.UUID, decidedBy, reason string) error
+	ApproveKYCSubmission(ctx context.Context, id, decisionRequestID uuid.UUID, decidedBy, providerRef, reason string, validUntil time.Time, applyTier func(context.Context, uuid.UUID, int) error) error
+	RejectKYCSubmission(ctx context.Context, id, decisionRequestID uuid.UUID, decidedBy, reason string) error
 	// ListExpiredKYCUsers returns ids of users whose current kyc_level's
 	// validity window (kyc_verified_until) has passed — the periodic expiry
 	// worker's source query.
@@ -92,14 +99,14 @@ func extractRescreenFields(payload map[string]any) (name *string, birthDate stri
 	return name, birthDate
 }
 
-const kycSubmissionColumns = `id, user_id, level_requested, status, provider, provider_ref, decided_by, decision_reason, created_at, decided_at, payload_ciphertext`
+const kycSubmissionColumns = `id, user_id, level_requested, status, provider, provider_ref, decided_by, decision_reason, decision_request_id, created_at, decided_at, payload_ciphertext`
 
 func (r *kycRepo) scanKYCSubmission(scanner interface{ Scan(...any) error }) (model.KYCSubmission, error) {
 	var s model.KYCSubmission
 	var payloadCiphertext []byte
-	var providerRef, decidedBy, reason sql.NullString
+	var providerRef, decidedBy, reason, decisionRequestID sql.NullString
 	var decidedAt sql.NullTime
-	if err := scanner.Scan(&s.ID, &s.UserID, &s.LevelRequested, &s.Status, &s.Provider, &providerRef, &decidedBy, &reason, &s.CreatedAt, &decidedAt, &payloadCiphertext); err != nil {
+	if err := scanner.Scan(&s.ID, &s.UserID, &s.LevelRequested, &s.Status, &s.Provider, &providerRef, &decidedBy, &reason, &decisionRequestID, &s.CreatedAt, &decidedAt, &payloadCiphertext); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return model.KYCSubmission{}, ErrKYCSubmissionNotFound
 		}
@@ -120,6 +127,13 @@ func (r *kycRepo) scanKYCSubmission(scanner interface{ Scan(...any) error }) (mo
 	}
 	if reason.Valid {
 		s.DecisionReason = reason.String
+	}
+	if decisionRequestID.Valid {
+		parsed, err := uuid.Parse(decisionRequestID.String)
+		if err != nil {
+			return model.KYCSubmission{}, fmt.Errorf("auth: parse kyc decision request id: %w", err)
+		}
+		s.DecisionRequestID = parsed
 	}
 	if decidedAt.Valid {
 		value := decidedAt.Time
@@ -182,6 +196,178 @@ func (r *kycRepo) ListKYCSubmissions(ctx context.Context, status string) ([]mode
 		return nil, fmt.Errorf("auth: iterate kyc submissions: %w", err)
 	}
 	return out, nil
+}
+
+const kycDecisionRequestColumns = `id, submission_id, requested_decision, request_reason, requested_by, status, decided_by, review_reason, created_at, decided_at, applied_at`
+
+func scanKYCDecisionRequest(scanner interface{ Scan(...any) error }) (model.KYCDecisionRequest, error) {
+	var request model.KYCDecisionRequest
+	var decidedBy, reviewReason sql.NullString
+	var decidedAt, appliedAt sql.NullTime
+	if err := scanner.Scan(&request.ID, &request.SubmissionID, &request.RequestedDecision,
+		&request.RequestReason, &request.RequestedBy, &request.Status, &decidedBy,
+		&reviewReason, &request.CreatedAt, &decidedAt, &appliedAt); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.KYCDecisionRequest{}, ErrKYCDecisionRequestNotFound
+		}
+		return model.KYCDecisionRequest{}, fmt.Errorf("auth: scan kyc decision request: %w", err)
+	}
+	if decidedBy.Valid {
+		request.DecidedBy = decidedBy.String
+	}
+	if reviewReason.Valid {
+		request.ReviewReason = reviewReason.String
+	}
+	if decidedAt.Valid {
+		value := decidedAt.Time
+		request.DecidedAt = &value
+	}
+	if appliedAt.Valid {
+		value := appliedAt.Time
+		request.AppliedAt = &value
+	}
+	return request, nil
+}
+
+func (r *kycRepo) CreateKYCDecisionRequest(ctx context.Context, request model.KYCDecisionRequest) error {
+	_, err := r.db.ExecContext(ctx, `
+		INSERT INTO kyc_decision_requests
+			(id, submission_id, requested_decision, request_reason, requested_by, status, created_at)
+		VALUES ($1, $2, $3, $4, $5, 'pending', $6)`,
+		request.ID, request.SubmissionID, request.RequestedDecision, request.RequestReason,
+		request.RequestedBy, request.CreatedAt)
+	if err != nil {
+		if platformerrors.IsDuplicateKey(err) {
+			return ErrKYCDecisionRequestPending
+		}
+		return fmt.Errorf("auth: create kyc decision request: %w", err)
+	}
+	return nil
+}
+
+func (r *kycRepo) GetKYCDecisionRequest(ctx context.Context, id uuid.UUID) (model.KYCDecisionRequest, error) {
+	return scanKYCDecisionRequest(r.db.QueryRowContext(ctx,
+		`SELECT `+kycDecisionRequestColumns+` FROM kyc_decision_requests WHERE id = $1`, id))
+}
+
+func (r *kycRepo) GetPendingKYCDecisionRequest(ctx context.Context, submissionID uuid.UUID) (model.KYCDecisionRequest, error) {
+	return scanKYCDecisionRequest(r.db.QueryRowContext(ctx,
+		`SELECT `+kycDecisionRequestColumns+`
+		 FROM kyc_decision_requests
+		 WHERE submission_id = $1
+		   AND (status = 'pending' OR (status = 'authorized' AND applied_at IS NULL))`, submissionID))
+}
+
+func (r *kycRepo) ListKYCDecisionRequests(ctx context.Context, status string, limit int) ([]model.KYCDecisionRequest, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	if limit > 500 {
+		limit = 500
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT `+kycDecisionRequestColumns+`
+		FROM kyc_decision_requests
+		WHERE ($1 = '' OR status = $1)
+		ORDER BY created_at ASC, id ASC
+		LIMIT $2`, status, limit)
+	if err != nil {
+		return nil, fmt.Errorf("auth: list kyc decision requests: %w", err)
+	}
+	defer rows.Close()
+	var out []model.KYCDecisionRequest
+	for rows.Next() {
+		request, scanErr := scanKYCDecisionRequest(rows)
+		if scanErr != nil {
+			return nil, scanErr
+		}
+		out = append(out, request)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("auth: iterate kyc decision requests: %w", err)
+	}
+	return out, nil
+}
+
+func (r *kycRepo) AuthorizeKYCDecisionRequest(ctx context.Context, id uuid.UUID, decidedBy string) (model.KYCDecisionRequest, error) {
+	var request model.KYCDecisionRequest
+	err := r.db.WithTx(ctx, nil, func(tx *sql.Tx) error {
+		var err error
+		request, err = scanKYCDecisionRequest(tx.QueryRowContext(ctx,
+			`SELECT `+kycDecisionRequestColumns+` FROM kyc_decision_requests WHERE id = $1 FOR UPDATE`, id))
+		if err != nil {
+			return err
+		}
+		if request.RequestedBy == decidedBy {
+			return ErrKYCDecisionSelfApproval
+		}
+		if request.Status != "pending" {
+			return ErrKYCDecisionAlreadyDecided
+		}
+		var decidedAt time.Time
+		if err := tx.QueryRowContext(ctx, `
+			UPDATE kyc_decision_requests
+			SET status = 'authorized', decided_by = $1, decided_at = now()
+			WHERE id = $2 AND status = 'pending'
+			RETURNING decided_at`, decidedBy, id).Scan(&decidedAt); err != nil {
+			return fmt.Errorf("auth: authorize kyc decision request: %w", err)
+		}
+		request.Status = "authorized"
+		request.DecidedBy = decidedBy
+		request.DecidedAt = &decidedAt
+		return nil
+	})
+	return request, err
+}
+
+func (r *kycRepo) RejectKYCDecisionRequest(ctx context.Context, id uuid.UUID, decidedBy, reason string) (model.KYCDecisionRequest, error) {
+	var request model.KYCDecisionRequest
+	err := r.db.WithTx(ctx, nil, func(tx *sql.Tx) error {
+		var err error
+		request, err = scanKYCDecisionRequest(tx.QueryRowContext(ctx,
+			`SELECT `+kycDecisionRequestColumns+` FROM kyc_decision_requests WHERE id = $1 FOR UPDATE`, id))
+		if err != nil {
+			return err
+		}
+		if request.RequestedBy == decidedBy {
+			return ErrKYCDecisionSelfApproval
+		}
+		if request.Status != "pending" {
+			return ErrKYCDecisionAlreadyDecided
+		}
+		var decidedAt time.Time
+		if err := tx.QueryRowContext(ctx, `
+			UPDATE kyc_decision_requests
+			SET status = 'rejected', decided_by = $1, review_reason = $2, decided_at = now()
+			WHERE id = $3 AND status = 'pending'
+			RETURNING decided_at`, decidedBy, reason, id).Scan(&decidedAt); err != nil {
+			return fmt.Errorf("auth: reject kyc decision request: %w", err)
+		}
+		request.Status = "rejected"
+		request.DecidedBy = decidedBy
+		request.ReviewReason = reason
+		request.DecidedAt = &decidedAt
+		return nil
+	})
+	return request, err
+}
+
+func (r *kycRepo) MarkKYCDecisionRequestApplied(ctx context.Context, id uuid.UUID) error {
+	result, err := r.db.ExecContext(ctx, `
+		UPDATE kyc_decision_requests
+		SET applied_at = COALESCE(applied_at, now())
+		WHERE id = $1 AND status = 'authorized'`, id)
+	if err != nil {
+		return fmt.Errorf("auth: mark kyc decision request applied: %w", err)
+	}
+	changed, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("auth: mark kyc decision request applied rows: %w", err)
+	}
+	if changed != 1 {
+		return ErrKYCDecisionAlreadyDecided
+	}
+	return nil
 }
 
 // ListKYCRescreenSubjects returns the latest approved subject projection per
@@ -265,7 +451,7 @@ func (r *kycRepo) ListExpiredKYCUsers(ctx context.Context, limit int) ([]uuid.UU
 	return out, nil
 }
 
-func (r *kycRepo) ApproveKYCSubmission(ctx context.Context, id uuid.UUID, decidedBy, providerRef, reason string, validUntil time.Time, applyTier func(context.Context, uuid.UUID, int) error) error {
+func (r *kycRepo) ApproveKYCSubmission(ctx context.Context, id, decisionRequestID uuid.UUID, decidedBy, providerRef, reason string, validUntil time.Time, applyTier func(context.Context, uuid.UUID, int) error) error {
 	return r.db.WithTx(ctx, nil, func(tx *sql.Tx) error {
 		var userID uuid.UUID
 		var level int
@@ -307,7 +493,7 @@ func (r *kycRepo) ApproveKYCSubmission(ctx context.Context, id uuid.UUID, decide
 		if changed != 1 {
 			return ErrKYCTierConflict
 		}
-		result, err = tx.ExecContext(ctx, `UPDATE kyc_submissions SET status = 'approved', provider_ref = NULLIF($1, ''), decision_reason = NULLIF($2, ''), decided_by = $3, decided_at = now() WHERE id = $4 AND status = 'pending'`, providerRef, reason, decidedBy, id)
+		result, err = tx.ExecContext(ctx, `UPDATE kyc_submissions SET status = 'approved', provider_ref = NULLIF($1, ''), decision_reason = NULLIF($2, ''), decided_by = $3, decision_request_id = NULLIF($4, '00000000-0000-0000-0000-000000000000')::uuid, decided_at = now() WHERE id = $5 AND status = 'pending'`, providerRef, reason, decidedBy, decisionRequestID.String(), id)
 		if err != nil {
 			return fmt.Errorf("auth: approve kyc submission: %w", err)
 		}
@@ -329,10 +515,10 @@ func (r *kycRepo) ApproveKYCSubmission(ctx context.Context, id uuid.UUID, decide
 func (r *kycRepo) EnqueueKYCApplyRetry(ctx context.Context, retry model.KYCApplyRetry) error {
 	_, err := r.db.ExecContext(ctx, `
 		INSERT INTO kyc_apply_retries
-			(id, submission_id, user_id, level, status, retry_count, next_attempt_at, last_error, direction, decided_by, decision_reason)
-		VALUES ($1, NULLIF($2, '00000000-0000-0000-0000-000000000000')::uuid, $3, $4, 'pending', $5, $6, NULLIF($7, ''), COALESCE(NULLIF($8, ''), 'upgrade'), NULLIF($9, ''), NULLIF($10, ''))
+			(id, submission_id, decision_request_id, user_id, level, status, retry_count, next_attempt_at, last_error, direction, decided_by, decision_reason)
+		VALUES ($1, NULLIF($2, '00000000-0000-0000-0000-000000000000')::uuid, NULLIF($3, '00000000-0000-0000-0000-000000000000')::uuid, $4, $5, 'pending', $6, $7, NULLIF($8, ''), COALESCE(NULLIF($9, ''), 'upgrade'), NULLIF($10, ''), NULLIF($11, ''))
 		ON CONFLICT DO NOTHING`,
-		retry.ID, retry.SubmissionID.String(), retry.UserID, retry.Level, retry.RetryCount,
+		retry.ID, retry.SubmissionID.String(), retry.DecisionRequestID.String(), retry.UserID, retry.Level, retry.RetryCount,
 		retry.NextAttemptAt, retry.LastError, retry.Direction, retry.DecidedBy, retry.DecisionReason)
 	if err != nil {
 		return fmt.Errorf("auth: enqueue kyc apply retry: %w", err)
@@ -340,14 +526,14 @@ func (r *kycRepo) EnqueueKYCApplyRetry(ctx context.Context, retry model.KYCApply
 	return nil
 }
 
-const kycApplyRetryColumns = `id, submission_id, user_id, level, status, retry_count, next_attempt_at, last_error, locked_until, created_at, updated_at, direction, decided_by, decision_reason`
+const kycApplyRetryColumns = `id, submission_id, decision_request_id, user_id, level, status, retry_count, next_attempt_at, last_error, locked_until, created_at, updated_at, direction, decided_by, decision_reason`
 
 func scanKYCApplyRetry(scanner interface{ Scan(...any) error }) (model.KYCApplyRetry, error) {
 	var retry model.KYCApplyRetry
-	var submissionID sql.NullString
+	var submissionID, decisionRequestID sql.NullString
 	var lastError, decidedBy, decisionReason sql.NullString
 	var lockedUntil sql.NullTime
-	if err := scanner.Scan(&retry.ID, &submissionID, &retry.UserID, &retry.Level,
+	if err := scanner.Scan(&retry.ID, &submissionID, &decisionRequestID, &retry.UserID, &retry.Level,
 		&retry.Status, &retry.RetryCount, &retry.NextAttemptAt, &lastError,
 		&lockedUntil, &retry.CreatedAt, &retry.UpdatedAt, &retry.Direction, &decidedBy, &decisionReason); err != nil {
 		return model.KYCApplyRetry{}, fmt.Errorf("auth: scan kyc apply retry: %w", err)
@@ -359,6 +545,13 @@ func scanKYCApplyRetry(scanner interface{ Scan(...any) error }) (model.KYCApplyR
 		if parsed, err := uuid.Parse(submissionID.String); err == nil {
 			retry.SubmissionID = parsed
 		}
+	}
+	if decisionRequestID.Valid {
+		parsed, err := uuid.Parse(decisionRequestID.String)
+		if err != nil {
+			return model.KYCApplyRetry{}, fmt.Errorf("auth: parse retry decision request id: %w", err)
+		}
+		retry.DecisionRequestID = parsed
 	}
 	if decidedBy.Valid {
 		retry.DecidedBy = decidedBy.String
@@ -523,8 +716,8 @@ func (r *kycRepo) MarkKYCApplyRetryFailure(ctx context.Context, id uuid.UUID, re
 	return nil
 }
 
-func (r *kycRepo) RejectKYCSubmission(ctx context.Context, id uuid.UUID, decidedBy, reason string) error {
-	result, err := r.db.ExecContext(ctx, `UPDATE kyc_submissions SET status = 'rejected', decided_by = $1, decision_reason = $2, decided_at = now() WHERE id = $3 AND status = 'pending'`, decidedBy, reason, id)
+func (r *kycRepo) RejectKYCSubmission(ctx context.Context, id, decisionRequestID uuid.UUID, decidedBy, reason string) error {
+	result, err := r.db.ExecContext(ctx, `UPDATE kyc_submissions SET status = 'rejected', decided_by = $1, decision_reason = $2, decision_request_id = NULLIF($3, '00000000-0000-0000-0000-000000000000')::uuid, decided_at = now() WHERE id = $4 AND status = 'pending'`, decidedBy, reason, decisionRequestID.String(), id)
 	if err != nil {
 		return fmt.Errorf("auth: reject kyc submission: %w", err)
 	}

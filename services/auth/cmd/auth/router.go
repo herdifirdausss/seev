@@ -29,6 +29,9 @@ type kycHandlers interface {
 	AdminListKYCHandler() http.HandlerFunc
 	AdminApproveKYCHandler() http.HandlerFunc
 	AdminRejectKYCHandler() http.HandlerFunc
+	AdminApproveKYCDecisionHandler() http.HandlerFunc
+	AdminRejectKYCDecisionHandler() http.HandlerFunc
+	AdminListKYCDecisionRequestsHandler() http.HandlerFunc
 	AdminDowngradeKYCHandler() http.HandlerFunc
 	AdminDownloadKYCDocumentHandler() http.HandlerFunc
 }
@@ -145,6 +148,9 @@ func internalRouter(args ...any) http.Handler {
 			mux.Handle("GET /api/v1/admin/kyc/submissions", authedAdmin(handlers.AdminListKYCHandler()))
 			mux.Handle("POST /api/v1/admin/kyc/submissions/{id}/approve", authedAdmin(handlers.AdminApproveKYCHandler()))
 			mux.Handle("POST /api/v1/admin/kyc/submissions/{id}/reject", authedAdmin(handlers.AdminRejectKYCHandler()))
+			mux.Handle("GET /api/v1/admin/kyc/decision-requests", authedAdmin(handlers.AdminListKYCDecisionRequestsHandler()))
+			mux.Handle("POST /api/v1/admin/kyc/decision-requests/{id}/approve", authedAdmin(handlers.AdminApproveKYCDecisionHandler()))
+			mux.Handle("POST /api/v1/admin/kyc/decision-requests/{id}/reject", authedAdmin(handlers.AdminRejectKYCDecisionHandler()))
 			mux.Handle("POST /api/v1/admin/kyc/users/{id}/downgrade", authedAdmin(handlers.AdminDowngradeKYCHandler()))
 			mux.Handle("GET /api/v1/admin/kyc/documents/{id}", authedAdmin(handlers.AdminDownloadKYCDocumentHandler()))
 		}

@@ -66,6 +66,45 @@ func newTestModule(ctrl *gomock.Controller, prov Provisioner) (*Module, *reposit
 	return m, users, refreshTokens, kyc
 }
 
+func expectAutomatedKYCDecision(t *testing.T, kyc *repository.MockKYCRepository, submissionID *uuid.UUID, decision, requestedBy, decidedBy string, applied bool) {
+	t.Helper()
+	var request model.KYCDecisionRequest
+	kyc.EXPECT().GetKYCSubmission(gomock.Any(), gomock.Any()).DoAndReturn(
+		func(_ context.Context, id uuid.UUID) (model.KYCSubmission, error) {
+			require.Equal(t, *submissionID, id)
+			return model.KYCSubmission{ID: id, Status: "pending"}, nil
+		})
+	kyc.EXPECT().CreateKYCDecisionRequest(gomock.Any(), gomock.Any()).DoAndReturn(
+		func(_ context.Context, candidate model.KYCDecisionRequest) error {
+			require.Equal(t, *submissionID, candidate.SubmissionID)
+			require.Equal(t, decision, candidate.RequestedDecision)
+			require.Equal(t, requestedBy, candidate.RequestedBy)
+			request = candidate
+			return nil
+		})
+	kyc.EXPECT().AuthorizeKYCDecisionRequest(gomock.Any(), gomock.Any(), decidedBy).DoAndReturn(
+		func(_ context.Context, id uuid.UUID, checker string) (model.KYCDecisionRequest, error) {
+			require.Equal(t, request.ID, id)
+			request.Status = "authorized"
+			request.DecidedBy = checker
+			return request, nil
+		})
+	if applied {
+		kyc.EXPECT().MarkKYCDecisionRequestApplied(gomock.Any(), gomock.Any()).DoAndReturn(
+			func(_ context.Context, id uuid.UUID) error {
+				require.Equal(t, request.ID, id)
+				return nil
+			})
+		kyc.EXPECT().GetKYCDecisionRequest(gomock.Any(), gomock.Any()).DoAndReturn(
+			func(_ context.Context, id uuid.UUID) (model.KYCDecisionRequest, error) {
+				require.Equal(t, request.ID, id)
+				now := time.Now()
+				request.AppliedAt = &now
+				return request, nil
+			})
+	}
+}
+
 // mustHash produces a real bcrypt hash for test fixtures — MinCost keeps the
 // suite fast; production cost is exercised implicitly via Register.
 func mustHash(t *testing.T, password string) string {
@@ -252,6 +291,7 @@ func TestEnsureBootstrapAdmin_CreatesOnceThenNoop(t *testing.T) {
 	users.EXPECT().CreateUser(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
 		func(_ context.Context, u model.User, _ string) error {
 			assert.Equal(t, "admin", u.Role)
+			assert.Equal(t, 0, u.KYCLevel, "operator identities are not KYC-verified customers")
 			return nil
 		})
 	// Second call: exists -> no create.
@@ -276,7 +316,8 @@ func TestSubmitKYC_L1AutoApprove(t *testing.T) {
 	kyc.EXPECT().GetLatestKYCSubmission(gomock.Any(), userID).Return(model.KYCSubmission{}, repository.ErrKYCSubmissionNotFound)
 	var submission model.KYCSubmission
 	kyc.EXPECT().CreateKYCSubmission(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, s model.KYCSubmission) error { submission = s; return nil })
-	kyc.EXPECT().ApproveKYCSubmission(gomock.Any(), gomock.Any(), "system", gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, _ uuid.UUID, _ string, _ string, _ string, _ time.Time, apply func(context.Context, uuid.UUID, int) error) error {
+	expectAutomatedKYCDecision(t, kyc, &submission.ID, KYCDecisionApprove, "provider:mockkyc", "system-kyc-policy", true)
+	kyc.EXPECT().ApproveKYCSubmission(gomock.Any(), gomock.Any(), gomock.Any(), "system-kyc-policy", gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, _, _ uuid.UUID, _ string, _ string, _ string, _ time.Time, apply func(context.Context, uuid.UUID, int) error) error {
 		return apply(ctx, userID, 1)
 	})
 
@@ -301,8 +342,9 @@ func TestSubmitKYC_RejectVerdict_MarksRejectedNoLevelChange(t *testing.T) {
 	kyc.EXPECT().GetLatestKYCSubmission(gomock.Any(), userID).Return(model.KYCSubmission{}, repository.ErrKYCSubmissionNotFound)
 	var submissionID uuid.UUID
 	kyc.EXPECT().CreateKYCSubmission(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, s model.KYCSubmission) error { submissionID = s.ID; return nil })
-	kyc.EXPECT().RejectKYCSubmission(gomock.Any(), gomock.Any(), "provider", "mock verification rejected").
-		DoAndReturn(func(_ context.Context, id uuid.UUID, _, _ string) error {
+	expectAutomatedKYCDecision(t, kyc, &submissionID, KYCDecisionReject, "provider:mockkyc", "system-kyc-policy", true)
+	kyc.EXPECT().RejectKYCSubmission(gomock.Any(), gomock.Any(), gomock.Any(), "system-kyc-policy", "mock verification rejected").
+		DoAndReturn(func(_ context.Context, id, _ uuid.UUID, _, _ string) error {
 			assert.Equal(t, submissionID, id)
 			return nil
 		})
@@ -346,11 +388,14 @@ func TestSubmitKYC_L2ReferThenAdminApprove(t *testing.T) {
 	assert.Zero(t, prov.calls)
 
 	kyc.EXPECT().GetKYCSubmission(gomock.Any(), submissionID).Return(submission, nil)
-	kyc.EXPECT().ApproveKYCSubmission(gomock.Any(), submissionID, "admin-1", gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, _ uuid.UUID, _ string, _ string, _ string, _ time.Time, apply func(context.Context, uuid.UUID, int) error) error {
-		return apply(ctx, userID, 2)
+	kyc.EXPECT().CreateKYCDecisionRequest(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, request model.KYCDecisionRequest) error {
+		assert.Equal(t, submissionID, request.SubmissionID)
+		assert.Equal(t, KYCDecisionApprove, request.RequestedDecision)
+		assert.Equal(t, "admin-1", request.RequestedBy)
+		return nil
 	})
 	require.NoError(t, m.ApproveKYC(context.Background(), submissionID, "admin-1"))
-	assert.Equal(t, 1, prov.calls)
+	assert.Zero(t, prov.calls, "the maker request must not apply a tier before checker authorization")
 }
 
 func TestSubmitKYC_ApplyTierFailureLeavesApprovalPending(t *testing.T) {
@@ -359,8 +404,13 @@ func TestSubmitKYC_ApplyTierFailureLeavesApprovalPending(t *testing.T) {
 	m, users, _, kyc := newTestModule(ctrl, &stubProvisioner{err: context.DeadlineExceeded})
 	users.EXPECT().GetUserByID(gomock.Any(), userID).Return(model.User{ID: userID, KYCLevel: 0}, nil)
 	kyc.EXPECT().GetLatestKYCSubmission(gomock.Any(), userID).Return(model.KYCSubmission{}, repository.ErrKYCSubmissionNotFound)
-	kyc.EXPECT().CreateKYCSubmission(gomock.Any(), gomock.Any()).Return(nil)
-	kyc.EXPECT().ApproveKYCSubmission(gomock.Any(), gomock.Any(), "system", gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, _ uuid.UUID, _ string, _ string, _ string, _ time.Time, apply func(context.Context, uuid.UUID, int) error) error {
+	var submissionID uuid.UUID
+	kyc.EXPECT().CreateKYCSubmission(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, submission model.KYCSubmission) error {
+		submissionID = submission.ID
+		return nil
+	})
+	expectAutomatedKYCDecision(t, kyc, &submissionID, KYCDecisionApprove, "provider:mockkyc", "system-kyc-policy", false)
+	kyc.EXPECT().ApproveKYCSubmission(gomock.Any(), gomock.Any(), gomock.Any(), "system-kyc-policy", gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, _, _ uuid.UUID, _ string, _ string, _ string, _ time.Time, apply func(context.Context, uuid.UUID, int) error) error {
 		return fmt.Errorf("%w: %w", repository.ErrKYCApplyTier, apply(ctx, userID, 1))
 	})
 	kyc.EXPECT().EnqueueKYCApplyRetry(gomock.Any(), gomock.Any()).Return(nil)
@@ -424,7 +474,8 @@ func TestSubmitKYC_SanctionsBlockRejectsBeforeProvider(t *testing.T) {
 	kyc.EXPECT().GetLatestKYCSubmission(gomock.Any(), userID).Return(model.KYCSubmission{}, repository.ErrKYCSubmissionNotFound)
 	var submissionID uuid.UUID
 	kyc.EXPECT().CreateKYCSubmission(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, s model.KYCSubmission) error { submissionID = s.ID; return nil })
-	kyc.EXPECT().RejectKYCSubmission(gomock.Any(), gomock.Any(), "sanctions", "sanctions match").DoAndReturn(func(_ context.Context, id uuid.UUID, _, _ string) error {
+	expectAutomatedKYCDecision(t, kyc, &submissionID, KYCDecisionReject, "sanctions-screening", "system-sanctions-policy", true)
+	kyc.EXPECT().RejectKYCSubmission(gomock.Any(), gomock.Any(), gomock.Any(), "system-sanctions-policy", "sanctions match").DoAndReturn(func(_ context.Context, id, _ uuid.UUID, _, _ string) error {
 		assert.Equal(t, submissionID, id)
 		return nil
 	})

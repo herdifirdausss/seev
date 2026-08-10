@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
@@ -151,6 +152,48 @@ func TestAuth_DuplicateEmail_409_CaseInsensitive(t *testing.T) {
 
 	_, _, err = m.Register(ctx, "BOB@Example.Com", "different1!", "")
 	assert.ErrorIs(t, err, auth.ErrEmailTaken)
+}
+
+func TestAuthSchema_KYCLevelZeroRejectsValidityDeadline(t *testing.T) {
+	db := setupAuthTestDB(t)
+	ctx := context.Background()
+	m, _ := newAuthModule(db)
+	user, _, err := m.Register(ctx, "kyc-constraint@example.com", "hunter22!", "")
+	require.NoError(t, err)
+
+	_, err = db.ExecContext(ctx, `
+		UPDATE auth_users
+		SET kyc_level = 0, kyc_verified_until = now() + interval '1 day'
+		WHERE id = $1`, user.ID)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "chk_auth_users_kyc_validity_consistency")
+
+	_, err = db.ExecContext(ctx, `
+		UPDATE auth_users
+		SET kyc_level = 1, kyc_verified_until = NULL
+		WHERE id = $1`, user.ID)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "chk_auth_users_kyc_validity_consistency")
+}
+
+func approveKYCSubmissionFixture(t *testing.T, db *database.DBSQL, submissionID uuid.UUID) {
+	t.Helper()
+	ctx := context.Background()
+	requestID := uuid.New()
+	_, err := db.ExecContext(ctx, `
+		INSERT INTO kyc_decision_requests
+			(id, submission_id, requested_decision, request_reason, requested_by,
+			 status, decided_by, decided_at)
+		VALUES ($1, $2, 'approve', 'integration fixture approval',
+			'integration-fixture-maker', 'authorized', 'integration-fixture-checker', now())`,
+		requestID, submissionID)
+	require.NoError(t, err)
+	_, err = db.ExecContext(ctx, `
+		UPDATE kyc_submissions
+		SET status = 'approved', decision_request_id = $1,
+			decided_by = 'integration-fixture-checker', decided_at = now()
+		WHERE id = $2`, requestID, submissionID)
+	require.NoError(t, err)
 }
 
 // TestAuth_RefreshRotation_RealRows proves rotation + replay containment

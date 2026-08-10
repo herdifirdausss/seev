@@ -72,7 +72,8 @@ func TestAuth_KYC_L0ToL1_AutoApprove_AppliesRealLedgerTier(t *testing.T) {
 }
 
 // TestAuth_KYC_L1ToL2_ReferThenAdminApprove_UpgradesRealLedgerTierInPlace
-// proves the L2 path (always refer -> admin approves) end to end, and that
+// proves the L2 path (always refer -> maker proposes and a different checker
+// approves) end to end, and that
 // upgrading overwrites the SAME policy_limits row rather than adding a
 // second one.
 func TestAuth_KYC_L1ToL2_ReferThenAdminApprove_UpgradesRealLedgerTierInPlace(t *testing.T) {
@@ -89,7 +90,21 @@ func TestAuth_KYC_L1ToL2_ReferThenAdminApprove_UpgradesRealLedgerTierInPlace(t *
 	require.NoError(t, err)
 	assert.Equal(t, "pending", submission.Status, "L2 must always refer to manual review")
 
-	require.NoError(t, m.ApproveKYC(ctx, submission.ID, "admin-1"))
+	request, err := m.RequestKYCDecision(ctx, submission.ID, "admin-maker-1", auth.KYCDecisionApprove, "documents verified")
+	require.NoError(t, err)
+	replayedRequest, err := m.RequestKYCDecision(ctx, submission.ID, "admin-maker-1", auth.KYCDecisionApprove, "documents verified")
+	require.NoError(t, err)
+	require.Equal(t, request.ID, replayedRequest.ID, "an exact maker retry must not create a second authorization request")
+	decided, err := m.ApproveKYCDecision(ctx, request.ID, "admin-checker-1")
+	require.NoError(t, err)
+	require.NotNil(t, decided.AppliedAt)
+
+	// Delivery can be replayed after an ambiguous client timeout. The durable
+	// authorization is returned without applying the ledger tier twice.
+	replayed, err := m.ApproveKYCDecision(ctx, request.ID, "admin-checker-1")
+	require.NoError(t, err)
+	require.Equal(t, decided.ID, replayed.ID)
+	require.NotNil(t, replayed.AppliedAt)
 
 	status, err := m.KYC(ctx, u.ID)
 	require.NoError(t, err)
@@ -98,6 +113,44 @@ func TestAuth_KYC_L1ToL2_ReferThenAdminApprove_UpgradesRealLedgerTierInPlace(t *
 
 	assert.Equal(t, int64(100_000_000), policyLimitMaxPerTxIT(t, db, u.ID.String(), "transfer_p2p"),
 		"upgrading L1->L2 must overwrite the SAME policy_limits row with L2's caps")
+}
+
+func TestAuth_KYC_ManualDecisionRequiresDistinctCheckerAndSupportsRejectedProposal(t *testing.T) {
+	db := setupAuthTestDB(t)
+	m, _ := newAuthModuleWithMockKYC(db)
+	ctx := context.Background()
+
+	u, _, err := m.Register(ctx, "kyc-maker-checker@example.com", "hunter22!", "KYC Maker Checker")
+	require.NoError(t, err)
+	_, err = m.SubmitKYC(ctx, u.ID, 1, nil)
+	require.NoError(t, err)
+	submission, err := m.SubmitKYC(ctx, u.ID, 2, map[string]any{"kyb_name": "Reviewed Merchant"})
+	require.NoError(t, err)
+	require.Equal(t, "pending", submission.Status)
+
+	first, err := m.RequestKYCDecision(ctx, submission.ID, "maker-1", auth.KYCDecisionApprove, "documents appear valid")
+	require.NoError(t, err)
+	_, err = m.ApproveKYCDecision(ctx, first.ID, "maker-1")
+	require.ErrorIs(t, err, auth.ErrKYCDecisionSelfApproval)
+
+	rejectedProposal, err := m.RejectKYCDecision(ctx, first.ID, "checker-1", "address evidence is incomplete")
+	require.NoError(t, err)
+	require.Equal(t, "rejected", rejectedProposal.Status)
+	status, err := m.KYC(ctx, u.ID)
+	require.NoError(t, err)
+	require.Equal(t, 1, status.Level)
+	require.Equal(t, "pending", status.Submission.Status, "rejecting the proposal must not decide the customer submission")
+
+	second, err := m.RequestKYCDecision(ctx, submission.ID, "maker-2", auth.KYCDecisionReject, "identity evidence could not be verified")
+	require.NoError(t, err)
+	applied, err := m.ApproveKYCDecision(ctx, second.ID, "checker-2")
+	require.NoError(t, err)
+	require.NotNil(t, applied.AppliedAt)
+	status, err = m.KYC(ctx, u.ID)
+	require.NoError(t, err)
+	require.Equal(t, 1, status.Level)
+	require.Equal(t, "rejected", status.Submission.Status)
+	require.Equal(t, second.ID, status.Submission.DecisionRequestID)
 }
 
 // TestAuth_KYC_Reject_LevelUnchangedNoLedgerCall proves a rejected

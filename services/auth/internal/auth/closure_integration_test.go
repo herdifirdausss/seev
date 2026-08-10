@@ -334,12 +334,25 @@ func TestClosure_RacingRetentionFailsClosedUntilClosureHorizon(t *testing.T) {
 	ctx := context.Background()
 	const password = "hunter22!"
 	userID := registerTestUser(t, m, "retention-race@example.test", password)
-	submissionID := uuid.New()
+	submissionID, decisionID := uuid.New(), uuid.New()
 	_, err := db.ExecContext(ctx, `
 		INSERT INTO kyc_submissions
-		  (id,user_id,level_requested,status,provider,created_at,decided_at,payload_ciphertext,payload_key_version)
-		VALUES($1,$2,1,'rejected','test',now()-interval '400 days',now()-interval '400 days',$3,1)`,
+		  (id,user_id,level_requested,status,provider,created_at,payload_ciphertext,payload_key_version)
+		VALUES($1,$2,1,'pending','test',now()-interval '400 days',$3,1)`,
 		submissionID, userID, []byte("encrypted-payload"))
+	require.NoError(t, err)
+	_, err = db.ExecContext(ctx, `
+		INSERT INTO kyc_decision_requests
+		  (id,submission_id,requested_decision,request_reason,requested_by,status,decided_by,decided_at,applied_at)
+		VALUES($1,$2,'reject','old-test-fixture','test-maker',
+		       'authorized','test-checker',now()-interval '400 days',now()-interval '400 days')`,
+		decisionID, submissionID)
+	require.NoError(t, err)
+	_, err = db.ExecContext(ctx, `
+		UPDATE kyc_submissions
+		SET status='rejected', decision_request_id=$1, decision_reason='old-test-fixture',
+		    decided_by='test-checker', decided_at=now()-interval '400 days'
+		WHERE id=$2`, decisionID, submissionID)
 	require.NoError(t, err)
 	req, err := m.RequestClosure(ctx, userID, password)
 	require.NoError(t, err)
@@ -371,6 +384,50 @@ func TestClosure_RacingRetentionFailsClosedUntilClosureHorizon(t *testing.T) {
 	var count int
 	require.NoError(t, db.QueryRowContext(ctx, `SELECT count(*) FROM kyc_submissions WHERE id=$1`, submissionID).Scan(&count))
 	require.Equal(t, 1, count, "a concurrent purge must not use row age instead of the 365-day closure horizon")
+}
+
+func TestRetention_KYCSubmissionPurgeCascadesDecisionEvidenceAfterClosureHorizon(t *testing.T) {
+	m, db, _ := setupClosureModule(t)
+	ctx := context.Background()
+	const password = "hunter22!"
+	userID := registerTestUser(t, m, "retention-decision@example.test", password)
+	submissionID, decisionID := uuid.New(), uuid.New()
+
+	_, err := db.ExecContext(ctx, `
+		INSERT INTO kyc_submissions
+		  (id,user_id,level_requested,status,provider,created_at,payload_ciphertext,payload_key_version)
+		VALUES($1,$2,1,'pending','test',now()-interval '400 days',$3,1)`,
+		submissionID, userID, []byte("encrypted-payload"))
+	require.NoError(t, err)
+	_, err = db.ExecContext(ctx, `
+		INSERT INTO kyc_decision_requests
+		  (id,submission_id,requested_decision,request_reason,requested_by,status,decided_by,decided_at,applied_at)
+		VALUES($1,$2,'reject','document mismatch','maker','authorized','checker',now(),now())`,
+		decisionID, submissionID)
+	require.NoError(t, err)
+	_, err = db.ExecContext(ctx, `
+		UPDATE kyc_submissions
+		SET status='rejected', decision_request_id=$1, decision_reason='document mismatch',
+		    decided_by='checker', decided_at=now()-interval '400 days'
+		WHERE id=$2`, decisionID, submissionID)
+	require.NoError(t, err)
+
+	req, err := m.RequestClosure(ctx, userID, password)
+	require.NoError(t, err)
+	require.Equal(t, "completed", driveClosureToCompletion(t, m, db, req.ID, 8))
+	_, err = db.ExecContext(ctx, `UPDATE privacy_requests SET ready_at=now()-interval '400 days' WHERE id=$1`, req.ID)
+	require.NoError(t, err)
+
+	var affected int
+	require.NoError(t, db.QueryRowContext(ctx,
+		`SELECT fn_retention_purge_kyc_submissions($1,500,false)`, uuid.New()).Scan(&affected))
+	require.Equal(t, 1, affected)
+
+	var submissions, decisions int
+	require.NoError(t, db.QueryRowContext(ctx, `SELECT count(*) FROM kyc_submissions WHERE id=$1`, submissionID).Scan(&submissions))
+	require.NoError(t, db.QueryRowContext(ctx, `SELECT count(*) FROM kyc_decision_requests WHERE id=$1`, decisionID).Scan(&decisions))
+	require.Zero(t, submissions)
+	require.Zero(t, decisions, "decision evidence must not retain a sensitive KYC submission past its closure horizon")
 }
 
 func closureTestAccountIDs(t *testing.T, db *database.DBSQL, userID uuid.UUID) []uuid.UUID {

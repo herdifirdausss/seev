@@ -46,17 +46,36 @@ type User struct {
 }
 
 type KYCSubmission struct {
-	ID             uuid.UUID
-	UserID         uuid.UUID
-	LevelRequested int
-	Status         string
-	Payload        map[string]any
-	Provider       string
-	ProviderRef    string
-	DecidedBy      string
-	DecisionReason string
-	CreatedAt      time.Time
-	DecidedAt      *time.Time
+	ID                uuid.UUID
+	UserID            uuid.UUID
+	LevelRequested    int
+	Status            string
+	Payload           map[string]any
+	Provider          string
+	ProviderRef       string
+	DecidedBy         string
+	DecisionReason    string
+	DecisionRequestID uuid.UUID
+	CreatedAt         time.Time
+	DecidedAt         *time.Time
+}
+
+// KYCDecisionRequest is the durable maker/checker authorization for one
+// terminal KYC outcome. Status "authorized" means a distinct checker has
+// approved execution; AppliedAt records when the submission actually reached
+// that terminal state (which may happen later through the retry worker).
+type KYCDecisionRequest struct {
+	ID                uuid.UUID
+	SubmissionID      uuid.UUID
+	RequestedDecision string
+	RequestReason     string
+	RequestedBy       string
+	Status            string
+	DecidedBy         string
+	ReviewReason      string
+	CreatedAt         time.Time
+	DecidedAt         *time.Time
+	AppliedAt         *time.Time
 }
 
 // KYCRescreenSubject is the minimal, non-credential projection used by the
@@ -72,20 +91,21 @@ type KYCRescreenSubject struct {
 // pending KYC approval.  It intentionally contains no ledger credentials or
 // payload data; the submission is re-read by auth when the intent is claimed.
 type KYCApplyRetry struct {
-	ID             uuid.UUID
-	SubmissionID   uuid.UUID
-	UserID         uuid.UUID
-	Level          int
-	Direction      string
-	DecidedBy      string
-	DecisionReason string
-	Status         string
-	RetryCount     int
-	NextAttemptAt  time.Time
-	LastError      string
-	LockedUntil    *time.Time
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
+	ID                uuid.UUID
+	SubmissionID      uuid.UUID
+	DecisionRequestID uuid.UUID
+	UserID            uuid.UUID
+	Level             int
+	Direction         string
+	DecidedBy         string
+	DecisionReason    string
+	Status            string
+	RetryCount        int
+	NextAttemptAt     time.Time
+	LastError         string
+	LockedUntil       *time.Time
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
 }
 
 type KYCDocument struct {

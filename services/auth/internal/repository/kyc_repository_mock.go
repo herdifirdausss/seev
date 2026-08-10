@@ -44,17 +44,32 @@ func (m *MockKYCRepository) EXPECT() *MockKYCRepositoryMockRecorder {
 }
 
 // ApproveKYCSubmission mocks base method.
-func (m *MockKYCRepository) ApproveKYCSubmission(ctx context.Context, id uuid.UUID, decidedBy, providerRef, reason string, validUntil time.Time, applyTier func(context.Context, uuid.UUID, int) error) error {
+func (m *MockKYCRepository) ApproveKYCSubmission(ctx context.Context, id, decisionRequestID uuid.UUID, decidedBy, providerRef, reason string, validUntil time.Time, applyTier func(context.Context, uuid.UUID, int) error) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ApproveKYCSubmission", ctx, id, decidedBy, providerRef, reason, validUntil, applyTier)
+	ret := m.ctrl.Call(m, "ApproveKYCSubmission", ctx, id, decisionRequestID, decidedBy, providerRef, reason, validUntil, applyTier)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // ApproveKYCSubmission indicates an expected call of ApproveKYCSubmission.
-func (mr *MockKYCRepositoryMockRecorder) ApproveKYCSubmission(ctx, id, decidedBy, providerRef, reason, validUntil, applyTier any) *gomock.Call {
+func (mr *MockKYCRepositoryMockRecorder) ApproveKYCSubmission(ctx, id, decisionRequestID, decidedBy, providerRef, reason, validUntil, applyTier any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ApproveKYCSubmission", reflect.TypeOf((*MockKYCRepository)(nil).ApproveKYCSubmission), ctx, id, decidedBy, providerRef, reason, validUntil, applyTier)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ApproveKYCSubmission", reflect.TypeOf((*MockKYCRepository)(nil).ApproveKYCSubmission), ctx, id, decisionRequestID, decidedBy, providerRef, reason, validUntil, applyTier)
+}
+
+// AuthorizeKYCDecisionRequest mocks base method.
+func (m *MockKYCRepository) AuthorizeKYCDecisionRequest(ctx context.Context, id uuid.UUID, decidedBy string) (model.KYCDecisionRequest, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AuthorizeKYCDecisionRequest", ctx, id, decidedBy)
+	ret0, _ := ret[0].(model.KYCDecisionRequest)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// AuthorizeKYCDecisionRequest indicates an expected call of AuthorizeKYCDecisionRequest.
+func (mr *MockKYCRepositoryMockRecorder) AuthorizeKYCDecisionRequest(ctx, id, decidedBy any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AuthorizeKYCDecisionRequest", reflect.TypeOf((*MockKYCRepository)(nil).AuthorizeKYCDecisionRequest), ctx, id, decidedBy)
 }
 
 // ClaimKYCApplyRetries mocks base method.
@@ -70,6 +85,20 @@ func (m *MockKYCRepository) ClaimKYCApplyRetries(ctx context.Context, limit int,
 func (mr *MockKYCRepositoryMockRecorder) ClaimKYCApplyRetries(ctx, limit, lease any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ClaimKYCApplyRetries", reflect.TypeOf((*MockKYCRepository)(nil).ClaimKYCApplyRetries), ctx, limit, lease)
+}
+
+// CreateKYCDecisionRequest mocks base method.
+func (m *MockKYCRepository) CreateKYCDecisionRequest(ctx context.Context, request model.KYCDecisionRequest) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateKYCDecisionRequest", ctx, request)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CreateKYCDecisionRequest indicates an expected call of CreateKYCDecisionRequest.
+func (mr *MockKYCRepositoryMockRecorder) CreateKYCDecisionRequest(ctx, request any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateKYCDecisionRequest", reflect.TypeOf((*MockKYCRepository)(nil).CreateKYCDecisionRequest), ctx, request)
 }
 
 // CreateKYCDocument mocks base method.
@@ -128,6 +157,21 @@ func (mr *MockKYCRepositoryMockRecorder) EnqueueKYCApplyRetry(ctx, retry any) *g
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "EnqueueKYCApplyRetry", reflect.TypeOf((*MockKYCRepository)(nil).EnqueueKYCApplyRetry), ctx, retry)
 }
 
+// GetKYCDecisionRequest mocks base method.
+func (m *MockKYCRepository) GetKYCDecisionRequest(ctx context.Context, id uuid.UUID) (model.KYCDecisionRequest, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetKYCDecisionRequest", ctx, id)
+	ret0, _ := ret[0].(model.KYCDecisionRequest)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetKYCDecisionRequest indicates an expected call of GetKYCDecisionRequest.
+func (mr *MockKYCRepositoryMockRecorder) GetKYCDecisionRequest(ctx, id any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetKYCDecisionRequest", reflect.TypeOf((*MockKYCRepository)(nil).GetKYCDecisionRequest), ctx, id)
+}
+
 // GetKYCDocument mocks base method.
 func (m *MockKYCRepository) GetKYCDocument(arg0 context.Context, arg1 uuid.UUID) (model.KYCDocument, error) {
 	m.ctrl.T.Helper()
@@ -173,6 +217,21 @@ func (mr *MockKYCRepositoryMockRecorder) GetLatestKYCSubmission(ctx, userID any)
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetLatestKYCSubmission", reflect.TypeOf((*MockKYCRepository)(nil).GetLatestKYCSubmission), ctx, userID)
 }
 
+// GetPendingKYCDecisionRequest mocks base method.
+func (m *MockKYCRepository) GetPendingKYCDecisionRequest(ctx context.Context, submissionID uuid.UUID) (model.KYCDecisionRequest, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetPendingKYCDecisionRequest", ctx, submissionID)
+	ret0, _ := ret[0].(model.KYCDecisionRequest)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetPendingKYCDecisionRequest indicates an expected call of GetPendingKYCDecisionRequest.
+func (mr *MockKYCRepositoryMockRecorder) GetPendingKYCDecisionRequest(ctx, submissionID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetPendingKYCDecisionRequest", reflect.TypeOf((*MockKYCRepository)(nil).GetPendingKYCDecisionRequest), ctx, submissionID)
+}
+
 // ListExpiredKYCUsers mocks base method.
 func (m *MockKYCRepository) ListExpiredKYCUsers(ctx context.Context, limit int) ([]uuid.UUID, error) {
 	m.ctrl.T.Helper()
@@ -186,6 +245,21 @@ func (m *MockKYCRepository) ListExpiredKYCUsers(ctx context.Context, limit int) 
 func (mr *MockKYCRepositoryMockRecorder) ListExpiredKYCUsers(ctx, limit any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListExpiredKYCUsers", reflect.TypeOf((*MockKYCRepository)(nil).ListExpiredKYCUsers), ctx, limit)
+}
+
+// ListKYCDecisionRequests mocks base method.
+func (m *MockKYCRepository) ListKYCDecisionRequests(ctx context.Context, status string, limit int) ([]model.KYCDecisionRequest, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListKYCDecisionRequests", ctx, status, limit)
+	ret0, _ := ret[0].([]model.KYCDecisionRequest)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListKYCDecisionRequests indicates an expected call of ListKYCDecisionRequests.
+func (mr *MockKYCRepositoryMockRecorder) ListKYCDecisionRequests(ctx, status, limit any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListKYCDecisionRequests", reflect.TypeOf((*MockKYCRepository)(nil).ListKYCDecisionRequests), ctx, status, limit)
 }
 
 // ListKYCRescreenSubjects mocks base method.
@@ -246,16 +320,45 @@ func (mr *MockKYCRepositoryMockRecorder) MarkKYCApplyRetrySucceeded(ctx, id any)
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MarkKYCApplyRetrySucceeded", reflect.TypeOf((*MockKYCRepository)(nil).MarkKYCApplyRetrySucceeded), ctx, id)
 }
 
-// RejectKYCSubmission mocks base method.
-func (m *MockKYCRepository) RejectKYCSubmission(ctx context.Context, id uuid.UUID, decidedBy, reason string) error {
+// MarkKYCDecisionRequestApplied mocks base method.
+func (m *MockKYCRepository) MarkKYCDecisionRequestApplied(ctx context.Context, id uuid.UUID) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "RejectKYCSubmission", ctx, id, decidedBy, reason)
+	ret := m.ctrl.Call(m, "MarkKYCDecisionRequestApplied", ctx, id)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// MarkKYCDecisionRequestApplied indicates an expected call of MarkKYCDecisionRequestApplied.
+func (mr *MockKYCRepositoryMockRecorder) MarkKYCDecisionRequestApplied(ctx, id any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MarkKYCDecisionRequestApplied", reflect.TypeOf((*MockKYCRepository)(nil).MarkKYCDecisionRequestApplied), ctx, id)
+}
+
+// RejectKYCDecisionRequest mocks base method.
+func (m *MockKYCRepository) RejectKYCDecisionRequest(ctx context.Context, id uuid.UUID, decidedBy, reason string) (model.KYCDecisionRequest, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RejectKYCDecisionRequest", ctx, id, decidedBy, reason)
+	ret0, _ := ret[0].(model.KYCDecisionRequest)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// RejectKYCDecisionRequest indicates an expected call of RejectKYCDecisionRequest.
+func (mr *MockKYCRepositoryMockRecorder) RejectKYCDecisionRequest(ctx, id, decidedBy, reason any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RejectKYCDecisionRequest", reflect.TypeOf((*MockKYCRepository)(nil).RejectKYCDecisionRequest), ctx, id, decidedBy, reason)
+}
+
+// RejectKYCSubmission mocks base method.
+func (m *MockKYCRepository) RejectKYCSubmission(ctx context.Context, id, decisionRequestID uuid.UUID, decidedBy, reason string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RejectKYCSubmission", ctx, id, decisionRequestID, decidedBy, reason)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // RejectKYCSubmission indicates an expected call of RejectKYCSubmission.
-func (mr *MockKYCRepositoryMockRecorder) RejectKYCSubmission(ctx, id, decidedBy, reason any) *gomock.Call {
+func (mr *MockKYCRepositoryMockRecorder) RejectKYCSubmission(ctx, id, decisionRequestID, decidedBy, reason any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RejectKYCSubmission", reflect.TypeOf((*MockKYCRepository)(nil).RejectKYCSubmission), ctx, id, decidedBy, reason)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RejectKYCSubmission", reflect.TypeOf((*MockKYCRepository)(nil).RejectKYCSubmission), ctx, id, decisionRequestID, decidedBy, reason)
 }

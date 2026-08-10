@@ -371,21 +371,26 @@ func submissionID(r *http.Request) (uuid.UUID, bool) {
 
 func (h *Handler) AdminApproveKYCHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if !isAdminMaker(r) {
+			response.Forbidden(w, "maker privileges required")
+			return
+		}
+		requestedBy, identityOK := currentUserID(r)
+		if !identityOK {
+			response.Unauthorized(w, "invalid session")
+			return
+		}
 		id, ok := submissionID(r)
 		if !ok {
 			response.BadRequest(w, "invalid submission id")
 			return
 		}
-		if err := h.module.ApproveKYC(r.Context(), id, adminID(r)); err != nil {
-			var queued *KYCApplyQueuedError
-			if errors.As(err, &queued) {
-				response.Accepted(w, map[string]any{"status": "queued", "retry_id": queued.RetryID, "id": id})
-				return
-			}
-			writeAuthError(w, err)
+		request, err := h.module.RequestKYCDecision(r.Context(), id, requestedBy.String(), KYCDecisionApprove, "manual KYC approval request")
+		if err != nil {
+			writeKYCDecisionError(w, err)
 			return
 		}
-		response.OK(w, map[string]any{"status": "approved", "id": id})
+		response.Accepted(w, toKYCDecisionRequestResponse(request))
 	}
 }
 
@@ -418,6 +423,15 @@ func (h *Handler) AdminDowngradeKYCHandler() http.HandlerFunc {
 
 func (h *Handler) AdminRejectKYCHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if !isAdminMaker(r) {
+			response.Forbidden(w, "maker privileges required")
+			return
+		}
+		requestedBy, identityOK := currentUserID(r)
+		if !identityOK {
+			response.Unauthorized(w, "invalid session")
+			return
+		}
 		id, ok := submissionID(r)
 		if !ok {
 			response.BadRequest(w, "invalid submission id")
@@ -429,10 +443,11 @@ func (h *Handler) AdminRejectKYCHandler() http.HandlerFunc {
 		if !response.Decode(w, r, &req) {
 			return
 		}
-		if err := h.module.RejectKYC(r.Context(), id, adminID(r), req.Reason); err != nil {
-			writeAuthError(w, err)
+		request, err := h.module.RequestKYCDecision(r.Context(), id, requestedBy.String(), KYCDecisionReject, req.Reason)
+		if err != nil {
+			writeKYCDecisionError(w, err)
 			return
 		}
-		response.OK(w, map[string]any{"status": "rejected", "id": id})
+		response.Accepted(w, toKYCDecisionRequestResponse(request))
 	}
 }

@@ -45,7 +45,11 @@ func (m *Module) ensureBootstrapOperator(ctx context.Context, email, password, r
 	}
 	u := model.User{
 		ID: uuid.New(), Email: email, FullName: fullName,
-		Role: role, Status: model.StatusActive, KYCLevel: 2,
+		// Operator identities do not perform customer money movement and must
+		// not masquerade as KYC-verified customers. Keeping them at L0 also
+		// preserves the database invariant that every verified level has an
+		// explicit validity deadline.
+		Role: role, Status: model.StatusActive, KYCLevel: 0,
 	}
 	if err := m.users.CreateUser(ctx, u, string(hash)); err != nil {
 		if errors.Is(err, repository.ErrDuplicateEmail) {
