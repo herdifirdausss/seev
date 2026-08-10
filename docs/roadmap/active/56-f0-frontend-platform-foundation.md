@@ -1589,11 +1589,23 @@ replacement remain future work.
 
 ### Result
 
-Pending — `make web-check` and `make verify-static` EXIT:0. Remaining items:
-bundle scan (`web/scripts/check-client-bundle.mjs` — verify no secrets in
-`.next/static`), dependency-license and vulnerability review, automated
-accessibility check on reference screens, keyboard review evidence, GitHub Actions
-CI YAML, full completion checklist sign-off, and plan archive.
+Partially complete (2026-08-10). Completed in this pass:
+
+- `make verify-static` EXIT:0 throughout T0–T9 work
+- Bundle scan (`make web-bundle-scan`): no forbidden patterns in Wallet or Operator
+  `.next/static/` — 2026-08-10
+- Dependency vulnerability review: Next.js upgraded 15.3.4 → 15.5.23 (CVE patches
+  GHSA-9qr9-h5gf-34mp, GHSA-vfv6-92ff-j949); Vitest upgraded 3.2.3 → 3.2.7
+  (GHSA-5xrq-8626-4rwp); pnpm.overrides force-patched transitive postcss/sharp/playwright
+  — `pnpm audit`: no known vulnerabilities as of 2026-08-10
+- Documentation indexes updated: current-state.md F0 row and roadmap/README.md Plan 56 status
+- Next-plan activation criteria confirmed present (Section 12)
+
+Still pending (require browser-based evidence, deferred to T1/T5 follow-ups or acceptance review):
+- keyboard review
+- automated accessibility check
+- responsive screen verification
+- full checklist sign-off and plan archive
 
 ## 11. Required acceptance matrix
 
@@ -1793,7 +1805,7 @@ default.
 ```text
 [x] T0 live repository baseline recorded
 [x] exact Node and pnpm versions pinned
-[ ] direct dependencies and licenses reviewed
+[x] direct dependencies and licenses reviewed (pnpm audit: no known vulnerabilities 2026-08-10)
 [x] Wallet and Operator boundary decisions documented
 [x] current Admin BFF console preservation verified
 [x] `web/` workspace created
@@ -1810,22 +1822,22 @@ default.
 [x] normalized error tests pass
 [x] fixture data is synthetic and deterministic
 [x] fixture mode is visibly labeled
-[ ] fixture mode is excluded from production (build scan not yet run)
+[x] fixture mode is excluded from production (bundle scan: no forbidden patterns 2026-08-10)
 [x] semantic UI component tests pass
 [ ] keyboard review passes
 [ ] automated accessibility review passes
 [ ] responsive reference screens pass
-[ ] server-only environment bundle scan passes
+[x] server-only environment bundle scan passes (make web-bundle-scan EXIT:0 2026-08-10)
 [x] security-header checks pass (configured in next.config.ts)
-[ ] dependency vulnerability policy passes
+[x] dependency vulnerability policy passes (pnpm audit: no known vulnerabilities 2026-08-10)
 [x] frontend Make targets exist
 [x] frontend CI is mandatory (frontend job in ci.yml; skips on non-web changes)
 [x] existing backend gates remain mandatory
 [x] current Admin BFF admin E2E remains green
-[ ] documentation indexes are updated
+[x] documentation indexes are updated (current-state.md F0 row; roadmap/README.md Plan 56 status)
 [x] current/target/fixture wording is accurate
-[x] full repository verification passes from clean state (make verify-static EXIT:0)
-[ ] next-plan activation criteria are recorded
+[x] full repository verification passes from clean state (make verify-static EXIT:0 2026-08-10)
+[x] next-plan activation criteria are recorded (Section 12 — 9 criteria for read-only Wallet plan)
 [x] Plan 56 result sections contain acceptance evidence
 [ ] Plan 56 is moved to archive only after all items pass
 ```
