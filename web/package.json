@@ -14,7 +14,8 @@
     "test": "pnpm -r run test",
     "build": "pnpm -r run build",
     "e2e": "pnpm -r --filter './apps/*' run e2e",
-    "check": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test && pnpm run build"
+    "check": "pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test && pnpm run build",
+    "dev": "pnpm -r --parallel --filter './apps/*' run dev"
   },
   "devDependencies": {
     "eslint": "9.28.0",

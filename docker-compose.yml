@@ -1062,6 +1062,47 @@ services:
     # Docker socket itself — only reaches it through docker-socket-proxy's
     # allowlisted TCP API (docs/roadmap/archive/43 K1).
 
+  # ── Frontend applications (Plan 56 F0) ──────────────────────────────────────
+  # These services are opt-in via the "frontend" profile.
+  # Plan 56 is fixture-only — no live backend connection is configured yet.
+  # Start both: docker compose --profile frontend up wallet operator
+  # Start one:  docker compose --profile frontend up wallet
+  # Build:      docker compose --profile frontend build
+
+  wallet:
+    profiles: ["frontend"]
+    image: seev/wallet:${SEEV_IMAGE_TAG:-dev}
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+      args:
+        APP: wallet
+        PORT: "3000"
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      # When live gateway integration lands, add:
+      # NEXT_PUBLIC_GATEWAY_URL: http://localhost:8080
+
+  operator:
+    profiles: ["frontend"]
+    image: seev/operator:${SEEV_IMAGE_TAG:-dev}
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+      args:
+        APP: operator
+        PORT: "3001"
+    ports:
+      - "127.0.0.1:3001:3001"
+    environment:
+      NODE_ENV: production
+      PORT: "3001"
+      # When live Admin BFF integration lands, add:
+      # ADMIN_BFF_URL: http://admin-bff-service:8095
+
 networks:
   # Isolates docker-socket-proxy + Alloy from every other container —
   # nothing else can reach the proxy's allowlisted Docker API (docs/roadmap/archive/43 K1).

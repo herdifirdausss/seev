@@ -105,6 +105,7 @@ Thumbs.db
 # Node dependencies — never committed at any depth
 **/node_modules/
 
+
 # Next.js build output
 web/**/.next/
 web/**/out/
