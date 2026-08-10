@@ -107,6 +107,52 @@ paths:
       x-see-audience: admin
       security: [{sessionCookie: []}]
       responses: {'200': {$ref: './components/common.yaml#/components/responses/Success'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '403': {$ref: './components/common.yaml#/components/responses/Forbidden'}}
+  /api/v1/admin/kyc/submissions/{id}/approve:
+    post:
+      operationId: adminRequestKycApprovalV1
+      x-see-owner: admin-bff
+      x-see-behavior-owner: auth
+      x-see-audience: admin
+      security: [{sessionCookie: []}]
+      parameters: [{$ref: './components/common.yaml#/components/parameters/UUID'}]
+      responses: {'202': {$ref: './components/common.yaml#/components/responses/Success'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '403': {$ref: './components/common.yaml#/components/responses/Forbidden'}, '404': {$ref: './components/common.yaml#/components/responses/NotFound'}, '409': {$ref: './components/common.yaml#/components/responses/Conflict'}}
+  /api/v1/admin/kyc/submissions/{id}/reject:
+    post:
+      operationId: adminRequestKycRejectionV1
+      x-see-owner: admin-bff
+      x-see-behavior-owner: auth
+      x-see-audience: admin
+      security: [{sessionCookie: []}]
+      parameters: [{$ref: './components/common.yaml#/components/parameters/UUID'}]
+      requestBody: {$ref: './components/common.yaml#/components/requestBodies/Form'}
+      responses: {'202': {$ref: './components/common.yaml#/components/responses/Success'}, '400': {$ref: './components/common.yaml#/components/responses/BadRequest'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '403': {$ref: './components/common.yaml#/components/responses/Forbidden'}, '404': {$ref: './components/common.yaml#/components/responses/NotFound'}, '409': {$ref: './components/common.yaml#/components/responses/Conflict'}}
+  /api/v1/admin/kyc/decision-requests:
+    get:
+      operationId: adminListKycDecisionRequestsV1
+      x-see-owner: admin-bff
+      x-see-behavior-owner: auth
+      x-see-audience: admin
+      security: [{sessionCookie: []}]
+      responses: {'200': {$ref: './components/common.yaml#/components/responses/Success'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '403': {$ref: './components/common.yaml#/components/responses/Forbidden'}}
+  /api/v1/admin/kyc/decision-requests/{id}/approve:
+    post:
+      operationId: adminAuthorizeKycDecisionV1
+      x-see-owner: admin-bff
+      x-see-behavior-owner: auth
+      x-see-audience: admin
+      security: [{sessionCookie: []}]
+      parameters: [{$ref: './components/common.yaml#/components/parameters/UUID'}]
+      responses: {'200': {$ref: './components/common.yaml#/components/responses/Success'}, '202': {$ref: './components/common.yaml#/components/responses/Success'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '403': {$ref: './components/common.yaml#/components/responses/Forbidden'}, '404': {$ref: './components/common.yaml#/components/responses/NotFound'}, '409': {$ref: './components/common.yaml#/components/responses/Conflict'}, '503': {$ref: './components/common.yaml#/components/responses/Unavailable'}}
+  /api/v1/admin/kyc/decision-requests/{id}/reject:
+    post:
+      operationId: adminRejectKycDecisionRequestV1
+      x-see-owner: admin-bff
+      x-see-behavior-owner: auth
+      x-see-audience: admin
+      security: [{sessionCookie: []}]
+      parameters: [{$ref: './components/common.yaml#/components/parameters/UUID'}]
+      requestBody: {$ref: './components/common.yaml#/components/requestBodies/Form'}
+      responses: {'200': {$ref: './components/common.yaml#/components/responses/Success'}, '400': {$ref: './components/common.yaml#/components/responses/BadRequest'}, '401': {$ref: './components/common.yaml#/components/responses/Unauthorized'}, '403': {$ref: './components/common.yaml#/components/responses/Forbidden'}, '404': {$ref: './components/common.yaml#/components/responses/NotFound'}, '409': {$ref: './components/common.yaml#/components/responses/Conflict'}}
   /api/v1/admin/privacy/requests:
     get:
       operationId: adminListPrivacyRequestsV1

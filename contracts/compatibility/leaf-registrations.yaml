@@ -58,6 +58,9 @@ registrations:
   - {service: auth, listener: admin, method: GET, pattern: /api/v1/admin/kyc/submissions, owner: auth, audience: admin, source: services/auth/cmd/auth/router.go}
   - {service: auth, listener: admin, method: POST, pattern: "/api/v1/admin/kyc/submissions/{id}/approve", owner: auth, audience: admin, source: services/auth/cmd/auth/router.go}
   - {service: auth, listener: admin, method: POST, pattern: "/api/v1/admin/kyc/submissions/{id}/reject", owner: auth, audience: admin, source: services/auth/cmd/auth/router.go}
+  - {service: auth, listener: admin, method: GET, pattern: "/api/v1/admin/kyc/decision-requests", owner: auth, audience: admin, source: services/auth/cmd/auth/router.go}
+  - {service: auth, listener: admin, method: POST, pattern: "/api/v1/admin/kyc/decision-requests/{id}/approve", owner: auth, audience: admin, source: services/auth/cmd/auth/router.go}
+  - {service: auth, listener: admin, method: POST, pattern: "/api/v1/admin/kyc/decision-requests/{id}/reject", owner: auth, audience: admin, source: services/auth/cmd/auth/router.go}
   - {service: auth, listener: admin, method: POST, pattern: "/api/v1/admin/kyc/users/{id}/downgrade", owner: auth, audience: admin, source: services/auth/cmd/auth/router.go}
   - {service: auth, listener: admin, method: GET, pattern: "/api/v1/admin/kyc/documents/{id}", owner: auth, audience: admin, source: services/auth/cmd/auth/router.go}
   - {service: auth, listener: admin, method: GET, pattern: /api/v1/admin/privacy/requests, owner: auth, audience: admin, source: services/auth/cmd/auth/router.go}

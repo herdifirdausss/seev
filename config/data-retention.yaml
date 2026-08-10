@@ -306,6 +306,25 @@ entries:
       as the retention horizon rather than a separate closed_at column.
 
   - owner: auth
+    class: auth.kyc_decision_requests
+    table: auth.kyc_decision_requests
+    classification: sensitive
+    terminal_timestamp: "auth_users closure time (join through kyc_decision_requests.submission_id)"
+    duration: 365d
+    action: delete
+    batch_size: 500
+    hold_scope: subject
+    policy_version: 1
+    notes: >
+      Durable maker/checker authorization evidence follows the same
+      closure-gated 365-day lifecycle as its KYC submission. The submission
+      purge is already hold-aware and deletes this child through its
+      ON DELETE CASCADE foreign key, after documents and apply retries have
+      been resolved. Keeping the child permanently would retain the sensitive
+      parent forever through a mandatory foreign key and contradict the
+      documented account-closure contract.
+
+  - owner: auth
     class: auth.kyc_apply_retries.succeeded
     table: auth.kyc_apply_retries
     classification: personal

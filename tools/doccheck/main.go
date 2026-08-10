@@ -6,6 +6,7 @@ package main
 import (
 	"bufio"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"net/url"
@@ -620,7 +621,7 @@ func visualAssetFailures(root string) []string {
 
 	decoder := xml.NewDecoder(file)
 	for {
-		if _, err = decoder.Token(); err == io.EOF {
+		if _, err = decoder.Token(); errors.Is(err, io.EOF) {
 			return nil
 		} else if err != nil {
 			return []string{fmt.Sprintf("docs/seev-story.svg: invalid SVG XML: %v", err)}
@@ -715,7 +716,7 @@ func validateSVG(root, name string) string {
 
 	decoder := xml.NewDecoder(file)
 	for {
-		if _, err = decoder.Token(); err == io.EOF {
+		if _, err = decoder.Token(); errors.Is(err, io.EOF) {
 			return ""
 		} else if err != nil {
 			return fmt.Sprintf("%s: invalid SVG XML: %v", name, err)

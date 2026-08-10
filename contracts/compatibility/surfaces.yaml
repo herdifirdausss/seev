@@ -1497,6 +1497,76 @@ http:
     lifecycle: active
     contract_version: v1
     source: services/adminbff/internal/admin/module.go
+  - id: admin-bff.kyc.approval.request
+    service: admin-bff
+    method: POST
+    path: /api/v1/admin/kyc/submissions/{id}/approve
+    kind: operation
+    owner: admin-bff
+    behavior_owner: auth
+    audience: admin
+    artifact: contracts/http/admin-v1.yaml
+    auth: session+csrf+maker
+    consumers: [operator]
+    lifecycle: active
+    contract_version: v1
+    source: services/adminbff/internal/admin/module.go
+  - id: admin-bff.kyc.rejection.request
+    service: admin-bff
+    method: POST
+    path: /api/v1/admin/kyc/submissions/{id}/reject
+    kind: operation
+    owner: admin-bff
+    behavior_owner: auth
+    audience: admin
+    artifact: contracts/http/admin-v1.yaml
+    auth: session+csrf+maker
+    consumers: [operator]
+    lifecycle: active
+    contract_version: v1
+    source: services/adminbff/internal/admin/module.go
+  - id: admin-bff.kyc.decision-requests.list
+    service: admin-bff
+    method: GET
+    path: /api/v1/admin/kyc/decision-requests
+    kind: operation
+    owner: admin-bff
+    behavior_owner: auth
+    audience: admin
+    artifact: contracts/http/admin-v1.yaml
+    auth: session+csrf
+    consumers: [operator]
+    lifecycle: active
+    contract_version: v1
+    source: services/adminbff/internal/admin/module.go
+  - id: admin-bff.kyc.decision.authorize
+    service: admin-bff
+    method: POST
+    path: /api/v1/admin/kyc/decision-requests/{id}/approve
+    kind: operation
+    owner: admin-bff
+    behavior_owner: auth
+    audience: admin
+    artifact: contracts/http/admin-v1.yaml
+    auth: session+csrf+checker
+    consumers: [operator]
+    lifecycle: active
+    contract_version: v1
+    source: services/adminbff/internal/admin/module.go
+  - id: admin-bff.kyc.decision.reject
+    service: admin-bff
+    method: POST
+    path: /api/v1/admin/kyc/decision-requests/{id}/reject
+    kind: operation
+    owner: admin-bff
+    behavior_owner: auth
+    audience: admin
+    artifact: contracts/http/admin-v1.yaml
+    auth: session+csrf+checker
+    consumers: [operator]
+    lifecycle: active
+    contract_version: v1
+    source: services/adminbff/internal/admin/module.go
   - id: admin-bff.privacy.requests.list
     service: admin-bff
     method: GET
