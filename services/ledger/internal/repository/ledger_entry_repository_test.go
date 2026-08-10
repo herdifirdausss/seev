@@ -41,14 +41,32 @@ func TestInsertEntries_SingleRoundTrip_ForMultipleEntries(t *testing.T) {
 		secondCreditAccountID: decimal.NewFromInt(50),
 	}
 
-	// A single ExecContext expectation proves all 3 entries went in one
-	// multi-row INSERT, not 3 separate round trips.
-	mock.ExpectExec(`INSERT INTO ledger_entries`).
-		WillReturnResult(sqlmock.NewResult(0, 3))
+	// One function call proves all entries cross the privileged DB boundary in
+	// one round trip instead of receiving direct table-write privileges.
+	mock.ExpectQuery(`SELECT public\.fn_post_ledger_entries_bulk`).
+		WithArgs(txID, sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows([]string{"fn_post_ledger_entries_bulk"}).AddRow(3))
 
 	err := repo.InsertEntries(context.Background(), tx, txID, entries, newBalances)
 
 	require.NoError(t, err)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestInsertEntries_FunctionCountMismatch_Rejected(t *testing.T) {
+	tx, mock := newMockTx(t)
+	repo := NewEntryRepository(nil)
+	txID, accountID := uuid.New(), uuid.New()
+	mock.ExpectQuery(`SELECT public\.fn_post_ledger_entries_bulk`).
+		WithArgs(txID, sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows([]string{"fn_post_ledger_entries_bulk"}).AddRow(0))
+
+	err := repo.InsertEntries(context.Background(), tx, txID,
+		[]model.EntryInstruction{{AccountID: accountID, Direction: constant.Debit, Amount: decimal.NewFromInt(1)}},
+		map[uuid.UUID]decimal.Decimal{accountID: decimal.Zero})
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "expected 1")
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 

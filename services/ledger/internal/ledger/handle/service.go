@@ -20,11 +20,11 @@ import (
 	"github.com/herdifirdausss/seev/internal/platform/database/identifiers"
 	"github.com/herdifirdausss/seev/internal/platform/errors"
 	currencyreg "github.com/herdifirdausss/seev/internal/platform/money/currency"
-	"github.com/herdifirdausss/seev/services/ledger/internal/ledger/errors"
-	"github.com/herdifirdausss/seev/services/ledger/internal/ledger/constants"
 	"github.com/herdifirdausss/seev/services/ledger/internal/feepolicy"
-	ledgermetadata "github.com/herdifirdausss/seev/services/ledger/internal/metadata"
+	"github.com/herdifirdausss/seev/services/ledger/internal/ledger/constants"
+	"github.com/herdifirdausss/seev/services/ledger/internal/ledger/errors"
 	"github.com/herdifirdausss/seev/services/ledger/internal/ledger/model"
+	ledgermetadata "github.com/herdifirdausss/seev/services/ledger/internal/metadata"
 	"github.com/herdifirdausss/seev/services/ledger/internal/processors"
 	"github.com/herdifirdausss/seev/services/ledger/internal/repository"
 	"github.com/shopspring/decimal"
@@ -165,7 +165,7 @@ func (s *Service) Handle(ctx context.Context, cmd processors.Command) (err error
 	}
 	if cmd.Currency != "" {
 		if _, err := currencyreg.Normalize(cmd.Currency); err != nil {
-			return fmt.Errorf("%w: currency: %v", apperror.ErrCurrencyInvalid, err)
+			return fmt.Errorf("%w: currency: %w", apperror.ErrCurrencyInvalid, err)
 		}
 	}
 

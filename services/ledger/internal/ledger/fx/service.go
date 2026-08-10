@@ -20,11 +20,11 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/herdifirdausss/seev/contracts/events/ledger"
-	"github.com/herdifirdausss/seev/internal/platform/money/currency"
 	"github.com/herdifirdausss/seev/internal/platform/database"
 	"github.com/herdifirdausss/seev/internal/platform/database/identifiers"
-	"github.com/herdifirdausss/seev/services/ledger/internal/ledger/errors"
+	"github.com/herdifirdausss/seev/internal/platform/money/currency"
 	"github.com/herdifirdausss/seev/services/ledger/internal/ledger/constants"
+	"github.com/herdifirdausss/seev/services/ledger/internal/ledger/errors"
 	"github.com/herdifirdausss/seev/services/ledger/internal/ledger/model"
 	"github.com/herdifirdausss/seev/services/ledger/internal/processors"
 	"github.com/herdifirdausss/seev/services/ledger/internal/repository"
@@ -475,7 +475,7 @@ func (s *Service) createQuote(ctx context.Context, userID uuid.UUID, sourceCode,
 
 		rate, err := currency.ParseRate(referenceRateRaw)
 		if err != nil {
-			return fmt.Errorf("%w: %v", apperror.ErrFXRateInvalid, err)
+			return fmt.Errorf("%w: %w", apperror.ErrFXRateInvalid, err)
 		}
 		baseCurrency = strings.TrimSpace(baseCurrency)
 		quoteCurrency = strings.TrimSpace(quoteCurrency)
@@ -488,7 +488,7 @@ func (s *Service) createQuote(ctx context.Context, userID uuid.UUID, sourceCode,
 		}
 		clientRateText, err := clientRate.ExactString()
 		if err != nil {
-			return fmt.Errorf("%w: client rate is invalid: %v", apperror.ErrFXRateInvalid, err)
+			return fmt.Errorf("%w: client rate is invalid: %w", apperror.ErrFXRateInvalid, err)
 		}
 		sourceMoney := currency.Money{Currency: sourceCode, Minor: sourceAmount}
 		targetMoney, remainder, err := currency.ConvertWithMinorUnits(

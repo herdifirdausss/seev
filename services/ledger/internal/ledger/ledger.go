@@ -1712,11 +1712,11 @@ func (m *Module) CreateSavingsProduct(ctx context.Context, product SavingsProduc
 	}
 	expectedExpense, err := m.accountRepo.GetSystemAccountID(ctx, constant.AccountTypeInterestExpense, "", product.Currency)
 	if err != nil {
-		return SavingsProduct{}, fmt.Errorf("%w: interest expense account is unavailable: %v", apperror.ErrValidation, err)
+		return SavingsProduct{}, fmt.Errorf("%w: interest expense account is unavailable: %w", apperror.ErrValidation, err)
 	}
 	expectedPayable, err := m.accountRepo.GetSystemAccountID(ctx, constant.AccountTypeAccruedInterestPayable, "", product.Currency)
 	if err != nil {
-		return SavingsProduct{}, fmt.Errorf("%w: accrued interest payable account is unavailable: %v", apperror.ErrValidation, err)
+		return SavingsProduct{}, fmt.Errorf("%w: accrued interest payable account is unavailable: %w", apperror.ErrValidation, err)
 	}
 	if product.InterestExpenseAccountID != expectedExpense || product.InterestPayableAccountID != expectedPayable {
 		return SavingsProduct{}, fmt.Errorf("%w: savings system accounts must match the product currency", apperror.ErrValidation)

@@ -71,7 +71,7 @@ func (s *Service) OpenDispute(ctx context.Context, originalTxID uuid.UUID, dispu
 
 	original, err := s.txRepo.GetByID(ctx, originalTxID)
 	if err != nil {
-		return uuid.Nil, fmt.Errorf("%w: original transaction %s: %v", apperror.ErrOriginalNotFound, originalTxID, err)
+		return uuid.Nil, fmt.Errorf("%w: original transaction %s: %w", apperror.ErrOriginalNotFound, originalTxID, err)
 	}
 	if original.Status != "posted" {
 		return uuid.Nil, fmt.Errorf("%w: original transaction status is %q, must be 'posted'", apperror.ErrNotReversible, original.Status)

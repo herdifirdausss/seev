@@ -72,7 +72,7 @@ func TestPostMoneyInEndToEndOverGRPC(t *testing.T) {
 	_, thisFile, _, ok := runtime.Caller(0)
 	require.True(t, ok)
 	migrations := "file://" + filepath.Join(filepath.Dir(thisFile), "..", "..", "..", "..", "..")
-	require.NoError(t, testutil.ApplyServiceMigrations(migrations, dsn))
+	require.NoError(t, testutil.ApplyMigration(migrations, "ledger", dsn))
 
 	db, err := database.New(ctx, database.Config{
 		Host: host, Port: port.Port(), User: dbUser, Password: dbPassword,

@@ -416,12 +416,12 @@ func (r *transactionRepo) BackfillOnce(ctx context.Context, batchSize int) (int,
 		if queryErr != nil {
 			return fmt.Errorf("select backfill batch: %w", queryErr)
 		}
+		defer result.Close()
 		for result.Next() {
 			var pr pendingRow
 			var scope sql.NullString
 			var key sql.NullString
 			if scanErr := result.Scan(&pr.id, &key, &scope, &pr.txType, &pr.amount, &pr.currency); scanErr != nil {
-				result.Close()
 				return fmt.Errorf("scan backfill row: %w", scanErr)
 			}
 			if !key.Valid {
@@ -439,10 +439,8 @@ func (r *transactionRepo) BackfillOnce(ctx context.Context, batchSize int) (int,
 			rows = append(rows, pr)
 		}
 		if rowsErr := result.Err(); rowsErr != nil {
-			result.Close()
 			return fmt.Errorf("iterate backfill batch: %w", rowsErr)
 		}
-		result.Close()
 
 		for _, pr := range rows {
 			digest, version := r.digestRing.Digest(canonicalIdempotencyInput(pr.scope, pr.key))

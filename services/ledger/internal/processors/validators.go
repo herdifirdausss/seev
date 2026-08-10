@@ -7,8 +7,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/herdifirdausss/seev/services/ledger/internal/ledger/errors"
-	"github.com/herdifirdausss/seev/services/ledger/internal/metadata"
 	"github.com/herdifirdausss/seev/services/ledger/internal/ledger/model"
+	"github.com/herdifirdausss/seev/services/ledger/internal/metadata"
 	"github.com/shopspring/decimal"
 )
 
@@ -126,7 +126,7 @@ func (FeeAmountValidator) Validate(_ context.Context, _ *sql.Tx,
 	cmd ResolvedCommand, _ map[uuid.UUID]model.AccountBalance) error {
 	fee, err := metadata.MetaDecimal(cmd.Metadata, "fee_amount")
 	if err != nil {
-		return fmt.Errorf("%w: %s", apperror.ErrValidation, err)
+		return fmt.Errorf("%w: %w", apperror.ErrValidation, err)
 	}
 	if !fee.IsPositive() {
 		return apperror.NewBizErr(apperror.ErrValidation, fmt.Sprintf("fee_amount must be positive, got %s", fee))

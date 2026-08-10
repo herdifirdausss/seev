@@ -202,6 +202,16 @@ func TestServerPost_InjectsRequestIDFromCtx(t *testing.T) {
 	require.Equal(t, "trace-from-grpc-ctx", service.postCommand.Metadata["request_id"])
 }
 
+func TestServerPost_FreezeReleaseRequiresGovernedWorkflow(t *testing.T) {
+	service := &fakeService{}
+	server := New(service)
+
+	_, err := server.Post(context.Background(), &ledgerv1.PostRequest{Type: "freeze_release"})
+
+	require.Equal(t, codes.PermissionDenied, status.Code(err))
+	require.Empty(t, service.postCommand.Type, "governed freeze release must not reach the posting service")
+}
+
 func TestServerErrorMapping(t *testing.T) {
 	service := &fakeService{}
 	client := newTestClient(t, service)

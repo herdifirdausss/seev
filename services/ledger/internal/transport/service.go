@@ -60,9 +60,9 @@ type Service interface {
 	// ListAdjustments back the maker-checker adjustment endpoints
 	// (docs/roadmap/archive/16 Task T1) — internal router only, admin-gated. This is
 	// the ONLY reachable path to adjustment_credit/adjustment_debit/reversal/
-	// chargeback/freeze_confiscate; direct POST /transactions with those
-	// types is rejected (decision K8; reversal/chargeback/freeze_confiscate
-	// added by a later security audit finding). referenceID is required for
+	// chargeback/freeze_release/freeze_confiscate; direct POST /transactions
+	// with those types is rejected (decision K8; the high-risk types were
+	// added by later security audit findings). referenceID is required for
 	// type "reversal", ignored otherwise.
 	CreateAdjustment(ctx context.Context, requestedBy, adjType string, amount decimal.Decimal, targetUserID, referenceID uuid.UUID, metadata map[string]any, reason string) (uuid.UUID, error)
 	ApproveAdjustment(ctx context.Context, id uuid.UUID, approverID string) (uuid.UUID, error)

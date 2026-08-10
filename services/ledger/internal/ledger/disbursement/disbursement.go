@@ -20,13 +20,13 @@ import (
 
 	"github.com/google/uuid"
 
-	currencyreg "github.com/herdifirdausss/seev/internal/platform/money/currency"
 	"github.com/herdifirdausss/seev/internal/platform/database/identifiers"
+	currencyreg "github.com/herdifirdausss/seev/internal/platform/money/currency"
+	commandservice "github.com/herdifirdausss/seev/services/ledger/internal/ledger/command"
 	"github.com/herdifirdausss/seev/services/ledger/internal/ledger/errors"
 	"github.com/herdifirdausss/seev/services/ledger/internal/ledger/model"
 	"github.com/herdifirdausss/seev/services/ledger/internal/processors"
 	"github.com/herdifirdausss/seev/services/ledger/internal/repository"
-	commandservice "github.com/herdifirdausss/seev/services/ledger/internal/ledger/command"
 )
 
 // maxImportRows mirrors service/recon's own cap (docs/roadmap/archive/16 Task T2) — a
@@ -101,7 +101,7 @@ func (s *Service) Import(ctx context.Context, filename string, rows []model.Disb
 			rows[i] = r
 		}
 		if err := currencyreg.ValidateCode(r.Currency); err != nil {
-			return uuid.Nil, fmt.Errorf("%w: row %d has invalid currency: %v", apperror.ErrValidation, i+1, err)
+			return uuid.Nil, fmt.Errorf("%w: row %d has invalid currency: %w", apperror.ErrValidation, i+1, err)
 		}
 	}
 

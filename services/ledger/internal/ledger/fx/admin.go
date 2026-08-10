@@ -11,8 +11,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/herdifirdausss/seev/internal/platform/money/currency"
 	"github.com/herdifirdausss/seev/internal/platform/database/identifiers"
+	"github.com/herdifirdausss/seev/internal/platform/money/currency"
 	"github.com/herdifirdausss/seev/services/ledger/internal/ledger/errors"
 	"github.com/herdifirdausss/seev/services/ledger/internal/ledger/model"
 )
@@ -381,11 +381,11 @@ func (s *Service) CreateRate(ctx context.Context, pairID, directionID uuid.UUID,
 	}
 	parsedRate, err := currency.ParseRate(referenceRate)
 	if err != nil {
-		return model.FXRateVersion{}, fmt.Errorf("%w: %v", apperror.ErrFXRateInvalid, err)
+		return model.FXRateVersion{}, fmt.Errorf("%w: %w", apperror.ErrFXRateInvalid, err)
 	}
 	storedRate, err := parsedRate.DecimalString(18)
 	if err != nil {
-		return model.FXRateVersion{}, fmt.Errorf("%w: %v", apperror.ErrFXRateInvalid, err)
+		return model.FXRateVersion{}, fmt.Errorf("%w: %w", apperror.ErrFXRateInvalid, err)
 	}
 	if effectiveFrom.IsZero() {
 		effectiveFrom = s.now()

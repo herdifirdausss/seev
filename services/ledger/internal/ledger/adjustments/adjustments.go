@@ -20,13 +20,14 @@ import (
 	"github.com/herdifirdausss/seev/contracts/events/ledger"
 	"github.com/herdifirdausss/seev/internal/platform/database/identifiers"
 	currencyreg "github.com/herdifirdausss/seev/internal/platform/money/currency"
-	"github.com/herdifirdausss/seev/services/ledger/internal/ledger/errors"
+	commandservice "github.com/herdifirdausss/seev/services/ledger/internal/ledger/command"
 	"github.com/herdifirdausss/seev/services/ledger/internal/ledger/constants"
-	ledgermetadata "github.com/herdifirdausss/seev/services/ledger/internal/metadata"
+	"github.com/herdifirdausss/seev/services/ledger/internal/ledger/errors"
+	"github.com/herdifirdausss/seev/services/ledger/internal/ledger/governance"
 	"github.com/herdifirdausss/seev/services/ledger/internal/ledger/model"
+	ledgermetadata "github.com/herdifirdausss/seev/services/ledger/internal/metadata"
 	"github.com/herdifirdausss/seev/services/ledger/internal/processors"
 	"github.com/herdifirdausss/seev/services/ledger/internal/repository"
-	commandservice "github.com/herdifirdausss/seev/services/ledger/internal/ledger/command"
 )
 
 // DatabaseSQL is the thin interface over the connection pool this service
@@ -42,8 +43,8 @@ type Poster interface {
 	Handle(ctx context.Context, cmd processors.Command) error
 }
 
-// allowedTypes are the ONLY transaction types a pending adjustment may
-// request — this is the entire reason this package exists (docs/roadmap/archive/16
+// governance.IsPendingAdjustmentType defines the ONLY transaction types a
+// pending adjustment may request — this is the entire reason this package exists (docs/roadmap/archive/16
 // Task T1): adjustment_credit/adjustment_debit are removed from direct
 // access on every router, reachable ONLY through this approved-by-a-second-
 // identity path. adjustment_suspense_credit/debit (docs/roadmap/archive/16 Task T2,
@@ -51,29 +52,19 @@ type Poster interface {
 // resolution — a discrepancy against a gateway's suspense account, not a
 // specific user's balance, so they take a gateway instead of a target user.
 //
-// reversal/chargeback/freeze_confiscate (security audit finding) join this
+// reversal/chargeback/freeze_release/freeze_confiscate (security audit
+// finding) join this
 // set for the same reason: each was previously reachable with a single
 // admin JWT (services/ledger/internal/transport/http.go's adminOnlyTypes) despite
 // being at least as consequential as a manual balance adjustment —
 // reversal can undo ANY prior transaction with no restriction on which
-// one, freeze_confiscate is an explicitly terminal/permanent seizure. They
+// one, freeze_release removes a protective control, and freeze_confiscate
+// is an explicitly terminal/permanent seizure. They
 // are now blocked from direct POST the same way adjustment_credit/debit
-// already were (see directPostBlockedTypes in transport/http.go) and are
+// already were (see governance.IsWorkflowOnlyPostType) and are
 // reachable ONLY through this maker-checker path.
-var allowedTypes = map[string]bool{
-	"adjustment_credit":          true,
-	"adjustment_debit":           true,
-	"adjustment_suspense_credit": true,
-	"adjustment_suspense_debit":  true,
-	"reversal":                   true,
-	"chargeback":                 true,
-	"freeze_confiscate":          true,
-	"fx_rebalance_credit":        true,
-	"fx_rebalance_debit":         true,
-}
-
 // suspenseTypes require a "gateway" metadata key instead of a target user —
-// see allowedTypes.
+// see governance.IsPendingAdjustmentType.
 var suspenseTypes = map[string]bool{
 	"adjustment_suspense_credit": true,
 	"adjustment_suspense_debit":  true,
@@ -85,7 +76,8 @@ var fxRebalanceTypes = map[string]bool{
 }
 
 // referenceIDTypes require a ReferenceID (the transaction being acted on) —
-// see allowedTypes. Only reversal needs one: chargeback/freeze_confiscate
+// see governance.IsPendingAdjustmentType. Only reversal needs one:
+// chargeback/freeze_confiscate
 // identify their target entirely through UserID + Metadata (dispute_ref/
 // card_network, case_id/legal_ref respectively), the same shape every
 // adjustment type already used.
@@ -127,7 +119,7 @@ func New(db DatabaseSQL, repo repository.PendingAdjustmentRepository, txRepo rep
 // transaction being reversed) and ignored for every other type — Reversal
 // resolves its accounts entirely from ReferenceID, never from UserID.
 func (s *Service) Create(ctx context.Context, requestedBy, adjType string, amount decimal.Decimal, targetUserID, referenceID uuid.UUID, metadata map[string]any, reason string) (uuid.UUID, error) {
-	if !allowedTypes[adjType] {
+	if !governance.IsPendingAdjustmentType(adjType) {
 		return uuid.Nil, fmt.Errorf("%w: type is not an approved adjustment or FX rebalance type", apperror.ErrValidation)
 	}
 	if !amount.IsPositive() || !amount.Equal(amount.Truncate(0)) {
@@ -136,11 +128,17 @@ func (s *Service) Create(ctx context.Context, requestedBy, adjType string, amoun
 	if metadata == nil {
 		metadata = map[string]any{}
 	}
+	if adjType == "freeze_release" {
+		caseID, _ := ledgermetadata.MetaString(metadata, "case_id")
+		if strings.TrimSpace(caseID) == "" {
+			return uuid.Nil, fmt.Errorf("%w: freeze_release requires metadata 'case_id'", apperror.ErrValidation)
+		}
+	}
 	currencyCode := ""
 	if rawCurrency, rawErr := ledgermetadata.MetaString(metadata, "currency"); rawErr == nil && strings.TrimSpace(rawCurrency) != "" {
 		currencyCode = strings.ToUpper(strings.TrimSpace(rawCurrency))
 		if err := currencyreg.ValidateCode(currencyCode); err != nil {
-			return uuid.Nil, fmt.Errorf("%w: %v", apperror.ErrCurrencyInvalid, err)
+			return uuid.Nil, fmt.Errorf("%w: %w", apperror.ErrCurrencyInvalid, err)
 		}
 		metadata["currency"] = currencyCode
 	}
@@ -224,7 +222,7 @@ func (s *Service) Approve(ctx context.Context, id uuid.UUID, approverID string) 
 	if err := json.Unmarshal(pa.CmdPayload, &payload); err != nil {
 		markErr := s.markFailedTx(ctx, id, "corrupt cmd_payload: "+err.Error())
 		if markErr != nil {
-			return uuid.Nil, fmt.Errorf("unmarshal payload: %w (mark failed also errored: %v)", err, markErr)
+			return uuid.Nil, fmt.Errorf("unmarshal payload: %w (mark failed also errored: %w)", err, markErr)
 		}
 		return uuid.Nil, fmt.Errorf("unmarshal payload: %w", err)
 	}

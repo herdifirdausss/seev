@@ -33,20 +33,20 @@ import (
 	"github.com/herdifirdausss/seev/internal/platform/money/currency"
 	"github.com/herdifirdausss/seev/internal/platform/security/crypto"
 	"github.com/herdifirdausss/seev/internal/testkit"
-	"github.com/herdifirdausss/seev/services/ledger/internal/ledger/errors"
-	"github.com/herdifirdausss/seev/services/ledger/internal/ledger/constants"
 	"github.com/herdifirdausss/seev/services/ledger/internal/feepolicy"
-	"github.com/herdifirdausss/seev/services/ledger/internal/ledger/model"
-	"github.com/herdifirdausss/seev/services/ledger/internal/processors"
-	"github.com/herdifirdausss/seev/services/ledger/internal/repository"
 	"github.com/herdifirdausss/seev/services/ledger/internal/ledger/accrual"
 	"github.com/herdifirdausss/seev/services/ledger/internal/ledger/adjustments"
+	"github.com/herdifirdausss/seev/services/ledger/internal/ledger/constants"
 	"github.com/herdifirdausss/seev/services/ledger/internal/ledger/disbursement"
 	"github.com/herdifirdausss/seev/services/ledger/internal/ledger/dispute"
+	"github.com/herdifirdausss/seev/services/ledger/internal/ledger/errors"
 	ledgerhandle "github.com/herdifirdausss/seev/services/ledger/internal/ledger/handle"
+	"github.com/herdifirdausss/seev/services/ledger/internal/ledger/model"
 	"github.com/herdifirdausss/seev/services/ledger/internal/ledger/provision"
 	"github.com/herdifirdausss/seev/services/ledger/internal/ledger/recon"
 	"github.com/herdifirdausss/seev/services/ledger/internal/ledger/schedule"
+	"github.com/herdifirdausss/seev/services/ledger/internal/processors"
+	"github.com/herdifirdausss/seev/services/ledger/internal/repository"
 )
 
 // schemaTestDigestRing is docs/roadmap/archive/51-a8-data-lifecycle-privacy.md T3's (K7) fixed test
@@ -87,9 +87,11 @@ func migrationsSourceURL(t *testing.T) string {
 	return "file://" + filepath.Join(filepath.Dir(thisFile), "..", "..", "..", "..")
 }
 
-// setupSchemaTestDB starts a throwaway Postgres container, applies every
-// migrations/*.up.sql file via golang-migrate (the same mechanism `make
-// migrate-up` uses), and returns a connected *database.DBSQL plus cleanup.
+// setupSchemaTestDB starts a throwaway Postgres container, applies Ledger's
+// migrations via golang-migrate (the same mechanism `make migrate-up` uses),
+// and returns a connected *database.DBSQL plus cleanup. Applying unrelated
+// services here makes every schema contract slower without increasing its
+// coverage and can saturate Docker when integration packages run in parallel.
 func setupSchemaTestDB(t *testing.T) *database.DBSQL {
 	t.Helper()
 	ctx := context.Background()
@@ -114,7 +116,7 @@ func setupSchemaTestDB(t *testing.T) *database.DBSQL {
 	dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
 		dbUser, dbPassword, host, port.Port(), dbName)
 
-	require.NoError(t, testutil.ApplyServiceMigrations(migrationsSourceURL(t), dsn))
+	require.NoError(t, testutil.ApplyMigration(migrationsSourceURL(t), "ledger", dsn))
 
 	cfg := config.PostgresConfig{
 		Host: host, Port: port.Port(), User: dbUser, Password: dbPassword,
@@ -169,7 +171,7 @@ func setupAppServiceTestDB(t *testing.T) appServiceTestDB {
 	dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
 		dbUser, dbPassword, host, port.Port(), dbName)
 
-	require.NoError(t, testutil.ApplyServiceMigrations(migrationsSourceURL(t), dsn))
+	require.NoError(t, testutil.ApplyMigration(migrationsSourceURL(t), "ledger", dsn))
 
 	ownerCfg := config.PostgresConfig{
 		Host: host, Port: port.Port(), User: dbUser, Password: dbPassword,
@@ -1671,6 +1673,50 @@ func TestSchemaContract_PendingAdjustment_FullFlow_MovesBalance(t *testing.T) {
 	require.Equal(t, txID, *decidedEvent.ExecutedTxID)
 }
 
+func TestSchemaContract_FreezeRelease_RequiresMakerCheckerBeforeMovingFunds(t *testing.T) {
+	db := setupSchemaTestDB(t)
+	postingSvc, _ := newService(db)
+	adjSvc, _ := newAdjustmentsService(db)
+	ctx := context.Background()
+	userID := uuid.New()
+	require.NoError(t, provisionStandardAccounts(t, db, userID))
+
+	accountID := func(accountType string) uuid.UUID {
+		t.Helper()
+		var id uuid.UUID
+		require.NoError(t, db.QueryRowContext(ctx, `
+			SELECT id FROM accounts
+			WHERE owner_type = 'user' AND owner_id = $1 AND type = $2 AND currency = 'IDR'`,
+			userID, accountType).Scan(&id))
+		return id
+	}
+	cashID, frozenID := accountID("cash"), accountID("frozen")
+
+	require.NoError(t, postingSvc.Handle(ctx, processors.Command{
+		IdempotencyKey: "freeze-release-fund", Type: "money_in",
+		Amount: decimal.NewFromInt(10_000), UserID: userID,
+		Metadata: map[string]any{"gateway": "bca"},
+	}))
+	require.NoError(t, postingSvc.Handle(ctx, processors.Command{
+		IdempotencyKey: "freeze-release-initiate", Type: "freeze_initiate",
+		Amount: decimal.NewFromInt(10_000), UserID: userID,
+		Metadata: map[string]any{"case_id": "CASE-123", "reason": "fraud_suspected"},
+	}))
+	require.True(t, getBalance(t, db, cashID).IsZero())
+	require.True(t, getBalance(t, db, frozenID).Equal(decimal.NewFromInt(10_000)))
+
+	requestID, err := adjSvc.Create(ctx, "maker", "freeze_release", decimal.NewFromInt(10_000), userID, uuid.Nil,
+		map[string]any{"case_id": "CASE-123"}, "investigation cleared")
+	require.NoError(t, err)
+	require.True(t, getBalance(t, db, cashID).IsZero(), "maker request alone must not release funds")
+	require.True(t, getBalance(t, db, frozenID).Equal(decimal.NewFromInt(10_000)))
+
+	_, err = adjSvc.Approve(ctx, requestID, "checker")
+	require.NoError(t, err)
+	require.True(t, getBalance(t, db, cashID).Equal(decimal.NewFromInt(10_000)))
+	require.True(t, getBalance(t, db, frozenID).IsZero())
+}
+
 // TestSchemaContract_PendingReversal_FullFlow_MakerCheckerRequired proves
 // the security audit fix end to end against real Postgres: reversal (an
 // unrestricted undo of ANY prior transaction) now goes through the exact
@@ -1995,6 +2041,116 @@ func TestSchemaContract_AppServiceRole_CannotUpdateLedgerEntries(t *testing.T) {
 	_, err := dbs.appDB.ExecContext(ctx, `UPDATE ledger_entries SET note = 'hack' WHERE false`)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "permission denied")
+}
+
+// The posting function is the only app_service write path. A direct INSERT
+// must be denied even when the row would otherwise satisfy every table
+// constraint.
+func TestSchemaContract_AppServiceRole_CannotInsertLedgerEntriesDirectly(t *testing.T) {
+	dbs := setupAppServiceTestDB(t)
+	ctx := context.Background()
+	accountID := createUserCashAccount(t, dbs.appDB, uuid.New())
+	txID := uuid.New()
+	_, err := dbs.appDB.ExecContext(ctx, `
+		INSERT INTO ledger_transactions
+			(id, idempotency_key, type, status, amount, currency)
+		VALUES ($1, $2, 'money_in', 'posted', 100, 'IDR')`, txID, "direct-entry-"+txID.String())
+	require.NoError(t, err)
+
+	_, err = dbs.appDB.ExecContext(ctx, `
+		INSERT INTO ledger_entries
+			(id, transaction_id, account_id, direction, amount, balance_after)
+		VALUES ($1, $2, $3, 'credit', 100, 100)`, uuid.New(), txID, accountID)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "permission denied")
+}
+
+// An invalid function payload must be atomic: its balance validation rejects
+// the whole call before any ledger_entries row becomes visible.
+func TestSchemaContract_AppServiceRole_BulkPostingRejectsUnbalancedAtomically(t *testing.T) {
+	dbs := setupAppServiceTestDB(t)
+	ctx := context.Background()
+	accountID := createUserCashAccount(t, dbs.appDB, uuid.New())
+	txID := uuid.New()
+	_, err := dbs.appDB.ExecContext(ctx, `
+		INSERT INTO ledger_transactions
+			(id, idempotency_key, type, status, amount, currency)
+		VALUES ($1, $2, 'money_in', 'posted', 100, 'IDR')`, txID, "unbalanced-entry-"+txID.String())
+	require.NoError(t, err)
+
+	payload := fmt.Sprintf(`[{"id":%q,"account_id":%q,"direction":"credit","amount":"100","balance_after":"100"}]`,
+		uuid.New().String(), accountID.String())
+	var inserted int
+	err = dbs.appDB.QueryRowContext(ctx,
+		`SELECT public.fn_post_ledger_entries_bulk($1, $2::jsonb)`, txID, payload,
+	).Scan(&inserted)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "not balanced")
+
+	var count int
+	require.NoError(t, dbs.appDB.QueryRowContext(ctx,
+		`SELECT count(*) FROM ledger_entries WHERE transaction_id = $1`, txID,
+	).Scan(&count))
+	require.Zero(t, count)
+}
+
+func TestSchemaContract_AppServiceRole_BulkPostingIsBalancedAndAtomic(t *testing.T) {
+	dbs := setupAppServiceTestDB(t)
+	ctx := context.Background()
+	debitAccountID := createUserCashAccount(t, dbs.appDB, uuid.New())
+	creditAccountID := createUserCashAccount(t, dbs.appDB, uuid.New())
+
+	createTransaction := func(label string) uuid.UUID {
+		t.Helper()
+		txID := uuid.New()
+		_, err := dbs.appDB.ExecContext(ctx, `
+			INSERT INTO ledger_transactions
+				(id, idempotency_key, type, status, amount, currency,
+				 source_account_id, destination_account_id)
+			VALUES ($1, $2, 'transfer_p2p', 'posted', 100, 'IDR', $3, $4)`,
+			txID, label+txID.String(), debitAccountID, creditAccountID)
+		require.NoError(t, err)
+		return txID
+	}
+	payload := func(creditAccount uuid.UUID) string {
+		return fmt.Sprintf(`[
+			{"id":%q,"account_id":%q,"direction":"debit","amount":"100","balance_after":"-100"},
+			{"id":%q,"account_id":%q,"direction":"credit","amount":"100","balance_after":"100"}
+		]`, uuid.New().String(), debitAccountID.String(), uuid.New().String(), creditAccount.String())
+	}
+
+	txID := createTransaction("balanced-entry-")
+	var inserted int
+	require.NoError(t, dbs.appDB.QueryRowContext(ctx,
+		`SELECT public.fn_post_ledger_entries_bulk($1, $2::jsonb)`, txID, payload(creditAccountID),
+	).Scan(&inserted))
+	require.Equal(t, 2, inserted)
+
+	// A transaction owns exactly one posting batch. A second balanced call
+	// with fresh entry IDs must be rejected by the function itself rather than
+	// being allowed to append more accounting legs.
+	err := dbs.appDB.QueryRowContext(ctx,
+		`SELECT public.fn_post_ledger_entries_bulk($1, $2::jsonb)`, txID, payload(creditAccountID),
+	).Scan(&inserted)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "already has ledger entries")
+	var postedCount int
+	require.NoError(t, dbs.appDB.QueryRowContext(ctx,
+		`SELECT count(*) FROM ledger_entries WHERE transaction_id = $1`, txID,
+	).Scan(&postedCount))
+	require.Equal(t, 2, postedCount)
+
+	invalidTxID := createTransaction("atomic-entry-")
+	err = dbs.appDB.QueryRowContext(ctx,
+		`SELECT public.fn_post_ledger_entries_bulk($1, $2::jsonb)`, invalidTxID, payload(uuid.New()),
+	).Scan(&inserted)
+	require.Error(t, err)
+
+	var count int
+	require.NoError(t, dbs.appDB.QueryRowContext(ctx,
+		`SELECT count(*) FROM ledger_entries WHERE transaction_id = $1`, invalidTxID,
+	).Scan(&count))
+	require.Zero(t, count, "a failure in one entry must roll back the entire bulk insert")
 }
 
 // TestSchemaContract_AppReadonlyRole_CannotWrite proves app_readonly has no

@@ -230,8 +230,8 @@ func TestCreate_Valid_Succeeds(t *testing.T) {
 	assert.NotEqual(t, uuid.Nil, id)
 }
 
-// ─── reversal/chargeback/freeze_confiscate: security audit finding ─────────
-// These three used to be directly postable with a single admin JWT
+// ─── reversal/chargeback/freeze release/confiscate: security audit finding ─
+// These actions used to be directly postable with a single admin JWT
 // (services/ledger/internal/transport/http.go's old adminOnlyTypes) — now routed
 // through the same maker-checker path as adjustment_credit/debit.
 
@@ -269,8 +269,8 @@ func TestCreate_Reversal_WithReferenceID_Succeeds(t *testing.T) {
 	assert.NotEqual(t, uuid.Nil, id)
 }
 
-func TestCreate_ChargebackAndFreezeConfiscate_RequireUserID(t *testing.T) {
-	for _, adjType := range []string{"chargeback", "freeze_confiscate"} {
+func TestCreate_ChargebackAndFreezeActions_RequireUserID(t *testing.T) {
+	for _, adjType := range []string{"chargeback", "freeze_release", "freeze_confiscate"} {
 		t.Run(adjType, func(t *testing.T) {
 			adjRepo, ctrl := newMockAdjRepo(t)
 			defer ctrl.Finish()
@@ -286,6 +286,69 @@ func TestCreate_ChargebackAndFreezeConfiscate_RequireUserID(t *testing.T) {
 			assert.ErrorIs(t, err, apperror.ErrValidation)
 		})
 	}
+}
+
+func TestCreate_FreezeRelease_RequiresCaseID(t *testing.T) {
+	adjRepo, ctrl := newMockAdjRepo(t)
+	defer ctrl.Finish()
+	txRepo, transactionRepoController := newMockTxRepo(t)
+	defer transactionRepoController.Finish()
+	outbox, outboxRepoController := newMockOutboxRepo(t)
+	defer outboxRepoController.Finish()
+
+	svc := New(mockDB{}, adjRepo, txRepo, outbox, &fakePoster{})
+	_, err := svc.Create(context.Background(), "maker", "freeze_release", decimal.NewFromInt(1000), uuid.New(), uuid.Nil, nil, "case cleared")
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, apperror.ErrValidation)
+}
+
+func TestCreate_FreezeRelease_WithCaseIDCreatesPendingRequest(t *testing.T) {
+	adjRepo, ctrl := newMockAdjRepo(t)
+	defer ctrl.Finish()
+	txRepo, transactionRepoController := newMockTxRepo(t)
+	defer transactionRepoController.Finish()
+	outbox, outboxRepoController := newMockOutboxRepo(t)
+	defer outboxRepoController.Finish()
+
+	adjRepo.EXPECT().Create(gomock.Any(), gomock.Any(), gomock.Any(), "maker", gomock.Any(), "case cleared").Return(nil)
+	svc := New(mockDB{}, adjRepo, txRepo, outbox, &fakePoster{})
+	id, err := svc.Create(context.Background(), "maker", "freeze_release", decimal.NewFromInt(1000), uuid.New(), uuid.Nil, map[string]any{"case_id": "CASE-123"}, "case cleared")
+
+	require.NoError(t, err)
+	assert.NotEqual(t, uuid.Nil, id)
+}
+
+func TestApprove_FreezeRelease_PreservesCaseAndUsesCheckerIdentity(t *testing.T) {
+	adjRepo, ctrl := newMockAdjRepo(t)
+	defer ctrl.Finish()
+	txRepo, transactionRepoController := newMockTxRepo(t)
+	defer transactionRepoController.Finish()
+	outbox, outboxRepoController := newMockOutboxRepo(t)
+	defer outboxRepoController.Finish()
+	poster := &fakePoster{}
+
+	id, userID := uuid.New(), uuid.New()
+	payload := []byte(`{"type":"freeze_release","amount":"1000","user_id":"` + userID.String() + `","metadata":{"case_id":"CASE-123"}}`)
+	adjRepo.EXPECT().GetByID(gomock.Any(), id).Return(model.PendingAdjustment{
+		ID: id, RequestedBy: "maker", Status: "pending", CmdPayload: payload, Reason: "investigation cleared",
+	}, nil)
+	adjRepo.EXPECT().MarkApproved(gomock.Any(), gomock.Any(), id, "checker").Return(int64(1), nil)
+	adjRepo.EXPECT().MarkExecuted(gomock.Any(), gomock.Any(), id, gomock.Any()).Return(nil)
+	txID := uuid.New()
+	txRepo.EXPECT().GetByIdempotencyKey(gomock.Any(), "adj:"+id.String(), nil).
+		Return(model.LedgerTransaction{ID: txID}, nil)
+	outbox.EXPECT().InsertEvents(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+
+	svc := New(mockDB{}, adjRepo, txRepo, outbox, poster)
+	gotTxID, err := svc.Approve(context.Background(), id, "checker")
+
+	require.NoError(t, err)
+	assert.Equal(t, txID, gotTxID)
+	assert.Equal(t, "freeze_release", poster.lastCmd.Type)
+	assert.Equal(t, userID, poster.lastCmd.UserID)
+	assert.Equal(t, "CASE-123", poster.lastCmd.Metadata["case_id"])
+	assert.Equal(t, "checker", poster.lastCmd.Metadata["authorized_by"])
 }
 
 // TestApprove_Reversal_ThreadsReferenceIDIntoPostedCommand proves Approve

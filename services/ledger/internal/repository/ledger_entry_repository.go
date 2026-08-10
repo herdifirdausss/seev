@@ -4,14 +4,13 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/herdifirdausss/seev/internal/platform/database"
 	"github.com/herdifirdausss/seev/internal/platform/database/identifiers"
-	"github.com/herdifirdausss/seev/internal/platform/database/nulls"
 	"github.com/herdifirdausss/seev/services/ledger/internal/ledger/constants"
 	"github.com/herdifirdausss/seev/services/ledger/internal/ledger/model"
 	"github.com/shopspring/decimal"
@@ -70,15 +69,11 @@ func NewEntryRepository(db database.DatabaseSQL) EntryRepository {
 	return &entryRepo{db: db}
 }
 
-// InsertEntries batches every entry of a posting into a single multi-row
-// INSERT (docs/roadmap/archive/11 Task T2) — the previous per-entry loop meant N
-// round trips while still holding the row locks taken earlier in the same
-// transaction (LockBalances' FOR UPDATE on user accounts), needlessly
-// extending how long concurrent postings on the same account had to wait.
-// Insert order doesn't need to match entries' order (unlike UpdateBalances,
-// which sorts for deterministic lock ordering) — these are new rows, not
-// existing ones being locked, so there's no contention between concurrent
-// INSERTs to worry about.
+// InsertEntries crosses the database posting boundary in one round trip. The
+// app role has no direct INSERT privilege on ledger_entries; migration 000049's
+// SECURITY DEFINER function validates the complete batch and inserts it in the
+// caller's existing transaction. Immutable-entry and deferred balance triggers
+// still run normally on the rows written by the function.
 func (r *entryRepo) InsertEntries(
 	ctx context.Context,
 	tx *sql.Tx,
@@ -93,24 +88,37 @@ func (r *entryRepo) InsertEntries(
 		return fmt.Errorf("entries batch too large: %d > %d", len(entries), maxEntriesBatch)
 	}
 
-	const cols = 7
-	args := make([]any, 0, len(entries)*cols)
-	parts := make([]string, 0, len(entries))
-	for i, e := range entries {
-		b := i*cols + 1
-		parts = append(parts, fmt.Sprintf("($%d,$%d,$%d,$%d,$%d,$%d,$%d,now())", b, b+1, b+2, b+3, b+4, b+5, b+6))
-		args = append(args,
-			// Time-ordered v7, not v4 (docs/roadmap/archive/11 Task T4) — keeps
-			// ledger_entries' primary-key btree insert-clustered.
-			identifiers.NewV7(), txID, e.AccountID, string(e.Direction),
-			e.Amount, newBalances[e.AccountID], nulls.String(e.Note),
-		)
+	type postingEntry struct {
+		ID           uuid.UUID `json:"id"`
+		AccountID    uuid.UUID `json:"account_id"`
+		Direction    string    `json:"direction"`
+		Amount       string    `json:"amount"`
+		BalanceAfter string    `json:"balance_after"`
+		Note         string    `json:"note,omitempty"`
 	}
-
-	q := "INSERT INTO ledger_entries (id, transaction_id, account_id, direction, amount, balance_after, note, created_at) VALUES " +
-		strings.Join(parts, ",")
-	if _, err := tx.ExecContext(ctx, q, args...); err != nil {
-		return fmt.Errorf("batch insert entries: %w", err)
+	payload := make([]postingEntry, 0, len(entries))
+	for _, entry := range entries {
+		payload = append(payload, postingEntry{
+			ID:           identifiers.NewV7(),
+			AccountID:    entry.AccountID,
+			Direction:    string(entry.Direction),
+			Amount:       entry.Amount.String(),
+			BalanceAfter: newBalances[entry.AccountID].String(),
+			Note:         entry.Note,
+		})
+	}
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("encode ledger posting entries: %w", err)
+	}
+	var inserted int
+	if err := tx.QueryRowContext(ctx,
+		`SELECT public.fn_post_ledger_entries_bulk($1, $2::jsonb)`, txID, string(encoded),
+	).Scan(&inserted); err != nil {
+		return fmt.Errorf("post ledger entries: %w", err)
+	}
+	if inserted != len(entries) {
+		return fmt.Errorf("post ledger entries: inserted %d entries, expected %d", inserted, len(entries))
 	}
 	return nil
 }

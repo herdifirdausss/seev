@@ -26,8 +26,8 @@ import (
 	fraudv1 "github.com/herdifirdausss/seev/gen/go/fraud/v1"
 	"github.com/herdifirdausss/seev/internal/platform/database"
 	"github.com/herdifirdausss/seev/internal/platform/security/middleware"
-	"github.com/herdifirdausss/seev/services/ledger/internal/ledger/errors"
 	"github.com/herdifirdausss/seev/services/ledger/internal/feepolicy"
+	"github.com/herdifirdausss/seev/services/ledger/internal/ledger/errors"
 	"github.com/herdifirdausss/seev/services/ledger/internal/ledger/model"
 	"github.com/herdifirdausss/seev/services/ledger/internal/processors"
 	"github.com/herdifirdausss/seev/services/ledger/internal/repository"
@@ -454,12 +454,12 @@ func TestPostTransaction_AdminOnlyType_AllowedForAdmin(t *testing.T) {
 	svc.EXPECT().Post(gomock.Any(), gomock.Any()).Return(nil)
 
 	// freeze_initiate, not adjustment_credit/debit/reversal/chargeback/
-	// freeze_confiscate — those are blocked from direct POST entirely (see
+	// freeze_release/freeze_confiscate — those are blocked from direct POST
+	// entirely (see
 	// TestPostTransaction_AdjustmentType_BlockedEvenForAdmin and
 	// TestPostTransaction_MakerCheckerType_BlockedEvenForAdmin below).
-	// freeze_initiate/freeze_release stay single-admin-gated: they're
-	// reversible holds, unlike the terminal/unrestricted actions that moved
-	// behind maker-checker.
+	// freeze_initiate stays single-admin-gated so an operator can contain an
+	// active incident immediately. Releasing that control requires a checker.
 	body := `{"idempotency_key":"abc12345","type":"freeze_initiate","amount":"1000"}`
 	w := doReq(t, h, http.MethodPost, "/transactions", tokenFor(t, userID.String(), "admin"), body)
 	assert.Equal(t, http.StatusCreated, w.Code)
@@ -479,11 +479,12 @@ func TestPostTransaction_AdjustmentType_BlockedEvenForAdmin(t *testing.T) {
 
 // TestPostTransaction_MakerCheckerType_BlockedEvenForAdmin proves the
 // security audit fix: reversal (an unrestricted undo of any prior
-// transaction), chargeback, and freeze_confiscate (a terminal fund seizure)
+// transaction), chargeback, freeze_release (removes a protective control),
+// and freeze_confiscate (a terminal fund seizure)
 // are no longer directly postable with a single admin JWT — only reachable
 // via POST /admin/adjustments, same as adjustment_credit/debit.
 func TestPostTransaction_MakerCheckerType_BlockedEvenForAdmin(t *testing.T) {
-	for _, txType := range []string{"reversal", "chargeback", "freeze_confiscate"} {
+	for _, txType := range []string{"reversal", "chargeback", "freeze_release", "freeze_confiscate"} {
 		t.Run(txType, func(t *testing.T) {
 			h, _, ctrl := newInternalTestHandler(t)
 			defer ctrl.Finish()

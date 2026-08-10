@@ -75,7 +75,7 @@ func setupFXTestDB(t *testing.T) *database.DBSQL {
 
 	dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
 		dbUser, dbPassword, host, port.Port(), dbName)
-	require.NoError(t, testutil.ApplyServiceMigrations(fxMigrationsSourceURL(t), dsn))
+	require.NoError(t, testutil.ApplyMigration(fxMigrationsSourceURL(t), "ledger", dsn))
 
 	cfg := config.PostgresConfig{
 		Host: host, Port: port.Port(), User: dbUser, Password: dbPassword,

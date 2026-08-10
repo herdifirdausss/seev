@@ -3,16 +3,17 @@ package processors
 import (
 	"context"
 	"database/sql"
+	stderrors "errors"
 	"fmt"
 	"strings"
 
 	"github.com/google/uuid"
 
 	"github.com/herdifirdausss/seev/internal/platform/money/currency"
-	"github.com/herdifirdausss/seev/services/ledger/internal/ledger/errors"
 	"github.com/herdifirdausss/seev/services/ledger/internal/ledger/constants"
-	"github.com/herdifirdausss/seev/services/ledger/internal/metadata"
+	"github.com/herdifirdausss/seev/services/ledger/internal/ledger/errors"
 	"github.com/herdifirdausss/seev/services/ledger/internal/ledger/model"
+	"github.com/herdifirdausss/seev/services/ledger/internal/metadata"
 	"github.com/herdifirdausss/seev/services/ledger/internal/repository"
 	"github.com/shopspring/decimal"
 )
@@ -163,7 +164,7 @@ func fxRebalanceTarget(cmd Command) (pair, code string, err error) {
 	}
 	code = strings.ToUpper(strings.TrimSpace(code))
 	if err := currency.ValidateCode(code); err != nil {
-		return "", "", fmt.Errorf("%w: %v", apperror.ErrCurrencyInvalid, err)
+		return "", "", fmt.Errorf("%w: %w", apperror.ErrCurrencyInvalid, err)
 	}
 	if cmd.Currency != "" && strings.ToUpper(strings.TrimSpace(cmd.Currency)) != code {
 		return "", "", fmt.Errorf("%w: command currency does not match rebalance currency", apperror.ErrCurrencyMismatch)
@@ -196,7 +197,7 @@ func lockFXRebalancePositionLimit(ctx context.Context, tx *sql.Tx, cmd ResolvedC
 		  AND l.currency = $2
 		FOR UPDATE OF l`, pair, code).Scan(&minimum, &maximum)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if stderrors.Is(err, sql.ErrNoRows) {
 			return fmt.Errorf("%w: no FX position limit for %s/%s", apperror.ErrFXPositionLimitExceeded, pair, code)
 		}
 		return fmt.Errorf("lock FX position limit: %w", err)
@@ -217,7 +218,7 @@ func lockFXRebalancePositionLimit(ctx context.Context, tx *sql.Tx, cmd ResolvedC
 		WHERE account_id = $1
 		FOR UPDATE`, cmd.AccountIDs[positionIndex]).Scan(&positionID)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if stderrors.Is(err, sql.ErrNoRows) {
 			return fmt.Errorf("%w: FX position account %s balance is missing", apperror.ErrAccountNotFound, cmd.AccountIDs[positionIndex])
 		}
 		return fmt.Errorf("lock FX position balance: %w", err)
@@ -242,7 +243,7 @@ func validateFXRebalancePosition(ctx context.Context, tx *sql.Tx, cmd ResolvedCo
 		  AND p.status <> 'disabled'
 		  AND l.currency = $2`, pair, code).Scan(&minimum, &maximum)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if stderrors.Is(err, sql.ErrNoRows) {
 			return fmt.Errorf("%w: no FX position limit for %s/%s", apperror.ErrFXPositionLimitExceeded, pair, code)
 		}
 		return fmt.Errorf("load FX position limit: %w", err)

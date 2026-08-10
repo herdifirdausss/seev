@@ -66,11 +66,11 @@ func (r *kycTierRepo) Apply(ctx context.Context, userID uuid.UUID, kycLevel int3
 		if err != nil {
 			return fmt.Errorf("query policy tier limits: %w", err)
 		}
+		defer rows.Close()
 		var templates []tierLimitTemplate
 		for rows.Next() {
 			var t tierLimitTemplate
 			if scanErr := rows.Scan(&t.transactionType, &t.maxPerTx, &t.maxDailyAmount, &t.maxDailyCount, &t.maxMonthlyAmount); scanErr != nil {
-				rows.Close()
 				return fmt.Errorf("scan policy tier limit: %w", scanErr)
 			}
 			templates = append(templates, t)
@@ -78,8 +78,6 @@ func (r *kycTierRepo) Apply(ctx context.Context, userID uuid.UUID, kycLevel int3
 		if err := rows.Err(); err != nil {
 			return fmt.Errorf("iterate policy tier limits: %w", err)
 		}
-		rows.Close()
-
 		if len(templates) == 0 {
 			return apperror.ErrUnknownKycTier
 		}

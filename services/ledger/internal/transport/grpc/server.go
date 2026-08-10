@@ -18,6 +18,7 @@ import (
 	ledgerv1 "github.com/herdifirdausss/seev/gen/go/ledger/v1"
 	"github.com/herdifirdausss/seev/internal/platform/security/middleware"
 	"github.com/herdifirdausss/seev/services/ledger/internal/ledger/errors"
+	"github.com/herdifirdausss/seev/services/ledger/internal/ledger/governance"
 	"github.com/herdifirdausss/seev/services/ledger/internal/ledger/model"
 	"github.com/herdifirdausss/seev/services/ledger/internal/processors"
 )
@@ -55,24 +56,10 @@ type Server struct {
 	service Service
 }
 
-var workflowOnlyPostTypes = map[string]struct{}{
-	"adjustment_credit":          {},
-	"adjustment_debit":           {},
-	"adjustment_suspense_credit": {},
-	"adjustment_suspense_debit":  {},
-	"reversal":                   {},
-	"chargeback":                 {},
-	"freeze_confiscate":          {},
-	"fx_rebalance_credit":        {},
-	"fx_rebalance_debit":         {},
-	"fx_out":                     {},
-	"fx_in":                      {},
-}
-
 func New(service Service) *Server { return &Server{service: service} }
 
 func (s *Server) Post(ctx context.Context, req *ledgerv1.PostRequest) (*ledgerv1.PostResponse, error) {
-	if _, blocked := workflowOnlyPostTypes[req.GetType()]; blocked {
+	if governance.IsWorkflowOnlyPostType(req.GetType()) {
 		return nil, status.Error(codes.PermissionDenied, "transaction type must use its governed internal workflow")
 	}
 	amount, err := integralAmount(req.GetAmount())

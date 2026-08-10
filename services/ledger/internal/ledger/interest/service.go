@@ -14,11 +14,11 @@ import (
 
 	"github.com/herdifirdausss/seev/contracts/events/ledger"
 	"github.com/herdifirdausss/seev/internal/platform/database/identifiers"
+	commandservice "github.com/herdifirdausss/seev/services/ledger/internal/ledger/command"
 	"github.com/herdifirdausss/seev/services/ledger/internal/ledger/errors"
 	"github.com/herdifirdausss/seev/services/ledger/internal/ledger/model"
 	"github.com/herdifirdausss/seev/services/ledger/internal/processors"
 	"github.com/herdifirdausss/seev/services/ledger/internal/repository"
-	commandservice "github.com/herdifirdausss/seev/services/ledger/internal/ledger/command"
 )
 
 var (
@@ -214,7 +214,7 @@ func (s *Service) processClaimedAccrual(ctx context.Context, enrollment model.Sa
 	}
 	rate, err := s.repo.GetRateForDate(ctx, enrollment.ProductID, date)
 	if err != nil {
-		return s.blockOrRetry(ctx, period, item.ID, "SAVINGS_RATE_MISSING", fmt.Errorf("%w: %v", ErrSavingsRateMissing, err))
+		return s.blockOrRetry(ctx, period, item.ID, "SAVINGS_RATE_MISSING", fmt.Errorf("%w: %w", ErrSavingsRateMissing, err))
 	}
 	balanceInt, err := balanceInt64(balance)
 	if err != nil {
@@ -223,7 +223,7 @@ func (s *Service) processClaimedAccrual(ctx context.Context, enrollment model.Sa
 	carryNumerator := enrollment.CarryNumerator
 	carryDenominator := enrollment.CarryDenominator
 	if priorCarry, priorDenominator, found, carryErr := s.repo.GetCarryBeforeDate(ctx, enrollment.ID, date); carryErr != nil {
-		return s.blockOrRetry(ctx, period, item.ID, "INTEREST_PRIOR_ACCRUAL_INCOMPLETE", fmt.Errorf("%w: %v", ErrPriorAccrualIncomplete, carryErr))
+		return s.blockOrRetry(ctx, period, item.ID, "INTEREST_PRIOR_ACCRUAL_INCOMPLETE", fmt.Errorf("%w: %w", ErrPriorAccrualIncomplete, carryErr))
 	} else if found {
 		carryNumerator = priorCarry
 		carryDenominator = priorDenominator
@@ -362,7 +362,7 @@ func (s *Service) blockOrRetry(ctx context.Context, period model.InterestPeriod,
 		next = time.Time{}
 	}
 	if err := s.repo.FailDailyAccrual(ctx, id, status, code, next); err != nil {
-		return fmt.Errorf("%s: %w; record failure: %v", code, cause, err)
+		return fmt.Errorf("%s: %w; record failure: %w", code, cause, err)
 	}
 	return fmt.Errorf("%s: %w", code, cause)
 }
@@ -589,7 +589,7 @@ func (s *Service) ClosePeriod(ctx context.Context, periodID uuid.UUID, actor str
 			return s.repo.MarkPeriodStatus(ctx, tx, periodID, model.InterestPeriodFailed, "INTEREST_PERIOD_CLOSE_FAILED")
 		})
 		if failErr != nil {
-			return fmt.Errorf("%w; record failed period: %v", cause, failErr)
+			return fmt.Errorf("%w; record failed period: %w", cause, failErr)
 		}
 		return cause
 	}

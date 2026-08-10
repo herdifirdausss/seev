@@ -22,13 +22,13 @@ import (
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 
-	currencyreg "github.com/herdifirdausss/seev/internal/platform/money/currency"
 	"github.com/herdifirdausss/seev/internal/platform/database/identifiers"
+	currencyreg "github.com/herdifirdausss/seev/internal/platform/money/currency"
+	commandservice "github.com/herdifirdausss/seev/services/ledger/internal/ledger/command"
 	"github.com/herdifirdausss/seev/services/ledger/internal/ledger/errors"
 	"github.com/herdifirdausss/seev/services/ledger/internal/ledger/model"
 	"github.com/herdifirdausss/seev/services/ledger/internal/processors"
 	"github.com/herdifirdausss/seev/services/ledger/internal/repository"
-	commandservice "github.com/herdifirdausss/seev/services/ledger/internal/ledger/command"
 )
 
 // DatabaseSQL is the thin interface over the connection pool this service
@@ -173,7 +173,7 @@ func (s *Service) create(
 	}
 	if requestedCurrency != "" {
 		if err := currencyreg.ValidateCode(requestedCurrency); err != nil {
-			return uuid.Nil, fmt.Errorf("%w: currency: %v", apperror.ErrValidation, err)
+			return uuid.Nil, fmt.Errorf("%w: currency: %w", apperror.ErrValidation, err)
 		}
 	}
 
@@ -239,7 +239,7 @@ func (s *Service) CreateWithPolicy(
 			return pauseErr
 		})
 		if pauseErr != nil {
-			return uuid.Nil, fmt.Errorf("%w (failed to quarantine schedule: %v)", err, pauseErr)
+			return uuid.Nil, fmt.Errorf("%w (failed to quarantine schedule: %w)", err, pauseErr)
 		}
 		return uuid.Nil, err
 	}

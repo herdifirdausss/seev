@@ -57,7 +57,7 @@ func setupPolicyTestDB(t *testing.T) *database.DBSQL {
 	require.NoError(t, err)
 
 	dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable", dbUser, dbPassword, host, port.Port(), dbName)
-	require.NoError(t, testutil.ApplyServiceMigrations(migrationsSourceURL(t), dsn))
+	require.NoError(t, testutil.ApplyMigration(migrationsSourceURL(t), "ledger", dsn))
 
 	db, err := database.New(ctx, config.PostgresConfig{
 		Host: host, Port: port.Port(), User: dbUser, Password: dbPassword,
