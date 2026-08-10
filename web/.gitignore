@@ -11,6 +11,14 @@ out/
 # TypeScript incremental cache
 *.tsbuildinfo
 
+# Package build output (when packages compile to dist/)
+dist/
+
+# Test artifacts
+coverage/
+playwright-report/
+test-results/
+
 # Environment (never commit secrets)
 .env
 .env.local

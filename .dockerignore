@@ -1,8 +1,33 @@
+# Dotfiles and tool metadata at any depth:
+# covers .git, .github, .claude, .vscode, .DS_Store, .next, .pnpm-store, etc.
 .[!.]*
+
+# Go build output and test artifacts
 bin
 tmp
 coverage.out
 *.log
-.env
+
+# Terraform
 .terraform
 **/.terraform
+
+# Secrets (belt-and-suspenders alongside .gitignore)
+.env
+
+# Frontend workspace — Go services do not depend on the Next.js workspace.
+# Excluding it keeps the build context from carrying node_modules (~500 MB),
+# Next.js build output (~110 MB combined), and TypeScript caches.
+web/
+
+# Safety net: any stray node_modules or TypeScript caches outside web/
+**/node_modules
+**/*.tsbuildinfo
+
+# Documentation and shell scripts — not required by go build or go:embed
+docs/
+scripts/
+
+# Local load-test artifacts and smoke diagnostics
+artifacts/
+.smoke-container-artifacts/
