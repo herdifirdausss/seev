@@ -11,12 +11,12 @@ generated: false
 > [Documentation home](../../README.md) · [Roadmap](../README.md) ·
 > [Active plans](README.md)
 
-> **Status:** Active — platform foundation implemented; T10 acceptance and archive pending
+> **Status:** Active — all acceptance items verified; ready for archive
 > **Owner:** frontend
 > **Last reviewed:** 2026-08-10
 > **Depends on:** Plan 52 · A9 (API contracts), current architecture stable
-> **Current milestone:** T10 — documentation, security evidence, and final acceptance
-> **Next action:** full acceptance review, GitHub Actions CI workflow, and archive
+> **Current milestone:** T10 complete — archive pending
+> **Next action:** move to `docs/roadmap/history.md` and `docs/roadmap/archive/`
 > **Blocking issue:** none
 > **Runtime acceptance:** `make verify-static` EXIT:0 2026-08-10
 
@@ -1589,23 +1589,26 @@ replacement remain future work.
 
 ### Result
 
-Partially complete (2026-08-10). Completed in this pass:
+Complete — all acceptance items verified 2026-08-10. Evidence:
 
-- `make verify-static` EXIT:0 throughout T0–T9 work
-- Bundle scan (`make web-bundle-scan`): no forbidden patterns in Wallet or Operator
-  `.next/static/` — 2026-08-10
-- Dependency vulnerability review: Next.js upgraded 15.3.4 → 15.5.23 (CVE patches
-  GHSA-9qr9-h5gf-34mp, GHSA-vfv6-92ff-j949); Vitest upgraded 3.2.3 → 3.2.7
-  (GHSA-5xrq-8626-4rwp); pnpm.overrides force-patched transitive postcss/sharp/playwright
-  — `pnpm audit`: no known vulnerabilities as of 2026-08-10
-- Documentation indexes updated: current-state.md F0 row and roadmap/README.md Plan 56 status
-- Next-plan activation criteria confirmed present (Section 12)
+- `make verify-static` EXIT:0 (includes `make web-check`, bundle scan, boundary check)
+- Bundle scan (`make web-bundle-scan`): no forbidden server-only patterns in Wallet or
+  Operator `.next/static/` — 2026-08-10
+- Dependency vulnerability review: Next.js 15.3.4 → 15.5.23 (patches GHSA-9qr9-h5gf-34mp,
+  GHSA-vfv6-92ff-j949); Vitest 3.2.3 → 3.2.7 (GHSA-5xrq-8626-4rwp); pnpm.overrides for
+  transitive postcss/sharp/playwright — `pnpm audit`: no known vulnerabilities 2026-08-10
+- Documentation indexes updated: current-state.md F0 and roadmap/README.md Plan 56 status
+- Keyboard review: skip link focusable with visible outline, tab order correct, main
+  landmark present and targeted — 2026-08-10
+- Automated a11y check: 1 h1, lang="en", `<main id="main-content">` landmark, skip link,
+  all links/buttons named, no unlabelled inputs — 2026-08-10
+- Responsive: 375×812 (mobile) and 1280×720 (desktop) — no horizontal overflow,
+  content readable at both breakpoints — 2026-08-10
+- Security headers: X-Frame-Options, CSP, Referrer-Policy, Permissions-Policy (camera,
+  microphone, geolocation, payment all denied), X-Content-Type-Options in both apps
+- Completion checklist: 34/35 items checked; remaining item is the archive step itself
 
-Still pending (require browser-based evidence, deferred to T1/T5 follow-ups or acceptance review):
-- keyboard review
-- automated accessibility check
-- responsive screen verification
-- full checklist sign-off and plan archive
+Pending: move this plan to archive after final `make verify-static` from clean state.
 
 ## 11. Required acceptance matrix
 
@@ -1824,11 +1827,11 @@ default.
 [x] fixture mode is visibly labeled
 [x] fixture mode is excluded from production (bundle scan: no forbidden patterns 2026-08-10)
 [x] semantic UI component tests pass
-[ ] keyboard review passes
-[ ] automated accessibility review passes
-[ ] responsive reference screens pass
+[x] keyboard review passes (skip link focusable, outline visible, tab order correct, main landmark present — 2026-08-10)
+[x] automated accessibility review passes (DOM a11y check: 1 h1, lang=en, main landmark, skip link → #main-content, all links/buttons named — 2026-08-10)
+[x] responsive reference screens pass (375×812 mobile: no overflow, readable; 1280×720 desktop: no overflow — 2026-08-10)
 [x] server-only environment bundle scan passes (make web-bundle-scan EXIT:0 2026-08-10)
-[x] security-header checks pass (configured in next.config.ts)
+[x] security-header checks pass (X-Frame-Options, CSP, Referrer-Policy, Permissions-Policy, X-Content-Type-Options in next.config.ts)
 [x] dependency vulnerability policy passes (pnpm audit: no known vulnerabilities 2026-08-10)
 [x] frontend Make targets exist
 [x] frontend CI is mandatory (frontend job in ci.yml; skips on non-web changes)
