@@ -100,6 +100,12 @@ Thumbs.db
 # .idea/
 # .vscode/
 
+# Claude Code agent worktrees — each is a full repo checkout living inside
+# the project dir. Excluded locally via .git/info/exclude too, but listed
+# here so the rule travels with the repo and VS Code respects it.
+.claude/worktrees/
+.worktrees/
+
 # ─── Frontend workspace (web/) ───────────────────────────────────────────────
 
 # Node dependencies — never committed at any depth

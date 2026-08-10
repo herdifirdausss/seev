@@ -1,0 +1,31 @@
+{
+  // Exclude Claude Code agent worktrees from the file watcher and search index.
+  // Each worktree is a full repo checkout (~1700 files) that balloons VS Code's
+  // Source Control badge and slows down search.
+  "files.watcherExclude": {
+    "**/.claude/worktrees/**": true,
+    "**/.worktrees/**": true,
+    "**/node_modules/**": true,
+    "**/.next/**": true,
+    "**/dist/**": true,
+    "**/.pnpm-store/**": true
+  },
+  "search.exclude": {
+    "**/.claude/worktrees/**": true,
+    "**/.worktrees/**": true,
+    "**/node_modules/**": true,
+    "**/.next/**": true,
+    "**/dist/**": true,
+    "**/.pnpm-store/**": true
+  },
+  // Tell VS Code's git extension to ignore worktree subdirs so it doesn't
+  // open them as separate Source Control providers.
+  "git.ignoredRepositories": [
+    ".claude/worktrees/advanced-financial-products-period-close-113a33",
+    ".claude/worktrees/codex-c3-multi-channel-notifications",
+    ".claude/worktrees/codex-c5-advanced-financial-products",
+    ".claude/worktrees/dreamy-jackson-71d76c",
+    ".claude/worktrees/multi-currency-e2e-68c019",
+    ".claude/worktrees/zero-downtime-migration-engine-7cf82c"
+  ]
+}
