@@ -304,7 +304,7 @@ guarantees before anyone touches it
 
 Public clients authenticate with JWT (users) or HMAC-signed webhooks
 (vendors). Every hop *between* services — gRPC or internal HTTP, all
-all internal service hops — are mutually authenticated by mTLS, where identity is the
+internal service hops — are mutually authenticated by mTLS, where identity is the
 certificate's URI SAN, never a Common Name or "signed by our CA" alone; a
 new caller has to be added to its callee's allowlist explicitly, it's
 never inferred. Certificates are short-lived and rotate without a

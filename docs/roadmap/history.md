@@ -36,7 +36,7 @@ detailed implementation history lives in Git. Active plans are in
 | 47 · A5 | Admin console | Admin BFF implemented | — | `reference/services.md` |
 | 48 · A10 | Product assurance | Assurance service implemented | — | `reference/services.md` |
 | 49 · A6 | Internal security | mTLS, allowlists, RLS, and security controls implemented | 2026-08-04 | `security/threat-model.md` (TM-01–TM-14) |
-| 50 · A7 | Backup, PITR, and disaster recovery | DR workflow and restore drill implemented | 2026-08-04 | `operations/runbooks/backup-restore.md`, `operations/runbooks/dr-restore-drill.md` |
+| 50 · A7 | Backup, PITR, and disaster recovery | DR workflow and restore drill implemented | 2026-08-04 | `operations/runbooks/backup-restore-evidence.md`, `operations/runbooks/dr-restore-drill.md` |
 | 51 · A8 | Data lifecycle and privacy | Privacy controls, field encryption, closure workflow complete | 2026-08-04 | `reference/services.md` |
 | 52 · A9 | API contracts and schema evolution | Contract validation and evolution workflow complete | 2026-08-04 | `reference/api-contracts.md` |
 | 53 · B0 | Load and capacity gate | Load test and capacity model established | 2026-08-04 | `performance/capacity-model.md` |
