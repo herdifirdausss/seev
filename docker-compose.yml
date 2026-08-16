@@ -729,7 +729,7 @@ services:
   #   docker compose --profile app --profile notifications up -d
   mailpit:
     profiles: ["notifications"]
-    image: axllent/mailpit:v1.21.8@sha256:81370195cd4a0eab9604d17c2617a7525b0486f9365555253b6c5376c6350f1a # digest verified 2026-08-04
+    image: axllent/mailpit:v1.30.7@sha256:d5ecbb067db3705fa953d79e1b7f81ef84038df67aba6c52825d8c02a1ea748a # digest verified 2026-08-04
     environment:
       MP_MAX_MESSAGES: "1000"
       MP_DATABASE: /data/mailpit.db
